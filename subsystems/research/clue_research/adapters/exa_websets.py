@@ -542,6 +542,112 @@ class ExaWebsetItem(BaseModel):
         return self.enrichments or ()
 
 
+class ExaDiscoveryEnrichmentObservation(BaseModel):
+    """One terminal enrichment mapped from provider id to the platform's logical field key."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enrichment_id: NonEmptyStr
+    field_key: NonEmptyStr
+    format: ExaWebsetEnrichmentFormat
+    result: tuple[str, ...] | None
+    reasoning: str | None
+    references: tuple[ExaWebsetReference, ...]
+
+    @property
+    def is_missing(self) -> bool:
+        return self.result is None
+
+
+class ExaDiscoveryCompanyItem(BaseModel):
+    """Pure D4 projection of an immutable Exa company item.
+
+    The full provider object remains in the raw artifact. This projection intentionally contains
+    only the approved D4 company fields; notably, founded year and web traffic have no member here.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider_item_id: NonEmptyStr
+    provider_webset_id: NonEmptyStr
+    provider_source_id: NonEmptyStr
+    company_url: NonEmptyStr
+    company_name: NonEmptyStr
+    base_fields: dict[str, JsonValue]
+    evaluations: tuple[ExaWebsetItemEvaluation, ...]
+    enrichments: tuple[ExaDiscoveryEnrichmentObservation, ...]
+    observed_at: datetime
+
+
+def normalize_exa_discovery_company_item(
+    item: ExaWebsetItem,
+    enrichment_definitions: tuple[ExaResponseEnrichment, ...],
+) -> ExaDiscoveryCompanyItem:
+    """Normalize a D3-validated company item without provider I/O or persistence.
+
+    Terminal D3 reconciliation already proves one result per requested enrichment. D4 repeats the
+    id-to-logical-field check at its own boundary so a caller cannot materialize a raw artifact
+    against the wrong definition page.
+    """
+
+    if not isinstance(item.properties, ExaWebsetItemCompanyProperties):
+        raise ValueError("D4 account materialization requires an Exa company item")
+    definitions_by_id = {definition.id: definition for definition in enrichment_definitions}
+    if len(definitions_by_id) != len(enrichment_definitions):
+        raise ValueError("Exa enrichment definitions repeat an id")
+    results_by_id = {result.enrichment_id: result for result in item.enrichment_results}
+    if len(results_by_id) != len(item.enrichment_results):
+        raise ValueError("Exa item repeats an enrichment result id")
+    if results_by_id.keys() != definitions_by_id.keys():
+        raise ValueError("Exa item enrichment ids do not match its terminal definitions")
+
+    normalized: list[ExaDiscoveryEnrichmentObservation] = []
+    logical_keys: set[str] = set()
+    for enrichment_id, result in results_by_id.items():
+        definition = definitions_by_id[enrichment_id]
+        field_key = definition.metadata.get("clueFieldKey", "").strip()
+        if not field_key:
+            raise ValueError(f"Exa enrichment {enrichment_id!r} has no clueFieldKey")
+        if field_key in logical_keys:
+            raise ValueError(f"Exa enrichment definitions repeat logical field {field_key!r}")
+        logical_keys.add(field_key)
+        if result.status != "completed":
+            raise ValueError(f"Exa enrichment {enrichment_id!r} is not terminal completed")
+        expected_result_format = {
+            "core.company_email": ExaWebsetEnrichmentFormat.EMAIL,
+            "core.company_phone": ExaWebsetEnrichmentFormat.PHONE,
+        }.get(field_key, definition.format)
+        # The create/definition contract requests email and phone logical fields as ``text``.
+        # Terminal item results specialize those two values to ``email``/``phone``. Other result
+        # formats must remain identical to the definition.
+        if expected_result_format is None or result.format is not expected_result_format:
+            raise ValueError(
+                f"Exa enrichment {enrichment_id!r} result format does not match its definition"
+            )
+        normalized.append(
+            ExaDiscoveryEnrichmentObservation(
+                enrichment_id=enrichment_id,
+                field_key=field_key,
+                format=result.format,
+                result=result.result,
+                reasoning=result.reasoning,
+                references=result.references,
+            )
+        )
+
+    return ExaDiscoveryCompanyItem(
+        provider_item_id=item.id,
+        provider_webset_id=item.webset_id,
+        provider_source_id=item.source_id,
+        company_url=item.properties.url,
+        company_name=item.properties.company.name,
+        base_fields=item.properties.discovery_fields(),
+        evaluations=item.evaluations,
+        enrichments=tuple(normalized),
+        observed_at=item.updated_at,
+    )
+
+
 class ExaWebsetEvent(BaseModel):
     """One Exa event as delivered by webhook or the cursor-paginated event feed."""
 
@@ -1186,6 +1292,8 @@ __all__ = [
     "ExaCreateSearch",
     "ExaCreateWebhookRequest",
     "ExaCreateWebsetRequest",
+    "ExaDiscoveryCompanyItem",
+    "ExaDiscoveryEnrichmentObservation",
     "ExaEnrichmentOption",
     "ExaEventPage",
     "ExaEventPageExchange",
@@ -1219,6 +1327,7 @@ __all__ = [
     "ExaWebsetsLifecycleTransport",
     "ExaWebsetsTransport",
     "ExaWebsetsWebhookAdminTransport",
+    "normalize_exa_discovery_company_item",
     "ExaWebhook",
     "ExaWebhookEventType",
     "ExaWebhookPage",

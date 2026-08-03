@@ -59,6 +59,7 @@ from clue_api.exa_websets_lifecycle import (
     DurableExaWebsetLifecycle,
     ExaDiscoveryWakeWorker,
 )
+from clue_api.exa_websets_materialization import ExaWebsetsD4Materializer
 from clue_api.execution_tools import (
     ExecutionControlServices,
     register_execution_control_tools,
@@ -208,7 +209,8 @@ async def _exa_discovery_loop(
         raise TypeError("Exa discovery worker requires a SecretStr API key")
     async with ExaWebsetsClient(api_key=api_key, lookup_attempts=1) as client:
         worker = ExaDiscoveryWakeWorker(
-            lifecycle=DurableExaWebsetLifecycle(transport=client, storage=storage)
+            lifecycle=DurableExaWebsetLifecycle(transport=client, storage=storage),
+            materializer=ExaWebsetsD4Materializer(storage=storage),
         )
         while True:
             try:

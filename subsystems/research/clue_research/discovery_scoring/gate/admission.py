@@ -38,6 +38,7 @@ from clue_core import (
     RunId,
     SourceTier,
     discovery_claim,
+    revalidate_with,
 )
 from clue_locks import entity_lock
 from clue_research.claimstore import ALL_WORKSPACES, claims_for, insert_claim
@@ -94,6 +95,7 @@ def _to_observation(candidate: CandidateHypothesis) -> Observation:
         name=candidate.raw_name or "",
         entity_type=EntityType.ACCOUNT,
         domain=domain,
+        geo=candidate.candidate_geo,
     )
 
 
@@ -120,7 +122,11 @@ async def _provenance_origin(
 
 
 async def _existing_provenance(
-    conn: AsyncConnection, entity_id: EntityId, run_id: RunId, matched_channel: str
+    conn: AsyncConnection,
+    entity_id: EntityId,
+    run_id: RunId,
+    matched_channel: str,
+    artifact_key: str | None,
 ) -> ClaimId | None:
     """The id of an existing discovery-provenance claim for this ``(entity, run, channel)``, if
     any — the idempotency check that makes re-admission an M7-replay-safe no-op.
@@ -134,23 +140,35 @@ async def _existing_provenance(
             conn, member, DISCOVERY_PROVENANCE_FIELD, scope=ALL_WORKSPACES
         ):
             provenance = claim.discovery_provenance
-            if (
+            base_match = (
                 provenance is not None
                 and provenance.run_id == run_id
                 and provenance.found_via == matched_channel
+            )
+            # Durable provider items are independently valuable evidence even when several map to
+            # one survivor. Their content-addressed artifact is therefore the replay identity.
+            # Legacy channels with no artifact retain the original one-claim-per-run/channel rule.
+            if base_match and (
+                claim.artifact_key == artifact_key if artifact_key is not None else True
             ):
                 return claim.id
     return None
 
 
-async def _write_discovery_provenance(
+async def ensure_discovery_provenance(
     conn: AsyncConnection,
     candidate: CandidateHypothesis,
     entity_id: EntityId,
     run_id: RunId,
 ) -> ClaimId:
     """Write (idempotently) the one discovery-provenance claim for an admitted entity."""
-    existing = await _existing_provenance(conn, entity_id, run_id, candidate.matched_channel)
+    existing = await _existing_provenance(
+        conn,
+        entity_id,
+        run_id,
+        candidate.matched_channel,
+        candidate.artifact_key,
+    )
     if existing is not None:
         return existing
     source_tier, extraction_method = await _provenance_origin(conn, candidate.matched_channel)
@@ -162,6 +180,7 @@ async def _write_discovery_provenance(
             "matched_channel": candidate.matched_channel,
             "matched_signal": candidate.matched_signal,
             "discovery_confidence": candidate.resolver_confidence,
+            "evidence": candidate.discovery_evidence,
         },
         source_tier=source_tier,
         extraction_method=extraction_method,
@@ -173,7 +192,14 @@ async def _write_discovery_provenance(
         discovery_confidence=candidate.resolver_confidence,
         # the candidate's grounding (M6.1 guarantees one of these is non-empty)
         source_url=candidate.source_url or candidate.source_record_ref,
+        evidence_span=candidate.evidence_span,
+        observed_at=candidate.observed_at,
         cost_cents=candidate.cost_cents,
+    )
+    claim = revalidate_with(
+        claim,
+        source_key=candidate.matched_channel,
+        artifact_key=candidate.artifact_key,
     )
     return await insert_claim(conn, claim)
 
@@ -209,7 +235,7 @@ async def _admit_resolved(
     if decision.entity_id is None:  # defensive — AUTO_MERGED/NEW_ENTITY always carry an entity id
         raise RuntimeError(f"disposition {decision.outcome} returned no entity_id")
     entity_id = await surviving_id(conn, decision.entity_id, EntityType.ACCOUNT)
-    claim_id = await _write_discovery_provenance(conn, candidate, entity_id, run_id)
+    claim_id = await ensure_discovery_provenance(conn, candidate, entity_id, run_id)
     return AdmissionResult(
         status=AdmissionStatus.ADMITTED,
         account_entity_id=entity_id,
@@ -277,4 +303,9 @@ async def admit(
     )
 
 
-__all__ = ["admit", "DISCOVERY_PROVENANCE_FIELD", "IMPORT_CHANNEL"]
+__all__ = [
+    "admit",
+    "ensure_discovery_provenance",
+    "DISCOVERY_PROVENANCE_FIELD",
+    "IMPORT_CHANNEL",
+]

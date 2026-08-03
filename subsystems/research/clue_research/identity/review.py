@@ -138,6 +138,18 @@ class ReviewTask(BaseModel):
     config_version: int
 
 
+class ReviewDecision(BaseModel):
+    """Current durable human-decision state plus the resulting survivor, when one exists."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    task_id: EntityId
+    workspace_id: str | None
+    status: ReviewStatus
+    resolution: ReviewResolution | None
+    survivor_id: EntityId | None
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -549,6 +561,49 @@ async def list_open_tasks(
         .all()
     )
     return [_row_to_task(dict(r)) for r in rows]
+
+
+async def get_review_decision(conn: AsyncConnection, task_id: EntityId) -> ReviewDecision:
+    """Read the latest review outcome without making identity policy decisions at the caller.
+
+    ``resolve_*`` appends the authoritative ``review_resolved`` disposition. Keeping this lookup
+    in M2 prevents discovery materializers from reaching into identity audit tables directly.
+    """
+
+    task = await get_task(conn, task_id)
+    if task is None:
+        raise ValueError(f"review task {task_id} not found")
+    survivor_id = None
+    if task.status is ReviewStatus.RESOLVED:
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT survivor_id FROM identity_disposition "
+                    "WHERE review_task_id = :task_id AND kind = 'review_resolved' "
+                    "ORDER BY created_at DESC, id DESC LIMIT 1"
+                ),
+                {"task_id": task_id},
+            )
+        ).one_or_none()
+        if row is None:
+            raise RuntimeError(f"resolved review task {task_id} has no disposition")
+        survivor_id = EntityId(row[0]) if row[0] is not None else None
+        if (
+            task.resolution
+            in {
+                ReviewResolution.MERGE_INTO,
+                ReviewResolution.CREATE_NEW_ENTITY,
+            }
+            and survivor_id is None
+        ):
+            raise RuntimeError(f"resolved review task {task_id} has no survivor")
+    return ReviewDecision(
+        task_id=task.id,
+        workspace_id=task.workspace_id,
+        status=task.status,
+        resolution=task.resolution,
+        survivor_id=survivor_id,
+    )
 
 
 async def _close_task(

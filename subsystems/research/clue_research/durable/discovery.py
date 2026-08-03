@@ -133,6 +133,7 @@ class DiscoveryCandidateLinkRow(BaseModel):
     account_entity_id: EntityId | None
     survivor_entity_id: EntityId | None
     disposition_reason: str | None
+    review_task_id: EntityId | None
     updated_at: UtcDatetime
 
 
@@ -451,6 +452,56 @@ async def get_discovery_batch(
     return _batch_row(row) if row is not None else None
 
 
+async def lock_discovery_batch_for_materialization(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    batch_id: DiscoveryBatchId,
+) -> DiscoveryBatchRow:
+    """Lock one D4 batch for the caller's transaction and enter field materialization.
+
+    Holding the row lock until commit serializes D4 workers, making the claim-equivalence check and
+    subsequent append atomic. ``seal_pending`` is accepted for exact replay; D4 never mutates a
+    sealed batch.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_BATCH_COLUMNS} FROM discovery_batch "
+                    "WHERE workspace_id = :workspace_id AND id = :id FOR UPDATE"
+                ),
+                {"workspace_id": workspace_id, "id": batch_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        raise DiscoveryNotFound(f"discovery batch {batch_id}")
+    batch = _batch_row(row)
+    if batch.state is DiscoveryBatchState.IDENTITY_RESOLUTION:
+        await conn.execute(
+            text(
+                "UPDATE discovery_batch SET state = 'field_materialization', updated_at = now() "
+                "WHERE workspace_id = :workspace_id AND id = :id"
+            ),
+            {"workspace_id": workspace_id, "id": batch_id},
+        )
+        updated = await get_discovery_batch(conn, workspace_id=workspace_id, batch_id=batch_id)
+        assert updated is not None
+        return updated
+    if batch.state not in {
+        DiscoveryBatchState.FIELD_MATERIALIZATION,
+        DiscoveryBatchState.SEAL_PENDING,
+    }:
+        raise DiscoveryReplayConflict(
+            f"batch {batch_id} in state {batch.state.value} cannot run D4 materialization"
+        )
+    return batch
+
+
 async def update_discovery_batch_state(
     conn: AsyncConnection,
     *,
@@ -489,7 +540,8 @@ _OPERATION_COLUMNS = (
     "observation_window, provider_external_id, provider_operation_id, state, spend_outcome, "
     "next_poll_at, submitted_receipt_ref, final_receipt_ref, raw_request_artifact_key, "
     "raw_response_manifest_key, provider_units_reserved, provider_units_charged, "
-    "cost_cents_reserved, cost_cents_charged, started_at, terminal_at"
+    "cost_cents_reserved, cost_cents_charged, started_at, terminal_at, "
+    "final_reconciled_at, pagination_exhausted_at"
 )
 
 
@@ -796,6 +848,31 @@ async def get_discovery_operation(
     return _operation_row(row) if row is not None else None
 
 
+async def list_discovery_operations(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    batch_id: DiscoveryBatchId,
+) -> tuple[DiscoveryOperation, ...]:
+    """List a batch's provider operations in stable creation/id order."""
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_OPERATION_COLUMNS} FROM discovery_operation "
+                    "WHERE workspace_id = :workspace_id AND batch_id = :batch_id "
+                    "ORDER BY started_at NULLS FIRST, id"
+                ),
+                {"workspace_id": workspace_id, "batch_id": batch_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(_operation_row(row) for row in rows)
+
+
 async def find_discovery_operation_by_provider_id(
     conn: AsyncConnection,
     *,
@@ -912,6 +989,8 @@ def _operation_row(row: Any) -> DiscoveryOperation:
             "cost_cents_charged": row["cost_cents_charged"],
             "started_at": row["started_at"],
             "terminal_at": row["terminal_at"],
+            "final_reconciled_at": row["final_reconciled_at"],
+            "pagination_exhausted_at": row["pagination_exhausted_at"],
         }
     )
 
@@ -1540,12 +1619,14 @@ async def put_discovery_candidate_link(
     account_entity_id: EntityId | None = None,
     survivor_entity_id: EntityId | None = None,
     disposition_reason: str | None = None,
+    review_task_id: EntityId | None = None,
 ) -> DiscoveryCandidateLinkRow:
     _validate_candidate_shape(
         admission_status=admission_status,
         account_entity_id=account_entity_id,
         survivor_entity_id=survivor_entity_id,
         disposition_reason=disposition_reason,
+        review_task_id=review_task_id,
     )
     existing = await get_discovery_candidate_link(
         conn,
@@ -1554,6 +1635,19 @@ async def put_discovery_candidate_link(
         item_snapshot_id=item_snapshot_id,
         for_update=True,
     )
+    survivor_redirect = (
+        existing is not None
+        and existing.admission_status
+        in {
+            DiscoveryCandidateAdmissionState.ADMITTED,
+            DiscoveryCandidateAdmissionState.MERGED,
+        }
+        and admission_status is DiscoveryCandidateAdmissionState.MERGED
+        and existing.account_entity_id == account_entity_id
+        and existing.survivor_entity_id != survivor_entity_id
+        and survivor_entity_id != account_entity_id
+        and bool(disposition_reason)
+    )
     if existing is None:
         await conn.execute(
             text(
@@ -1561,11 +1655,12 @@ async def put_discovery_candidate_link(
                 INSERT INTO discovery_candidate_link (
                     workspace_id, batch_id, item_snapshot_id, raw_name, candidate_domain,
                     source_url, admission_status, account_entity_id, survivor_entity_id,
-                    disposition_reason
+                    disposition_reason, review_task_id
                 )
                 SELECT :workspace_id, :batch_id, item.id, :raw_name, :candidate_domain,
                        :source_url, CAST(:admission_status AS discovery_candidate_admission_state),
-                       :account_entity_id, :survivor_entity_id, :disposition_reason
+                       :account_entity_id, :survivor_entity_id, :disposition_reason,
+                       :review_task_id
                 FROM discovery_item_snapshot item
                 JOIN discovery_operation operation
                   ON operation.id = item.operation_id AND operation.workspace_id = item.workspace_id
@@ -1584,9 +1679,36 @@ async def put_discovery_candidate_link(
                 "account_entity_id": account_entity_id,
                 "survivor_entity_id": survivor_entity_id,
                 "disposition_reason": disposition_reason,
+                "review_task_id": review_task_id,
             },
         )
-    elif existing.admission_status is DiscoveryCandidateAdmissionState.PENDING:
+    elif (
+        existing.admission_status
+        in {
+            DiscoveryCandidateAdmissionState.PENDING,
+            DiscoveryCandidateAdmissionState.REVIEW_REQUIRED,
+        }
+        or survivor_redirect
+    ):
+        if (
+            existing.admission_status is DiscoveryCandidateAdmissionState.REVIEW_REQUIRED
+            and admission_status
+            not in {
+                DiscoveryCandidateAdmissionState.REVIEW_REQUIRED,
+                DiscoveryCandidateAdmissionState.ADMITTED,
+                DiscoveryCandidateAdmissionState.MERGED,
+                DiscoveryCandidateAdmissionState.EXCLUDED,
+            }
+        ):
+            raise DiscoveryReplayConflict("identity review cannot transition back to pending")
+        if (
+            existing.admission_status is DiscoveryCandidateAdmissionState.REVIEW_REQUIRED
+            and admission_status is not DiscoveryCandidateAdmissionState.REVIEW_REQUIRED
+            and review_task_id != existing.review_task_id
+        ):
+            raise DiscoveryReplayConflict(
+                "identity review transition must preserve its review task lineage"
+            )
         await conn.execute(
             text(
                 """
@@ -1600,6 +1722,7 @@ async def put_discovery_candidate_link(
                     account_entity_id = :account_entity_id,
                     survivor_entity_id = :survivor_entity_id,
                     disposition_reason = :disposition_reason,
+                    review_task_id = :review_task_id,
                     updated_at = now()
                 WHERE workspace_id = :workspace_id AND batch_id = :batch_id
                   AND item_snapshot_id = :item_snapshot_id
@@ -1616,6 +1739,7 @@ async def put_discovery_candidate_link(
                 "account_entity_id": account_entity_id,
                 "survivor_entity_id": survivor_entity_id,
                 "disposition_reason": disposition_reason,
+                "review_task_id": review_task_id,
             },
         )
     else:
@@ -1624,12 +1748,14 @@ async def put_discovery_candidate_link(
             account_entity_id,
             survivor_entity_id,
             disposition_reason,
+            review_task_id,
         )
         actual = (
             existing.admission_status,
             existing.account_entity_id,
             existing.survivor_entity_id,
             existing.disposition_reason,
+            existing.review_task_id,
         )
         if proposed != actual:
             raise DiscoveryReplayConflict(
@@ -1663,7 +1789,7 @@ async def get_discovery_candidate_link(
                     """
                 SELECT workspace_id, batch_id, item_snapshot_id, raw_name, candidate_domain,
                        source_url, admission_status, account_entity_id, survivor_entity_id,
-                       disposition_reason, updated_at
+                       disposition_reason, review_task_id, updated_at
                 FROM discovery_candidate_link
                 WHERE workspace_id = :workspace_id AND batch_id = :batch_id
                   AND item_snapshot_id = :item_snapshot_id
@@ -1689,10 +1815,21 @@ def _validate_candidate_shape(
     account_entity_id: EntityId | None,
     survivor_entity_id: EntityId | None,
     disposition_reason: str | None,
+    review_task_id: EntityId | None,
 ) -> None:
     if admission_status is DiscoveryCandidateAdmissionState.PENDING:
         valid = (
-            account_entity_id is None and survivor_entity_id is None and disposition_reason is None
+            account_entity_id is None
+            and survivor_entity_id is None
+            and disposition_reason is None
+            and review_task_id is None
+        )
+    elif admission_status is DiscoveryCandidateAdmissionState.REVIEW_REQUIRED:
+        valid = (
+            account_entity_id is None
+            and survivor_entity_id is None
+            and disposition_reason is None
+            and review_task_id is not None
         )
     elif admission_status is DiscoveryCandidateAdmissionState.ADMITTED:
         valid = (
@@ -1768,9 +1905,12 @@ async def put_discovery_field_resolution(
             logical_field_key=str(resolution.logical_field_key),
         )
         assert existing is not None
+        # Every state, including review/retry/failure blockers, must be exact-replay safe. The
+        # transition table below governs changes; it must not reject a byte-for-byte replay of the
+        # same durable decision.
+        if existing == resolution:
+            return existing
         if existing.state in _FIELD_TERMINAL:
-            if existing == resolution:
-                return existing
             raise DiscoveryReplayConflict(
                 f"field {resolution.logical_field_key} already has a seal-terminal decision"
             )
@@ -1801,23 +1941,40 @@ async def put_discovery_field_resolution(
                 await conn.execute(
                     text(
                         """
-                    SELECT id, entity_id, workspace_id
+                    WITH RECURSIVE members AS (
+                        SELECT id
+                        FROM account_entity
+                        WHERE id = :account_entity_id AND workspace_id = :workspace_id
+                        UNION
+                        SELECT account.id
+                        FROM account_entity account
+                        JOIN members ON account.merged_into = members.id
+                        WHERE account.workspace_id = :workspace_id
+                    )
+                    SELECT claim.id, claim.entity_id, claim.workspace_id,
+                           (members.id IS NOT NULL) AS belongs_to_survivor
                     FROM claim
-                    WHERE id = ANY(:claim_ids)
+                    LEFT JOIN members ON members.id = claim.entity_id
+                    WHERE claim.id = ANY(:claim_ids)
                     """
                     ),
-                    {"claim_ids": list(resolution.claim_ids)},
+                    {
+                        "workspace_id": workspace_id,
+                        "account_entity_id": resolution.account_entity_id,
+                        "claim_ids": list(resolution.claim_ids),
+                    },
                 )
             )
             .mappings()
             .all()
         )
         if len(claims) != len(resolution.claim_ids) or any(
-            claim["entity_id"] != resolution.account_entity_id
-            or claim["workspace_id"] not in (None, workspace_id)
+            not claim["belongs_to_survivor"] or claim["workspace_id"] not in (None, workspace_id)
             for claim in claims
         ):
-            raise ValueError("discovery field claims must belong to the scoped account/workspace")
+            raise ValueError(
+                "discovery field claims must belong to the scoped survivor or a merged member"
+            )
 
     params = {
         "id": resolution_id,
@@ -2731,6 +2888,15 @@ _READINESS_SQL = text(
                     AND candidate.batch_id = :batch_id
                     AND candidate.item_snapshot_id = item.id
                     AND candidate.admission_status IN ('admitted', 'merged', 'excluded')
+                    AND (
+                        candidate.review_task_id IS NULL
+                        OR EXISTS (
+                            SELECT 1 FROM identity_review_task review
+                            WHERE review.id = candidate.review_task_id
+                              AND review.workspace_id = candidate.workspace_id
+                              AND review.status IN ('resolved', 'dismissed')
+                        )
+                    )
               )
         ) AS candidate_identities_terminal,
 
@@ -2770,12 +2936,25 @@ _READINESS_SQL = text(
                           SELECT 1 FROM discovery_field_claim field_claim
                           JOIN claim
                             ON claim.id = field_claim.claim_id
-                           AND claim.entity_id = resolution.account_entity_id
                            AND (claim.workspace_id IS NULL
                                 OR claim.workspace_id = :workspace_id)
                           WHERE field_claim.workspace_id = :workspace_id
                             AND field_claim.resolution_id = resolution.id
                             AND field_claim.claim_id = resolution.winning_claim_id
+                            AND claim.entity_id IN (
+                                WITH RECURSIVE members AS (
+                                    SELECT id
+                                    FROM account_entity
+                                    WHERE id = resolution.account_entity_id
+                                      AND workspace_id = :workspace_id
+                                    UNION
+                                    SELECT account.id
+                                    FROM account_entity account
+                                    JOIN members ON account.merged_into = members.id
+                                    WHERE account.workspace_id = :workspace_id
+                                )
+                                SELECT id FROM members
+                            )
                       )
                   ))
                   OR (resolution.state IN (
@@ -2801,8 +2980,23 @@ _READINESS_SQL = text(
                       survivor.id IS NULL OR survivor.merged_into IS NOT NULL
                       OR (candidate.admission_status = 'admitted'
                           AND source_account.id <> survivor.id)
-                      OR (candidate.admission_status = 'merged'
-                          AND source_account.merged_into <> survivor.id)
+                      OR (candidate.admission_status = 'merged' AND (
+                          source_account.id IS NULL OR source_account.id = survivor.id
+                          OR NOT EXISTS (
+                              WITH RECURSIVE chain AS (
+                                  SELECT id, merged_into
+                                  FROM account_entity
+                                  WHERE id = source_account.id
+                                    AND workspace_id = candidate.workspace_id
+                                  UNION
+                                  SELECT account.id, account.merged_into
+                                  FROM account_entity account
+                                  JOIN chain ON account.id = chain.merged_into
+                                  WHERE account.workspace_id = candidate.workspace_id
+                              )
+                              SELECT 1 FROM chain WHERE id = survivor.id
+                          )
+                      ))
                   ))
               )
         ) AS survivor_links_complete,

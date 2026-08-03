@@ -18,6 +18,7 @@ don't pass one).
 | 07 | `07_research_view_trial.py` | Read-only C7 production research-view inspection | `ProductionResearchViewComposer` |
 | 08 | `08_seed_discovery_fixture.py` | Reproducible Stage-0 handoff for discovery tests | `trial.discovery_fixture.seed_insight_health_discovery_fixture` |
 | 09 | `09_exa_websets_d2_canary.py` | Bounded live/replay Exa Websets D2 submit | `DurableExaWebsetSubmitter` |
+| 10 | `10_exa_websets_d4_materialization.py` | Zero-provider-call D4 materialization/replay | `ExaWebsetsD4Materializer` |
 
 ## One-time setup
 
@@ -185,3 +186,19 @@ separately approved observation/generation rather than changing the old row.
 The configured Exa team must have Websets API access. A key that can use the web application but
 not the Websets API returns a durable, known-not-charged terminal failure and does not satisfy the
 D2 success gate.
+
+## Exa Websets D4 materialization
+
+Script 10 consumes only an existing D3-terminal batch and its immutable filesystem artifacts. It
+does not construct an Exa client or read an API key, so both the first D4 run and replay make zero
+provider calls:
+
+```bash
+uv run python scripts/10_exa_websets_d4_materialization.py \
+  --database-url postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_discovery_fixture \
+  --batch-id <D3-terminal-discovery-batch-id>
+```
+
+The first run reports created claims and admission/field-resolution summaries. Repeating it in a
+fresh process must report `outcome=replayed`, `claims_created=0`, stable claim ids, and
+`provider_calls_this_process=0`. D4 stops at `seal_pending`; D5 owns the actual batch seal.

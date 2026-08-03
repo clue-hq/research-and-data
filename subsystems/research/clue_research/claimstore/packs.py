@@ -125,6 +125,18 @@ def _seed(
 # ~90-day default freshness; signal/personal fields refresh faster (substrate §6).
 CORE_PACK: tuple[SeedField, ...] = (
     _seed(
+        "core.account_name",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("registry", "sumble_organizations", "exa_websets"),
+        freshness_ttl=timedelta(days=180),
+        value_schema={"type": "string"},
+        description="Evidence-bearing canonical account name observation.",
+        research_view_route=_account_route(
+            "core.account_name", ResearchSectionKind.ABOUT, ordinal=1
+        ),
+    ),
+    _seed(
         "core.employee_count",
         "int",
         PassKind.SCORING,
@@ -166,6 +178,18 @@ CORE_PACK: tuple[SeedField, ...] = (
         value_schema={"type": "string"},
         description="Primary industry classification returned with account evidence.",
         research_view_route=_account_route("core.industry", ResearchSectionKind.ABOUT, ordinal=15),
+    ),
+    _seed(
+        "core.company_about",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("sumble_organizations", "exa_websets"),
+        freshness_ttl=timedelta(days=90),
+        value_schema={"type": "string"},
+        description="Provider-sourced public company description/about text.",
+        research_view_route=_account_route(
+            "core.company_about", ResearchSectionKind.ABOUT, ordinal=16
+        ),
     ),
     _seed(
         "core.employee_range",
@@ -311,6 +335,28 @@ CORE_PACK: tuple[SeedField, ...] = (
         description="Most recent funding round.",
         research_view_route=_account_route(
             "account.recent_funding", ResearchSectionKind.INSIGHTS, ordinal=10
+        ),
+    ),
+    _seed(
+        "account.total_funding",
+        "object",
+        PassKind.SCORING,
+        tier_plan=("apollo", "exa_websets"),
+        freshness_ttl=timedelta(days=90),
+        value_schema={
+            "type": "object",
+            "required": ["amount_usd", "estimate_kind"],
+            "properties": {
+                "amount_usd": {"type": "number"},
+                "estimate_kind": {
+                    "type": "string",
+                    "enum": ["reported", "provider_estimate", "third_party_estimate"],
+                },
+            },
+        },
+        description="Total funding in USD with explicit estimate semantics.",
+        research_view_route=_account_route(
+            "account.total_funding", ResearchSectionKind.INSIGHTS, ordinal=9
         ),
     ),
     # The CRM resolver's "already a customer / already in pipeline" flag (M4.5; substrate §4) — a

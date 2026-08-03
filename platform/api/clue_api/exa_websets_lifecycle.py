@@ -15,7 +15,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Protocol
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
@@ -30,6 +30,7 @@ from clue_api.exa_websets_submit import (
 )
 from clue_core import (
     FIRST_PAGE_CURSOR,
+    DiscoveryBatchId,
     DiscoveryBatchState,
     DiscoveryEventDisposition,
     DiscoveryItemSnapshot,
@@ -102,6 +103,10 @@ from clue_research.durable import (
 from clue_storage import StorageBackend
 
 CrashHook = Callable[[DiscoveryPageReceipt], Awaitable[None]]
+
+
+class DiscoveryBatchMaterializer(Protocol):
+    async def materialize(self, *, workspace_id: str, batch_id: DiscoveryBatchId) -> object: ...
 
 
 class ExaLifecycleOutcome(StrEnum):
@@ -1145,9 +1150,23 @@ class DurableExaWebsetLifecycle:
             await reconcile_discovery_batch_costs(
                 conn, workspace_id=workspace_id, batch_id=operation.batch_id
             )
-            await reconcile_discovery_batch_state(
+            batch = await reconcile_discovery_batch_state(
                 conn, workspace_id=workspace_id, batch_id=operation.batch_id
             )
+            if batch.state is DiscoveryBatchState.IDENTITY_RESOLUTION:
+                await schedule_discovery_wake(
+                    conn,
+                    workspace_id=workspace_id,
+                    request=DiscoveryWakeRequest(
+                        workspace_id=workspace_id,
+                        project_run_id=batch.project_run_id,
+                        discovery_batch_id=batch.id,
+                        operation_id=operation.operation_id,
+                        reason=DiscoveryWakeReason.FIELD_MATERIALIZATION,
+                        available_at=observed_at,
+                        dedupe_key=f"d4-materialize:{batch.id}",
+                    ),
+                )
         return ExaLifecycleResult(
             outcome=ExaLifecycleOutcome.SUCCEEDED,
             operation=succeeded,
@@ -1321,10 +1340,12 @@ class ExaDiscoveryWakeWorker:
         self,
         *,
         lifecycle: DurableExaWebsetLifecycle,
+        materializer: DiscoveryBatchMaterializer | None = None,
         conn_factory: ConnFactory = transaction,
         claim_stale_after: timedelta = timedelta(minutes=5),
     ) -> None:
         self._lifecycle = lifecycle
+        self._materializer = materializer
         self._conn_factory = conn_factory
         self._claim_stale_after = claim_stale_after
 
@@ -1341,11 +1362,19 @@ class ExaDiscoveryWakeWorker:
         for wake in wakes:
             if wake.operation_id is None:
                 continue
-            await self._lifecycle.run_once(
-                workspace_id=wake.workspace_id,
-                operation_id=wake.operation_id,
-                now=now,
-            )
+            if wake.reason == DiscoveryWakeReason.FIELD_MATERIALIZATION.value:
+                if self._materializer is None:
+                    raise RuntimeError("D4 materialization wake has no configured materializer")
+                await self._materializer.materialize(
+                    workspace_id=wake.workspace_id,
+                    batch_id=wake.batch_id,
+                )
+            else:
+                await self._lifecycle.run_once(
+                    workspace_id=wake.workspace_id,
+                    operation_id=wake.operation_id,
+                    now=now,
+                )
             async with self._conn_factory() as conn:
                 await complete_discovery_wake(conn, workspace_id=wake.workspace_id, wake_id=wake.id)
             completed += 1
