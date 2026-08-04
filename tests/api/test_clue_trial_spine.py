@@ -125,6 +125,7 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
             storage_backend="fs",
             storage_fs_root=str(tmp_path / "artifacts"),
             c7_production_handoff_enabled=False,
+            c7_research_view_read_enabled=True,
         )
         storage = build_storage_backend(settings)
         gateway = build_gateway(GatewayConfig(stub=True))
@@ -280,10 +281,11 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
         )
         assert completed.project_run.status is not ProjectRunStatus.FAILED
         assert completed.project_run.phase in (ProjectPhase.REVIEW, ProjectPhase.HANDOFF)
-        assert completed.research_view is not None
-        subject = completed.research_view["subject"]
-        assert isinstance(subject, dict)
-        assert subject["entity_id"] == str(account_id)
+        # This S1-only trial deliberately binds neither an account profiler nor a committee
+        # source. DEEP therefore creates no account-run subject, and C7 must fail closed instead
+        # of manufacturing an empty dossier that looks complete.
+        assert completed.research_view is None
+        assert completed.research_view_error == "subject_not_found"
 
     async def wrapped() -> None:
         async with db_lifespan():

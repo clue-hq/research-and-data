@@ -102,11 +102,20 @@ class _Phase:
         self.calls = 0
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
-        del ctx
         self.calls += 1
+        decision = ctx.params.get("checkpoint_decision")
+        approved = self.pause and isinstance(decision, dict) and decision.get("action") == "approve"
         return PhaseResult(
-            status=PhaseStatus.PAUSED if self.pause else PhaseStatus.COMPLETED,
-            payload={"gate": self.phase.value} if self.pause else {},
+            status=(PhaseStatus.PAUSED if self.pause and not approved else PhaseStatus.COMPLETED),
+            payload=(
+                {
+                    "gate": self.phase.value,
+                    "checkpoint_status": "resumed",
+                    "decision_action": "approve",
+                }
+                if approved
+                else ({"gate": self.phase.value} if self.pause else {})
+            ),
         )
 
 
@@ -329,7 +338,7 @@ def test_recipe1_phase_spine_waits_and_resumes_without_reexecuting_gate() -> Non
             assert second.status is ExecutionStatus.COMPLETED
             completed = await machine.status(run_id)
             assert completed.status is ProjectRunStatus.COMPLETED
-            assert handlers[ProjectPhase.TIER_CHECKPOINT].calls == 1
+            assert handlers[ProjectPhase.TIER_CHECKPOINT].calls == 2
             assert second.completed_node_keys == tuple(
                 sorted(phase.value for phase in PHASE_SEQUENCE)
             )
