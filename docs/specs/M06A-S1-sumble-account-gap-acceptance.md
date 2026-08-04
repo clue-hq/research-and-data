@@ -2,7 +2,8 @@
 
 - **Overall S1 gate:** `OPEN` pending the bounded paid live-provider canary
 - **Mechanical/provider-contract status:** `PASS` on 2026-08-03
-- **Live-provider status:** `OPEN` by the requested slice boundary
+- **Live-provider status:** organization endpoint/normalizer proven live through the shared
+  pre-seal waterfall; S1 jobs and confirmed-technology endpoints remain `OPEN`
 - **Branch:** `platform/c8-exa-sumble-discovery`
 - **Implementation commit:** `ae05542` (`feat(enrichment): add durable Sumble S1 account gaps`)
 - **Migration:** `bd0b7e62a2b4` (single head)
@@ -128,9 +129,9 @@ All S1-owned files pass format, lint, type, contract, unit, and PostgreSQL accep
 
 ## 6. Remaining live-provider gate
 
-No paid Sumble request was made in this implementation round, matching the requested sequencing.
-The next closure step is the separately approved one-account/one-field live canary. It must use a
-genuinely selected account, record the real v9 request/response and returned credit fields, settle
-the operation, materialize the expected claim or terminal missing result, then repeat from a fresh
-process with zero provider calls and zero additional spend. Until that evidence exists, S1's
-mechanical integration is complete but the overall provider gate remains `OPEN`.
+The later P0-P3 repair reused S1's Sumble adapter and shared claim materializer for two live
+REST-v9 `/organizations` requests. Both returned the pinned request/credit/organization envelope,
+charged 2 credits, and produced durable `core.industry` claims. This closes live contract risk for
+the organization endpoint and shared normalizer, but it did not execute the S1 parent ledger or its
+jobs/confirmed-technology endpoints. The overall post-selection S1 gate therefore remains `OPEN`
+until a selected account exercises those S1-specific snapshots and terminal fresh-process replay.

@@ -121,6 +121,17 @@ from clue_core.discovery import (
     new_discovery_plan_id,
     validate_discovery_plan_policy,
 )
+from clue_core.discovery_gap import (
+    DiscoveryGapFieldPlan,
+    DiscoveryGapFieldResult,
+    DiscoveryGapFieldState,
+    DiscoveryGapOperation,
+    DiscoveryGapOperationId,
+    DiscoveryGapOperationState,
+    DiscoveryGapRequest,
+    DiscoveryGapSpendOutcome,
+    new_discovery_gap_operation_id,
+)
 from clue_core.entity import AccountEntity, ContactEntity, Entity
 from clue_core.enums import (
     AccountStatus,
@@ -612,6 +623,16 @@ __all__ = [
     "new_discovery_operation_id",
     "new_discovery_plan_id",
     "validate_discovery_plan_policy",
+    # required-field provider work before the D5 seal (M6A adversarial repair)
+    "DiscoveryGapFieldPlan",
+    "DiscoveryGapFieldResult",
+    "DiscoveryGapFieldState",
+    "DiscoveryGapOperation",
+    "DiscoveryGapOperationId",
+    "DiscoveryGapOperationState",
+    "DiscoveryGapRequest",
+    "DiscoveryGapSpendOutcome",
+    "new_discovery_gap_operation_id",
     # targeted post-discovery enrichment
     "TargetedEnrichmentFieldPlan",
     "TargetedEnrichmentFieldResult",

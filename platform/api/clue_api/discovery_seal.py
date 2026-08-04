@@ -46,6 +46,7 @@ from clue_research.durable import (
     get_discovery_batch_status,
     get_discovery_field_resolution,
     get_discovery_plan,
+    list_discovery_gap_operations,
     put_discovery_batch_manifest,
     read_discovery_seal_readiness,
     seal_discovery_batch,
@@ -60,6 +61,12 @@ class DiscoveryBatchStarter(Protocol):
     """Originate the current run's durable acquisition before the seal handler waits on it."""
 
     async def ensure_started(self, ctx: PhaseContext) -> DiscoveryBatchId: ...
+
+
+class DiscoveryRequiredFieldResolver(Protocol):
+    """Drive pending required-field work after the readiness transaction closes."""
+
+    async def ensure_terminal(self, ctx: PhaseContext, batch_id: DiscoveryBatchId) -> object: ...
 
 
 def _canonical_json(value: object) -> bytes:
@@ -202,6 +209,59 @@ async def build_discovery_batch_manifest(
             )
         ).scalars()
     )
+    claim_counts = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT
+                      (SELECT count(DISTINCT edge.claim_id)
+                       FROM discovery_field_claim edge
+                       JOIN discovery_field_resolution resolution
+                         ON resolution.id = edge.resolution_id
+                        AND resolution.workspace_id = edge.workspace_id
+                       WHERE resolution.workspace_id = :workspace_id
+                         AND resolution.batch_id = :batch_id) AS field_resolution,
+                      (SELECT count(DISTINCT provider_claim_id)
+                       FROM (
+                         SELECT materialized.id AS provider_claim_id
+                         FROM discovery_candidate_link candidate
+                         JOIN discovery_item_snapshot item
+                           ON item.id = candidate.item_snapshot_id
+                          AND item.workspace_id = candidate.workspace_id
+                         JOIN claim materialized
+                           ON materialized.entity_id = candidate.survivor_entity_id
+                          AND materialized.artifact_key = item.raw_artifact_key
+                         WHERE candidate.workspace_id = :workspace_id
+                           AND candidate.batch_id = :batch_id
+                           AND candidate.admission_status IN ('admitted', 'merged')
+                         UNION
+                         SELECT provider_claim_id
+                         FROM discovery_gap_field_result
+                         WHERE workspace_id = :workspace_id
+                           AND discovery_batch_id = :batch_id
+                           AND provider_claim_id IS NOT NULL
+                       ) provider_claims) AS provider_materialized
+                    """
+                ),
+                {"workspace_id": workspace_id, "batch_id": batch_id},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    gap_operation_ids = tuple(
+        str(value)
+        for value in (
+            await conn.execute(
+                text(
+                    "SELECT id FROM discovery_gap_operation "
+                    "WHERE workspace_id=:workspace_id AND discovery_batch_id=:batch_id ORDER BY id"
+                ),
+                {"workspace_id": workspace_id, "batch_id": batch_id},
+            )
+        ).scalars()
+    )
     coverage_payload: dict[str, JsonValue] = {
         "contract": "discovery-coverage-report-v1",
         "workspace_id": workspace_id,
@@ -218,6 +278,10 @@ async def build_discovery_batch_manifest(
         "searched_channels": cast(JsonValue, list(searched_channels)),
         "unsearched_channels": cast(JsonValue, sorted(set(plan.channels) - set(searched_channels))),
         "coverage_is_exhaustive": False,
+        "sealed_claim_count": len(claim_ids),
+        "field_resolution_claim_count": int(claim_counts["field_resolution"]),
+        "materialized_provider_claim_count": int(claim_counts["provider_materialized"]),
+        "discovery_gap_operation_ids": cast(JsonValue, list(gap_operation_ids)),
     }
     account_key, account_sha = await _capture_manifest(
         conn, storage, workspace_id=workspace_id, payload=account_payload
@@ -289,17 +353,22 @@ class DurableDiscoveryPhaseHandler:
         storage: StorageBackend,
         fallback: PhaseHandler,
         starter: DiscoveryBatchStarter | None = None,
+        required_field_resolver: DiscoveryRequiredFieldResolver | None = None,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self._storage = storage
         self._fallback = fallback
         self._starter = starter
+        self._required_field_resolver = required_field_resolver
         self._conn_factory = conn_factory
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         started = False
+        attempted_required_fields = False
         while True:
             need_start = False
+            need_required_fields = False
+            required_fields_batch_id: DiscoveryBatchId | None = None
             use_fallback = False
             async with self._conn_factory() as conn:
                 batch = await get_current_discovery_batch(
@@ -361,7 +430,32 @@ class DurableDiscoveryPhaseHandler:
                             for blocker in blockers
                             if blocker is not DiscoverySealBlocker.FINAL_MANIFESTS
                         )
-                        if not non_manifest:
+                        gap_owned = {
+                            DiscoverySealBlocker.REQUIRED_FIELDS,
+                            DiscoverySealBlocker.OPERATION_TERMINALITY,
+                            DiscoverySealBlocker.DISPATCH_RECEIPTS,
+                            DiscoverySealBlocker.SPEND_RECONCILIATION,
+                        }
+                        gap_operations = await list_discovery_gap_operations(
+                            conn,
+                            workspace_id=ctx.workspace_id,
+                            batch_id=batch.id,
+                        )
+                        gap_requires_drive = any(
+                            operation.terminal_at is None for operation in gap_operations
+                        )
+                        if (
+                            (
+                                DiscoverySealBlocker.REQUIRED_FIELDS in non_manifest
+                                or gap_requires_drive
+                            )
+                            and self._required_field_resolver is not None
+                            and not attempted_required_fields
+                            and set(non_manifest).issubset(gap_owned)
+                        ):
+                            need_required_fields = True
+                            required_fields_batch_id = batch.id
+                        elif not non_manifest:
                             manifest = manifest or await build_discovery_batch_manifest(
                                 conn,
                                 self._storage,
@@ -374,7 +468,7 @@ class DurableDiscoveryPhaseHandler:
                                 batch_id=batch.id,
                                 draft=manifest.seal_draft,
                             )
-                        else:
+                        elif not need_required_fields:
                             status = await get_discovery_batch_status(
                                 conn, workspace_id=ctx.workspace_id, batch_id=batch.id
                             )
@@ -405,19 +499,27 @@ class DurableDiscoveryPhaseHandler:
                                 status=PhaseStatus.WAITING_EXTERNAL,
                                 payload=wait.model_dump(mode="json"),
                             )
-                    assert seal is not None
-                    completion = _completion(seal)
-                    return PhaseResult(
-                        status=PhaseStatus.COMPLETED,
-                        accounts_processed=seal.account_count,
-                        cost_cents=seal.cost_cents_charged,
-                        payload=completion.model_dump(mode="json"),
-                    )
+                    if not need_required_fields:
+                        assert seal is not None
+                        completion = _completion(seal)
+                        return PhaseResult(
+                            status=PhaseStatus.COMPLETED,
+                            accounts_processed=seal.account_count,
+                            cost_cents=seal.cost_cents_charged,
+                            payload=completion.model_dump(mode="json"),
+                        )
             if need_start:
                 assert self._starter is not None
                 # Never hold a DB transaction/row lock across the potentially paid provider call.
                 await self._starter.ensure_started(ctx)
                 started = True
+                continue
+            if need_required_fields:
+                assert self._required_field_resolver is not None
+                assert required_fields_batch_id is not None
+                # This may be paid provider work. Never hold readiness locks across it.
+                await self._required_field_resolver.ensure_terminal(ctx, required_fields_batch_id)
+                attempted_required_fields = True
                 continue
             if use_fallback:
                 return await self._fallback.run(ctx)
@@ -580,6 +682,7 @@ class DbSealedDiscoveryAccountManifestReader:
 
 __all__ = [
     "DbSealedDiscoveryAccountManifestReader",
+    "DiscoveryRequiredFieldResolver",
     "DurableDiscoveryPhaseHandler",
     "build_discovery_batch_manifest",
 ]
