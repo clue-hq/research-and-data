@@ -88,8 +88,13 @@ _OUTSTANDING_SQL = text(
         SELECT operation.cost_cents_reserved AS reserved
         FROM external_research_operation operation
         WHERE operation.project_run_id = :project_run_id
-          AND operation.state NOT IN (
-              'ready', 'failed_terminal', 'spend_outcome_unknown', 'cancelled'
+          AND operation.state NOT IN ('ready', 'failed_terminal', 'cancelled')
+          AND NOT (
+              operation.state = 'spend_outcome_unknown'
+              AND EXISTS (
+                  SELECT 1 FROM external_research_cost_reconciliation reconciliation
+                  WHERE reconciliation.operation_id = operation.id
+              )
           )
     ) reservations
     """

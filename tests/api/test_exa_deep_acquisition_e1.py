@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -20,6 +21,15 @@ from clue_api.exa_deep_acquisition import (
     ExaDeepAcquisitionOutcome,
     compile_exa_deep_acquisition_plan,
     load_exa_deep_snapshot,
+)
+from clue_core import ExternalResearchCostDisposition, ProjectPhase, ProjectRunId
+from clue_research.durable import (
+    list_ready_external_research_snapshots,
+    reconcile_external_research_cost,
+)
+from clue_research.durable.provider_spend import (
+    ProviderSpendBudgetExceeded,
+    require_provider_spend_capacity,
 )
 from clue_research.identity import get_account
 from clue_research.resolvers.exa import ExaDeepRequestFailure
@@ -70,6 +80,34 @@ class _NoReplayTransport:
 
 class _ProcessCrash(BaseException):
     pass
+
+
+class _FailingPutStorage:
+    def __init__(self, delegate: FsStorage, *, fail_on_put: int) -> None:
+        self._delegate = delegate
+        self._fail_on_put = fail_on_put
+        self.puts = 0
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        self.puts += 1
+        if self.puts == self._fail_on_put:
+            raise RuntimeError("synthetic durable storage failure")
+        await self._delegate.put(key, data, media_type=media_type)
+
+    async def get(self, key: str) -> bytes:
+        return await self._delegate.get(key)
+
+    async def delete(self, key: str) -> None:
+        await self._delegate.delete(key)
+
+    async def exists(self, key: str) -> bool:
+        return await self._delegate.exists(key)
+
+    async def presign(self, key: str, *, expires_in: int = 3600) -> str:
+        return await self._delegate.presign(key, expires_in=expires_in)
+
+    def list_blobs(self):
+        return self._delegate.list_blobs()
 
 
 async def _preflight(
@@ -275,6 +313,56 @@ def test_e1_coalesces_settles_once_persists_all_artifacts_and_replays_offline(
             assert freshness_reuse.operation.operation_id == ready.operation.operation_id
             assert replay_transport.calls == 0
 
+            second_run_id = ProjectRunId(uuid4())
+            await conn.execute(
+                text(
+                    "INSERT INTO project_run ("
+                    "id, workspace_id, icp_key, icp_version, phase, status, budget_cap_cents, "
+                    "spent_cents, tier_cutoffs_json, project_id, brand_id, client_entity_id, "
+                    "client_kb_version, product_id, product_context_version_id, "
+                    "readiness_decision_id) SELECT :new_id, workspace_id, icp_key, icp_version, "
+                    "phase, status, budget_cap_cents, 0, tier_cutoffs_json, project_id, brand_id, "
+                    "client_entity_id, client_kb_version, product_id, product_context_version_id, "
+                    "readiness_decision_id FROM project_run WHERE id=:source_id"
+                ),
+                {"new_id": second_run_id, "source_id": seed.project_run_id},
+            )
+            second_seed = seed.model_copy(update={"project_run_id": second_run_id})
+            second_preflight = _compile_preflight(
+                second_seed,
+                await get_account(conn, seed.account_id),
+                "window:exa-e1-second-run",
+            )
+            cross_run = await fresh_process.acquire(second_preflight)
+            assert cross_run.outcome is ExaDeepAcquisitionOutcome.REPLAYED
+            assert cross_run.operation.operation_id == ready.operation.operation_id
+            assert replay_transport.calls == 0
+            adopted = await list_ready_external_research_snapshots(
+                conn,
+                workspace_id=seed.workspace_id,
+                project_run_id=second_run_id,
+                account_id=seed.account_id,
+                source_key="exa_deep",
+                research_directive_id=seed.research_directive.directive_id,
+                research_directive_version=seed.research_directive.version,
+                research_directive_sha256=seed.research_directive.canonical_json_sha256,
+                research_override_id=None,
+                research_override_sha256=None,
+            )
+            assert adopted == (ready.snapshot,)
+            uses = int(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM external_research_snapshot_use "
+                            "WHERE snapshot_id=:snapshot_id"
+                        ),
+                        {"snapshot_id": ready.snapshot.snapshot_id},
+                    )
+                ).scalar_one()
+            )
+            assert uses == 2
+
     run_async(scenario())
 
 
@@ -388,6 +476,7 @@ def test_e1_classifies_pre_dispatch_malformed_and_all_null_outcomes(tmp_path: Pa
             rejected_result = await rejected.acquire(rejected_preflight)
             assert rejected_result.outcome is ExaDeepAcquisitionOutcome.FAILED_TERMINAL
             assert rejected_result.operation.spend_outcome.value == "not_charged"
+            assert rejected_result.provider_calls == 1
 
             malformed_preflight = _compile_preflight(seed, account, "window:exa-e1-malformed")
             malformed = ExaDeepAcquisitionCoordinator(
@@ -398,6 +487,52 @@ def test_e1_classifies_pre_dispatch_malformed_and_all_null_outcomes(tmp_path: Pa
             unknown = await malformed.acquire(malformed_preflight)
             assert unknown.outcome is ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN
             assert unknown.operation.spend_outcome.value == "unknown"
+            malformed_attempt = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT response_artifact_key, provider_request_id FROM "
+                            "external_research_attempt WHERE operation_id=:operation_id"
+                        ),
+                        {"operation_id": unknown.operation.operation_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert malformed_attempt["response_artifact_key"] is not None
+            assert malformed_attempt["provider_request_id"] == "missing-cost-and-output"
+            assert await storage.exists(malformed_attempt["response_artifact_key"])
+
+            await conn.execute(
+                text("UPDATE project_run SET budget_cap_cents=10 WHERE id=:id"),
+                {"id": seed.project_run_id},
+            )
+            with pytest.raises(ProviderSpendBudgetExceeded):
+                await require_provider_spend_capacity(
+                    conn,
+                    project_run_id=seed.project_run_id,
+                    proposed_cents=Decimal("0.01"),
+                    allowed_phases=frozenset({ProjectPhase.DEEP}),
+                )
+            reconciled = await reconcile_external_research_cost(
+                conn,
+                workspace_id=seed.workspace_id,
+                operation_id=unknown.operation.operation_id,
+                disposition=ExternalResearchCostDisposition.NOT_CHARGED,
+                settled_cost_cents=Decimal(0),
+                evidence_artifact_key=malformed_attempt["response_artifact_key"],
+                actor_ref="provider-billing:test-confirmed-not-charged",
+                now=datetime.now(UTC),
+            )
+            assert reconciled.disposition is ExternalResearchCostDisposition.NOT_CHARGED
+            capacity = await require_provider_spend_capacity(
+                conn,
+                project_run_id=seed.project_run_id,
+                proposed_cents=Decimal(10),
+                allowed_phases=frozenset({ProjectPhase.DEEP}),
+            )
+            assert capacity.outstanding_cents == 0
 
             exception_preflight = _compile_preflight(
                 seed, account, "window:exa-e1-transport-exception"
@@ -409,6 +544,16 @@ def test_e1_classifies_pre_dispatch_malformed_and_all_null_outcomes(tmp_path: Pa
             )
             exception_unknown = await exception_coordinator.acquire(exception_preflight)
             assert exception_unknown.outcome is ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN
+            await reconcile_external_research_cost(
+                conn,
+                workspace_id=seed.workspace_id,
+                operation_id=exception_unknown.operation.operation_id,
+                disposition=ExternalResearchCostDisposition.NOT_CHARGED,
+                settled_cost_cents=Decimal(0),
+                evidence_artifact_key=exception_unknown.operation.request_artifact_key,
+                actor_ref="provider-billing:test-confirmed-not-charged",
+                now=datetime.now(UTC),
+            )
 
             null_preflight = _compile_preflight(seed, account, "window:exa-e1-null")
             aliases = null_preflight.exa_request.output_schema["properties"]
@@ -490,3 +635,46 @@ def test_e1_bundle_compiler_splits_only_at_provider_schema_limit() -> None:
         2,
     ]
     assert plan.field_count == 10
+
+
+def test_e1_quarantines_success_persistence_failure_immediately(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        base_storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            seed = await _setup(conn, base_storage, workspace_id="ws-exa-e1-persist-failure")
+            account = await get_account(conn, seed.account_id)
+            assert account is not None
+            preflight = _compile_preflight(seed, account, "window:exa-e1-persist-failure")
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            storage = _FailingPutStorage(base_storage, fail_on_put=3)
+            payload = _payload()
+            payload["costDollars"]["total"] = 0.07
+            result = await ExaDeepAcquisitionCoordinator(
+                transport=_Transport(payload),
+                storage=storage,
+                conn_factory=same_connection,
+            ).acquire(preflight)
+            assert result.outcome is ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN
+            assert result.operation.failure_code == "success_persistence_failed"
+            assert result.operation.dispatch_lease_expires_at is None
+            attempt = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT state::text, response_artifact_key FROM "
+                            "external_research_attempt WHERE operation_id=:operation_id"
+                        ),
+                        {"operation_id": result.operation.operation_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert attempt["state"] == "spend_outcome_unknown"
+            assert attempt["response_artifact_key"] is not None
+
+    run_async(scenario())

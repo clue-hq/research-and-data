@@ -224,11 +224,14 @@ class CoverageController:
                 if effective_source_plans is not None
                 else None
             )
-            planned, projected = await self._planned_field(
+            planned, projected, has_zero_spend_path = await self._planned_field(
                 conn,
                 field,
                 strategy,
                 effective_source_plan=authority,
+            )
+            budget_allowed = not planned.tier_plan or await self._budget_allows(
+                project_run_id, run_id, entity, projected
             )
             if not planned.tier_plan:
                 result = WaterfallResult(
@@ -236,7 +239,7 @@ class CoverageController:
                     field_key=field.field_key,
                     stop_reason=StopReason.NO_RESOLVER,
                 )
-            elif not await self._budget_allows(project_run_id, run_id, entity, projected):
+            elif not budget_allowed and not has_zero_spend_path:
                 result = WaterfallResult(
                     entity_id=entity.entity_id,
                     field_key=field.field_key,
@@ -254,7 +257,7 @@ class CoverageController:
                     ),
                     run_id=run_id,
                     workspace_id=workspace_id,
-                    budget_envelope=remaining_budget_cents,
+                    budget_envelope=(Decimal(0) if not budget_allowed else remaining_budget_cents),
                     claim_tagger=claim_tagger,
                     source_gate=self._source_gate(
                         entity,
@@ -534,19 +537,17 @@ class CoverageController:
         strategy: ResearchStrategy,
         *,
         effective_source_plan: EffectiveFieldSourcePlan | None,
-    ) -> tuple[FieldDef, Decimal]:
+    ) -> tuple[FieldDef, Decimal, bool]:
         keys: list[str] = []
         projected = Decimal(0)
+        has_zero_spend_path = False
         source_keys = (
             tuple(source.source_key for source in effective_source_plan.sources)
             if effective_source_plan is not None
             else field.tier_plan
         )
         authorized_tiers = (
-            {
-                source.source_key: int(source.source_tier)
-                for source in effective_source_plan.sources
-            }
+            {source.source_key: int(source.source_tier) for source in effective_source_plan.sources}
             if effective_source_plan is not None
             else None
         )
@@ -565,9 +566,13 @@ class CoverageController:
                 resolver = get_resolver(key)
             except NoResolverBoundError:
                 resolver = None
-            if resolver is not None and not getattr(resolver, "materialization_only", False):
+            if resolver is None:
+                continue
+            if getattr(resolver, "materialization_only", False) or manifest.cost_cents == 0:
+                has_zero_spend_path = True
+            else:
                 projected += manifest.cost_cents
-        return field.model_copy(update={"tier_plan": tuple(keys)}), projected
+        return field.model_copy(update={"tier_plan": tuple(keys)}), projected, has_zero_spend_path
 
     async def _budget_allows(
         self,

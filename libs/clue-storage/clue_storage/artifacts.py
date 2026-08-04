@@ -40,7 +40,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import UtcDatetime
-from clue_storage.protocol import StorageBackend
+from clue_storage.protocol import StorageBackend, StorageError, artifact_key, content_address
+
+
+class ArtifactIntegrityError(StorageError):
+    """Artifact metadata and physical content do not prove one live content-addressed object."""
 
 
 class ArtifactRecord(BaseModel):
@@ -133,6 +137,40 @@ async def get_artifact(conn: AsyncConnection, storage_key: str) -> ArtifactRecor
     data = dict(row)
     data["artifact_id"] = str(data["artifact_id"])
     return ArtifactRecord(**data)
+
+
+async def read_verified_artifact(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    storage_key: str,
+    workspace_id: str,
+) -> tuple[ArtifactRecord, bytes]:
+    """Read a live workspace artifact and verify its row, key, size, and content digest."""
+
+    record = await get_artifact(conn, storage_key)
+    if record is None:
+        raise ArtifactIntegrityError(f"artifact row is missing for {storage_key!r}")
+    if record.workspace_id != workspace_id:
+        raise ArtifactIntegrityError("artifact belongs to another workspace")
+    if record.erased_at is not None or record.purged_at is not None:
+        raise ArtifactIntegrityError("artifact was erased or purged")
+    try:
+        data = await storage.get(storage_key)
+    except StorageError as exc:
+        raise ArtifactIntegrityError("artifact blob is missing") from exc
+    digest = content_address(data)
+    expected_key = artifact_key(workspace_id, digest)
+    if (
+        record.content_sha256 != digest
+        or record.size_bytes != len(data)
+        or record.storage_key != expected_key
+        or storage_key != expected_key
+    ):
+        raise ArtifactIntegrityError(
+            "artifact bytes do not match durable content-addressed metadata"
+        )
+    return record, data
 
 
 async def live_claim_count(conn: AsyncConnection, storage_key: str) -> int:

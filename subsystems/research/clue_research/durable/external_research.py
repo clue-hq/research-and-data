@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import (
     EntityId,
     ExternalResearchAcquisitionRequest,
+    ExternalResearchCostDisposition,
     ExternalResearchOperationId,
     ExternalResearchOperationState,
     ExternalResearchReconciliationState,
@@ -69,6 +70,7 @@ class ExternalResearchOperationRow(BaseModel):
     source_key: str
     observation_window: str
     freshness_seconds: int
+    reuse_fingerprint: str
     request_fingerprint: str
     wire_request_sha256: str
     state: ExternalResearchOperationState
@@ -98,9 +100,23 @@ class ExternalResearchResultArtifactInput(BaseModel):
     source_title: str
 
 
+class ExternalResearchCostReconciliationRow(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reconciliation_id: UUID
+    operation_id: ExternalResearchOperationId
+    workspace_id: str
+    disposition: ExternalResearchCostDisposition
+    settled_cost_cents: Decimal
+    evidence_artifact_key: str
+    actor_ref: str
+    created_at: UtcDatetime
+
+
 _OPERATION_COLUMNS = (
     "id AS operation_id, workspace_id, project_id, project_run_id, account_id, source_key, "
-    "observation_window, freshness_seconds, request_fingerprint, wire_request_sha256, state::text, "
+    "observation_window, freshness_seconds, reuse_fingerprint, request_fingerprint, "
+    "wire_request_sha256, state::text, "
     "spend_outcome::text, request_artifact_key, cost_cents_reserved, provider_request_id, "
     "dispatch_lease_expires_at, fresh_until, failure_code, terminal_at"
 )
@@ -169,13 +185,33 @@ async def get_external_research_operation(
     return _operation(row)
 
 
-async def find_fresh_external_research_operation(
+async def lock_external_research_reuse(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    reuse_fingerprint: str,
+) -> None:
+    """Serialize semantic-equivalent reserve/reuse decisions across runs and windows.
+
+    A transaction-scoped advisory lock is appropriate here because a ready operation eventually
+    expires and therefore cannot carry a permanent UNIQUE constraint on the semantic key. A hash
+    collision only serializes unrelated requests; it cannot merge them because the subsequent
+    lookup still compares the full digest and immutable lineage.
+    """
+
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:reuse_key, 0))"),
+        {"reuse_key": f"{workspace_id}:{reuse_fingerprint}"},
+    )
+
+
+async def find_reusable_external_research_operation(
     conn: AsyncConnection,
     *,
     request: ExternalResearchAcquisitionRequest,
     now: datetime,
 ) -> ExternalResearchOperationRow | None:
-    """Find an exact-wire, exact-directive ready snapshot still reusable under its policy."""
+    """Find one semantic-equivalent active operation or a still-fresh ready snapshot."""
 
     pin = request.research_directive
     row = (
@@ -193,9 +229,12 @@ async def find_fresh_external_research_operation(
                     "AND research_override_sha256 IS NOT DISTINCT FROM :override_sha "
                     "AND freshness_policy_ref=:freshness_policy_ref "
                     "AND freshness_seconds=:freshness_seconds "
+                    "AND reuse_fingerprint=:reuse_fingerprint "
                     "AND wire_request_sha256=:wire_request_sha256 "
-                    "AND state='ready' AND fresh_until > :now "
-                    "ORDER BY fresh_until DESC, created_at DESC LIMIT 1"
+                    "AND (state IN ('planned', 'dispatching') "
+                    "     OR (state='ready' AND fresh_until > :now)) "
+                    "ORDER BY CASE WHEN state='ready' THEN 0 ELSE 1 END, "
+                    "fresh_until DESC NULLS LAST, created_at DESC LIMIT 1"
                 ),
                 {
                     "workspace_id": request.workspace_id,
@@ -211,6 +250,7 @@ async def find_fresh_external_research_operation(
                     "override_sha": pin.override_sha256,
                     "freshness_policy_ref": request.freshness_policy_ref,
                     "freshness_seconds": request.freshness_seconds,
+                    "reuse_fingerprint": request.reuse_fingerprint,
                     "wire_request_sha256": request.wire_request_sha256,
                     "now": now,
                 },
@@ -267,7 +307,8 @@ async def reserve_external_research_operation(
                 contact_id, icp_key, icp_version, research_directive_id,
                 research_directive_version, research_directive_sha256, research_override_id,
                 research_override_sha256, source_key, observation_window, freshness_policy_ref,
-                freshness_seconds, request_fingerprint, wire_request_sha256, request_json,
+                freshness_seconds, reuse_fingerprint, request_fingerprint,
+                wire_request_sha256, request_json,
                 state, spend_outcome,
                 request_artifact_key, cost_cents_reserved
             ) VALUES (
@@ -275,7 +316,8 @@ async def reserve_external_research_operation(
                 CAST(:subject_kind AS external_research_subject_kind), :account_id, :contact_id,
                 :icp_key, :icp_version, :directive_id, :directive_version, :directive_sha,
                 :override_id, :override_sha, :source_key, :observation_window,
-                :freshness_policy_ref, :freshness_seconds, :request_fingerprint,
+                :freshness_policy_ref, :freshness_seconds, :reuse_fingerprint,
+                :request_fingerprint,
                 :wire_request_sha256,
                 CAST(:request_json AS jsonb), 'planned', 'not_dispatched',
                 :request_artifact_key, :reserved
@@ -301,6 +343,7 @@ async def reserve_external_research_operation(
             "observation_window": request.observation_window,
             "freshness_policy_ref": request.freshness_policy_ref,
             "freshness_seconds": request.freshness_seconds,
+            "reuse_fingerprint": request.reuse_fingerprint,
             "request_fingerprint": request.request_fingerprint,
             "wire_request_sha256": request.wire_request_sha256,
             "request_json": request.model_dump_json(),
@@ -324,6 +367,7 @@ def _assert_replay(
     if (
         stored.account_id != request.account_id
         or stored.project_run_id != request.project_run_id
+        or stored.reuse_fingerprint != request.reuse_fingerprint
         or stored.wire_request_sha256 != request.wire_request_sha256
         or stored.request_artifact_key != request_artifact_key
         or stored.cost_cents_reserved != request.cost_cents_reserved
@@ -563,9 +607,19 @@ async def complete_external_research_success(
             "now": now,
         },
     )
-    return await get_external_research_snapshot(
+    snapshot = await get_external_research_snapshot(
         conn, workspace_id=workspace_id, operation_id=operation_id
     )
+    await _insert_snapshot_use(
+        conn,
+        operation=operation,
+        snapshot=snapshot,
+        project_run_id=operation.project_run_id,
+        consumer_request_fingerprint=operation.request_fingerprint,
+        consumer_observation_window=operation.observation_window,
+        adopted_at=now,
+    )
+    return snapshot
 
 
 async def complete_external_research_pre_dispatch_failure(
@@ -632,6 +686,8 @@ async def mark_external_research_spend_unknown(
     failure_code: str,
     failure_detail: str,
     now: datetime,
+    response_artifact_key: str | None = None,
+    provider_request_id: str | None = None,
 ) -> ExternalResearchOperationRow:
     operation = await get_external_research_operation(
         conn, workspace_id=workspace_id, operation_id=operation_id, for_update=True
@@ -646,6 +702,8 @@ async def mark_external_research_spend_unknown(
         now=now,
         failure_code=failure_code,
         failure_detail=failure_detail,
+        response_artifact_key=response_artifact_key,
+        provider_request_id=provider_request_id,
     )
     return await get_external_research_operation(
         conn, workspace_id=workspace_id, operation_id=operation_id
@@ -659,11 +717,15 @@ async def _mark_unknown_sql(
     now: datetime,
     failure_code: str,
     failure_detail: str,
+    response_artifact_key: str | None = None,
+    provider_request_id: str | None = None,
 ) -> None:
     await conn.execute(
         text(
             "UPDATE external_research_attempt SET state='spend_outcome_unknown', "
             "failure_code=:failure_code, failure_detail=:failure_detail, "
+            "response_artifact_key=COALESCE(:response_key, response_artifact_key), "
+            "provider_request_id=COALESCE(:provider_request_id, provider_request_id), "
             "dispatch_lease_expires_at=NULL, completed_at=:now "
             "WHERE operation_id=:operation_id AND state='dispatching'"
         ),
@@ -671,6 +733,8 @@ async def _mark_unknown_sql(
             "operation_id": operation.operation_id,
             "failure_code": failure_code,
             "failure_detail": failure_detail,
+            "response_key": response_artifact_key,
+            "provider_request_id": provider_request_id,
             "now": now,
         },
     )
@@ -678,6 +742,7 @@ async def _mark_unknown_sql(
         text(
             "UPDATE external_research_operation SET state='spend_outcome_unknown', "
             "spend_outcome='unknown', dispatch_lease_expires_at=NULL, "
+            "provider_request_id=COALESCE(:provider_request_id, provider_request_id), "
             "failure_code=:failure_code, failure_detail=:failure_detail, terminal_at=:now, "
             "updated_at=:now WHERE id=:operation_id"
         ),
@@ -685,9 +750,200 @@ async def _mark_unknown_sql(
             "operation_id": operation.operation_id,
             "failure_code": failure_code,
             "failure_detail": failure_detail,
+            "provider_request_id": provider_request_id,
             "now": now,
         },
     )
+
+
+async def _insert_snapshot_use(
+    conn: AsyncConnection,
+    *,
+    operation: ExternalResearchOperationRow,
+    snapshot: ExternalResearchSnapshotRef,
+    project_run_id: UUID,
+    consumer_request_fingerprint: str,
+    consumer_observation_window: str,
+    adopted_at: datetime,
+) -> None:
+    await conn.execute(
+        text(
+            "INSERT INTO external_research_snapshot_use ("
+            "workspace_id, project_id, project_run_id, account_id, source_key, snapshot_id, "
+            "reuse_fingerprint, consumer_request_fingerprint, consumer_observation_window, "
+            "adopted_at) VALUES ("
+            ":workspace_id, :project_id, :project_run_id, :account_id, :source_key, "
+            ":snapshot_id, :reuse_fingerprint, :consumer_fingerprint, :consumer_window, :now) "
+            "ON CONFLICT (workspace_id, project_run_id, snapshot_id) DO NOTHING"
+        ),
+        {
+            "workspace_id": operation.workspace_id,
+            "project_id": operation.project_id,
+            "project_run_id": project_run_id,
+            "account_id": operation.account_id,
+            "source_key": operation.source_key,
+            "snapshot_id": snapshot.snapshot_id,
+            "reuse_fingerprint": operation.reuse_fingerprint,
+            "consumer_fingerprint": consumer_request_fingerprint,
+            "consumer_window": consumer_observation_window,
+            "now": adopted_at,
+        },
+    )
+
+
+async def adopt_external_research_snapshot(
+    conn: AsyncConnection,
+    *,
+    request: ExternalResearchAcquisitionRequest,
+    operation_id: ExternalResearchOperationId,
+    now: datetime,
+) -> ExternalResearchSnapshotRef:
+    """Bind a fresh semantic-equivalent snapshot to the consuming project run exactly once."""
+
+    operation = await get_external_research_operation(
+        conn,
+        workspace_id=request.workspace_id,
+        operation_id=operation_id,
+        for_update=True,
+    )
+    if (
+        operation.state is not ExternalResearchOperationState.READY
+        or operation.fresh_until is None
+        or operation.fresh_until <= now
+        or operation.project_id != request.project_id
+        or operation.account_id != request.account_id
+        or operation.source_key != request.source_key
+        or operation.reuse_fingerprint != request.reuse_fingerprint
+        or operation.wire_request_sha256 != request.wire_request_sha256
+    ):
+        raise ExternalResearchReplayConflict(
+            "ready external research operation is not reusable for this consumer"
+        )
+    snapshot = await get_external_research_snapshot(
+        conn,
+        workspace_id=request.workspace_id,
+        operation_id=operation_id,
+    )
+    await _insert_snapshot_use(
+        conn,
+        operation=operation,
+        snapshot=snapshot,
+        project_run_id=request.project_run_id,
+        consumer_request_fingerprint=request.request_fingerprint,
+        consumer_observation_window=request.observation_window,
+        adopted_at=now,
+    )
+    return snapshot
+
+
+async def get_external_research_cost_reconciliation(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    operation_id: ExternalResearchOperationId,
+) -> ExternalResearchCostReconciliationRow | None:
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT id AS reconciliation_id, operation_id, workspace_id, "
+                    "disposition::text, settled_cost_cents, evidence_artifact_key, actor_ref, "
+                    "created_at FROM external_research_cost_reconciliation "
+                    "WHERE workspace_id=:workspace_id AND operation_id=:operation_id"
+                ),
+                {"workspace_id": workspace_id, "operation_id": operation_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return None if row is None else ExternalResearchCostReconciliationRow.model_validate(row)
+
+
+async def reconcile_external_research_cost(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    operation_id: ExternalResearchOperationId,
+    disposition: ExternalResearchCostDisposition,
+    settled_cost_cents: Decimal,
+    evidence_artifact_key: str,
+    actor_ref: str,
+    now: datetime,
+) -> ExternalResearchCostReconciliationRow:
+    """Append one billing fact and adjust the owning run's recorded spend exactly once."""
+
+    if settled_cost_cents < 0:
+        raise ValueError("settled external research cost cannot be negative")
+    if disposition is ExternalResearchCostDisposition.NOT_CHARGED and settled_cost_cents != 0:
+        raise ValueError("not-charged reconciliation must settle at zero")
+    operation = await get_external_research_operation(
+        conn, workspace_id=workspace_id, operation_id=operation_id, for_update=True
+    )
+    existing = await get_external_research_cost_reconciliation(
+        conn, workspace_id=workspace_id, operation_id=operation_id
+    )
+    if existing is not None:
+        if (
+            existing.disposition is not disposition
+            or existing.settled_cost_cents != settled_cost_cents
+            or existing.evidence_artifact_key != evidence_artifact_key
+            or existing.actor_ref != actor_ref
+        ):
+            raise ExternalResearchReplayConflict(
+                "external research cost was already reconciled differently"
+            )
+        return existing
+    if operation.state not in {
+        ExternalResearchOperationState.READY,
+        ExternalResearchOperationState.SPEND_OUTCOME_UNKNOWN,
+    }:
+        raise ExternalResearchTransitionConflict(
+            "cost reconciliation requires a ready or spend-unknown operation"
+        )
+    already_recorded = Decimal(0)
+    if operation.state is ExternalResearchOperationState.READY:
+        already_recorded = Decimal(
+            (
+                await conn.execute(
+                    text(
+                        "SELECT settled_cost_cents FROM external_research_receipt "
+                        "WHERE operation_id=:operation_id"
+                    ),
+                    {"operation_id": operation_id},
+                )
+            ).scalar_one()
+        )
+    reconciliation_id = uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO external_research_cost_reconciliation ("
+            "id, operation_id, workspace_id, disposition, settled_cost_cents, "
+            "evidence_artifact_key, actor_ref, created_at) VALUES ("
+            ":id, :operation_id, :workspace_id, CAST(:disposition AS "
+            "external_research_cost_disposition), :settled, :evidence, :actor, :now)"
+        ),
+        {
+            "id": reconciliation_id,
+            "operation_id": operation_id,
+            "workspace_id": workspace_id,
+            "disposition": disposition.value,
+            "settled": settled_cost_cents,
+            "evidence": evidence_artifact_key,
+            "actor": actor_ref,
+            "now": now,
+        },
+    )
+    delta = settled_cost_cents - already_recorded
+    await conn.execute(
+        text("UPDATE project_run SET spent_cents=spent_cents+:delta WHERE id=:project_run_id"),
+        {"project_run_id": operation.project_run_id, "delta": delta},
+    )
+    reconciled = await get_external_research_cost_reconciliation(
+        conn, workspace_id=workspace_id, operation_id=operation_id
+    )
+    assert reconciled is not None
+    return reconciled
 
 
 async def get_external_research_snapshot(
@@ -779,8 +1035,11 @@ async def list_ready_external_research_snapshots(
                     "JOIN external_research_operation operation "
                     "ON operation.id=snapshot.operation_id "
                     "AND operation.workspace_id=snapshot.workspace_id "
+                    "JOIN external_research_snapshot_use snapshot_use "
+                    "ON snapshot_use.snapshot_id=snapshot.id "
+                    "AND snapshot_use.workspace_id=snapshot.workspace_id "
                     "WHERE operation.workspace_id=:workspace_id "
-                    "AND operation.project_run_id=:project_run_id "
+                    "AND snapshot_use.project_run_id=:project_run_id "
                     "AND operation.account_id=:account_id AND operation.source_key=:source_key "
                     "AND operation.research_directive_id=:directive_id "
                     "AND operation.research_directive_version=:directive_version "
@@ -812,7 +1071,55 @@ async def list_ready_external_research_snapshots(
     return tuple(ExternalResearchSnapshotRef.model_validate(row) for row in rows)
 
 
+async def find_active_external_research_operation_for_materialization(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_run_id: UUID,
+    account_id: EntityId,
+    source_key: str,
+    research_directive_id: UUID,
+    research_directive_version: int,
+    research_directive_sha256: str,
+    research_override_id: UUID | None,
+    research_override_sha256: str | None,
+) -> ExternalResearchOperationRow | None:
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_OPERATION_COLUMNS} FROM external_research_operation "
+                    "WHERE workspace_id=:workspace_id AND project_run_id=:project_run_id "
+                    "AND account_id=:account_id AND source_key=:source_key "
+                    "AND research_directive_id=:directive_id "
+                    "AND research_directive_version=:directive_version "
+                    "AND research_directive_sha256=:directive_sha256 "
+                    "AND research_override_id IS NOT DISTINCT FROM :override_id "
+                    "AND research_override_sha256 IS NOT DISTINCT FROM :override_sha "
+                    "AND state IN ('planned', 'dispatching') "
+                    "ORDER BY created_at DESC LIMIT 1"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "project_run_id": project_run_id,
+                    "account_id": account_id,
+                    "source_key": source_key,
+                    "directive_id": research_directive_id,
+                    "directive_version": research_directive_version,
+                    "directive_sha256": research_directive_sha256,
+                    "override_id": research_override_id,
+                    "override_sha": research_override_sha256,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return None if row is None else _operation(row)
+
+
 __all__ = [
+    "ExternalResearchCostReconciliationRow",
     "ExternalResearchDispatchClaim",
     "ExternalResearchDispatchDecision",
     "ExternalResearchLedgerError",
@@ -821,15 +1128,20 @@ __all__ = [
     "ExternalResearchReplayConflict",
     "ExternalResearchResultArtifactInput",
     "ExternalResearchTransitionConflict",
+    "adopt_external_research_snapshot",
     "claim_external_research_dispatch",
     "complete_external_research_pre_dispatch_failure",
     "complete_external_research_success",
-    "find_fresh_external_research_operation",
     "find_external_research_operation",
+    "find_active_external_research_operation_for_materialization",
+    "find_reusable_external_research_operation",
+    "get_external_research_cost_reconciliation",
     "get_external_research_operation",
     "get_external_research_snapshot",
     "list_external_research_result_artifacts",
     "list_ready_external_research_snapshots",
+    "lock_external_research_reuse",
     "mark_external_research_spend_unknown",
+    "reconcile_external_research_cost",
     "reserve_external_research_operation",
 ]
