@@ -165,7 +165,8 @@ def test_composed_worker_drives_reverse_profiling_through_handoff() -> None:
 
                 # Approve the checkpoint (resume), then drive #2: deep → verification → handoff →
                 # DONE.
-                await machine.submit_checkpoint(run_id, decision={"action": "approve"})
+                composed = await driver.composed(await driver.status(run_id))
+                await composed.run.submit_checkpoint(run_id, decision={"action": "approve"})
                 await enqueue_drive(queue, run_id)  # reopen_terminal: re-drive the paused run
                 await worker.drain_once()
                 run = await machine.status(run_id)

@@ -24,7 +24,7 @@ def test_enabling_sumble_committee_without_credential_fails_loudly() -> None:
     with pytest.raises(RuntimeError, match="CLUE_SUMBLE_API_KEY"):
         build_production_sumble_committee_preparer(
             Settings(_env_file=None, sumble_committee_acquisition_enabled=True),
-            secrets=Secrets(_env_file=None),
+            secrets=Secrets(_env_file=None, sumble_api_key=None),
             inputs=object(),  # type: ignore[arg-type]
             storage=FakeStorage(),
             pre_spend_gate=object(),  # type: ignore[arg-type]

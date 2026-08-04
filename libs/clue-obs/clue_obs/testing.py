@@ -92,6 +92,19 @@ def capture_events(
     root = logging.getLogger()
     saved_handlers = root.handlers[:]
     saved_level = root.level
+    saved_disabled = {
+        name: logger.disabled
+        for name, logger in logging.root.manager.loggerDict.items()
+        if isinstance(logger, logging.Logger)
+    }
+
+    # Alembic's stdlib ``fileConfig`` disables loggers that its config does not name. A capture
+    # block is an isolated test logging environment, so revive existing loggers for the duration
+    # and restore every flag afterwards. Without this, results depend on whether a migration test
+    # happened to run earlier in the same pytest process.
+    for logger_entry in logging.root.manager.loggerDict.values():
+        if isinstance(logger_entry, logging.Logger):
+            logger_entry.disabled = False
 
     setup(mode=resolved_mode, fmt=fmt, run_log_path=run_log_path)
 
@@ -107,4 +120,8 @@ def capture_events(
                     h.close()
         root.handlers[:] = saved_handlers
         root.setLevel(saved_level)
+        for name, disabled in saved_disabled.items():
+            restored_logger = logging.root.manager.loggerDict.get(name)
+            if isinstance(restored_logger, logging.Logger):
+                restored_logger.disabled = disabled
         structlog.reset_defaults()
