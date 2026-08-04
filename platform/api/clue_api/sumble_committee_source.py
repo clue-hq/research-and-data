@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 
 from pydantic import JsonValue, TypeAdapter
@@ -14,6 +15,7 @@ from clue_core import (
     CommitteeAcquisitionState,
     CommitteeSnapshotState,
     EntityId,
+    UtcDatetime,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.durable import (
@@ -21,7 +23,17 @@ from clue_research.durable import (
     get_committee_acquisition_operation,
     list_committee_acquisition_snapshots,
 )
-from clue_research.profiling.committee import CommitteePersonCandidate
+from clue_research.profiling.committee import (
+    CURRENT_LOCATION,
+    CURRENT_TITLE,
+    JOB_FUNCTION,
+    JOB_LEVEL,
+    ORGANIZATION_RELATIONSHIP,
+    TEAM_MEMBERSHIP,
+    CandidateFactProvenance,
+    CandidateProfessionalFact,
+    CommitteePersonCandidate,
+)
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY, normalize_people
 from clue_research.resolvers.sumble.teams import (
     TEAMS_SOURCE_KEY,
@@ -33,6 +45,16 @@ from clue_research.resolvers.sumble.teams import (
 from clue_storage import StorageBackend, get_artifact
 
 _JSON_OBJECT = TypeAdapter(dict[str, object])
+
+
+@dataclass(frozen=True)
+class _SnapshotLineage:
+    source_key: str
+    artifact_key: str
+    operation_ref: str
+    snapshot_ref: str
+    request_ref: str
+    observed_at: UtcDatetime | None
 
 
 class SumbleCommitteeSourceError(RuntimeError):
@@ -117,6 +139,7 @@ class SumbleCommitteeSource:
             )
             live_keys = {edge.artifact_key for edge in subject_edges}
             response_keys: dict[str, str] = {}
+            lineage_by_source: dict[str, _SnapshotLineage] = {}
             for source_key, snapshot in by_source.items():
                 key = snapshot.response_artifact_key
                 if key is None or key not in live_keys:
@@ -129,6 +152,17 @@ class SumbleCommitteeSource:
                         "Sumble committee response artifact is unavailable"
                     )
                 response_keys[source_key] = key
+                lineage_by_source[source_key] = _SnapshotLineage(
+                    source_key=source_key,
+                    artifact_key=key,
+                    operation_ref=f"committee-operation:{operation.operation_id}",
+                    snapshot_ref=(
+                        f"committee-snapshot:{operation.operation_id}:{source_key}:"
+                        f"{snapshot.request_fingerprint}"
+                    ),
+                    request_ref=f"committee-request:{source_key}:{snapshot.request_fingerprint}",
+                    observed_at=snapshot.updated_at or snapshot.created_at,
+                )
 
         teams_payload = _decode(await self._storage.get(response_keys[TEAMS_SOURCE_KEY]))
         people_payload = _decode(await self._storage.get(response_keys[PEOPLE_SOURCE_KEY]))
@@ -166,7 +200,12 @@ class SumbleCommitteeSource:
                     job_level=person.job_level,
                     location=person.location,
                     country=person.country,
+                    organization_id=person.current_employer_organization_id,
+                    organization_name=person.current_employer_name,
+                    role_start_date=person.current_role_start_date,
                     team_rows=team_rows,
+                    direct_lineage=lineage_by_source[PEOPLE_SOURCE_KEY],
+                    teams_lineage=lineage_by_source[TEAMS_SOURCE_KEY],
                     evidence_refs=(
                         response_keys[PEOPLE_SOURCE_KEY],
                         *((response_keys[TEAMS_SOURCE_KEY],) if team_rows else ()),
@@ -189,7 +228,12 @@ class SumbleCommitteeSource:
                     job_level=member.job_level,
                     location=member.location,
                     country=member.country,
+                    organization_id=member.current_employer_organization_id,
+                    organization_name=member.current_employer_name,
+                    role_start_date=member.current_role_start_date,
                     team_rows=team_rows,
+                    direct_lineage=lineage_by_source[TEAMS_SOURCE_KEY],
+                    teams_lineage=lineage_by_source[TEAMS_SOURCE_KEY],
                     evidence_refs=(response_keys[TEAMS_SOURCE_KEY],),
                 )
             )
@@ -207,7 +251,12 @@ class SumbleCommitteeSource:
         job_level: str | None,
         location: str | None,
         country: str | None,
+        organization_id: int,
+        organization_name: str | None,
+        role_start_date: str | None,
         team_rows: tuple[tuple[SumbleTeamRecord, SumbleTeamMemberRecord], ...],
+        direct_lineage: _SnapshotLineage,
+        teams_lineage: _SnapshotLineage,
         evidence_refs: tuple[str, ...],
     ) -> CommitteePersonCandidate:
         team_names = tuple(dict.fromkeys(team.name for team, _member in team_rows))
@@ -231,6 +280,21 @@ class SumbleCommitteeSource:
             for key, value in (("location", location), ("country", country))
             if value is not None
         }
+        professional_facts = self._professional_facts(
+            person_source_url=source_url,
+            title=title,
+            job_function=job_function,
+            job_level=job_level,
+            location=location,
+            country=country,
+            organization_id=organization_id,
+            organization_name=organization_name,
+            role_start_date=role_start_date,
+            team_rows=team_rows,
+            direct_lineage=direct_lineage,
+            teams_lineage=teams_lineage,
+            direct_confidence=self._default_confidence,
+        )
         return CommitteePersonCandidate(
             source_key=self.source_key,
             source_person_id=str(provider_person_id),
@@ -245,9 +309,116 @@ class SumbleCommitteeSource:
             source_url=source_url,
             matched_signal="; ".join(signal_parts),
             evidence_refs=tuple(dict.fromkeys(evidence_refs)),
+            professional_facts=professional_facts,
             discovery_confidence=confidence,
             cost_cents=Decimal(0),
         )
+
+    def _professional_facts(
+        self,
+        *,
+        person_source_url: str,
+        title: str | None,
+        job_function: str | None,
+        job_level: str | None,
+        location: str | None,
+        country: str | None,
+        organization_id: int,
+        organization_name: str | None,
+        role_start_date: str | None,
+        team_rows: tuple[tuple[SumbleTeamRecord, SumbleTeamMemberRecord], ...],
+        direct_lineage: _SnapshotLineage,
+        teams_lineage: _SnapshotLineage,
+        direct_confidence: float,
+    ) -> tuple[CandidateProfessionalFact, ...]:
+        facts: list[CandidateProfessionalFact] = []
+
+        def returned(field_key: str, value: JsonValue, label: str) -> None:
+            facts.append(
+                CandidateProfessionalFact(
+                    field_key=field_key,
+                    value_json=value,
+                    provenance_kind=CandidateFactProvenance.PROVIDER_RETURNED,
+                    source_key=direct_lineage.source_key,
+                    source_tier=1,
+                    source_url=person_source_url,
+                    evidence_span=f"provider_returned {label}: {value}",
+                    artifact_key=direct_lineage.artifact_key,
+                    source_operation_ref=direct_lineage.operation_ref,
+                    source_snapshot_ref=direct_lineage.snapshot_ref,
+                    source_request_ref=direct_lineage.request_ref,
+                    observed_at=direct_lineage.observed_at,
+                    confidence=direct_confidence,
+                )
+            )
+
+        for field_key, value, label in (
+            (CURRENT_TITLE, title, "job_title"),
+            (JOB_FUNCTION, job_function, "job_function"),
+            (JOB_LEVEL, job_level, "job_level"),
+        ):
+            if value is not None and value.strip():
+                returned(field_key, value, label)
+
+        location_value: dict[str, JsonValue] = {
+            key: value
+            for key, value in (("raw", location), ("country", country))
+            if value is not None and value.strip()
+        }
+        if location_value:
+            returned(CURRENT_LOCATION, location_value, "current_location")
+
+        relationship: dict[str, JsonValue] = {
+            "relationship": "current_employee",
+            "basis": "provider_returned_current_employer",
+            "organization_id": organization_id,
+        }
+        if organization_name is not None and organization_name.strip():
+            relationship["organization_name"] = organization_name
+        if role_start_date is not None and role_start_date.strip():
+            relationship["role_start_date"] = role_start_date
+        returned(
+            ORGANIZATION_RELATIONSHIP,
+            relationship,
+            "current_employer",
+        )
+
+        if team_rows:
+            memberships: list[JsonValue] = []
+            confidences: list[float] = []
+            for team, member in team_rows:
+                membership: dict[str, JsonValue] = {
+                    "provider_team_id": team.provider_team_id,
+                    "name": team.name,
+                    "organization_id": team.organization_id,
+                    "relationship_basis": member.relationship_basis.value,
+                    "source_url": team.source_url,
+                }
+                if member.relationship_confidence is not None:
+                    membership["confidence"] = member.relationship_confidence
+                    confidences.append(member.relationship_confidence)
+                memberships.append(membership)
+            facts.append(
+                CandidateProfessionalFact(
+                    field_key=TEAM_MEMBERSHIP,
+                    value_json=memberships,
+                    provenance_kind=CandidateFactProvenance.PROVIDER_MODELED,
+                    source_key=teams_lineage.source_key,
+                    source_tier=1,
+                    source_url=team_rows[0][0].source_url,
+                    evidence_span=(
+                        "provider_modeled team_membership: "
+                        + ", ".join(team.name for team, _member in team_rows)
+                    ),
+                    artifact_key=teams_lineage.artifact_key,
+                    source_operation_ref=teams_lineage.operation_ref,
+                    source_snapshot_ref=teams_lineage.snapshot_ref,
+                    source_request_ref=teams_lineage.request_ref,
+                    observed_at=teams_lineage.observed_at,
+                    confidence=max(confidences, default=direct_confidence),
+                )
+            )
+        return tuple(facts)
 
 
 def _memberships(

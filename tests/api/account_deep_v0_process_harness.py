@@ -121,17 +121,21 @@ async def _inspect(
             workspace_id=workspace_id,
         )
         verified_artifacts += 1
-    claim_count = int(
+    claim_field_keys = list(
         (
             await conn.execute(
                 text(
-                    "SELECT count(*) FROM claim WHERE workspace_id=:workspace_id "
-                    "AND run_id=:run_id AND superseded_by IS NULL"
+                    "SELECT field_key FROM claim WHERE workspace_id=:workspace_id "
+                    "AND run_id=:run_id AND superseded_by IS NULL "
+                    "ORDER BY field_key"
                 ),
                 {"workspace_id": workspace_id, "run_id": project_run_id},
             )
-        ).scalar_one()
+        )
+        .scalars()
+        .all()
     )
+    claim_count = len(claim_field_keys)
     gate_count = int(
         (
             await conn.execute(
@@ -181,6 +185,7 @@ async def _inspect(
         "snapshot_refs": [f"{item.source_key}:{item.request_fingerprint}" for item in snapshots],
         "attempt_count": len(attempts),
         "claim_count": claim_count,
+        "claim_field_keys": claim_field_keys,
         "gate_count": gate_count,
         "eligibility_count": eligibility_count,
         "verified_artifact_count": verified_artifacts,

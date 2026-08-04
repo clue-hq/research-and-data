@@ -18,11 +18,12 @@ them.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import FieldDef, PassKind, Persona
+from clue_core import CONTACT_PROFESSIONAL_FIELD_KEYS, FieldDef, PassKind, Persona
 from clue_research.claimstore import SeedField, load_pack
 
 # --- field keys (conventions §3: plain contact.* committee facts) -----------
@@ -32,6 +33,18 @@ PERSONA = "contact.persona"
 # ``clinical``/``business``). It is not an enum and not an alias for committee persona. No claim
 # means ``unknown``; consumers may not guess a class from title, role, or persona.
 CONTACT_CLASS = "contact.class"
+
+# M8C C1 — literal/provider-modeled professional facts from an already-acquired committee
+# snapshot.  The tuple is frozen in core C0; aliases here keep committee consumers from repeating
+# string keys and make this pack their one registration owner.
+(
+    CURRENT_TITLE,
+    JOB_FUNCTION,
+    JOB_LEVEL,
+    TEAM_MEMBERSHIP,
+    CURRENT_LOCATION,
+    ORGANIZATION_RELATIONSHIP,
+) = CONTACT_PROFESSIONAL_FIELD_KEYS
 
 # The canonical persona/role set (conventions §3) — the closed value domain for both fields.
 _PERSONA_VALUES: list[str] = [p.value for p in Persona]
@@ -53,6 +66,57 @@ _ROLE_VALUE_SCHEMA: dict[str, Any] = {
 # ``contact.persona`` is the bare persona key — a closed enum for ``(account, persona)`` keying.
 _PERSONA_VALUE_SCHEMA: dict[str, Any] = {"type": "string", "enum": _PERSONA_VALUES}
 
+_TEAM_MEMBERSHIP_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": [
+            "provider_team_id",
+            "name",
+            "organization_id",
+            "relationship_basis",
+        ],
+        "properties": {
+            "provider_team_id": {"type": "integer"},
+            "name": {"type": "string"},
+            "organization_id": {"type": "integer"},
+            "relationship_basis": {
+                "type": "string",
+                "enum": ["provider_inferred_team_membership"],
+            },
+            "confidence": {"type": "number"},
+            "source_url": {"type": "string"},
+        },
+    },
+}
+
+_CURRENT_LOCATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "raw": {"type": "string"},
+        "country": {"type": "string"},
+    },
+}
+
+_ORGANIZATION_RELATIONSHIP_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["relationship", "basis", "organization_id"],
+    "properties": {
+        "relationship": {"type": "string", "enum": ["current_employee"]},
+        "basis": {
+            "type": "string",
+            "enum": [
+                "provider_returned_current_employer",
+                "provider_inferred_team_membership",
+            ],
+        },
+        "organization_id": {"type": "integer"},
+        "organization_name": {"type": "string"},
+        "role_start_date": {"type": "string"},
+        "provider_team_ids": {"type": "array", "items": {"type": "integer"}},
+    },
+}
+
 
 def _committee_field(
     field_key: str, *, value_type: str, value_schema: dict[str, Any], description: str
@@ -65,6 +129,25 @@ def _committee_field(
             field_key=field_key,
             value_type=value_type,
             tier_plan=(),  # produced by committee discovery, not the M4 waterfall
+            pass_kind=PassKind.DEEP,
+            gate="committee-gated",
+        ),
+        value_schema=value_schema,
+        description=description,
+    )
+
+
+def _professional_field(
+    field_key: str, *, value_type: str, value_schema: dict[str, Any], description: str
+) -> SeedField:
+    """A 30-day, snapshot-produced professional field with no waterfall tier plan."""
+
+    return SeedField(
+        field_def=FieldDef(
+            field_key=field_key,
+            value_type=value_type,
+            tier_plan=(),
+            freshness_ttl=timedelta(days=30),
             pass_kind=PassKind.DEEP,
             gate="committee-gated",
         ),
@@ -93,6 +176,46 @@ COMMITTEE_PACK: tuple[SeedField, ...] = (
         description=(
             "Optional pack/workspace contact-class value (C7.1 / REQ-16 A3). "
             "Separate from committee persona; an absent claim means unknown."
+        ),
+    ),
+    _professional_field(
+        CURRENT_TITLE,
+        value_type="str",
+        value_schema={"type": "string"},
+        description="Provider-returned current professional title for an admitted contact.",
+    ),
+    _professional_field(
+        JOB_FUNCTION,
+        value_type="str",
+        value_schema={"type": "string"},
+        description="Provider-returned current job function for an admitted contact.",
+    ),
+    _professional_field(
+        JOB_LEVEL,
+        value_type="str",
+        value_schema={"type": "string"},
+        description="Provider-returned current job level for an admitted contact.",
+    ),
+    _professional_field(
+        TEAM_MEMBERSHIP,
+        value_type="list[object]",
+        value_schema=_TEAM_MEMBERSHIP_SCHEMA,
+        description=(
+            "Provider-modeled organization-team membership with explicit relationship basis."
+        ),
+    ),
+    _professional_field(
+        CURRENT_LOCATION,
+        value_type="object",
+        value_schema=_CURRENT_LOCATION_SCHEMA,
+        description="Provider-returned current professional location/country.",
+    ),
+    _professional_field(
+        ORGANIZATION_RELATIONSHIP,
+        value_type="object",
+        value_schema=_ORGANIZATION_RELATIONSHIP_SCHEMA,
+        description=(
+            "Exact-account current-employment relationship with returned or modeled basis."
         ),
     ),
 )
