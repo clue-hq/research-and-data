@@ -995,8 +995,13 @@ The account-deep integration is releasable only when all are true:
 
 ## 11. Explicitly deferred follow-ons
 
-- contact email/phone reveal and independent validation;
-- broad M4 contact facets at fleet scale;
+The first two contact-oriented follow-ons now have a dedicated technical roadmap:
+[M8C — Contact-deep research and selected-contact enrichment](M8C-contact-deep-research-and-selected-contact-enrichment-roadmap.md).
+M8B remains the implementation and live-acceptance record for account profiling and no-reveal
+Sumble committee discovery; M8C begins at that boundary.
+
+- contact email/phone reveal and independent validation — owned by M8C;
+- broad M4 contact facets at fleet scale — owned by M8C;
 - Sumble Signals, Priority Signals, relevance feedback, and Intelligence Briefs;
 - general-purpose Exa Search tool for arbitrary agent web search;
 - Parallel Task in the healthcare source profile;
