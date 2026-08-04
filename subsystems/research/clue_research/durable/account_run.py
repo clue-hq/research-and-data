@@ -60,6 +60,7 @@ class AccountRunRow(BaseModel):
     plan_json: dict[str, JsonValue]
     references_index: ReferencesIndex
     cost_cents: CostCents
+    budget_cap_cents: CostCents | None = None
     research_directive: ResearchDirectivePin | None = None
     started_at: UtcDatetime
     updated_at: UtcDatetime
@@ -75,15 +76,16 @@ _INSERT_SQL = text(
 
 _ENSURE_SQL = text(
     """
-    INSERT INTO account_run (id, project_run_id, entity_id, tier, status)
-    VALUES (:id, :project_run_id, :entity_id, :tier, CAST(:status AS account_run_status))
+    INSERT INTO account_run (id, project_run_id, entity_id, tier, status, budget_cap_cents)
+    VALUES (:id, :project_run_id, :entity_id, :tier, CAST(:status AS account_run_status), :budget)
     ON CONFLICT (id) DO NOTHING
     """
 )
 
 _SELECT_COLUMNS = (
     "id, project_run_id, entity_id, tier, status, sub_phase, plan_json, references_index, "
-    "cost_cents, research_directive_id, research_directive_version, research_directive_ref, "
+    "cost_cents, budget_cap_cents, research_directive_id, research_directive_version, "
+    "research_directive_ref, "
     "research_directive_sha256, research_directive_override_id, "
     "research_directive_override_ref, research_directive_override_sha256, started_at, updated_at"
 )
@@ -126,6 +128,7 @@ async def ensure_account_run(
     entity_id: EntityId,
     tier: str,
     status: AccountRunStatus = AccountRunStatus.PENDING,
+    budget_cap_cents: CostCents | None = None,
 ) -> None:
     """Insert the ``account_run`` row if it does not already exist (``ON CONFLICT DO NOTHING``).
 
@@ -141,6 +144,7 @@ async def ensure_account_run(
             "entity_id": entity_id,
             "tier": tier,
             "status": status.value,
+            "budget": budget_cap_cents,
         },
     )
 
@@ -419,6 +423,7 @@ def _row_to_account_run(row: dict[str, object]) -> AccountRunRow:
             "plan_json": decode_jsonb(row["plan_json"]),
             "references_index": decode_jsonb(row["references_index"]),
             "cost_cents": row["cost_cents"] if row["cost_cents"] is not None else Decimal(0),
+            "budget_cap_cents": row["budget_cap_cents"],
             "research_directive": research_directive,
             "started_at": row["started_at"],
             "updated_at": row["updated_at"],

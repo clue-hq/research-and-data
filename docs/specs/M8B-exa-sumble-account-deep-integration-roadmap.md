@@ -2,9 +2,9 @@
 ## Exa Deep account profiling + Sumble organization map and buying committee
 
 > **Status:** implementation in progress. A0, the remediated A1, A2, Exa E0–E2, M06A S2A–S2D,
-> the provider-neutral O1 DEEP wait seam, and the Sumble portion of O2 composition are implemented
-> mechanically; the production Sumble directive-input binding, the full-unit launch
-> surface, O3, and live canaries remain open. **Recorded:** 2026-08-04. **Working branch:**
+> the provider-neutral O1 DEEP wait seam, and the complete O2 composition are implemented
+> mechanically; O3 behavior/evals, the remaining V0 fault matrix, and successful live canaries
+> remain open. **Recorded:** 2026-08-04. **Working branch:**
 > `platform/c8-account-profiling-integration`. **Provider baseline:** commit `cb7a275`, identical to
 > the current local `platform/c8-exa-sumble-discovery` branch when this plan was recorded.
 >
@@ -133,16 +133,16 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 |---|---|---|
 | Exa Websets discovery | D1-D6 built; E1 built mechanically; discovery branch integrated | Consume only; do not rebuild or mutate the seal |
 | Sumble account gaps | S1 mechanical REST-v9/snapshot/receipt integration passes; paid live gate remains open | Reuse its auth, error, snapshot, fingerprint, credit, and spend-unknown contracts where the shapes genuinely match |
-| Account profiling | M8 account profiler and C6.7 governed account research agent consume the same task-scoped ready-snapshot binding and exact effective source plan | Complete the full-unit O2 launcher and successful live provider acceptance |
-| Exa Deep | E0 provides the bounded wire contract, E1 durably acquires/coalesces/persists/settles/replays, and E2 materializes exact directive-pinned snapshots through the shared account-research seams | A successful live provider canary and serial full-unit launch composition remain open |
-| Committee worker | Provider-neutral `CommitteeSource`, admission, role plausibility, persona claims, and coverage exist | Implement Sumble-backed source and preserve provider-vs-inferred semantics |
+| Account profiling | M8 account profiler and C6.7 governed account research agent consume the same task-scoped ready-snapshot binding and exact effective source plan; O2 composes durable Exa acquisition before snapshot-only materialization | Successful live provider acceptance remains open |
+| Exa Deep | E0 provides the bounded wire contract, E1 durably acquires/coalesces/persists/settles/replays, E2 materializes exact directive-pinned snapshots through the shared account-research seams, and O2 composes acquisition/materialization into the full unit | A successful live provider canary remains open |
+| Committee worker | Provider-neutral `CommitteeSource`, admission, role plausibility, persona claims, and coverage now consume the exact-account Sumble snapshot source while preserving provider-returned versus platform-inferred semantics | Pass the separately authorized live committee canary and V0 adversarial matrix |
 | Sumble committee acquisition | S2A–S2D now implement the pinned no-reveal contract, durable async acquisition, snapshot source, and seven-condition gate | Pass the separately authorized live S2 canary and fresh-process replay |
-| Deep orchestrator | Provider-neutral preparation now runs between account profiling and the short committee transaction, and A2 pins are immutable on account plans/runs | Retain these seams while E1/E2 and the full launch tool are bound; never add a provider branch |
+| Deep orchestrator | Provider-neutral account-resolver preparation runs before account profiling and committee preparation runs between account profiling and the short committee transaction; both consume immutable launch/directive pins | Preserve the provider-neutral seams through O3/V0 and live canaries |
 | Project wait state | DEEP and discovery now both admit typed active `WAITING_EXTERNAL` checkpoints | Bind the production wake scheduler/event path and prove it in the combined canary |
-| Production committee composition | Sumble S2 composition is default-off and injectable into the per-run composer; A2's durable directive and exact run pins exist, but the production `SumbleCommitteeInputResolver` remains unbound | Implement the resolver over A2's durable state in serial O2 composition, then enable only with credential/policy/live gates |
-| Main-agent toolbelt | `run_deep_account@1` invokes M2 `profile_account` only; `resolve_committee@1` is separate | Keep fine-grained tools; add an unambiguous set-scoped full-unit launcher that uses the existing fleet and `AccountDeepOrchestrator` |
-| Research direction | A2 provides a versioned, human-confirmed directive, exact sealed membership, account overrides, future-thread memory visibility, context materialization, and immutable plan/run/Sumble pins | Consume the exact pin in E1/E2, the production Sumble input resolver, O3 behavior, and the full-unit launch surface without treating memory as execution authority |
-| Synthetic upstream state | Existing Insight Health fixture stops at discovery and its active ICP has scoring fields only | Add a separate profiling fixture layer with deep fields, selected sealed account, tier approval, directive, source override, provider snapshots/doubles, and real orchestrator entry |
+| Production committee composition | Default-off production composition derives bounded, no-reveal Sumble Teams/People inputs from the immutable O2 launch, exact A2 pin, approved tier, sealed membership, S1 organization identity, privacy policy, and per-account budget | Enable only with credential/policy/live gates and pass the separately authorized canary |
+| Main-agent toolbelt | Fine-grained account/committee/contact tools remain separate; `launch_account_deep@1` creates one immutable exact-set/directive/budget receipt and re-enqueues the existing fleet | O3 must teach the Head-of-ABM to preview, confirm, launch, and narrate this surface without auto-launching |
+| Research direction | A2's human-confirmed direction is now consumed by the launch receipt, high-tier resolver, account-run budget/pin, Exa preparation, and Sumble committee input resolver | Complete O3 behavior while continuing to treat memory as advisory rather than execution authority |
+| Synthetic upstream state | The additive Insight Health account-deep fixture supplies deep fields, one selected sealed account, tier approval, a confirmed directive, source override, provider doubles, and the real orchestrator entry without mutating the discovery fixture | Extend only where the remaining V0 fault matrix needs another governed state |
 
 ### 3.1 Implementation checkpoint — 2026-08-04
 
@@ -160,13 +160,12 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 | S2D | Complete mechanically | `00a3e90`; immutable seven-condition decision and zero-call ineligible matrix |
 | O1 | Complete mechanically | `6fbf14b`; provider-neutral prepare/wait seam, DEEP wait checkpoint, same account-run resume, no transaction during provider work |
 | O2 — Sumble composition | Complete mechanically | `cc5b62a`; S2D -> S2B -> S2C adapter, independent default-off setting, credential failure, per-run composer injection, durable combined test |
-| O2 — full capability | Open | awaits the production Sumble directive-input resolver over A2 state, `launch_account_deep@1`, and full tool/fleet binding |
+| O2 — full capability | Complete mechanically; no new live call | immutable exact-set launch and budget receipt; tier approval does not auto-enqueue; production Exa E1/E2 preparation and replay; durable Sumble A2/S1 input resolver; existing fleet/orchestrator and Head-of-ABM v17 tool binding; real-Postgres combined acceptance |
 
-The current Sumble production builder deliberately requires an injected
-`SumbleCommitteeInputResolver`. A2 now owns the durable directive, exact account/run pin, committee
-plan, and authorization inputs that resolver must read; the remaining production adapter and
-composition binding belong to serial O2 integration. Supplying a static or session-only object in
-production would violate this roadmap. With the feature disabled or no resolver bound, production
+The Sumble production builder still requires an injected `SumbleCommitteeInputResolver`; O2 now
+supplies its durable implementation from the production composition root. It reconstructs inputs
+only from the exact launch/directive/account-run/seal/tier/S1 snapshot state. Supplying a static or
+session-only object in production remains forbidden. With the feature disabled, production
 performs zero S2 calls.
 
 ## 4. Provider roles and field-level waterfall
@@ -790,6 +789,37 @@ Deliver:
 **Gate O2:** the platform deepagent launches a selected set into the detached fleet; each account
 uses the full orchestrator; zero committee sources is a typed precondition for a full-unit request
 rather than a warning and silent empty output; fine-grained account-only research remains valid.
+
+**Implemented 2026-08-04 — Gate O2 closed mechanically; successful paid canaries remain later
+acceptance work.**
+
+- `launch_account_deep@1` is the only set-scoped full-unit authority. Tier approval leaves the run
+  active at DEEP without enqueuing research; launch requires an action reference, an exact
+  human-confirmed directive, 1–500 exact approved accounts, a recomputed estimate, remaining run
+  headroom, and a composed committee capability.
+- The immutable `account_deep_launch` receipt and account membership rows pin the project run,
+  directive version/digest, sorted selected set, per-account effective pins, approved budget,
+  estimate, actor, action, and source operation. Exact replay survives directive supersession and
+  state-machine advancement; a changed set, directive, or budget conflicts. Decimal wire scale is
+  not part of the request identity.
+- DEEP selection reads only that receipt and rechecks the live human-approved tier evidence. The
+  selected account's effective cap is persisted on `account_run` and governs account profiling,
+  committee discovery, and contact admission; ephemeral phase params cannot widen the launch.
+- Production Exa preparation compiles each field through the canonical source planner, presents
+  that exact authority to the real pre-spend gate, acquires through E1 outside claim transactions,
+  and supplies only E2 immutable snapshot resolvers to account profiling. Pending work maps to the
+  existing provider-neutral DEEP wait and ready replay performs zero HTTP.
+- Production Sumble preparation derives its organization id from a verified successful S1
+  snapshot and compiles the no-reveal Teams/People request from the exact launch, A2 committee
+  plan, sealed membership, human tier, privacy policy, and account budget. No session-only input
+  object or provider branch was added to `AccountDeepOrchestrator`.
+- The existing scheduler/fleet and one `AccountDeepOrchestrator` per account remain the execution
+  unit. Fine-grained account, committee, and contact tools are unchanged. Head-of-ABM v17 receives
+  launch authority; conversational preview/steering behavior and its evals remain O3-owned.
+- Real-Postgres acceptance covers explicit launch/enqueue, no enqueue at tier approval, immutable
+  and exact replay, directive supersession, account-run budget propagation, canonical-plan Exa
+  acquisition plus zero-call replay, S1-backed Sumble inputs, and the combined prerequisite
+  regression set. The new Alembic revision passes a clean head-to-base-to-head round trip.
 
 ### Slice O3 — Main-deepagent planning and steering behavior
 

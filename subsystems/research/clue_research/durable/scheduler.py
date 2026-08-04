@@ -27,9 +27,9 @@ from contextlib import AbstractAsyncContextManager
 from typing import Any, TypeVar, overload
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from clue_core import EntityId, EntityType, ProjectRunId, ResearchDirectivePin
+from clue_core import CostCents, EntityId, EntityType, ProjectRunId, ResearchDirectivePin
 from clue_locks import DEFAULT_TTL_MS, entity_lock
 from clue_research.durable.graph import AccountResearchGraph, AccountRunResult
 
@@ -51,6 +51,7 @@ class AccountSpec(BaseModel):
     workspace_id: str | None = None
     field_keys: tuple[str, ...] | None = None
     research_directive: ResearchDirectivePin | None = None
+    budget_cap_cents: CostCents | None = Field(default=None, ge=0)
 
 
 # A per-account callback the deep handler (M8A.2) supplies to drive a *custom* pipeline — the M8A.1

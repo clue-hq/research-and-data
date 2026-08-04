@@ -30,7 +30,7 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v16",
+    AgentRole.HEAD_OF_ABM: "v17",
     AgentRole.RESEARCH: "v4",
     AgentRole.CONTENT_DRAFTER: "v4",
     AgentRole.REVIEWER: "v4",
@@ -73,6 +73,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # `test_c8_omission_resolution_contract.py` now refuses to let ship.
     "inspect_readiness_history": (AgentRole.HEAD_OF_ABM,),
     "inspect_statement_history": (AgentRole.HEAD_OF_ABM,),
+    "launch_account_deep": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
     "pause_run": (),
     "profile_contact": (AgentRole.RESEARCH,),
@@ -148,6 +149,7 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
             {
                 "enrich_selected_accounts",
                 "enrich_account_gaps",
+                "launch_account_deep",
                 "start_recon",
                 "submit_onboarding_input",
                 "synthesize_icps",

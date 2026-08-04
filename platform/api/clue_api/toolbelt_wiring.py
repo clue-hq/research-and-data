@@ -60,7 +60,7 @@ from decimal import Decimal
 from typing import ClassVar, Protocol, cast
 from uuid import UUID
 
-from pydantic import JsonValue
+from pydantic import Field, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
@@ -105,6 +105,7 @@ from clue_api.sumble_account_gaps import (
     SumbleAccountGapResult,
 )
 from clue_api.tool_outputs import (
+    AccountDeepLaunchOutput,
     AccountGapEnrichmentOutput,
     CommitteeOutput,
     ConfirmIcpOutput,
@@ -138,6 +139,7 @@ from clue_core import (
     PreSpendGate,
     ProjectPhase,
     ProjectRunId,
+    ResearchDirectiveId,
     ResearchViewComposer,
     RunId,
 )
@@ -151,6 +153,8 @@ from clue_research.discovery_scoring.scoring import admitted_account_ids
 from clue_research.discovery_scoring.tiering import DEFAULT_TIERING_CONFIG
 from clue_research.durable import (
     NARRATIVE_EMIT_SKIPPED_KEY,
+    AccountDeepLaunchConflict,
+    AccountDeepLaunchInvalid,
     BudgetEngine,
     DbBudgetStore,
     DbIdempotencyStore,
@@ -162,8 +166,10 @@ from clue_research.durable import (
     ProjectRun,
     ProjectRunRow,
     ProjectRunStatus,
+    create_account_deep_launch,
     get_checkpoint,
     get_project_run,
+    preview_account_deep_launch,
 )
 from clue_research.icp.rubric import TierCutoffs, rubric_from_slot
 from clue_research.icp.spec import get_active_icp, get_icp_version
@@ -306,6 +312,14 @@ class SubmitTierCheckpointInput(ToolInput):
     decision: dict[str, object] = {}
 
 
+class LaunchAccountDeepInput(ToolInput):
+    project_run_id: str
+    research_directive_id: str
+    account_entity_ids: tuple[str, ...] = Field(min_length=1, max_length=500)
+    approved_budget_cap_cents: Decimal = Field(ge=0)
+    expected_estimated_cost_cents: Decimal = Field(ge=0)
+
+
 class RunDeepAccountInput(ToolInput):
     account_entity_id: str
     icp_key: str
@@ -383,6 +397,7 @@ class _CapabilityTool(Tool):
         lock_factory: LockFactory,
         storage: StorageBackend | None,
         project_execution_router: ProjectExecutionRouter | None,
+        account_deep_full_unit_available: bool,
     ) -> None:
         self._settings = settings
         self._gateway = gateway
@@ -395,6 +410,7 @@ class _CapabilityTool(Tool):
         self._lock_factory = lock_factory
         self._storage = storage
         self._project_execution_router = project_execution_router
+        self._account_deep_full_unit_available = account_deep_full_unit_available
 
     def _require_gateway(self) -> LLMGateway:
         if self._gateway is None:
@@ -1234,17 +1250,21 @@ class SubmitTierCheckpointTool(_CapabilityTool):
         assert run_id is not None
         decision = cast(dict[str, JsonValue], inputs.decision)
         row = await self._run.submit_checkpoint(run_id, decision=decision)
-        routed = (
-            await self._project_execution_router.resume_owned(run_id, actor=ctx.actor)
-            if self._project_execution_router is not None
-            else False
-        )
-        if not routed and self._queue is not None:
-            await enqueue_run_drive(
-                run_id,
-                queue=self._queue,
-                conn_factory=self._conn_factory,
+        # Tier approval exposes the eligible account set but is not authorization to spend on
+        # account-deep research.  Leave an ACTIVE run parked at DEEP; launch_account_deep@1 creates
+        # the separate exact-set receipt and is the only tool that re-enqueues this boundary.
+        if row.phase is not ProjectPhase.DEEP:
+            routed = (
+                await self._project_execution_router.resume_owned(run_id, actor=ctx.actor)
+                if self._project_execution_router is not None
+                else False
             )
+            if not routed and self._queue is not None:
+                await enqueue_run_drive(
+                    run_id,
+                    queue=self._queue,
+                    conn_factory=self._conn_factory,
+                )
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -1281,6 +1301,145 @@ class SubmitProjectCheckpointTool(SubmitTierCheckpointTool):
                 "the run is not suspended at an actionable project checkpoint",
             )
         return ()
+
+
+# =============================================================================================
+# full account-deep fleet launch (set-scoped O2 capability)
+# =============================================================================================
+
+
+class LaunchAccountDeepTool(_CapabilityTool):
+    """Authorize and enqueue the existing account-deep fleet for one exact selected set.
+
+    The confirmed directive remains planning state.  This tool creates the distinct immutable
+    launch receipt only after recomputing the directive-derived estimate, proving the selected
+    accounts are members, and verifying that a committee source/preparer is actually composed.
+    """
+
+    name = "launch_account_deep"
+    input_model = LaunchAccountDeepInput
+    output_model = AccountDeepLaunchOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project_run + exact directive pin + selected account set + budget",
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "project_run_id",
+            "research_directive_id",
+            "account_entity_ids",
+            "approved_budget_cap_cents",
+            "expected_estimated_cost_cents",
+        )
+    )
+    pin_requirements = ("project_run", "research_directive", "deep_policy")
+
+    @staticmethod
+    def _ids(
+        inputs: LaunchAccountDeepInput,
+    ) -> tuple[ProjectRunId | None, ResearchDirectiveId | None, tuple[EntityId, ...] | None]:
+        run_id = _parse_run_id(inputs.project_run_id)
+        try:
+            directive_id = ResearchDirectiveId(UUID(inputs.research_directive_id))
+        except (ValueError, AttributeError, TypeError):
+            directive_id = None
+        accounts = tuple(_parse_entity_id(value) for value in inputs.account_entity_ids)
+        if any(value is None for value in accounts):
+            return run_id, directive_id, None
+        return run_id, directive_id, cast(tuple[EntityId, ...], accounts)
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, LaunchAccountDeepInput)
+        if not self._account_deep_full_unit_available:
+            return _fail(
+                "committee_capability_not_configured",
+                "full account-deep launch requires at least one governed committee source",
+            )
+        if ctx.action_ref is None:
+            return _fail(
+                "launch_action_ref_missing",
+                "account-deep launch requires the captured user/agent action reference",
+            )
+        run_id, directive_id, account_ids = self._ids(inputs)
+        if run_id is None:
+            return _fail("run_not_found", "no such project run")
+        if directive_id is None:
+            return _fail("research_directive_not_found", "no such research directive")
+        if account_ids is None:
+            return _fail("invalid_account_id", "one or more account ids are malformed")
+        try:
+            async with self._conn_factory() as conn:
+                await preview_account_deep_launch(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    project_run_id=run_id,
+                    directive_id=directive_id,
+                    account_entity_ids=account_ids,
+                    approved_budget_cap_cents=inputs.approved_budget_cap_cents,
+                    expected_estimated_cost_cents=inputs.expected_estimated_cost_cents,
+                )
+        except AccountDeepLaunchConflict as exc:
+            return _fail("account_deep_launch_conflict", str(exc))
+        except AccountDeepLaunchInvalid as exc:
+            return _fail("account_deep_launch_invalid", str(exc))
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        assert isinstance(inputs, LaunchAccountDeepInput)
+        return ToolEstimate(
+            cost_cents=inputs.expected_estimated_cost_cents,
+            detail={"selected_accounts": len(inputs.account_entity_ids)},
+        )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, LaunchAccountDeepInput)
+        run_id, directive_id, account_ids = self._ids(inputs)
+        assert run_id is not None and directive_id is not None and account_ids is not None
+        assert ctx.action_ref is not None
+        async with self._conn_factory() as conn:
+            created = await create_account_deep_launch(
+                conn,
+                workspace_id=ctx.workspace_id,
+                project_run_id=run_id,
+                directive_id=directive_id,
+                account_entity_ids=account_ids,
+                approved_budget_cap_cents=inputs.approved_budget_cap_cents,
+                expected_estimated_cost_cents=inputs.expected_estimated_cost_cents,
+                created_by=ctx.actor_id or ctx.actor,
+                source_operation_id=ctx.operation_id,
+                source_action_ref=ctx.action_ref,
+            )
+        routed = (
+            await self._project_execution_router.resume_owned(run_id, actor=ctx.actor)
+            if self._project_execution_router is not None
+            else False
+        )
+        enqueued = routed
+        if not routed and self._queue is not None:
+            await enqueue_run_drive(
+                run_id,
+                queue=self._queue,
+                conn_factory=self._conn_factory,
+            )
+            enqueued = True
+        launch = created.launch
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "launch_id": str(launch.id),
+                "project_run_id": str(launch.project_run_id),
+                "research_directive_id": str(launch.directive_id),
+                "selected_accounts": len(created.account_entity_ids),
+                "estimated_cost_cents": str(launch.estimated_cost_cents),
+                "approved_budget_cap_cents": str(launch.approved_budget_cap_cents),
+                "replayed": created.replayed,
+                "enqueued": enqueued,
+            },
+        )
 
 
 # =============================================================================================
@@ -1944,6 +2103,7 @@ _TOOL_TYPES: tuple[type[_CapabilityTool], ...] = (
     ScoreAccountsTool,
     SubmitTierCheckpointTool,
     SubmitProjectCheckpointTool,
+    LaunchAccountDeepTool,
     RunDeepAccountTool,
     ResolveCommitteeTool,
     ProfileContactTool,
@@ -1984,6 +2144,7 @@ def build_toolbelt(
     research_view_recheck: ResearchViewRecheckService | None = None,
     targeted_enrichment_starter: TargetedEnrichmentStarter | None = None,
     account_gap_enrichment_starter: AccountGapEnrichmentStarter | None = None,
+    account_deep_full_unit_available: bool | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -2067,6 +2228,11 @@ def build_toolbelt(
         else None
     )
     locks = lock_factory if lock_factory is not None else lazy_account_lock_factory()
+    full_unit_available = (
+        bool(committee_sources)
+        if account_deep_full_unit_available is None
+        else account_deep_full_unit_available
+    )
     registry = ToolRegistry()
     for tool_type in _TOOL_TYPES:
         registry.register(
@@ -2082,6 +2248,7 @@ def build_toolbelt(
                 lock_factory=locks,
                 storage=storage,
                 project_execution_router=project_execution_router,
+                account_deep_full_unit_available=full_unit_available,
             ),
             make_default=True,
         )

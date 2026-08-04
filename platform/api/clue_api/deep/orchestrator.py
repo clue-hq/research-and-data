@@ -59,6 +59,11 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
+from clue_api.account_research_wiring import (
+    AccountResolverBindingAvailability,
+    AccountResolverBindingProvider,
+    AccountResolverBindingsUnavailable,
+)
 from clue_api.deep.committee_preparation import (
     CommitteePreparer,
     ExternalCommitteePreparationFailed,
@@ -84,6 +89,7 @@ from clue_core import (
     LLMGateway,
     PreSpendGate,
     ProjectRunId,
+    Resolver,
     RunId,
     WorkerStatus,
 )
@@ -257,6 +263,7 @@ class AccountDeepOrchestrator:
         synthesis_guard: SynthesisGuard | None = None,
         budget_cap_cents: CostCents | None = None,
         committee_preparer: CommitteePreparer | None = None,
+        account_resolver_provider: AccountResolverBindingProvider | None = None,
     ) -> None:
         self._profile_account = profile_account
         self._discover_committee = discover_committee
@@ -280,6 +287,7 @@ class AccountDeepOrchestrator:
         self._synthesis_guard = synthesis_guard
         self._budget_cap_cents = budget_cap_cents
         self._committee_preparer = committee_preparer
+        self._account_resolver_provider = account_resolver_provider
 
     async def run_one(
         self, spec: AccountSpec, *, project_run_id: ProjectRunId
@@ -299,6 +307,8 @@ class AccountDeepOrchestrator:
         }
         if spec.research_directive is not None:
             ensure_args["research_directive"] = spec.research_directive
+        if spec.budget_cap_cents is not None:
+            ensure_args["budget_cap_cents"] = spec.budget_cap_cents
         await self._io.ensure(**ensure_args)  # type: ignore[arg-type]
         state = await self._io.load(run_id)
         refs: dict[str, list[str]] = {k: list(v) for k, v in state.references_index.items()}
@@ -310,12 +320,48 @@ class AccountDeepOrchestrator:
         contact_results: tuple[ContactProfileResult, ...] = ()
         budget_stop: BudgetVerdict | None = None
         external_preparation: ExternalResearchPreparation | None = None
+        account_resolver_bindings: dict[str, Resolver] = {}
 
         # --- Stage 1: account axis (M8.1) — the direct callable carries the ICP spec +
         # workspace_id as
         # explicit kwargs (no AspectContext / ctx.params), so the planner loads the spec and the
         # tenant-private resonance writes bind their tenant without the "#2" graph param-threading.
         if done is None:
+            if self._account_resolver_provider is not None:
+                resolution = await self._account_resolver_provider.resolver_bindings(
+                    workspace_id=workspace_id,
+                    project_run_id=project_run_id,
+                    account_entity_id=spec.entity_id,
+                    research_directive=spec.research_directive,
+                )
+                if resolution.availability is AccountResolverBindingAvailability.WAITING_EXTERNAL:
+                    external_preparation = ExternalResearchPreparation(
+                        outcome=ExternalResearchPreparationOutcome.WAITING_EXTERNAL,
+                        operation_ref=resolution.operation_ref,
+                        retry_after=resolution.retry_after,
+                        snapshot_refs=resolution.snapshot_refs,
+                        audit_refs=resolution.audit_refs,
+                        reason_code=resolution.reason_code,
+                    )
+                    return AccountDeepResult(
+                        account_run_id=run_id,
+                        entity_id=spec.entity_id,
+                        tier=spec.tier,
+                        cost_cents=cost,
+                        sub_phase=None,
+                        external_preparation=external_preparation,
+                    )
+                if resolution.availability in {
+                    AccountResolverBindingAvailability.REQUIRED_MISSING,
+                    AccountResolverBindingAvailability.FAILED_EXTERNAL,
+                }:
+                    raise AccountResolverBindingsUnavailable(resolution)
+                account_resolver_bindings = dict(resolution.bindings)
+            effective_budget_cap = (
+                spec.budget_cap_cents
+                if spec.budget_cap_cents is not None
+                else self._budget_cap_cents
+            )
             account_icp = (
                 self._spec
                 if spec.field_keys is None
@@ -328,7 +374,7 @@ class AccountDeepOrchestrator:
                 "run_id": run_id,
                 "project_run_id": project_run_id,
                 "workspace_id": workspace_id,
-                "budget_cap_cents": self._budget_cap_cents,
+                "budget_cap_cents": effective_budget_cap,
                 "recursion_policy": self._recursion_policy,
                 "gateway": self._gateway,
                 "planner_model": self._planner_model,
@@ -337,6 +383,8 @@ class AccountDeepOrchestrator:
             }
             if spec.research_directive is not None:
                 profile_args["research_directive"] = spec.research_directive
+            if account_resolver_bindings:
+                profile_args["resolver_bindings"] = account_resolver_bindings
             account_result = await self._profile_account(**profile_args)
             if account_result.status is WorkerStatus.FAILED and not account_result.aspects:
                 # The account did not resolve (``profile_account`` returns FAILED with no aspects
@@ -484,7 +532,11 @@ class AccountDeepOrchestrator:
                         gateway=self._gateway,
                         spec=self._spec,
                         role_model=self._role_model,
-                        budget_cap_cents=self._budget_cap_cents,
+                        budget_cap_cents=(
+                            spec.budget_cap_cents
+                            if spec.budget_cap_cents is not None
+                            else self._budget_cap_cents
+                        ),
                         pre_spend_gate=self._pre_spend_gate,
                         config=self._committee_config,
                     ),

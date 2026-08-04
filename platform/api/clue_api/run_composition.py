@@ -49,6 +49,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
+from clue_api.account_research_wiring import AccountResolverBindingProvider
 from clue_api.agent_platform_wiring import DbAgentOwnershipRouter, RoutedAccountProfiler
 from clue_api.composition import build_pre_spend_gate
 from clue_api.contact_eligibility import (
@@ -101,6 +102,7 @@ from clue_core import (
     PhaseContext,
     PhaseHandler,
     PhaseResult,
+    PreSpendGate,
     ProjectPhase,
     ProjectRunId,
 )
@@ -293,6 +295,8 @@ class ComposingRunDriver:
         account_agent_profiler: ProfileAccountFn | None = None,
         profile_account_fn: ProfileAccountFn | None = None,
         committee_preparer: CommitteePreparer | None = None,
+        account_resolver_provider: AccountResolverBindingProvider | None = None,
+        pre_spend_gate: PreSpendGate | None = None,
     ) -> None:
         self._settings = settings if settings is not None else load_settings()
         self._store: ProjectRunStore = store if store is not None else DbProjectRunStore()
@@ -315,6 +319,8 @@ class ComposingRunDriver:
         self._account_agent_profiler = account_agent_profiler
         self._profile_account_fn = profile_account_fn
         self._committee_preparer = committee_preparer
+        self._account_resolver_provider = account_resolver_provider
+        self._pre_spend_gate = pre_spend_gate
         if (controls is None) != (supervisor_actions is None):
             raise ValueError("controls and supervisor_actions must be supplied together")
         if controls is not None and execution_journal is None:
@@ -491,7 +497,7 @@ class ComposingRunDriver:
             priority_for=priority_for,
             account_admission=account_admission,
         )
-        base_gate = build_pre_spend_gate()
+        base_gate = self._pre_spend_gate or build_pre_spend_gate()
         pre_spend_gate = (
             RunControlledPreSpendGate(
                 inner=base_gate,
@@ -540,6 +546,7 @@ class ComposingRunDriver:
             pre_spend_gate=pre_spend_gate,
             canary_controller=canary_controller,
             committee_preparer=self._committee_preparer,
+            account_resolver_provider=self._account_resolver_provider,
             profile_account_fn=(
                 self._profile_account_fn
                 if self._profile_account_fn is not None

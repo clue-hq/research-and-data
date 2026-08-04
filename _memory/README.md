@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-04-m8b-o2-account-deep-composition.md` — O2 complete mechanically: explicit immutable
+  exact-set launch after the conversational/tier pause, account budget/pin propagation, canonical
+  Exa preparation and snapshot replay, durable S1/A2-backed no-reveal Sumble committee inputs,
+  existing fleet/orchestrator composition, real-Postgres acceptance, and O3/V0/live handoff.
 - `2026-08-04-m8b-e0-a2-integration.md` — merged the complete E0 request/response branch into the
   A2 account-profiling integration branch; reconciled roadmap state, isolated the negative Exa
   credential test from local environment configuration, and verified the combined E0/A2/deep/

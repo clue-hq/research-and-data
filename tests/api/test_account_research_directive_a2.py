@@ -56,6 +56,7 @@ from clue_research.directives import (
 )
 from clue_research.durable import (
     DbAccountRunStore,
+    create_account_deep_launch,
     get_account_run,
     insert_account_run,
     pin_account_run_research_directive,
@@ -126,7 +127,7 @@ def _body(account_id: EntityId, *, successor: bool = False) -> ResearchDirective
             contact_reveals_allowed=False,
         ),
         effort_policy=ResearchEffortPolicy(
-            tier="tier_1",
+            tier="high",
             max_depth=2,
             max_fanout=8,
             budget_cap_cents=Decimal("300"),
@@ -541,13 +542,19 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
                 icp_version=fixture.deep_icp_version,
             )
             assert tuple(await resolver(base_context)) == ()
-            launched_specs = tuple(
-                await resolver(
-                    base_context.model_copy(
-                        update={"params": {"research_directive_id": str(directive_id)}}
-                    )
-                )
+            await create_account_deep_launch(
+                conn,
+                workspace_id=WORKSPACE_ID,
+                project_run_id=PROJECT_RUN_ID,
+                directive_id=directive_id,
+                account_entity_ids=(fixture.selected_account_id,),
+                approved_budget_cap_cents=Decimal("300"),
+                expected_estimated_cost_cents=Decimal("300"),
+                created_by="human:user-a2",
+                source_operation_id=new_operation_id(),
+                source_action_ref="human-turn:launch-account-deep",
             )
+            launched_specs = tuple(await resolver(base_context))
             assert tuple(item.entity_id for item in launched_specs) == (
                 fixture.selected_account_id,
             )

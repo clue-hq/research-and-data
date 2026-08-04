@@ -71,6 +71,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     ),
     "submit_tier_checkpoint": ("precondition", ("run_not_found",)),
     "submit_project_checkpoint": ("precondition", ("run_not_found",)),
+    "launch_account_deep": (
+        "precondition",
+        ("committee_capability_not_configured",),
+    ),
     "run_deep_account": ("precondition", ("no_active_icp",)),
     "resolve_committee": ("precondition", ("account_not_found",)),
     "profile_contact": ("precondition", ("account_not_found",)),
@@ -141,6 +145,13 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "submit_tier_checkpoint": {"project_run_id": _UUID()},
         "submit_project_checkpoint": {"project_run_id": _UUID()},
+        "launch_account_deep": {
+            "project_run_id": _UUID(),
+            "research_directive_id": _UUID(),
+            "account_entity_ids": [_UUID()],
+            "approved_budget_cap_cents": "1",
+            "expected_estimated_cost_cents": "1",
+        },
         "run_deep_account": {"account_entity_id": _UUID(), "icp_key": "matrix", "tier": "top"},
         "resolve_committee": {"account_entity_id": _UUID()},
         "profile_contact": {
@@ -691,9 +702,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # 35 → 37 names with PC-C8's two read-only inspection tools, then 38 with E1's explicit
     # targeted-enrichment boundary, 39 with S1's explicit Sumble gap boundary, and 41 with A2's
     # draft/human-confirm direction tools; proposal writes, research_account_gaps, and the A2
-    # tools retain @1 replay contracts alongside their current @2 contracts.
-    assert len(registry.names()) == 41
-    assert len(registry) == 46
+    # tools retain @1 replay contracts alongside their current @2 contracts; O2 adds the exact-set
+    # account-deep launch boundary.
+    assert len(registry.names()) == 42
+    assert len(registry) == 47
     assert {
         item.address for item in registry.all_descriptors() if item.name == "research_account_gaps"
     } == {
