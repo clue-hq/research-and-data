@@ -43,9 +43,9 @@ from clue_research.resolvers import (
     GroundedSynthesisResolver,
     RetryableResolverError,
     SynthesisResult,
+    SynthesizedField,
     register_parallel_task_resolver,
 )
-from clue_research.resolvers.exa import normalize_exa_response
 from clue_research.resolvers.parallel import (
     DEFAULT_PARALLEL_CONFIG,
     ParallelTaskConfig,
@@ -328,18 +328,19 @@ def test_independence_exa_and_parallel_yield_distinct_grounded_claims() -> None:
     # distinct source_urls, each carrying its own evidence span — two independently grounded tier-4
     # inputs for the verification path (M9), exactly what the second provider exists to give.
     account = _account()
-    exa_result = normalize_exa_response(
-        {
-            "results": [
-                {
-                    "url": "https://acme.com/eng",
-                    "text": "Engineering note: Acme Corp runs brittle legacy ETL across teams.",
-                    "highlights": ["runs brittle legacy ETL"],
-                    "highlightScores": [0.9],
-                }
-            ]
-        },
-        _field(),
+    exa_result = SynthesisResult(
+        fields=(
+            SynthesizedField(
+                field_key=_MOVES,
+                value="runs brittle legacy ETL",
+                source_url="https://acme.com/eng",
+                evidence_span="runs brittle legacy ETL",
+                retrieved_text=(
+                    "Engineering note: Acme Corp runs brittle legacy ETL across teams."
+                ),
+                confidence=0.9,
+            ),
+        )
     )
     parallel_result = normalize_parallel_response(
         _payload(
