@@ -226,3 +226,25 @@ than edited as part of D6.
 
 The live accounts' `hold` status is not a D6 failure. It is the verified input to the next approved
 waterfall slice and proves the system does not turn missing required data into a false positive.
+
+## 8. P0-P3 pre-seal waterfall supplement — 2026-08-03
+
+The later adversarial review found that the original order could not actually use Sumble to repair
+a required discovery field: D4 terminalized the absence, D5 sealed it, and post-selection S1
+required a human tier that a held account could never obtain. The repair keeps missing required
+attempts pending, runs a durable required-field waterfall inside `DISCOVERY`, and makes D5 include
+that work before sealing. Optional S1 remains post-selection.
+
+A new dedicated live run began from the Insight Health/Aura Stage-0 handoff. Exa's deterministic
+external id found the already-existing paid two-row Webset after a `409` create response and a
+successful lookup; current polling, events, items, and D4 materialization were exercised again.
+Two new Sumble v9 organization requests then resolved the missing industry for both accounts at
+2 credits each. The sealed batch settled 32 provider units (28 Exa + 4 Sumble), 17 claims, 14
+field-resolution rows, and 13 distinct claims linked by those rows. The result was
+`selected=1, hold=1, excluded=0`; the selected account was
+human-approved into `DEEP`, while the hold retained an honest missing-revenue reason.
+
+Fresh-process replay returned the same two accounts and seal
+`ec6cef9abd2dedd8077b9edf187090af156b09e76ff37032f7e03f065b58fc88` with zero Exa calls. Database
+tests separately prove a sealed replay cannot invoke Sumble, concurrent resolvers dispatch once,
+and a crash after possible Sumble dispatch becomes spend-unknown rather than retrying.

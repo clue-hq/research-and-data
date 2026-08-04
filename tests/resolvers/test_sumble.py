@@ -246,6 +246,21 @@ def test_non_object_and_schema_drift_fail_closed() -> None:
             client.resolve_organization("acme.example")
 
 
+def test_organization_identity_mismatch_fails_closed_after_one_paid_response() -> None:
+    payload = _fixture("organizations_match.json")
+    payload["organizations"][0]["attributes"]["url"] = "wrong.example"
+    http = RecordingHttp(payload)
+    client = SumbleClient(
+        api_key=SecretStr("fixture"),
+        budget=SumbleCreditBudget(maximum=2),
+        http=http,
+    )
+
+    with pytest.raises(SumbleSchemaDrift, match="domain does not match"):
+        client.resolve_organization("acme.example")
+    assert len(http.calls) == 1
+
+
 def test_organization_normalization_produces_direct_fields_and_hard_miss() -> None:
     payload = _fixture("organizations_match.json")
     headcount = normalize_organization(payload, _field("core.employee_count", "int"))

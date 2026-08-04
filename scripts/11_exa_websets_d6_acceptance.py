@@ -12,6 +12,7 @@ import secrets as token_secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,7 @@ from clue_api.exa_websets_submit import (
     build_exa_create_request,
 )
 from clue_api.run_composition import ComposingRunDriver
+from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
 from clue_api.trial.discovery_fixture import PROJECT_RUN_ID, WORKSPACE_ID
 from clue_config import GatewayConfig, Secrets, load_settings
 from clue_core import (
@@ -64,6 +66,7 @@ from clue_research.durable import (
     get_discovery_operation,
     get_discovery_plan,
     get_project_run,
+    list_discovery_gap_operations,
     list_discovery_operations,
     list_discovery_pages,
 )
@@ -91,6 +94,20 @@ def _args() -> argparse.Namespace:
         "--include-contact-enrichments",
         action="store_true",
         help="Explicitly add public company email and phone (48-credit rather than 28-credit cap).",
+    )
+    parser.add_argument(
+        "--allow-live-sumble",
+        action="store_true",
+        help=(
+            "Permit bounded Sumble organization enrichment for required fields that Exa leaves "
+            "pending before D5 seals."
+        ),
+    )
+    parser.add_argument(
+        "--sumble-cents-per-credit",
+        type=Decimal,
+        default=Decimal(0),
+        help="Optional honest monetary allocation for one Sumble credit; defaults to zero.",
     )
     parser.add_argument(
         "--replay-only",
@@ -177,6 +194,9 @@ async def _state_report(*, transport_calls: dict[str, int]) -> dict[str, Any]:
         operations = await list_discovery_operations(
             conn, workspace_id=WORKSPACE_ID, batch_id=batch.id
         )
+        gap_operations = await list_discovery_gap_operations(
+            conn, workspace_id=WORKSPACE_ID, batch_id=batch.id
+        )
         seal = await get_discovery_batch_seal(conn, workspace_id=WORKSPACE_ID, batch_id=batch.id)
         manifest = await get_discovery_batch_manifest(
             conn, workspace_id=WORKSPACE_ID, batch_id=batch.id
@@ -210,7 +230,7 @@ async def _state_report(*, transport_calls: dict[str, int]) -> dict[str, Any]:
                          ON resolution.id=field_claim.resolution_id
                         AND resolution.workspace_id=field_claim.workspace_id
                        WHERE resolution.workspace_id=:workspace_id
-                         AND resolution.batch_id=:batch_id) AS claims,
+                         AND resolution.batch_id=:batch_id) AS field_resolution_claims,
                       (SELECT count(*) FROM discovery_field_resolution
                        WHERE workspace_id=:workspace_id AND batch_id=:batch_id) AS resolutions
                     """
@@ -242,6 +262,13 @@ async def _state_report(*, transport_calls: dict[str, int]) -> dict[str, Any]:
                 )
             ).scalar_one()
         )
+    materialized_provider_count = (
+        manifest.coverage_payload.get("materialized_provider_claim_count", 0)
+        if manifest is not None
+        else 0
+    )
+    if not isinstance(materialized_provider_count, int):
+        raise RuntimeError("coverage report materialized-provider count is not an integer")
     return {
         "workspace_id": WORKSPACE_ID,
         "project_run_id": str(PROJECT_RUN_ID),
@@ -256,13 +283,20 @@ async def _state_report(*, transport_calls: dict[str, int]) -> dict[str, Any]:
         "operation_ids": [str(item.operation_id) for item in operations],
         "provider_operation_ids": [item.provider_operation_id for item in operations],
         "operation_states": [item.state.value for item in operations],
+        "discovery_gap_operation_ids": [str(item.operation_id) for item in gap_operations],
+        "discovery_gap_operation_states": [item.state.value for item in gap_operations],
+        "discovery_gap_provider_units_charged": str(
+            sum((item.provider_units_charged for item in gap_operations), Decimal(0))
+        ),
         "request_fingerprints": [item.request_fingerprint for item in operations],
         "transport_calls_this_process": transport_calls,
         "item_count": int(counts["items"]),
         "page_count": int(counts["pages"]),
         "signed_webhook_event_count": int(counts["signed_events"]),
         "account_count": int(counts["accounts"]),
-        "claim_count": int(counts["claims"]),
+        "sealed_claim_count": len(manifest.claim_ids) if manifest is not None else 0,
+        "field_resolution_claim_count": int(counts["field_resolution_claims"]),
+        "materialized_provider_claim_count": materialized_provider_count,
         "field_resolution_count": int(counts["resolutions"]),
         "field_resolution_summary": {str(state): int(count) for state, count in resolution_rows},
         "numeric_score_claim_count": numeric_score_count,
@@ -372,7 +406,8 @@ async def _replay_only(*, storage: FsStorage, transport: _CountingTransport) -> 
     report.update(
         {
             "mode": "fresh_process_replay",
-            "replay_verdict": "zero_provider_calls",
+            "replay_verdict": "zero_exa_transport_calls",
+            "sumble_replay_evidence": "not_exercised_by_this_sealed-read command",
             "selection_outcome": selection_outcome,
             "submit_outcomes": outcomes,
             "replayed_account_ids": [str(value) for value in sealed.account_ids],
@@ -389,7 +424,11 @@ async def _operations(batch_id: DiscoveryBatchId) -> tuple[DiscoveryOperation, .
 
 
 async def _live(
-    args: argparse.Namespace, *, storage: FsStorage, transport: _CountingTransport
+    args: argparse.Namespace,
+    *,
+    storage: FsStorage,
+    transport: _CountingTransport,
+    secrets: Secrets,
 ) -> dict[str, Any]:
     policy = ExaDiscoveryAcquisitionPolicy(
         include_contact_enrichments=args.include_contact_enrichments
@@ -437,11 +476,21 @@ async def _live(
             f"{preflight.maximum_cost_cents}-cent maximum"
         )
 
+    settings = load_settings(
+        _env_file=None,
+        sumble_discovery_gap_enrichment_enabled=args.allow_live_sumble,
+        sumble_cents_per_credit=args.sumble_cents_per_credit,
+    )
     driver = ComposingRunDriver(
-        settings=load_settings(_env_file=None),
+        settings=settings,
         gateway=build_gateway(GatewayConfig(stub=True)),
         storage=storage,
         discovery_batch_starter=starter,
+        discovery_required_field_resolver=build_production_sumble_discovery_gap_resolver(
+            settings,
+            secrets=secrets,
+            storage=storage,
+        ),
     )
     with collect_spans() as exporter:
         _, batch, _ = await _current_lineage()
@@ -554,10 +603,9 @@ async def _live(
                 "deep_eligible_count": len(candidates),
             }
         else:
-            # A real provider result is not made positive merely to satisfy a canary.  The strict
-            # scoring-bypass contract keeps required-field gaps on hold for the next waterfall and
-            # leaves the durable human checkpoint paused.  The database-backed positive-path test
-            # separately proves that genuinely selected accounts can cross this barrier.
+            # A real provider result is not made positive merely to satisfy a canary. Required
+            # discovery fields have already reached terminal pre-seal dispositions; a criterion or
+            # field conflict can still honestly hold the account at the human checkpoint.
             selection_outcome = {
                 "completion_status": "held_for_waterfall",
                 "deep_eligible_count": 0,
@@ -571,6 +619,8 @@ async def _live(
                 "maximum_provider_credits": str(preflight.maximum_provider_credits),
                 "maximum_cost_cents": str(preflight.maximum_cost_cents),
                 "contact_enrichments_enabled": preflight.contact_enrichments_enabled,
+                "sumble_required_field_waterfall_enabled": args.allow_live_sumble,
+                "sumble_cents_per_credit": str(args.sumble_cents_per_credit),
                 "observation_window": preflight.observation_window,
             },
             "webhook_evidence": webhook_evidence,
@@ -588,12 +638,14 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
     secrets = Secrets()
     if secrets.exa_api_key is None:
         raise RuntimeError("CLUE_EXA_API_KEY is unset")
+    if args.allow_live_sumble and secrets.sumble_api_key is None:
+        raise RuntimeError("--allow-live-sumble requires CLUE_SUMBLE_API_KEY")
     storage = FsStorage(args.storage_root)
     async with ExaWebsetsClient(api_key=secrets.exa_api_key, lookup_attempts=1) as client:
         transport = _CountingTransport(client)
         if args.replay_only:
             return await _replay_only(storage=storage, transport=transport)
-        return await _live(args, storage=storage, transport=transport)
+        return await _live(args, storage=storage, transport=transport, secrets=secrets)
 
 
 async def _entry(args: argparse.Namespace) -> dict[str, Any]:

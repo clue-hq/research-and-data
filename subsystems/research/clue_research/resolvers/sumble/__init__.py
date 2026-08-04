@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from threading import RLock
 from typing import Any, Final, Literal, Protocol
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, TypeAdapter
 
@@ -405,7 +406,7 @@ class SumbleClient:
         #
         # Cost is therefore unchanged: 1 base credit + 1 paid attribute (``employee_count``) = 2.
         body, estimated_max = organization_request(domain, field_keys=field_keys)
-        return self._request(
+        snapshot = self._request(
             source_key=ORGANIZATIONS_SOURCE_KEY,
             method="POST",
             path="/organizations",
@@ -413,6 +414,8 @@ class SumbleClient:
             response_model=SumbleOrganizationsResponse,
             estimated_max=estimated_max,
         )
+        _validate_requested_organization(snapshot.payload, requested_domain=domain)
+        return snapshot
 
     def engineering_jobs(self, organization_id: int, *, limit: int = 1) -> SumbleSnapshot:
         if not 1 <= limit <= 200:
@@ -511,7 +514,7 @@ def _identified_rows(
     )
     matched_count = response.matched_count
     if not identified and matched_count is not None and matched_count >= 1:
-        returned = sorted(
+        returned_attributes = sorted(
             {
                 str(name)
                 for row in response.organizations
@@ -521,11 +524,47 @@ def _identified_rows(
         raise SumbleSchemaDrift(
             f"{ORGANIZATIONS_SOURCE_KEY}: response reports matched_count={matched_count} but no "
             "returned organization carries the required 'id' and 'url' attributes "
-            f"(attributes present: {returned or ['<none>']}); the pinned select list "
+            f"(attributes present: {returned_attributes or ['<none>']}); the pinned select list "
             f"{[*_ORGANIZATION_FREE_ATTRIBUTES, *_ORGANIZATION_PAID_ATTRIBUTES]!r} and the live "
             "v9 contract have drifted"
         )
+    if len(identified) > 1:
+        raise SumbleSchemaDrift(
+            f"{ORGANIZATIONS_SOURCE_KEY}: one requested organization returned "
+            f"{len(identified)} identified matches"
+        )
+    for row in identified:
+        if row.input is not None and row.input.url:
+            requested = _canonical_domain(row.input.url)
+            returned_domain = _canonical_domain(row.attributes.url or "")
+            if not requested or not returned_domain or requested != returned_domain:
+                raise SumbleSchemaDrift(
+                    f"{ORGANIZATIONS_SOURCE_KEY}: returned organization domain does not match "
+                    "the echoed request domain"
+                )
     return identified
+
+
+def _canonical_domain(value: str) -> str:
+    candidate = value.strip()
+    if not candidate:
+        return ""
+    parsed = urlsplit(candidate if "://" in candidate else f"https://{candidate}")
+    host = (parsed.hostname or "").lower().rstrip(".")
+    return host[4:] if host.startswith("www.") else host
+
+
+def _validate_requested_organization(payload: Mapping[str, Any], *, requested_domain: str) -> None:
+    response = SumbleOrganizationsResponse.model_validate(payload)
+    identified = _identified_rows(response)
+    if not identified:
+        return
+    returned = _canonical_domain(identified[0].attributes.url or "")
+    requested = _canonical_domain(requested_domain)
+    if not requested or returned != requested:
+        raise SumbleSchemaDrift(
+            f"{ORGANIZATIONS_SOURCE_KEY}: returned organization domain does not match the request"
+        )
 
 
 def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[ResolvedField]:

@@ -12,11 +12,13 @@ from sqlalchemy import text
 from clue_api.trial.discovery_fixture import (
     AMBIENT_URL,
     AURA_ANYWHERE_URL,
+    BRAND_ID,
     FIXTURE_COMPILER_VERSION,
     HOME_URL,
     ICP_KEY,
     NEUROSURGERY_URL,
     PRODUCT_ID,
+    PROJECT_ID,
     PROJECT_RUN_ID,
     REQUIRED_URLS,
     WORKSPACE_ID,
@@ -25,18 +27,21 @@ from clue_api.trial.discovery_fixture import (
     load_firecrawl_search_pages,
     seed_insight_health_discovery_fixture,
 )
+from clue_config import DEFAULT_STAGE0_POLICY
 from clue_core import (
     EntityId,
     ExtractionMethod,
+    ProductContextVersionId,
     ProjectPhase,
     ReadinessDecisionId,
+    ReadinessGate,
     ReadinessVerdict,
     VerificationStatus,
     decode_jsonb,
 )
 from clue_research.durable import get_project_run
 from clue_research.icp import get_active_icp
-from clue_research.stage0 import get_readiness_decision, read_client_kb_claims
+from clue_research.stage0 import evaluate_readiness, get_readiness_decision, read_client_kb_claims
 from clue_storage import FsStorage
 from tests.db.conftest import run_async
 from tests.stage0.conftest import rollback_conn
@@ -227,6 +232,9 @@ def test_discovery_fixture_is_real_db_backed_provenance_complete_and_replay_safe
             assert decision.verdict is ReadinessVerdict.READY
             assert decision.metrics["coverage_ratio"] == pytest.approx(7 / 9)
             assert decision.metrics["verified_claims"] == 0
+            assert decision.metrics["workspace_readiness_policy_version"] == 0
+            assert decision.metrics["workspace_required_field_keys"] == []
+            assert decision.metrics["workspace_required_missing_field_keys"] == []
 
             project_run = await get_project_run(conn, PROJECT_RUN_ID)
             assert project_run is not None
@@ -283,5 +291,34 @@ def test_discovery_fixture_is_real_db_backed_provenance_complete_and_replay_safe
             }
             assert second == first
             assert counts_after == counts_before
+
+            replay_metrics = {
+                key: value
+                for key, value in decision.metrics.items()
+                if not key.startswith("workspace_")
+            }
+            replay_metrics["coverage_ratio"] = 0.8
+            with pytest.raises(
+                ValueError, match="readiness decision id replayed with different immutable payload"
+            ):
+                await evaluate_readiness(
+                    conn,
+                    workspace_id=WORKSPACE_ID,
+                    brand_id=BRAND_ID,
+                    product_id=PRODUCT_ID,
+                    project_id=PROJECT_ID,
+                    client_entity_id=EntityId(UUID(first.client_entity_id)),
+                    client_kb_version=first.client_kb_version,
+                    icp_key=first.icp_key,
+                    icp_version=first.icp_version,
+                    product_context_version_id=ProductContextVersionId(
+                        UUID(first.product_context_version_id)
+                    ),
+                    gate=ReadinessGate.DISCOVERY_SPEND,
+                    spec=DEFAULT_STAGE0_POLICY.readiness,
+                    metrics=replay_metrics,
+                    created_by_actor="system",
+                    readiness_decision_id=ReadinessDecisionId(UUID(first.readiness_decision_id)),
+                )
 
     run_async(_run())
