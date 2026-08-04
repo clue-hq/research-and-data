@@ -1,20 +1,131 @@
-"""Provider-neutral external-research preparation and DEEP wait contracts.
+"""Provider-neutral external-research acquisition, preparation and DEEP wait contracts.
 
-External acquisition happens before a short claim-materialization transaction.  These value types
-carry only durable references and scheduling metadata, so a project checkpoint can sleep on
-provider-owned time without persisting response bodies or provider-specific state.
+External acquisition happens before a short claim-materialization transaction. Request contracts
+pin admitted immutable lineage; ready/preparation/wait contracts carry only durable references and
+scheduling metadata. Response bodies remain artifact-backed and provider lifecycle state remains in
+the durable adapter rather than leaking into orchestrator checkpoints.
 """
 
 from __future__ import annotations
 
+from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, NewType
+from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
-from clue_core.primitives import EntityId, RunId, UtcDatetime
+from clue_core.primitives import EntityId, ProjectRunId, RunId, UtcDatetime
+from clue_core.research_directive import ResearchDirectivePin
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+Sha256Hex = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+
+ExternalResearchOperationId = NewType("ExternalResearchOperationId", UUID)
+ExternalResearchSnapshotId = NewType("ExternalResearchSnapshotId", UUID)
+
+
+def new_external_research_operation_id() -> ExternalResearchOperationId:
+    return ExternalResearchOperationId(uuid4())
+
+
+def new_external_research_snapshot_id() -> ExternalResearchSnapshotId:
+    return ExternalResearchSnapshotId(uuid4())
+
+
+class ExternalResearchSubjectKind(StrEnum):
+    ACCOUNT = "account"
+    CONTACT = "contact"
+
+
+class ExternalResearchOperationState(StrEnum):
+    PLANNED = "planned"
+    DISPATCHING = "dispatching"
+    READY = "ready"
+    FAILED_TERMINAL = "failed_terminal"
+    SPEND_OUTCOME_UNKNOWN = "spend_outcome_unknown"
+    CANCELLED = "cancelled"
+
+
+class ExternalResearchAttemptState(StrEnum):
+    DISPATCHING = "dispatching"
+    RESPONDED = "responded"
+    FAILED_PRE_DISPATCH = "failed_pre_dispatch"
+    FAILED_TERMINAL = "failed_terminal"
+    SPEND_OUTCOME_UNKNOWN = "spend_outcome_unknown"
+
+
+class ExternalResearchSpendOutcome(StrEnum):
+    NOT_DISPATCHED = "not_dispatched"
+    NOT_CHARGED = "not_charged"
+    PROVIDER_REPORTED = "provider_reported"
+    UNKNOWN = "unknown"
+
+
+class ExternalResearchReconciliationState(StrEnum):
+    NOT_REQUIRED = "not_required"
+    PENDING_PROVIDER_BILLING = "pending_provider_billing"
+    RECONCILED = "reconciled"
+
+
+class ExternalResearchAcquisitionRequest(BaseModel):
+    """Provider-neutral immutable input for one bounded external-research operation.
+
+    The provider wire body is already compiled and policy-admitted.  This contract intentionally
+    does not know how the provider is called or how its response becomes claims.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workspace_id: NonEmptyStr
+    project_id: NonEmptyStr
+    project_run_id: ProjectRunId
+    subject_kind: ExternalResearchSubjectKind = ExternalResearchSubjectKind.ACCOUNT
+    account_id: EntityId
+    contact_id: EntityId | None = None
+    icp_key: NonEmptyStr
+    icp_version: int = Field(ge=1)
+    research_directive: ResearchDirectivePin
+    source_key: NonEmptyStr
+    observation_window: NonEmptyStr
+    freshness_policy_ref: NonEmptyStr
+    freshness_seconds: int = Field(ge=1)
+    request_fingerprint: Sha256Hex
+    wire_request_sha256: Sha256Hex
+    request_payload: dict[str, JsonValue]
+    cost_cents_reserved: Decimal = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _subject_and_directive_are_exact(self) -> ExternalResearchAcquisitionRequest:
+        if self.research_directive.account_id != self.account_id:
+            raise ValueError("external research directive pin belongs to another account")
+        if self.subject_kind is ExternalResearchSubjectKind.ACCOUNT and self.contact_id is not None:
+            raise ValueError("account research cannot carry a contact id")
+        if self.subject_kind is ExternalResearchSubjectKind.CONTACT and self.contact_id is None:
+            raise ValueError("contact research requires a contact id")
+        if not self.request_payload:
+            raise ValueError("external research request payload must be non-empty")
+        return self
+
+
+class ExternalResearchSnapshotRef(BaseModel):
+    """Reference-only output consumed by later materialization slices."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    snapshot_id: ExternalResearchSnapshotId
+    operation_id: ExternalResearchOperationId
+    workspace_id: NonEmptyStr
+    account_id: EntityId
+    source_key: NonEmptyStr
+    request_fingerprint: Sha256Hex
+    request_artifact_key: NonEmptyStr
+    response_artifact_key: NonEmptyStr
+    normalization_artifact_key: NonEmptyStr
+    provider_request_id: NonEmptyStr
+    provider_reported_cost_cents: Decimal = Field(ge=0)
+    all_null: bool
+    fresh_until: UtcDatetime
 
 
 class ExternalResearchPreparationOutcome(StrEnum):
@@ -114,4 +225,15 @@ __all__ = [
     "DeepExternalWakeReason",
     "ExternalResearchPreparation",
     "ExternalResearchPreparationOutcome",
+    "ExternalResearchAcquisitionRequest",
+    "ExternalResearchAttemptState",
+    "ExternalResearchOperationId",
+    "ExternalResearchOperationState",
+    "ExternalResearchReconciliationState",
+    "ExternalResearchSnapshotId",
+    "ExternalResearchSnapshotRef",
+    "ExternalResearchSpendOutcome",
+    "ExternalResearchSubjectKind",
+    "new_external_research_operation_id",
+    "new_external_research_snapshot_id",
 ]
