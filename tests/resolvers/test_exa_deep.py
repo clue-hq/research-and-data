@@ -1,12 +1,7 @@
-"""M11.1 acceptance — the Exa Deep tier-4 grounded-synthesis resolver (ENG-143).
+"""Provider-neutral Exa resolver integration tests.
 
-Two layers: (1) **pure** tests of the Exa-specific pieces — the entity-bound (target-locked) query
-shaping, the highlight→grounded-field normalization, score clamping, the realized-cost parse, and
-the full backend over a fake HTTP transport (credential + build + normalize, no network/DB); and
-(2) **end-to-end** tests through the real M4.1 waterfall (DB-gated; skip without a DB) proving the
-engine stamps the provenance, the swap seam holds, the budget cap stops tier-4 spend,
-the realized cost is recorded, an empty retrieval writes nothing, and resonance synthesis is
-tenant-private. The provider call is always a double — no live Exa call, no key.
+The E0 wire/compiler/normalizer contract is covered in test_exa_deep_wire_e0.py. These tests retain
+the existing resolver registration and waterfall acceptance with provider doubles only.
 """
 
 from __future__ import annotations
@@ -14,9 +9,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from pydantic import SecretStr
 
-from clue_config import Secrets
 from clue_core import (
     AccountEntity,
     Claim,
@@ -34,27 +27,18 @@ from clue_core import (
 )
 from clue_research.claimstore import ALL_WORKSPACES, claims_for
 from clue_research.resolvers import (
-    RetryableResolverError,
     SynthesisResult,
     SynthesizedField,
     register_exa_deep_resolver,
 )
-from clue_research.resolvers.exa import (
-    DEFAULT_EXA_CONFIG,
-    ExaDeepConfig,
-    build_exa_request,
-    make_backend,
-    normalize_exa_response,
-)
+from clue_research.resolvers.exa import ExaDeepRequestFailure
+from clue_research.resolvers.exa.deep_contract import ExaDeepFailureClass
 from clue_research.sources import StopReason, bind_resolver, get_resolver, resolve_field
 
 from .conftest import rollback_conn, run_async
 
 _PAIN = "account.operational_pain"
 _MODE = ResearchMode.ACCOUNT_PROFILING
-
-
-# --- shared fixtures/doubles ---------------------------------------------------------------------
 
 
 class _Accounts:
@@ -104,199 +88,18 @@ def _on_entity_field(key: str = _PAIN, conf: float = 0.9) -> SynthesizedField:
     )
 
 
-# --- pure: the entity-bound (target-locked) query -------------------------------------------------
-
-
-def test_build_exa_request_is_entity_bound_and_authed() -> None:
-    request = build_exa_request(_account(), _field(), SecretStr("secret-key"))
-    assert request.method == "POST"
-    assert request.url == DEFAULT_EXA_CONFIG.endpoint
-    assert request.headers["x-api-key"] == "secret-key"
-    body = request.json_body or {}
-    query = body["query"]
-    assert "Acme Corp" in query  # canonical name
-    assert "acme.com" in query  # primary domain
-    assert "US" in query  # hq_geo disambiguator
-    assert "operational" in query  # field intent
-    assert body["numResults"] == DEFAULT_EXA_CONFIG.num_results
-    assert "highlights" in body["contents"]
-
-
-def test_build_exa_request_omits_auth_without_token() -> None:
-    request = build_exa_request(_account(), _field(), None)
-    assert "x-api-key" not in request.headers
-
-
-# --- pure: highlight → grounded field normalization ----------------------------------------------
-
-
-def test_normalize_maps_each_highlight_to_a_grounded_field() -> None:
-    payload = {
-        "results": [
-            {
-                "url": "https://glassdoor.com/acme",
-                "text": "Reviewers say morale is low and attrition is high at Acme Corp.",
-                "highlights": ["morale is low", "attrition is high"],
-                "highlightScores": [0.81, 0.77],
-            }
-        ],
-        "costDollars": {"total": 0.1},
-    }
-    result = normalize_exa_response(payload, _field())
-    assert [f.value for f in result.fields] == ["morale is low", "attrition is high"]
-    assert all(f.source_url == "https://glassdoor.com/acme" for f in result.fields)
-    assert all(f.evidence_span == f.value for f in result.fields)
-    assert all(f.evidence_span in f.retrieved_text for f in result.fields)  # grounded
-    assert result.fields[0].confidence == pytest.approx(0.81)
-    assert result.cost_cents == Decimal("10.0")  # 0.1 dollars -> cents
-
-
-def test_normalize_drops_result_without_url() -> None:
-    payload = {"results": [{"highlights": ["x"], "highlightScores": [0.9]}]}
-    assert normalize_exa_response(payload, _field()).fields == ()
-
-
-def test_normalize_drops_result_without_highlight() -> None:
-    payload = {"results": [{"url": "https://acme.com", "text": "no highlights here"}]}
-    assert normalize_exa_response(payload, _field()).fields == ()
-
-
-def test_normalize_empty_payload_is_empty_result() -> None:
-    result = normalize_exa_response({}, _field())
-    assert result.fields == ()
-    assert result.cost_cents == Decimal(0)
-
-
-def test_normalize_clamps_out_of_range_scores() -> None:
-    payload = {
-        "results": [
-            {
-                "url": "https://acme.com",
-                "text": "alpha beta",
-                "highlights": ["alpha", "beta"],
-                "highlightScores": [1.5, -0.2],  # out of [0,1]
-            }
-        ]
-    }
-    confs = [f.confidence for f in normalize_exa_response(payload, _field()).fields]
-    assert confs == [1.0, 0.0]
-
-
-def test_normalize_filters_below_min_confidence() -> None:
-    cfg = ExaDeepConfig(min_confidence=0.5)
-    payload = {
-        "results": [
-            {
-                "url": "https://acme.com",
-                "text": "weak strong",
-                "highlights": ["weak", "strong"],
-                "highlightScores": [0.3, 0.9],  # 0.3 < 0.5 dropped
-            }
-        ]
-    }
-    fields = normalize_exa_response(payload, _field(), config=cfg).fields
-    assert [f.value for f in fields] == ["strong"]
-
-
-def test_make_backend_synthesizes_via_fake_http() -> None:
-    # The full Exa backend orchestration without a network: credential resolution from auth_ref +
-    # build_request + the fake transport + normalize. No DB.
-    payload = {
-        "results": [
-            {
-                "url": "https://acme.com/eng",
-                "text": "Acme Corp runs brittle legacy ETL across teams.",
-                "highlights": ["runs brittle legacy ETL"],
-                "highlightScores": [0.86],
-            }
-        ],
-        "costDollars": {"total": 0.05},
-    }
-    calls: list[dict[str, object]] = []
-
-    def _fake_http(url: str, **kwargs: object) -> dict[str, object]:
-        calls.append({"url": url, **kwargs})
-        return payload
-
-    backend = make_backend(http=_fake_http, secrets=Secrets(exa_api_key=SecretStr("test-key")))
-    result = backend.synthesize(_account(), _field())
-    assert len(calls) == 1 and calls[0]["url"] == DEFAULT_EXA_CONFIG.endpoint
-    assert calls[0]["method"] == "POST"
-    assert [f.value for f in result.fields] == ["runs brittle legacy ETL"]
-    assert result.cost_cents == Decimal("5.0")
-
-
-def test_normalize_drops_highlight_absent_from_present_page_text() -> None:
-    # Grounded-only with teeth: page text IS present but does not contain the highlight (a provider
-    # bug or a tampered/injected response) → the record is dropped, not masked by a span fallback.
-    payload = {
-        "results": [
-            {
-                "url": "https://acme.com",
-                "text": "the page is entirely about something else",
-                "highlights": ["a fabricated passage that is not on the page"],
-                "highlightScores": [0.95],
-            }
-        ]
-    }
-    assert normalize_exa_response(payload, _field()).fields == ()
-
-
-def test_normalize_keeps_highlight_only_response_without_page_text() -> None:
-    # A genuinely highlight-only response (no page ``text``) grounds on the passage itself.
-    payload = {
-        "results": [
-            {
-                "url": "https://acme.com",
-                "highlights": ["a grounded passage"],
-                "highlightScores": [0.9],
-            }
-        ]
-    }
-    fields = normalize_exa_response(payload, _field()).fields
-    assert len(fields) == 1 and fields[0].retrieved_text == "a grounded passage"
-
-
-# --- pure: config-driven cost / timeout / retry (AC7, AC11) --------------------------------------
-
-
-def test_make_backend_threads_timeout_and_retries_from_config() -> None:
-    backend = make_backend(config=ExaDeepConfig(timeout_s=42.0, retries=5))
-    assert backend._timeout == 42.0
-    assert backend._retries == 5
-
-
-def test_transient_http_fault_propagates_not_swallowed() -> None:
-    # The transient-vs-hard-miss contract M7 relies on: a retryable fault propagates rather than
-    # being swallowed into an empty SynthesisResult.
-    def _raising_http(url: str, **kwargs: object) -> dict[str, object]:
-        raise RetryableResolverError("simulated transient provider failure")
-
-    backend = make_backend(http=_raising_http, secrets=Secrets(exa_api_key=SecretStr("k")))
-    with pytest.raises(RetryableResolverError):
-        backend.synthesize(_account(), _field())
-
-
-def test_config_default_cost_cents_is_honored_on_a_zero_cost_call() -> None:
-    # When the backend reports no realized cost, the attributed default comes from
-    # config.default_cost_cents (AC11 config-driven), overriding the seed-manifest default.
-    account = _account()
-    register_exa_deep_resolver(
-        accounts=_Accounts(account),
-        backend=_StubBackend(SynthesisResult(fields=(_on_entity_field(),), cost_cents=Decimal(0))),
-        config=ExaDeepConfig(default_cost_cents=Decimal(25)),
-    )
-    (claim,) = get_resolver("exa_deep").resolve(account.as_entity(), _field())
-    assert claim.cost_cents == Decimal(25)
-
-
-def test_register_synthesis_wiring_binds_a_tier4_resolver_to_exa_deep() -> None:
-    # The PF-7 api-composition-root path (not just a direct register_exa_deep_resolver call).
+def test_register_synthesis_wiring_binds_exa_as_hard_disabled_until_e1() -> None:
     from clue_api.synthesis_wiring import register_synthesis_wiring
 
-    register_synthesis_wiring(accounts=_Accounts(_account()))
+    account = _account()
+    register_synthesis_wiring(accounts=_Accounts(account))
     resolver = get_resolver("exa_deep")
     assert resolver.tier == 4
+    with pytest.raises(ExaDeepRequestFailure) as captured:
+        resolver.resolve(account.as_entity(), _field())
+    assert captured.value.failure_class is ExaDeepFailureClass.HARD
+    assert captured.value.dispatched is False
+    assert "E1" in str(captured.value)
 
 
 # --- end-to-end through the real waterfall (DB-gated) --------------------------------------------
