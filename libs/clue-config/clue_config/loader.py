@@ -130,6 +130,8 @@ def _merge(base: Config, overlay: ConfigOverlay, version: ConfigVersion) -> Conf
         updates["verification_health_thresholds"] = overlay.verification_health_thresholds
     if overlay.supervisor_policy is not None:
         updates["supervisor_policy"] = overlay.supervisor_policy
+    if overlay.contact_research_policy is not None:
+        updates["contact_research_policy"] = overlay.contact_research_policy
     # `is not None` (not truthiness) so an explicit `False` overrides the default `True`.
     if overlay.observability_client_facing is not None:
         updates["observability_client_facing"] = overlay.observability_client_facing
