@@ -608,7 +608,10 @@ def test_missing_effective_schema_fails_before_credential_or_dispatch() -> None:
         calls.append({"url": url, **kwargs})
         return _one_field_payload()
 
-    backend = make_backend(http=_fake_http, secrets=Secrets())
+    backend = make_backend(
+        http=_fake_http,
+        secrets=Secrets(_env_file=None, exa_api_key=None),
+    )
     with pytest.raises(ExaDeepRequestFailure) as captured:
         backend.synthesize(_account(), _field())
     assert captured.value.failure_class is ExaDeepFailureClass.HARD
@@ -626,7 +629,7 @@ def test_missing_credential_is_a_typed_pre_dispatch_hard_failure() -> None:
     backend = make_backend(
         field_schemas={_PAIN: {"type": "string"}},
         http=_fake_http,
-        secrets=Secrets(),
+        secrets=Secrets(_env_file=None, exa_api_key=None),
     )
     with pytest.raises(ExaDeepRequestFailure) as captured:
         backend.synthesize(_account(), _field())
