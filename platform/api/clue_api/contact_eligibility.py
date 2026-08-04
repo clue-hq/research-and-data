@@ -246,9 +246,7 @@ class ContactEligibilityResolver:
                 self._resolve_contact_claims(
                     contact_entity_id=contact_id,
                     account_entity_id=account_entity_id,
-                    canonical_entity_version=contacts_by_id[
-                        contact_id
-                    ].canonical_version,
+                    canonical_entity_version=contacts_by_id[contact_id].canonical_version,
                     claims=claims,
                     use_decisions=use_decisions,
                 )
@@ -361,6 +359,7 @@ class ContactEligibilityResolver:
             product_id=self._product_id,
             canonical_entity_version=canonical_entity_version,
         )
+
 
 class ProductionHandoffCommitteeReader:
     """Production adapter satisfying both narrative committee protocols."""

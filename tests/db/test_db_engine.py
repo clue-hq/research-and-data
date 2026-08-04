@@ -114,12 +114,8 @@ def test_repeatable_read_transaction_is_read_only() -> None:
 
     async def _run() -> None:
         async with db_lifespan(), repeatable_read_transaction() as conn:
-            isolation = (
-                await conn.execute(text("SHOW transaction_isolation"))
-            ).scalar_one()
-            read_only = (
-                await conn.execute(text("SHOW transaction_read_only"))
-            ).scalar_one()
+            isolation = (await conn.execute(text("SHOW transaction_isolation"))).scalar_one()
+            read_only = (await conn.execute(text("SHOW transaction_read_only"))).scalar_one()
             assert isolation == "repeatable read"
             assert read_only == "on"
 
