@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-04-m8b-v0-offline-database-acceptance.md` — V0 complete mechanically: frozen
+  32-case fault manifest, Sumble response-before-normalization durability and charged-drift
+  quarantine, disposable migration/concurrency/fresh-process inspection, clean 3,337-test suite,
+  static/import/one-head gates, and the separately authorized V1 live boundary.
 - `2026-08-04-m8b-o3-main-agent-steering.md` — O3 complete mechanically: non-linear Head-of-ABM
   account-deep steering, exact current directive/launch/account L3 context, truthful governed tool
   descriptions, pre-launch research-specialist behavior, scripted conversation gates, and

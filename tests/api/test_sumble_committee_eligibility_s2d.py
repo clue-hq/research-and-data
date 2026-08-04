@@ -88,7 +88,10 @@ def _sources() -> tuple[CommitteeEnumerationSource, ...]:
         ("must_haves", CommitteeEligibilityCondition.MUST_HAVE_CRITERIA),
         ("human_tier", CommitteeEligibilityCondition.HUMAN_APPROVED_TIER),
         ("committee_plan", CommitteeEligibilityCondition.CONFIRMED_COMMITTEE_PLAN),
-        ("governance", CommitteeEligibilityCondition.GOVERNANCE_AND_BUDGET),
+        ("personal_data", CommitteeEligibilityCondition.GOVERNANCE_AND_BUDGET),
+        ("jurisdiction", CommitteeEligibilityCondition.GOVERNANCE_AND_BUDGET),
+        ("use_class", CommitteeEligibilityCondition.GOVERNANCE_AND_BUDGET),
+        ("identity", CommitteeEligibilityCondition.GOVERNANCE_AND_BUDGET),
     ),
 )
 def test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operation(
@@ -121,8 +124,18 @@ def test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operat
                 request = request.model_copy(update={"tier_claim_id": new_claim_id()})
             elif case == "committee_plan":
                 authorization = authorization.model_copy(update={"confirmed_by_human": False})
-            elif case == "governance":
+            elif case == "personal_data":
                 authorization = authorization.model_copy(update={"personal_data_allowed": False})
+            elif case == "jurisdiction":
+                authorization = authorization.model_copy(update={"jurisdiction_allowed": False})
+            elif case == "use_class":
+                authorization = authorization.model_copy(
+                    update={"allowed_use_classes": (UseClass.PERSONAL_PUBLIC_NON_SENSITIVE,)}
+                )
+            elif case == "identity":
+                authorization = authorization.model_copy(
+                    update={"identity_acquisition_allowed": False}
+                )
 
             @asynccontextmanager
             async def same_connection() -> AsyncIterator[AsyncConnection]:

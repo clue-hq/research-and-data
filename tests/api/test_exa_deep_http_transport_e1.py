@@ -82,6 +82,36 @@ def test_http_transport_classifies_missing_credential_before_dispatch() -> None:
             402,
         ),
         (
+            ProviderResponseError("unauthorized", status_code=401),
+            ExaDeepFailureClass.HARD,
+            401,
+        ),
+        (
+            ProviderResponseError("forbidden", status_code=403),
+            ExaDeepFailureClass.HARD,
+            403,
+        ),
+        (
+            ProviderResponseError("not found", status_code=404),
+            ExaDeepFailureClass.HARD,
+            404,
+        ),
+        (
+            ProviderResponseError("rate limited", status_code=429),
+            ExaDeepFailureClass.SPEND_UNKNOWN,
+            429,
+        ),
+        (
+            ProviderResponseError("server error", status_code=500),
+            ExaDeepFailureClass.SPEND_UNKNOWN,
+            500,
+        ),
+        (
+            ProviderResponseError("unavailable", status_code=503),
+            ExaDeepFailureClass.SPEND_UNKNOWN,
+            503,
+        ),
+        (
             RetryableResolverError("timeout"),
             ExaDeepFailureClass.SPEND_UNKNOWN,
             None,

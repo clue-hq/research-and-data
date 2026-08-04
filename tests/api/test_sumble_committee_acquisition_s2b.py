@@ -121,6 +121,39 @@ class _ProcessCrash(BaseException):
     pass
 
 
+class _CrashBeforeDispatchRateLimiter:
+    async def acquire(self, source_key: str, *, tokens: int = 1) -> bool:
+        assert source_key == "sumble"
+        assert tokens == 1
+        raise _ProcessCrash()
+
+
+class _CrashAfterResponseCoordinator(SumbleCommitteeAcquisitionCoordinator):
+    """Simulate SIGKILL after the raw response commit but before snapshot folding."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._crashed = False
+
+    async def _persist_response_snapshot(self, *args: Any, **kwargs: Any) -> None:
+        if not self._crashed:
+            self._crashed = True
+            raise _ProcessCrash()
+        await super()._persist_response_snapshot(*args, **kwargs)
+
+
+class _ChargedSchemaDriftTransport(_CommitteeTransport):
+    def search_teams(
+        self, body: Mapping[str, Any], *, maximum_credits: int
+    ) -> tuple[SumbleTeamsResponse, SumbleRawPayload]:
+        del body
+        assert maximum_credits == 12
+        self.calls.append("teams")
+        payload = _payload("teams_succeeded.json")
+        payload["teams"][0]["team_id"] = None
+        return SumbleTeamsResponse.model_validate(payload), payload
+
+
 async def _setup(
     conn: AsyncConnection,
     storage: FsStorage,
@@ -487,6 +520,18 @@ def test_s2b_async_wait_charge_settlement_zero_call_replay_and_dsar(tmp_path: Pa
                 )
                 == ()
             )
+            erased_replay = await coordinator.start(preflight)
+            assert erased_replay.outcome is SumbleCommitteeOutcome.REPLAYED
+            assert len(transport.calls) == 4
+            assert (
+                await enumerate_discovery_subject_artifacts(
+                    conn,
+                    workspace_id=request.workspace_id,
+                    subject_kind="account",
+                    subject_entity_id=request.account_id,
+                )
+                == ()
+            )
             terminal = await conn.begin_nested()
             with pytest.raises(DBAPIError, match="terminal committee acquisition operation"):
                 await conn.execute(
@@ -497,6 +542,182 @@ def test_s2b_async_wait_charge_settlement_zero_call_replay_and_dsar(tmp_path: Pa
                     {"id": ready.operation.operation_id},
                 )
             await terminal.rollback()
+
+    run_async(scenario())
+
+
+def test_s2b_recovers_a_committed_response_without_repeating_the_dispatch(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            request = await _setup(conn, storage, workspace_id="ws-s2b-response-crash")
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            transport = _CommitteeTransport()
+            preflight = compile_sumble_committee_preflight(request, cents_per_credit=Decimal("0.5"))
+            crashed = _CrashAfterResponseCoordinator(
+                transport=transport,
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+            )
+            with pytest.raises(_ProcessCrash):
+                await crashed.start(preflight)
+            assert transport.calls == ["teams"]
+            attempts = await list_committee_acquisition_attempts(
+                conn,
+                workspace_id=request.workspace_id,
+                operation_id=(
+                    await conn.execute(
+                        text(
+                            "SELECT id FROM committee_acquisition_operation "
+                            "WHERE workspace_id=:workspace_id"
+                        ),
+                        {"workspace_id": request.workspace_id},
+                    )
+                ).scalar_one(),
+            )
+            assert len(attempts) == 1
+            assert attempts[0].state.value == "responded"
+            assert attempts[0].response_artifact_key is not None
+            assert await storage.exists(attempts[0].response_artifact_key)
+
+            recovered = await SumbleCommitteeAcquisitionCoordinator(
+                transport=transport,
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+            ).start(preflight)
+            assert recovered.outcome is SumbleCommitteeOutcome.WAITING_EXTERNAL
+            assert recovered.provider_calls == 1
+            assert transport.calls == ["teams", "people_submit"]
+            snapshots = await list_committee_acquisition_snapshots(
+                conn,
+                workspace_id=request.workspace_id,
+                operation_id=recovered.operation.operation_id,
+            )
+            teams = next(item for item in snapshots if item.source_key == "sumble_teams")
+            assert teams.state.value == "succeeded"
+            assert teams.response_artifact_key == attempts[0].response_artifact_key
+
+    run_async(scenario())
+
+
+def test_s2b_charged_schema_drift_retains_response_charge_and_never_retries(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            request = await _setup(conn, storage, workspace_id="ws-s2b-charged-drift")
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            spent_before = Decimal(
+                (
+                    await conn.execute(
+                        text("SELECT spent_cents FROM project_run WHERE id=:id"),
+                        {"id": request.project_run_id},
+                    )
+                ).scalar_one()
+            )
+            transport = _ChargedSchemaDriftTransport()
+            coordinator = SumbleCommitteeAcquisitionCoordinator(
+                transport=transport,
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+            )
+            preflight = compile_sumble_committee_preflight(request, cents_per_credit=Decimal("0.5"))
+            unknown = await coordinator.start(preflight)
+            assert unknown.outcome is SumbleCommitteeOutcome.SPEND_OUTCOME_UNKNOWN
+            assert unknown.operation.provider_units_charged == Decimal(12)
+            assert unknown.operation.cost_cents_charged == Decimal(6)
+            assert transport.calls == ["teams"]
+            attempts = await list_committee_acquisition_attempts(
+                conn,
+                workspace_id=request.workspace_id,
+                operation_id=unknown.operation.operation_id,
+            )
+            assert len(attempts) == 1
+            assert attempts[0].state.value == "responded"
+            assert attempts[0].provider_units_charged == Decimal(12)
+            assert attempts[0].response_artifact_key is not None
+            assert await storage.exists(attempts[0].response_artifact_key)
+            snapshots = await list_committee_acquisition_snapshots(
+                conn,
+                workspace_id=request.workspace_id,
+                operation_id=unknown.operation.operation_id,
+            )
+            teams = next(item for item in snapshots if item.source_key == "sumble_teams")
+            assert teams.state.value == "spend_outcome_unknown"
+            assert teams.response_artifact_key == attempts[0].response_artifact_key
+            assert teams.provider_units_charged == Decimal(12)
+            spent_after = Decimal(
+                (
+                    await conn.execute(
+                        text("SELECT spent_cents FROM project_run WHERE id=:id"),
+                        {"id": request.project_run_id},
+                    )
+                ).scalar_one()
+            )
+            assert spent_after - spent_before == Decimal(6)
+
+            replay = await coordinator.start(preflight)
+            assert replay.outcome is SumbleCommitteeOutcome.SPEND_OUTCOME_UNKNOWN
+            assert transport.calls == ["teams"]
+
+    run_async(scenario())
+
+
+def test_s2b_people_failed_is_terminal_uncharged_and_replays_without_poll(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            request = await _setup(conn, storage, workspace_id="ws-s2b-people-failed")
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            transport = _CommitteeTransport()
+            transport._people = iter(  # noqa: SLF001 - recorded provider state fixture
+                (_payload("people_pending.json"), _payload("people_failed.json"))
+            )
+            coordinator = SumbleCommitteeAcquisitionCoordinator(
+                transport=transport,
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+                poll_after_seconds=30,
+            )
+            preflight = compile_sumble_committee_preflight(request, cents_per_credit=Decimal("0.5"))
+            pending = await coordinator.start(preflight)
+            assert pending.outcome is SumbleCommitteeOutcome.WAITING_EXTERNAL
+            await conn.execute(
+                text("UPDATE committee_acquisition_operation SET next_poll_at=:past WHERE id=:id"),
+                {
+                    "id": pending.operation.operation_id,
+                    "past": datetime.now(UTC) - timedelta(seconds=1),
+                },
+            )
+            failed = await coordinator.start(preflight)
+            assert failed.outcome is SumbleCommitteeOutcome.FAILED_TERMINAL
+            assert failed.operation.provider_units_charged == Decimal(12)
+            assert failed.operation.cost_cents_charged == Decimal(6)
+            assert transport.calls == ["teams", "people_submit", "people_poll"]
+            replay = await coordinator.start(preflight)
+            assert replay.outcome is SumbleCommitteeOutcome.FAILED_TERMINAL
+            assert transport.calls == ["teams", "people_submit", "people_poll"]
 
     run_async(scenario())
 
@@ -543,5 +764,60 @@ def test_s2b_process_crash_quarantines_dispatch_and_never_retries(tmp_path: Path
             assert next(
                 item for item in snapshots if item.source_key == "sumble_teams"
             ).state.value == ("spend_outcome_unknown")
+
+    run_async(scenario())
+
+
+def test_s2b_process_crash_before_dispatch_resumes_without_false_spend_or_duplicate(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            request = await _setup(conn, storage, workspace_id="ws-s2b-pre-dispatch-crash")
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            transport = _CommitteeTransport()
+            preflight = compile_sumble_committee_preflight(request, cents_per_credit=Decimal("0.5"))
+            crashed = SumbleCommitteeAcquisitionCoordinator(
+                transport=transport,
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+                rate_limiter=_CrashBeforeDispatchRateLimiter(),
+            )
+            with pytest.raises(_ProcessCrash):
+                await crashed.start(preflight)
+            assert transport.calls == []
+            operation_id = (
+                await conn.execute(
+                    text(
+                        "SELECT id FROM committee_acquisition_operation "
+                        "WHERE workspace_id=:workspace_id"
+                    ),
+                    {"workspace_id": request.workspace_id},
+                )
+            ).scalar_one()
+            assert (
+                await list_committee_acquisition_attempts(
+                    conn,
+                    workspace_id=request.workspace_id,
+                    operation_id=operation_id,
+                )
+                == ()
+            )
+
+            resumed = await SumbleCommitteeAcquisitionCoordinator(
+                transport=transport,
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+            ).start(preflight)
+            assert resumed.outcome is SumbleCommitteeOutcome.WAITING_EXTERNAL
+            assert resumed.operation.provider_units_charged == Decimal(12)
+            assert transport.calls == ["teams", "people_submit"]
 
     run_async(scenario())
