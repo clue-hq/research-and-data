@@ -297,8 +297,6 @@ def _bodies() -> dict[str, dict[str, object]]:
         "confirm_account_research_directive": {
             "directive_id": _UUID(),
             "expected_sha256": "0" * 64,
-            "confirmed_by": "human:matrix",
-            "confirming_turn_ref": "turn:matrix-confirm",
         },
     }
 
@@ -324,6 +322,8 @@ def test_out_of_order_matrix(require_profiling_db: None) -> None:  # noqa: F811
             ctx = ToolContext(
                 workspace_id=ws,
                 actor="human",
+                actor_id="human:matrix",
+                action_ref="turn:matrix-confirm",
                 conn_factory=cf,
                 operation_id=new_operation_id(),
             )
@@ -690,16 +690,18 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     assert set(registry.names()) == set(_MATRIX)
     # 35 → 37 names with PC-C8's two read-only inspection tools, then 38 with E1's explicit
     # targeted-enrichment boundary, 39 with S1's explicit Sumble gap boundary, and 41 with A2's
-    # draft/human-confirm direction tools; the two
-    # proposal writes and research_account_gaps retain @1 compatibility contracts alongside @2.
+    # draft/human-confirm direction tools; proposal writes, research_account_gaps, and the A2
+    # tools retain @1 replay contracts alongside their current @2 contracts.
     assert len(registry.names()) == 41
-    assert len(registry) == 44
+    assert len(registry) == 46
     assert {
         item.address for item in registry.all_descriptors() if item.name == "research_account_gaps"
     } == {
         "research_account_gaps@1",
         "research_account_gaps@2",
     }
+    assert registry.descriptor("draft_account_research_directive").version == "2"
+    assert registry.descriptor("confirm_account_research_directive").version == "2"
 
 
 def test_duplicate_tool_registration_is_impossible_by_construction() -> None:

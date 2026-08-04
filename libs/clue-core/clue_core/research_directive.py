@@ -29,6 +29,9 @@ from clue_core.primitives import EntityId, UtcDatetime
 
 ResearchDirectiveId = NewType("ResearchDirectiveId", UUID)
 ResearchDirectiveOverrideId = NewType("ResearchDirectiveOverrideId", UUID)
+RESEARCH_DIRECTIVE_BODY_MAX_BYTES = 48_000
+EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES = 64_000
+USER_RESEARCH_INSTRUCTION_MAX_BYTES = 8_000
 NonEmptyStr = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=2_000),
@@ -37,6 +40,41 @@ StableKey = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=255),
 ]
+
+
+def _canonical_json_size(value: object) -> int:
+    return len(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    )
+
+
+class ResearchSealedSelectionRef(BaseModel):
+    """An immutable discovery seal, never an opaque caller-authored selection label."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    discovery_batch_id: UUID
+    discovery_seal_sha256: Sha256Hex
+
+    @property
+    def ref(self) -> str:
+        return f"discovery-seal:{self.discovery_batch_id}:{self.discovery_seal_sha256}"
+
+    @classmethod
+    def parse(cls, value: str) -> ResearchSealedSelectionRef:
+        prefix, separator, remainder = value.partition(":")
+        batch, second_separator, digest = remainder.partition(":")
+        if prefix != "discovery-seal" or not separator or not second_separator:
+            raise ValueError(
+                "sealed research selection must be discovery-seal:<batch_uuid>:<seal_sha256>"
+            )
+        return cls(discovery_batch_id=UUID(batch), discovery_seal_sha256=digest)
 
 
 def new_research_directive_id() -> ResearchDirectiveId:
@@ -102,6 +140,8 @@ class ResearchAccountScope(BaseModel):
             )
         if len(set(self.explicit_account_ids)) != len(self.explicit_account_ids):
             raise ValueError("research account scope ids must be unique")
+        if self.sealed_selection_ref is not None:
+            ResearchSealedSelectionRef.parse(self.sealed_selection_ref)
         return self
 
 
@@ -213,6 +253,12 @@ class ResearchDirectiveBody(BaseModel):
         question_ids = tuple(item.question_id for item in self.questions)
         if len(set(question_ids)) != len(question_ids):
             raise ValueError("research directive question ids must be unique")
+        size = _canonical_json_size(self.model_dump(mode="json"))
+        if size > RESEARCH_DIRECTIVE_BODY_MAX_BYTES:
+            raise ValueError(
+                "research directive body exceeds its "
+                f"{RESEARCH_DIRECTIVE_BODY_MAX_BYTES}-byte execution-context contract"
+            )
         return self
 
 
@@ -368,6 +414,7 @@ class ResearchDirectivePin(BaseModel):
     directive_ref: NonEmptyStr
     version: int = Field(ge=1)
     canonical_json_sha256: Sha256Hex
+    account_id: EntityId
     override_id: ResearchDirectiveOverrideId | None = None
     override_ref: str | None = None
     override_sha256: Sha256Hex | None = None
@@ -392,6 +439,7 @@ class ResearchDirectivePin(BaseModel):
         directive: ResearchDirective,
         override: ResearchDirectiveAccountOverride | None = None,
         *,
+        account_id: EntityId | None = None,
         allow_superseded: bool = False,
     ) -> ResearchDirectivePin:
         allowed_statuses = {ResearchDirectiveStatus.CONFIRMED}
@@ -401,11 +449,22 @@ class ResearchDirectivePin(BaseModel):
             raise ValueError("only a confirmed research directive can be pinned")
         if override is not None and override.directive_id != directive.directive_id:
             raise ValueError("research directive override belongs to another directive")
+        resolved_account_id = account_id or (override.account_id if override is not None else None)
+        if (
+            resolved_account_id is None
+            and len(directive.body.account_scope.explicit_account_ids) == 1
+        ):
+            resolved_account_id = directive.body.account_scope.explicit_account_ids[0]
+        if resolved_account_id is None:
+            raise ValueError("research directive pin requires one exact account id")
+        if override is not None and override.account_id != resolved_account_id:
+            raise ValueError("research directive override belongs to another account")
         return cls(
             directive_id=directive.directive_id,
             directive_ref=directive.directive_ref,
             version=directive.version,
             canonical_json_sha256=directive.canonical_json_sha256,
+            account_id=resolved_account_id,
             override_id=override.override_id if override else None,
             override_ref=override.override_ref if override else None,
             override_sha256=override.canonical_json_sha256 if override else None,
@@ -436,6 +495,14 @@ class EffectiveAccountResearchDirective(BaseModel):
     def _effective_work_is_non_empty(self) -> EffectiveAccountResearchDirective:
         if not self.field_keys and not self.questions:
             raise ValueError("effective account research directive cannot be empty")
+        if self.pin.account_id != self.account_id:
+            raise ValueError("effective directive pin belongs to another account")
+        size = _canonical_json_size(self.model_dump(mode="json"))
+        if size > EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES:
+            raise ValueError(
+                "effective account research directive exceeds its "
+                f"{EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES}-byte execution-context contract"
+            )
         return self
 
 
@@ -464,6 +531,11 @@ def compose_account_research_directive(
 
     body = directive.body
     override_body = override.body if override else ResearchDirectiveAccountOverrideBody()
+    if override_body.source_policy is not None:
+        project_allowed = set(body.source_policy.allowed_source_keys)
+        override_allowed = set(override_body.source_policy.allowed_source_keys)
+        if not override_allowed <= project_allowed:
+            raise ValueError("account source-policy override may only narrow project sources")
     excluded_fields = set(override_body.exclude_field_keys)
     fields = tuple(
         dict.fromkeys(
@@ -490,6 +562,7 @@ def compose_account_research_directive(
         pin=ResearchDirectivePin.from_records(
             directive,
             override,
+            account_id=account_id,
             allow_superseded=allow_superseded,
         ),
         field_keys=fields,
@@ -569,6 +642,9 @@ def research_directive_override_digest(
 
 
 __all__ = [
+    "EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES",
+    "RESEARCH_DIRECTIVE_BODY_MAX_BYTES",
+    "USER_RESEARCH_INSTRUCTION_MAX_BYTES",
     "EffectiveAccountResearchDirective",
     "ResearchAccountScope",
     "ResearchCommitteePlan",
@@ -583,6 +659,7 @@ __all__ = [
     "ResearchEffortPolicy",
     "ResearchPrivacyPolicy",
     "ResearchQuestion",
+    "ResearchSealedSelectionRef",
     "ResearchSourcePolicy",
     "compose_account_research_directive",
     "new_research_directive_id",

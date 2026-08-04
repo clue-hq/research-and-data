@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -19,11 +20,13 @@ from clue_api.sumble_committee_acquisition import (
 )
 from clue_api.sumble_committee_launch import GatedSumbleCommitteeLauncher
 from clue_api.sumble_committee_preparation import (
+    SumbleCommitteePreparationError,
     SumbleCommitteePreparationInputs,
     SumbleCommitteePreparer,
 )
 from clue_core import (
     ExternalResearchPreparationOutcome,
+    ResearchDirectiveId,
     RunId,
 )
 from clue_research.durable import find_committee_acquisition_operation
@@ -81,13 +84,13 @@ def test_sumble_preparer_waits_then_returns_exact_snapshot_source_without_resubm
                 request,
                 cents_per_credit=Decimal("0.5"),
             )
+            original_inputs = SumbleCommitteePreparationInputs(
+                preflight=preflight,
+                authorization=_authorization(request),
+            )
+            input_resolver = _Inputs(original_inputs)
             preparer = SumbleCommitteePreparer(
-                inputs=_Inputs(
-                    SumbleCommitteePreparationInputs(
-                        preflight=preflight,
-                        authorization=_authorization(request),
-                    )
-                ),
+                inputs=input_resolver,
                 launcher=GatedSumbleCommitteeLauncher(
                     eligibility=eligibility,
                     starter=coordinator,
@@ -102,6 +105,37 @@ def test_sumble_preparer_waits_then_returns_exact_snapshot_source_without_resubm
                 "workspace_id": request.workspace_id,
                 "tier": "high",
             }
+
+            mismatched_id = ResearchDirectiveId(uuid4())
+            mismatched_pin = request.research_directive.model_copy(
+                update={
+                    "directive_id": mismatched_id,
+                    "directive_ref": f"research-directive:{mismatched_id}:v1",
+                    "canonical_json_sha256": "f" * 64,
+                }
+            )
+            mismatched_request = request.model_copy(
+                update={
+                    "research_direction_ref": mismatched_pin.directive_ref,
+                    "research_directive": mismatched_pin,
+                }
+            )
+            input_resolver._value = SumbleCommitteePreparationInputs(
+                preflight=preflight.model_copy(update={"request": mismatched_request}),
+                authorization=original_inputs.authorization.model_copy(
+                    update={
+                        "research_direction_ref": mismatched_pin.directive_ref,
+                        "research_directive": mismatched_pin,
+                    }
+                ),
+            )
+            with pytest.raises(
+                SumbleCommitteePreparationError,
+                match="exact directive pin",
+            ):
+                await preparer.prepare(**kwargs)
+            assert transport.calls == []
+            input_resolver._value = original_inputs
 
             waiting = await preparer.prepare(**kwargs)
             assert (

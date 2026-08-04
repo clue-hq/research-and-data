@@ -58,6 +58,7 @@ def _authorization(request: CommitteeAcquisitionRequest) -> CommitteeExecutionAu
         project_run_id=request.project_run_id,
         account_id=request.account_id,
         research_direction_ref=request.research_direction_ref,
+        research_directive=request.research_directive,
         committee_plan_ref=request.committee_plan_ref,
         confirmation_ref="turn:human-confirmation:s2d",
         confirmed_by_human=True,
@@ -154,11 +155,11 @@ def test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operat
             ).scalar_one() == 1
             assert (
                 await conn.execute(
-                        text(
-                            "SELECT count(*) FROM gate_decision WHERE run_id=:run "
-                            "AND request_kind='enumeration' "
-                            "AND enumeration_scope='committee'"
-                        ),
+                    text(
+                        "SELECT count(*) FROM gate_decision WHERE run_id=:run "
+                        "AND request_kind='enumeration' "
+                        "AND enumeration_scope='committee'"
+                    ),
                     {"run": request.project_run_id},
                 )
             ).scalar_one() == 2

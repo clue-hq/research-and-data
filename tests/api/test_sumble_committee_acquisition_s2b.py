@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid5
 
 import pytest
 from sqlalchemy import text
@@ -28,16 +29,27 @@ from clue_core import (
     EntityId,
     ExtractionMethod,
     ProjectRunId,
+    ResearchAccountScope,
+    ResearchCommitteePlan,
+    ResearchDirectiveBody,
+    ResearchDirectiveId,
+    ResearchDirectivePin,
+    ResearchEffortPolicy,
     ResearchMode,
+    ResearchPrivacyPolicy,
+    ResearchSourcePolicy,
     RunId,
     account_claim,
+    research_directive_digest,
 )
 from clue_research.claimstore import insert_claim
 from clue_research.discovery_scoring.tiering import TIER_FIELD, DiscoverySelectionPolicy
 from clue_research.durable import (
     enumerate_discovery_subject_artifacts,
+    insert_account_run,
     list_committee_acquisition_attempts,
     list_committee_acquisition_snapshots,
+    pin_account_run_research_directive,
     seal_discovery_batch,
     tombstone_discovery_subject_artifacts,
 )
@@ -47,6 +59,7 @@ from clue_research.resolvers.sumble.committee_transport import SumbleRawPayload
 from clue_research.resolvers.sumble.people import SumblePeopleResponse
 from clue_research.resolvers.sumble.teams import SumbleTeamsResponse
 from clue_research.sources import seed_source_manifests
+from clue_spine import confirm_project_product, create_product
 from clue_storage import FsStorage
 from tests.api.test_exa_targeted_enrichment_e1 import _advance_sealed_run_to_deep
 from tests.db.conftest import run_async
@@ -136,6 +149,30 @@ async def _setup(
         workspace_id=workspace_id,
         discovery_strategy=strategy,
     )
+    brand_id = str(
+        (
+            await conn.execute(
+                text(
+                    "SELECT brand_id FROM project WHERE project_id=:project_id "
+                    "AND workspace_id=:workspace_id"
+                ),
+                {"project_id": started.project_id, "workspace_id": workspace_id},
+            )
+        ).scalar_one()
+    )
+    product = await create_product(
+        conn,
+        workspace_id=workspace_id,
+        brand_id=brand_id,
+        name="S2B committee test product",
+    )
+    confirmed_project = await confirm_project_product(
+        conn,
+        workspace_id=workspace_id,
+        project_id=started.project_id,
+        product_id=product.product_id,
+    )
+    assert confirmed_project is not None
     ready = await _complete_batch(
         conn,
         storage,
@@ -181,6 +218,107 @@ async def _setup(
         workspace_id=workspace_id,
     )
     await insert_claim(conn, tier)
+    account_id = EntityId(ready.account_id)
+    directive_id = ResearchDirectiveId(
+        uuid5(UUID("99c38cee-483a-5b14-b9fb-edba3222edb9"), workspace_id)
+    )
+    product_id = product.product_id
+    directive_body = ResearchDirectiveBody(
+        account_scope=ResearchAccountScope(explicit_account_ids=(account_id,)),
+        field_keys=("core.employee_count",),
+        committee_plan=ResearchCommitteePlan(
+            functions=("Operations", "Administration"),
+            levels=("Director", "VP"),
+            personas=("champion", "economic_buyer"),
+            candidate_cap=2,
+        ),
+        source_policy=ResearchSourcePolicy(allowed_source_keys=("sumble_teams", "sumble_people")),
+        privacy_policy=ResearchPrivacyPolicy(),
+        effort_policy=ResearchEffortPolicy(
+            tier="high",
+            max_depth=1,
+            max_fanout=2,
+            budget_cap_cents=Decimal(14),
+            budget_envelope_ref="budget:s2b-test-v1",
+            recursion_policy_ref="recursion:s2b-test-v1",
+            freshness_policy_ref="freshness:s2b-test-v1",
+        ),
+    )
+    source_turn_ref = "turn:s2b-test-directive"
+    digest = research_directive_digest(
+        directive_id=directive_id,
+        workspace_id=workspace_id,
+        project_id=started.project_id,
+        product_id=product_id,
+        icp_key="independent-specialty-practices",
+        icp_version=1,
+        version=1,
+        body=directive_body,
+        memory_refs=(),
+        source_turn_ref=source_turn_ref,
+        predecessor_id=None,
+    )
+    draft_operation_id = uuid5(directive_id, "draft")
+    confirmation_operation_id = uuid5(directive_id, "confirm")
+    await conn.execute(
+        text(
+            "INSERT INTO account_research_directive "
+            "(directive_id, workspace_id, project_id, product_id, icp_key, icp_version, "
+            "version, status, content_json, memory_refs, created_by, source_turn_ref, "
+            "draft_operation_id, draft_request_sha256, confirmation_operation_id, "
+            "confirmed_by, confirming_turn_ref, canonical_json_sha256, confirmed_at) "
+            "VALUES (:directive_id, :workspace_id, :project_id, :product_id, :icp_key, 1, "
+            "1, 'confirmed', CAST(:content_json AS jsonb), '[]'::jsonb, 'test-fixture', "
+            ":source_turn_ref, :draft_operation_id, :draft_request_sha256, "
+            ":confirmation_operation_id, 'human:s2b-test', 'turn:s2b-test-confirm', "
+            ":digest, now())"
+        ),
+        {
+            "directive_id": directive_id,
+            "workspace_id": workspace_id,
+            "project_id": started.project_id,
+            "product_id": product_id,
+            "icp_key": "independent-specialty-practices",
+            "content_json": directive_body.model_dump_json(),
+            "source_turn_ref": source_turn_ref,
+            "draft_operation_id": draft_operation_id,
+            "draft_request_sha256": "b" * 64,
+            "confirmation_operation_id": confirmation_operation_id,
+            "digest": digest,
+        },
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO account_research_directive_account "
+            "(directive_id, workspace_id, account_id, scope_kind) "
+            "VALUES (:directive_id, :workspace_id, :account_id, 'explicit')"
+        ),
+        {
+            "directive_id": directive_id,
+            "workspace_id": workspace_id,
+            "account_id": account_id,
+        },
+    )
+    directive_pin = ResearchDirectivePin(
+        directive_id=directive_id,
+        directive_ref=f"research-directive:{directive_id}:v1",
+        version=1,
+        canonical_json_sha256=digest,
+        account_id=account_id,
+    )
+    account_run_id = RunId(started.project_run_id)
+    await insert_account_run(
+        conn,
+        account_run_id=account_run_id,
+        project_run_id=ProjectRunId(started.project_run_id),
+        entity_id=account_id,
+        tier="high",
+    )
+    await pin_account_run_research_directive(
+        conn,
+        account_run_id=account_run_id,
+        pin=directive_pin,
+    )
     return CommitteeAcquisitionRequest(
         workspace_id=workspace_id,
         project_id=started.project_id,
@@ -189,10 +327,11 @@ async def _setup(
         icp_version=1,
         discovery_batch_id=started.batch_id,
         discovery_seal_sha256=seal.seal_sha256,
-        account_id=EntityId(ready.account_id),
+        account_id=account_id,
         tier_claim_id=tier.id,
         committee_plan_ref="committee-plan:s2b-test:v1",
-        research_direction_ref="research-direction:s2b-test:v3",
+        research_direction_ref=directive_pin.directive_ref,
+        research_directive=directive_pin,
         organization_identity_ref="account-gap-snapshot:sumble_organizations:test",
         provider_organization_id="1726684",
         provider_api_version=SUMBLE_API_VERSION,

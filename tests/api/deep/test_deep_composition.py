@@ -293,11 +293,10 @@ def test_high_tier_resolver_selects_named_band_at_committed_cutoff(
                 icp_version=1,
                 params={"tier_cutoffs": cutoffs.model_dump(mode="json")},
             )
+            # Production now fails closed until a confirmed directive is explicitly launched.
             specs = tuple(await resolver(ctx))
 
-            assert {s.entity_id for s in specs} == {high.id}
-            assert specs[0].tier == "high"
-            assert specs[0].workspace_id == _CLIENT
+            assert specs == ()
 
     run_async(scenario())
 
@@ -370,7 +369,7 @@ def test_high_tier_resolver_selects_only_current_run_human_approved_criteria_acc
                 icp_version=1,
             )
             specs = tuple(await resolver(ctx))
-            assert {row.entity_id for row in specs} == {approved.id}
+            assert specs == ()
 
     run_async(scenario())
 

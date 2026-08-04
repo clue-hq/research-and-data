@@ -20,8 +20,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    USER_RESEARCH_INSTRUCTION_MAX_BYTES,
     EffectiveAccountResearchDirective,
     EntityId,
+    EntityScope,
     MemoryAccepted,
     MemoryDisabled,
     MemoryProvenanceClass,
@@ -32,6 +34,7 @@ from clue_core import (
     MemoryWriteSeam,
     OperationId,
     PassKind,
+    ResearchAccountScope,
     ResearchDirective,
     ResearchDirectiveAccountOverride,
     ResearchDirectiveAccountOverrideBody,
@@ -40,6 +43,7 @@ from clue_core import (
     ResearchDirectiveOverrideId,
     ResearchDirectivePin,
     ResearchDirectiveStatus,
+    ResearchSealedSelectionRef,
     ScopeRef,
     compose_account_research_directive,
     research_directive_digest,
@@ -49,7 +53,9 @@ from clue_research.claimstore.registry import get_field
 from clue_research.durable.scheduler import AccountSpec
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account
+from clue_research.sources.authority import load_effective_source_plan
 from clue_research.sources.registry import get_source
+from clue_research.sources.source_profile import resolve_allowed_set
 from clue_spine import get_project
 
 _OVERRIDE_NAMESPACE = UUID("466ca70e-f500-51b9-abf8-891353fcfc0c")
@@ -76,6 +82,7 @@ class ResearchDirectiveInvalid(ResearchDirectiveError):
 class DraftedResearchDirective:
     directive: ResearchDirective
     overrides: tuple[ResearchDirectiveAccountOverride, ...]
+    account_ids: tuple[EntityId, ...]
     memory_outcome: str
 
 
@@ -99,7 +106,7 @@ async def validate_research_directive_draft(
     icp_version: int,
     body: ResearchDirectiveBody,
     overrides: dict[EntityId, ResearchDirectiveAccountOverrideBody],
-) -> None:
+) -> tuple[EntityId, ...]:
     project = await get_project(conn, project_id)
     if project is None or project.workspace_id != workspace_id:
         raise ResearchDirectiveInvalid("research directive project is absent or cross-workspace")
@@ -135,20 +142,64 @@ async def validate_research_directive_draft(
                 f"research directive field {field_key!r} is not active in the pinned ICP"
             )
 
+    canonical_field_sources: set[str] = set()
+    for field_key in sorted(field_keys):
+        frozen = await load_effective_source_plan(
+            conn,
+            workspace_id=workspace_id,
+            icp_key=icp_key,
+            icp_version=icp_version,
+            field_key=field_key,
+        )
+        if frozen is not None:
+            canonical_field_sources.update(item.source_key for item in frozen.sources)
+        else:
+            canonical_field_sources.update(
+                item.source_key
+                for item in await resolve_allowed_set(
+                    conn,
+                    icp,
+                    field_key,
+                    entity_scope=EntityScope.ACCOUNT,
+                )
+            )
+
     source_keys = set(body.source_policy.allowed_source_keys)
-    source_keys.update(body.source_policy.excluded_source_keys)
     for override in overrides.values():
         if override.source_policy is not None:
+            if not set(override.source_policy.allowed_source_keys) <= set(
+                body.source_policy.allowed_source_keys
+            ):
+                raise ResearchDirectiveInvalid(
+                    "account source-policy override may only narrow project sources"
+                )
             source_keys.update(override.source_policy.allowed_source_keys)
-            source_keys.update(override.source_policy.excluded_source_keys)
     for source_key in sorted(source_keys):
         source = await get_source(conn, source_key)
         if source is None or not source.active:
             raise ResearchDirectiveInvalid(
                 f"research directive source {source_key!r} is not active in the registry"
             )
+        field_authorized = source_key in canonical_field_sources
+        committee_authorized = (
+            body.privacy_policy.committee_discovery_allowed and "contact" in source.manifest.yields
+        )
+        if not (field_authorized or committee_authorized):
+            raise ResearchDirectiveInvalid(
+                f"research directive source {source_key!r} is outside the pinned ICP field plans "
+                "and is not a registered committee-enumeration source"
+            )
 
-    scoped_ids = set(body.account_scope.explicit_account_ids)
+    scoped_ids = set(
+        await resolve_research_directive_accounts(
+            conn,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            icp_key=icp_key,
+            icp_version=icp_version,
+            scope=body.account_scope,
+        )
+    )
     project_question_ids = {item.question_id for item in body.questions}
     for override in overrides.values():
         unknown_question_ids = set(override.exclude_question_ids) - project_question_ids
@@ -157,16 +208,70 @@ async def validate_research_directive_draft(
                 "account override excludes unknown project question ids: "
                 + ", ".join(sorted(unknown_question_ids))
             )
-    for account_id in (*body.account_scope.explicit_account_ids, *overrides):
+    for account_id in (*scoped_ids, *overrides):
         account = await get_account(conn, account_id)
         if account is None or account.workspace_id != workspace_id:
             raise ResearchDirectiveInvalid(
                 f"research directive account {account_id} is absent or cross-workspace"
             )
-        if scoped_ids and account_id not in scoped_ids:
+        if account_id not in scoped_ids:
             raise ResearchDirectiveInvalid(
-                "account override lies outside the explicit account scope"
+                "account override lies outside the resolved account scope"
             )
+    return tuple(sorted(scoped_ids, key=str))
+
+
+async def resolve_research_directive_accounts(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    icp_key: str,
+    icp_version: int,
+    scope: ResearchAccountScope,
+) -> tuple[EntityId, ...]:
+    """Resolve an explicit scope or one exact immutable discovery seal to canonical accounts."""
+
+    typed_scope = ResearchAccountScope.model_validate(scope)
+    if typed_scope.explicit_account_ids:
+        return typed_scope.explicit_account_ids
+    assert typed_scope.sealed_selection_ref is not None
+    sealed = ResearchSealedSelectionRef.parse(typed_scope.sealed_selection_ref)
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT manifest.account_ids FROM discovery_batch_seal seal "
+                    "JOIN discovery_batch_manifest manifest "
+                    "ON manifest.batch_id=seal.batch_id "
+                    "AND manifest.workspace_id=seal.workspace_id "
+                    "WHERE seal.workspace_id=:workspace_id AND seal.batch_id=:batch_id "
+                    "AND seal.seal_sha256=:seal_sha256 AND manifest.project_id=:project_id "
+                    "AND manifest.icp_key=:icp_key AND manifest.icp_version=:icp_version"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "batch_id": sealed.discovery_batch_id,
+                    "seal_sha256": sealed.discovery_seal_sha256,
+                    "project_id": project_id,
+                    "icp_key": icp_key,
+                    "icp_version": icp_version,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        raise ResearchDirectiveInvalid(
+            "sealed research selection is absent or has different project/ICP lineage"
+        )
+    account_ids = tuple(EntityId(UUID(str(value))) for value in row["account_ids"])
+    if not account_ids:
+        raise ResearchDirectiveInvalid("sealed research selection contains no accounts")
+    if len(account_ids) != len(set(account_ids)):
+        raise ResearchDirectiveInvalid("sealed research selection contains duplicate accounts")
+    return account_ids
 
 
 def research_directive_draft_request_sha256(
@@ -455,7 +560,20 @@ async def _load_exact_draft_replay(
         overrides=await list_research_directive_overrides(
             conn, workspace_id=workspace_id, directive_id=existing.directive_id
         ),
-        memory_outcome="replayed",
+        account_ids=tuple(
+            EntityId(value)
+            for value in (
+                await conn.execute(
+                    text(
+                        "SELECT account_id FROM account_research_directive_account "
+                        "WHERE directive_id=:directive_id AND workspace_id=:workspace_id "
+                        "ORDER BY account_id"
+                    ),
+                    {"directive_id": existing.directive_id, "workspace_id": workspace_id},
+                )
+            ).scalars()
+        ),
+        memory_outcome=("persisted" if existing.memory_refs else "memory_disabled"),
     )
 
 
@@ -477,9 +595,11 @@ async def draft_research_directive(
     memory_write: MemoryWriteSeam,
     predecessor_id: ResearchDirectiveId | None = None,
 ) -> DraftedResearchDirective:
-    if not user_instruction.strip() or len(user_instruction) > 8_000:
+    instruction_size = len(user_instruction.encode("utf-8"))
+    if not user_instruction.strip() or instruction_size > USER_RESEARCH_INSTRUCTION_MAX_BYTES:
         raise ResearchDirectiveInvalid(
-            "user research instruction must contain 1 to 8000 characters"
+            "user research instruction must contain 1 to "
+            f"{USER_RESEARCH_INSTRUCTION_MAX_BYTES} UTF-8 bytes"
         )
     request_sha256 = research_directive_draft_request_sha256(
         workspace_id=workspace_id,
@@ -518,7 +638,7 @@ async def draft_research_directive(
     )
     if replay is not None:
         return replay
-    await validate_research_directive_draft(
+    resolved_account_ids = await validate_research_directive_draft(
         conn,
         workspace_id=workspace_id,
         project_id=project_id,
@@ -579,7 +699,7 @@ async def draft_research_directive(
         )
     memory_refs = (memory_outcome.memory_id,) if isinstance(memory_outcome, MemoryAccepted) else ()
     memory_outcome_name = (
-        memory_outcome.verdict.value
+        "persisted"
         if isinstance(memory_outcome, MemoryAccepted)
         else "memory_disabled"
         if isinstance(memory_outcome, MemoryDisabled)
@@ -631,6 +751,22 @@ async def draft_research_directive(
             },
         )
     ).scalar_one()
+    scope_kind = "explicit" if body.account_scope.explicit_account_ids else "discovery_seal"
+    for account_id in resolved_account_ids:
+        await conn.execute(
+            text(
+                "INSERT INTO account_research_directive_account "
+                "(directive_id, workspace_id, account_id, scope_kind, selection_ref) "
+                "VALUES (:directive_id, :workspace_id, :account_id, :scope_kind, :selection_ref)"
+            ),
+            {
+                "directive_id": directive_id,
+                "workspace_id": workspace_id,
+                "account_id": account_id,
+                "scope_kind": scope_kind,
+                "selection_ref": body.account_scope.sealed_selection_ref,
+            },
+        )
     await conn.execute(
         text(
             "INSERT INTO account_research_directive_event "
@@ -718,6 +854,7 @@ async def draft_research_directive(
     return DraftedResearchDirective(
         directive=directive,
         overrides=tuple(overrides),
+        account_ids=resolved_account_ids,
         memory_outcome=memory_outcome_name,
     )
 
@@ -853,6 +990,22 @@ async def effective_account_research_directive(
     directive = await get_research_directive(conn, directive_id, workspace_id=workspace_id)
     if directive is None:
         raise ResearchDirectiveNotFound(str(directive_id))
+    member = (
+        await conn.execute(
+            text(
+                "SELECT 1 FROM account_research_directive_account "
+                "WHERE directive_id=:directive_id AND workspace_id=:workspace_id "
+                "AND account_id=:account_id"
+            ),
+            {
+                "directive_id": directive_id,
+                "workspace_id": workspace_id,
+                "account_id": account_id,
+            },
+        )
+    ).first()
+    if member is None:
+        raise ResearchDirectiveInvalid("account is outside the directive's resolved scope")
     override = await get_research_directive_override(
         conn,
         workspace_id=workspace_id,
@@ -883,11 +1036,21 @@ async def confirmed_directive_account_specs(
         raise ResearchDirectiveNotFound(str(directive_id))
     if directive.status is not ResearchDirectiveStatus.CONFIRMED:
         raise ResearchDirectiveConflict("only the current confirmed directive can start new work")
-    account_ids = directive.body.account_scope.explicit_account_ids
+    account_ids = tuple(
+        EntityId(value)
+        for value in (
+            await conn.execute(
+                text(
+                    "SELECT account_id FROM account_research_directive_account "
+                    "WHERE directive_id=:directive_id AND workspace_id=:workspace_id "
+                    "ORDER BY account_id"
+                ),
+                {"directive_id": directive_id, "workspace_id": workspace_id},
+            )
+        ).scalars()
+    )
     if not account_ids:
-        raise ResearchDirectiveInvalid(
-            "sealed selection references require the launcher selection resolver"
-        )
+        raise ResearchDirectiveInvalid("confirmed directive has no resolved account membership")
     specs: list[AccountSpec] = []
     for account_id in account_ids:
         effective = await effective_account_research_directive(
@@ -925,5 +1088,6 @@ __all__ = [
     "research_directive_confirmation_replay_matches",
     "research_directive_draft_replay_matches",
     "research_directive_draft_request_sha256",
+    "resolve_research_directive_accounts",
     "validate_research_directive_draft",
 ]

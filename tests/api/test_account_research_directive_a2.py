@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from decimal import Decimal
 from pathlib import Path
+from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.deep import build_high_tier_resolver
 from clue_api.memory_wiring import memory_assembly_factory
-from clue_api.research_directive_tools import build_research_directive_tools
+from clue_api.research_directive_tools import (
+    DraftAccountResearchDirectiveInput,
+    build_research_directive_tools,
+)
 from clue_api.trial.account_deep_fixture import (
     DEEP_FIELD_KEYS,
     PROJECT_RUN_ID,
@@ -21,7 +27,10 @@ from clue_config import MemoryCaps
 from clue_core import (
     AssemblyRequest,
     EntityId,
+    MemoryDisabled,
     MemoryType,
+    PhaseContext,
+    ProjectPhase,
     ResearchAccountScope,
     ResearchCommitteePlan,
     ResearchDirectiveAccountOverrideBody,
@@ -31,6 +40,7 @@ from clue_core import (
     ResearchEffortPolicy,
     ResearchPrivacyPolicy,
     ResearchQuestion,
+    ResearchSealedSelectionRef,
     ResearchSourcePolicy,
     ScopeStack,
     new_operation_id,
@@ -38,11 +48,20 @@ from clue_core import (
 )
 from clue_memory import WriteSeam
 from clue_research.directives import (
+    ResearchDirectiveInvalid,
     confirmed_directive_account_specs,
     effective_account_research_directive,
     get_research_directive,
+    validate_research_directive_draft,
 )
-from clue_research.durable import DbAccountRunStore, get_account_run
+from clue_research.durable import (
+    DbAccountRunStore,
+    get_account_run,
+    insert_account_run,
+    pin_account_run_research_directive,
+)
+from clue_research.icp import get_icp_version
+from clue_research.identity import insert_account_entity
 from clue_storage import FsStorage
 from clue_toolbelt import PreconditionFailed, ToolContext, ToolRegistry, invoke_tool
 from tests.api.test_account_deep_fixture_a1 import _pages
@@ -58,6 +77,11 @@ USER_DIRECTION = (
     "For this project, investigate grounded fax, referral, phone, and administrative coordination "
     "friction; treat each as a hypothesis and do not assert it without account-locked evidence."
 )
+
+
+class _DisabledMemory:
+    async def submit(self, _submission: object) -> MemoryDisabled:
+        return MemoryDisabled()
 
 
 def _body(account_id: EntityId, *, successor: bool = False) -> ResearchDirectiveBody:
@@ -94,7 +118,7 @@ def _body(account_id: EntityId, *, successor: bool = False) -> ResearchDirective
             candidate_cap=12,
         ),
         source_policy=ResearchSourcePolicy(
-            allowed_source_keys=("sumble_jobs", "sumble_people", "exa_deep"),
+            allowed_source_keys=("sumble_teams", "sumble_people", "exa_deep"),
             preferred_source_keys=("sumble_people", "exa_deep"),
         ),
         privacy_policy=ResearchPrivacyPolicy(
@@ -112,6 +136,175 @@ def _body(account_id: EntityId, *, successor: bool = False) -> ResearchDirective
         ),
         exclusions=("no patient-level facts",),
     )
+
+
+def test_user_instruction_limit_is_utf8_bytes_not_python_characters() -> None:
+    payload = {
+        "project_id": PROJECT_ID,
+        "product_id": PRODUCT_ID,
+        "icp_key": "deep",
+        "icp_version": 1,
+        "body": _body(EntityId(UUID("10000000-0000-0000-0000-000000000099"))),
+        "user_instruction": "é" * 5_000,
+        "source_turn_ref": "turn:multibyte",
+    }
+    with pytest.raises(ValidationError, match="8000-byte"):
+        DraftAccountResearchDirectiveInput.model_validate(payload)
+
+
+def test_sealed_scope_resolves_exact_membership_and_memory_disabled_is_truthful(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path / "sealed-artifacts")
+            fixture = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+            )
+            cf = conn_session_factory(conn)
+            registry = ToolRegistry()
+            for tool in build_research_directive_tools(
+                memory_write_factory=lambda _conn: _DisabledMemory(),
+                conn_factory=cf,
+            ):
+                registry.register(tool, make_default=tool.version == "2")
+
+            sealed_ref = ResearchSealedSelectionRef(
+                discovery_batch_id=fixture.discovery_batch_id,
+                discovery_seal_sha256=fixture.discovery_seal_sha256,
+            ).ref
+            sealed_body = _body(fixture.selected_account_id).model_copy(
+                update={"account_scope": ResearchAccountScope(sealed_selection_ref=sealed_ref)}
+            )
+            result = await invoke_tool(
+                registry,
+                "draft_account_research_directive",
+                {
+                    "project_id": PROJECT_ID,
+                    "product_id": PRODUCT_ID,
+                    "icp_key": fixture.deep_icp_key,
+                    "icp_version": fixture.deep_icp_version,
+                    "body": sealed_body.model_dump(mode="json"),
+                    "user_instruction": USER_DIRECTION,
+                    "source_turn_ref": "turn:sealed-direction",
+                },
+                ToolContext(
+                    workspace_id=WORKSPACE_ID,
+                    actor="agent",
+                    conn_factory=cf,
+                    operation_id=new_operation_id(),
+                ),
+                idempotency_ttl_s=TTL,
+            )
+            assert result.references["memory_outcome"] == "memory_disabled"
+            assert result.references["future_thread_memory_persisted"] is False
+            assert result.references["preview"]["account_ids"] == [str(fixture.selected_account_id)]
+            assert (
+                "project_memory_disabled"
+                in result.references["preview"]["unresolved_prerequisites"]
+            )
+
+            directive_id = UUID(result.references["directive_id"])
+            membership = tuple(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT account_id FROM account_research_directive_account "
+                            "WHERE directive_id=:directive_id"
+                        ),
+                        {"directive_id": directive_id},
+                    )
+                ).scalars()
+            )
+            assert membership == (UUID(str(fixture.selected_account_id)),)
+
+            invalid_body = sealed_body.model_copy(
+                update={
+                    "account_scope": ResearchAccountScope(
+                        sealed_selection_ref=ResearchSealedSelectionRef(
+                            discovery_batch_id=fixture.discovery_batch_id,
+                            discovery_seal_sha256="f" * 64,
+                        ).ref
+                    )
+                }
+            )
+            with pytest.raises(PreconditionFailed) as invalid_seal:
+                await invoke_tool(
+                    registry,
+                    "draft_account_research_directive",
+                    {
+                        "project_id": PROJECT_ID,
+                        "product_id": PRODUCT_ID,
+                        "icp_key": fixture.deep_icp_key,
+                        "icp_version": fixture.deep_icp_version,
+                        "body": invalid_body.model_dump(mode="json"),
+                        "predecessor_id": str(directive_id),
+                        "user_instruction": USER_DIRECTION,
+                        "source_turn_ref": "turn:invalid-seal",
+                    },
+                    ToolContext(
+                        workspace_id=WORKSPACE_ID,
+                        actor="agent",
+                        conn_factory=cf,
+                        operation_id=new_operation_id(),
+                    ),
+                    idempotency_ttl_s=TTL,
+                )
+            assert invalid_seal.value.reason_codes == ("research_directive_invalid",)
+
+            unauthorized_source_body = sealed_body.model_copy(
+                update={
+                    "source_policy": ResearchSourcePolicy(
+                        allowed_source_keys=(
+                            "sumble_teams",
+                            "sumble_people",
+                            "exa_deep",
+                            "sumble_jobs",
+                        )
+                    )
+                }
+            )
+            with pytest.raises(
+                ResearchDirectiveInvalid,
+                match="outside the pinned ICP field plans",
+            ):
+                await validate_research_directive_draft(
+                    conn,
+                    workspace_id=WORKSPACE_ID,
+                    project_id=PROJECT_ID,
+                    product_id=PRODUCT_ID,
+                    icp_key=fixture.deep_icp_key,
+                    icp_version=fixture.deep_icp_version,
+                    body=unauthorized_source_body,
+                    overrides={},
+                )
+            with pytest.raises(PreconditionFailed) as unauthorized_source:
+                await invoke_tool(
+                    registry,
+                    "draft_account_research_directive",
+                    {
+                        "project_id": PROJECT_ID,
+                        "product_id": PRODUCT_ID,
+                        "icp_key": fixture.deep_icp_key,
+                        "icp_version": fixture.deep_icp_version,
+                        "body": unauthorized_source_body.model_dump(mode="json"),
+                        "predecessor_id": str(directive_id),
+                        "user_instruction": USER_DIRECTION,
+                        "source_turn_ref": "turn:unauthorized-source",
+                    },
+                    ToolContext(
+                        workspace_id=WORKSPACE_ID,
+                        actor="agent",
+                        conn_factory=cf,
+                        operation_id=new_operation_id(),
+                    ),
+                    idempotency_ttl_s=TTL,
+                )
+            assert unauthorized_source.value.reason_codes == ("research_directive_invalid",)
+
+    run_async(scenario())
 
 
 def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -> None:
@@ -138,7 +331,7 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
                 memory_write_factory=memory_factory,
                 conn_factory=cf,
             ):
-                registry.register(tool, make_default=True)
+                registry.register(tool, make_default=tool.version == "2")
 
             override = ResearchDirectiveAccountOverrideBody(
                 include_field_keys=(DEEP_FIELD_KEYS[4],),
@@ -182,7 +375,11 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
                 idempotency_ttl_s=TTL,
             )
             assert drafted.references["status"] == "draft"
-            assert drafted.references["preview_hypothesis_count"] == 1
+            assert len(drafted.references["preview"]["hypotheses"]) == 1
+            assert drafted.references["preview"]["account_overrides"][0][
+                "effective_field_keys"
+            ] == [DEEP_FIELD_KEYS[2], DEEP_FIELD_KEYS[4]]
+            assert drafted.references["future_thread_memory_persisted"] is True
             directive_id = ResearchDirectiveId(draft_operation)
 
             replay = await invoke_tool(
@@ -237,8 +434,6 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
             confirm_body = {
                 "directive_id": str(directive_id),
                 "expected_sha256": drafted.references["canonical_json_sha256"],
-                "confirmed_by": "human:user-a2",
-                "confirming_turn_ref": "human-turn:deep-direction-confirm-1",
             }
             with pytest.raises(PreconditionFailed) as agent_confirmation:
                 await invoke_tool(
@@ -255,12 +450,29 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
                 )
             assert agent_confirmation.value.reason_codes == ("human_required",)
 
+            with pytest.raises(PreconditionFailed) as missing_receipt:
+                await invoke_tool(
+                    registry,
+                    "confirm_account_research_directive",
+                    confirm_body,
+                    ToolContext(
+                        workspace_id=WORKSPACE_ID,
+                        actor="human",
+                        conn_factory=cf,
+                        operation_id=new_operation_id(),
+                    ),
+                    idempotency_ttl_s=TTL,
+                )
+            assert missing_receipt.value.reason_codes == ("trusted_human_receipt_required",)
+
             confirm_operation = new_operation_id()
             confirm_ctx = ToolContext(
                 workspace_id=WORKSPACE_ID,
                 actor="human",
                 conn_factory=cf,
                 operation_id=confirm_operation,
+                actor_id="human:user-a2",
+                action_ref="human-turn:deep-direction-confirm-1",
             )
             confirmed = await invoke_tool(
                 registry,
@@ -270,6 +482,10 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
                 idempotency_ttl_s=TTL,
             )
             assert confirmed.references["status"] == "confirmed"
+            assert confirmed.references["confirmed_by"] == "human:user-a2"
+            assert confirmed.references["confirming_action_ref"] == (
+                "human-turn:deep-direction-confirm-1"
+            )
             durable_confirmation_replay = await invoke_tool(
                 registry,
                 "confirm_account_research_directive",
@@ -284,9 +500,15 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
                     "confirm_account_research_directive",
                     {
                         **confirm_body,
-                        "confirming_turn_ref": "human-turn:different-confirmation",
                     },
-                    confirm_ctx,
+                    ToolContext(
+                        workspace_id=WORKSPACE_ID,
+                        actor="human",
+                        conn_factory=cf,
+                        operation_id=confirm_operation,
+                        actor_id="human:user-a2",
+                        action_ref="human-turn:different-confirmation",
+                    ),
                     idempotency_ttl_s=TTL,
                 )
             assert changed_confirmation_replay.value.reason_codes == (
@@ -300,6 +522,36 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
             assert len(specs) == 1
             assert specs[0].research_directive is not None
             assert specs[0].field_keys == (DEEP_FIELD_KEYS[2], DEEP_FIELD_KEYS[4])
+
+            deep_icp = await get_icp_version(
+                conn,
+                WORKSPACE_ID,
+                fixture.deep_icp_key,
+                fixture.deep_icp_version,
+            )
+            assert deep_icp is not None
+            resolver = build_high_tier_resolver(spec=deep_icp, session_factory=cf)
+            base_context = PhaseContext(
+                project_run_id=PROJECT_RUN_ID,
+                project_id=PROJECT_ID,
+                brand_id=BRAND_ID,
+                phase=ProjectPhase.DEEP,
+                workspace_id=WORKSPACE_ID,
+                icp_key=fixture.deep_icp_key,
+                icp_version=fixture.deep_icp_version,
+            )
+            assert tuple(await resolver(base_context)) == ()
+            launched_specs = tuple(
+                await resolver(
+                    base_context.model_copy(
+                        update={"params": {"research_directive_id": str(directive_id)}}
+                    )
+                )
+            )
+            assert tuple(item.entity_id for item in launched_specs) == (
+                fixture.selected_account_id,
+            )
+            assert launched_specs[0].research_directive == specs[0].research_directive
 
             plan = await DbAccountRunStore(conn_factory=cf).begin(
                 account_run_id=fixture.expected_account_run_id,
@@ -315,6 +567,35 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
             assert account_run is not None
             original_pin = account_run.research_directive
             assert original_pin == specs[0].research_directive
+
+            outside_account_id = await insert_account_entity(
+                conn,
+                canonical_name="Outside Directive Scope",
+                primary_domain="outside-directive-scope.example",
+                workspace_id=WORKSPACE_ID,
+            )
+            outside_run_id = new_run_id()
+            await insert_account_run(
+                conn,
+                account_run_id=outside_run_id,
+                project_run_id=PROJECT_RUN_ID,
+                entity_id=outside_account_id,
+                tier="tier_1",
+            )
+            outside_scope_pin = original_pin.model_copy(
+                update={
+                    "override_id": None,
+                    "override_ref": None,
+                    "override_sha256": None,
+                }
+            )
+            with pytest.raises(Exception, match="account_run_research_directive_account_fk"):
+                async with conn.begin_nested():
+                    await pin_account_run_research_directive(
+                        conn,
+                        account_run_id=outside_run_id,
+                        pin=outside_scope_pin,
+                    )
 
             legacy_run_id = new_run_id()
             await conn.execute(
@@ -382,14 +663,14 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
                 {
                     "directive_id": str(successor_id),
                     "expected_sha256": successor_draft.references["canonical_json_sha256"],
-                    "confirmed_by": "human:user-a2",
-                    "confirming_turn_ref": "human-turn:deep-direction-confirm-2",
                 },
                 ToolContext(
                     workspace_id=WORKSPACE_ID,
                     actor="human",
                     conn_factory=cf,
                     operation_id=new_operation_id(),
+                    actor_id="human:user-a2",
+                    action_ref="human-turn:deep-direction-confirm-2",
                 ),
                 idempotency_ttl_s=TTL,
             )

@@ -157,13 +157,13 @@ def account_research_context_policy() -> ContextAssemblyPolicy:
     """The exact conservative opening-context budget for account-research@v1."""
 
     return ContextAssemblyPolicy(
-        version="account-research-context-v1",
+        version="account-research-context-v2",
         token_counter_version="utf8-bytes-v1",
         budgets=tuple(
             LayerBudget(layer=layer, max_tokens=budget)
             for layer, budget in zip(
                 tuple(ContextLayer),
-                (24_000, 8_000, 24_000, 8_000, 16_000, 0, 12_000),
+                (24_000, 8_000, 128_000, 16_000, 16_000, 0, 12_000),
                 strict=True,
             )
         ),
@@ -361,6 +361,7 @@ class PreparedAccountResearchTurnRunner:
                 "application/vnd.clue.account-research-directive+json",
                 effective_directive.model_dump(mode="json"),
                 account_entity_id,
+                project.project_id,
             )
             project_context_artifacts = (
                 ProjectContextArtifact(
@@ -388,6 +389,7 @@ class PreparedAccountResearchTurnRunner:
                 plan=plan,
             ),
             account_entity_id,
+            project.project_id,
         )
         budget_limit = _effective_budget_limit(
             self._settings,
@@ -410,12 +412,14 @@ class PreparedAccountResearchTurnRunner:
                 ),
             },
             account_entity_id,
+            project.project_id,
         )
         manifest_ref = await self._artifact(
             workspace_id,
             "application/vnd.clue.agent-resource-manifest+json",
             resolved.resource_manifest.model_dump(mode="json"),
             account_entity_id,
+            project.project_id,
         )
         user_message_ref = await self._artifact(
             workspace_id,
@@ -442,6 +446,7 @@ class PreparedAccountResearchTurnRunner:
                 ),
             },
             account_entity_id,
+            project.project_id,
         )
         turn_id = uuid5(_TURN_NAMESPACE, str(account_run_id))
         request = AgentTurnRequest(
@@ -551,12 +556,14 @@ class PreparedAccountResearchTurnRunner:
         media_type: str,
         payload: object,
         account_entity_id: EntityId,
+        project_id: str,
     ) -> ArtifactRef:
         return await self._artifacts.persist_body(
             workspace_id=workspace_id,
             data=_canonical_json(payload),
             media_type=media_type,
-            subject_bindings=((UUID(str(account_entity_id)), "account_context"),),
+            subject_bindings=((UUID(str(account_entity_id)), "context"),),
+            project_bindings=((project_id, "account_research_context"),),
         )
 
     async def _load_scope(
