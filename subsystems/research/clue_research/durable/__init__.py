@@ -196,6 +196,7 @@ from clue_research.durable.external_research import (
     get_external_research_operation,
     get_external_research_snapshot,
     list_external_research_result_artifacts,
+    list_ready_external_research_snapshots,
     mark_external_research_spend_unknown,
     reserve_external_research_operation,
 )
@@ -377,6 +378,7 @@ __all__ = [
     "get_external_research_operation",
     "get_external_research_snapshot",
     "list_external_research_result_artifacts",
+    "list_ready_external_research_snapshots",
     "mark_external_research_spend_unknown",
     "reserve_external_research_operation",
     # durable discovery-batch substrate (M6A D1)

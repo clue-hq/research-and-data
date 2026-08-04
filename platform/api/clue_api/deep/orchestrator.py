@@ -316,9 +316,14 @@ class AccountDeepOrchestrator:
         # explicit kwargs (no AspectContext / ctx.params), so the planner loads the spec and the
         # tenant-private resonance writes bind their tenant without the "#2" graph param-threading.
         if done is None:
+            account_icp = (
+                self._spec
+                if spec.field_keys is None
+                else self._spec.model_copy(update={"field_keys": spec.field_keys})
+            )
             profile_args: dict[str, object] = {
                 "account_entity_id": spec.entity_id,
-                "spec": self._spec,
+                "spec": account_icp,
                 "tier": spec.tier,
                 "run_id": run_id,
                 "project_run_id": project_run_id,

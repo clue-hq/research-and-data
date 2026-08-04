@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import Protocol
 
@@ -44,6 +45,7 @@ from clue_core import (
     ProjectRunId,
     ResearchDirectivePin,
     ResearchTerminalStatus,
+    Resolver,
     RunId,
     WorkerStatus,
 )
@@ -59,10 +61,12 @@ from clue_research.coverage import list_attempts, list_decisions
 from clue_research.durable import DbAccountRunStore, ResearchPlan, get_account_run
 from clue_research.profiling import AccountProfileResult
 from clue_research.profiling.aspect_worker import AspectCoverage
+from clue_research.sources import bind_resolver_overrides
 from clue_toolbelt import ToolContext, ToolInvoker, ToolRegistry
 
 __all__ = [
     "AccountResearchAgentRuntime",
+    "AccountResolverBindingProvider",
     "AccountResearchStepPinProvider",
     "AccountResearchTurnRunner",
     "GovernedAccountProfiler",
@@ -293,6 +297,19 @@ class AccountResearchTurnRunner(Protocol):
     ) -> AgentTurnOutcome: ...
 
 
+class AccountResolverBindingProvider(Protocol):
+    """Ready, account-scoped resolver bindings made visible only during one agent turn."""
+
+    async def resolver_bindings(
+        self,
+        *,
+        workspace_id: str,
+        project_run_id: ProjectRunId,
+        account_entity_id: EntityId,
+        research_directive: ResearchDirectivePin | None,
+    ) -> Mapping[str, Resolver]: ...
+
+
 class GovernedAccountProfiler:
     """ProfileAccountFn replacement: durable plan -> one account agent -> ledger projection."""
 
@@ -300,9 +317,11 @@ class GovernedAccountProfiler:
         self,
         *,
         turns: AccountResearchTurnRunner,
+        resolver_provider: AccountResolverBindingProvider | None = None,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self._turns = turns
+        self._resolver_provider = resolver_provider
         self._conn_factory = conn_factory
 
     async def __call__(
@@ -360,16 +379,37 @@ class GovernedAccountProfiler:
                     "for every initially planned field"
                 )
 
-        outcome = await self._turns.run(
-            workspace_id=workspace_id,
-            project_run_id=project_run_id,
-            account_entity_id=account_entity_id,
-            account_run_id=run_id,
-            tier=tier,
-            plan=plan,
-            budget_cap_cents=budget_cap_cents,
-            completion_guard=require_terminal,
-        )
+        bindings: Mapping[str, Resolver] = {}
+        if self._resolver_provider is not None:
+            bindings = await self._resolver_provider.resolver_bindings(
+                workspace_id=workspace_id,
+                project_run_id=project_run_id,
+                account_entity_id=account_entity_id,
+                research_directive=research_directive,
+            )
+        if bindings:
+            with bind_resolver_overrides(bindings):
+                outcome = await self._turns.run(
+                    workspace_id=workspace_id,
+                    project_run_id=project_run_id,
+                    account_entity_id=account_entity_id,
+                    account_run_id=run_id,
+                    tier=tier,
+                    plan=plan,
+                    budget_cap_cents=budget_cap_cents,
+                    completion_guard=require_terminal,
+                )
+        else:
+            outcome = await self._turns.run(
+                workspace_id=workspace_id,
+                project_run_id=project_run_id,
+                account_entity_id=account_entity_id,
+                account_run_id=run_id,
+                tier=tier,
+                plan=plan,
+                budget_cap_cents=budget_cap_cents,
+                completion_guard=require_terminal,
+            )
         return await self._project_result(
             workspace_id=workspace_id,
             account_entity_id=account_entity_id,
