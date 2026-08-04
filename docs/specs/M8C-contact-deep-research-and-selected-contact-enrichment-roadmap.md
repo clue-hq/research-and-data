@@ -1,8 +1,8 @@
 # M8C — Contact-deep research and selected-contact enrichment roadmap
 ## Sumble professional graph + Exa Deep contact research + governed channel enrichment
 
-> **Status:** technical planning record; implementation not yet started and C0 decisions remain
-> open. **Recorded:**
+> **Status:** implementation underway; C0 contract/field/policy freeze is mechanically accepted,
+> and C1 snapshot-backed professional materialization is next. **Recorded:**
 > 2026-08-05. **Parent capability:**
 > [M8B account-deep provider integration](M8B-exa-sumble-account-deep-integration-roadmap.md).
 > **Working branch at record time:** `platform/c8-account-profiling-integration`.
@@ -671,6 +671,9 @@ Every slice has a strict exit gate. Unit tests alone do not close a provider sli
 occurs without explicit live-call authorization and preflight evidence.
 
 ### C0 — Contract, field, and policy freeze
+
+**Status:** complete. Binding acceptance record:
+`M8C-C0-contact-research-contract-acceptance.md`.
 
 **Owns**
 

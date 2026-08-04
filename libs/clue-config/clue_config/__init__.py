@@ -23,6 +23,10 @@ Implements ENG-120 (docs/specs/M00-foundations-and-shared-contracts.md §M0.4).
 
 from __future__ import annotations
 
+from clue_config.contact_research import (
+    DEFAULT_CONTACT_RESEARCH_POLICY,
+    ContactResearchPolicy,
+)
 from clue_config.gateway import (
     DEFAULT_GATEWAY_CONFIG,
     GatewayConfig,
@@ -100,6 +104,8 @@ __all__ = [
     "Config",
     "ConfigOverlay",
     "ConfigVersion",
+    "ContactResearchPolicy",
+    "DEFAULT_CONTACT_RESEARCH_POLICY",
     # jurisdiction / policy skeleton
     "JurisdictionPolicy",
     "Jurisdiction",
