@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from clue_core import (
+    RESEARCH_DIRECTIVE_BODY_MAX_BYTES,
     EntityId,
     ResearchAccountScope,
     ResearchCommitteePlan,
@@ -22,6 +23,7 @@ from clue_core import (
     ResearchEffortPolicy,
     ResearchPrivacyPolicy,
     ResearchQuestion,
+    ResearchSealedSelectionRef,
     ResearchSourcePolicy,
     compose_account_research_directive,
     research_directive_digest,
@@ -192,4 +194,44 @@ def test_pin_rejects_mutable_or_fabricated_reference_labels() -> None:
             directive_ref="research-directive:latest",
             version=directive.version,
             canonical_json_sha256=directive.canonical_json_sha256,
+            account_id=ACCOUNT_ID,
         )
+
+
+def test_sealed_selection_ref_is_an_exact_batch_and_digest_pin() -> None:
+    batch_id = UUID("40000000-0000-0000-0000-000000000001")
+    sealed = ResearchSealedSelectionRef(
+        discovery_batch_id=batch_id,
+        discovery_seal_sha256="b" * 64,
+    )
+    assert ResearchSealedSelectionRef.parse(sealed.ref) == sealed
+    with pytest.raises(ValidationError, match="discovery-seal"):
+        ResearchAccountScope(sealed_selection_ref="selection:latest")
+
+
+def test_override_source_policy_can_narrow_but_never_widen_project_authority() -> None:
+    directive = _directive()
+    narrowing = ResearchDirectiveAccountOverrideBody(
+        source_policy=ResearchSourcePolicy(allowed_source_keys=("exa_deep",))
+    )
+    widened = narrowing.model_copy(
+        update={"source_policy": ResearchSourcePolicy(allowed_source_keys=("exa_deep", "npi"))}
+    )
+    compose_account_research_directive(
+        directive,
+        account_id=ACCOUNT_ID,
+        override=_override().model_copy(update={"body": narrowing}),
+    )
+    with pytest.raises(ValueError, match="only narrow"):
+        compose_account_research_directive(
+            directive,
+            account_id=ACCOUNT_ID,
+            override=_override().model_copy(update={"body": widened}),
+        )
+
+
+def test_directive_body_has_a_canonical_utf8_execution_size_ceiling() -> None:
+    payload = _body().model_dump(mode="python")
+    payload["exclusions"] = tuple(f"{index:02d}-" + ("x" * 1_990) for index in range(32))
+    with pytest.raises(ValidationError, match=str(RESEARCH_DIRECTIVE_BODY_MAX_BYTES)):
+        ResearchDirectiveBody.model_validate(payload)

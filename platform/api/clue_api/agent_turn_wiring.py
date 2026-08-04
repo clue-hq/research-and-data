@@ -69,6 +69,7 @@ __all__ = [
 _EVENT_NAMESPACE = UUID("f16bca96-c8c9-5fad-9f42-35ad7873f021")
 _REF_NAMESPACE = UUID("9431adab-a359-59ee-b2f3-af522f93016b")
 _PRIVACY_NAMESPACE = UUID("f4d51cff-a92e-5ed6-a07f-826cb2348241")
+_PROJECT_PRIVACY_NAMESPACE = UUID("cd318be1-c3cf-50c1-9ddd-826cd63fa5b3")
 
 
 def _event_id(turn_id: UUID, status: str) -> UUID:
@@ -203,6 +204,7 @@ class DurableAgentArtifactStore(AgentArtifactSink, AgentArtifactReader):
         data: bytes,
         media_type: str,
         subject_bindings: Sequence[tuple[UUID, str]] = (),
+        project_bindings: Sequence[tuple[str, str]] = (),
     ) -> ArtifactRef:
         digest = content_address(data)
         key = artifact_key(workspace_id, digest)
@@ -246,6 +248,44 @@ class DurableAgentArtifactStore(AgentArtifactSink, AgentArtifactReader):
                         "kind": binding_kind,
                     },
                 )
+            for project_id, binding_kind in sorted(set(project_bindings)):
+                await conn.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+                    {"scope": f"agent-project-artifacts:{workspace_id}:{project_id}"},
+                )
+                inserted = await conn.execute(
+                    text(
+                        "INSERT INTO agent_artifact_project "
+                        "(workspace_id, project_id, artifact_key, binding_kind) "
+                        "SELECT :workspace_id, :project_id, :key, :kind FROM project "
+                        "WHERE project_id=:project_id AND workspace_id=:workspace_id "
+                        "ON CONFLICT DO NOTHING RETURNING artifact_key"
+                    ),
+                    {
+                        "workspace_id": workspace_id,
+                        "project_id": project_id,
+                        "key": key,
+                        "kind": binding_kind,
+                    },
+                )
+                if inserted.first() is None:
+                    existing = await conn.execute(
+                        text(
+                            "SELECT 1 FROM agent_artifact_project "
+                            "WHERE workspace_id=:workspace_id AND project_id=:project_id "
+                            "AND artifact_key=:key AND binding_kind=:kind"
+                        ),
+                        {
+                            "workspace_id": workspace_id,
+                            "project_id": project_id,
+                            "key": key,
+                            "kind": binding_kind,
+                        },
+                    )
+                    if existing.first() is None:
+                        raise ValueError(
+                            "agent artifact project binding is absent or cross-workspace"
+                        )
         # The row is committed before external storage mutation. A crash here is body-unavailable
         # and therefore fail-closed; retry converges on this same content-addressed key.
         await self._storage.put(key, data, media_type=record.media_type)
@@ -1508,6 +1548,65 @@ class AgentPrivacyService:
             artifact_keys=keys,
             reason_code=reason_code,
         )
+
+    async def erase_project(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        reason_code: str = "project_deletion",
+    ) -> PrivacyEraseResult:
+        """Erase exclusively project-owned artifacts, then release the deletion interlock.
+
+        ``agent_artifact_project`` uses ``ON DELETE RESTRICT`` so a project cannot be deleted first
+        and leave untraceable CAS bytes behind. An artifact shared byte-for-byte with another
+        project keeps its body and only loses this project's binding; exclusively owned artifacts
+        take the normal tombstone, physical purge, affected-turn, and workspace-purge path.
+        """
+
+        project_subject = uuid5(_PROJECT_PRIVACY_NAMESPACE, f"{workspace_id}:{project_id}")
+        async with self._conn_factory() as conn:
+            await conn.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+                {"scope": f"agent-project-artifacts:{workspace_id}:{project_id}"},
+            )
+            rows = tuple(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT binding.artifact_key, NOT EXISTS ("
+                            "SELECT 1 FROM agent_artifact_project other "
+                            "WHERE other.workspace_id=binding.workspace_id "
+                            "AND other.artifact_key=binding.artifact_key "
+                            "AND other.project_id<>binding.project_id) AS exclusive "
+                            "FROM agent_artifact_project binding "
+                            "WHERE binding.workspace_id=:workspace_id "
+                            "AND binding.project_id=:project_id ORDER BY binding.artifact_key"
+                        ),
+                        {"workspace_id": workspace_id, "project_id": project_id},
+                    )
+                ).mappings()
+            )
+        exclusive_keys = tuple(str(row["artifact_key"]) for row in rows if row["exclusive"])
+        result = await self.erase_artifacts(
+            workspace_id=workspace_id,
+            subject_entity_id=project_subject,
+            artifact_keys=exclusive_keys,
+            reason_code=reason_code,
+        )
+        async with self._conn_factory() as conn:
+            await conn.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+                {"scope": f"agent-project-artifacts:{workspace_id}:{project_id}"},
+            )
+            await conn.execute(
+                text(
+                    "DELETE FROM agent_artifact_project "
+                    "WHERE workspace_id=:workspace_id AND project_id=:project_id"
+                ),
+                {"workspace_id": workspace_id, "project_id": project_id},
+            )
+        return result
 
     async def erase_artifacts(
         self,

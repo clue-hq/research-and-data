@@ -410,3 +410,81 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
             harness.close()
 
     run_async(scenario())
+
+
+def test_project_bound_context_blocks_orphaning_and_is_erased_before_project_delete(
+    tmp_path: Path,
+    require_c63_db: None,
+) -> None:
+    del require_c63_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "ws-a2-project-erasure", name="A2 erasure")
+            factory = conn_session_factory(conn)
+            storage = _Storage()
+            artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=factory)
+            context_ref = await artifacts.persist_body(
+                workspace_id=project.workspace_id,
+                data=b'{"directive_ref":"research-directive:test:v1"}',
+                media_type="application/vnd.clue.account-research-directive+json",
+                project_bindings=((project.project_id, "account_research_context"),),
+            )
+
+            blocked = await conn.begin_nested()
+            with pytest.raises(DBAPIError):
+                await conn.execute(
+                    text(
+                        "DELETE FROM project WHERE project_id=:project_id "
+                        "AND workspace_id=:workspace_id"
+                    ),
+                    {
+                        "project_id": project.project_id,
+                        "workspace_id": project.workspace_id,
+                    },
+                )
+            await blocked.rollback()
+
+            harness = make_workspace(
+                tmp_path,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+            )
+            try:
+                erased = await AgentPrivacyService(
+                    storage=storage,
+                    workspaces=harness.factory,
+                    conn_factory=factory,
+                ).erase_project(
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                )
+                assert erased.tombstoned_artifact_keys == (context_ref.artifact_key,)
+                with pytest.raises(ArtifactNotFound):
+                    await artifacts.read(context_ref)
+                assert (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM agent_artifact_project "
+                            "WHERE workspace_id=:workspace_id AND project_id=:project_id"
+                        ),
+                        {
+                            "workspace_id": project.workspace_id,
+                            "project_id": project.project_id,
+                        },
+                    )
+                ).scalar_one() == 0
+                await conn.execute(
+                    text(
+                        "DELETE FROM project WHERE project_id=:project_id "
+                        "AND workspace_id=:workspace_id"
+                    ),
+                    {
+                        "project_id": project.project_id,
+                        "workspace_id": project.workspace_id,
+                    },
+                )
+            finally:
+                harness.close()
+
+    run_async(scenario())

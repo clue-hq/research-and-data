@@ -54,7 +54,7 @@ class CommitteeExecutionAuthorization(BaseModel):
     project_run_id: ProjectRunId
     account_id: EntityId
     research_direction_ref: NonEmptyStr
-    research_directive: ResearchDirectivePin | None = None
+    research_directive: ResearchDirectivePin
     committee_plan_ref: NonEmptyStr
     confirmation_ref: NonEmptyStr
     confirmed_by_human: bool
@@ -73,10 +73,10 @@ class CommitteeExecutionAuthorization(BaseModel):
             raise ValueError("committee authorization use classes must be unique")
         if self.contact_reveals_allowed:
             raise ValueError("S2 committee acquisition authorization cannot allow contact reveals")
-        if self.research_directive is not None and (
-            self.research_direction_ref != self.research_directive.directive_ref
-        ):
+        if self.research_direction_ref != self.research_directive.directive_ref:
             raise ValueError("committee authorization directive ref and exact pin must agree")
+        if self.account_id != self.research_directive.account_id:
+            raise ValueError("committee authorization directive pin belongs to another account")
         return self
 
     @property

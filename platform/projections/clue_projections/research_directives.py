@@ -6,11 +6,35 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_core import ResearchDirective, ResearchDirectiveAccountOverride
+from clue_core import (
+    EntityId,
+    ResearchCommitteePlan,
+    ResearchDirective,
+    ResearchDirectiveAccountOverride,
+    ResearchEffortPolicy,
+    ResearchPrivacyPolicy,
+    ResearchQuestion,
+    ResearchSourcePolicy,
+)
+
+
+class ResearchDirectiveAccountPreview(BaseModel):
+    """The effective differences a human is approving for one overridden account."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    account_id: str
+    override_ref: str
+    effective_field_keys: tuple[str, ...]
+    effective_hypotheses: tuple[ResearchQuestion, ...]
+    effective_source_policy: ResearchSourcePolicy
+    effective_committee_plan: ResearchCommitteePlan
+    effective_effort_policy: ResearchEffortPolicy
+    added_exclusions: tuple[str, ...]
 
 
 class ResearchDirectivePreview(BaseModel):
-    """Bounded review payload; questions remain explicitly labeled as hypotheses."""
+    """Bounded complete review payload; questions remain explicitly labeled as hypotheses."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -20,66 +44,107 @@ class ResearchDirectivePreview(BaseModel):
     account_ids: tuple[str, ...]
     sealed_selection_ref: str | None
     field_keys: tuple[str, ...]
-    hypotheses: tuple[str, ...]
-    allowed_source_keys: tuple[str, ...]
-    preferred_source_keys: tuple[str, ...]
-    excluded_source_keys: tuple[str, ...]
-    committee_functions: tuple[str, ...]
-    committee_levels: tuple[str, ...]
-    committee_teams: tuple[str, ...]
-    committee_personas: tuple[str, ...]
+    hypotheses: tuple[ResearchQuestion, ...]
+    source_policy: ResearchSourcePolicy
+    committee_plan: ResearchCommitteePlan
+    privacy_policy: ResearchPrivacyPolicy
+    effort_policy: ResearchEffortPolicy
     exclusions: tuple[str, ...]
-    tier: str
-    max_depth: int
-    max_fanout: int
-    budget_cap_cents: Decimal
-    account_override_refs: tuple[str, ...]
+    account_overrides: tuple[ResearchDirectiveAccountPreview, ...]
+    memory_outcome: str
+    future_thread_memory_persisted: bool
     unresolved_prerequisites: tuple[str, ...]
+    rendered_summary: str
 
-    def render(self) -> str:
-        accounts = str(len(self.account_ids)) if self.account_ids else self.sealed_selection_ref
-        return (
-            f"Research directive {self.directive_ref} covers {accounts} account selection; "
-            f"{len(self.field_keys)} registered fields and {len(self.hypotheses)} user-guided "
-            f"hypotheses; committee functions {', '.join(self.committee_functions) or 'none'}; "
-            f"tier {self.tier}, depth {self.max_depth}, fan-out {self.max_fanout}, "
-            f"budget cap {self.budget_cap_cents} cents."
+    @property
+    def budget_cap_cents(self) -> Decimal:
+        return self.effort_policy.budget_cap_cents
+
+
+def _account_preview(
+    directive: ResearchDirective,
+    override: ResearchDirectiveAccountOverride,
+) -> ResearchDirectiveAccountPreview:
+    body = directive.body
+    changes = override.body
+    excluded_fields = set(changes.exclude_field_keys)
+    fields = tuple(
+        dict.fromkeys(
+            field
+            for field in (*body.field_keys, *changes.include_field_keys)
+            if field not in excluded_fields
         )
+    )
+    excluded_questions = set(changes.exclude_question_ids)
+    questions = tuple(
+        item
+        for item in (*body.questions, *changes.additional_questions)
+        if item.question_id not in excluded_questions
+    )
+    return ResearchDirectiveAccountPreview(
+        account_id=str(override.account_id),
+        override_ref=override.override_ref,
+        effective_field_keys=fields,
+        effective_hypotheses=questions,
+        effective_source_policy=changes.source_policy or body.source_policy,
+        effective_committee_plan=changes.committee_plan or body.committee_plan,
+        effective_effort_policy=changes.effort_policy or body.effort_policy,
+        added_exclusions=changes.exclusions,
+    )
 
 
 def project_research_directive_preview(
     directive: ResearchDirective,
     overrides: tuple[ResearchDirectiveAccountOverride, ...] = (),
+    *,
+    resolved_account_ids: tuple[EntityId, ...] | None = None,
+    memory_outcome: str = "unknown",
 ) -> ResearchDirectivePreview:
     body = directive.body
+    account_ids = resolved_account_ids or body.account_scope.explicit_account_ids
     unresolved: list[str] = []
     if not body.privacy_policy.account_research_allowed:
         unresolved.append("account_research_not_authorized")
     if not body.privacy_policy.committee_discovery_allowed:
         unresolved.append("committee_discovery_not_authorized")
+    memory_persisted = bool(directive.memory_refs)
+    if not memory_persisted:
+        unresolved.append("project_memory_disabled")
+    rendered = (
+        f"Research directive {directive.directive_ref} covers {len(account_ids)} account(s), "
+        f"{len(body.field_keys)} registered fields and {len(body.questions)} user-guided "
+        f"hypotheses. It may enumerate up to {body.committee_plan.candidate_cap} committee "
+        f"candidates across {', '.join(body.committee_plan.functions) or 'no named functions'}, "
+        f"with depth {body.effort_policy.max_depth}, fan-out {body.effort_policy.max_fanout}, "
+        f"and a {body.effort_policy.budget_cap_cents}-cent cap. "
+        "Contact profiling is "
+        f"{'allowed' if body.privacy_policy.contact_profiling_allowed else 'excluded'}; "
+        "contact reveals are "
+        f"{'allowed' if body.privacy_policy.contact_reveals_allowed else 'excluded'}."
+    )
     return ResearchDirectivePreview(
         directive_ref=directive.directive_ref,
         version=directive.version,
         status=directive.status.value,
-        account_ids=tuple(str(item) for item in body.account_scope.explicit_account_ids),
+        account_ids=tuple(str(item) for item in account_ids),
         sealed_selection_ref=body.account_scope.sealed_selection_ref,
         field_keys=body.field_keys,
-        hypotheses=tuple(question.text for question in body.questions),
-        allowed_source_keys=body.source_policy.allowed_source_keys,
-        preferred_source_keys=body.source_policy.preferred_source_keys,
-        excluded_source_keys=body.source_policy.excluded_source_keys,
-        committee_functions=body.committee_plan.functions,
-        committee_levels=body.committee_plan.levels,
-        committee_teams=body.committee_plan.teams,
-        committee_personas=body.committee_plan.personas,
+        hypotheses=body.questions,
+        source_policy=body.source_policy,
+        committee_plan=body.committee_plan,
+        privacy_policy=body.privacy_policy,
+        effort_policy=body.effort_policy,
         exclusions=body.exclusions,
-        tier=body.effort_policy.tier,
-        max_depth=body.effort_policy.max_depth,
-        max_fanout=body.effort_policy.max_fanout,
-        budget_cap_cents=body.effort_policy.budget_cap_cents,
-        account_override_refs=tuple(item.override_ref for item in overrides),
+        account_overrides=tuple(_account_preview(directive, item) for item in overrides),
+        memory_outcome=memory_outcome,
+        future_thread_memory_persisted=memory_persisted,
         unresolved_prerequisites=tuple(unresolved),
+        rendered_summary=rendered,
     )
 
 
-__all__ = ["ResearchDirectivePreview", "project_research_directive_preview"]
+__all__ = [
+    "ResearchDirectiveAccountPreview",
+    "ResearchDirectivePreview",
+    "project_research_directive_preview",
+]

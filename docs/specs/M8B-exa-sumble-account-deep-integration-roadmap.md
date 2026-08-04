@@ -491,17 +491,28 @@ Deliver:
 directive, reaches a fresh account research agent by reference, and a later edit does not mutate an
 already-running operation.
 
-**Implemented 2026-08-04 — Gate A2 closed.**
+**Implemented and critically remediated 2026-08-04 — Gate A2 closed.**
 
 - A bounded, immutable, content-addressed directive contract now covers research questions,
   sealed or explicit account scope, source/committee/privacy/effort policy, account overrides,
-  supersession, and exact effective-account composition. The migration persists append-only
-  versions, immutable child rows, lifecycle events, human confirmation receipts, and full-request
-  fingerprints for exact operation replay.
-- `draft_account_research_directive@1` persists the trusted user instruction to project-scoped
-  user-stated memory and returns a typed preview without provider work. Human-only
-  `confirm_account_research_directive@1` confirms the exact draft digest; agents have no authority
-  to invoke that transition. Head-of-ABM profile v15 carries the drafting authority.
+  supersession, and exact effective-account composition. Canonical JSON is bounded by UTF-8 bytes
+  at both directive and effective-account boundaries, and the L3 account-research context policy
+  has matching headroom for the directive plus the other required project artifacts.
+- A sealed scope is an exact `discovery-seal:<batch_uuid>:<seal_sha256>` lineage pin. It resolves
+  once to durable immutable account membership; overrides, account-run pins, production DEEP
+  selection, and Sumble preparation all enforce that same membership relationally. Missing or
+  malformed launch pins fail closed with zero selected accounts and zero Sumble transport.
+- Directive sources must belong to the pinned ICP's canonical effective field-source plans or be
+  active contact-yielding committee sources. Account overrides may narrow but never widen source
+  authority; an active registry entry alone is not authorization.
+- `draft_account_research_directive@2` persists the trusted user instruction to project-scoped
+  user-stated memory and returns the complete bounded review payload: resolved accounts,
+  hypotheses, field/source/committee/privacy/effort policy, effective per-account overrides,
+  exclusions, unresolved gates, preview digest, and an explicit memory outcome. Human-only
+  `confirm_account_research_directive@2` accepts only the reviewed directive id/digest and derives
+  confirmation attribution from the trusted invocation context. Agents retain no confirmation
+  authority. Historical v1 contracts remain replayable but are neither default nor granted to the
+  active Head-of-ABM profile v16.
 - Confirmed directive ref/digest pins now flow through account specs, research plans,
   `account_run`, account-profile execution, Sumble committee requests and authorizations, and run
   journal state. A pin can be attached only before an account run starts and is immutable
@@ -511,9 +522,15 @@ already-running operation.
   `context/project/research-directive.json`. Research-specialist delegations receive both that exact
   file reference and the typed directive domain ref automatically, independent of model wording.
   Fresh-thread project memory assembly also exposes the original user-stated direction.
+- Every account-research context artifact carries a reverse project binding. Project deletion is
+  database-blocked until the privacy service tombstones and purges exclusively owned bytes and
+  releases those bindings, preventing orphaned directive/context artifacts.
 - DB-backed acceptance covers durable draft/confirm replay, human-only confirmation, future-thread
-  memory visibility, account override composition, exact plan/run pinning, automatic delegation,
-  and frozen replay after supersession. A2 performs no provider call, reveal, credential read, or
+  memory visibility and the disabled-memory outcome, exact sealed membership, canonical source
+  authorization, account override composition, fail-closed production launch, exact plan/run and
+  Sumble pinning, automatic delegation, project erasure, size ceilings, and frozen replay after
+  supersession. Alembic revision `5330703a78a3` adds the membership and reverse-artifact bindings
+  and passes head-to-base-to-head smoke. A2 performs no provider call, reveal, credential read, or
   spend; Exa E0 resolver files remain outside this slice.
 
 ### Slice E0 — Exa Deep structured wire contract

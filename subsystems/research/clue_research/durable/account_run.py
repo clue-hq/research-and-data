@@ -391,6 +391,7 @@ def _row_to_account_run(row: dict[str, object]) -> AccountRunRow:
             version=cast(int, row["research_directive_version"]),
             directive_ref=str(row["research_directive_ref"]),
             canonical_json_sha256=str(row["research_directive_sha256"]),
+            account_id=EntityId(row["entity_id"]),  # type: ignore[arg-type]
             override_id=(
                 ResearchDirectiveOverrideId(row["research_directive_override_id"])  # type: ignore[arg-type]
                 if row["research_directive_override_id"] is not None

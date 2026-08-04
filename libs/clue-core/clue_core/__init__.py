@@ -343,6 +343,9 @@ from clue_core.primitives import (
     new_run_id,
 )
 from clue_core.research_directive import (
+    EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES,
+    RESEARCH_DIRECTIVE_BODY_MAX_BYTES,
+    USER_RESEARCH_INSTRUCTION_MAX_BYTES,
     EffectiveAccountResearchDirective,
     ResearchAccountScope,
     ResearchCommitteePlan,
@@ -357,6 +360,7 @@ from clue_core.research_directive import (
     ResearchEffortPolicy,
     ResearchPrivacyPolicy,
     ResearchQuestion,
+    ResearchSealedSelectionRef,
     ResearchSourcePolicy,
     compose_account_research_directive,
     new_research_directive_id,
@@ -512,6 +516,9 @@ __all__ = [
     "CommitteeEligibilityOutcome",
     "CommitteeExecutionAuthorization",
     # confirmed account-research direction (M8B A2)
+    "EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES",
+    "RESEARCH_DIRECTIVE_BODY_MAX_BYTES",
+    "USER_RESEARCH_INSTRUCTION_MAX_BYTES",
     "EffectiveAccountResearchDirective",
     "ResearchAccountScope",
     "ResearchCommitteePlan",
@@ -526,6 +533,7 @@ __all__ = [
     "ResearchEffortPolicy",
     "ResearchPrivacyPolicy",
     "ResearchQuestion",
+    "ResearchSealedSelectionRef",
     "ResearchSourcePolicy",
     "compose_account_research_directive",
     "new_research_directive_id",

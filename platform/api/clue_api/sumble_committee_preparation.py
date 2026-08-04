@@ -119,13 +119,13 @@ class SumbleCommitteePreparer:
         request = inputs.preflight.request
         async with self._conn_factory() as conn:
             account_run = await get_account_run(conn, account_run_id)
-        if (
-            account_run is not None
-            and account_run.research_directive is not None
-            and (
-                request.research_directive != account_run.research_directive
-                or inputs.authorization.research_directive != account_run.research_directive
+        if account_run is None or account_run.research_directive is None:
+            raise SumbleCommitteePreparationError(
+                "Sumble committee preparation requires a directive-pinned account run"
             )
+        if (
+            request.research_directive != account_run.research_directive
+            or inputs.authorization.research_directive != account_run.research_directive
         ):
             raise SumbleCommitteePreparationError(
                 "Sumble committee request does not carry the account run's exact directive pin"

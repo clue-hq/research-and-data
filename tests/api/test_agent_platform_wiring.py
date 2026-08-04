@@ -23,6 +23,10 @@ from clue_api.agent_platform_wiring import (
 )
 from clue_api.fleet_main import _account_agent_runtime_required
 from clue_config import Settings
+from clue_core import (
+    EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES,
+    USER_RESEARCH_INSTRUCTION_MAX_BYTES,
+)
 from clue_research.durable import AspectPlan, ResearchPlan
 from clue_research.identity import insert_account_entity
 from tests._workspace import seed_project, seed_workspace
@@ -69,7 +73,8 @@ def test_agent_rollout_defaults_are_off_and_validated(
 def test_account_context_policy_freezes_all_seven_layers_and_fresh_wake() -> None:
     policy = account_research_context_policy()
     assert tuple(item.layer for item in policy.budgets) == tuple(ContextLayer)
-    assert policy.budget_for(ContextLayer.L4_MEMORY) == 8_000
+    assert policy.budget_for(ContextLayer.L3_PROJECT) >= 2 * EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES
+    assert policy.budget_for(ContextLayer.L4_MEMORY) >= 2 * USER_RESEARCH_INSTRUCTION_MAX_BYTES
     assert policy.budget_for(ContextLayer.L6_CONVERSATION) == 0
 
 

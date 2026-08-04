@@ -68,6 +68,7 @@ from clue_projections.research_coverage import (
     research_coverage,
 )
 from clue_projections.research_directives import (
+    ResearchDirectiveAccountPreview,
     ResearchDirectivePreview,
     project_research_directive_preview,
 )
@@ -145,6 +146,7 @@ __all__ = [
     "ResearchViewStatusPage",
     "research_view_statuses",
     "research_attempt_history",
+    "ResearchDirectiveAccountPreview",
     "ResearchDirectivePreview",
     "project_research_directive_preview",
     # Phase C2 proposals

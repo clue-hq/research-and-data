@@ -30,7 +30,7 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v15",
+    AgentRole.HEAD_OF_ABM: "v16",
     AgentRole.RESEARCH: "v4",
     AgentRole.CONTENT_DRAFTER: "v4",
     AgentRole.REVIEWER: "v4",
@@ -200,6 +200,8 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
 
     if name == "propose_field":
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
+    if name == "draft_account_research_directive":
+        return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@2" else ()
     if name == "research_account_gaps":
         return (AgentRole.ACCOUNT_RESEARCH,) if address == "research_account_gaps@2" else ()
     return C6_AGENT_TOOL_AUTHORITY.get(name, ())

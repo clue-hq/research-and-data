@@ -49,6 +49,7 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Final
+from uuid import UUID
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
@@ -80,9 +81,15 @@ from clue_core import (
     PhaseContext,
     PhaseHandler,
     PreSpendGate,
+    ResearchDirectiveId,
+    ResearchDirectiveStatus,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import WorkspaceScope, claims_for, entities_with_field_claim
+from clue_research.directives import (
+    confirmed_directive_account_specs,
+    get_research_directive,
+)
 from clue_research.discovery_scoring.tiering import (
     TIER_FIELD,
     DiscoverySelectionPolicy,
@@ -181,6 +188,16 @@ def build_high_tier_resolver(
     """
 
     async def _resolve(ctx: PhaseContext) -> Sequence[AccountSpec]:
+        # A confirmed directive is necessary but not itself a launch. O2's launch tool writes this
+        # exact id into the DEEP phase input; absence/malformed/cross-lineage input is a zero-call
+        # no-op, preserving the conversational pause after discovery.
+        raw_directive_id = ctx.params.get("research_directive_id")
+        if not isinstance(raw_directive_id, str):
+            return ()
+        try:
+            directive_id = ResearchDirectiveId(UUID(raw_directive_id))
+        except ValueError:
+            return ()
         try:
             selection_policy = DiscoverySelectionPolicy.from_slot(spec.discovery_strategy)
         except ValueError:
@@ -202,8 +219,32 @@ def build_high_tier_resolver(
         scope = WorkspaceScope.for_workspace(ctx.workspace_id)
         specs: list[AccountSpec] = []
         async with session_factory() as conn:
+            directive = await get_research_directive(
+                conn,
+                directive_id,
+                workspace_id=ctx.workspace_id,
+            )
+            if (
+                directive is None
+                or directive.status is not ResearchDirectiveStatus.CONFIRMED
+                or directive.project_id != ctx.project_id
+                or directive.icp_key != ctx.icp_key
+                or directive.icp_version != ctx.icp_version
+            ):
+                return ()
+            directed_specs = {
+                item.entity_id: item
+                for item in await confirmed_directive_account_specs(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    directive_id=directive_id,
+                )
+            }
             entity_ids = await entities_with_field_claim(conn, TIER_FIELD, scope=scope)
             for entity_id in entity_ids:
+                directed = directed_specs.get(entity_id)
+                if directed is None or directed.research_directive is None:
+                    continue
                 live = await claims_for(conn, entity_id, TIER_FIELD, scope=scope)
                 if not live:
                     continue
@@ -229,7 +270,8 @@ def build_high_tier_resolver(
                         entity_id=entity_id,
                         tier=tier,
                         workspace_id=ctx.workspace_id,
-                        field_keys=spec.field_keys or None,
+                        field_keys=directed.field_keys,
+                        research_directive=directed.research_directive,
                     )
                 )
         return tuple(specs)

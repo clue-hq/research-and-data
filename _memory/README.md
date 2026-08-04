@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-04-m8b-a2-research-directive.md` — M8B A2 plus critical-review remediation:
+  immutable research direction, exact sealed membership and production launch pins, canonical
+  source authority, trusted human confirmation receipts, complete previews, explicit memory
+  outcomes, bounded context, project-artifact erasure, and provider-free verification.
 - `2026-07-28-phase-c7-8-closeout.md` — C7.8 and C7 complete: 18-case executable
   adversarial matrix, 10-surface DSAR matrix, breadth-batched/capped derivation reads, six
   independent default-off activation controls, operations/runbook/status closeout, clean full
