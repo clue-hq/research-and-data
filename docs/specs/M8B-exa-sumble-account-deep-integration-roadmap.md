@@ -1,10 +1,10 @@
 # M8B — Account-deep provider integration roadmap
 ## Exa Deep account profiling + Sumble organization map and buying committee
 
-> **Status:** implementation in progress. A0, the remediated A1, Exa E0, M06A S2A–S2D, the
+> **Status:** implementation in progress. A0, the remediated A1, A2, Exa E0, M06A S2A–S2D, the
 > provider-neutral O1 DEEP wait seam, and the Sumble portion of O2 composition are implemented
-> mechanically; Exa E1/E2, A2,
-> the full-unit launch surface, O3, and live canaries remain open. **Recorded:** 2026-08-03. **Working branch:**
+> mechanically; Exa E1/E2, the production Sumble directive-input binding, the full-unit launch
+> surface, O3, and live canaries remain open. **Recorded:** 2026-08-04. **Working branch:**
 > `platform/c8-account-profiling-integration`. **Provider baseline:** commit `cb7a275`, identical to
 > the current local `platform/c8-exa-sumble-discovery` branch when this plan was recorded.
 >
@@ -129,27 +129,28 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 
 ## 3. Current state and exact deltas
 
-| Area | Current state at `cb7a275` | Required delta |
+| Area | Current integrated state | Remaining delta |
 |---|---|---|
 | Exa Websets discovery | D1-D6 built; E1 built mechanically; discovery branch integrated | Consume only; do not rebuild or mutate the seal |
 | Sumble account gaps | S1 mechanical REST-v9/snapshot/receipt integration passes; paid live gate remains open | Reuse its auth, error, snapshot, fingerprint, credit, and spend-unknown contracts where the shapes genuinely match |
 | Account profiling | M8 account profiler and C6.7 governed account research agent exist | Supply a deep-field ICP, directive context, real production resolver/acquisition bindings, and provider acceptance |
-| Exa Deep | `ExaDeepResolver` exists but is an older synchronous, field-at-a-time Search adapter using `search_type="neural"`, highlights, and direct HTTP | Freeze the current `/search` Deep/Deep-Reasoning contract; compile structured output; coalesce bounded fields/questions; persist request/response/cost; materialize snapshot-backed fields |
+| Exa Deep | E0 provides the bounded Deep/Deep-Reasoning structured request compiler, truthful schema/evidence normalizer, and a hard-disabled production resolver-time HTTP boundary | E1 must durably acquire/coalesce/persist/settle/replay; E2 must materialize verified snapshot-backed fields and bind production composition |
 | Committee worker | Provider-neutral `CommitteeSource`, admission, role plausibility, persona claims, and coverage exist | Implement Sumble-backed source and preserve provider-vs-inferred semantics |
 | Sumble committee acquisition | S2A–S2D now implement the pinned no-reveal contract, durable async acquisition, snapshot source, and seven-condition gate | Pass the separately authorized live S2 canary and fresh-process replay |
-| Deep orchestrator | Provider-neutral preparation now runs between account profiling and the short committee transaction | Retain this seam while the A2 resolver and full launch tool are bound; never add a provider branch |
+| Deep orchestrator | Provider-neutral preparation now runs between account profiling and the short committee transaction, and A2 pins are immutable on account plans/runs | Retain these seams while E1/E2 and the full launch tool are bound; never add a provider branch |
 | Project wait state | DEEP and discovery now both admit typed active `WAITING_EXTERNAL` checkpoints | Bind the production wake scheduler/event path and prove it in the combined canary |
-| Production committee composition | Sumble S2 composition is default-off and injectable into the per-run composer; A2 inputs are intentionally unbound | Implement the durable A2 input resolver, then enable only with credential/policy/live gates |
+| Production committee composition | Sumble S2 composition is default-off and injectable into the per-run composer; A2's durable directive and exact run pins exist, but the production `SumbleCommitteeInputResolver` remains unbound | Implement the resolver over A2's durable state in serial O2 composition, then enable only with credential/policy/live gates |
 | Main-agent toolbelt | `run_deep_account@1` invokes M2 `profile_account` only; `resolve_committee@1` is separate | Keep fine-grained tools; add an unambiguous set-scoped full-unit launcher that uses the existing fleet and `AccountDeepOrchestrator` |
-| Research direction | Project-scoped memory and `project_instruction` ingestion exist; account plans currently contain only gap-field aspects | Add a versioned confirmed directive, pin it into plan/run context, and layer account-specific overrides without treating memory as authority |
+| Research direction | A2 provides a versioned, human-confirmed directive, exact sealed membership, account overrides, future-thread memory visibility, context materialization, and immutable plan/run/Sumble pins | Consume the exact pin in E1/E2, the production Sumble input resolver, O3 behavior, and the full-unit launch surface without treating memory as execution authority |
 | Synthetic upstream state | Existing Insight Health fixture stops at discovery and its active ICP has scoring fields only | Add a separate profiling fixture layer with deep fields, selected sealed account, tier approval, directive, source override, provider snapshots/doubles, and real orchestrator entry |
 
-### 3.1 Implementation checkpoint — 2026-08-03
+### 3.1 Implementation checkpoint — 2026-08-04
 
 | Slice | State | Evidence |
 |---|---|---|
 | A0 | Complete mechanically; no live call | `M8B-A0-account-deep-provider-contract-acceptance.md`; pinned Exa request/response digests, strict additive-tolerant models, independent default-off settings, spend/error and future-operation decisions |
 | A1 | Complete mechanically; precedence remediation closed 2026-08-04 | additive fixture; direct and composed paths use the real gate and the same frozen exact-source authority, produce all four account claims, persist explicit policy refs, and replay without provider calls/writes |
+| A2 | Complete mechanically after authority remediation; no provider call | `61826eb` + `940fbc0`; human-confirmed durable directives, exact sealed membership/source authority, account overrides, future-thread/context propagation, immutable plan/run/Sumble pins, and governed erasure |
 | E0 | Complete mechanically after E0-R1/R2 remediation; no live call | `M8B-E0-exa-deep-wire-acceptance.md`; provider-safe request compiler plus unchanged-golden normalization, paid all-null hard miss, exact value-schema validation, field-faithful/citation-preserving evidence disposition, and hard-disabled resolver-time HTTP. |
 | S2A | Complete mechanically | `2810dcf`; pinned v9 Teams/People request, response, credit, no-reveal, identity, and normalizer contract |
 | S2B | Complete mechanically | `0f8715b`; durable async operation/snapshot/attempt/receipt and exact spend/replay |
@@ -157,13 +158,14 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 | S2D | Complete mechanically | `00a3e90`; immutable seven-condition decision and zero-call ineligible matrix |
 | O1 | Complete mechanically | `6fbf14b`; provider-neutral prepare/wait seam, DEEP wait checkpoint, same account-run resume, no transaction during provider work |
 | O2 — Sumble composition | Complete mechanically | `cc5b62a`; S2D -> S2B -> S2C adapter, independent default-off setting, credential failure, per-run composer injection, durable combined test |
-| O2 — full capability | Open | awaits A2 input resolver, Exa E2, `launch_account_deep@1`, and full tool/fleet binding |
+| O2 — full capability | Open | awaits the production Sumble directive-input resolver over A2 state, Exa E2, `launch_account_deep@1`, and full tool/fleet binding |
 
 The current Sumble production builder deliberately requires an injected
-`SumbleCommitteeInputResolver`. That seam is the A2 ownership boundary: it must read the pinned
-directive/committee plan and authorization receipts from durable project state. Supplying a static
-or session-only object in production would violate this roadmap. With the feature disabled or no
-resolver bound, production performs zero S2 calls.
+`SumbleCommitteeInputResolver`. A2 now owns the durable directive, exact account/run pin, committee
+plan, and authorization inputs that resolver must read; the remaining production adapter and
+composition binding belong to serial O2 integration. Supplying a static or session-only object in
+production would violate this roadmap. With the feature disabled or no resolver bound, production
+performs zero S2 calls.
 
 ## 4. Provider roles and field-level waterfall
 
