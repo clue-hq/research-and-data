@@ -1317,6 +1317,12 @@ class LaunchAccountDeepTool(_CapabilityTool):
     """
 
     name = "launch_account_deep"
+    model_description = (
+        "Create or exactly replay the immutable set-scoped account-deep launch receipt only after "
+        "an explicit human go-ahead over the confirmed directive, exact account set, and reviewed "
+        "estimate. A successful result means launched/enqueued or replayed; it never means the "
+        "account or committee research has completed."
+    )
     input_model = LaunchAccountDeepInput
     output_model = AccountDeepLaunchOutput
     replay = ReplaySafety(

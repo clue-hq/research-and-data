@@ -47,19 +47,17 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        # head-of-abm@v17 / stage0-interview@v9 — exact-set O2 account-deep launch plus the
-        # truthful A2 draft preview and S1 account-gap
-        # and E1 targeted-
-        # enrichment authority plus
-        # dynamic Client-KB proposal/materialization
+        # head-of-abm@v18 adds O3's progressively disclosed account-deep conversational skill;
+        # the exact-set O2 launch and truthful A2 draft preview remain the governed primitives,
+        # alongside S1/E1 targeted-enrichment and dynamic Client-KB proposal/materialization
         # guidance and propose_field@2, on top of PC-C8 §6c's quote-by-text bump. The statement
         # authors the verbatim span instead of character offsets, and a typed claim value is
         # admitted by the entailment judge, on top of slice 1's closing bump (the §7
         # inspection-tool grants + delegation withholding) and task 1.4's:
         # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
         # nested authority, and B1 layer 2's engine-defaulted claim entity.
-        AgentRole.HEAD_OF_ABM: ("3b8a93066501c63702ab538b23968698b680125f5422e7e426ec892f4e6449fe"),
-        AgentRole.RESEARCH: "4bf40eee2b8e6f6d98a0ee295e3ff900243e162eae53cc6c8852e70521aef391",
+        AgentRole.HEAD_OF_ABM: ("d531f2948294595d3a680e5a0494281d9c966d5ab84b4663ffc9286464cf92ee"),
+        AgentRole.RESEARCH: "0d80c5ecc0244d2a97c812789dc43107586d2c3962a43d9529847b11a22dd8ee",
         AgentRole.CONTENT_DRAFTER: (
             "f4095d62dfc9bc734aa2acb111270a3f10e2242a252e96c229d464435b7a90bc"
         ),
@@ -165,8 +163,9 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
     disclosures = head.skill_disclosures()
 
-    assert len(disclosures) == 1
+    assert len(disclosures) == 2
     assert disclosures[0].resource.address == "skill:stage0-interview@v9"
+    assert disclosures[1].resource.address == "skill:account-deep-steering@v1"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -179,7 +178,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     (
         (
             AgentRole.RESEARCH,
-            "skill:research-task@v1",
+            "skill:research-task@v2",
             "outputs/research-strategy.md",
             180.0,
             16,
@@ -304,8 +303,9 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
 
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "evaluate_stage0_readiness@1" not in {pin.address for pin in head.profile.tools}
-    assert head.profile.skills == ()
-    assert head.skill_disclosures() == ()
+    assert [item.resource.address for item in head.skill_disclosures()] == [
+        "skill:account-deep-steering@v1"
+    ]
 
 
 def test_resolved_snapshot_materializes_through_c61_backend(
@@ -333,7 +333,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v3/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v4/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(
