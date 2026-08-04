@@ -251,6 +251,7 @@ def build_high_tier_resolver(
                     field_keys=effective.field_keys,
                     research_directive=pin,
                     budget_cap_cents=effective.effort_policy.budget_cap_cents,
+                    contact_profiling_allowed=(effective.privacy_policy.contact_profiling_allowed),
                 )
             entity_ids = await entities_with_field_claim(conn, TIER_FIELD, scope=scope)
             for entity_id in entity_ids:
@@ -285,6 +286,7 @@ def build_high_tier_resolver(
                         field_keys=directed.field_keys,
                         research_directive=directed.research_directive,
                         budget_cap_cents=directed.budget_cap_cents,
+                        contact_profiling_allowed=directed.contact_profiling_allowed,
                     )
                 )
         return tuple(specs)

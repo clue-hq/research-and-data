@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.sumble_account_gaps import SUMBLE_V9_CONTRACT_VERSION
 from clue_api.sumble_committee_acquisition import (
     SUMBLE_COMMITTEE_CONTRACT_VERSION,
     SUMBLE_COMMITTEE_POLICY_VERSION,
@@ -24,6 +25,7 @@ from clue_api.sumble_committee_acquisition import (
     SumbleCommitteeOutcome,
     compile_sumble_committee_preflight,
 )
+from clue_api.sumble_committee_wake import SumbleCommitteeWakeWorker
 from clue_core import (
     CommitteeAcquisitionRequest,
     EntityId,
@@ -69,6 +71,10 @@ from tests.durable.test_discovery_batch_d1 import _complete_batch, _start_batch
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "providers" / "sumble" / "v9"
+
+
+def test_s2_uses_the_same_reviewed_v9_contract_as_s1() -> None:
+    assert SUMBLE_COMMITTEE_CONTRACT_VERSION == SUMBLE_V9_CONTRACT_VERSION
 
 
 def _payload(name: str) -> SumbleRawPayload:
@@ -414,6 +420,26 @@ def test_s2b_async_wait_charge_settlement_zero_call_replay_and_dsar(tmp_path: Pa
             assert transport.calls == ["teams", "people_submit"]
             assert pending.operation.provider_units_charged == Decimal(12)
 
+            offered: set[ProjectRunId] = set()
+
+            async def wake(project_run_id: ProjectRunId) -> bool:
+                # A developer may intentionally run this rollback-isolated test against a
+                # database that also contains real pending fleet work.  Model queue ownership
+                # for this fixture only: unrelated project runs are not this test's offers and
+                # must not affect its wake count.
+                if project_run_id != request.project_run_id:
+                    return False
+                if project_run_id in offered:
+                    return False
+                offered.add(project_run_id)
+                return True
+
+            wake_worker = SumbleCommitteeWakeWorker(
+                project_run_waker=wake,
+                conn_factory=same_connection,
+            )
+            assert await wake_worker.run_due(now=datetime.now(UTC)) == 0
+
             not_due = await coordinator.start(preflight)
             assert not_due.outcome is SumbleCommitteeOutcome.WAITING_EXTERNAL
             assert transport.calls == ["teams", "people_submit"]
@@ -425,6 +451,9 @@ def test_s2b_async_wait_charge_settlement_zero_call_replay_and_dsar(tmp_path: Pa
                     "past": datetime.now(UTC) - timedelta(seconds=1),
                 },
             )
+            assert await wake_worker.run_due(now=datetime.now(UTC)) == 1
+            assert offered == {request.project_run_id}
+            assert await wake_worker.run_due(now=datetime.now(UTC)) == 0
             running = await coordinator.start(preflight)
             assert running.outcome is SumbleCommitteeOutcome.WAITING_EXTERNAL
             assert transport.calls[-1] == "people_poll"

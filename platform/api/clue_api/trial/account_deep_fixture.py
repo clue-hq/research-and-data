@@ -49,6 +49,7 @@ from clue_api.trial.discovery_fixture import (
     FixtureStateConflict,
     InsightHealthDiscoveryFixtureResult,
     OfficialSitePage,
+    load_insight_health_discovery_fixture,
     seed_insight_health_discovery_fixture,
 )
 from clue_config import (
@@ -184,6 +185,52 @@ MUST_HAVE_CRITERIA = (
 )
 
 OBSERVED_AT = datetime(2026, 8, 3, 9, 0, tzinfo=UTC)
+
+
+class AccountDeepFixtureTarget(BaseModel):
+    """One truthful account/ICP target for the additive A1 development handoff.
+
+    The original A1 acceptance target remains the default.  Live-provider acceptance may instead
+    point the fixture at an account already admitted by the synthetic discovery database, without
+    mutating that earlier batch or pretending the ``.example`` account is a real provider target.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    canonical_name: str
+    primary_domain: str
+    linkedin_url: str
+    source_url: str
+    hq_geo: dict[str, JsonValue]
+    aliases: tuple[str, ...] = ()
+    registry_ids: dict[str, str] = Field(default_factory=dict)
+    account_status: AccountStatus = AccountStatus.ACTIVE
+    industry: str
+    employee_count: int
+    revenue_band: str
+    icp_key: str
+    discovery_query: str
+    must_have_criteria: tuple[str, ...]
+
+
+DEFAULT_ACCOUNT_DEEP_FIXTURE_TARGET = AccountDeepFixtureTarget(
+    canonical_name=ACCOUNT_NAME,
+    primary_domain=ACCOUNT_DOMAIN,
+    linkedin_url=ACCOUNT_LINKEDIN_URL,
+    source_url=ACCOUNT_SOURCE_URL,
+    hq_geo=ACCOUNT_GEO,
+    aliases=("Cascade Gastro",),
+    registry_ids={"fixture": "cascade-gastro-001"},
+    industry="Gastroenterology specialty practice",
+    employee_count=42,
+    revenue_band="10m_50m",
+    icp_key=DEEP_ICP_KEY,
+    discovery_query=(
+        "Independent gastroenterology specialty practices in the United States with multiple "
+        "providers and evidence of referral, fax, patient-access, or scheduling workflows"
+    ),
+    must_have_criteria=MUST_HAVE_CRITERIA,
+)
 
 
 def _stable_uuid(label: str) -> UUID:
@@ -624,11 +671,12 @@ def _directive_bytes(directive: FixtureResearchDirective) -> bytes:
     ).encode("utf-8")
 
 
-def _provider_payload(source_key: str) -> dict[str, JsonValue]:
+def _provider_payload(source_key: str, *, target: AccountDeepFixtureTarget) -> dict[str, JsonValue]:
+    use_recorded_doubles = target == DEFAULT_ACCOUNT_DEEP_FIXTURE_TARGET
     fields: list[JsonValue] = [
         cast(JsonValue, record.model_dump(mode="json"))
         for record in DEFAULT_RECORDED_FIELDS
-        if record.source_key == source_key
+        if use_recorded_doubles and record.source_key == source_key
     ]
     people: list[JsonValue] = (
         [
@@ -638,7 +686,7 @@ def _provider_payload(source_key: str) -> dict[str, JsonValue]:
             cast(JsonValue, candidate.model_dump(mode="json", exclude_none=True))
             for candidate in DEFAULT_COMMITTEE_CANDIDATES
         ]
-        if source_key == "sumble_people"
+        if use_recorded_doubles and source_key == "sumble_people"
         else []
     )
     teams: list[JsonValue] = (
@@ -658,7 +706,7 @@ def _provider_payload(source_key: str) -> dict[str, JsonValue]:
                 "relationship_label": "provider_returned_team_membership",
             },
         ]
-        if source_key == "sumble_teams"
+        if use_recorded_doubles and source_key == "sumble_teams"
         else []
     )
     return {
@@ -666,8 +714,8 @@ def _provider_payload(source_key: str) -> dict[str, JsonValue]:
         "fixture": FIXTURE_VERSION,
         "source_key": source_key,
         "account": {
-            "canonical_name": ACCOUNT_NAME,
-            "primary_domain": ACCOUNT_DOMAIN,
+            "canonical_name": target.canonical_name,
+            "primary_domain": target.primary_domain,
         },
         "fields": fields,
         "people": people,
@@ -680,9 +728,13 @@ async def _capture_fixture_artifacts(
     conn: AsyncConnection,
     *,
     storage: StorageBackend,
+    target: AccountDeepFixtureTarget,
 ) -> tuple[str, str, dict[str, str]]:
     sink = SnapshotSink(workspace_id=WORKSPACE_ID)
-    directive_body = _directive_bytes(DEFAULT_RESEARCH_DIRECTIVE)
+    fixture_directive = DEFAULT_RESEARCH_DIRECTIVE.model_copy(
+        update={"account_scope": (target.primary_domain,)}
+    )
+    directive_body = _directive_bytes(fixture_directive)
     directive_ref = sink.capture(
         RawArtifact(
             ref="fixture://insight-health/account-deep/research-directive/v1",
@@ -705,7 +757,9 @@ async def _capture_fixture_artifacts(
         "exa_deep",
     ):
         body = json.dumps(
-            _provider_payload(source_key), sort_keys=True, separators=(",", ":")
+            _provider_payload(source_key, target=target),
+            sort_keys=True,
+            separators=(",", ":"),
         ).encode("utf-8")
         provider_keys[source_key] = sink.capture(
             RawArtifact(
@@ -725,18 +779,15 @@ async def _capture_fixture_artifacts(
     return directive_ref, content_address(directive_body), provider_keys
 
 
-def _deep_discovery_strategy() -> dict[str, JsonValue]:
+def _deep_discovery_strategy(target: AccountDeepFixtureTarget) -> dict[str, JsonValue]:
     return {
         "mode": "platform_led",
         "channels": ["exa_websets"],
         "requested_count": 1,
         "entity_type": "company",
-        "query": (
-            "Independent gastroenterology specialty practices in the United States with multiple "
-            "providers and evidence of referral, fax, patient-access, or scheduling workflows"
-        ),
+        "query": target.discovery_query,
         "geographies": ["US"],
-        "must_have_criteria": list(MUST_HAVE_CRITERIA),
+        "must_have_criteria": list(target.must_have_criteria),
         "scoring_mode": "disabled",
         "selection_mode": "discovery_criteria",
         "approved_tier": "high",
@@ -747,12 +798,12 @@ def _deep_discovery_strategy() -> dict[str, JsonValue]:
     }
 
 
-def _deep_source_profile_ref() -> dict[str, JsonValue]:
+def _deep_source_profile_ref(target: AccountDeepFixtureTarget) -> dict[str, JsonValue]:
     return {
         "contract": "account-deep-healthcare-source-override-v1",
         "pack_key": "healthcare_practice",
         "workspace_id": WORKSPACE_ID,
-        "icp_key": DEEP_ICP_KEY,
+        "icp_key": target.icp_key,
         "override_version": SOURCE_OVERRIDE_VERSION,
         "official_page_source": "firecrawl_site",
         "allowed": [
@@ -767,11 +818,13 @@ def _deep_source_profile_ref() -> dict[str, JsonValue]:
     }
 
 
-async def _ensure_source_override(conn: AsyncConnection) -> None:
+async def _ensure_source_override(
+    conn: AsyncConnection, *, target: AccountDeepFixtureTarget
+) -> None:
     await bind_healthcare_account_deep_source_override(
         conn,
         workspace_id=WORKSPACE_ID,
-        icp_key=DEEP_ICP_KEY,
+        icp_key=target.icp_key,
         version=SOURCE_OVERRIDE_VERSION,
     )
 
@@ -780,15 +833,16 @@ async def _ensure_deep_icp(
     conn: AsyncConnection,
     *,
     discovery: InsightHealthDiscoveryFixtureResult,
+    target: AccountDeepFixtureTarget,
 ) -> ICPSpec:
-    await _ensure_source_override(conn)
-    existing = await get_active_icp(conn, WORKSPACE_ID, DEEP_ICP_KEY)
+    await _ensure_source_override(conn, target=target)
+    existing = await get_active_icp(conn, WORKSPACE_ID, target.icp_key)
     expected = {
         "created_from": ICPCreatedFrom.CLIENT_EDIT,
         "field_keys": DEEP_FIELD_KEYS,
         "enabled_packs": ("healthcare_practice",),
-        "discovery_strategy": _deep_discovery_strategy(),
-        "source_profile_ref": _deep_source_profile_ref(),
+        "discovery_strategy": _deep_discovery_strategy(target),
+        "source_profile_ref": _deep_source_profile_ref(target),
         "client_entity_id": EntityId(UUID(discovery.client_entity_id)),
         "client_kb_version": discovery.client_kb_version,
         "product_id": PRODUCT_ID,
@@ -797,14 +851,14 @@ async def _ensure_deep_icp(
         return await create_icp_spec(
             conn,
             workspace_id=WORKSPACE_ID,
-            icp_key=DEEP_ICP_KEY,
+            icp_key=target.icp_key,
             created_from=ICPCreatedFrom.CLIENT_EDIT,
             field_keys=DEEP_FIELD_KEYS,
             enabled_packs=("healthcare_practice",),
-            discovery_strategy=_deep_discovery_strategy(),
-            source_profile_ref=_deep_source_profile_ref(),
+            discovery_strategy=_deep_discovery_strategy(target),
+            source_profile_ref=_deep_source_profile_ref(target),
             created_by="human:insight-health-account-deep-fixture",
-            label="U.S. independent gastroenterology practices — account deep",
+            label=f"{target.industry} — account deep",
             description=(
                 "Synthetic deep-eligible ICP for target-locked account profiling and bounded "
                 "buying-committee discovery. It does not replace the discovery fixture ICP."
@@ -900,7 +954,7 @@ async def _ensure_deep_project_run(
         raise FixtureStateConflict("account-deep fixture project run has incompatible lineage")
 
 
-def _discovery_plan(deep_icp: ICPSpec) -> DiscoveryPlan:
+def _discovery_plan(deep_icp: ICPSpec, *, target: AccountDeepFixtureTarget) -> DiscoveryPlan:
     return DiscoveryPlan(
         discovery_plan_id=DISCOVERY_PLAN_ID,
         plan_version=1,
@@ -917,12 +971,12 @@ def _discovery_plan(deep_icp: ICPSpec) -> DiscoveryPlan:
             DiscoverySearchPlan(
                 search_key="gastro-account-deep-fixture-search",
                 channel_key="exa_websets",
-                normalized_query=str(_deep_discovery_strategy()["query"]),
+                normalized_query=target.discovery_query,
                 entity_type=DiscoveryEntityKind.COMPANY,
                 requested_count=1,
                 criteria=tuple(
                     DiscoveryCriterionPlan(description=criterion)
-                    for criterion in MUST_HAVE_CRITERIA
+                    for criterion in target.must_have_criteria
                 ),
             ),
         ),
@@ -939,11 +993,12 @@ async def _capture_discovery_payloads(
     conn: AsyncConnection,
     *,
     storage: StorageBackend,
+    target: AccountDeepFixtureTarget,
 ) -> dict[str, tuple[str, bytes]]:
     payloads: dict[str, object] = {
         "request": {
-            "query": _deep_discovery_strategy()["query"],
-            "criteria": list(MUST_HAVE_CRITERIA),
+            "query": target.discovery_query,
+            "criteria": list(target.must_have_criteria),
             "count": 1,
         },
         "submit": {"id": "exa-webset-account-deep-fixture", "status": "running"},
@@ -955,14 +1010,14 @@ async def _capture_discovery_payloads(
         "page": {"items": ["exa-account-deep-item-1"], "has_more": False},
         "item": {
             "id": "exa-account-deep-item-1",
-            "name": ACCOUNT_NAME,
-            "url": ACCOUNT_SOURCE_URL,
-            "domain": ACCOUNT_DOMAIN,
-            "linkedin_url": ACCOUNT_LINKEDIN_URL,
-            "industry": "Gastroenterology specialty practice",
-            "employee_count": 42,
-            "headquarters": ACCOUNT_GEO,
-            "revenue_band": "10m_50m",
+            "name": target.canonical_name,
+            "url": target.source_url,
+            "domain": target.primary_domain,
+            "linkedin_url": target.linkedin_url,
+            "industry": target.industry,
+            "employee_count": target.employee_count,
+            "headquarters": target.hq_geo,
+            "revenue_band": target.revenue_band,
             "evaluations": [
                 {
                     "criterion": criterion,
@@ -970,13 +1025,13 @@ async def _capture_discovery_payloads(
                     "reasoning": "recorded synthetic provider evidence for the exact account",
                     "references": [
                         {
-                            "url": ACCOUNT_SOURCE_URL,
-                            "title": ACCOUNT_NAME,
-                            "snippet": f"{criterion} — {ACCOUNT_DOMAIN}",
+                            "url": target.source_url,
+                            "title": target.canonical_name,
+                            "snippet": f"{criterion} — {target.primary_domain}",
                         }
                     ],
                 }
-                for criterion in MUST_HAVE_CRITERIA
+                for criterion in target.must_have_criteria
             ],
         },
     }
@@ -998,20 +1053,20 @@ async def _capture_discovery_payloads(
     return captured
 
 
-async def _ensure_account(conn: AsyncConnection) -> EntityId:
+async def _ensure_account(conn: AsyncConnection, *, target: AccountDeepFixtureTarget) -> EntityId:
     existing = await resolve_alias(
-        conn, ACCOUNT_DOMAIN, EntityType.ACCOUNT, workspace_id=WORKSPACE_ID
+        conn, target.primary_domain, EntityType.ACCOUNT, workspace_id=WORKSPACE_ID
     )
     if existing is None:
         existing = await insert_account_entity(
             conn,
             workspace_id=WORKSPACE_ID,
-            canonical_name=ACCOUNT_NAME,
-            primary_domain=ACCOUNT_DOMAIN,
-            aliases=("Cascade Gastro",),
-            hq_geo=ACCOUNT_GEO,
-            registry_ids={"fixture": "cascade-gastro-001"},
-            status=AccountStatus.ACTIVE,
+            canonical_name=target.canonical_name,
+            primary_domain=target.primary_domain,
+            aliases=target.aliases,
+            hq_geo=target.hq_geo,
+            registry_ids=target.registry_ids,
+            status=target.account_status,
         )
     account = await get_account(conn, existing)
     if account is None or (
@@ -1019,7 +1074,12 @@ async def _ensure_account(conn: AsyncConnection) -> EntityId:
         account.primary_domain,
         account.status,
         account.workspace_id,
-    ) != (ACCOUNT_NAME, ACCOUNT_DOMAIN, AccountStatus.ACTIVE, WORKSPACE_ID):
+    ) != (
+        target.canonical_name,
+        target.primary_domain,
+        target.account_status,
+        WORKSPACE_ID,
+    ):
         raise FixtureStateConflict("account-deep fixture account identity differs")
     return existing
 
@@ -1095,42 +1155,58 @@ async def _materialize_fixture_account(
     *,
     account_id: EntityId,
     item_artifact_key: str,
+    target: AccountDeepFixtureTarget,
 ) -> tuple[dict[str, Claim], Claim]:
     values: dict[str, tuple[str, JsonValue, str]] = {
         "identity.account_name": (
             "core.account_name",
-            ACCOUNT_NAME,
-            f"{ACCOUNT_NAME} is the canonical name returned for {ACCOUNT_DOMAIN}.",
+            target.canonical_name,
+            (
+                f"{target.canonical_name} is the canonical name returned for "
+                f"{target.primary_domain}."
+            ),
         ),
         "identity.primary_domain": (
             "core.primary_domain",
-            ACCOUNT_DOMAIN,
-            f"The exact returned primary domain is {ACCOUNT_DOMAIN}.",
+            target.primary_domain,
+            f"The exact returned primary domain is {target.primary_domain}.",
         ),
         "discovery.company_linkedin_url": (
             "core.company_linkedin_url",
-            ACCOUNT_LINKEDIN_URL,
-            f"The company profile for {ACCOUNT_NAME} is {ACCOUNT_LINKEDIN_URL}.",
+            target.linkedin_url,
+            f"The company profile for {target.canonical_name} is {target.linkedin_url}.",
         ),
         "discovery.industry": (
             "core.industry",
-            "Gastroenterology specialty practice",
-            f"{ACCOUNT_NAME} at {ACCOUNT_DOMAIN} is a gastroenterology specialty practice.",
+            target.industry,
+            (
+                f"{target.canonical_name} at {target.primary_domain} is classified as "
+                f"{target.industry}."
+            ),
         ),
         "discovery.employee_size": (
             "core.employee_count",
-            42,
-            f"{ACCOUNT_NAME} at {ACCOUNT_DOMAIN} has 42 employees in the recorded fixture.",
+            target.employee_count,
+            (
+                f"{target.canonical_name} at {target.primary_domain} has "
+                f"{target.employee_count} employees in the recorded fixture."
+            ),
         ),
         "discovery.headquarters": (
             "core.hq_location",
-            ACCOUNT_GEO,
-            f"{ACCOUNT_NAME} at {ACCOUNT_DOMAIN} is headquartered in Portland, Oregon.",
+            target.hq_geo,
+            (
+                f"{target.canonical_name} at {target.primary_domain} has recorded headquarters "
+                f"{target.hq_geo.get('raw', 'location unavailable')}."
+            ),
         ),
         "discovery.revenue": (
             "core.revenue_band",
-            "10m_50m",
-            f"{ACCOUNT_NAME} at {ACCOUNT_DOMAIN} has recorded revenue band 10m_50m.",
+            target.revenue_band,
+            (
+                f"{target.canonical_name} at {target.primary_domain} has recorded revenue band "
+                f"{target.revenue_band}."
+            ),
         ),
     }
     claims: dict[str, Claim] = {}
@@ -1142,7 +1218,7 @@ async def _materialize_fixture_account(
             account_id=account_id,
             field_key=field_key,
             value=value,
-            source_url=ACCOUNT_SOURCE_URL,
+            source_url=target.source_url,
             evidence_span=evidence,
             artifact_key=item_artifact_key,
         )
@@ -1158,13 +1234,13 @@ async def _materialize_fixture_account(
                     "reasoning": "recorded provider criterion evaluation for the exact account",
                     "references": [
                         {
-                            "url": ACCOUNT_SOURCE_URL,
-                            "title": ACCOUNT_NAME,
-                            "snippet": f"{criterion}; exact account {ACCOUNT_DOMAIN}",
+                            "url": target.source_url,
+                            "title": target.canonical_name,
+                            "snippet": f"{criterion}; exact account {target.primary_domain}",
                         }
                     ],
                 }
-                for criterion in MUST_HAVE_CRITERIA
+                for criterion in target.must_have_criteria
             ]
         },
     }
@@ -1173,9 +1249,10 @@ async def _materialize_fixture_account(
         account_id=account_id,
         field_key="core.discovery_provenance",
         value=criterion_value,
-        source_url=ACCOUNT_SOURCE_URL,
+        source_url=target.source_url,
         evidence_span=(
-            f"All three must-have criteria returned yes for {ACCOUNT_NAME} at {ACCOUNT_DOMAIN}."
+            f"All must-have criteria returned yes for {target.canonical_name} at "
+            f"{target.primary_domain}."
         ),
         artifact_key=item_artifact_key,
         discovery=True,
@@ -1188,6 +1265,7 @@ async def _ensure_sealed_batch(
     *,
     storage: StorageBackend,
     deep_icp: ICPSpec,
+    target: AccountDeepFixtureTarget,
 ) -> tuple[EntityId, str]:
     existing_seal = await get_discovery_batch_seal(
         conn, workspace_id=WORKSPACE_ID, batch_id=DISCOVERY_BATCH_ID
@@ -1211,8 +1289,8 @@ async def _ensure_sealed_batch(
             raise FixtureStateConflict("fixture sealed account manifest differs")
         return sealed.account_ids[0], existing_seal.seal_sha256
 
-    payloads = await _capture_discovery_payloads(conn, storage=storage)
-    plan = _discovery_plan(deep_icp)
+    payloads = await _capture_discovery_payloads(conn, storage=storage, target=target)
+    plan = _discovery_plan(deep_icp, target=target)
     await put_discovery_plan(conn, workspace_id=WORKSPACE_ID, plan=plan)
     await create_discovery_batch(
         conn,
@@ -1226,7 +1304,7 @@ async def _ensure_sealed_batch(
             {
                 "fixture": FIXTURE_VERSION,
                 "plan_id": str(DISCOVERY_PLAN_ID),
-                "account_domain": ACCOUNT_DOMAIN,
+                "account_domain": target.primary_domain,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -1323,21 +1401,24 @@ async def _ensure_sealed_batch(
         conn, workspace_id=WORKSPACE_ID, batch_id=DISCOVERY_BATCH_ID
     )
 
-    account_id = await _ensure_account(conn)
+    account_id = await _ensure_account(conn, target=target)
     await put_discovery_candidate_link(
         conn,
         workspace_id=WORKSPACE_ID,
         batch_id=DISCOVERY_BATCH_ID,
         item_snapshot_id=DISCOVERY_ITEM_ID,
         admission_status=DiscoveryCandidateAdmissionState.ADMITTED,
-        raw_name=ACCOUNT_NAME,
-        candidate_domain=ACCOUNT_DOMAIN,
-        source_url=ACCOUNT_SOURCE_URL,
+        raw_name=target.canonical_name,
+        candidate_domain=target.primary_domain,
+        source_url=target.source_url,
         account_entity_id=account_id,
         survivor_entity_id=account_id,
     )
     claims, _criterion = await _materialize_fixture_account(
-        conn, account_id=account_id, item_artifact_key=item_key
+        conn,
+        account_id=account_id,
+        item_artifact_key=item_key,
+        target=target,
     )
     for logical_field, claim in claims.items():
         await put_discovery_field_resolution(
@@ -1580,8 +1661,10 @@ async def _commit_handoff(
 async def seed_insight_health_account_deep_fixture(
     conn: AsyncConnection,
     *,
-    pages: Mapping[str, OfficialSitePage],
+    pages: Mapping[str, OfficialSitePage] | None = None,
     storage: StorageBackend,
+    target: AccountDeepFixtureTarget = DEFAULT_ACCOUNT_DEEP_FIXTURE_TARGET,
+    reuse_existing_stage0: bool = False,
 ) -> InsightHealthAccountDeepFixtureResult:
     """Seed A1 Level A + B without provider I/O or an already-created ``account_run``.
 
@@ -1590,22 +1673,40 @@ async def seed_insight_health_account_deep_fixture(
     tier decision. The original discovery fixture's ICP and project run remain untouched.
     """
 
-    discovery = await seed_insight_health_discovery_fixture(conn, pages=pages, storage=storage)
+    if reuse_existing_stage0:
+        discovery = await load_insight_health_discovery_fixture(conn)
+    else:
+        if pages is None:
+            raise FixtureStateConflict(
+                "account-deep fixture requires pages unless existing Stage-0 reuse is explicit"
+            )
+        discovery = await seed_insight_health_discovery_fixture(
+            conn,
+            pages=pages,
+            storage=storage,
+        )
     original_icp = await get_active_icp(conn, WORKSPACE_ID, discovery.icp_key)
     if original_icp is None or original_icp.version != discovery.icp_version:
         raise FixtureStateConflict("the upstream discovery fixture ICP is absent")
 
     await load_research_packs(conn)
-    deep_icp = await _ensure_deep_icp(conn, discovery=discovery)
+    deep_icp = await _ensure_deep_icp(conn, discovery=discovery, target=target)
     preserved_icp = await get_active_icp(conn, WORKSPACE_ID, discovery.icp_key)
     if preserved_icp != original_icp:
         raise FixtureStateConflict("account-deep fixture mutated the discovery fixture ICP")
 
     directive_ref, directive_sha256, provider_keys = await _capture_fixture_artifacts(
-        conn, storage=storage
+        conn,
+        storage=storage,
+        target=target,
     )
     await _ensure_deep_project_run(conn, discovery=discovery, deep_icp=deep_icp)
-    account_id, seal_sha256 = await _ensure_sealed_batch(conn, storage=storage, deep_icp=deep_icp)
+    account_id, seal_sha256 = await _ensure_sealed_batch(
+        conn,
+        storage=storage,
+        deep_icp=deep_icp,
+        target=target,
+    )
     tier_claim = await _commit_handoff(
         conn,
         storage=storage,
@@ -1664,12 +1765,14 @@ async def seed_insight_health_account_deep_fixture(
 
 
 __all__ = [
+    "AccountDeepFixtureTarget",
     "ACCOUNT_DOMAIN",
     "ACCOUNT_NAME",
     "ACCOUNT_SOURCE_URL",
     "DEEP_FIELD_KEYS",
     "DEEP_ICP_KEY",
     "DEFAULT_COMMITTEE_CANDIDATES",
+    "DEFAULT_ACCOUNT_DEEP_FIXTURE_TARGET",
     "DEFAULT_RECORDED_FIELDS",
     "DEFAULT_RESEARCH_DIRECTIVE",
     "DISCOVERY_BATCH_ID",

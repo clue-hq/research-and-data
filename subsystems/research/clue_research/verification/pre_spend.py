@@ -427,6 +427,24 @@ class PreSpendGateImpl:
             self._emit_metric(request, verdict)
             return decision
 
+    def with_conn_factory(self, conn_factory: ConnFactory) -> PreSpendGateImpl:
+        """Clone this gate onto a caller-owned transaction.
+
+        Committee materialisation admits a contact and role-gates it before the short committee
+        transaction commits.  A gate opening its own transaction cannot see that new identity and
+        would reject every legitimate role-inference call.  Rebinding preserves the exact policy,
+        lock reader, audit, metric, and fencing-token behavior while making identity/schema reads
+        and the decision receipt part of the caller's atomic transaction.
+        """
+        return PreSpendGateImpl(
+            policy=self._policy,
+            conn_factory=conn_factory,
+            lock_reader=self._lock_reader,
+            record_decisions=self._record,
+            sink=self._sink,
+            lock_token_for_run=self._lock_token_for_run,
+        )
+
     async def assemble_target_lock(
         self, entity: AccountEntity | ContactEntity, field: FieldDef
     ) -> TargetLock:

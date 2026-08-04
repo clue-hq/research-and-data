@@ -29,9 +29,9 @@ degenerate no-composer deployment). Two honest limits remain:
   C7.6 closed the HANDOFF gap: the per-run composer now binds the production governed committee
   reader and the real materialise-then-outbox M12 handler. See :mod:`clue_api.run_composition`.
 
-This entrypoint also runs the B2 **orphan-blob sweep** on ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``
-as a background task alongside the worker (started with it, cancelled on drain) — the orphan leg the
-retention sweep does not cover. Sweep errors are logged, never fatal to the worker.
+This entrypoint also runs the B2 **orphan-blob sweep** and the provider-neutral DEEP wake path for
+due Sumble committee operations as background tasks alongside the worker (started with it,
+cancelled on drain). Sweep/wake errors are logged and never fatal to the worker.
 """
 
 from __future__ import annotations
@@ -101,6 +101,7 @@ from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
 from clue_api.sumble_committee_inputs import DurableSumbleCommitteeInputResolver
 from clue_api.sumble_committee_preparation import build_production_sumble_committee_preparer
+from clue_api.sumble_committee_wake import SumbleCommitteeWakeWorker
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
@@ -206,6 +207,36 @@ def _start_agent_cleanup(
         log.info("fleet.agent_cleanup.disabled")
         return None
     return asyncio.create_task(_agent_cleanup_loop(settings, job))
+
+
+async def _sumble_committee_wake_loop(
+    settings: Settings,
+    worker: SumbleCommitteeWakeWorker,
+    *,
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+) -> None:
+    """Wake due S2 operations without putting provider logic in the DEEP orchestrator."""
+
+    while True:
+        try:
+            completed = await worker.run_due()
+            if completed:
+                log.info("fleet.sumble_committee.woke", run_count=completed)
+        except Exception:  # noqa: BLE001 - one wake scan must not sink the fleet
+            log.warning("fleet.sumble_committee.wake_error", exc_info=True)
+        await sleep(settings.sumble_committee_wake_worker_interval_s)
+
+
+def _start_sumble_committee_wake(settings: Settings) -> asyncio.Task[None] | None:
+    if not settings.sumble_committee_acquisition_enabled:
+        log.info("fleet.sumble_committee.disabled")
+        return None
+    return asyncio.create_task(
+        _sumble_committee_wake_loop(
+            settings,
+            SumbleCommitteeWakeWorker(project_run_waker=enqueue_run_drive),
+        )
+    )
 
 
 async def _exa_discovery_loop(
@@ -618,6 +649,7 @@ async def _serve() -> None:
             secrets=secrets,
             storage=storage,
         )
+        sumble_committee_wake = _start_sumble_committee_wake(settings)
         try:
             await run_worker(worker)
         finally:
@@ -626,6 +658,7 @@ async def _serve() -> None:
                 agent_cleanup,
                 exa_discovery,
                 exa_targeted_enrichment,
+                sumble_committee_wake,
             ):
                 if background is None:
                     continue

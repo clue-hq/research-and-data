@@ -171,6 +171,23 @@ def test_composed_run_threads_committee_preparer_into_deep_orchestrator() -> Non
     run_async(scenario())
 
 
+def test_composed_run_binds_configured_role_inference_model() -> None:
+    async def scenario() -> None:
+        settings = load_settings(
+            gateway_allow_stub=True,
+            c7_production_handoff_enabled=True,
+            synthesis_model="test/configured-role-model",
+            _env_file=None,
+        )
+        composed = await _driver(
+            {("ws", "a", 1): _spec("a")},
+            settings=settings,
+        ).composed(_row("a"))
+        assert composed.deep.orchestrator._role_model == "test/configured-role-model"
+
+    run_async(scenario())
+
+
 def test_composed_discovery_retains_injected_durable_batch_starter() -> None:
     class _Starter:
         async def ensure_started(self, ctx: PhaseContext):

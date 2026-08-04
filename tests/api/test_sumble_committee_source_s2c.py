@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -154,5 +155,65 @@ def test_s2c_unconfigured_account_is_an_empty_source(tmp_path: Path) -> None:
                 operation_ids={}, storage=storage, conn_factory=same_connection
             )
             assert await source.find_candidates(account, limit=10) == ()
+
+    run_async(scenario())
+
+
+def test_s2c_combined_people_and_team_candidates_obey_directive_cap(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        class _DisjointTeamTransport(_CommitteeTransport):
+            def search_teams(self, body, *, maximum_credits):  # type: ignore[no-untyped-def]
+                response, payload = super().search_teams(body, maximum_credits=maximum_credits)
+                payload = deepcopy(payload)
+                related = deepcopy(payload["teams"][0]["related_people"][0])
+                related["person_id"] = 2002
+                related["sumble_url"] = "https://sumble.com/l/person/taylor-rivera"
+                related["attributes"]["name"] = "Taylor Rivera"
+                related["attributes"]["linkedin_url"] = "https://www.linkedin.com/in/taylor-rivera"
+                payload["teams"][0]["related_people"].append(related)
+                return type(response).model_validate(payload), payload
+
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            request = await _setup(conn, storage, workspace_id="ws-s2c-candidate-cap")
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            transport = _DisjointTeamTransport()
+            coordinator = SumbleCommitteeAcquisitionCoordinator(
+                transport=transport,
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+                poll_after_seconds=30,
+            )
+            preflight = compile_sumble_committee_preflight(request, cents_per_credit=Decimal("0.5"))
+            pending = await coordinator.start(preflight)
+            for _ in range(2):
+                await conn.execute(
+                    text(
+                        "UPDATE committee_acquisition_operation SET next_poll_at=:past WHERE id=:id"
+                    ),
+                    {
+                        "id": pending.operation.operation_id,
+                        "past": datetime.now(UTC) - timedelta(seconds=1),
+                    },
+                )
+                ready = await coordinator.start(preflight)
+            assert ready.operation.state.value == "ready"
+
+            account = await get_account(conn, request.account_id)
+            assert account is not None
+            source = SumbleCommitteeSource(
+                operation_ids={request.account_id: ready.operation.operation_id},
+                storage=storage,
+                conn_factory=same_connection,
+            )
+            candidates = await source.find_candidates(account, limit=25)
+            assert request.people_limit == 2
+            assert len(candidates) == 2
+            assert {candidate.source_person_id for candidate in candidates} == {"1001", "2002"}
 
     run_async(scenario())

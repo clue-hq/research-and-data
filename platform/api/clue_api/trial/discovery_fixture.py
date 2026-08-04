@@ -865,6 +865,90 @@ async def seed_insight_health_discovery_fixture(
     )
 
 
+async def load_insight_health_discovery_fixture(
+    conn: AsyncConnection,
+) -> InsightHealthDiscoveryFixtureResult:
+    """Reconstruct the frozen Stage-0 handoff from an already-seeded development database.
+
+    Unlike :func:`seed_insight_health_discovery_fixture`, this path performs no artifact capture,
+    resolver binding, or writes.  It exists for later-slice acceptance databases whose original
+    harvested page bodies are intentionally outside the checkout but whose durable Stage-0 lineage
+    remains complete.
+    """
+
+    project_run = await get_project_run(conn, PROJECT_RUN_ID)
+    if project_run is None or (
+        project_run.workspace_id,
+        project_run.project_id,
+        project_run.product_id,
+        project_run.icp_key,
+        project_run.icp_version,
+    ) != (WORKSPACE_ID, PROJECT_ID, PRODUCT_ID, ICP_KEY, 1):
+        raise FixtureStateConflict("persisted Stage-0 project-run lineage differs")
+    if project_run.client_entity_id is None or project_run.client_kb_version is None:
+        raise FixtureStateConflict("persisted Stage-0 project run lacks Client-KB lineage")
+    if project_run.product_context_version_id is None:
+        raise FixtureStateConflict("persisted Stage-0 project run lacks product context")
+
+    onboarding = await get_onboarding_input(
+        conn,
+        ONBOARDING_INPUT_ID,
+        workspace_id=WORKSPACE_ID,
+    )
+    if onboarding is None or onboarding.source_ref != HOME_URL:
+        raise FixtureStateConflict("persisted Stage-0 onboarding input is absent or different")
+    readiness = await get_readiness_decision(
+        conn,
+        READINESS_DECISION_ID,
+        workspace_id=WORKSPACE_ID,
+    )
+    if readiness is None or readiness.verdict is not ReadinessVerdict.READY:
+        raise FixtureStateConflict("persisted Stage-0 readiness decision is absent or not ready")
+    spec = await get_active_icp(conn, WORKSPACE_ID, ICP_KEY)
+    if spec is None or spec.version != project_run.icp_version:
+        raise FixtureStateConflict("persisted Stage-0 ICP is absent or no longer active")
+
+    kb_claims = await read_client_kb_claims(
+        conn,
+        project_run.client_entity_id,
+        workspace_id=WORKSPACE_ID,
+        version=project_run.client_kb_version,
+        product_id=PRODUCT_ID,
+    )
+    if not kb_claims:
+        raise FixtureStateConflict("persisted Stage-0 Client KB is empty")
+    ordered_fields = tuple(sorted(kb_claims))
+    artifact_keys_by_url: dict[str, str] = {}
+    for claim in kb_claims.values():
+        if claim.source_url in REQUIRED_URLS and claim.artifact_key is not None:
+            artifact_keys_by_url[claim.source_url] = claim.artifact_key
+    if set(artifact_keys_by_url) != set(REQUIRED_URLS):
+        raise FixtureStateConflict("persisted Stage-0 official-page artifacts are incomplete")
+
+    return InsightHealthDiscoveryFixtureResult(
+        fixture_version=FIXTURE_COMPILER_VERSION,
+        workspace_id=WORKSPACE_ID,
+        brand_id=BRAND_ID,
+        product_id=PRODUCT_ID,
+        project_id=PROJECT_ID,
+        client_entity_id=str(project_run.client_entity_id),
+        client_kb_version=project_run.client_kb_version,
+        stage0_run_id=str(STAGE0_RUN_ID),
+        onboarding_input_id=str(ONBOARDING_INPUT_ID),
+        icp_key=spec.icp_key,
+        icp_version=spec.version,
+        product_context_version_id=str(project_run.product_context_version_id),
+        readiness_decision_id=str(readiness.id),
+        readiness_verdict=readiness.verdict.value,
+        project_run_id=str(PROJECT_RUN_ID),
+        project_phase=project_run.phase.value,
+        client_kb_fields=ordered_fields,
+        client_claim_ids={key: str(kb_claims[key].id) for key in ordered_fields},
+        artifact_keys_by_url=artifact_keys_by_url,
+        source_urls=REQUIRED_URLS,
+    )
+
+
 __all__ = [
     "AMBIENT_URL",
     "AURA_ANYWHERE_URL",
@@ -883,5 +967,6 @@ __all__ = [
     "REQUIRED_URLS",
     "WORKSPACE_ID",
     "load_firecrawl_search_pages",
+    "load_insight_health_discovery_fixture",
     "seed_insight_health_discovery_fixture",
 ]

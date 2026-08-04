@@ -98,9 +98,11 @@ class Settings(BaseSettings):
     sumble_cents_per_credit: Decimal = Field(default=Decimal(0), ge=0)
     # Independent, default-off authorization for S2 no-reveal Teams + People acquisition during
     # account-deep research. Enabling S1 never enables personal-data acquisition implicitly.
-    # Env: CLUE_SUMBLE_COMMITTEE_ACQUISITION_ENABLED / CLUE_SUMBLE_COMMITTEE_POLL_AFTER_S.
+    # Env: CLUE_SUMBLE_COMMITTEE_ACQUISITION_ENABLED / CLUE_SUMBLE_COMMITTEE_POLL_AFTER_S /
+    # CLUE_SUMBLE_COMMITTEE_WAKE_WORKER_INTERVAL_S.
     sumble_committee_acquisition_enabled: bool = False
     sumble_committee_poll_after_s: int = Field(default=30, ge=1)
+    sumble_committee_wake_worker_interval_s: float = Field(default=1.0, gt=0)
 
     # --- C5 Recipe #1 new-run routing -------------------------------------------------------
     # Master switch. False is a hard off regardless of allowlist/percentage; existing runs are

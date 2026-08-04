@@ -256,6 +256,7 @@ def test_launch_is_immutable_exactly_replayable_and_drives_the_effective_budget(
             assert resolved[0].entity_id == fixture.selected_account_id
             assert resolved[0].research_directive == pin
             assert resolved[0].budget_cap_cents == Decimal("300")
+            assert resolved[0].contact_profiling_allowed is False
 
             with pytest.raises(DBAPIError, match="immutable"):
                 async with conn.begin_nested():

@@ -539,6 +539,11 @@ class ComposingRunDriver:
         deep = build_deep_phase_handler(
             spec=spec,
             gateway=self._gateway,
+            # M8 role inference is a direct LLM gateway call, not a research-product
+            # resolver.  Bind the same deployment-configured synthesis model used by
+            # other platform reasoning surfaces; leaving this unset makes a ready
+            # Sumble snapshot fail only when committee materialisation begins.
+            role_model=self._settings.synthesis_model,
             committee_sources=self._committee_sources,
             storage=self._storage,
             scheduler=scheduler,
