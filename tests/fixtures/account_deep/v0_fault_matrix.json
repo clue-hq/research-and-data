@@ -1,0 +1,134 @@
+{
+  "spec": "M8B Slice V0",
+  "provider_mode": "recorded-fixtures-only",
+  "cases": [
+    {
+      "id": "eligibility_sealed_batch",
+      "nodeid": "tests/api/test_sumble_committee_eligibility_s2d.py::test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operation"
+    },
+    {
+      "id": "eligibility_pass_a",
+      "nodeid": "tests/api/test_sumble_committee_eligibility_s2d.py::test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operation"
+    },
+    {
+      "id": "eligibility_must_haves",
+      "nodeid": "tests/api/test_sumble_committee_eligibility_s2d.py::test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operation"
+    },
+    {
+      "id": "eligibility_human_tier",
+      "nodeid": "tests/api/test_sumble_committee_eligibility_s2d.py::test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operation"
+    },
+    {
+      "id": "eligibility_committee_plan",
+      "nodeid": "tests/api/test_sumble_committee_eligibility_s2d.py::test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operation"
+    },
+    {
+      "id": "eligibility_governance",
+      "nodeid": "tests/api/test_sumble_committee_eligibility_s2d.py::test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operation"
+    },
+    {
+      "id": "eligibility_fresh_snapshot",
+      "nodeid": "tests/api/test_sumble_committee_eligibility_s2d.py::test_s2d_eligible_acquires_resumes_and_fresh_replay_reuses_without_calls"
+    },
+    {
+      "id": "launch_duplicate_concurrent",
+      "nodeid": "tests/api/test_account_deep_v0_fresh_process.py::test_v0_fresh_process_replay_inspects_complete_durable_state"
+    },
+    {
+      "id": "crash_before_dispatch",
+      "nodeid": "tests/api/test_sumble_committee_acquisition_s2b.py::test_s2b_process_crash_before_dispatch_resumes_without_false_spend_or_duplicate"
+    },
+    {
+      "id": "crash_after_dispatch",
+      "nodeid": "tests/api/test_sumble_committee_acquisition_s2b.py::test_s2b_process_crash_quarantines_dispatch_and_never_retries"
+    },
+    {
+      "id": "crash_after_response_before_snapshot",
+      "nodeid": "tests/api/test_sumble_committee_acquisition_s2b.py::test_s2b_recovers_a_committed_response_without_repeating_the_dispatch"
+    },
+    {
+      "id": "crash_after_snapshot_before_materialization",
+      "nodeid": "tests/api/test_sumble_committee_source_s2c.py::test_s2c_reads_only_ready_exact_account_snapshots_and_survives_no_provider_calls"
+    },
+    {
+      "id": "crash_after_claim_before_fold",
+      "nodeid": "tests/durable/test_deep_orchestrator_db.py::test_resume_after_a_pre_fold_crash_reconciles_cost_and_keeps_all_references"
+    },
+    {
+      "id": "people_pending_running_succeeded_repeated_poll",
+      "nodeid": "tests/api/test_sumble_committee_acquisition_s2b.py::test_s2b_async_wait_charge_settlement_zero_call_replay_and_dsar"
+    },
+    {
+      "id": "people_failed",
+      "nodeid": "tests/api/test_sumble_committee_acquisition_s2b.py::test_s2b_people_failed_is_terminal_uncharged_and_replays_without_poll"
+    },
+    {
+      "id": "exa_missing_grounding",
+      "nodeid": "tests/resolvers/test_exa_deep_wire_e0.py::test_unmatched_url_or_missing_grounding_never_yields_a_candidate"
+    },
+    {
+      "id": "exa_additive_drift",
+      "nodeid": "tests/resolvers/test_exa_deep_contract_a0.py::test_response_tolerates_additive_fields_but_requires_cost_and_grounding"
+    },
+    {
+      "id": "exa_timeout",
+      "nodeid": "tests/api/test_exa_deep_http_transport_e1.py::test_http_transport_preserves_post_dispatch_spend_classification"
+    },
+    {
+      "id": "exa_4xx",
+      "nodeid": "tests/api/test_exa_deep_http_transport_e1.py::test_http_transport_preserves_post_dispatch_spend_classification"
+    },
+    {
+      "id": "exa_429",
+      "nodeid": "tests/api/test_exa_deep_http_transport_e1.py::test_http_transport_preserves_post_dispatch_spend_classification"
+    },
+    {
+      "id": "exa_5xx",
+      "nodeid": "tests/api/test_exa_deep_http_transport_e1.py::test_http_transport_preserves_post_dispatch_spend_classification"
+    },
+    {
+      "id": "exa_spend_unknown",
+      "nodeid": "tests/api/test_exa_deep_acquisition_e1.py::test_e1_active_dispatch_joins_then_expired_lease_quarantines_without_retry"
+    },
+    {
+      "id": "sumble_charged_schema_drift",
+      "nodeid": "tests/api/test_sumble_committee_acquisition_s2b.py::test_s2b_charged_schema_drift_retains_response_charge_and_never_retries"
+    },
+    {
+      "id": "snapshot_stale_fresh",
+      "nodeid": "tests/api/test_exa_deep_materialization_e2.py::test_e2_ignores_expired_snapshots_and_newer_null_shadows_older_value"
+    },
+    {
+      "id": "source_contradiction_merge_preservation",
+      "nodeid": "tests/api/test_sumble_account_gaps_s1.py::test_s1_real_db_three_snapshots_conflict_preservation_and_zero_call_replay"
+    },
+    {
+      "id": "account_identity_drift",
+      "nodeid": "tests/api/test_exa_deep_materialization_e2.py::test_e2_materializer_fails_closed_on_cross_account_or_missing_snapshot"
+    },
+    {
+      "id": "same_name_contact_collision",
+      "nodeid": "tests/api/deep/test_identity_binding_ac4.py::test_born_binding_weak_and_unpromotable_on_same_name"
+    },
+    {
+      "id": "budget_rejection",
+      "nodeid": "tests/api/test_sumble_committee_eligibility_s2d.py::test_s2d_project_budget_rejection_precedes_operation_reservation"
+    },
+    {
+      "id": "jurisdiction_rejection",
+      "nodeid": "tests/api/test_sumble_committee_eligibility_s2d.py::test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operation"
+    },
+    {
+      "id": "use_class_rejection",
+      "nodeid": "tests/api/test_sumble_committee_eligibility_s2d.py::test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operation"
+    },
+    {
+      "id": "dsar_enumerate_tombstone_replay",
+      "nodeid": "tests/api/test_sumble_committee_acquisition_s2b.py::test_s2b_async_wait_charge_settlement_zero_call_replay_and_dsar"
+    },
+    {
+      "id": "fresh_process_replay_and_inspection",
+      "nodeid": "tests/api/test_account_deep_v0_fresh_process.py::test_v0_fresh_process_replay_inspects_complete_durable_state"
+    }
+  ]
+}

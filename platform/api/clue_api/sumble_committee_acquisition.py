@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -67,7 +67,7 @@ from clue_research.resolvers.sumble.teams import (
     normalize_teams,
     teams_search_request,
 )
-from clue_storage import StorageBackend
+from clue_storage import StorageBackend, read_verified_artifact
 
 SUMBLE_COMMITTEE_CONTRACT_VERSION: Final = (
     "sumble-v9-openapi-8eac8f9b74afb74f1bd4f593ee2baa4547d2ca80947feea581e91e551a97c887"
@@ -321,6 +321,75 @@ class SumbleCommitteeAcquisitionCoordinator:
                 workspace_id=operation.request.workspace_id,
                 operation_id=operation.operation_id,
             )
+            attempts = await list_committee_acquisition_attempts(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
+        by_source = {item.source_key: item for item in snapshots}
+        responded = {
+            item.source_key: item
+            for item in attempts
+            if item.state is CommitteeAttemptState.RESPONDED
+        }
+        for source_key, snapshot in by_source.items():
+            attempt = responded.get(source_key)
+            if (
+                snapshot.state is not CommitteeSnapshotState.DISPATCHING
+                or attempt is None
+                or attempt.response_artifact_key is None
+            ):
+                continue
+            try:
+                async with self._conn_factory() as conn:
+                    _, body = await read_verified_artifact(
+                        conn,
+                        self._storage,
+                        storage_key=attempt.response_artifact_key,
+                        workspace_id=operation.request.workspace_id,
+                    )
+                raw = json.loads(body)
+                if not isinstance(raw, dict):
+                    raise ValueError("Sumble response artifact must contain a JSON object")
+                payload = cast(SumbleRawPayload, raw)
+                if source_key == TEAMS_SOURCE_KEY:
+                    response: SumbleTeamsResponse | SumblePeopleResponse = (
+                        SumbleTeamsResponse.model_validate(payload)
+                    )
+                    normalize_teams(
+                        payload,
+                        expected_organization_id=int(operation.request.provider_organization_id),
+                        max_people_per_team=operation.request.related_people_per_team,
+                        max_jobs_per_team=operation.request.jobs_per_team,
+                    )
+                else:
+                    response = SumblePeopleResponse.model_validate(payload)
+                    if attempt.kind is CommitteeAttemptKind.PEOPLE_POLL:
+                        current = by_source[PEOPLE_SOURCE_KEY]
+                        if current.provider_operation_id is not None:
+                            require_matching_people_request_id(
+                                response, current.provider_operation_id
+                            )
+                    if response.status is SumblePeopleStatus.SUCCEEDED:
+                        normalize_people(
+                            payload,
+                            expected_organization_id=int(
+                                operation.request.provider_organization_id
+                            ),
+                        )
+                await self._persist_response_snapshot(operation, attempt, response)
+            except Exception:
+                return await self._mark_unknown(
+                    operation,
+                    "sumble_committed_response_recovery_failed",
+                )
+
+        async with self._conn_factory() as conn:
+            snapshots = await list_committee_acquisition_snapshots(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
         by_source = {item.source_key: item for item in snapshots}
         teams = by_source.get(TEAMS_SOURCE_KEY)
         people = by_source.get(PEOPLE_SOURCE_KEY)
@@ -449,13 +518,14 @@ class SumbleCommitteeAcquisitionCoordinator:
             preflight.teams_body,
             maximum_credits=preflight.teams_maximum_credits,
         )
+        attempt = await self._record_response_attempt(operation, attempt, response, payload)
         normalize_teams(
             payload,
             expected_organization_id=int(operation.request.provider_organization_id),
             max_people_per_team=operation.request.related_people_per_team,
             max_jobs_per_team=operation.request.jobs_per_team,
         )
-        await self._persist_response(operation, attempt, response, payload)
+        await self._persist_response_snapshot(operation, attempt, response)
 
     async def _dispatch_people_submit(
         self, operation: CommitteeAcquisitionOperation, preflight: SumbleCommitteePreflight
@@ -473,12 +543,13 @@ class SumbleCommitteeAcquisitionCoordinator:
             preflight.people_body,
             maximum_credits=preflight.people_maximum_credits,
         )
+        attempt = await self._record_response_attempt(operation, attempt, response, payload)
         if response.status is SumblePeopleStatus.SUCCEEDED:
             normalize_people(
                 payload,
                 expected_organization_id=int(operation.request.provider_organization_id),
             )
-        await self._persist_response(operation, attempt, response, payload)
+        await self._persist_response_snapshot(operation, attempt, response)
         return response
 
     async def _dispatch_people_poll(
@@ -506,41 +577,30 @@ class SumbleCommitteeAcquisitionCoordinator:
             maximum_credits=preflight.people_maximum_credits,
         )
         require_matching_people_request_id(response, snapshot.provider_operation_id)
+        attempt = await self._record_response_attempt(operation, attempt, response, payload)
         if response.status is SumblePeopleStatus.SUCCEEDED:
             normalize_people(
                 payload,
                 expected_organization_id=int(operation.request.provider_organization_id),
             )
-        await self._persist_response(operation, attempt, response, payload)
+        await self._persist_response_snapshot(operation, attempt, response)
         return response
 
-    async def _persist_response(
+    async def _record_response_attempt(
         self,
         operation: CommitteeAcquisitionOperation,
         attempt: CommitteeAcquisitionAttempt,
         response: SumbleTeamsResponse | SumblePeopleResponse,
         payload: SumbleRawPayload,
-    ) -> None:
+    ) -> CommitteeAcquisitionAttempt:
+        """Persist raw provider evidence before any row-level normalization can fail."""
+
         source_key = attempt.source_key
         provider_status = (
             response.status.value if isinstance(response, SumblePeopleResponse) else "succeeded"
         )
         provider_id = (
             response.request_id if isinstance(response, SumblePeopleResponse) else response.id
-        )
-        state = (
-            CommitteeSnapshotState.SUCCEEDED
-            if provider_status == "succeeded"
-            else (
-                CommitteeSnapshotState.FAILED_TERMINAL
-                if provider_status == "failed"
-                else CommitteeSnapshotState.WAITING_EXTERNAL
-            )
-        )
-        spend = (
-            CommitteeSpendOutcome.CHARGED
-            if response.credits_used
-            else CommitteeSpendOutcome.NOT_CHARGED
         )
         async with self._conn_factory() as conn:
             response_key = await capture_discovery_artifact(
@@ -560,16 +620,7 @@ class SumbleCommitteeAcquisitionCoordinator:
                 if source_key == TEAMS_SOURCE_KEY
                 else "sumble_people_response",
             )
-            current = await get_committee_acquisition_snapshot(
-                conn,
-                workspace_id=operation.request.workspace_id,
-                operation_id=operation.operation_id,
-                source_key=source_key,
-                for_update=True,
-            )
-            if current is None:
-                raise CommitteeAcquisitionNotFound("committee response snapshot")
-            await update_committee_acquisition_attempt(
+            return await update_committee_acquisition_attempt(
                 conn,
                 attempt=attempt.model_copy(
                     update={
@@ -583,18 +634,56 @@ class SumbleCommitteeAcquisitionCoordinator:
                     }
                 ),
             )
+
+    async def _persist_response_snapshot(
+        self,
+        operation: CommitteeAcquisitionOperation,
+        attempt: CommitteeAcquisitionAttempt,
+        response: SumbleTeamsResponse | SumblePeopleResponse,
+    ) -> None:
+        """Fold one already-recorded response into its mutable operation snapshot."""
+
+        if attempt.response_artifact_key is None:
+            raise CommitteeAcquisitionNotFound("committee response artifact")
+        provider_status = (
+            response.status.value if isinstance(response, SumblePeopleResponse) else "succeeded"
+        )
+        state = (
+            CommitteeSnapshotState.SUCCEEDED
+            if provider_status == "succeeded"
+            else (
+                CommitteeSnapshotState.FAILED_TERMINAL
+                if provider_status == "failed"
+                else CommitteeSnapshotState.WAITING_EXTERNAL
+            )
+        )
+        spend = (
+            CommitteeSpendOutcome.CHARGED
+            if attempt.provider_units_charged
+            else CommitteeSpendOutcome.NOT_CHARGED
+        )
+        async with self._conn_factory() as conn:
+            current = await get_committee_acquisition_snapshot(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+                source_key=attempt.source_key,
+                for_update=True,
+            )
+            if current is None:
+                raise CommitteeAcquisitionNotFound("committee response snapshot")
             await update_committee_acquisition_snapshot(
                 conn,
                 snapshot=current.model_copy(
                     update={
                         "state": state,
                         "spend_outcome": spend,
-                        "response_artifact_key": response_key,
-                        "provider_operation_id": provider_id,
+                        "response_artifact_key": attempt.response_artifact_key,
+                        "provider_operation_id": attempt.provider_operation_id,
                         "provider_status": provider_status,
-                        "provider_units_charged": Decimal(response.credits_used),
-                        "credits_remaining": response.credits_remaining,
-                        "cost_cents_charged": Decimal(response.credits_used)
+                        "provider_units_charged": attempt.provider_units_charged,
+                        "credits_remaining": attempt.credits_remaining,
+                        "cost_cents_charged": attempt.provider_units_charged
                         * self._cents_per_credit,
                         "failure_code": (
                             "sumble_people_terminal_failure"
@@ -727,6 +816,36 @@ class SumbleCommitteeAcquisitionCoordinator:
                                 update={
                                     "state": CommitteeSnapshotState.SPEND_OUTCOME_UNKNOWN,
                                     "spend_outcome": CommitteeSpendOutcome.UNKNOWN,
+                                    "failure_code": failure_code,
+                                }
+                            ),
+                        )
+                elif attempt.state is CommitteeAttemptState.RESPONDED:
+                    snapshot = await get_committee_acquisition_snapshot(
+                        conn,
+                        workspace_id=operation.request.workspace_id,
+                        operation_id=operation.operation_id,
+                        source_key=attempt.source_key,
+                        for_update=True,
+                    )
+                    if (
+                        snapshot is not None
+                        and snapshot.state is CommitteeSnapshotState.DISPATCHING
+                    ):
+                        await update_committee_acquisition_snapshot(
+                            conn,
+                            snapshot=snapshot.model_copy(
+                                update={
+                                    "state": CommitteeSnapshotState.SPEND_OUTCOME_UNKNOWN,
+                                    "spend_outcome": CommitteeSpendOutcome.UNKNOWN,
+                                    "response_artifact_key": attempt.response_artifact_key,
+                                    "provider_operation_id": attempt.provider_operation_id,
+                                    "provider_status": attempt.provider_status,
+                                    "provider_units_charged": (attempt.provider_units_charged),
+                                    "credits_remaining": attempt.credits_remaining,
+                                    "cost_cents_charged": (
+                                        attempt.provider_units_charged * self._cents_per_credit
+                                    ),
                                     "failure_code": failure_code,
                                 }
                             ),
