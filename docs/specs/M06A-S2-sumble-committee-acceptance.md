@@ -8,10 +8,11 @@
 - **S1 dependency:** consume commit `ae05542`; do not rebuild S1 in this slice
 - **Provider API:** Sumble REST `v9`
 - **Pinned OpenAPI SHA-256:**
-  `8eac8f9b74afb74f1bd4f593ee2baa4547d2ca80947feea581e91e551a97c887`
-- **Contract captured:** 2026-08-03
-- **Status:** S2A–S2D and the provider-neutral DEEP wait/composition path pass mechanically;
-  live-provider and full O2 launch acceptance remain open
+  `c6f1324366a94844932ee3522caee6aa9f428f7d958a9956bea3425d18e2811c`
+- **Contract captured:** 2026-08-03; re-reviewed and aligned with S1 on 2026-08-05
+- **Status:** S2A–S2D and the provider-neutral DEEP wait/composition path pass mechanically and the
+  bounded no-reveal Sumble provider/fleet canary passed on 2026-08-05; the broader M8B V1
+  conversational/promoted-output gate remains open
 
 This acceptance record began as the S2A wire-level freeze and now records the implemented M06A S2
 boundary. The branch contains bounded no-reveal Teams/People models, durable asynchronous
@@ -34,6 +35,13 @@ when a shared OpenAPI enum is broader. In particular, the generated person-attri
 `email` and `phone` for reuse across response shapes, while Teams prose says contact details are
 not available for `related_people`. S2A explicitly whitelists non-contact attributes and rejects a
 snapshot containing either contact field.
+
+The 2026-08-05 re-review aligned S2 with the newer v9 document already pinned by S1. The live
+document retains `POST /v9/teams`, `POST /v9/people`, the same bounded filter/select/limit shapes,
+the explicit People contact attributes, and the request-id polling shape used here. S2's request
+whitelists and response normalizers required no wire change; only the stale contract digest was
+corrected. A live capped Teams/People operation then succeeded under those shapes. Historical
+operations retain their originally persisted contract version as immutable audit evidence.
 
 ## 2. Decided contract
 
@@ -189,12 +197,22 @@ S2A passes only when recorded contract tests prove:
 - The disposable test database was dropped after acceptance. No live Sumble request or credit was
   used.
 
-## 9. Remaining release gates
+## 9. Live S2 evidence and remaining boundary
 
-- A2 must persist and resolve the confirmed versioned research directive, committee plan, human
-  confirmation, privacy/identity policy receipts, and bounded per-account Sumble preflight. Until
-  that resolver is bound, the default production composer performs no S2 acquisition.
-- Full O2 still needs the set-scoped `launch_account_deep@1` tool and Exa Deep E0–E2 composition.
-- S2 live release still requires the prerequisite S1 acceptance ruling and a separately authorized,
-  capped one-account Sumble canary plus fresh-process zero-spend replay.
-- Email/phone reveal remains a later separately governed slice.
+The 2026-08-05 canary selected one real account from the synthetic sealed discovery handoff. S2D
+admitted the exact account/directive/tier/S1-identity tuple; S2B made one bounded Teams call and one
+asynchronous People submit/poll sequence; the durable operation settled 63 credits once (Teams 15,
+People 48); S2C admitted six LinkedIn-bound candidates under the exact account; and the existing
+committee worker wrote role/persona hypotheses through six live model calls. The original live
+database and a fresh fleet replay clone both contain one committee operation and three attempts, so
+replay produced no second Sumble call or charge.
+
+The live request artifacts retain explicit non-contact selects and contain no email, phone,
+`"all"`, or reveal request. The current v9 OpenAPI digest was re-reviewed and aligned with S1, and
+a regression now prevents the two Sumble lanes from drifting to different accepted documents.
+
+S2's no-reveal provider release is therefore live-proven. Email/phone reveal remains a later,
+separately governed operation. M8B V1 still requires a production-composed conversational launch,
+an honest Sumble credit-to-money policy, and a sample whose inferred committee claims survive the
+downstream verification/handoff quality gate; those are broader integration conditions, not a
+reason to repeat the already-settled S2 acquisition.

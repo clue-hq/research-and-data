@@ -1,10 +1,12 @@
 # M8B — Account-deep provider integration roadmap
 ## Exa Deep account profiling + Sumble organization map and buying committee
 
-> **Status:** implementation in progress. A0, the remediated A1, A2, Exa E0–E2, M06A S2A–S2D,
-> the provider-neutral O1 DEEP wait seam, the complete O2 composition, and O3 main-agent steering
-> are implemented mechanically. V0 offline/database acceptance is closed; the separately
-> authorized successful live canaries remain open. **Recorded:** 2026-08-04. **Working branch:**
+> **Status:** implementation and live integration validation in progress. A0–A2, Exa E0–E2,
+> M06A S2A–S2D, the O1 wait/wake seam, O2 production fleet composition, O3 steering behavior, and
+> V0 are implemented. Real Exa, Sumble, OpenRouter, detached-fleet, verification, and zero-provider
+> replay canaries passed on 2026-08-05 after six live-found defects were corrected. V1 remains open
+> only for the production-composed conversational entry, promoted-output quality, and complete
+> monetary-pricing gates. **Recorded:** 2026-08-05. **Working branch:**
 > `platform/c8-account-profiling-integration`. **Provider baseline:** commit `cb7a275`, identical to
 > the current local `platform/c8-exa-sumble-discovery` branch when this plan was recorded.
 >
@@ -133,13 +135,13 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 |---|---|---|
 | Exa Websets discovery | D1-D6 built; E1 built mechanically; discovery branch integrated | Consume only; do not rebuild or mutate the seal |
 | Sumble account gaps | S1 mechanical REST-v9/snapshot/receipt integration passes; paid live gate remains open | Reuse its auth, error, snapshot, fingerprint, credit, and spend-unknown contracts where the shapes genuinely match |
-| Account profiling | M8 account profiler and C6.7 governed account research agent consume the same task-scoped ready-snapshot binding and exact effective source plan; O2 composes durable Exa acquisition before snapshot-only materialization | Successful live provider acceptance remains open |
-| Exa Deep | E0 provides the bounded wire contract, E1 durably acquires/coalesces/persists/settles/replays, E2 materializes exact directive-pinned snapshots through the shared account-research seams, and O2 composes acquisition/materialization into the full unit | A successful live provider canary remains open |
-| Committee worker | Provider-neutral `CommitteeSource`, admission, role plausibility, persona claims, and coverage consume the exact-account Sumble snapshot source; V0 proves snapshot-only replay and provider-returned versus platform-inferred semantics | Pass the separately authorized live committee canary |
-| Sumble committee acquisition | S2A–S2D implement the pinned no-reveal contract, durable async acquisition, snapshot source, seven-condition gate, response-before-normalization durability, charged-schema-drift quarantine, and fresh-process zero-call replay | Pass the separately authorized live S2 canary |
-| Deep orchestrator | Provider-neutral account-resolver preparation runs before account profiling and committee preparation runs between account profiling and the short committee transaction; both consume immutable launch/directive pins, and V0 proves their crash/fold boundaries | Preserve the provider-neutral seams through live canaries |
-| Project wait state | DEEP and discovery now both admit typed active `WAITING_EXTERNAL` checkpoints | Bind the production wake scheduler/event path and prove it in the combined canary |
-| Production committee composition | Default-off production composition derives bounded, no-reveal Sumble Teams/People inputs from the immutable O2 launch, exact A2 pin, approved tier, sealed membership, S1 organization identity, privacy policy, and per-account budget | Enable only with credential/policy/live gates and pass the separately authorized canary |
+| Account profiling | M8 account profiling consumed a real ready Exa snapshot through the exact effective source plan and produced two grounded verification-governed claims in the detached fleet | Obtain a promoted claim in the final quality canary; the live sample was honestly flagged/rejected |
+| Exa Deep | E0–E2 and O2 produced one real coalesced two-field Deep-Reasoning operation, immutable artifacts/receipt, two materialized claims, and zero-call replay | Configure the final quality canary so at least one grounded claim survives verification |
+| Committee worker | The snapshot-backed source admitted six exact-account LinkedIn identities and live model inference wrote six role plus six persona claims with honest provider/inference separation | Obtain promoted role/persona output in the final quality canary; current hypotheses were flagged/rejected |
+| Sumble committee acquisition | S2A–S2D made real bounded no-reveal Teams/People calls, durably waited/polled, settled 63 credits once, materialized six candidates, and replayed without another call | Configure an honest credit-to-money policy for the final canary |
+| Deep orchestrator | The provider-neutral account/committee preparation seams, short committee transaction, optional contact boundary, and detached fleet completed live for one account | Live-proven; retain regression coverage |
+| Project wait state | DEEP waiting is now paired with a durable due-operation reader and fleet wake worker; a pending People operation resumed the same run/operation | Live-proven; retain restart/wake regression coverage |
+| Production committee composition | Production S2D -> S2B -> S2C composition produced six candidates and completed through the real detached fleet without a provider branch in the orchestrator | Live-proven; keep default-off credential/policy gates |
 | Main-agent toolbelt | Head-of-ABM v18 progressively discloses the non-linear account-deep steering skill over the existing fine-grained tools and exact O2 launch; governed descriptions distinguish draft, launch, wait, and completion | Prove the live conversational directive-to-launch path in V1 without widening engine authority |
 | Research direction | A2's human-confirmed direction is consumed by launch/provider pins and O3 supplies the newest exact directive plus current launch/account state as immutable L3 context | Preserve memory as advisory and the confirmed directive as execution authority through V1 |
 | Synthetic upstream state | The additive Insight Health account-deep fixture supplies deep fields, one selected sealed account, tier approval, a confirmed directive, source override, provider doubles, and the real orchestrator entry without mutating the discovery fixture; V0 adds a disposable fresh-process database harness | Retain for replay; no live proof implied |
@@ -152,17 +154,17 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 | A1 | Complete mechanically; precedence remediation closed 2026-08-04 | additive fixture; direct and composed paths use the real gate and the same frozen exact-source authority, produce all four account claims, persist explicit policy refs, and replay without provider calls/writes |
 | A2 | Complete mechanically after authority remediation; no provider call | `61826eb` + `940fbc0`; human-confirmed durable directives, exact sealed membership/source authority, account overrides, future-thread/context propagation, immutable plan/run/Sumble pins, and governed erasure |
 | E0 | Complete mechanically after E0-R1/R2 remediation; no live call | `M8B-E0-exa-deep-wire-acceptance.md`; provider-safe request compiler plus unchanged-golden normalization, paid all-null hard miss, exact value-schema validation, field-faithful/citation-preserving evidence disposition, and hard-disabled resolver-time HTTP. |
-| E1 | Complete mechanically; live success still open | durable one-call bundle acquisition, immutable request/response/result/normalization/snapshot/receipt state, exact settlement and zero-call replay; the 2026-08-04 live attempt reached Exa once but received a definitive HTTP 401 and was durably classified `failed_terminal` / `not_charged` without retry |
-| E2 | Complete mechanically; live success still open | exact directive/run/account snapshot selection, offline revalidation, immutable claim lineage, zero-cost per-field materialization, shared source-plan binding for mechanical and governed-agent paths, terminal unsupported coverage, verification promotion/rejection, and zero-call replay |
+| E1 | Complete and live-proven 2026-08-05 | one real two-field Deep-Reasoning call; one immutable operation/attempt/snapshot/receipt, 13 result artifacts, 1.800 cents settled, zero-call replay |
+| E2 | Complete and live-proven through verification | two cited artifact-backed account claims materialized from the ready snapshot; verification flagged/rejected the sample rather than promoting unsupported output |
 | S2A | Complete mechanically | `2810dcf`; pinned v9 Teams/People request, response, credit, no-reveal, identity, and normalizer contract |
-| S2B | Complete mechanically | `0f8715b`; durable async operation/snapshot/attempt/receipt and exact spend/replay |
-| S2C | Complete mechanically | `69295ee`; exact-account snapshot-backed `SumbleCommitteeSource` through existing M8 committee worker |
+| S2B | Complete and live-proven | one Teams plus async People submit/poll operation, 63 credits settled once, durable wake/replay, no reveal |
+| S2C | Complete and live-proven | six exact-account strong-identity candidates through the existing M8 committee worker; combined candidate cap enforced |
 | S2D | Complete mechanically | `00a3e90`; immutable seven-condition decision and zero-call ineligible matrix |
-| O1 | Complete mechanically | `6fbf14b`; provider-neutral prepare/wait seam, DEEP wait checkpoint, same account-run resume, no transaction during provider work |
+| O1 | Complete and live-proven | provider-neutral wait plus the durable due-operation/fleet wake path resumed the same account run and provider operation |
 | O2 — Sumble composition | Complete mechanically | `cc5b62a`; S2D -> S2B -> S2C adapter, independent default-off setting, credential failure, per-run composer injection, durable combined test |
-| O2 — full capability | Complete mechanically; no new live call | immutable exact-set launch and budget receipt; tier approval does not auto-enqueue; production Exa E1/E2 preparation and replay; durable Sumble A2/S1 input resolver; existing fleet/orchestrator and Head-of-ABM v17 tool binding; real-Postgres combined acceptance |
+| O2 — full capability | Complete and live fleet-proven | immutable launch/run state drove production Exa/Sumble snapshot materialization, six live role calls, verification, deep/verification checkpoints, and review pause in the detached fleet |
 | O3 | Complete mechanically; no live model/provider call | Head-of-ABM v18 and research-specialist v5 resources; exact current steering card/directive L3 composition; truthful draft/launch descriptions; seven scripted non-linear conversation cases; real-Postgres context/launch regression |
-| V0 | Complete mechanically; recorded fixtures only | `M8B-V0-offline-database-acceptance.md`; frozen 32-case manifest, crash/spend/schema-drift correction, disposable migration round trip, concurrent/fresh-process replay and inspection, 110-test matrix, clean 3,337-test repository suite, mypy/Ruff/import contracts, and one Alembic head |
+| V0 | Complete mechanically; recorded fixtures only | `M8B-V0-offline-database-acceptance.md`; frozen 32-case manifest plus a fresh 2026-08-05 V0 replay/migration pass; full repository run now 3,332 passed, 23 expected skips, 0 failures; mypy/Ruff/import contracts and one Alembic head pass |
 
 The Sumble production builder still requires an injected `SumbleCommitteeInputResolver`; O2 now
 supplies its durable implementation from the production composition root. It reconstructs inputs
@@ -918,12 +920,17 @@ and replay evidence. A mock-only or exit-zero result does not close the gate.
 Sumble organization map/committee -> verification -> projections, with exact cost and replay, and no
 contact reveal.
 
-**Attempted 2026-08-05 — Gate V1 remains open.** The branch passed the complete 170-test slice
-matrix and the 3,348-test repository run, but live preflight found no Exa, Sumble, or OpenRouter
-credential, both paid acquisition switches default-off, a fixture-only `.example` target, no
-production-composed Head-of-ABM conversation-to-launch executable, and a changed live Sumble v9
-OpenAPI digest requiring re-review. No authenticated provider request or live model call occurred.
-The complete evidence and exact resume conditions are recorded in
+**Live partial pass 2026-08-05 — Gate V1 remains narrowly open.** Starting from the synthetic
+discovery-only database, one real selected account produced one Exa Deep-Reasoning operation, one
+bounded Sumble Teams/People operation with durable pending/wake/poll, two grounded account claims,
+six admitted committee identities, six live-model role/persona classifications, verification, a
+successful detached-fleet DEEP -> VERIFICATION -> REVIEW run, and fresh-process zero-provider
+replay. The live run exposed and drove fixes for the missing provider wake worker, absent production
+role model, combined-candidate cap leak, ignored contact-profiling prohibition, transaction-
+invisible gate reads, and stale S2 OpenAPI pin. V1 remains open because the user-facing O3
+conversation-to-launch surface was not executed live, the sample claims were honestly
+flagged/rejected rather than promoted, and Sumble/OpenRouter monetary pricing was not configured.
+The durable ids, receipts, claims, test evidence, and exact remaining gates are recorded in
 `M8B-V1-live-acceptance.md`.
 
 ## 9. Sequencing and parallel ownership

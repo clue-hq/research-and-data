@@ -52,6 +52,10 @@ class AccountSpec(BaseModel):
     field_keys: tuple[str, ...] | None = None
     research_directive: ResearchDirectivePin | None = None
     budget_cap_cents: CostCents | None = Field(default=None, ge=0)
+    # Legacy callers without a research directive retain the original full-unit behavior.
+    # Directive-backed production resolution always sets this explicitly from the confirmed
+    # privacy policy so the optional contact axis cannot run merely because a committee exists.
+    contact_profiling_allowed: bool = True
 
 
 # A per-account callback the deep handler (M8A.2) supplies to drive a *custom* pipeline — the M8A.1

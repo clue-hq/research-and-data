@@ -397,6 +397,7 @@ def _orchestrator(
     budget: Any | None = None,
     spend: Any | None = None,
     committee_preparer: Any | None = None,
+    pre_spend_gate: Any | None = None,
     session_factory: Any = _fake_session_factory,
 ) -> AccountDeepOrchestrator:
     return AccountDeepOrchestrator(
@@ -413,6 +414,7 @@ def _orchestrator(
         gateway=object(),  # a sentinel; the fakes ignore it
         recursion_policy=recursion_policy,
         committee_preparer=committee_preparer,
+        pre_spend_gate=pre_spend_gate,
     )
 
 
@@ -454,6 +456,89 @@ def test_fresh_run_sequences_account_then_committee_then_contacts() -> None:
             AccountRunSubPhase.CONTACTS_COMPLETE,
         ]
         assert io.saves[-1][1] is AccountRunStatus.DONE
+
+    run_async(_run())
+
+
+def test_confirmed_contact_profiling_exclusion_skips_fanout() -> None:
+    io = FakeAccountRunIO()
+    rec = Recorder()
+    orch = _orchestrator(
+        io,
+        make_profile_account(rec),
+        make_discover_committee(rec, n_members=3),
+        FakeProfileContact(rec),
+    )
+    campaign = new_project_run_id()
+    entity = new_entity_id()
+    spec = AccountSpec(
+        entity_id=entity,
+        tier="top",
+        workspace_id="client-1",
+        contact_profiling_allowed=False,
+    )
+
+    async def _run() -> None:
+        result = await orch.run_one(spec, project_run_id=campaign)
+        assert rec.order == ["account", "committee"]
+        assert result.committee is not None
+        assert result.contacts == ()
+        assert result.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
+        assert result.cost_cents == Decimal("8")
+        run_id = deep_account_run_id(campaign, entity)
+        assert len(io.runs[run_id]["references_index"]["committee_contacts"]) == 3
+        assert not any(key.startswith("contact:") for key in io.runs[run_id]["references_index"])
+        assert io.saves[-1][1] is AccountRunStatus.DONE
+
+    run_async(_run())
+
+
+def test_committee_gate_is_rebound_to_the_atomic_committee_transaction() -> None:
+    io = FakeAccountRunIO()
+    rec = Recorder()
+
+    class _BoundGate:
+        async def check(self, request: object) -> object:
+            raise AssertionError(f"committee fake unexpectedly checked {request!r}")
+
+    class _RebindableGate:
+        def __init__(self) -> None:
+            self.bound = _BoundGate()
+            self.factories: list[object] = []
+
+        def with_conn_factory(self, factory: object) -> _BoundGate:
+            self.factories.append(factory)
+            return self.bound
+
+        async def check(self, request: object) -> object:
+            raise AssertionError(f"unbound gate used for committee work: {request!r}")
+
+    gate = _RebindableGate()
+    base_committee = make_discover_committee(rec, n_members=1)
+
+    async def committee(conn: Any, **kwargs: Any) -> CommitteeResult:
+        assert kwargs["pre_spend_gate"] is gate.bound
+        return await base_committee(conn, **kwargs)
+
+    orch = _orchestrator(
+        io,
+        make_profile_account(rec),
+        committee,
+        FakeProfileContact(rec),
+        pre_spend_gate=gate,
+    )
+    campaign = new_project_run_id()
+    spec = AccountSpec(
+        entity_id=new_entity_id(),
+        tier="top",
+        workspace_id="client-1",
+        contact_profiling_allowed=False,
+    )
+
+    async def _run() -> None:
+        result = await orch.run_one(spec, project_run_id=campaign)
+        assert result.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
+        assert len(gate.factories) == 1
 
     run_async(_run())
 

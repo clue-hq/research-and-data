@@ -18,6 +18,7 @@ from clue_core import (
     CommitteeAttemptKind,
     CommitteeSnapshotState,
     ProjectPhase,
+    ProjectRunId,
 )
 from clue_research.durable.provider_spend import (
     ProviderSpendGuardError,
@@ -421,6 +422,38 @@ async def claim_committee_acquisition_poll(
     return _operation(row) if row is not None else None
 
 
+async def list_due_committee_acquisition_project_runs(
+    conn: AsyncConnection,
+    *,
+    now: datetime,
+    limit: int = 100,
+) -> tuple[ProjectRunId, ...]:
+    """Return bounded DEEP runs whose durable committee poll is due.
+
+    This read does not claim provider work.  It only identifies project runs that need their
+    provider-neutral DEEP handler re-entered; the ordinary fleet queue supplies deduplication and
+    the acquisition coordinator atomically claims the poll after the run wakes.
+    """
+
+    if limit < 1:
+        raise ValueError("due committee acquisition limit must be positive")
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT project_run_id, min(next_poll_at) AS due_at "
+                "FROM committee_acquisition_operation "
+                "WHERE state='waiting_external' AND next_poll_at IS NOT NULL "
+                "AND next_poll_at <= :now "
+                "GROUP BY project_run_id "
+                "ORDER BY due_at, project_run_id "
+                "LIMIT :limit"
+            ),
+            {"now": now, "limit": limit},
+        )
+    ).all()
+    return tuple(ProjectRunId(row.project_run_id) for row in rows)
+
+
 async def begin_committee_acquisition_attempt(
     conn: AsyncConnection,
     *,
@@ -635,6 +668,7 @@ __all__ = [
     "get_committee_acquisition_operation",
     "get_committee_acquisition_snapshot",
     "list_committee_acquisition_attempts",
+    "list_due_committee_acquisition_project_runs",
     "list_committee_acquisition_snapshots",
     "reserve_committee_acquisition",
     "update_committee_acquisition_attempt",

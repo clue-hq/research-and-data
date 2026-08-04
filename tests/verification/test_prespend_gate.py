@@ -316,6 +316,25 @@ def test_valid_request_passes_and_audited() -> None:
 
 
 @pytest.mark.usefixtures("require_verification_db")
+def test_rebound_gate_sees_an_identity_inserted_in_the_caller_transaction() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity_id = await _active_account(conn, name="Uncommitted Acme", domain="acme.test")
+
+            @asynccontextmanager
+            async def caller_transaction() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            gate = PreSpendGateImpl().with_conn_factory(caller_transaction)
+            req = _request(entity_id, field_key="core.employee_count", tier=1, value=42)
+            decision = await gate.check(req)
+            assert decision.verdict is PreSpendVerdict.PASS
+            assert await _decision_rows(conn, req.run_id) == [("pass", [])]
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_verification_db")
 def test_exact_source_key_cannot_borrow_an_allowed_tier() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:

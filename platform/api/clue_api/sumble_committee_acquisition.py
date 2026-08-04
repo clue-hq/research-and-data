@@ -70,7 +70,7 @@ from clue_research.resolvers.sumble.teams import (
 from clue_storage import StorageBackend, read_verified_artifact
 
 SUMBLE_COMMITTEE_CONTRACT_VERSION: Final = (
-    "sumble-v9-openapi-8eac8f9b74afb74f1bd4f593ee2baa4547d2ca80947feea581e91e551a97c887"
+    "sumble-v9-openapi-c6f1324366a94844932ee3522caee6aa9f428f7d958a9956bea3425d18e2811c"
 )
 SUMBLE_COMMITTEE_POLICY_VERSION: Final = "sumble-committee-s2b-v1"
 SUMBLE_COMMITTEE_PRICING_VERSION: Final = "sumble-v9-credits-2026-08-03"

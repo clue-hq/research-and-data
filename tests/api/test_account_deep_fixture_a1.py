@@ -49,6 +49,7 @@ from clue_api.trial.discovery_fixture import (
     PROJECT_ID,
     WORKSPACE_ID,
     OfficialSitePage,
+    seed_insight_health_discovery_fixture,
 )
 from clue_api.trial.discovery_fixture import (
     ICP_KEY as DISCOVERY_ICP_KEY,
@@ -516,6 +517,36 @@ def test_a1_fixture_is_deep_eligible_additive_and_read_only_on_replay(
             assert replay_original_run is not None
             assert replay_original_icp.model_dump(mode="json") == original_icp_dump
             assert replay_original_run.model_dump(mode="json") == original_run_dump
+
+    run_async(_run())
+
+
+def test_a1_can_layer_over_an_existing_stage0_handoff_without_reseeding_it(
+    require_profiling_db: None,
+    tmp_path: Path,
+) -> None:
+    del require_profiling_db
+
+    async def _run() -> None:
+        async with rollback_conn(seed=False) as conn:
+            storage = FsStorage(tmp_path / "artifacts")
+            upstream = await seed_insight_health_discovery_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+            )
+            upstream_run_before = await get_project_run(conn, DISCOVERY_PROJECT_RUN_ID)
+            assert upstream_run_before is not None
+
+            layered = await seed_insight_health_account_deep_fixture(
+                conn,
+                storage=storage,
+                reuse_existing_stage0=True,
+            )
+
+            assert layered.discovery_fixture == upstream
+            assert layered.project_run_id != DISCOVERY_PROJECT_RUN_ID
+            assert await get_project_run(conn, DISCOVERY_PROJECT_RUN_ID) == upstream_run_before
 
     run_async(_run())
 

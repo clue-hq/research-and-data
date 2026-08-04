@@ -69,6 +69,7 @@ from clue_core import (
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet import GovernedPartialAccount
+from clue_obs import get_logger
 from clue_research.durable import (
     AccountRunStatus,
     AccountScheduler,
@@ -78,6 +79,8 @@ from clue_research.durable import (
     set_status,
 )
 from clue_research.sources import SourceCallObserver, bind_source_call_observer
+
+log = get_logger("clue_api.deep.handler")
 
 # --- injected seams ----------------------------------------------------------
 
@@ -363,6 +366,12 @@ class DeepPhaseHandler:
                 # The call raised, so there is no result to read the cost from — recover whatever
                 # the orchestrator committed stage-by-stage before the crash so the burn-down stays
                 # honest (finalize also flips the row to FAILED).
+                log.exception(
+                    "deep.account_failed",
+                    project_run_id=str(project_run_id),
+                    account_run_id=str(run_id),
+                    account_entity_id=str(spec.entity_id),
+                )
                 cost = await self._finalize_failed_account(run_id)
                 return _AccountOutcome(
                     cost_cents=cost,

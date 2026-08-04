@@ -143,6 +143,13 @@ class SumbleCommitteeSource:
             people_payload,
             expected_organization_id=organization_id,
         )
+        # ``people_limit`` is compiled directly from the confirmed directive's
+        # committee ``candidate_cap``.  The provider may return that many People
+        # rows *and* additional related people nested under Teams, so applying only
+        # the committee worker's generic per-source limit would exceed the user's
+        # authorized total.  The stricter of the two limits governs the combined
+        # snapshot-backed source.
+        effective_limit = min(limit, operation.request.people_limit)
         memberships = _memberships(teams.teams)
         candidates: list[CommitteePersonCandidate] = []
         seen_provider_ids: set[int] = set()
@@ -186,7 +193,7 @@ class SumbleCommitteeSource:
                     evidence_refs=(response_keys[TEAMS_SOURCE_KEY],),
                 )
             )
-        return tuple(candidates[:limit])
+        return tuple(candidates[:effective_limit])
 
     def _candidate(
         self,

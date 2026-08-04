@@ -53,11 +53,14 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import cast
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.account_research_wiring import (
     AccountResolverBindingAvailability,
@@ -517,6 +520,7 @@ class AccountDeepOrchestrator:
         # never lost vs the ledger.
         if done is AccountRunSubPhase.ACCOUNT_PROFILED:
             async with self._session_factory() as conn:
+                committee_gate = self._transaction_bound_gate(conn)
                 committee_result, info = await self._spend.run_step(
                     conn,
                     key=deep_step_key(run_id, "committee"),
@@ -537,7 +541,7 @@ class AccountDeepOrchestrator:
                             if spec.budget_cap_cents is not None
                             else self._budget_cap_cents
                         ),
-                        pre_spend_gate=self._pre_spend_gate,
+                        pre_spend_gate=committee_gate,
                         config=self._committee_config,
                     ),
                 )
@@ -563,16 +567,18 @@ class AccountDeepOrchestrator:
         # contact's claim writes + charge + ledger ``succeed`` commit in ONE transaction (M8A.4);
         # ``budget_stop`` records the verdict (if any) that halted admission.
         if done is AccountRunSubPhase.COMMITTEE_DISCOVERED:
-            contact_ids = self._committee_contact_ids(committee_result, refs)
-            outcomes, budget_stop = await self._profile_contacts(
-                contact_ids[: self._config.committee_size_cap],
-                project_run_id=project_run_id,
-                account_entity_id=spec.entity_id,
-                run_id=run_id,
-                workspace_id=workspace_id,
-                tier=spec.tier,
-                committed_cents=cost,
-            )
+            outcomes: tuple[_ContactOutcome, ...] = ()
+            if spec.contact_profiling_allowed:
+                contact_ids = self._committee_contact_ids(committee_result, refs)
+                outcomes, budget_stop = await self._profile_contacts(
+                    contact_ids[: self._config.committee_size_cap],
+                    project_run_id=project_run_id,
+                    account_entity_id=spec.entity_id,
+                    run_id=run_id,
+                    workspace_id=workspace_id,
+                    tier=spec.tier,
+                    committed_cents=cost,
+                )
             for outcome in outcomes:
                 if not outcome.info.replayed:
                     cost += outcome.info.cost_cents
@@ -608,6 +614,27 @@ class AccountDeepOrchestrator:
             budget_stop=budget_stop,
             external_preparation=external_preparation,
         )
+
+    def _transaction_bound_gate(self, conn: AsyncConnection) -> PreSpendGate | None:
+        """Use the committee transaction for gates that support connection rebinding.
+
+        Candidate admission and role inference intentionally share one atomic committee step.  A
+        production gate on a separate connection cannot see the just-inserted contact.  Concrete
+        gates expose ``with_conn_factory`` as an additive capability; injected protocol-only test
+        doubles continue to receive the original gate unchanged.
+        """
+        gate = self._pre_spend_gate
+        if gate is None:
+            return None
+        rebind = getattr(gate, "with_conn_factory", None)
+        if not callable(rebind):
+            return gate
+
+        @asynccontextmanager
+        async def same_connection() -> AsyncIterator[AsyncConnection]:
+            yield conn
+
+        return cast(PreSpendGate, rebind(same_connection))
 
     @staticmethod
     def _fold_external_preparation_refs(

@@ -1,5 +1,8 @@
 # 2026-08-05 — M8B V1 live acceptance attempt
 
+> Historical first attempt only. Superseded later the same day by
+> `2026-08-05-m8b-live-fleet-remediation.md`; real provider and fleet calls subsequently ran.
+
 ## Outcome
 
 - V1 remains open. No authenticated Exa, Sumble, or OpenRouter request was made.
