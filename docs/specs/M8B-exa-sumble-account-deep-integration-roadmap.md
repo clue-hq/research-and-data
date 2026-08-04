@@ -2,9 +2,9 @@
 ## Exa Deep account profiling + Sumble organization map and buying committee
 
 > **Status:** implementation in progress. A0, the remediated A1, A2, Exa E0–E2, M06A S2A–S2D,
-> the provider-neutral O1 DEEP wait seam, and the complete O2 composition are implemented
-> mechanically; O3 behavior/evals, the remaining V0 fault matrix, and successful live canaries
-> remain open. **Recorded:** 2026-08-04. **Working branch:**
+> the provider-neutral O1 DEEP wait seam, the complete O2 composition, and O3 main-agent steering
+> are implemented mechanically; the remaining V0 fault matrix and successful live canaries remain
+> open. **Recorded:** 2026-08-04. **Working branch:**
 > `platform/c8-account-profiling-integration`. **Provider baseline:** commit `cb7a275`, identical to
 > the current local `platform/c8-exa-sumble-discovery` branch when this plan was recorded.
 >
@@ -137,11 +137,11 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 | Exa Deep | E0 provides the bounded wire contract, E1 durably acquires/coalesces/persists/settles/replays, E2 materializes exact directive-pinned snapshots through the shared account-research seams, and O2 composes acquisition/materialization into the full unit | A successful live provider canary remains open |
 | Committee worker | Provider-neutral `CommitteeSource`, admission, role plausibility, persona claims, and coverage now consume the exact-account Sumble snapshot source while preserving provider-returned versus platform-inferred semantics | Pass the separately authorized live committee canary and V0 adversarial matrix |
 | Sumble committee acquisition | S2A–S2D now implement the pinned no-reveal contract, durable async acquisition, snapshot source, and seven-condition gate | Pass the separately authorized live S2 canary and fresh-process replay |
-| Deep orchestrator | Provider-neutral account-resolver preparation runs before account profiling and committee preparation runs between account profiling and the short committee transaction; both consume immutable launch/directive pins | Preserve the provider-neutral seams through O3/V0 and live canaries |
+| Deep orchestrator | Provider-neutral account-resolver preparation runs before account profiling and committee preparation runs between account profiling and the short committee transaction; both consume immutable launch/directive pins | Preserve the provider-neutral seams through V0 and live canaries |
 | Project wait state | DEEP and discovery now both admit typed active `WAITING_EXTERNAL` checkpoints | Bind the production wake scheduler/event path and prove it in the combined canary |
 | Production committee composition | Default-off production composition derives bounded, no-reveal Sumble Teams/People inputs from the immutable O2 launch, exact A2 pin, approved tier, sealed membership, S1 organization identity, privacy policy, and per-account budget | Enable only with credential/policy/live gates and pass the separately authorized canary |
-| Main-agent toolbelt | Fine-grained account/committee/contact tools remain separate; `launch_account_deep@1` creates one immutable exact-set/directive/budget receipt and re-enqueues the existing fleet | O3 must teach the Head-of-ABM to preview, confirm, launch, and narrate this surface without auto-launching |
-| Research direction | A2's human-confirmed direction is now consumed by the launch receipt, high-tier resolver, account-run budget/pin, Exa preparation, and Sumble committee input resolver | Complete O3 behavior while continuing to treat memory as advisory rather than execution authority |
+| Main-agent toolbelt | Head-of-ABM v18 progressively discloses the non-linear account-deep steering skill over the existing fine-grained tools and exact O2 launch; governed descriptions distinguish draft, launch, wait, and completion | Prove the live conversational directive-to-launch path in V1 without widening engine authority |
+| Research direction | A2's human-confirmed direction is consumed by launch/provider pins and O3 now supplies the newest exact directive plus current launch/account state as immutable L3 context | Preserve memory as advisory and the confirmed directive as execution authority through V0/V1 |
 | Synthetic upstream state | The additive Insight Health account-deep fixture supplies deep fields, one selected sealed account, tier approval, a confirmed directive, source override, provider doubles, and the real orchestrator entry without mutating the discovery fixture | Extend only where the remaining V0 fault matrix needs another governed state |
 
 ### 3.1 Implementation checkpoint — 2026-08-04
@@ -161,6 +161,7 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 | O1 | Complete mechanically | `6fbf14b`; provider-neutral prepare/wait seam, DEEP wait checkpoint, same account-run resume, no transaction during provider work |
 | O2 — Sumble composition | Complete mechanically | `cc5b62a`; S2D -> S2B -> S2C adapter, independent default-off setting, credential failure, per-run composer injection, durable combined test |
 | O2 — full capability | Complete mechanically; no new live call | immutable exact-set launch and budget receipt; tier approval does not auto-enqueue; production Exa E1/E2 preparation and replay; durable Sumble A2/S1 input resolver; existing fleet/orchestrator and Head-of-ABM v17 tool binding; real-Postgres combined acceptance |
+| O3 | Complete mechanically; no live model/provider call | Head-of-ABM v18 and research-specialist v5 resources; exact current steering card/directive L3 composition; truthful draft/launch descriptions; seven scripted non-linear conversation cases; real-Postgres context/launch regression |
 
 The Sumble production builder still requires an injected `SumbleCommitteeInputResolver`; O2 now
 supplies its durable implementation from the production composition root. It reconstructs inputs
@@ -840,6 +841,31 @@ Deliver behavior that:
 **Gate O3:** scripted conversation evals cover “show accounts only,” “discover more,” “research these
 five with special fax/referral direction,” “remove phone reveals,” edit-before-confirm, and
 edit-after-launch. No case auto-launches from discovery completion.
+
+**Implemented 2026-08-04 — Gate O3 closed mechanically; live conversational/provider acceptance
+remains V1-owned.**
+
+- Head-of-ABM v18 progressively discloses one provider-neutral account-deep steering skill beside
+  Stage 0. It treats discovery and tier results as conversational context, never launch consent,
+  and keeps working-plan edits conversational until the human asks for an immutable draft.
+- The preview contract separates registered standard fields from directional hypotheses, maps Exa
+  Deep to structured cited account evidence and Sumble Teams/People to the bounded organization
+  map, and makes the current no-contact-reveal boundary explicit.
+- A current-state compiler reads the exact project run, tier approval, newest directive and
+  overrides, immutable O2 launch receipt, canonical account identities, and account-run cursors.
+  It materializes content-addressed project context and the exact directive without transitioning
+  a phase, confirming, launching, calling a provider, or claiming completion.
+- Model-facing tool descriptions now state that drafting is non-spending and non-confirming, while
+  launch success means receipt/enqueue/replay rather than completed research. Tool schemas and
+  existing recipe/profile pins remain unchanged.
+- Research-specialist v5 distinguishes pre-launch plan review from admitted execution and receives
+  the exact directive artifact and current steering card through the existing fresh-wake
+  delegation seam. It cannot confirm, launch, promote claims, or bypass
+  budget/privacy/evidence gates.
+- Scripted coverage includes show-only, discover-more, five-account fax/referral direction,
+  no-reveal, edit-before-confirm, edit-after-launch, and explicit-go-ahead cases. Real-Postgres
+  acceptance proves the card before/after the immutable launch and its exact project/subject-bound
+  artifact materialization.
 
 ### Slice V0 — Offline and database acceptance
 

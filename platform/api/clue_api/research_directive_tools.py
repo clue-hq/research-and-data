@@ -161,6 +161,11 @@ def _created_by(ctx: ToolContext) -> str:
 class DraftAccountResearchDirectiveTool(Tool):
     name = "draft_account_research_directive"
     version = "1"
+    model_description = (
+        "Persist one non-spending immutable account-research directive draft only after the "
+        "human has finished revising the conversational working plan. The result is a complete "
+        "review preview, not human confirmation, spend authorization, launch, or research."
+    )
     input_model: ClassVar[type[ToolInput]] = DraftAccountResearchDirectiveInput
     output_model: ClassVar[type[ToolOutput]] = DraftAccountResearchDirectiveOutput
     replay = ReplaySafety(

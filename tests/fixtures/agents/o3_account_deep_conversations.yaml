@@ -1,0 +1,43 @@
+schema_version: "1"
+scenarios:
+  - name: show_accounts_only
+    user_turns: ["Show me the discovered accounts only."]
+    scripted_actions: [render_accounts, finalize_awaiting_input]
+    required_guidance: "Show me the accounts"
+    explicit_launch_go_ahead: false
+  - name: discover_more
+    user_turns: ["These are too few. Discover more accounts."]
+    scripted_actions: [recommend_separate_discovery, finalize_awaiting_input]
+    required_guidance: "Discover more"
+    explicit_launch_go_ahead: false
+  - name: five_accounts_with_fax_referral_direction
+    user_turns:
+      - "Research these five accounts, especially fax and referral coordination friction."
+    scripted_actions: [render_working_preview, distinguish_fields_from_hypotheses]
+    required_guidance: "Directional questions"
+    explicit_launch_go_ahead: false
+  - name: remove_phone_reveals
+    user_turns: ["Remove phone reveals from the plan."]
+    scripted_actions: [set_contact_reveals_false, render_working_preview]
+    required_guidance: "remove phone reveals"
+    explicit_launch_go_ahead: false
+  - name: edit_before_confirm
+    user_turns:
+      - "Research these five accounts."
+      - "Before I confirm, add fax and referral evidence and remove the blocker persona."
+      - "Prepare that settled plan for confirmation."
+    scripted_actions: [render_working_preview, revise_working_preview, draft_directive]
+    required_guidance: "Revise before confirmation"
+    explicit_launch_go_ahead: false
+  - name: edit_after_launch
+    user_turns:
+      - "The current fleet is running. Add DAC coordination to future research."
+    scripted_actions: [explain_frozen_launch, draft_successor_for_future_work]
+    required_guidance: "An edit after launch creates a successor directive"
+    explicit_launch_go_ahead: false
+  - name: explicit_launch
+    user_turns:
+      - "The confirmed plan, five accounts, and 1500-cent estimate look right. Proceed now."
+    scripted_actions: [launch_account_deep, report_receipt_as_enqueued_not_complete]
+    required_guidance: "Launch only on an explicit go-ahead"
+    explicit_launch_go_ahead: true

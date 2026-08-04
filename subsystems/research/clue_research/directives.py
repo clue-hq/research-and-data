@@ -400,6 +400,68 @@ async def get_research_directive(
     return await _row_to_directive(dict(row)) if row is not None else None
 
 
+async def get_latest_research_directive(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    product_id: str,
+    icp_key: str,
+    icp_version: int,
+) -> ResearchDirective | None:
+    """Return the newest immutable directive version for one exact project/ICP lineage.
+
+    This is a read-side convenience for conversational context assembly. It deliberately returns
+    a draft when that is the newest version: the Head-of-ABM must be able to describe an awaiting
+    confirmation draft honestly rather than silently falling back to an older confirmed version.
+    A launched operation still reads its separately pinned directive from the launch receipt.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_DIRECTIVE_COLUMNS} FROM account_research_directive "
+                    "WHERE workspace_id=:workspace_id AND project_id=:project_id "
+                    "AND product_id=:product_id AND icp_key=:icp_key "
+                    "AND icp_version=:icp_version ORDER BY version DESC LIMIT 1"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "project_id": project_id,
+                    "product_id": product_id,
+                    "icp_key": icp_key,
+                    "icp_version": icp_version,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return await _row_to_directive(dict(row)) if row is not None else None
+
+
+async def research_directive_account_ids(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    directive_id: ResearchDirectiveId,
+) -> tuple[EntityId, ...]:
+    """Read the exact membership frozen when a directive draft was admitted."""
+
+    values = (
+        await conn.execute(
+            text(
+                "SELECT account_id FROM account_research_directive_account "
+                "WHERE directive_id=:directive_id AND workspace_id=:workspace_id "
+                "ORDER BY account_id"
+            ),
+            {"directive_id": directive_id, "workspace_id": workspace_id},
+        )
+    ).scalars()
+    return tuple(EntityId(value) for value in values)
+
+
 async def get_research_directive_by_operation(
     conn: AsyncConnection,
     *,
@@ -1084,8 +1146,10 @@ __all__ = [
     "effective_account_research_directive",
     "get_research_directive",
     "get_research_directive_by_operation",
+    "get_latest_research_directive",
     "get_research_directive_override",
     "list_research_directive_overrides",
+    "research_directive_account_ids",
     "research_directive_confirmation_replay_matches",
     "research_directive_draft_replay_matches",
     "research_directive_draft_request_sha256",
