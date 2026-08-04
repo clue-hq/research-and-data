@@ -94,8 +94,7 @@ async def exact_fit_projection(
     if set(evidence) != set(evidence_ids):
         return None
     if any(
-        item.product_id not in {None, product_id}
-        or item.entity_id not in set(member_entity_ids)
+        item.product_id not in {None, product_id} or item.entity_id not in set(member_entity_ids)
         for item in evidence.values()
     ):
         return None

@@ -199,9 +199,7 @@ class DbCanonicalSubjectReader:
     def __init__(self, scope: ResolvedResearchViewScope) -> None:
         self._scope = scope
 
-    async def read_subject(
-        self, request: ResearchViewReadRequest
-    ) -> CanonicalSubjectRead | None:
+    async def read_subject(self, request: ResearchViewReadRequest) -> CanonicalSubjectRead | None:
         if request != self._scope.request:
             return None
         subject = self._scope.subject
@@ -302,9 +300,8 @@ class DbDerivedClaimReader:
         candidates: list[ResearchStatementCandidate] = []
         for route, claim in roots:
             supports = supports_by_root.get(claim.id, ())
-            if (
-                not supports
-                or tuple(item.ordinal for item in supports) != tuple(range(len(supports)))
+            if not supports or tuple(item.ordinal for item in supports) != tuple(
+                range(len(supports))
             ):
                 continue
             candidates.append(
@@ -491,9 +488,7 @@ class DbCoverageViewReader:
         for field in required:
             current_decision = latest.get(field)
             terminal_status = (
-                current_decision.terminal_status
-                if current_decision is not None
-                else None
+                current_decision.terminal_status if current_decision is not None else None
             )
             statuses[field] = terminal_status.value if terminal_status is not None else None
         references = tuple(

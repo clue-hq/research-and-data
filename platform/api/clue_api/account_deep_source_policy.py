@@ -51,9 +51,7 @@ async def bind_healthcare_account_deep_source_override(
         HEALTHCARE_ACCOUNT_DEEP_PACK_KEY,
         workspace_id,
         (
-            WeightedSource(
-                source_key="sumble_tech_stack", weight=SourceWeight.HIGH, rank=1
-            ),
+            WeightedSource(source_key="sumble_tech_stack", weight=SourceWeight.HIGH, rank=1),
             WeightedSource(source_key=official_page_source, weight=SourceWeight.HIGH, rank=2),
             WeightedSource(source_key="exa_deep", weight=SourceWeight.MEDIUM, rank=3),
         ),

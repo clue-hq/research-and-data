@@ -379,10 +379,7 @@ async def get_accounts(
         f"SELECT {_ACCOUNT_COLUMNS} FROM account_entity WHERE id IN :ids ORDER BY id"
     ).bindparams(bindparam("ids", expanding=True))
     rows = (await conn.execute(stmt, {"ids": list(entity_ids)})).mappings().all()
-    return {
-        account.id: account
-        for account in (_row_to_account(dict(row)) for row in rows)
-    }
+    return {account.id: account for account in (_row_to_account(dict(row)) for row in rows)}
 
 
 async def get_contacts(
@@ -395,10 +392,7 @@ async def get_contacts(
         f"SELECT {_CONTACT_COLUMNS} FROM contact_entity WHERE id IN :ids ORDER BY id"
     ).bindparams(bindparam("ids", expanding=True))
     rows = (await conn.execute(stmt, {"ids": list(entity_ids)})).mappings().all()
-    return {
-        contact.id: contact
-        for contact in (_row_to_contact(dict(row)) for row in rows)
-    }
+    return {contact.id: contact for contact in (_row_to_contact(dict(row)) for row in rows)}
 
 
 async def canonical_member_ids(

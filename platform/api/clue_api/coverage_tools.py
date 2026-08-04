@@ -266,9 +266,7 @@ class ResearchAccountGapsTool(Tool):
                 )
                 if source_plan.effective_source_plan is None:
                     raise RuntimeError("source planner did not return exact field authority")
-                effective_source_plans[str(field.field_key)] = (
-                    source_plan.effective_source_plan
-                )
+                effective_source_plans[str(field.field_key)] = source_plan.effective_source_plan
             remaining = (
                 None
                 if run.budget_cap_cents is None

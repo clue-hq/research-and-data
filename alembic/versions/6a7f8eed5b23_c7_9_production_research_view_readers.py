@@ -29,16 +29,12 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # A C7 subject version participates in statement/view identity.  The previous hard-coded
     # version=1 made an identity merge or canonical correction invisible to saved-view hashes.
-    op.execute(
-        "ALTER TABLE account_entity ADD COLUMN canonical_version integer NOT NULL DEFAULT 1"
-    )
+    op.execute("ALTER TABLE account_entity ADD COLUMN canonical_version integer NOT NULL DEFAULT 1")
     op.execute(
         "ALTER TABLE account_entity ADD CONSTRAINT account_entity_canonical_version_positive "
         "CHECK (canonical_version >= 1)"
     )
-    op.execute(
-        "ALTER TABLE contact_entity ADD COLUMN canonical_version integer NOT NULL DEFAULT 1"
-    )
+    op.execute("ALTER TABLE contact_entity ADD COLUMN canonical_version integer NOT NULL DEFAULT 1")
     op.execute(
         "ALTER TABLE contact_entity ADD CONSTRAINT contact_entity_canonical_version_positive "
         "CHECK (canonical_version >= 1)"
@@ -223,8 +219,7 @@ def upgrade() -> None:
         "ADD COLUMN display_personal_public_non_sensitive boolean NOT NULL DEFAULT true"
     )
     op.execute(
-        "ALTER TABLE workspace_policy "
-        "ADD COLUMN display_sensitive boolean NOT NULL DEFAULT false"
+        "ALTER TABLE workspace_policy ADD COLUMN display_sensitive boolean NOT NULL DEFAULT false"
     )
     op.execute(
         "ALTER TABLE workspace_policy "
@@ -253,9 +248,7 @@ def upgrade() -> None:
 
     # The legacy compatibility projection is still reachable during the C7 cutover.  Its natural
     # key must not let product B overwrite product A for the same account/ICP.
-    op.execute(
-        "ALTER TABLE account_handoff ADD COLUMN product_id text NOT NULL DEFAULT ''"
-    )
+    op.execute("ALTER TABLE account_handoff ADD COLUMN product_id text NOT NULL DEFAULT ''")
     op.execute(
         """
         UPDATE account_handoff
@@ -346,13 +339,9 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS research_view_change_report_product_scope")
     op.execute("ALTER TABLE research_view_change_report DROP COLUMN product_id")
 
-    op.execute(
-        "ALTER TABLE workspace_policy DROP COLUMN display_requires_strong_contact_binding"
-    )
+    op.execute("ALTER TABLE workspace_policy DROP COLUMN display_requires_strong_contact_binding")
     op.execute("ALTER TABLE workspace_policy DROP COLUMN display_sensitive")
-    op.execute(
-        "ALTER TABLE workspace_policy DROP COLUMN display_personal_public_non_sensitive"
-    )
+    op.execute("ALTER TABLE workspace_policy DROP COLUMN display_personal_public_non_sensitive")
     op.execute("ALTER TABLE workspace_policy DROP COLUMN display_professional_public")
 
     op.execute("DROP TABLE research_subject_activity")
