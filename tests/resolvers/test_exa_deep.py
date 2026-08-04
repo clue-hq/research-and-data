@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from clue_core import (
     AccountEntity,
     Claim,
@@ -29,6 +31,8 @@ from clue_research.resolvers import (
     SynthesizedField,
     register_exa_deep_resolver,
 )
+from clue_research.resolvers.exa import ExaDeepRequestFailure
+from clue_research.resolvers.exa.deep_contract import ExaDeepFailureClass
 from clue_research.sources import StopReason, bind_resolver, get_resolver, resolve_field
 
 from .conftest import rollback_conn, run_async
@@ -84,11 +88,18 @@ def _on_entity_field(key: str = _PAIN, conf: float = 0.9) -> SynthesizedField:
     )
 
 
-def test_register_synthesis_wiring_binds_a_tier4_resolver_to_exa_deep() -> None:
+def test_register_synthesis_wiring_binds_exa_as_hard_disabled_until_e1() -> None:
     from clue_api.synthesis_wiring import register_synthesis_wiring
 
-    register_synthesis_wiring(accounts=_Accounts(_account()))
-    assert get_resolver("exa_deep").tier == 4
+    account = _account()
+    register_synthesis_wiring(accounts=_Accounts(account))
+    resolver = get_resolver("exa_deep")
+    assert resolver.tier == 4
+    with pytest.raises(ExaDeepRequestFailure) as captured:
+        resolver.resolve(account.as_entity(), _field())
+    assert captured.value.failure_class is ExaDeepFailureClass.HARD
+    assert captured.value.dispatched is False
+    assert "E1" in str(captured.value)
 
 
 # --- end-to-end through the real waterfall (DB-gated) --------------------------------------------

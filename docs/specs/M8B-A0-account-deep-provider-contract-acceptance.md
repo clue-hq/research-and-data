@@ -2,7 +2,8 @@
 
 - **Parent roadmap:** `M8B-exa-sumble-account-deep-integration-roadmap.md`, Slice A0
 - **Recorded:** 2026-08-04
-- **Status:** request contract amended by E0-R1 on 2026-08-04; no live provider call authorized
+- **Status:** request contract amended by E0-R1 and response contract amended by E0-R2 on
+  2026-08-04; no live provider call authorized
 - **Exa endpoint:** `POST https://api.exa.ai/search`
 - **Official reference:** `https://exa.ai/docs/reference/search-api-guide-for-coding-agents`
 - **Reference reviewed:** 2026-08-04; the live documentation is mutable, so no current-page digest
@@ -52,10 +53,14 @@ rules.
 The accepted settleable response requires:
 
 - non-empty `requestId`;
-- at least one result with a real source `url` and title, retaining returned text/highlights;
+- at least one result with a real source `url` and title, retaining returned text/highlights, unless
+  the response is an all-null/no-grounding paid hard miss (where `results=[]` is valid);
 - structured `output.content` keyed by the reversible provider aliases from the request;
-- non-empty field-level `output.grounding` with at least one citation URL/title per grounding row;
-- grounding for every non-null top-level output field;
+- field-level `output.grounding` with at least one citation URL/title per grounding row when any
+  output is non-null; an all-null paid hard miss may omit grounding or return an empty array;
+- exactly one grounding row for every non-null top-level output field;
+- every returned value, including nested values and nulls, validates against the exact admitted
+  request property schema before normalization;
 - every grounding citation resolves to a retained result carrying non-empty text or a highlight, so
   the response can produce an inspectable evidence span;
 - `costDollars.total >= 0`.
@@ -64,7 +69,9 @@ The golden response is
 `tests/fixtures/providers/exa/search/deep_response.json`, SHA-256
 `7cf7c23aecb67a029902de97ea0d818f4fdd37aa32506cf1cdce7eaccf05687a`.
 Response models tolerate additive provider fields at the response, result, output, citation, and
-cost levels. They do not branch on deprecated `resolvedSearchType` or `context`.
+cost levels. They do not branch on deprecated `resolvedSearchType` or `context`. A structurally
+valid all-null response retains `requestId` and reported cost and normalizes to an empty paid hard
+miss, not `spend_unknown`.
 
 ### 1.3 Source and evidence URL semantics
 
@@ -76,6 +83,12 @@ cost levels. They do not branch on deprecated `resolvedSearchType` or `context`.
   or a synthetic fixture URL in production;
 - the claim's evidence span must be inspectable text from the cited result. A structured value and
   citation URL without an evidence span remain unverified and cannot promote.
+- normalization evaluates every citation separately, selects the best retained highlight/text
+  passage with conservative overlap to that exact field value/key, and never assigns a page's
+  unrelated first highlight merely because the page was cited;
+- every provider citation becomes an immutable attribution record with field, URL, title,
+  confidence and selection disposition; unsupported citations remain in the raw response and
+  attribution set but do not become claim candidates.
 
 ### 1.4 Charging and settlement decision
 
@@ -166,8 +179,8 @@ Decision:
 - latency and timeout calibration for `deep` versus `deep-reasoning`;
 - whether every live successful response supplies `requestId` and `costDollars.total` under the
   account's plan. Missing either fails closed as non-settleable/spend-unknown;
-- live synthesis-field path details beyond the documented flat contract; E0 keeps the first schema
-  flat and bounded.
+- live synthesis-field path details beyond the documented two-level contract; E0 keeps schemas
+  bounded to two named property levels and ten total properties.
 
 ## 6. A0 exit gate
 
@@ -175,7 +188,8 @@ A0 is mechanically closed when:
 
 1. request/response goldens match the recorded digests;
 2. the request model rejects neural mode, over-cap results and field-schema injection;
-3. the response accepts additive fields but rejects missing cost/output/grounding;
+3. the response accepts additive fields and a paid all-null/no-grounding miss, but rejects missing
+   cost/output, missing grounding for a non-null field, and any value outside the admitted schema;
 4. post-dispatch ambiguity classifies spend unknown;
 5. exact independent flags load with default-off and hard caps;
 6. the Sumble companion contract tests still pass;

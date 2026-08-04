@@ -134,6 +134,23 @@ def test_response_tolerates_additive_fields_but_requires_cost_and_grounding() ->
     with pytest.raises(ValidationError, match="no inspectable text or highlight"):
         ExaDeepSearchResponse.model_validate(no_inspectable_span)
 
+    duplicate_citation = json.loads(json.dumps(raw))
+    duplicate_citation["output"]["grounding"][0]["citations"].append(
+        duplicate_citation["output"]["grounding"][0]["citations"][0]
+    )
+    with pytest.raises(ValidationError, match="repeat a citation URL"):
+        ExaDeepSearchResponse.model_validate(duplicate_citation)
+
+    duplicate_result = json.loads(json.dumps(raw))
+    duplicate_result["results"].append(duplicate_result["results"][0])
+    with pytest.raises(ValidationError, match="repeat a retained result URL"):
+        ExaDeepSearchResponse.model_validate(duplicate_result)
+
+    missing_results = json.loads(json.dumps(raw))
+    missing_results["results"] = []
+    with pytest.raises(ValidationError, match="results may be empty only"):
+        ExaDeepSearchResponse.model_validate(missing_results)
+
 
 def test_exchange_rejects_missing_or_extra_requested_fields() -> None:
     request = ExaDeepSearchRequest.model_validate(_json("deep_request.json"))

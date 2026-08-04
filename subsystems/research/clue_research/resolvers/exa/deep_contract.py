@@ -12,6 +12,7 @@ import re
 from collections.abc import Mapping
 from decimal import Decimal
 from enum import StrEnum
+from math import isfinite
 from typing import Annotated, Literal, cast
 
 from pydantic import (
@@ -259,6 +260,120 @@ def validate_exa_output_schema(schema: Mapping[str, JsonValue]) -> None:
         )
 
 
+def _enum_contains(enum: list[JsonValue], value: JsonValue) -> bool:
+    """JSON-aware enum equality: booleans never alias integers, while 1 and 1.0 may agree."""
+
+    for candidate in enum:
+        if isinstance(candidate, bool) or isinstance(value, bool):
+            if type(candidate) is type(value) and candidate == value:
+                return True
+            continue
+        if candidate == value:
+            return True
+    return False
+
+
+def validate_exa_output_value(
+    value: JsonValue,
+    schema: Mapping[str, JsonValue],
+    *,
+    path: str,
+) -> None:
+    """Validate one returned value against the exact provider-safe request-schema subset.
+
+    E0-R1 already rejects schema keywords outside this subset. Keeping the matching value
+    validator here means a provider cannot return a type/enum/range/shape that the registry did not
+    admit and leave that mismatch for E2 to discover after a paid response has been materialized.
+    """
+
+    declared = _declared_schema_types(schema, path=path)
+    if value is None:
+        if "null" not in declared:
+            raise ValueError(f"{path} does not admit null")
+        enum = schema.get("enum")
+        if isinstance(enum, list) and not _enum_contains(enum, value):
+            raise ValueError(f"{path} is not one of the admitted enum values")
+        return
+
+    non_null_type = next(item for item in declared if item != "null")
+    valid_type = False
+    if non_null_type == "string":
+        valid_type = isinstance(value, str)
+    elif non_null_type == "integer":
+        valid_type = isinstance(value, int) and not isinstance(value, bool)
+        valid_type = valid_type or (
+            isinstance(value, float) and isfinite(value) and value.is_integer()
+        )
+    elif non_null_type == "number":
+        valid_type = (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and (not isinstance(value, float) or isfinite(value))
+        )
+    elif non_null_type == "boolean":
+        valid_type = isinstance(value, bool)
+    elif non_null_type == "object":
+        valid_type = isinstance(value, dict)
+    elif non_null_type == "array":
+        valid_type = isinstance(value, list)
+    if not valid_type:
+        raise ValueError(f"{path} is not a valid {non_null_type} value")
+
+    enum = schema.get("enum")
+    if isinstance(enum, list) and not _enum_contains(enum, value):
+        raise ValueError(f"{path} is not one of the admitted enum values")
+
+    if non_null_type == "string":
+        maximum = schema.get("maxLength")
+        if isinstance(maximum, int) and len(cast(str, value)) > maximum:
+            raise ValueError(f"{path} exceeds maxLength={maximum}")
+        return
+
+    if non_null_type in {"integer", "number"}:
+        number = cast(int | float, value)
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        if isinstance(minimum, (int, float)) and number < minimum:
+            raise ValueError(f"{path} is below minimum={minimum}")
+        if isinstance(maximum, (int, float)) and number > maximum:
+            raise ValueError(f"{path} exceeds maximum={maximum}")
+        return
+
+    if non_null_type == "array":
+        items = schema.get("items")
+        if not isinstance(items, dict):  # independently safe after request-schema validation
+            raise ValueError(f"{path}.items is not a schema object")
+        array = cast(list[JsonValue], value)
+        maximum = schema.get("maxItems")
+        if isinstance(maximum, int) and len(array) > maximum:
+            raise ValueError(f"{path} exceeds maxItems={maximum}")
+        for index, item in enumerate(array):
+            validate_exa_output_value(item, items, path=f"{path}[{index}]")
+        return
+
+    if non_null_type == "object":
+        properties = schema.get("properties")
+        if not isinstance(properties, dict):  # independently safe after request-schema validation
+            raise ValueError(f"{path}.properties is not an object")
+        obj = cast(dict[str, JsonValue], value)
+        required = schema.get("required", [])
+        if not isinstance(required, list):  # independently safe after request-schema validation
+            raise ValueError(f"{path}.required is not an array")
+        missing = sorted(set(cast(list[str], required)) - set(obj))
+        if missing:
+            raise ValueError(f"{path} is missing required properties {missing!r}")
+        extra = sorted(set(obj) - set(properties))
+        if schema.get("additionalProperties") is False and extra:
+            raise ValueError(f"{path} contains additional properties {extra!r}")
+        for name, child_value in obj.items():
+            child_schema = properties.get(name)
+            if child_schema is None:
+                continue
+            if not isinstance(child_schema, dict):
+                raise ValueError(f"{path}.{name} is not governed by a schema object")
+            validate_exa_output_value(child_value, child_schema, path=f"{path}.{name}")
+
+
 class ExaDeepFailureClass(StrEnum):
     RETRYABLE = "retryable"
     HARD = "hard"
@@ -416,12 +531,21 @@ class ExaDeepGrounding(BaseModel):
     # grounding shape and therefore cannot be required for settlement.
     confidence: Literal["low", "medium", "high"] | None = None
 
+    @model_validator(mode="after")
+    def _citation_urls_are_unique(self) -> ExaDeepGrounding:
+        urls = tuple(str(citation.url) for citation in self.citations)
+        if len(urls) != len(set(urls)):
+            raise ValueError("one field grounding cannot repeat a citation URL")
+        return self
+
 
 class ExaDeepOutput(BaseModel):
     model_config = ConfigDict(frozen=True, extra="allow")
 
     content: dict[str, JsonValue]
-    grounding: tuple[ExaDeepGrounding, ...] = Field(min_length=1)
+    # A paid all-null response is a valid hard miss and may contain no grounding rows. The model
+    # validator below still requires every non-null field to have exactly one grounding row.
+    grounding: tuple[ExaDeepGrounding, ...] = ()
 
     @model_validator(mode="after")
     def _every_non_null_field_is_grounded(self) -> ExaDeepOutput:
@@ -471,12 +595,18 @@ class ExaDeepSearchResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
 
     request_id: NonEmptyStr = Field(alias="requestId")
-    results: tuple[ExaDeepResult, ...] = Field(min_length=1)
+    results: tuple[ExaDeepResult, ...] = ()
     output: ExaDeepOutput
     cost_dollars: ExaDeepCostDollars = Field(alias="costDollars")
 
     @model_validator(mode="after")
     def _grounding_resolves_to_inspectable_results(self) -> ExaDeepSearchResponse:
+        all_null = all(value is None for value in self.output.content.values())
+        if not self.results and (not all_null or self.output.grounding):
+            raise ValueError("results may be empty only for an all-null response without grounding")
+        urls = tuple(str(result.url) for result in self.results)
+        if len(urls) != len(set(urls)):
+            raise ValueError("successful response cannot repeat a retained result URL")
         result_by_url = {str(result.url): result for result in self.results}
         for grounding in self.output.grounding:
             for citation in grounding.citations:
@@ -512,6 +642,21 @@ def validate_exa_deep_exchange(
             "structured output fields do not match the request schema "
             f"(missing={sorted(expected - returned)}, extra={sorted(returned - expected)})"
         )
+    for alias, value in response.output.content.items():
+        field_schema = properties[alias]
+        if not isinstance(field_schema, dict):  # independently safe after request validation
+            raise ValueError(f"request schema for {alias!r} is not an object")
+        try:
+            validate_exa_output_value(
+                value,
+                field_schema,
+                path=f"output.content.{alias}",
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"structured output value for {field_key_from_exa_alias(alias)!r} "
+                f"violates its admitted registry schema: {exc}"
+            ) from exc
 
 
 __all__ = [
@@ -536,4 +681,5 @@ __all__ = [
     "field_key_from_exa_alias",
     "validate_exa_deep_exchange",
     "validate_exa_output_schema",
+    "validate_exa_output_value",
 ]
