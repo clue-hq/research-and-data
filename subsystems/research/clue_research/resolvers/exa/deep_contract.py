@@ -9,9 +9,10 @@ cost, structured output, and field-level grounding for every non-null output fie
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 from pydantic import (
     BaseModel,
@@ -36,6 +37,226 @@ BoundedPromptStr = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=8000),
 ]
 _FIELD_KEY = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+")
+_FIELD_ALIAS = re.compile(r"f_[0-9a-f]+")
+_PROMPT_FIELD_MAPPING = re.compile(
+    r"(?<![A-Za-z0-9_])(f_[0-9a-f]+)=([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)(?![A-Za-z0-9_])"
+)
+_SAFE_NESTED_PROPERTY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+EXA_OUTPUT_MAX_PROPERTIES = 10
+EXA_OUTPUT_MAX_DEPTH = 2
+EXA_OUTPUT_MAX_FIELDS = 8
+ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS = 10_000
+_MAX_FIELD_ALIAS_CHARACTERS = 256
+_EXA_SCHEMA_TYPES = frozenset({"string", "integer", "number", "boolean", "object", "array"})
+_COMMON_SCHEMA_KEYS = frozenset({"type", "enum", "description", "title"})
+_TYPE_SCHEMA_KEYS: dict[str, frozenset[str]] = {
+    "string": frozenset({"maxLength"}),
+    "integer": frozenset({"minimum", "maximum"}),
+    "number": frozenset({"minimum", "maximum"}),
+    "boolean": frozenset(),
+    "object": frozenset({"properties", "required", "additionalProperties"}),
+    "array": frozenset({"items", "maxItems"}),
+}
+
+
+def exa_field_alias(field_key: str) -> str:
+    """Encode a registry key into one reversible, field-path-safe provider property name.
+
+    Exa reports grounding names as field paths. Sending a dotted registry key directly would make
+    a literal property indistinguishable from a nested path, so the wire contract hex-encodes the
+    validated ASCII key behind an ``f_`` prefix. The compiler also pins the readable mapping in the
+    system prompt; E1 can persist the request without a separate mutable alias table.
+    """
+
+    if _FIELD_KEY.fullmatch(field_key) is None:
+        raise ValueError(f"invalid registered field key {field_key!r}")
+    alias = f"f_{field_key.encode('ascii').hex()}"
+    if len(alias) > _MAX_FIELD_ALIAS_CHARACTERS:
+        raise ValueError("registered field key is too long for the Exa provider alias contract")
+    return alias
+
+
+def field_key_from_exa_alias(alias: str) -> FieldKey:
+    """Decode and revalidate a provider alias; malformed or non-canonical aliases fail closed."""
+
+    if (
+        _FIELD_ALIAS.fullmatch(alias) is None
+        or len(alias) > _MAX_FIELD_ALIAS_CHARACTERS
+        or len(alias.removeprefix("f_")) % 2 != 0
+    ):
+        raise ValueError(f"invalid Exa field alias {alias!r}")
+    try:
+        field_key = bytes.fromhex(alias.removeprefix("f_")).decode("ascii")
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ValueError(f"invalid Exa field alias {alias!r}") from exc
+    if _FIELD_KEY.fullmatch(field_key) is None or exa_field_alias(field_key) != alias:
+        raise ValueError(f"invalid Exa field alias {alias!r}")
+    return field_key
+
+
+def _declared_schema_types(schema: Mapping[str, JsonValue], *, path: str) -> frozenset[str]:
+    raw = schema.get("type")
+    declared: tuple[str, ...]
+    if isinstance(raw, str):
+        declared = (raw,)
+    elif isinstance(raw, list) and raw and all(isinstance(item, str) for item in raw):
+        declared = tuple(cast(str, item) for item in raw)
+    else:
+        raise ValueError(f"{path}.type must be one type or a non-empty type list")
+    if len(declared) != len(set(declared)):
+        raise ValueError(f"{path}.type cannot contain duplicates")
+    non_null = set(declared) - {"null"}
+    if len(non_null) != 1 or not non_null.issubset(_EXA_SCHEMA_TYPES):
+        raise ValueError(f"{path}.type must declare exactly one supported non-null type")
+    if set(declared) - non_null - {"null"}:
+        raise ValueError(f"{path}.type contains an unsupported type")
+    return frozenset(declared)
+
+
+def _validate_exa_schema_node(
+    schema: Mapping[str, JsonValue],
+    *,
+    path: str,
+    property_depth: int,
+) -> int:
+    declared = _declared_schema_types(schema, path=path)
+    non_null_type = next(item for item in declared if item != "null")
+    unsupported = set(schema) - _COMMON_SCHEMA_KEYS - _TYPE_SCHEMA_KEYS[non_null_type]
+    if unsupported:
+        raise ValueError(f"{path} contains unsupported schema keywords {sorted(unsupported)!r}")
+
+    enum = schema.get("enum")
+    if enum is not None:
+        if not isinstance(enum, list) or not enum:
+            raise ValueError(f"{path}.enum must be a non-empty array")
+        if "null" in declared and None not in enum:
+            raise ValueError(f"{path}.enum must include null when the field is nullable")
+
+    if non_null_type == "object":
+        properties = schema.get("properties")
+        if not isinstance(properties, dict) or not properties:
+            raise ValueError(f"{path}.properties must be a non-empty object")
+        additional = schema.get("additionalProperties")
+        if additional not in (None, False):
+            raise ValueError(f"{path}.additionalProperties must be false when present")
+        required = schema.get("required", [])
+        if (
+            not isinstance(required, list)
+            or any(not isinstance(item, str) for item in required)
+            or len(required) != len(set(required))
+            or not set(required).issubset(properties)
+        ):
+            raise ValueError(f"{path}.required must name unique declared properties")
+        total = 0
+        for name, child in properties.items():
+            if not isinstance(name, str) or _SAFE_NESTED_PROPERTY.fullmatch(name) is None:
+                raise ValueError(f"{path} contains a provider-unsafe property name {name!r}")
+            if not isinstance(child, dict):
+                raise ValueError(f"{path}.{name} must be a schema object")
+            child_depth = property_depth + 1
+            if child_depth > EXA_OUTPUT_MAX_DEPTH:
+                raise ValueError(
+                    f"{path}.{name} exceeds Exa's maximum output property depth "
+                    f"{EXA_OUTPUT_MAX_DEPTH}"
+                )
+            total += 1 + _validate_exa_schema_node(
+                child,
+                path=f"{path}.{name}",
+                property_depth=child_depth,
+            )
+        return total
+
+    if non_null_type == "array":
+        items = schema.get("items")
+        if not isinstance(items, dict):
+            raise ValueError(f"{path}.items must be one schema object")
+        maximum = schema.get("maxItems")
+        if maximum is not None and (
+            not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < 1
+        ):
+            raise ValueError(f"{path}.maxItems must be a positive integer")
+        return _validate_exa_schema_node(
+            items,
+            path=f"{path}.items",
+            property_depth=property_depth,
+        )
+
+    if non_null_type == "string":
+        maximum = schema.get("maxLength")
+        if maximum is not None and (
+            not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < 1
+        ):
+            raise ValueError(f"{path}.maxLength must be a positive integer")
+    if non_null_type in {"integer", "number"}:
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        if minimum is not None and (
+            not isinstance(minimum, (int, float)) or isinstance(minimum, bool)
+        ):
+            raise ValueError(f"{path}.minimum must be numeric")
+        if maximum is not None and (
+            not isinstance(maximum, (int, float)) or isinstance(maximum, bool)
+        ):
+            raise ValueError(f"{path}.maximum must be numeric")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise ValueError(f"{path}.minimum must not exceed maximum")
+    return 0
+
+
+def validate_exa_output_schema(schema: Mapping[str, JsonValue]) -> None:
+    """Enforce Exa's documented two-level, ten-property structured-output budget."""
+
+    unsupported_root = set(schema) - {
+        "type",
+        "properties",
+        "required",
+        "additionalProperties",
+    }
+    if unsupported_root:
+        raise ValueError(
+            f"outputSchema contains unsupported root keywords {sorted(unsupported_root)!r}"
+        )
+    if schema.get("type") != "object" or schema.get("additionalProperties") is not False:
+        raise ValueError("outputSchema must be a closed object schema")
+    properties = schema.get("properties")
+    if not isinstance(properties, dict) or not properties:
+        raise ValueError("outputSchema must contain at least one provider field alias")
+    if len(properties) > EXA_OUTPUT_MAX_FIELDS:
+        raise ValueError(
+            f"outputSchema must contain at most {EXA_OUTPUT_MAX_FIELDS} provider field aliases"
+        )
+    required = schema.get("required")
+    if (
+        not isinstance(required, list)
+        or any(not isinstance(item, str) for item in required)
+        or len(required) != len(set(required))
+        or set(required) != set(properties)
+    ):
+        raise ValueError("outputSchema must require every provider field alias exactly once")
+
+    total_properties = 0
+    for alias, child in properties.items():
+        if not isinstance(alias, str):
+            raise ValueError("outputSchema property aliases must be strings")
+        field_key_from_exa_alias(alias)
+        if not isinstance(child, dict):
+            raise ValueError(f"outputSchema.{alias} must be a schema object")
+        if "null" not in _declared_schema_types(
+            child,
+            path=f"outputSchema.properties.{alias}",
+        ):
+            raise ValueError(f"outputSchema.{alias} must admit null for an evidence miss")
+        total_properties += 1 + _validate_exa_schema_node(
+            child,
+            path=f"outputSchema.properties.{alias}",
+            property_depth=1,
+        )
+    if total_properties > EXA_OUTPUT_MAX_PROPERTIES:
+        raise ValueError(
+            "outputSchema exceeds Exa's maximum of "
+            f"{EXA_OUTPUT_MAX_PROPERTIES} total properties ({total_properties})"
+        )
 
 
 class ExaDeepFailureClass(StrEnum):
@@ -72,6 +293,42 @@ class ExaDeepFieldSpec(BaseModel):
         ):
             return value
         raise ValueError("effective field value_schema must declare a JSON schema type")
+
+
+class ExaDeepTextOptions(BaseModel):
+    """Bounded full-text retrieval options accepted by the current Search API."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        populate_by_name=True,
+        serialize_by_alias=True,
+    )
+
+    max_characters: int = Field(alias="maxCharacters", ge=1, le=ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS)
+
+
+class ExaDeepHighlightOptions(BaseModel):
+    """Bounded, query-guided highlight options with no deprecated sentence/count knobs."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        populate_by_name=True,
+        serialize_by_alias=True,
+    )
+
+    query: BoundedQueryStr
+    max_characters: int = Field(alias="maxCharacters", ge=1, le=ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS)
+
+
+class ExaDeepContents(BaseModel):
+    """The exact content payload E0-R1 permits on account-profile Search calls."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    text: ExaDeepTextOptions
+    highlights: ExaDeepHighlightOptions
 
 
 def classify_exa_deep_http_failure(
@@ -113,7 +370,7 @@ class ExaDeepSearchRequest(BaseModel):
     )
     system_prompt: BoundedPromptStr = Field(alias="systemPrompt")
     output_schema: dict[str, JsonValue] = Field(alias="outputSchema")
-    contents: dict[str, JsonValue]
+    contents: ExaDeepContents
     stream: Literal[False] = False
 
     @field_validator("additional_queries")
@@ -128,22 +385,18 @@ class ExaDeepSearchRequest(BaseModel):
     @model_validator(mode="after")
     def _bounded_structured_target_lock(self) -> ExaDeepSearchRequest:
         schema = self.output_schema
-        if schema.get("type") != "object" or schema.get("additionalProperties") is not False:
-            raise ValueError("outputSchema must be a closed object schema")
+        validate_exa_output_schema(schema)
         properties = schema.get("properties")
-        if not isinstance(properties, dict) or not properties or len(properties) > 8:
-            raise ValueError("outputSchema must contain between one and eight field properties")
-        if any(not isinstance(key, str) or not _FIELD_KEY.fullmatch(key) for key in properties):
-            raise ValueError("outputSchema properties must be registered-field-key shaped")
-        required = schema.get("required")
-        if not isinstance(required, list) or set(required) != set(properties):
-            raise ValueError("outputSchema must require every requested field")
-        if self.contents.get("text") is not True or "highlights" not in self.contents:
-            raise ValueError("account-deep requests require contents.text and highlights")
+        if not isinstance(properties, dict):  # independently type-safe after the validator above
+            raise ValueError("outputSchema properties must be an object")
         prompt = self.system_prompt.casefold()
         required_instructions = ("exact account", "source url", "leave the field null")
         if any(instruction not in prompt for instruction in required_instructions):
             raise ValueError("systemPrompt is missing target-lock or grounding instructions")
+        expected_mappings = {(alias, field_key_from_exa_alias(alias)) for alias in properties}
+        prompt_mappings = set(_PROMPT_FIELD_MAPPING.findall(self.system_prompt))
+        if prompt_mappings != expected_mappings:
+            raise ValueError("systemPrompt must contain exactly the provider-alias field mappings")
         return self
 
 
@@ -172,11 +425,17 @@ class ExaDeepOutput(BaseModel):
 
     @model_validator(mode="after")
     def _every_non_null_field_is_grounded(self) -> ExaDeepOutput:
-        if any(not _FIELD_KEY.fullmatch(key) for key in self.content):
-            raise ValueError("output content keys must be registered-field-key shaped")
+        try:
+            for key in self.content:
+                field_key_from_exa_alias(key)
+        except ValueError as exc:
+            raise ValueError("output content keys must be canonical Exa field aliases") from exc
         grounded_fields = tuple(item.field.removeprefix("content.") for item in self.grounding)
-        if any(not _FIELD_KEY.fullmatch(field) for field in grounded_fields):
-            raise ValueError("grounding fields must be registered-field-key shaped")
+        try:
+            for field in grounded_fields:
+                field_key_from_exa_alias(field)
+        except ValueError as exc:
+            raise ValueError("grounding fields must be canonical Exa field aliases") from exc
         if len(grounded_fields) != len(set(grounded_fields)):
             raise ValueError("grounding cannot repeat a field")
         unknown = sorted(set(grounded_fields) - set(self.content))
@@ -256,15 +515,25 @@ def validate_exa_deep_exchange(
 
 
 __all__ = [
+    "ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS",
+    "EXA_OUTPUT_MAX_DEPTH",
+    "EXA_OUTPUT_MAX_FIELDS",
+    "EXA_OUTPUT_MAX_PROPERTIES",
     "ExaDeepCitation",
+    "ExaDeepContents",
     "ExaDeepCostDollars",
     "ExaDeepFieldSpec",
     "ExaDeepFailureClass",
     "ExaDeepGrounding",
+    "ExaDeepHighlightOptions",
     "ExaDeepOutput",
     "ExaDeepResult",
     "ExaDeepSearchRequest",
     "ExaDeepSearchResponse",
+    "ExaDeepTextOptions",
     "classify_exa_deep_http_failure",
+    "exa_field_alias",
+    "field_key_from_exa_alias",
     "validate_exa_deep_exchange",
+    "validate_exa_output_schema",
 ]

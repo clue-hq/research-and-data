@@ -23,13 +23,20 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, m
 
 from clue_core import AccountEntity, FieldDef, ResolverError, RetryableResolverError
 from clue_research.resolvers.exa.deep_contract import (
+    ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS,
+    EXA_OUTPUT_MAX_FIELDS,
+    ExaDeepContents,
     ExaDeepFailureClass,
     ExaDeepFieldSpec,
     ExaDeepGrounding,
+    ExaDeepHighlightOptions,
     ExaDeepResult,
     ExaDeepSearchRequest,
     ExaDeepSearchResponse,
+    ExaDeepTextOptions,
     classify_exa_deep_http_failure,
+    exa_field_alias,
+    field_key_from_exa_alias,
     validate_exa_deep_exchange,
 )
 from clue_research.resolvers.grounded import (
@@ -57,7 +64,6 @@ if TYPE_CHECKING:
 SOURCE_KEY = "exa_deep"
 AUTH_REF = "CLUE_EXA_API_KEY"
 
-_MAX_FIELDS = 8
 _MAX_ADDITIONAL_QUERIES = 10
 _MAX_RESEARCH_INTENT_CHARS = 1000
 
@@ -71,8 +77,10 @@ class ExaDeepConfig(BaseModel):
     search_type: Literal["deep", "deep-reasoning"] = "deep-reasoning"
     num_results: int = Field(default=50, ge=1, le=50)
     max_additional_queries: int = Field(default=10, ge=0, le=10)
-    highlights_per_result: int = Field(default=3, ge=1, le=10)
-    highlight_sentences: int = Field(default=4, ge=1, le=10)
+    text_max_characters: int = Field(default=10_000, ge=1, le=ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS)
+    highlight_max_characters: int = Field(
+        default=2_000, ge=1, le=ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS
+    )
     timeout_s: float = Field(default=DEFAULT_TIMEOUT_S * 3, gt=0)
     min_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     low_confidence: float = Field(default=0.3, ge=0.0, le=1.0)
@@ -126,26 +134,26 @@ def _identity_query_suffix(account: AccountEntity) -> str:
 
 
 def _nullable_schema(value_schema: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
-    """Copy one registry schema and admit null without weakening its registered constraints."""
+    """Copy one registry schema and admit null using one standard JSON-Schema type union.
+
+    Type-specific constraints are ignored for a null instance under JSON Schema. An enum is the one
+    exception: it must list null explicitly, so the compiler adds it without mutating the registry
+    input. E0-R1 deliberately emits no ``anyOf``/``oneOf`` schema composition.
+    """
 
     schema = copy.deepcopy(dict(value_schema))
     schema_type = schema.get("type")
-    if isinstance(schema_type, list) and "null" in schema_type:
-        return schema
-    # Preserve the compact frozen golden for an unconstrained type-only schema. Once the registry
-    # supplies enum/range/shape constraints, wrap the *exact* schema instead: merely adding null to
-    # ``type`` would still reject null under ``enum``/``const`` and can interact incorrectly with
-    # composition keywords.
-    if set(schema) != {"type"}:
-        return {"anyOf": [schema, {"type": "null"}]}
     if isinstance(schema_type, str):
         schema["type"] = [schema_type, "null"] if schema_type != "null" else ["null"]
-        return schema
-    if isinstance(schema_type, list) and all(isinstance(item, str) for item in schema_type):
+    elif isinstance(schema_type, list) and all(isinstance(item, str) for item in schema_type):
         if "null" not in schema_type:
             schema["type"] = [*schema_type, "null"]
-        return schema
-    raise ValueError("effective field value_schema must declare a JSON schema type")
+    else:
+        raise ValueError("effective field value_schema must declare a JSON schema type")
+    enum = schema.get("enum")
+    if isinstance(enum, list) and None not in enum:
+        schema["enum"] = [*enum, None]
+    return schema
 
 
 def _compile_additional_queries(
@@ -185,8 +193,10 @@ def compile_exa_deep_request(
     effective-registry specs, so prompt text cannot enlarge the data contract.
     """
 
-    if not fields or len(fields) > _MAX_FIELDS:
-        raise ValueError("Exa Deep requires between one and eight admitted fields")
+    if not fields or len(fields) > EXA_OUTPUT_MAX_FIELDS:
+        raise ValueError(
+            f"Exa Deep requires between one and {EXA_OUTPUT_MAX_FIELDS} admitted fields"
+        )
     by_key = {spec.field_key: spec for spec in fields}
     if len(by_key) != len(fields):
         raise ValueError("Exa Deep field specs must have unique field keys")
@@ -203,9 +213,11 @@ def compile_exa_deep_request(
     domain = registrable_host(account.primary_domain)
     target = f"{account_name} at {domain}" if domain is not None else account_name
     prompt_target = f"at {domain}" if domain is not None else f'named "{account_name}"'
+    aliases = {key: exa_field_alias(key) for key in sorted(by_key)}
     properties: dict[str, JsonValue] = {
-        key: _nullable_schema(by_key[key].value_schema) for key in sorted(by_key)
+        aliases[key]: _nullable_schema(by_key[key].value_schema) for key in sorted(by_key)
     }
+    field_map = "; ".join(f"{aliases[key]}={key}" for key in sorted(by_key))
     output_schema: dict[str, JsonValue] = {
         "type": "object",
         "properties": properties,
@@ -222,17 +234,17 @@ def compile_exa_deep_request(
         system_prompt=(
             f"Research only the exact account {prompt_target}. Prefer primary sources, retain "
             "every source URL, do not drift to similarly named organizations, and leave the "
-            "field null when target-locked evidence is absent."
+            f"field null when target-locked evidence is absent. Use this exact property map: "
+            f"{field_map}."
         ),
         output_schema=output_schema,
-        contents={
-            "highlights": {
-                "highlightsPerUrl": config.highlights_per_result,
-                "numSentences": config.highlight_sentences,
-                "query": "Find direct evidence for the requested account fields.",
-            },
-            "text": True,
-        },
+        contents=ExaDeepContents(
+            highlights=ExaDeepHighlightOptions(
+                query="Find direct evidence for the requested account fields.",
+                max_characters=config.highlight_max_characters,
+            ),
+            text=ExaDeepTextOptions(max_characters=config.text_max_characters),
+        ),
         stream=False,
     )
 
@@ -319,11 +331,12 @@ def normalize_exa_deep_response(
     validate_exa_deep_exchange(request, response)
     result_by_url = {str(result.url): result for result in response.results}
     groundings = {
-        grounding.field.removeprefix("content."): grounding
+        field_key_from_exa_alias(grounding.field.removeprefix("content.")): grounding
         for grounding in response.output.grounding
     }
     fields: list[SynthesizedField] = []
-    for field_key, value in response.output.content.items():
+    for field_alias, value in response.output.content.items():
+        field_key = field_key_from_exa_alias(field_alias)
         if value is None:
             continue
         grounding = groundings.get(field_key)
@@ -366,7 +379,7 @@ def normalize_exa_response(
     """Compatibility wrapper for the one-field resolver backend; structured responses only."""
 
     response = parse_exa_deep_response(request, payload)
-    if set(response.output.content) != {field.field_key}:
+    if set(response.output.content) != {exa_field_alias(field.field_key)}:
         raise ValueError("one-field Exa resolver received a different structured field set")
     return normalize_exa_deep_response(request, response, config=config)
 
@@ -579,6 +592,8 @@ def register_exa_deep_resolver(
 
 __all__ = [
     "AUTH_REF",
+    "ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS",
+    "EXA_OUTPUT_MAX_FIELDS",
     "SOURCE_KEY",
     "DEFAULT_EXA_CONFIG",
     "ExaDeepConfig",
@@ -590,6 +605,8 @@ __all__ = [
     "ExaDeepSynthesisBackend",
     "build_exa_request",
     "compile_exa_deep_request",
+    "exa_field_alias",
+    "field_key_from_exa_alias",
     "make_backend",
     "normalize_exa_deep_response",
     "normalize_exa_response",
