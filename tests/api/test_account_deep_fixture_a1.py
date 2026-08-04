@@ -42,8 +42,11 @@ from clue_api.trial.account_deep_fixture import (
 from clue_api.trial.discovery_fixture import (
     AMBIENT_URL,
     AURA_ANYWHERE_URL,
+    BRAND_ID,
     HOME_URL,
     NEUROSURGERY_URL,
+    PRODUCT_ID,
+    PROJECT_ID,
     WORKSPACE_ID,
     OfficialSitePage,
 )
@@ -93,6 +96,7 @@ from clue_research.sources import (
 )
 from clue_research.verification import PreSpendGateImpl
 from clue_storage import FsStorage
+from tests.api.account_deep_test_support import confirmed_account_research_direction
 from tests.db.conftest import run_async
 from tests.profiling.conftest import FakeGateway
 from tests.stage0.conftest import rollback_conn
@@ -690,6 +694,20 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
                 conn, WORKSPACE_ID, fixture.deep_icp_key, fixture.deep_icp_version
             )
             assert spec is not None
+            _, account_spec = await confirmed_account_research_direction(
+                conn,
+                workspace_id=WORKSPACE_ID,
+                project_id=PROJECT_ID,
+                product_id=PRODUCT_ID,
+                account_id=fixture.selected_account_id,
+                icp_key=fixture.deep_icp_key,
+                icp_version=fixture.deep_icp_version,
+                # The core tech-stack field is already populated by the fixture and is not a
+                # registered deep-research field. Confirm only the four actual Pass-B gaps.
+                field_keys=(DEEP_FIELD_KEYS[0], *DEEP_FIELD_KEYS[2:]),
+            )
+            directive = account_spec.research_directive
+            assert directive is not None
             resolvers = _bind_recorded_resolvers(fixture)
             committee = build_recorded_committee_source(fixture)
             gateway = FakeGateway()
@@ -717,13 +735,14 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
             )
             ctx = PhaseContext(
                 project_run_id=fixture.project_run_id,
-                project_id="insight-health-sales",
-                brand_id="insight-health",
+                project_id=PROJECT_ID,
+                brand_id=BRAND_ID,
                 phase=ProjectPhase.DEEP,
                 workspace_id=WORKSPACE_ID,
                 icp_key=fixture.deep_icp_key,
                 icp_version=fixture.deep_icp_version,
                 budget_cap_cents=Decimal("1000"),
+                params={"research_directive_id": str(directive.directive_id)},
             )
 
             assert await get_account_run(conn, fixture.expected_account_run_id) is None

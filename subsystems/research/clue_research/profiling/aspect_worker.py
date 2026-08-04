@@ -253,15 +253,10 @@ class AspectProfilingWorker:
                         )
                     )
                     continue
-                if budget.exhausted:
-                    # The aspect's envelope is spent — the rest of the schema halts at the cap.
-                    fills.append(
-                        _FieldFill(
-                            field_key=field_key,
-                            disposition=ProfilingFieldDisposition.BUDGET_CAP,
-                        )
-                    )
-                    continue
+                # Always let the waterfall inspect the field at a zero remaining envelope.
+                # Idempotent claims and already-settled snapshot resolvers cost nothing and must
+                # remain readable after fresh-spend headroom is exhausted; live sources still
+                # stop at the waterfall's per-source budget pre-check before provider I/O.
                 fill = await self._fill_field(
                     conn,
                     account=account,
@@ -360,7 +355,6 @@ class AspectProfilingWorker:
                 tier_scope=plan_policy.effective_max_tier(self._tier_scope),
                 entity_tier=tier,
                 entity_scope=EntityScope.ACCOUNT,
-                budget_envelope=budget_remaining,
                 gateway=self._gateway,
                 planner_model=self._planner_model,
                 config=self._planner_config,

@@ -46,7 +46,7 @@ from collections.abc import Callable, Mapping, Sequence
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from clue_core import (
     AccountEntity,
@@ -65,6 +65,7 @@ from clue_core import (
     new_run_id,
     normalize_host,
     parse_cost_cents,
+    revalidate_with,
     serialize_value_json,
     to_value_json,
 )
@@ -130,6 +131,29 @@ class SynthesizedField(BaseModel):
     # the grounded-only invariant (span comes from a retrieved passage) still holds.
     retrieved_text: str = Field(min_length=1)
     confidence: Confidence
+    # Optional durable lineage attached by a snapshot-backed adapter after acquisition.  Live
+    # one-shot test backends omit it; production E2 snapshot materialization supplies all four.
+    artifact_key: str | None = None
+    source_operation_ref: str | None = None
+    source_snapshot_ref: str | None = None
+    source_request_ref: str | None = None
+
+    @model_validator(mode="after")
+    def _snapshot_lineage_is_complete(self) -> SynthesizedField:
+        refs = (
+            self.source_operation_ref,
+            self.source_snapshot_ref,
+            self.source_request_ref,
+        )
+        if any(ref is not None for ref in refs) and (
+            self.artifact_key is None
+            or not all(isinstance(ref, str) and ref.strip() for ref in refs)
+        ):
+            raise ValueError(
+                "snapshot-backed synthesis requires artifact, operation, snapshot, and "
+                "request references"
+            )
+        return self
 
 
 class SynthesisResult(BaseModel):
@@ -413,6 +437,9 @@ class GroundedSynthesisResolver:
         self._accounts = accounts
         self._source_key = source_key
         self._default_cost_cents = default_cost_cents
+        # A ready-snapshot backend performs no external I/O and owns no new spend.  The waterfall
+        # reads this provider-neutral capability to skip its live-call estimate/fallback charge.
+        self.materialization_only = bool(getattr(backend, "materialization_only", False))
 
     def resolve(self, entity: Entity, field: FieldDef) -> list[Claim]:
         # Personal-data firewall (PF-8 / M11.3): this is the *account*-synthesis path — it never
@@ -491,23 +518,30 @@ class GroundedSynthesisResolver:
             if dedup_key in seen:
                 continue
             seen.add(dedup_key)
-            claims.append(
-                account_claim(
-                    entity_id=account.id,
-                    field_key=sf.field_key,
-                    value_json=value_json,
-                    source_tier=_TIER4,
-                    extraction_method=ExtractionMethod.LLM_SYNTHESIS,
-                    confidence=sf.confidence,
-                    # run_id / research_mode are placeholders the waterfall's _finalize restamps
-                    # with the run's real values (the resolver cannot know the project run/mode).
-                    run_id=new_run_id(),
-                    research_mode=ResearchMode.ACCOUNT_PROFILING,
-                    source_url=sf.source_url,
-                    evidence_span=sf.evidence_span,
-                    cost_cents=price if not claims else Decimal(0),
-                )
+            claim = account_claim(
+                entity_id=account.id,
+                field_key=sf.field_key,
+                value_json=value_json,
+                source_tier=_TIER4,
+                extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+                confidence=sf.confidence,
+                # run_id / research_mode are placeholders the waterfall's _finalize restamps
+                # with the run's real values (the resolver cannot know the project run/mode).
+                run_id=new_run_id(),
+                research_mode=ResearchMode.ACCOUNT_PROFILING,
+                source_url=sf.source_url,
+                evidence_span=sf.evidence_span,
+                cost_cents=price if not claims else Decimal(0),
             )
+            if sf.artifact_key is not None:
+                claim = revalidate_with(
+                    claim,
+                    artifact_key=sf.artifact_key,
+                    source_operation_ref=sf.source_operation_ref,
+                    source_snapshot_ref=sf.source_snapshot_ref,
+                    source_request_ref=sf.source_request_ref,
+                )
+            claims.append(claim)
         return claims
 
 

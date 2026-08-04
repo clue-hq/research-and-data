@@ -29,6 +29,7 @@ from clue_research.sources.registry import (
     SourceManifestRedefinitionError,
     SourceYieldError,
     bind_resolver,
+    bind_resolver_overrides,
     clear_resolver_bindings,
     entity_scope_serves,
     get_resolver,
@@ -86,6 +87,7 @@ __all__ = [
     "entity_scope_serves",
     # resolver binding (in-process source_key -> Resolver dispatch)
     "bind_resolver",
+    "bind_resolver_overrides",
     "unbind_resolver",
     "is_resolver_bound",
     "get_resolver",

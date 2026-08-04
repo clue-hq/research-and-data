@@ -8,7 +8,7 @@ fresh-process replay.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid4
@@ -741,6 +741,77 @@ async def list_external_research_result_artifacts(
     return tuple(ExternalResearchResultArtifactInput.model_validate(row) for row in rows)
 
 
+async def list_ready_external_research_snapshots(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_run_id: UUID,
+    account_id: EntityId,
+    source_key: str,
+    research_directive_id: UUID,
+    research_directive_version: int,
+    research_directive_sha256: str,
+    research_override_id: UUID | None,
+    research_override_sha256: str | None,
+    now: datetime | None = None,
+) -> tuple[ExternalResearchSnapshotRef, ...]:
+    """Ready snapshots for one exact account run/directive/source lineage.
+
+    Materialization never searches by account alone: an older directive, different override,
+    sibling project run, or expired snapshot must not become evidence for the current operation.
+    Results are newest-first so the materializer can make a newer null/unsupported field outcome
+    shadow an older value when an authorized refresh overlaps an earlier bundle.
+    """
+
+    observed_at = now or datetime.now(UTC)
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT snapshot.id AS snapshot_id, snapshot.operation_id, "
+                    "snapshot.workspace_id, snapshot.account_id, snapshot.source_key, "
+                    "snapshot.request_fingerprint, snapshot.request_artifact_key, "
+                    "snapshot.response_artifact_key, snapshot.normalization_artifact_key, "
+                    "snapshot.provider_request_id, snapshot.provider_reported_cost_cents, "
+                    "snapshot.all_null, snapshot.fresh_until "
+                    "FROM external_research_snapshot snapshot "
+                    "JOIN external_research_operation operation "
+                    "ON operation.id=snapshot.operation_id "
+                    "AND operation.workspace_id=snapshot.workspace_id "
+                    "WHERE operation.workspace_id=:workspace_id "
+                    "AND operation.project_run_id=:project_run_id "
+                    "AND operation.account_id=:account_id AND operation.source_key=:source_key "
+                    "AND operation.research_directive_id=:directive_id "
+                    "AND operation.research_directive_version=:directive_version "
+                    "AND operation.research_directive_sha256=:directive_sha256 "
+                    "AND operation.research_override_id IS NOT DISTINCT FROM :override_id "
+                    "AND operation.research_override_sha256 IS NOT DISTINCT FROM :override_sha "
+                    "AND operation.state='ready' "
+                    "AND snapshot.fresh_until > :now "
+                    "ORDER BY operation.terminal_at DESC, snapshot.created_at DESC, "
+                    "operation.id DESC"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "project_run_id": project_run_id,
+                    "account_id": account_id,
+                    "source_key": source_key,
+                    "directive_id": research_directive_id,
+                    "directive_version": research_directive_version,
+                    "directive_sha256": research_directive_sha256,
+                    "override_id": research_override_id,
+                    "override_sha": research_override_sha256,
+                    "now": observed_at,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(ExternalResearchSnapshotRef.model_validate(row) for row in rows)
+
+
 __all__ = [
     "ExternalResearchDispatchClaim",
     "ExternalResearchDispatchDecision",
@@ -758,6 +829,7 @@ __all__ = [
     "get_external_research_operation",
     "get_external_research_snapshot",
     "list_external_research_result_artifacts",
+    "list_ready_external_research_snapshots",
     "mark_external_research_spend_unknown",
     "reserve_external_research_operation",
 ]

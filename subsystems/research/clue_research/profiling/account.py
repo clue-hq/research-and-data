@@ -24,7 +24,7 @@ small mirror of ``durable.planning`` (the one acknowledged DRY seam — flagged 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
@@ -47,6 +47,8 @@ from clue_core import (
     PassKind,
     PreSpendGate,
     ProjectRunId,
+    ResearchDirectivePin,
+    Resolver,
     RunId,
     WorkerResult,
     WorkerStatus,
@@ -70,7 +72,7 @@ from clue_research.profiling.aspect_worker import (
 )
 from clue_research.profiling.context import params_for_run
 from clue_research.profiling.resonance import ResonanceAspectWorker
-from clue_research.sources import SourcePlannerConfig
+from clue_research.sources import SourcePlannerConfig, bind_resolver_overrides
 
 # The field-classes the account axis (M8.1/M8.2) profiles. CONTACT / CONTACT_FACET are the contact
 # axis (M8.3/M8.4) and are never clustered here, so a contact field that shares an ICP is ignored.
@@ -265,6 +267,8 @@ async def profile_account(
     pre_spend_gate: PreSpendGate | None = None,
     synthesis_guard: SynthesisGuard | None = None,
     config_store: OverlayStore | None = None,
+    resolver_bindings: Mapping[str, Resolver] | None = None,
+    research_directive: ResearchDirectivePin | None = None,
 ) -> AccountProfileResult:
     """Profile one high-tier account: fill every deep account-axis gap field, or leave it
     empty/flagged, bounded by the tier's aspect cap and the budget envelope (M8.1).
@@ -273,6 +277,11 @@ async def profile_account(
     (AC1) — never silently incomplete. Aspects run **in parallel** (AC4) and return references, not
     blobs. Idempotent on ``run_id`` (the waterfall no-ops a re-run of ``(entity, field, source,
     run)`` — AC7). ``workspace_id`` defaults to ``spec.workspace_id``.
+
+    ``research_directive`` is the immutable launch pin already persisted on the outer account run.
+    The direct implementation accepts it to satisfy the same composition seam as the governed
+    account agent; its field boundary arrives through ``spec.field_keys`` and it never reloads or
+    mutates the directive.
 
     The per-aspect ``budget_envelope_cents`` is ``budget_cap_cents`` (each aspect bounded by the
     cap);
@@ -353,7 +362,11 @@ async def profile_account(
         return await worker.research(ctx)
 
     # --- fan out: one aspect worker per cluster, in parallel (AC4) ---
-    results = await asyncio.gather(*[_run_aspect(aspect) for aspect in granted])
+    if resolver_bindings:
+        with bind_resolver_overrides(resolver_bindings):
+            results = await asyncio.gather(*[_run_aspect(aspect) for aspect in granted])
+    else:
+        results = await asyncio.gather(*[_run_aspect(aspect) for aspect in granted])
 
     coverages = tuple(_coverage_of(r) for r in results)
     refs: tuple[ClaimId, ...] = tuple(ref for r in results for ref in r.claim_refs)

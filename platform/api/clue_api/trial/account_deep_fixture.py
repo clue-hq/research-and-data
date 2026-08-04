@@ -33,6 +33,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.account_deep_source_policy import bind_healthcare_account_deep_source_override
 from clue_api.composition import load_research_packs
 from clue_api.deep.orchestrator import deep_account_run_id
 from clue_api.discovery_seal import (
@@ -84,7 +85,6 @@ from clue_core import (
     EntityId,
     EntityType,
     ExtractionMethod,
-    FieldClass,
     FieldDef,
     ICPCreatedFrom,
     ICPSpec,
@@ -141,11 +141,8 @@ from clue_research.durable import (
 )
 from clue_research.durable.project_run import set_phase
 from clue_research.icp import (
-    SourceWeight,
-    WeightedSource,
     create_icp_spec,
     get_active_icp,
-    register_source_profile_override,
 )
 from clue_research.identity import get_account, insert_account_entity, resolve_alias
 from clue_research.profiling.committee import CommitteePersonCandidate
@@ -771,41 +768,9 @@ def _deep_source_profile_ref() -> dict[str, JsonValue]:
 
 
 async def _ensure_source_override(conn: AsyncConnection) -> None:
-    await register_source_profile_override(
+    await bind_healthcare_account_deep_source_override(
         conn,
-        "healthcare_practice",
-        WORKSPACE_ID,
-        (
-            WeightedSource(source_key="sumble_jobs", weight=SourceWeight.HIGH, rank=1),
-            WeightedSource(source_key="firecrawl_site", weight=SourceWeight.HIGH, rank=2),
-            WeightedSource(source_key="exa_deep", weight=SourceWeight.MEDIUM, rank=3),
-        ),
-        field_class=FieldClass.ACCOUNT,
-        icp_key=DEEP_ICP_KEY,
-        version=SOURCE_OVERRIDE_VERSION,
-    )
-    await register_source_profile_override(
-        conn,
-        "healthcare_practice",
-        WORKSPACE_ID,
-        (
-            WeightedSource(source_key="sumble_tech_stack", weight=SourceWeight.HIGH, rank=1),
-            WeightedSource(source_key="firecrawl_site", weight=SourceWeight.HIGH, rank=2),
-            WeightedSource(source_key="exa_deep", weight=SourceWeight.MEDIUM, rank=3),
-        ),
-        field_class=FieldClass.CORE,
-        icp_key=DEEP_ICP_KEY,
-        version=SOURCE_OVERRIDE_VERSION,
-    )
-    await register_source_profile_override(
-        conn,
-        "healthcare_practice",
-        WORKSPACE_ID,
-        (
-            WeightedSource(source_key="firecrawl_site", weight=SourceWeight.HIGH, rank=1),
-            WeightedSource(source_key="exa_deep", weight=SourceWeight.MEDIUM, rank=2),
-        ),
-        field_class=FieldClass.ACCOUNT_RESONANCE,
+        workspace_id=WORKSPACE_ID,
         icp_key=DEEP_ICP_KEY,
         version=SOURCE_OVERRIDE_VERSION,
     )

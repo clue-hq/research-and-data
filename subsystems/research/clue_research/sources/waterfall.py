@@ -326,23 +326,35 @@ async def resolve_field(
                     break
                 continue
 
-        # Budget pre-check (only for a step that will actually call a resolver): the manifest cost
-        # is the pre-spend estimate (substrate §4 / D7).
-        if budget.would_exceed(manifest.cost_cents):
+        # Resolve the binding before the budget check so an already-paid immutable snapshot can
+        # declare itself materialization-only.  Such a resolver performs no provider I/O and must
+        # neither consume fresh budget headroom nor copy the operation's settled cost onto every
+        # field.  An ordinary/unbound resolver retains the manifest estimate semantics.
+        try:
+            resolver = get_resolver(source_key)
+        except NoResolverBoundError:
+            resolver = None
+        if resolver is None:
+            # An unbound source cannot spend. Record the miss and continue before consulting the
+            # budget so an unavailable higher-priority source cannot hide a later zero-cost
+            # snapshot materializer behind a fictitious manifest estimate.
+            steps.append(
+                TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.NO_RESOLVER)
+            )
+            continue
+        materialization_only = bool(
+            getattr(resolver, "materialization_only", False)
+        )
+        estimated_cost = Decimal(0) if materialization_only else manifest.cost_cents
+
+        # Budget pre-check (only for a step that would incur new spend): the manifest cost is the
+        # live-call estimate (substrate §4 / D7).
+        if budget.would_exceed(estimated_cost):
             steps.append(
                 TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.BUDGET_SKIPPED)
             )
             stop_reason = StopReason.BUDGET_STOP
             break
-
-        # Dispatch through the registry binding ONLY (the engine never imports a resolver).
-        try:
-            resolver = get_resolver(source_key)
-        except NoResolverBoundError:
-            steps.append(
-                TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.NO_RESOLVER)
-            )
-            continue
 
         # Per-source gate (injected seam): consulted only for a step that will actually call a
         # resolver — reuse and unbound sources spend nothing and are not gated. The gate's own
@@ -431,7 +443,7 @@ async def resolve_field(
             # manifest's per-call cost for an empty (or fully tagger-dropped) result (substrate §4 /
             # D7; M4.4 cost AC). A claim-bearing result carries that cost on its first claim.
             if not kept:
-                step_cost = manifest.cost_cents
+                step_cost = Decimal(0) if materialization_only else manifest.cost_cents
             best = first_confident_claim(kept, threshold)
             apply_attributes(
                 span, {ATTR_COST_CENTS: step_cost, "best_confidence": _max_confidence(kept)}
