@@ -69,6 +69,7 @@ class AccountRunIO(Protocol):
         entity_id: EntityId,
         tier: str,
         research_directive: ResearchDirectivePin | None = None,
+        budget_cap_cents: CostCents | None = None,
     ) -> None:
         """Create the ``account_run`` row if absent (idempotent on re-entry — M7.1)."""
         ...
@@ -116,6 +117,7 @@ class DbAccountRunIO:
         entity_id: EntityId,
         tier: str,
         research_directive: ResearchDirectivePin | None = None,
+        budget_cap_cents: CostCents | None = None,
     ) -> None:
         async with self._session_factory() as conn:
             await ensure_account_run(
@@ -124,7 +126,13 @@ class DbAccountRunIO:
                 project_run_id=project_run_id,
                 entity_id=entity_id,
                 tier=tier,
+                budget_cap_cents=budget_cap_cents,
             )
+            row = await get_account_run(conn, account_run_id)
+            if row is None:
+                raise ValueError(f"account run {account_run_id} was not created")
+            if budget_cap_cents is not None and row.budget_cap_cents != budget_cap_cents:
+                raise ValueError("account run budget cap differs from the launched directive")
             if research_directive is not None:
                 await pin_account_run_research_directive(
                     conn,

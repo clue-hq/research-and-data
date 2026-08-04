@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Collection, Sequence
 from contextlib import AbstractAsyncContextManager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import cast
 
@@ -331,6 +331,12 @@ class ExaDeepSnapshotResolverProvider:
                     availability=AccountResolverBindingAvailability.WAITING_EXTERNAL,
                     bindings={},
                     reason_code="exa_deep_acquisition_in_progress",
+                    operation_ref=str(active.operation_id),
+                    retry_after=(
+                        active.dispatch_lease_expires_at
+                        if active.dispatch_lease_expires_at is not None
+                        else datetime.now(UTC) + timedelta(seconds=30)
+                    ),
                 )
             return AccountResolverBindings(
                 availability=AccountResolverBindingAvailability.REQUIRED_MISSING,
@@ -347,6 +353,8 @@ class ExaDeepSnapshotResolverProvider:
         return AccountResolverBindings(
             availability=AccountResolverBindingAvailability.READY,
             bindings={SOURCE_KEY: resolver},
+            snapshot_refs=tuple(str(snapshot.snapshot_id) for snapshot in snapshots),
+            audit_refs=tuple(str(snapshot.operation_id) for snapshot in snapshots),
         )
 
 

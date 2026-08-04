@@ -1066,6 +1066,7 @@ async def confirmed_directive_account_specs(
                 workspace_id=workspace_id,
                 field_keys=effective.field_keys,
                 research_directive=effective.pin,
+                budget_cap_cents=effective.effort_policy.budget_cap_cents,
             )
         )
     return tuple(specs)

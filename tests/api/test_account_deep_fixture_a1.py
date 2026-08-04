@@ -67,6 +67,7 @@ from clue_core import (
     ProjectPhase,
     ResearchMode,
     WorkerStatus,
+    new_operation_id,
     new_run_id,
 )
 from clue_research.claimstore import WorkspaceScope, claims_for
@@ -77,6 +78,7 @@ from clue_research.durable import (
     BudgetEngine,
     DbBudgetStore,
     PhaseCheckpointStatus,
+    create_account_deep_launch,
     get_account_run,
     get_checkpoint,
     get_discovery_batch,
@@ -708,6 +710,18 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
             )
             directive = account_spec.research_directive
             assert directive is not None
+            await create_account_deep_launch(
+                conn,
+                workspace_id=WORKSPACE_ID,
+                project_run_id=fixture.project_run_id,
+                directive_id=directive.directive_id,
+                account_entity_ids=(fixture.selected_account_id,),
+                approved_budget_cap_cents=Decimal("300"),
+                expected_estimated_cost_cents=Decimal("300"),
+                created_by="human:account-deep-fixture",
+                source_operation_id=new_operation_id(),
+                source_action_ref="turn:account-deep-fixture-launch",
+            )
             resolvers = _bind_recorded_resolvers(fixture)
             committee = build_recorded_committee_source(fixture)
             gateway = FakeGateway()
@@ -742,7 +756,7 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
                 icp_key=fixture.deep_icp_key,
                 icp_version=fixture.deep_icp_version,
                 budget_cap_cents=Decimal("1000"),
-                params={"research_directive_id": str(directive.directive_id)},
+                params={},
             )
 
             assert await get_account_run(conn, fixture.expected_account_run_id) is None
@@ -780,6 +794,7 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
             assert account_run.tier == "high"
             assert account_run.status is AccountRunStatus.DONE
             assert account_run.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
+            assert account_run.budget_cap_cents == Decimal("300")
             assert set(account_run.references_index) >= {"account", "committee"}
             assert len(account_run.references_index["account"]) == 4
             governed_rows = (

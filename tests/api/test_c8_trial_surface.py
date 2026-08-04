@@ -43,6 +43,7 @@ from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 _WITHHELD = {
     "enrich_account_gaps",
     "enrich_selected_accounts",
+    "launch_account_deep",
     "start_recon",
     "submit_onboarding_input",
     "synthesize_icps",

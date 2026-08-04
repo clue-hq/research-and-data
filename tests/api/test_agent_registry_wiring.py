@@ -47,7 +47,8 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        # head-of-abm@v16 / stage0-interview@v9 — truthful A2 draft preview plus S1 account-gap
+        # head-of-abm@v17 / stage0-interview@v9 — exact-set O2 account-deep launch plus the
+        # truthful A2 draft preview and S1 account-gap
         # and E1 targeted-
         # enrichment authority plus
         # dynamic Client-KB proposal/materialization
@@ -57,7 +58,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # inspection-tool grants + delegation withholding) and task 1.4's:
         # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
         # nested authority, and B1 layer 2's engine-defaulted claim entity.
-        AgentRole.HEAD_OF_ABM: ("acfa4e2e6a351c1ed5dad1af6002f8b3177f6c2c1f318d0025390b2449ec6041"),
+        AgentRole.HEAD_OF_ABM: ("3b8a93066501c63702ab538b23968698b680125f5422e7e426ec892f4e6449fe"),
         AgentRole.RESEARCH: "4bf40eee2b8e6f6d98a0ee295e3ff900243e162eae53cc6c8852e70521aef391",
         AgentRole.CONTENT_DRAFTER: (
             "f4095d62dfc9bc734aa2acb111270a3f10e2242a252e96c229d464435b7a90bc"
@@ -115,7 +116,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # The two proposal v1 addresses remain installed only for historical recipe replay. They add
     # inventory entries but cannot enter the current model surface; only propose_field@2 carries
     # the dynamic Client-KB authority.
-    assert len(by_address) == 46
+    assert len(by_address) == 47
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
@@ -126,6 +127,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "get_research_view@1",
         "inspect_readiness_history@1",
         "inspect_statement_history@1",
+        "launch_account_deep@1",
         "propose_field@2",
         "propose_source@1",
         "record_interview_answer@1",

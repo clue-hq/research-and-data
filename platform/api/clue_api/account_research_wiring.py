@@ -49,6 +49,7 @@ from clue_core import (
     ResearchTerminalStatus,
     Resolver,
     RunId,
+    UtcDatetime,
     WorkerStatus,
 )
 from clue_db import ConnFactory, transaction
@@ -320,6 +321,7 @@ class AccountResolverBindingAvailability(StrEnum):
     NOT_APPLICABLE = "not_applicable"
     WAITING_EXTERNAL = "waiting_external"
     REQUIRED_MISSING = "required_missing"
+    FAILED_EXTERNAL = "failed_external"
 
 
 @dataclass(frozen=True)
@@ -329,6 +331,10 @@ class AccountResolverBindings:
     availability: AccountResolverBindingAvailability
     bindings: Mapping[str, Resolver]
     reason_code: str | None = None
+    operation_ref: str | None = None
+    retry_after: UtcDatetime | None = None
+    snapshot_refs: tuple[str, ...] = ()
+    audit_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.availability is AccountResolverBindingAvailability.READY and not self.bindings:
@@ -338,10 +344,16 @@ class AccountResolverBindings:
             in {
                 AccountResolverBindingAvailability.WAITING_EXTERNAL,
                 AccountResolverBindingAvailability.REQUIRED_MISSING,
+                AccountResolverBindingAvailability.FAILED_EXTERNAL,
             }
             and not self.reason_code
         ):
             raise ValueError("unavailable resolver bindings require a reason code")
+        if self.availability is AccountResolverBindingAvailability.WAITING_EXTERNAL:
+            if self.operation_ref is None or self.retry_after is None:
+                raise ValueError("waiting resolver bindings require operation_ref and retry_after")
+        elif self.retry_after is not None:
+            raise ValueError("only waiting resolver bindings may carry retry_after")
 
 
 class AccountResolverBindingsUnavailable(RuntimeError):
@@ -376,6 +388,7 @@ class GovernedAccountProfiler:
         budget_cap_cents: Decimal | None = None,
         recursion_policy: RecursionPolicy | None = None,
         research_directive: ResearchDirectivePin | None = None,
+        resolver_bindings: Mapping[str, Resolver] | None = None,
         **_mechanical_collaborators: object,
     ) -> AccountProfileResult:
         store = DbAccountRunStore(
@@ -419,8 +432,8 @@ class GovernedAccountProfiler:
                     "for every initially planned field"
                 )
 
-        bindings: Mapping[str, Resolver] = {}
-        if self._resolver_provider is not None:
+        bindings: Mapping[str, Resolver] = resolver_bindings or {}
+        if not bindings and self._resolver_provider is not None:
             resolution = await self._resolver_provider.resolver_bindings(
                 workspace_id=workspace_id,
                 project_run_id=project_run_id,
@@ -430,6 +443,7 @@ class GovernedAccountProfiler:
             if resolution.availability in {
                 AccountResolverBindingAvailability.WAITING_EXTERNAL,
                 AccountResolverBindingAvailability.REQUIRED_MISSING,
+                AccountResolverBindingAvailability.FAILED_EXTERNAL,
             }:
                 raise AccountResolverBindingsUnavailable(resolution)
             bindings = resolution.bindings

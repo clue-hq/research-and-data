@@ -19,7 +19,9 @@ from clue_core import (
     AccountGapSnapshot,
     AccountGapSnapshotState,
     AccountGapSpendOutcome,
+    EntityId,
     ProjectPhase,
+    ProjectRunId,
     decode_jsonb,
     serialize_value_json,
 )
@@ -406,6 +408,44 @@ async def get_account_gap_snapshot(
     return _snapshot(row) if row is not None else None
 
 
+async def latest_succeeded_account_gap_snapshot(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_run_id: ProjectRunId,
+    account_id: EntityId,
+    source_key: str,
+) -> AccountGapSnapshot | None:
+    """Return the latest successful S1 snapshot for one exact run/account/source lineage."""
+
+    row = (
+        await conn.execute(
+            text(
+                "SELECT "
+                + ", ".join(f"snapshot.{column.strip()}" for column in _SNAPSHOT_COLUMNS.split(","))
+                + " "
+                "FROM account_gap_operation operation "
+                "JOIN account_gap_snapshot snapshot ON snapshot.operation_id=operation.id "
+                "AND snapshot.workspace_id=operation.workspace_id "
+                "WHERE operation.workspace_id=:workspace_id "
+                "AND operation.project_run_id=:project_run_id "
+                "AND operation.account_id=:account_id AND operation.state='succeeded' "
+                "AND snapshot.source_key=:source_key AND snapshot.state='succeeded' "
+                "AND snapshot.response_artifact_key IS NOT NULL "
+                "ORDER BY operation.terminal_at DESC NULLS LAST, operation.created_at DESC "
+                "LIMIT 1"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "project_run_id": project_run_id,
+                "account_id": account_id,
+                "source_key": source_key,
+            },
+        )
+    ).one_or_none()
+    return _snapshot(row) if row is not None else None
+
+
 async def claim_account_gap_snapshot(
     conn: AsyncConnection,
     *,
@@ -732,6 +772,7 @@ __all__ = [
     "get_account_gap_snapshot",
     "list_account_gap_field_results",
     "list_account_gap_snapshots",
+    "latest_succeeded_account_gap_snapshot",
     "put_account_gap_field_result",
     "quarantine_dispatching_account_gap_snapshots",
     "reserve_account_gap_snapshot",

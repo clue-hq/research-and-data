@@ -370,6 +370,15 @@ class DeepPhaseHandler:
                     budget_stop=None,
                     manifest=_failed_manifest(spec, run_id, cost_cents=cost),
                 )
+            if (
+                result.external_preparation is not None
+                and result.external_preparation.outcome
+                is ExternalResearchPreparationOutcome.WAITING_EXTERNAL
+            ):
+                # Account-profile acquisition may wait before the first completed sub-phase. The
+                # provider operation is durable and resumable, so this is a project-level external
+                # wait—not an unresolved account failure.
+                return _waiting_outcome(result)
             if result.sub_phase is None:
                 # The account did not resolve — ``profile_account`` returned FAILED with no aspects
                 # and the orchestrator short-circuited before discovery without advancing the marker
@@ -382,12 +391,6 @@ class DeepPhaseHandler:
                     budget_stop=None,
                     manifest=_failed_manifest(spec, run_id, cost_cents=result.cost_cents),
                 )
-            if (
-                result.external_preparation is not None
-                and result.external_preparation.outcome
-                is ExternalResearchPreparationOutcome.WAITING_EXTERNAL
-            ):
-                return _waiting_outcome(result)
             return _succeeded_outcome(result)
 
         async def _run_cohort(

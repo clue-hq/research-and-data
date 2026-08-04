@@ -66,6 +66,17 @@ class TierCheckpointOutput(ToolOutput):
     phase: str
 
 
+class AccountDeepLaunchOutput(ToolOutput):
+    launch_id: str
+    project_run_id: str
+    research_directive_id: str
+    selected_accounts: int
+    estimated_cost_cents: str
+    approved_budget_cap_cents: str
+    replayed: bool
+    enqueued: bool
+
+
 class DeepAccountOutput(ToolOutput):
     account_entity_id: str
     run_id: str

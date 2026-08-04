@@ -54,7 +54,8 @@ from clue_api.agent_execution_wiring import DbAgentPlanJournal
 from clue_api.agent_platform_wiring import build_agent_platform_components
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.compliance_wiring import register_compliance_wiring
-from clue_api.composition import load_research_packs
+from clue_api.composition import build_pre_spend_gate, load_research_packs
+from clue_api.exa_deep_preparation import build_production_exa_deep_resolver_provider
 from clue_api.exa_targeted_enrichment import (
     ExaTargetedEnrichmentCoordinator,
     ExaTargetedEnrichmentWorker,
@@ -98,6 +99,8 @@ from clue_api.run_composition import ComposingRunDriver, build_platform_gateway
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
+from clue_api.sumble_committee_inputs import DurableSumbleCommitteeInputResolver
+from clue_api.sumble_committee_preparation import build_production_sumble_committee_preparer
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
@@ -381,6 +384,26 @@ async def _serve() -> None:
         task_queue = DbTaskQueue()
         work_queue = DbWorkQueue(task_queue)
         gateway = build_platform_gateway(settings)
+        pre_spend_gate = build_pre_spend_gate(conn_factory=transaction)
+        sumble_committee_preparer = build_production_sumble_committee_preparer(
+            settings,
+            secrets=secrets,
+            inputs=DurableSumbleCommitteeInputResolver(
+                settings=settings,
+                storage=storage,
+                conn_factory=transaction,
+            ),
+            storage=storage,
+            pre_spend_gate=pre_spend_gate,
+            conn_factory=transaction,
+        )
+        exa_account_resolver_provider = build_production_exa_deep_resolver_provider(
+            settings,
+            secrets=secrets,
+            storage=storage,
+            pre_spend_gate=pre_spend_gate,
+            conn_factory=transaction,
+        )
         c7_enabled = any(
             (
                 settings.c7_research_view_read_enabled,
@@ -397,6 +420,7 @@ async def _serve() -> None:
             storage=storage,
             settings=settings,
             gateway=gateway,
+            pre_spend_gate=pre_spend_gate,
             research_directive_memory_write_factory=memory_write_factory_builder(settings, gateway),
             queue=task_queue,
             project_execution_router=project_execution_router,
@@ -417,6 +441,7 @@ async def _serve() -> None:
                 secrets=secrets,
                 storage=storage,
             ),
+            account_deep_full_unit_available=sumble_committee_preparer is not None,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -524,6 +549,9 @@ async def _serve() -> None:
             execution_journal=journal,
             project_execution_router=project_execution_router,
             account_agent_profiler=account_agent_profiler,
+            committee_preparer=sumble_committee_preparer,
+            account_resolver_provider=exa_account_resolver_provider,
+            pre_spend_gate=pre_spend_gate,
         )
         register_execution_control_tools(
             ExecutionControlServices(

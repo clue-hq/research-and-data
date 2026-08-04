@@ -18,6 +18,19 @@ is the resumable execution cursor whose id is the ``claim.run_id`` provenance.
 
 from __future__ import annotations
 
+from clue_research.durable.account_deep_launch import (
+    AccountDeepLaunchConflict,
+    AccountDeepLaunchError,
+    AccountDeepLaunchInvalid,
+    AccountDeepLaunchPreview,
+    AccountDeepLaunchRow,
+    CreatedAccountDeepLaunch,
+    account_deep_launch_account_pins,
+    account_deep_launch_accounts,
+    create_account_deep_launch,
+    get_account_deep_launch,
+    preview_account_deep_launch,
+)
 from clue_research.durable.account_gap_enrichment import (
     AccountGapBudgetExceeded,
     AccountGapNotFound,
@@ -29,6 +42,7 @@ from clue_research.durable.account_gap_enrichment import (
     find_account_gap_operation_for_fields,
     get_account_gap_operation,
     get_account_gap_snapshot,
+    latest_succeeded_account_gap_snapshot,
     list_account_gap_field_results,
     list_account_gap_snapshots,
     put_account_gap_field_result,
@@ -340,6 +354,7 @@ __all__ = [
     "get_account_gap_snapshot",
     "list_account_gap_field_results",
     "list_account_gap_snapshots",
+    "latest_succeeded_account_gap_snapshot",
     "put_account_gap_field_result",
     "quarantine_dispatching_account_gap_snapshots",
     "reserve_account_gap_operation",
@@ -527,6 +542,18 @@ __all__ = [
     "save_references",
     "set_account_sub_phase",
     "set_status",
+    # account-deep launch authorization (M8B O2)
+    "AccountDeepLaunchConflict",
+    "AccountDeepLaunchError",
+    "AccountDeepLaunchInvalid",
+    "AccountDeepLaunchPreview",
+    "AccountDeepLaunchRow",
+    "CreatedAccountDeepLaunch",
+    "account_deep_launch_account_pins",
+    "account_deep_launch_accounts",
+    "create_account_deep_launch",
+    "get_account_deep_launch",
+    "preview_account_deep_launch",
     "SubjectActivityRow",
     "append_subject_activity",
     "list_subject_activity",

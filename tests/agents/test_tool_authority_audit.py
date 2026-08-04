@@ -1,4 +1,4 @@
-"""Current C6 replay/authority audit over the complete 39-tool registry."""
+"""Current C6 replay/authority audit over the complete tool registry."""
 
 from __future__ import annotations
 
@@ -36,13 +36,14 @@ _C65_CERTIFIED = {
 def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(C6_AGENT_TOOL_AUTHORITY) == set(registry.names())
-    # 35 → 37 with PC-C8's inspection tools, then 38/39 with the E1 and S1 explicit provider-spend
-    # boundaries. Every addition must have a reviewed role decision here.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 41
+    # Every addition must have a reviewed role decision here. O2 adds the explicit, exact-set
+    # account-deep launch boundary after the E1 and S1 provider-spend tools.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 42
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["confirm_account_research_directive"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["launch_account_deep"] == (AgentRole.HEAD_OF_ABM,)
 
     for descriptor in registry.all_descriptors():
         roles = c6_roles_for_tool(descriptor.address)

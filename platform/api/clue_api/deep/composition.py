@@ -49,12 +49,12 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Final
-from uuid import UUID
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import JsonValue
 
+from clue_api.account_research_wiring import AccountResolverBindingProvider
 from clue_api.composition import (
     build_pre_spend_gate,
     load_research_packs,
@@ -81,13 +81,11 @@ from clue_core import (
     PhaseContext,
     PhaseHandler,
     PreSpendGate,
-    ResearchDirectiveId,
-    ResearchDirectiveStatus,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import WorkspaceScope, claims_for, entities_with_field_claim
 from clue_research.directives import (
-    confirmed_directive_account_specs,
+    effective_account_research_directive,
     get_research_directive,
 )
 from clue_research.discovery_scoring.tiering import (
@@ -103,6 +101,8 @@ from clue_research.durable import (
     BudgetEngine,
     LockFactory,
     WorkerRegistry,
+    account_deep_launch_account_pins,
+    get_account_deep_launch,
     register_phase_handler,
 )
 from clue_research.icp.rubric import TierCutoffs
@@ -188,16 +188,11 @@ def build_high_tier_resolver(
     """
 
     async def _resolve(ctx: PhaseContext) -> Sequence[AccountSpec]:
-        # A confirmed directive is necessary but not itself a launch. O2's launch tool writes this
-        # exact id into the DEEP phase input; absence/malformed/cross-lineage input is a zero-call
-        # no-op, preserving the conversational pause after discovery.
-        raw_directive_id = ctx.params.get("research_directive_id")
-        if not isinstance(raw_directive_id, str):
-            return ()
-        try:
-            directive_id = ResearchDirectiveId(UUID(raw_directive_id))
-        except ValueError:
-            return ()
+        # A confirmed directive is necessary but not itself a launch. O2 persists a separate,
+        # immutable launch receipt for the exact run/account subset. Absence is a zero-call no-op,
+        # preserving the conversational pause after discovery; a later directive supersession
+        # cannot mutate an already-authorized fleet because every selected account carries its
+        # immutable effective pin on the launch receipt.
         try:
             selection_policy = DiscoverySelectionPolicy.from_slot(spec.discovery_strategy)
         except ValueError:
@@ -219,27 +214,44 @@ def build_high_tier_resolver(
         scope = WorkspaceScope.for_workspace(ctx.workspace_id)
         specs: list[AccountSpec] = []
         async with session_factory() as conn:
+            launch = await get_account_deep_launch(
+                conn,
+                ctx.project_run_id,
+                workspace_id=ctx.workspace_id,
+            )
+            if launch is None or launch.project_id != ctx.project_id:
+                return ()
             directive = await get_research_directive(
                 conn,
-                directive_id,
+                launch.directive_id,
                 workspace_id=ctx.workspace_id,
             )
             if (
                 directive is None
-                or directive.status is not ResearchDirectiveStatus.CONFIRMED
                 or directive.project_id != ctx.project_id
                 or directive.icp_key != ctx.icp_key
                 or directive.icp_version != ctx.icp_version
+                or directive.version != launch.directive_version
+                or directive.canonical_json_sha256 != launch.directive_sha256
             ):
                 return ()
-            directed_specs = {
-                item.entity_id: item
-                for item in await confirmed_directive_account_specs(
+            directed_specs: dict[object, AccountSpec] = {}
+            for pin in await account_deep_launch_account_pins(conn, launch):
+                effective = await effective_account_research_directive(
                     conn,
                     workspace_id=ctx.workspace_id,
-                    directive_id=directive_id,
+                    directive_id=launch.directive_id,
+                    account_id=pin.account_id,
+                    expected_pin=pin,
                 )
-            }
+                directed_specs[pin.account_id] = AccountSpec(
+                    entity_id=pin.account_id,
+                    tier=effective.effort_policy.tier,
+                    workspace_id=ctx.workspace_id,
+                    field_keys=effective.field_keys,
+                    research_directive=pin,
+                    budget_cap_cents=effective.effort_policy.budget_cap_cents,
+                )
             entity_ids = await entities_with_field_claim(conn, TIER_FIELD, scope=scope)
             for entity_id in entity_ids:
                 directed = directed_specs.get(entity_id)
@@ -263,7 +275,7 @@ def build_high_tier_resolver(
                 if value.get("icp_key") != ctx.icp_key:
                     continue
                 tier = value.get("tier")
-                if not isinstance(tier, str) or tier not in eligible:
+                if not isinstance(tier, str) or tier not in eligible or directed.tier != tier:
                     continue
                 specs.append(
                     AccountSpec(
@@ -272,6 +284,7 @@ def build_high_tier_resolver(
                         workspace_id=ctx.workspace_id,
                         field_keys=directed.field_keys,
                         research_directive=directed.research_directive,
+                        budget_cap_cents=directed.budget_cap_cents,
                     )
                 )
         return tuple(specs)
@@ -374,6 +387,7 @@ def build_deep_phase_handler(
     canary_controller: DeepCanaryController | None = None,
     profile_account_fn: ProfileAccountFn | None = None,
     committee_preparer: CommitteePreparer | None = None,
+    account_resolver_provider: AccountResolverBindingProvider | None = None,
 ) -> DeepPhaseComposition:
     """Construct the fully-wired DEEP phase for one campaign's ICP and return the bundle (M8A.6).
 
@@ -452,6 +466,7 @@ def build_deep_phase_handler(
         synthesis_guard=synthesis_guard,
         budget_cap_cents=budget_cap_cents,
         committee_preparer=committee_preparer,
+        account_resolver_provider=account_resolver_provider,
     )
 
     if scheduler is None:
