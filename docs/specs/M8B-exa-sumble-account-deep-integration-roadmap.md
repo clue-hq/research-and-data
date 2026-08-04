@@ -1,9 +1,9 @@
 # M8B — Account-deep provider integration roadmap
 ## Exa Deep account profiling + Sumble organization map and buying committee
 
-> **Status:** implementation in progress. A0, the remediated A1, Exa E0, M06A S2A–S2D, the
+> **Status:** implementation in progress. A0, the remediated A1, Exa E0-R1, M06A S2A–S2D, the
 > provider-neutral O1 DEEP wait seam, and the Sumble portion of O2 composition are implemented
-> mechanically; Exa E1–E2, A2,
+> mechanically; Exa E0-R2/E1/E2, A2,
 > the full-unit launch surface, O3, and live canaries remain open. **Recorded:** 2026-08-03. **Working branch:**
 > `platform/c8-account-profiling-integration`. **Provider baseline:** commit `cb7a275`, identical to
 > the current local `platform/c8-exa-sumble-discovery` branch when this plan was recorded.
@@ -150,7 +150,7 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 |---|---|---|
 | A0 | Complete mechanically; no live call | `M8B-A0-account-deep-provider-contract-acceptance.md`; pinned Exa request/response digests, strict additive-tolerant models, independent default-off settings, spend/error and future-operation decisions |
 | A1 | Complete mechanically; precedence remediation closed 2026-08-04 | additive fixture; direct and composed paths use the real gate and the same frozen exact-source authority, produce all four account claims, persist explicit policy refs, and replay without provider calls/writes |
-| E0 | Complete mechanically; no live call | `M8B-E0-exa-deep-wire-acceptance.md`; deterministic registry-schema compiler, target-locked structured Deep request, additive grounded normalizer, one-dispatch compatibility transport, typed pre/post-dispatch failure boundary, frozen-golden and provider-double acceptance |
+| E0 | Reopened: E0-R1 complete; E0-R2 open; no live call | `M8B-E0-exa-deep-wire-acceptance.md`; R1 now provides provider-safe reversible aliases, current bounded content controls, exact 10-property/two-level schema enforcement, and deterministic nullable schemas. R2 must close unchanged-golden, all-null settlement, field-faithful evidence, citation/value validation, and resolver-time HTTP findings. |
 | S2A | Complete mechanically | `2810dcf`; pinned v9 Teams/People request, response, credit, no-reveal, identity, and normalizer contract |
 | S2B | Complete mechanically | `0f8715b`; durable async operation/snapshot/attempt/receipt and exact spend/replay |
 | S2C | Complete mechanically | `69295ee`; exact-account snapshot-backed `SumbleCommitteeSource` through existing M8 committee worker |
@@ -510,15 +510,26 @@ Modernize the existing adapter:
 prompt; missing URLs/grounding/spans are dropped; provider errors classify retryable, hard, budget,
 and spend-unknown outcomes correctly.
 
-**Implemented 2026-08-04 — Gate E0 mechanically closed.**
+**Corrected 2026-08-04 — E0-R1 closed; overall Gate E0 remains open for E0-R2.**
 
 - `resolvers/exa` now compiles only explicit `deep`/`deep-reasoning` non-streaming requests. It
   consumes admitted field keys plus exact effective-registry value schemas, sorts and closes the
   output contract deterministically, target-locks the canonical account, and bounds result/query
   depth independently of A2 storage.
+- E0-R1 hex-encodes each dotted registry key into one reversible path-safe provider alias and pins
+  the exact readable map in the fixed system prompt. Provider responses decode back to the original
+  field key before entering the provider-neutral seam.
+- The compiler now enforces Exa's documented maximum of ten total properties and two named
+  property levels across nested schemas. It rejects unsafe property names, unsupported composition,
+  over-budget bundles and malformed schemas before dispatch; E1 must use this failure boundary when
+  splitting/coalescing work.
+- `contents.text` and query-guided highlights now use explicit account-deep product budgets of
+  `maxCharacters=10000` and `maxCharacters=2000`; these are not represented as provider maxima.
+  Deprecated `numSentences` and ignored `highlightsPerUrl` are absent and forbidden.
 - Directive-derived intent and directional questions can alter bounded query text only; they
   cannot add output properties. Constrained registry schemas retain their exact semantics when the
-  compiler adds the explicit null-on-evidence-miss path.
+  compiler adds a standard nullable type union; nullable enums include an explicit null member and
+  caller schemas are never mutated.
 - Successful parsing requires the A0 request id, reported dollars, exact structured field exchange,
   retained result URLs, field grounding and inspectable evidence. Deprecated/additive response
   members are ignored. Spanless candidates are omitted and malformed successes produce no result.
@@ -526,9 +537,13 @@ and spend-unknown outcomes correctly.
   zero adapter retries. Missing schema/credential/invalid request is a pre-dispatch hard failure;
   transport ambiguity or malformed success after dispatch is `spend_unknown`. It does not reserve,
   persist, settle, replay, materialize claims, or bind production composition; those remain E1/E2.
-- Frozen A0 request/response bytes and digests are unchanged. Acceptance is recorded in
+- A0 request/response fixtures and digests were deliberately amended because provider property
+  aliases are part of both wire directions. Acceptance is recorded in
   `M8B-E0-exa-deep-wire-acceptance.md`; all tests use recorded fixtures or provider doubles and no
   credential read or paid provider request occurs.
+- E0-R1 does not close the response-side review findings. E0-R2 remains required before E1: the
+  unchanged golden must normalize, all-null paid misses must settle, evidence must be field-faithful,
+  values/citations must remain governed, and resolver-time HTTP must be disabled.
 
 ### Slice E1 — Durable Exa account acquisition
 

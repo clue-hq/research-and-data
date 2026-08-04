@@ -2,11 +2,11 @@
 
 - **Parent roadmap:** `M8B-exa-sumble-account-deep-integration-roadmap.md`, Slice A0
 - **Recorded:** 2026-08-04
-- **Status:** mechanically accepted; no live provider call authorized
+- **Status:** request contract amended by E0-R1 on 2026-08-04; no live provider call authorized
 - **Exa endpoint:** `POST https://api.exa.ai/search`
-- **Official reference:** `https://exa.ai/docs/reference/search.md`
-- **Official reference SHA-256:**
-  `6cf5ff75cad2bfdec2685f2786e5d5779c35cf20bb4407fe0c88d59780e6d5be`
+- **Official reference:** `https://exa.ai/docs/reference/search-api-guide-for-coding-agents`
+- **Reference reviewed:** 2026-08-04; the live documentation is mutable, so no current-page digest
+  is represented as immutable provider evidence
 - **Sumble companion:** `M06A-S2-sumble-committee-acceptance.md`
 
 This record closes A0's missing Exa and cross-provider authority decisions. It freezes contracts,
@@ -25,17 +25,27 @@ The accepted account-deep request is non-streaming `POST /search` with:
 - zero to ten unique directional queries, compiled from a confirmed directive rather than
   arbitrary untrusted interpolation; zero is represented by omitting nullable
   `additionalQueries`, while a present array contains one to ten entries;
-- a closed object `outputSchema` with one to eight registered-field-key-shaped properties, all
-  required, and `additionalProperties=false`;
+- a closed object `outputSchema` with one to eight reversible provider-safe aliases, all required,
+  and `additionalProperties=false`; every alias hex-encodes exactly one admitted registry field key
+  and the fixed system prompt carries the exact alias-to-field map;
+- at most ten declared properties in total and at most two named property levels across the full
+  schema, including nested object/array-item properties; over-budget bundles fail before dispatch
+  so E1 can split them without guessing;
+- one supported non-null type per field plus optional `null`; the compiler uses a JSON-Schema
+  `type: [T, "null"]` union and adds `null` to an enum when necessary, never `anyOf`/`oneOf`;
 - `systemPrompt` carrying the exact-account/no-drift, source-URL, and leave-null rules;
-- `contents.text=true` plus highlights so evidence remains inspectable;
+- `contents.text.maxCharacters=10000` and query-guided
+  `contents.highlights.maxCharacters=2000` as explicit account-deep product budgets (not claimed
+  provider maxima); deprecated `numSentences` and `highlightsPerUrl` are forbidden;
 - `stream=false` for the first release so one durable JSON response owns settlement.
 
 The golden request is
 `tests/fixtures/providers/exa/search/deep_request.json`, SHA-256
-`f5fbf6a9b4eb103a4459671475e11791547a34d3173ee35c42471fd18e361085`.
+`45a7ab41ab156bd4b6810db87c2e2852bc39b3e90049db307be42dd22cbf2f98`.
 `ExaDeepSearchRequest` forbids unknown request members and fails on the old `neural` mode, an
-over-cap request, open/injected output properties, missing content, or missing target-lock rules.
+over-cap request, dotted/injected provider properties, a missing alias map, deprecated/unbounded
+content controls, an over-budget schema, unsupported schema composition, or missing target-lock
+rules.
 
 ### 1.2 Successful response
 
@@ -43,7 +53,7 @@ The accepted settleable response requires:
 
 - non-empty `requestId`;
 - at least one result with a real source `url` and title, retaining returned text/highlights;
-- structured `output.content`;
+- structured `output.content` keyed by the reversible provider aliases from the request;
 - non-empty field-level `output.grounding` with at least one citation URL/title per grounding row;
 - grounding for every non-null top-level output field;
 - every grounding citation resolves to a retained result carrying non-empty text or a highlight, so
@@ -52,7 +62,7 @@ The accepted settleable response requires:
 
 The golden response is
 `tests/fixtures/providers/exa/search/deep_response.json`, SHA-256
-`38a5d1caffba5d904efc6a462239ec05bf5397a1848c595648abc2ce3f886ddc`.
+`7cf7c23aecb67a029902de97ea0d818f4fdd37aa32506cf1cdce7eaccf05687a`.
 Response models tolerate additive provider fields at the response, result, output, citation, and
 cost levels. They do not branch on deprecated `resolvedSearchType` or `context`.
 

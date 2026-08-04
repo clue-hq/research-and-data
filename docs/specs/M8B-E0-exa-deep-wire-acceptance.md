@@ -3,13 +3,16 @@
 - **Parent roadmap:** `M8B-exa-sumble-account-deep-integration-roadmap.md`, Slice E0
 - **Contract authority:** `M8B-A0-account-deep-provider-contract-acceptance.md`
 - **Recorded:** 2026-08-04
-- **Status:** mechanically accepted; no live provider call authorized or made
+- **Status:** E0-R1 request correction accepted; overall E0 remains open pending E0-R2; no live
+  provider call authorized or made
 - **Endpoint:** `POST https://api.exa.ai/search`
-- **Official reference:** `https://exa.ai/docs/reference/search`
+- **Official reference:** `https://exa.ai/docs/reference/search-api-guide-for-coding-agents`
 
-E0 replaces the old synchronous `type="neural"`/unstructured-highlights wire with the accepted
-Search Deep structured contract. It deliberately stops before durable acquisition, snapshots,
-settlement, claim materialization, production composition, or live validation.
+E0 replaces the old synchronous `type="neural"`/unstructured-highlights wire with a Search Deep
+structured contract. The 2026-08-04 critical review reopened the original closure. E0-R1 corrects
+the outbound provider request; E0-R2 still owns truthful response/evidence semantics. E0 stops
+before durable acquisition, snapshots, settlement, claim materialization, production composition,
+or live validation.
 
 ## 1. Implemented boundary
 
@@ -27,16 +30,33 @@ It emits one immutable `ExaDeepSearchRequest` with:
 - product-capped `numResults <= 50` and policy-capped `additionalQueries <= 10`;
 - canonical name/domain and available alias/geography target-lock material;
 - a deterministic, sorted, closed `outputSchema` compiled only from admitted registry fields;
+- reversible hex aliases for top-level provider properties, never dotted registry keys; the fixed
+  `systemPrompt` pins each exact `alias=field_key` mapping so provider grounding paths and literal
+  registry names cannot be confused;
+- at most ten total declared properties and at most two named property levels, including nested
+  object/array-item properties; unsafe names, unsupported schema composition, or an over-budget
+  bundle fail before credential lookup or dispatch;
 - every requested field required but nullable so evidence misses are represented as `null`;
-- constrained registry schemas preserved behind a schema union rather than weakened;
+- one standard `type: [T, "null"]` representation; constrained schemas remain intact and nullable
+  enums gain an explicit `null` member without mutating the registry input;
 - source-URL, no-drift and leave-null instructions in `systemPrompt`;
-- `contents.text`, highlights and `stream=false`.
+- `contents.text.maxCharacters=10000`, query-guided
+  `contents.highlights.maxCharacters=2000`, and `stream=false`; these are explicit account-deep
+  product budgets rather than claimed provider maxima, while deprecated `numSentences` and ignored
+  `highlightsPerUrl` are structurally forbidden.
 
 Research intent and directional questions can change query strings only. They never contribute an
 output key or schema. This is the explicit integration seam with the parallel A2 lane: E0 imports
-no directive table/model and A2 need not import a provider type.
+no directive table/model and A2 need not import a provider type. E1 must split/coalesce bundles
+against these same schema budgets rather than bypassing the compiler.
 
-## 2. Accepted response and normalization
+## 2. Provisional response and normalization boundary — E0-R2 remains open
+
+E0-R1 changes provider field names to reversible aliases and decodes them before emitting the
+provider-neutral field key. It does not close the response defects found in review: the untouched
+golden response must normalize without test mutation, all-null paid misses must settle honestly,
+and evidence selection must become field-faithful while preserving citations and validating values.
+Those are binding E0-R2 gates; the response behavior below is descriptive, not an E0 closure claim.
 
 The additive response parser consumes the frozen A0 models and proves the returned structured
 field set exactly equals the request field set. A settleable response requires `requestId`,
@@ -77,19 +97,29 @@ provider request id, provisional settlement, reconciliation, quarantine and repl
 snapshot-backed materialization, target-lock/verification, field-source-plan binding and production
 composition. E0 creates no migration and edits no API composition module.
 
-## 4. Exit-gate evidence
+## 4. E0-R1 exit-gate evidence
 
-| E0 gate | Executable evidence |
+| E0-R1 gate | Executable evidence |
 |---|---|
-| Frozen request remains stable | compiler output equals `deep_request.json`; A0 SHA-256 test remains green |
-| Free text cannot inject a field | malicious intent/query test asserts the sole schema key remains the admitted registry field |
-| Registry schema is deterministic and exact | reversed input order reproduces the golden; nested/constrained schema tests prove non-mutation and null union |
-| Missing URL/grounding/span yields no candidate | strict unmatched-URL/missing-grounding tests plus spanless normalizer test |
-| Additive/deprecated fields do not branch behavior | recorded response test adds both deprecated members and still normalizes by the accepted fields |
-| Error/spend classification is honest | A0 status matrix plus E0 pre-dispatch and post-dispatch backend tests |
-| No hidden retry/call | injected transport asserts one call and `retries=0` |
-| Provider-neutral seams remain intact | Exa and Parallel resolver/waterfall tests retain distinct provider-neutral `SynthesisResult` inputs |
+| Frozen request remains stable | compiler output equals the corrected `deep_request.json`; amended A0 SHA-256 test is green |
+| Free text cannot inject a field | malicious intent/query test asserts only the admitted provider alias exists |
+| Alias mapping is deterministic | round-trip tests prove every ASCII alias decodes to one field key, contains no path punctuation, and is pinned in the fixed prompt |
+| Current content contract only | exact wire assertion contains bounded text/highlights and no deprecated highlight knobs; over-cap values fail validation |
+| Provider schema budget | exact 10-property/two-level cases pass; property 11, level 3, unsafe names, and composition keywords fail before dispatch |
+| Nullable schema is deterministic | nested/constrained schema tests prove input non-mutation, one type union, and explicit enum null semantics |
+| Existing spend boundary remains intact | injected transport still asserts one call and `retries=0`; no credential or paid call is used in acceptance |
 
-Verification commands are recorded in `_memory/2026-08-04-m8b-e0-exa-deep-wire.md`. All E0 tests
-use frozen artifacts or injected doubles. The live canary remains V1 and requires separate user
-authorization after E1/E2 integration.
+## 5. Remaining E0-R2 gates
+
+- the unchanged golden response produces the expected grounded fields without rewriting highlights;
+- a successful all-null/no-grounding response settles as a paid hard miss rather than
+  `spend_unknown`;
+- a field receives only a passage that actually supports that field, not the first highlight from
+  a cited page;
+- returned values validate against the admitted registry schema and all grounding citations remain
+  durably attributable;
+- resolver-time HTTP is hard-disabled before E1 production composition.
+
+Verification commands are recorded in `_memory/2026-08-04-m8b-e0-r1-provider-request.md`. All
+E0-R1 tests use frozen artifacts or provider doubles. The live canary remains V1 and requires
+separate user authorization after E1/E2 integration.

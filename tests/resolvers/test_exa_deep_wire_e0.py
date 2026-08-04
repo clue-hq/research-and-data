@@ -27,9 +27,12 @@ from clue_research.resolvers.exa import (
     parse_exa_deep_response,
 )
 from clue_research.resolvers.exa.deep_contract import (
+    ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS,
     ExaDeepFailureClass,
     ExaDeepFieldSpec,
     ExaDeepSearchRequest,
+    exa_field_alias,
+    field_key_from_exa_alias,
 )
 
 _FIXTURES = Path(__file__).parents[1] / "fixtures" / "providers" / "exa" / "search"
@@ -93,6 +96,7 @@ def _one_field_payload(
 ) -> dict[str, object]:
     url = "https://cascade-gastro.example/careers/referral-coordinator"
     highlight = "Referral intake creates recurring administrative work."
+    field_alias = exa_field_alias(field_key)
     payload: dict[str, object] = {
         "requestId": "exa-e0-one-field",
         "results": [
@@ -104,10 +108,10 @@ def _one_field_payload(
             }
         ],
         "output": {
-            "content": {field_key: value},
+            "content": {field_alias: value},
             "grounding": [
                 {
-                    "field": field_key,
+                    "field": field_alias,
                     "confidence": "high",
                     "citations": [{"title": "Referral Coordinator", "url": url}],
                 }
@@ -135,7 +139,7 @@ def test_directional_text_cannot_inject_output_schema_members() -> None:
     )
     properties = request.output_schema["properties"]
     assert isinstance(properties, dict)
-    assert set(properties) == {_PAIN}
+    assert set(properties) == {exa_field_alias(_PAIN)}
     assert request.additional_queries is not None
     assert "account.fabricated" in request.additional_queries[0]
 
@@ -175,8 +179,8 @@ def test_compiler_preserves_registry_schema_without_mutating_it() -> None:
     )
     properties = request.output_schema["properties"]
     assert isinstance(properties, dict)
-    compiled_schema = properties["account.resonance.workflow_observations"]
-    assert compiled_schema == {"anyOf": [registry_schema, {"type": "null"}]}
+    compiled_schema = properties[exa_field_alias("account.resonance.workflow_observations")]
+    assert compiled_schema == {**registry_schema, "type": ["array", "null"]}
     assert registry_schema == before
 
     constrained = compile_exa_deep_request(
@@ -186,9 +190,157 @@ def test_compiler_preserves_registry_schema_without_mutating_it() -> None:
     )
     constrained_properties = constrained.output_schema["properties"]
     assert isinstance(constrained_properties, dict)
-    assert constrained_properties["account.resonance.workflow_state"] == {
-        "anyOf": [{"type": "string", "enum": ["manual"]}, {"type": "null"}]
+    assert constrained_properties[exa_field_alias("account.resonance.workflow_state")] == {
+        "type": ["string", "null"],
+        "enum": ["manual", None],
     }
+
+
+def test_provider_aliases_are_reversible_path_safe_and_prompt_pinned() -> None:
+    request = _golden_request()
+    properties = request.output_schema["properties"]
+    assert isinstance(properties, dict)
+    expected = {_MOVES, _PAIN}
+    assert {field_key_from_exa_alias(alias) for alias in properties} == expected
+    assert all("." not in alias and "[" not in alias and "]" not in alias for alias in properties)
+    assert all(
+        f"{alias}={field_key_from_exa_alias(alias)}" in request.system_prompt
+        for alias in properties
+    )
+
+    raw = request.model_dump(mode="json", by_alias=True, exclude_none=True)
+    raw_schema = raw["outputSchema"]
+    assert isinstance(raw_schema, dict)
+    raw_schema["properties"] = {_PAIN: {"type": ["string", "null"]}}
+    raw_schema["required"] = [_PAIN]
+    with pytest.raises(ValidationError, match="field alias"):
+        ExaDeepSearchRequest.model_validate(raw)
+
+    injected_prompt = request.model_dump(mode="json", by_alias=True, exclude_none=True)
+    injected_prompt["systemPrompt"] += " f_6163636f756e742e66616272696361746564=account.fabricated."
+    with pytest.raises(ValidationError, match="exactly the provider-alias field mappings"):
+        ExaDeepSearchRequest.model_validate(injected_prompt)
+
+
+def test_every_top_level_output_field_must_admit_a_null_evidence_miss() -> None:
+    request = _golden_request()
+    raw = request.model_dump(mode="json", by_alias=True, exclude_none=True)
+    raw_schema = raw["outputSchema"]
+    assert isinstance(raw_schema, dict)
+    properties = raw_schema["properties"]
+    assert isinstance(properties, dict)
+    properties[exa_field_alias(_PAIN)] = {"type": "string"}
+    with pytest.raises(ValidationError, match="must admit null"):
+        ExaDeepSearchRequest.model_validate(raw)
+
+
+def test_contents_use_only_current_bounded_text_and_highlight_controls() -> None:
+    request = _golden_request()
+    contents = request.model_dump(mode="json", by_alias=True)["contents"]
+    assert contents == {
+        "text": {"maxCharacters": 10_000},
+        "highlights": {
+            "query": "Find direct evidence for the requested account fields.",
+            "maxCharacters": 2_000,
+        },
+    }
+    assert "numSentences" not in str(contents)
+    assert "highlightsPerUrl" not in str(contents)
+    with pytest.raises(ValidationError):
+        ExaDeepConfig(text_max_characters=ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS + 1)
+    with pytest.raises(ValidationError):
+        ExaDeepConfig(highlight_max_characters=ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS + 1)
+
+
+def test_output_schema_enforces_ten_total_properties_and_two_property_levels() -> None:
+    ten_properties = {f"property_{index}": {"type": "string"} for index in range(1, 10)}
+    accepted = compile_exa_deep_request(
+        _account(),
+        (
+            _spec(
+                "account.resonance.bounded_object",
+                {
+                    "type": "object",
+                    "properties": ten_properties,
+                    "required": list(ten_properties),
+                    "additionalProperties": False,
+                },
+            ),
+        ),
+        research_intent="bounded evidence",
+    )
+    accepted_properties = accepted.output_schema["properties"]
+    assert isinstance(accepted_properties, dict) and len(accepted_properties) == 1
+
+    eleven_properties = {f"property_{index}": {"type": "string"} for index in range(1, 11)}
+    with pytest.raises(ValidationError, match="maximum of 10 total properties"):
+        compile_exa_deep_request(
+            _account(),
+            (
+                _spec(
+                    "account.resonance.over_budget_object",
+                    {
+                        "type": "object",
+                        "properties": eleven_properties,
+                        "required": list(eleven_properties),
+                        "additionalProperties": False,
+                    },
+                ),
+            ),
+            research_intent="bounded evidence",
+        )
+
+    with pytest.raises(ValidationError, match="maximum output property depth 2"):
+        compile_exa_deep_request(
+            _account(),
+            (
+                _spec(
+                    "account.resonance.too_deep",
+                    {
+                        "type": "object",
+                        "properties": {
+                            "level_two": {
+                                "type": "object",
+                                "properties": {"level_three": {"type": "string"}},
+                                "required": ["level_three"],
+                                "additionalProperties": False,
+                            }
+                        },
+                        "required": ["level_two"],
+                        "additionalProperties": False,
+                    },
+                ),
+            ),
+            research_intent="bounded evidence",
+        )
+
+
+def test_provider_schema_subset_rejects_unsafe_names_and_composition_keywords() -> None:
+    with pytest.raises(ValidationError, match="provider-unsafe property name"):
+        compile_exa_deep_request(
+            _account(),
+            (
+                _spec(
+                    "account.resonance.unsafe_shape",
+                    {
+                        "type": "object",
+                        "properties": {"unsafe.path": {"type": "string"}},
+                    },
+                ),
+            ),
+            research_intent="bounded evidence",
+        )
+    with pytest.raises(ValidationError, match="unsupported schema keywords"):
+        compile_exa_deep_request(
+            _account(),
+            (
+                _spec(
+                    "account.resonance.unsupported_composition",
+                    {"type": "string", "anyOf": [{"type": "string"}]},
+                ),
+            ),
+            research_intent="bounded evidence",
+        )
 
 
 def test_policy_caps_and_deep_modes_fail_closed() -> None:
@@ -366,4 +518,4 @@ def test_one_field_builder_requires_explicit_registry_schema_and_target_locks() 
     assert "x-api-key" not in request.headers
     assert "Cascade Gastroenterology Associates" in body["query"]
     assert "cascade-gastro.example" in body["query"]
-    assert set(body["outputSchema"]["properties"]) == {_PAIN}
+    assert set(body["outputSchema"]["properties"]) == {exa_field_alias(_PAIN)}
