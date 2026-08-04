@@ -1,27 +1,27 @@
-"""Target-locked Exa Search Deep adapter for account profiling (M8B E0).
+"""Target-locked Exa Search Deep contract for account profiling (M8B E0).
 
 This provider package owns the Exa-specific wire compiler, strict/additive response parsing,
-grounded normalization, and single-dispatch HTTP boundary. Durability, reservation, snapshots,
-settlement, and replay belong to E1; claim materialization and verification belong to E2.
+schema-aware grounded normalization, and the fail-closed boundary before durable acquisition.
+Durability, dispatch, reservation, snapshots, settlement, and replay belong to E1; claim
+materialization and verification belong to E2.
 
 The compiler intentionally receives admitted field keys together with their *effective registry
 value schemas*. Directional text from A2 is accepted only as bounded query material and can never
-add an output field. The live compatibility backend still implements the existing one-field
-``SynthesisBackend`` seam, but it refuses to dispatch unless E2 supplies the exact field schema.
-It performs no automatic HTTP retry: once a possibly paid request is handed to the transport, an
-ambiguous failure is ``spend_unknown`` rather than a retryable zero-cost miss.
+add an output field. Production registration binds a disabled backend until E1 owns a durable
+operation; the compatibility harness can consume only an explicitly injected provider double.
 """
 
 from __future__ import annotations
 
 import copy
+import re
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
 
-from clue_core import AccountEntity, FieldDef, ResolverError, RetryableResolverError
+from clue_core import AccountEntity, FieldDef, FieldKey, ResolverError, RetryableResolverError
 from clue_research.resolvers.exa.deep_contract import (
     ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS,
     EXA_OUTPUT_MAX_FIELDS,
@@ -34,7 +34,6 @@ from clue_research.resolvers.exa.deep_contract import (
     ExaDeepSearchRequest,
     ExaDeepSearchResponse,
     ExaDeepTextOptions,
-    classify_exa_deep_http_failure,
     exa_field_alias,
     field_key_from_exa_alias,
     validate_exa_deep_exchange,
@@ -92,6 +91,52 @@ class ExaDeepConfig(BaseModel):
     def _ordered_confidence_policy(self) -> ExaDeepConfig:
         if not self.low_confidence <= self.medium_confidence <= self.high_confidence:
             raise ValueError("grounding confidence policy must be ordered low <= medium <= high")
+        return self
+
+
+class ExaDeepCitationAttribution(BaseModel):
+    """One immutable normalization record for every provider grounding citation.
+
+    Unsupported citations remain attributable here and in the raw response but never become a
+    claim candidate. E1 persists this record/raw snapshot; E0 does not invent a storage path.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    field_key: FieldKey
+    source_url: str = Field(min_length=1)
+    source_title: str = Field(min_length=1)
+    status: Literal["selected", "unsupported", "below_confidence", "null_field"]
+    evidence_span: str | None = None
+    retrieved_text: str | None = None
+    confidence: float = Field(ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _selected_has_inspectable_evidence(self) -> ExaDeepCitationAttribution:
+        if self.status in {"selected", "below_confidence"}:
+            if not self.evidence_span or not self.retrieved_text:
+                raise ValueError("supported citation attribution requires inspectable evidence")
+            if self.evidence_span not in self.retrieved_text:
+                raise ValueError("supported evidence span must occur in retrieved text")
+        elif self.evidence_span is not None or self.retrieved_text is not None:
+            raise ValueError("unselected citation attribution cannot carry evidence")
+        return self
+
+
+class ExaDeepNormalization(BaseModel):
+    """Provider-neutral candidates plus the lossless citation disposition E1 must persist."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    request_id: str = Field(min_length=1)
+    all_null: bool
+    synthesis: SynthesisResult
+    citations: tuple[ExaDeepCitationAttribution, ...] = ()
+
+    @model_validator(mode="after")
+    def _all_null_is_an_empty_paid_miss(self) -> ExaDeepNormalization:
+        if self.all_null and self.synthesis.fields:
+            raise ValueError("an all-null provider response cannot emit synthesized fields")
         return self
 
 
@@ -308,25 +353,157 @@ def _confidence(grounding: ExaDeepGrounding, config: ExaDeepConfig) -> float:
     }[grounding.confidence]
 
 
-def _first_grounded_span(result: ExaDeepResult) -> tuple[str, str] | None:
-    text = result.text.strip() if result.text is not None else ""
+_TOKEN = re.compile(r"[a-z0-9]+")
+_SENTENCE_BREAK = re.compile(r"(?:\r?\n)+|(?<=[.!?])\s+")
+_STOP_WORDS = frozenset(
+    {
+        "a",
+        "about",
+        "account",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "being",
+        "by",
+        "can",
+        "could",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "our",
+        "that",
+        "the",
+        "their",
+        "these",
+        "this",
+        "those",
+        "to",
+        "was",
+        "were",
+        "will",
+        "with",
+        "would",
+        "your",
+    }
+)
+
+
+def _stem_token(token: str) -> str:
+    if len(token) > 5 and token.endswith("ies"):
+        token = f"{token[:-3]}y"
+    elif len(token) > 5 and token.endswith("ing"):
+        token = token[:-3]
+    elif len(token) > 4 and token.endswith(("ed", "ches", "shes", "xes", "zes")):
+        token = token[:-2]
+    elif len(token) > 4 and token.endswith("s") and not token.endswith("ss"):
+        token = token[:-1]
+    if len(token) > 4 and token.endswith("e"):
+        token = token[:-1]
+    return token
+
+
+def _tokens(text: str) -> frozenset[str]:
+    return frozenset(
+        stemmed
+        for raw in _TOKEN.findall(text.casefold())
+        if raw not in _STOP_WORDS
+        if len(stemmed := _stem_token(raw)) >= 2
+    )
+
+
+def _value_tokens(value: JsonValue) -> frozenset[str]:
+    if value is None or isinstance(value, bool):
+        return frozenset()
+    if isinstance(value, str):
+        return _tokens(value)
+    if isinstance(value, (int, float)):
+        return frozenset({str(value).casefold()})
+    if isinstance(value, list):
+        return frozenset().union(*(_value_tokens(item) for item in value))
+    if isinstance(value, dict):
+        return frozenset().union(*(_value_tokens(item) for item in value.values()))
+    return frozenset()
+
+
+def _candidate_passages(result: ExaDeepResult) -> tuple[tuple[str, str, int, int], ...]:
+    """Return exact retained passages as ``(span, retrieved, highlight_priority, order)``."""
+
+    passages: list[tuple[str, str, int, int]] = []
+    seen: set[str] = set()
+    order = 0
     for raw_highlight in result.highlights:
         highlight = raw_highlight.strip()
-        if not highlight:
-            continue
-        if text and highlight not in text:
-            continue
-        return highlight, text or highlight
-    return None
+        if highlight and highlight not in seen:
+            passages.append((highlight, highlight, 1, order))
+            seen.add(highlight)
+            order += 1
+    text = result.text.strip() if result.text is not None else ""
+    if text:
+        for raw_passage in _SENTENCE_BREAK.split(text):
+            passage = raw_passage.strip()
+            if passage and passage not in seen:
+                passages.append((passage, text, 0, order))
+                seen.add(passage)
+                order += 1
+    return tuple(passages)
 
 
-def normalize_exa_deep_response(
+def _support_score(
+    passage: str, *, field_key: str, value: JsonValue
+) -> tuple[int, float, int] | None:
+    passage_tokens = _tokens(passage)
+    value_tokens = _value_tokens(value)
+    field_tokens = _tokens(field_key.replace(".", " ").replace("_", " "))
+    shared_value = passage_tokens & value_tokens
+    shared_field = passage_tokens & field_tokens
+    if value_tokens:
+        required = 1 if len(value_tokens) <= 2 else 2
+        if len(shared_value) < required:
+            return None
+        return len(shared_value), len(shared_value) / len(value_tokens), len(shared_field)
+    if not shared_field:
+        return None
+    return 0, 0.0, len(shared_field)
+
+
+def _best_grounded_span(
+    result: ExaDeepResult,
+    *,
+    field_key: str,
+    value: JsonValue,
+) -> tuple[str, str] | None:
+    best: tuple[tuple[int, float, int, int, int], str, str] | None = None
+    for evidence_span, retrieved_text, highlight_priority, order in _candidate_passages(result):
+        support = _support_score(evidence_span, field_key=field_key, value=value)
+        if support is None:
+            continue
+        ranked = (*support, highlight_priority, -order)
+        if best is None or ranked > best[0]:
+            best = ranked, evidence_span, retrieved_text
+    return None if best is None else (best[1], best[2])
+
+
+def normalize_exa_deep_snapshot(
     request: ExaDeepSearchRequest,
     response: ExaDeepSearchResponse,
     *,
     config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
-) -> SynthesisResult:
-    """Map structured values to grounded candidates; a citation without a real span is dropped."""
+) -> ExaDeepNormalization:
+    """Validate and normalize one immutable response without dropping citation attribution."""
 
     validate_exa_deep_exchange(request, response)
     result_by_url = {str(result.url): result for result in response.results}
@@ -335,38 +512,73 @@ def normalize_exa_deep_response(
         for grounding in response.output.grounding
     }
     fields: list[SynthesizedField] = []
+    citations: list[ExaDeepCitationAttribution] = []
     for field_alias, value in response.output.content.items():
         field_key = field_key_from_exa_alias(field_alias)
-        if value is None:
-            continue
         grounding = groundings.get(field_key)
         if grounding is None:
             continue
         confidence = _confidence(grounding, config)
-        if confidence < config.min_confidence:
-            continue
         for citation in grounding.citations:
-            result = result_by_url.get(str(citation.url))
-            if result is None:
-                continue
-            span = _first_grounded_span(result)
-            if span is None:
-                continue
-            evidence_span, retrieved_text = span
-            fields.append(
-                SynthesizedField(
+            result = result_by_url[str(citation.url)]
+            status: Literal["selected", "unsupported", "below_confidence", "null_field"]
+            span: tuple[str, str] | None = None
+            if value is None:
+                status = "null_field"
+            else:
+                span = _best_grounded_span(result, field_key=field_key, value=value)
+                if span is None:
+                    status = "unsupported"
+                elif confidence < config.min_confidence:
+                    status = "below_confidence"
+                else:
+                    status = "selected"
+            evidence_span, retrieved_text = span if span is not None else (None, None)
+            citations.append(
+                ExaDeepCitationAttribution(
                     field_key=field_key,
-                    value=value,
                     source_url=str(citation.url),
+                    source_title=citation.title,
+                    status=status,
                     evidence_span=evidence_span,
                     retrieved_text=retrieved_text,
                     confidence=confidence,
                 )
             )
-    return SynthesisResult(
+            if status == "selected":
+                if evidence_span is None or retrieved_text is None:  # defensive type narrowing
+                    raise ValueError("selected citation is missing inspectable evidence")
+                fields.append(
+                    SynthesizedField(
+                        field_key=field_key,
+                        value=value,
+                        source_url=str(citation.url),
+                        evidence_span=evidence_span,
+                        retrieved_text=retrieved_text,
+                        confidence=confidence,
+                    )
+                )
+    synthesis = SynthesisResult(
         fields=tuple(fields),
         cost_cents=dollars_to_cost_cents(response.cost_dollars.total),
     )
+    return ExaDeepNormalization(
+        request_id=response.request_id,
+        all_null=all(value is None for value in response.output.content.values()),
+        synthesis=synthesis,
+        citations=tuple(citations),
+    )
+
+
+def normalize_exa_deep_response(
+    request: ExaDeepSearchRequest,
+    response: ExaDeepSearchResponse,
+    *,
+    config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
+) -> SynthesisResult:
+    """Compatibility projection of the lossless E0 normalization onto the stable synthesis seam."""
+
+    return normalize_exa_deep_snapshot(request, response, config=config).synthesis
 
 
 def normalize_exa_response(
@@ -384,85 +596,22 @@ def normalize_exa_response(
     return normalize_exa_deep_response(request, response, config=config)
 
 
-def post_exa_deep_json(
-    url: str,
-    *,
-    source_key: str,
-    headers: dict[str, str] | None = None,
-    params: dict[str, str] | None = None,
-    json_body: dict[str, Any] | None = None,
-    method: str = "POST",
-    timeout: float = DEFAULT_TIMEOUT_S * 3,
-    retries: int = 0,
-) -> Mapping[str, Any]:  # pragma: no cover - live boundary; E0 tests inject a fake
-    """Issue exactly one Search request and retain honest post-dispatch spend ambiguity."""
-
-    if retries != 0:
-        raise ExaDeepRequestFailure(
-            "Exa account-deep HTTP retries must be owned by the durable E1 operation",
-            failure_class=ExaDeepFailureClass.HARD,
-            dispatched=False,
-        )
-    import httpx
-
-    try:
-        response = httpx.request(
-            method,
-            url,
-            headers=headers,
-            params=params,
-            json=json_body,
-            timeout=timeout,
-        )
-    except httpx.HTTPError as exc:
-        raise ExaDeepRequestFailure(
-            f"{source_key}: ambiguous transport failure for {url}: {exc}",
-            failure_class=ExaDeepFailureClass.SPEND_UNKNOWN,
-            dispatched=True,
-        ) from exc
-    if not 200 <= response.status_code < 300:
-        failure_class = classify_exa_deep_http_failure(response.status_code, dispatched=True)
-        raise ExaDeepRequestFailure(
-            f"{source_key}: HTTP {response.status_code} from {url}",
-            failure_class=failure_class,
-            dispatched=True,
-            status_code=response.status_code,
-        )
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise ExaDeepRequestFailure(
-            f"{source_key}: non-JSON success response from {url}",
-            failure_class=ExaDeepFailureClass.SPEND_UNKNOWN,
-            dispatched=True,
-            status_code=response.status_code,
-        ) from exc
-    if not isinstance(payload, Mapping):
-        raise ExaDeepRequestFailure(
-            f"{source_key}: non-object success response from {url}",
-            failure_class=ExaDeepFailureClass.SPEND_UNKNOWN,
-            dispatched=True,
-            status_code=response.status_code,
-        )
-    return payload
-
-
 class ExaDeepSynthesisBackend:
-    """One-field compatibility backend over the E0 structured wire contract.
+    """One-field response harness over the E0 structured wire contract.
 
-    E1 will call :func:`compile_exa_deep_request` directly for coalesced fields and own durable
-    dispatch. This backend exists so the provider-neutral M11 resolver remains usable without
-    retaining the unsafe neural/highlight path.
+    The transport is mandatory and must be explicitly injected. Production never constructs this
+    harness: E1 will call :func:`compile_exa_deep_request` for coalesced fields and own durable
+    dispatch before a snapshot-backed materializer is registered.
     """
 
     def __init__(
         self,
         *,
+        http: HttpFetcher,
         field_schemas: Mapping[str, Mapping[str, JsonValue]],
         config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
         additional_queries_by_field: Mapping[str, Sequence[str]] | None = None,
         research_intents_by_field: Mapping[str, str] | None = None,
-        http: HttpFetcher = post_exa_deep_json,
         secrets: Secrets | None = None,
     ) -> None:
         self._field_schemas = {
@@ -538,16 +687,29 @@ class ExaDeepSynthesisBackend:
             ) from exc
 
 
+class _ExaDeepAcquisitionRequiredBackend:
+    """Production placeholder that makes resolver-time dispatch impossible before E1."""
+
+    def synthesize(self, account: AccountEntity, field: FieldDef) -> SynthesisResult:
+        del account, field
+        raise ExaDeepRequestFailure(
+            "exa_deep resolver-time acquisition is disabled; E1 must provide a durable ready "
+            "snapshot backend",
+            failure_class=ExaDeepFailureClass.HARD,
+            dispatched=False,
+        )
+
+
 def make_backend(
     *,
+    http: HttpFetcher,
     field_schemas: Mapping[str, Mapping[str, JsonValue]] | None = None,
     config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
     additional_queries_by_field: Mapping[str, Sequence[str]] | None = None,
     research_intents_by_field: Mapping[str, str] | None = None,
-    http: HttpFetcher = post_exa_deep_json,
     secrets: Secrets | None = None,
 ) -> ExaDeepSynthesisBackend:
-    """Build the E0 backend; absent schemas fail before credential lookup or HTTP dispatch."""
+    """Build the doubles-only E0 response harness with an explicit injected transport."""
 
     return ExaDeepSynthesisBackend(
         field_schemas=field_schemas or {},
@@ -563,26 +725,12 @@ def register_exa_deep_resolver(
     *,
     accounts: AccountLookup | None = None,
     backend: SynthesisBackend | None = None,
-    field_schemas: Mapping[str, Mapping[str, JsonValue]] | None = None,
-    config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
-    additional_queries_by_field: Mapping[str, Sequence[str]] | None = None,
-    research_intents_by_field: Mapping[str, str] | None = None,
-    http: HttpFetcher = post_exa_deep_json,
-    secrets: Secrets | None = None,
 ) -> None:
-    """Bind Exa behind the stable tier-4 resolver seam without authorizing provider spend."""
+    """Bind Exa behind the stable seam; default production binding cannot acquire over HTTP."""
 
     register_synthesis_resolver(
         SOURCE_KEY,
-        backend
-        or make_backend(
-            field_schemas=field_schemas,
-            config=config,
-            additional_queries_by_field=additional_queries_by_field,
-            research_intents_by_field=research_intents_by_field,
-            http=http,
-            secrets=secrets,
-        ),
+        backend or _ExaDeepAcquisitionRequiredBackend(),
         accounts=accounts,
         # A valid structured response always reports cost. Missing cost is spend_unknown, never a
         # manifest-price fallback masquerading as settlement. E1 owns reservation/reconciliation.
@@ -597,8 +745,10 @@ __all__ = [
     "SOURCE_KEY",
     "DEFAULT_EXA_CONFIG",
     "ExaDeepConfig",
+    "ExaDeepCitationAttribution",
     "ExaDeepFailureClass",
     "ExaDeepFieldSpec",
+    "ExaDeepNormalization",
     "ExaDeepRequestFailure",
     "ExaDeepSearchRequest",
     "ExaDeepSearchResponse",
@@ -609,8 +759,8 @@ __all__ = [
     "field_key_from_exa_alias",
     "make_backend",
     "normalize_exa_deep_response",
+    "normalize_exa_deep_snapshot",
     "normalize_exa_response",
     "parse_exa_deep_response",
-    "post_exa_deep_json",
     "register_exa_deep_resolver",
 ]

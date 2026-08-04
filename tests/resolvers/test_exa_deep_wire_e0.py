@@ -24,6 +24,7 @@ from clue_research.resolvers.exa import (
     compile_exa_deep_request,
     make_backend,
     normalize_exa_deep_response,
+    normalize_exa_deep_snapshot,
     parse_exa_deep_response,
 )
 from clue_research.resolvers.exa.deep_contract import (
@@ -364,32 +365,190 @@ def test_policy_caps_and_deep_modes_fail_closed() -> None:
     )
 
 
-def test_additive_response_normalizes_only_grounded_exact_spans_and_reported_cost() -> None:
+def test_unchanged_golden_normalizes_field_faithful_spans_cost_and_citations() -> None:
     raw = _json("deep_response.json")
     raw["resolvedSearchType"] = "deprecated"
     raw["context"] = {"deprecated": True}
-    results = raw["results"]
-    assert isinstance(results, list)
-    for result in results:
-        assert isinstance(result, dict)
-        text = result["text"]
-        assert isinstance(text, str)
-        result["highlights"] = [text]
 
     request = _golden_request()
     response = parse_exa_deep_response(request, raw)
-    normalized = normalize_exa_deep_response(request, response)
+    normalization = normalize_exa_deep_snapshot(request, response)
+    normalized = normalization.synthesis
 
     assert {field.field_key for field in normalized.fields} == {_PAIN, _MOVES}
     assert all(field.evidence_span in field.retrieved_text for field in normalized.fields)
+    assert {field.evidence_span for field in normalized.fields} == {
+        "The Referral Coordinator indexes incoming fax documents and routes patient calls.",
+        "The practice announced centralized patient-access operations across its locations.",
+    }
     assert {field.confidence for field in normalized.fields} == {0.6, 0.9}
     assert normalized.cost_cents == Decimal(42)
+    assert normalization.all_null is False
+    assert {citation.source_title for citation in normalization.citations} == {
+        "Referral Coordinator",
+        "Patient access expansion",
+    }
+    assert {citation.status for citation in normalization.citations} == {"selected"}
 
 
-def test_spanless_grounding_is_dropped_without_fabricating_a_candidate() -> None:
+def test_retained_text_can_supply_a_field_faithful_span_when_highlights_are_absent() -> None:
     request = compile_exa_deep_request(_account(), (_spec(_PAIN),), research_intent="pain evidence")
     response = parse_exa_deep_response(request, _one_field_payload(include_highlight=False))
-    assert normalize_exa_deep_response(request, response).fields == ()
+    normalized = normalize_exa_deep_response(request, response)
+    assert len(normalized.fields) == 1
+    assert normalized.fields[0].evidence_span in normalized.fields[0].retrieved_text
+
+
+def test_evidence_selection_skips_unrelated_first_highlight_and_preserves_every_citation() -> None:
+    request = compile_exa_deep_request(_account(), (_spec(_PAIN),), research_intent="pain evidence")
+    payload = _one_field_payload(
+        value=(
+            "Referral-document indexing and patient-call routing create recurring "
+            "administrative work."
+        )
+    )
+    results = payload["results"]
+    output = payload["output"]
+    assert isinstance(results, list) and isinstance(results[0], dict)
+    assert isinstance(output, dict)
+    results[0]["highlights"] = [
+        "The clinic offers paid leave and commuter benefits.",
+        "Referral intake creates recurring administrative work.",
+    ]
+    second_url = "https://cascade-gastro.example/operations/referral-intake"
+    results.append(
+        {
+            "title": "Referral intake operations",
+            "url": second_url,
+            "text": "The referral desk indexes fax documents and routes patient calls.",
+            "highlights": ["The referral desk indexes fax documents and routes patient calls."],
+        }
+    )
+    grounding = output["grounding"]
+    assert isinstance(grounding, list) and isinstance(grounding[0], dict)
+    citations = grounding[0]["citations"]
+    assert isinstance(citations, list)
+    citations.append({"title": "Referral intake operations", "url": second_url})
+
+    normalization = normalize_exa_deep_snapshot(
+        request,
+        parse_exa_deep_response(request, payload),
+    )
+    assert len(normalization.synthesis.fields) == 2
+    assert {field.source_url for field in normalization.synthesis.fields} == {
+        "https://cascade-gastro.example/careers/referral-coordinator",
+        second_url,
+    }
+    assert normalization.synthesis.fields[0].evidence_span == (
+        "Referral intake creates recurring administrative work."
+    )
+    assert [(item.source_title, item.status) for item in normalization.citations] == [
+        ("Referral Coordinator", "selected"),
+        ("Referral intake operations", "selected"),
+    ]
+
+
+def test_unrelated_cited_passage_is_attributed_but_never_materialized() -> None:
+    request = compile_exa_deep_request(_account(), (_spec(_PAIN),), research_intent="pain evidence")
+    payload = _one_field_payload()
+    results = payload["results"]
+    assert isinstance(results, list) and isinstance(results[0], dict)
+    results[0]["text"] = "The clinic offers paid leave and commuter benefits."
+    results[0]["highlights"] = ["The clinic offers paid leave and commuter benefits."]
+    normalization = normalize_exa_deep_snapshot(
+        request,
+        parse_exa_deep_response(request, payload),
+    )
+    assert normalization.synthesis.fields == ()
+    assert len(normalization.citations) == 1
+    assert normalization.citations[0].status == "unsupported"
+    assert normalization.citations[0].source_url.endswith("/careers/referral-coordinator")
+
+
+def test_all_null_response_is_a_settleable_paid_hard_miss_without_grounding() -> None:
+    request = compile_exa_deep_request(_account(), (_spec(_PAIN),), research_intent="pain evidence")
+    payload = _one_field_payload(value=None)
+    output = payload["output"]
+    assert isinstance(output, dict)
+    output.pop("grounding")
+    response = parse_exa_deep_response(request, payload)
+    normalization = normalize_exa_deep_snapshot(request, response)
+    assert normalization.all_null is True
+    assert normalization.citations == ()
+    assert normalization.synthesis.fields == ()
+    assert normalization.synthesis.cost_cents == Decimal(7)
+
+    empty_grounding_payload = _one_field_payload(value=None)
+    empty_output = empty_grounding_payload["output"]
+    assert isinstance(empty_output, dict)
+    empty_output["grounding"] = []
+    empty_grounding_payload["results"] = []
+    empty_normalization = normalize_exa_deep_snapshot(
+        request,
+        parse_exa_deep_response(request, empty_grounding_payload),
+    )
+    assert empty_normalization.all_null is True
+    assert empty_normalization.synthesis.cost_cents == Decimal(7)
+
+    backend = make_backend(
+        field_schemas={_PAIN: {"type": "string"}},
+        http=lambda url, **kwargs: payload,
+        secrets=Secrets(exa_api_key=SecretStr("test-key")),
+    )
+    settled = backend.synthesize(_account(), _field())
+    assert settled.fields == () and settled.cost_cents == Decimal(7)
+
+
+def test_returned_values_must_match_the_exact_admitted_registry_schema() -> None:
+    numeric_request = compile_exa_deep_request(
+        _account(),
+        (_spec("account.location_count", {"type": "integer", "minimum": 1, "maximum": 10}),),
+        research_intent="location count evidence",
+    )
+    with pytest.raises(ValueError, match="violates its admitted registry schema"):
+        parse_exa_deep_response(
+            numeric_request,
+            _one_field_payload(field_key="account.location_count", value=11),
+        )
+    with pytest.raises(ValueError, match="not a valid integer"):
+        parse_exa_deep_response(
+            numeric_request,
+            _one_field_payload(field_key="account.location_count", value="eleven"),
+        )
+
+    enum_key = "account.resonance.workflow_state"
+    enum_request = compile_exa_deep_request(
+        _account(),
+        (_spec(enum_key, {"type": "string", "enum": ["manual"]}),),
+        research_intent="workflow state evidence",
+    )
+    with pytest.raises(ValueError, match="not one of the admitted enum values"):
+        parse_exa_deep_response(
+            enum_request,
+            _one_field_payload(field_key=enum_key, value="automated"),
+        )
+
+    object_key = "account.resonance.workflow_observation"
+    object_request = compile_exa_deep_request(
+        _account(),
+        (
+            _spec(
+                object_key,
+                {
+                    "type": "object",
+                    "properties": {"label": {"type": "string", "maxLength": 8}},
+                    "required": ["label"],
+                    "additionalProperties": False,
+                },
+            ),
+        ),
+        research_intent="workflow evidence",
+    )
+    with pytest.raises(ValueError, match="missing required properties"):
+        parse_exa_deep_response(
+            object_request,
+            _one_field_payload(field_key=object_key, value={"other": "manual"}),
+        )
 
 
 def test_unmatched_url_or_missing_grounding_never_yields_a_candidate() -> None:
@@ -412,7 +571,7 @@ def test_unmatched_url_or_missing_grounding_never_yields_a_candidate() -> None:
         parse_exa_deep_response(request, ungrounded)
 
 
-def test_backend_dispatches_once_with_structured_deep_request_and_no_http_retry() -> None:
+def test_explicit_response_harness_dispatches_provider_double_once_with_no_retry() -> None:
     calls: list[dict[str, object]] = []
 
     def _fake_http(url: str, **kwargs: object) -> dict[str, object]:
