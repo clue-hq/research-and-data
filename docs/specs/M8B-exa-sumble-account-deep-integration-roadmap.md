@@ -918,6 +918,14 @@ and replay evidence. A mock-only or exit-zero result does not close the gate.
 Sumble organization map/committee -> verification -> projections, with exact cost and replay, and no
 contact reveal.
 
+**Attempted 2026-08-05 — Gate V1 remains open.** The branch passed the complete 170-test slice
+matrix and the 3,348-test repository run, but live preflight found no Exa, Sumble, or OpenRouter
+credential, both paid acquisition switches default-off, a fixture-only `.example` target, no
+production-composed Head-of-ABM conversation-to-launch executable, and a changed live Sumble v9
+OpenAPI digest requiring re-review. No authenticated provider request or live model call occurred.
+The complete evidence and exact resume conditions are recorded in
+`M8B-V1-live-acceptance.md`.
+
 ## 9. Sequencing and parallel ownership
 
 ```text
