@@ -68,6 +68,7 @@ class CommitteeMemberRef(BaseModel):
     discovery_claim_id: ClaimId
     role_claim_id: ClaimId
     persona_claim_id: ClaimId
+    professional_claim_ids: tuple[ClaimId, ...] = ()
 
     def as_committee_member(self) -> CommitteeMember:
         """Project to the handoff :class:`CommitteeMember` shape (profile_claims filled by M8.4)."""
@@ -100,6 +101,7 @@ class CommitteeResult(BaseModel):
         refs: list[ClaimId] = []
         for member in self.members:
             refs.extend((member.discovery_claim_id, member.role_claim_id, member.persona_claim_id))
+            refs.extend(member.professional_claim_ids)
         return tuple(refs)
 
     def committee(self) -> tuple[CommitteeMember, ...]:

@@ -170,6 +170,7 @@ def test_v0_fresh_process_replay_inspects_complete_durable_state(
             "snapshot_refs",
             "attempt_count",
             "claim_count",
+            "claim_field_keys",
             "gate_count",
             "eligibility_count",
             "verified_artifact_count",
@@ -187,7 +188,18 @@ def test_v0_fresh_process_replay_inspects_complete_durable_state(
         assert replayed["provider_units_charged"] == "28"
         assert replayed["cost_cents_charged"] == "14.0"
         assert replayed["attempt_count"] == 4
-        assert _as_int(replayed["claim_count"]) == 3
+        assert _as_int(replayed["claim_count"]) == 9
+        assert replayed["claim_field_keys"] == [
+            "account.scoring.tier",
+            "contact.current_location",
+            "contact.current_title",
+            "contact.job_function",
+            "contact.job_level",
+            "contact.organization_relationship",
+            "contact.persona",
+            "contact.role_on_committee",
+            "contact.team_membership",
+        ]
         assert _as_int(replayed["gate_count"]) >= 2
         assert _as_int(replayed["eligibility_count"]) >= 1
         assert _as_int(replayed["verified_artifact_count"]) >= 8

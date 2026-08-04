@@ -22,11 +22,22 @@ from clue_api.sumble_committee_source import (
     SumbleCommitteeSnapshotUnavailable,
     SumbleCommitteeSource,
 )
-from clue_core import ResearchMode, RunId
+from clue_core import ExtractionMethod, IdentityBinding, ResearchMode, RunId, UseClass
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.durable import tombstone_discovery_subject_artifacts
 from clue_research.identity import get_account
-from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE, discover_committee
+from clue_research.profiling.committee import (
+    CURRENT_LOCATION,
+    CURRENT_TITLE,
+    JOB_FUNCTION,
+    JOB_LEVEL,
+    ORGANIZATION_RELATIONSHIP,
+    PERSONA,
+    ROLE_ON_COMMITTEE,
+    TEAM_MEMBERSHIP,
+    CandidateFactProvenance,
+    discover_committee,
+)
 from clue_storage import FsStorage
 from tests.api.test_sumble_committee_acquisition_s2b import _CommitteeTransport, _setup
 from tests.db.conftest import run_async
@@ -97,6 +108,24 @@ def test_s2c_reads_only_ready_exact_account_snapshots_and_survives_no_provider_c
             assert candidate.verified_email is None
             assert candidate.cost_cents == 0
             assert len(candidate.evidence_refs) == 2
+            assert {str(fact.field_key) for fact in candidate.professional_facts} == {
+                CURRENT_TITLE,
+                JOB_FUNCTION,
+                JOB_LEVEL,
+                TEAM_MEMBERSHIP,
+                CURRENT_LOCATION,
+                ORGANIZATION_RELATIONSHIP,
+            }
+            assert {
+                fact.provenance_kind for fact in candidate.professional_facts
+            } == {
+                CandidateFactProvenance.PROVIDER_RETURNED,
+                CandidateFactProvenance.PROVIDER_MODELED,
+            }
+            assert all(
+                fact.source_url and fact.evidence_span and fact.artifact_key
+                for fact in candidate.professional_facts
+            )
             assert candidate.discovery_confidence == pytest.approx(0.92)
             assert len(transport.calls) == provider_call_count
 
@@ -125,6 +154,45 @@ def test_s2c_reads_only_ready_exact_account_snapshots_and_survives_no_provider_c
             assert len(persona_claims) == 1
             assert role_claims[0].research_mode is ResearchMode.COMMITTEE_DISCOVERY
             assert persona_claims[0].research_mode is ResearchMode.COMMITTEE_DISCOVERY
+
+            professional_ids = set(member.professional_claim_ids)
+            assert len(professional_ids) == 6
+            for field_key in (
+                CURRENT_TITLE,
+                JOB_FUNCTION,
+                JOB_LEVEL,
+                TEAM_MEMBERSHIP,
+                CURRENT_LOCATION,
+                ORGANIZATION_RELATIONSHIP,
+            ):
+                field_claims = await claims_for(
+                    conn, member.contact_entity_id, field_key, scope=scope
+                )
+                assert len(field_claims) == 1
+                field_claim = field_claims[0]
+                assert field_claim.id in professional_ids
+                assert field_claim.extraction_method is ExtractionMethod.API
+                assert field_claim.identity_binding is IdentityBinding.STRONG
+                assert field_claim.use_class is UseClass.PROFESSIONAL_PUBLIC
+                assert field_claim.source_key in {"sumble_people", "sumble_teams"}
+                assert field_claim.source_url
+                assert field_claim.evidence_span
+                assert field_claim.artifact_key
+                assert field_claim.source_operation_ref
+                assert field_claim.source_snapshot_ref
+                assert field_claim.source_request_ref
+
+            replay = await discover_committee(
+                conn,
+                account_entity_id=request.account_id,
+                run_id=RunId(request.project_run_id),
+                workspace_id=request.workspace_id,
+                sources=[source],
+                gateway=gateway,
+                role_model="s2c-role-model",
+            )
+            assert replay.claim_refs == committee.claim_refs
+            assert len(transport.calls) == provider_call_count
 
             await tombstone_discovery_subject_artifacts(
                 conn,

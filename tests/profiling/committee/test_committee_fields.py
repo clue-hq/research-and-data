@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from clue_core import (
+    CONTACT_PROFESSIONAL_FIELD_KEYS,
     ExtractionMethod,
     FieldClass,
     IdentityBinding,
@@ -43,25 +44,37 @@ from clue_research.profiling.committee import (
 from ..conftest import rollback_conn, run_async
 
 
-def test_committee_fields_are_plain_contact_not_facet() -> None:
+def test_committee_and_professional_fields_are_plain_contact_not_facet() -> None:
     # Pure: role/persona are plain contact.* (no facet governance CHECK applies to them).
     assert classify_field_key(ROLE_ON_COMMITTEE) is FieldClass.CONTACT
     assert classify_field_key(PERSONA) is FieldClass.CONTACT
     assert classify_field_key(CONTACT_CLASS) is FieldClass.CONTACT
-    assert set(COMMITTEE_FIELD_KEYS) == {ROLE_ON_COMMITTEE, PERSONA, CONTACT_CLASS}
+    assert all(
+        classify_field_key(field_key) is FieldClass.CONTACT
+        for field_key in CONTACT_PROFESSIONAL_FIELD_KEYS
+    )
+    assert set(COMMITTEE_FIELD_KEYS) == {
+        ROLE_ON_COMMITTEE,
+        PERSONA,
+        CONTACT_CLASS,
+        *CONTACT_PROFESSIONAL_FIELD_KEYS,
+    }
 
 
 def test_pack_registers_deep_tenant_private_fields(require_profiling_db: None) -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             await load_committee_pack(conn)
-            for key in (ROLE_ON_COMMITTEE, PERSONA, CONTACT_CLASS):
+            for key in COMMITTEE_FIELD_KEYS:
                 field = await get_field(conn, key)
                 assert field is not None, f"{key} not registered"
                 assert field.pass_kind is PassKind.DEEP
                 assert field.tier_plan == ()  # produced by M3, not waterfall-filled
                 # contact.* inherits the class default TENANT_PRIVATE.
                 assert resolve_reuse_scope(field) is ReuseScope.TENANT_PRIVATE
+                if key in CONTACT_PROFESSIONAL_FIELD_KEYS:
+                    assert field.freshness_ttl is not None
+                    assert field.freshness_ttl.days == 30
 
     run_async(scenario())
 

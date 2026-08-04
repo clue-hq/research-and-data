@@ -59,7 +59,10 @@ from clue_research.identity import (
     insert_contact_entity,
 )
 from clue_research.profiling.committee import load_committee_pack
-from clue_research.profiling.committee.sources import CommitteePersonCandidate
+from clue_research.profiling.committee.sources import (
+    CandidateProfessionalFact,
+    CommitteePersonCandidate,
+)
 from clue_research.profiling.fields import load_deep_profiling_pack
 from clue_research.sources import RegistrySourceManifest, register_source
 
@@ -278,6 +281,7 @@ def make_candidate(
     team_names: tuple[str, ...] = (),
     relationship_labels: tuple[str, ...] = (),
     evidence_refs: tuple[str, ...] = (),
+    professional_facts: tuple[CandidateProfessionalFact, ...] = (),
     source_url: str | None = None,
     matched_signal: str = "leadership page",
     discovery_confidence: Confidence = 0.8,
@@ -296,6 +300,7 @@ def make_candidate(
         team_names=team_names,
         relationship_labels=relationship_labels,
         evidence_refs=evidence_refs,
+        professional_facts=professional_facts,
         source_url=source_url,
         matched_signal=matched_signal,
         discovery_confidence=discovery_confidence,

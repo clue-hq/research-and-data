@@ -171,6 +171,9 @@ class SumbleTeamMemberRecord(BaseModel):
     job_level: str | None = None
     location: str | None = None
     country: str | None = None
+    current_employer_organization_id: int = Field(ge=1)
+    current_employer_name: str | None = None
+    current_role_start_date: str | None = None
     relationship_basis: SumbleRelationshipBasis = (
         SumbleRelationshipBasis.PROVIDER_INFERRED_TEAM_MEMBERSHIP
     )
@@ -335,6 +338,9 @@ def normalize_teams(
                     job_level=attributes.job_level,
                     location=attributes.location,
                     country=attributes.country,
+                    current_employer_organization_id=employer.organization_id,
+                    current_employer_name=employer.name,
+                    current_role_start_date=employer.start_date,
                     relationship_confidence=confidence.score if confidence is not None else None,
                     relationship_features=(
                         confidence.matched_features if confidence is not None else ()

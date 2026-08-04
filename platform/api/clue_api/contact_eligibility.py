@@ -27,6 +27,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from clue_core import (
+    CONTACT_PROFESSIONAL_FIELD_KEYS,
     Claim,
     ClaimId,
     CommitteeMember,
@@ -200,6 +201,7 @@ class ContactEligibilityResolver:
                 and claim.product_id == self._product_id
                 and (
                     str(claim.field_key) in {PERSONA, ROLE_ON_COMMITTEE}
+                    or str(claim.field_key) in CONTACT_PROFESSIONAL_FIELD_KEYS
                     or str(claim.field_key).startswith("contact.facet.")
                     or str(claim.field_key) == "contact.class"
                 )
