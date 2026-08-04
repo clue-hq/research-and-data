@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from decimal import Decimal
+from enum import StrEnum
 from typing import Protocol
 
 from clue_agents import (
@@ -65,6 +67,9 @@ from clue_research.sources import bind_resolver_overrides
 from clue_toolbelt import ToolContext, ToolInvoker, ToolRegistry
 
 __all__ = [
+    "AccountResolverBindingAvailability",
+    "AccountResolverBindings",
+    "AccountResolverBindingsUnavailable",
     "AccountResearchAgentRuntime",
     "AccountResolverBindingProvider",
     "AccountResearchStepPinProvider",
@@ -307,7 +312,42 @@ class AccountResolverBindingProvider(Protocol):
         project_run_id: ProjectRunId,
         account_entity_id: EntityId,
         research_directive: ResearchDirectivePin | None,
-    ) -> Mapping[str, Resolver]: ...
+    ) -> AccountResolverBindings: ...
+
+
+class AccountResolverBindingAvailability(StrEnum):
+    READY = "ready"
+    NOT_APPLICABLE = "not_applicable"
+    WAITING_EXTERNAL = "waiting_external"
+    REQUIRED_MISSING = "required_missing"
+
+
+@dataclass(frozen=True)
+class AccountResolverBindings:
+    """Provider-neutral task-local bindings plus an explicit preparation disposition."""
+
+    availability: AccountResolverBindingAvailability
+    bindings: Mapping[str, Resolver]
+    reason_code: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.availability is AccountResolverBindingAvailability.READY and not self.bindings:
+            raise ValueError("ready resolver bindings cannot be empty")
+        if (
+            self.availability
+            in {
+                AccountResolverBindingAvailability.WAITING_EXTERNAL,
+                AccountResolverBindingAvailability.REQUIRED_MISSING,
+            }
+            and not self.reason_code
+        ):
+            raise ValueError("unavailable resolver bindings require a reason code")
+
+
+class AccountResolverBindingsUnavailable(RuntimeError):
+    def __init__(self, resolution: AccountResolverBindings) -> None:
+        self.resolution = resolution
+        super().__init__(resolution.reason_code or resolution.availability.value)
 
 
 class GovernedAccountProfiler:
@@ -381,12 +421,18 @@ class GovernedAccountProfiler:
 
         bindings: Mapping[str, Resolver] = {}
         if self._resolver_provider is not None:
-            bindings = await self._resolver_provider.resolver_bindings(
+            resolution = await self._resolver_provider.resolver_bindings(
                 workspace_id=workspace_id,
                 project_run_id=project_run_id,
                 account_entity_id=account_entity_id,
                 research_directive=research_directive,
             )
+            if resolution.availability in {
+                AccountResolverBindingAvailability.WAITING_EXTERNAL,
+                AccountResolverBindingAvailability.REQUIRED_MISSING,
+            }:
+                raise AccountResolverBindingsUnavailable(resolution)
+            bindings = resolution.bindings
         if bindings:
             with bind_resolver_overrides(bindings):
                 outcome = await self._turns.run(

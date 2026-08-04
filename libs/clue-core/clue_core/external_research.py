@@ -68,6 +68,13 @@ class ExternalResearchReconciliationState(StrEnum):
     RECONCILED = "reconciled"
 
 
+class ExternalResearchCostDisposition(StrEnum):
+    """Authoritative provider-billing disposition recorded after an initial estimate/ambiguity."""
+
+    CHARGED = "charged"
+    NOT_CHARGED = "not_charged"
+
+
 class ExternalResearchAcquisitionRequest(BaseModel):
     """Provider-neutral immutable input for one bounded external-research operation.
 
@@ -90,6 +97,10 @@ class ExternalResearchAcquisitionRequest(BaseModel):
     observation_window: NonEmptyStr
     freshness_policy_ref: NonEmptyStr
     freshness_seconds: int = Field(ge=1)
+    # Stable across project runs and observation-window labels for the same immutable provider
+    # request.  It is the serialization/reuse identity; ``request_fingerprint`` remains the exact
+    # consumer-operation identity and therefore includes its run/window lineage.
+    reuse_fingerprint: Sha256Hex
     request_fingerprint: Sha256Hex
     wire_request_sha256: Sha256Hex
     request_payload: dict[str, JsonValue]
@@ -227,6 +238,7 @@ __all__ = [
     "ExternalResearchPreparationOutcome",
     "ExternalResearchAcquisitionRequest",
     "ExternalResearchAttemptState",
+    "ExternalResearchCostDisposition",
     "ExternalResearchOperationId",
     "ExternalResearchOperationState",
     "ExternalResearchReconciliationState",

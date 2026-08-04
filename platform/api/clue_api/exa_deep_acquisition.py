@@ -39,11 +39,12 @@ from clue_research.durable.external_research import (
     ExternalResearchDispatchDecision,
     ExternalResearchOperationRow,
     ExternalResearchResultArtifactInput,
+    adopt_external_research_snapshot,
     claim_external_research_dispatch,
     complete_external_research_pre_dispatch_failure,
     complete_external_research_success,
-    find_fresh_external_research_operation,
-    get_external_research_snapshot,
+    find_reusable_external_research_operation,
+    lock_external_research_reuse,
     mark_external_research_spend_unknown,
     reserve_external_research_operation,
 )
@@ -70,7 +71,7 @@ from clue_research.resolvers.http import (
     resolve_credential,
 )
 from clue_research.resolvers.live import HttpFetcher
-from clue_storage import StorageBackend
+from clue_storage import StorageBackend, artifact_key, content_address
 
 
 class ExaDeepAcquisitionTransport(Protocol):
@@ -214,7 +215,9 @@ class ExaDeepAcquisitionCoordinator:
 
     async def acquire(self, preflight: ExaDeepAcquisitionPreflight) -> ExaDeepAcquisitionResult:
         operation, created = await self._reserve(preflight)
-        terminal = await self._terminal_result(operation, replay=not created)
+        terminal = await self._terminal_result(
+            operation, request=preflight.request, replay=not created
+        )
         if terminal is not None:
             return terminal
         now = self._clock()
@@ -227,7 +230,9 @@ class ExaDeepAcquisitionCoordinator:
                 lease_expires_at=now + self._lease,
             )
         if claim.decision is ExternalResearchDispatchDecision.READY:
-            return await self._terminal_result(claim.operation, replay=True)  # type: ignore[return-value]
+            return await self._terminal_result(  # type: ignore[return-value]
+                claim.operation, request=preflight.request, replay=True
+            )
         if claim.decision is ExternalResearchDispatchDecision.JOIN_ACTIVE:
             return ExaDeepAcquisitionResult(
                 outcome=ExaDeepAcquisitionOutcome.JOINED_IN_FLIGHT,
@@ -238,7 +243,9 @@ class ExaDeepAcquisitionCoordinator:
             ExternalResearchDispatchDecision.TERMINAL,
             ExternalResearchDispatchDecision.QUARANTINED_STALE_DISPATCH,
         }:
-            return await self._terminal_result(claim.operation, replay=True)  # type: ignore[return-value]
+            return await self._terminal_result(  # type: ignore[return-value]
+                claim.operation, request=preflight.request, replay=True
+            )
         assert claim.attempt_ordinal is not None
         try:
             payload = await asyncio.to_thread(self._transport.search, preflight.exa_request)
@@ -258,6 +265,7 @@ class ExaDeepAcquisitionCoordinator:
                 return ExaDeepAcquisitionResult(
                     outcome=ExaDeepAcquisitionOutcome.FAILED_TERMINAL,
                     operation=failed,
+                    provider_calls=int(exc.dispatched),
                 )
             unknown = await self._mark_unknown(
                 claim.operation,
@@ -296,6 +304,24 @@ class ExaDeepAcquisitionCoordinator:
                 operation=unknown,
                 provider_calls=1,
             )
+        response_key: str | None = None
+        provider_request_id = payload.get("requestId")
+        if not isinstance(provider_request_id, str) or not provider_request_id.strip():
+            provider_request_id = None
+        try:
+            response_key = await self._capture_response(claim.operation, payload)
+        except Exception as exc:
+            unknown = await self._mark_unknown(
+                claim.operation,
+                failure_code="response_artifact_persistence_failed",
+                failure_detail=f"could not retain dispatched Exa response: {exc}",
+                provider_request_id=provider_request_id,
+            )
+            return ExaDeepAcquisitionResult(
+                outcome=ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN,
+                operation=unknown,
+                provider_calls=1,
+            )
         try:
             response = parse_exa_deep_response(preflight.exa_request, payload)
             normalization = normalize_exa_deep_snapshot(
@@ -306,32 +332,44 @@ class ExaDeepAcquisitionCoordinator:
                 claim.operation,
                 failure_code=ExaDeepFailureClass.SPEND_UNKNOWN.value,
                 failure_detail=f"unsettleable Exa success response: {exc}",
+                response_artifact_key=response_key,
+                provider_request_id=provider_request_id,
             )
             return ExaDeepAcquisitionResult(
                 outcome=ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN,
                 operation=unknown,
                 provider_calls=1,
             )
-        return await self._persist_success(
-            preflight,
-            claim.operation,
-            claim.attempt_ordinal,
-            payload,
-            response,
-            normalization,
-        )
+        try:
+            return await self._persist_success(
+                preflight,
+                claim.operation,
+                claim.attempt_ordinal,
+                response_key,
+                response,
+                normalization,
+            )
+        except Exception as exc:
+            current = await self._get(claim.operation)
+            terminal = await self._terminal_result(current, request=preflight.request, replay=False)
+            if terminal is not None and current.state is ExternalResearchOperationState.READY:
+                return terminal.model_copy(update={"provider_calls": 1})
+            unknown = await self._mark_unknown(
+                current,
+                failure_code="success_persistence_failed",
+                failure_detail=f"could not durably settle dispatched Exa response: {exc}",
+                response_artifact_key=response_key,
+                provider_request_id=response.request_id,
+            )
+            return ExaDeepAcquisitionResult(
+                outcome=ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN,
+                operation=unknown,
+                provider_calls=1,
+            )
 
     async def _reserve(
         self, preflight: ExaDeepAcquisitionPreflight
     ) -> tuple[ExternalResearchOperationRow, bool]:
-        async with self._conn_factory() as conn:
-            reusable = await find_fresh_external_research_operation(
-                conn,
-                request=preflight.request,
-                now=self._clock(),
-            )
-        if reusable is not None:
-            return reusable, False
         request_bytes = _json_bytes(
             {
                 "lineage": preflight.request.model_dump(mode="json"),
@@ -340,8 +378,24 @@ class ExaDeepAcquisitionCoordinator:
                 ),
             }
         )
+        request_key = artifact_key(
+            preflight.request.workspace_id,
+            content_address(request_bytes),
+        )
         async with self._conn_factory() as conn:
-            request_key = await capture_discovery_artifact(
+            await lock_external_research_reuse(
+                conn,
+                workspace_id=preflight.request.workspace_id,
+                reuse_fingerprint=preflight.request.reuse_fingerprint,
+            )
+            reusable = await find_reusable_external_research_operation(
+                conn,
+                request=preflight.request,
+                now=self._clock(),
+            )
+            if reusable is not None:
+                return reusable, False
+            captured_key = await capture_discovery_artifact(
                 conn,
                 self._storage,
                 workspace_id=preflight.request.workspace_id,
@@ -350,6 +404,8 @@ class ExaDeepAcquisitionCoordinator:
                 source_key=SOURCE_KEY,
                 source_url=None,
             )
+            if captured_key != request_key:
+                raise RuntimeError("request artifact content address changed during reservation")
             operation, created = await reserve_external_research_operation(
                 conn,
                 request=preflight.request,
@@ -364,7 +420,7 @@ class ExaDeepAcquisitionCoordinator:
         preflight: ExaDeepAcquisitionPreflight,
         operation: ExternalResearchOperationRow,
         attempt_ordinal: int,
-        payload: Mapping[str, Any],
+        response_key: str,
         response: ExaDeepSearchResponse,
         normalization: ExaDeepNormalization,
     ) -> ExaDeepAcquisitionResult:
@@ -374,6 +430,8 @@ class ExaDeepAcquisitionCoordinator:
                 operation,
                 failure_code="provider_cost_exceeds_reservation",
                 failure_detail="provider-reported cost exceeded the authorized reservation",
+                response_artifact_key=response_key,
+                provider_request_id=response.request_id,
             )
             return ExaDeepAcquisitionResult(
                 outcome=ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN,
@@ -383,15 +441,6 @@ class ExaDeepAcquisitionCoordinator:
         now = self._clock()
         fresh_until = now + timedelta(seconds=preflight.request.freshness_seconds)
         async with self._conn_factory() as conn:
-            response_key = await capture_discovery_artifact(
-                conn,
-                self._storage,
-                workspace_id=operation.workspace_id,
-                content=_json_bytes(dict(payload)),
-                media_type="application/json",
-                source_key=SOURCE_KEY,
-                source_url=None,
-            )
             normalization_key = await capture_discovery_artifact(
                 conn,
                 self._storage,
@@ -452,6 +501,12 @@ class ExaDeepAcquisitionCoordinator:
                 receipt_artifact_key=receipt_key,
                 now=now,
             )
+            snapshot = await adopt_external_research_snapshot(
+                conn,
+                request=preflight.request,
+                operation_id=operation.operation_id,
+                now=now,
+            )
             for artifact_key, kind in (
                 (response_key, "exa_deep_response"),
                 (normalization_key, "exa_deep_normalization"),
@@ -495,6 +550,8 @@ class ExaDeepAcquisitionCoordinator:
         *,
         failure_code: str,
         failure_detail: str,
+        response_artifact_key: str | None = None,
+        provider_request_id: str | None = None,
     ) -> ExternalResearchOperationRow:
         async with self._conn_factory() as conn:
             return await mark_external_research_spend_unknown(
@@ -504,7 +561,27 @@ class ExaDeepAcquisitionCoordinator:
                 failure_code=failure_code,
                 failure_detail=failure_detail,
                 now=self._clock(),
+                response_artifact_key=response_artifact_key,
+                provider_request_id=provider_request_id,
             )
+
+    async def _capture_response(
+        self,
+        operation: ExternalResearchOperationRow,
+        payload: Mapping[str, Any],
+    ) -> str:
+        async with self._conn_factory() as conn:
+            key = await capture_discovery_artifact(
+                conn,
+                self._storage,
+                workspace_id=operation.workspace_id,
+                content=_json_bytes(dict(payload)),
+                media_type="application/json",
+                source_key=SOURCE_KEY,
+                source_url=None,
+            )
+            await _bind_artifact(conn, operation, key, "exa_deep_response")
+            return key
 
     async def _get(self, operation: ExternalResearchOperationRow) -> ExternalResearchOperationRow:
         from clue_research.durable.external_research import get_external_research_operation
@@ -517,14 +594,19 @@ class ExaDeepAcquisitionCoordinator:
             )
 
     async def _terminal_result(
-        self, operation: ExternalResearchOperationRow, *, replay: bool
+        self,
+        operation: ExternalResearchOperationRow,
+        *,
+        request: ExternalResearchAcquisitionRequest,
+        replay: bool,
     ) -> ExaDeepAcquisitionResult | None:
         if operation.state is ExternalResearchOperationState.READY:
             async with self._conn_factory() as conn:
-                snapshot = await get_external_research_snapshot(
+                snapshot = await adopt_external_research_snapshot(
                     conn,
-                    workspace_id=operation.workspace_id,
+                    request=request,
                     operation_id=operation.operation_id,
+                    now=self._clock(),
                 )
             return ExaDeepAcquisitionResult(
                 outcome=(
@@ -616,20 +698,26 @@ def compile_exa_deep_acquisition_plan(
         )
         payload = wire.model_dump(mode="json", by_alias=True, exclude_none=True)
         wire_sha = _sha256(_json_bytes(payload))
-        fingerprint_payload = {
-            "contract": "exa-search-deep-acquisition-e1-v1",
+        reuse_payload = {
+            "contract": "exa-search-deep-acquisition-e1-semantic-v1",
             "workspace_id": workspace_id,
             "project_id": project_id,
-            "project_run_id": str(project_run_id),
             "account_id": str(account.id),
             "icp_key": icp_key,
             "icp_version": icp_version,
             "directive": research_directive.model_dump(mode="json"),
             "source_key": SOURCE_KEY,
-            "observation_window": observation_window,
             "freshness_policy_ref": freshness_policy_ref,
-            "bundle_index": index,
+            "freshness_seconds": freshness_seconds,
             "wire_request_sha256": wire_sha,
+        }
+        reuse_fingerprint = _sha256(_json_bytes(reuse_payload))
+        fingerprint_payload = {
+            "contract": "exa-search-deep-acquisition-e1-v2",
+            "reuse_fingerprint": reuse_fingerprint,
+            "project_run_id": str(project_run_id),
+            "observation_window": observation_window,
+            "bundle_index": index,
         }
         fingerprint = _sha256(_json_bytes(fingerprint_payload))
         durable = ExternalResearchAcquisitionRequest(
@@ -644,6 +732,7 @@ def compile_exa_deep_acquisition_plan(
             observation_window=f"{observation_window}:bundle:{index}",
             freshness_policy_ref=freshness_policy_ref,
             freshness_seconds=freshness_seconds,
+            reuse_fingerprint=reuse_fingerprint,
             request_fingerprint=fingerprint,
             wire_request_sha256=wire_sha,
             request_payload=payload,

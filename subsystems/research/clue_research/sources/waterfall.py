@@ -276,6 +276,7 @@ async def resolve_field(
     # Seeded with the caller's prior spend so the envelope bounds (cost_so_far + this call); the
     # result's total_cost_cents is the delta (this call's spend only).
     budget = BudgetTracker(envelope_cents=budget_envelope, spent_cents=cost_so_far)
+    budget_skipped = False
     ran_any = False
     stop_reason: StopReason | None = None
 
@@ -342,9 +343,7 @@ async def resolve_field(
                 TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.NO_RESOLVER)
             )
             continue
-        materialization_only = bool(
-            getattr(resolver, "materialization_only", False)
-        )
+        materialization_only = bool(getattr(resolver, "materialization_only", False))
         estimated_cost = Decimal(0) if materialization_only else manifest.cost_cents
 
         # Budget pre-check (only for a step that would incur new spend): the manifest cost is the
@@ -353,8 +352,10 @@ async def resolve_field(
             steps.append(
                 TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.BUDGET_SKIPPED)
             )
-            stop_reason = StopReason.BUDGET_STOP
-            break
+            budget_skipped = True
+            # A later resolver may be a zero-cost/materialization-only view over already-paid
+            # evidence. Skipping one unaffordable source must not hide that evidence.
+            continue
 
         # Per-source gate (injected seam): consulted only for a step that will actually call a
         # resolver — reuse and unbound sources spend nothing and are not gated. The gate's own
@@ -485,7 +486,10 @@ async def resolve_field(
         # No confident hit and no budget stop. If at least one resolver ran (or was reused), the
         # tiers are genuinely exhausted; if NOTHING ran (empty plan, all inactive/unregistered, or
         # only unbound tier-4 placeholders), it is no_resolver — a correct flagged-empty output.
-        stop_reason = StopReason.TIER_EXHAUSTED if ran_any else StopReason.NO_RESOLVER
+        if budget_skipped:
+            stop_reason = StopReason.BUDGET_STOP
+        else:
+            stop_reason = StopReason.TIER_EXHAUSTED if ran_any else StopReason.NO_RESOLVER
 
     result = WaterfallResult(
         entity_id=entity.entity_id,

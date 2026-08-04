@@ -42,6 +42,7 @@ async def confirmed_account_research_direction(
     icp_key: str,
     icp_version: int,
     field_keys: Sequence[str],
+    allowed_source_keys: Sequence[str] = ("sumble_teams", "sumble_people", "exa_deep"),
 ) -> tuple[ResearchDirectiveBody, Any]:
     """Create one real human-confirmed A2 directive on a borrowed test transaction."""
 
@@ -62,8 +63,8 @@ async def confirmed_account_research_direction(
             candidate_cap=4,
         ),
         source_policy=ResearchSourcePolicy(
-            allowed_source_keys=("sumble_teams", "sumble_people", "exa_deep"),
-            preferred_source_keys=("exa_deep",),
+            allowed_source_keys=tuple(allowed_source_keys),
+            preferred_source_keys=("exa_deep",) if "exa_deep" in allowed_source_keys else (),
         ),
         privacy_policy=ResearchPrivacyPolicy(
             contact_profiling_allowed=False,

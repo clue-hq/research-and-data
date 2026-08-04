@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import (
@@ -21,7 +22,10 @@ from clue_agents import (
     ArtifactRef,
     FinalizeStatus,
 )
-from clue_api.account_research_wiring import GovernedAccountProfiler
+from clue_api.account_research_wiring import (
+    AccountResolverBindingAvailability,
+    GovernedAccountProfiler,
+)
 from clue_api.agent_runtime_wiring import CompletionGuard, ModelFinalizeRequest
 from clue_api.coverage_tools import (
     ResearchAccountGapsV2Input,
@@ -35,7 +39,7 @@ from clue_api.exa_deep_acquisition import (
 from clue_api.exa_deep_materialization import (
     ExaDeepSnapshotError,
     ExaDeepSnapshotResolverProvider,
-    build_exa_deep_snapshot_resolver,
+    _build_exa_deep_snapshot_resolver,
 )
 from clue_api.trial.account_deep_fixture import (
     DEEP_FIELD_KEYS,
@@ -57,11 +61,12 @@ from clue_core import (
     PhaseContext,
     ProjectPhase,
     VerificationStatus,
+    new_claim_id,
     new_execution_id,
     new_operation_id,
     new_run_id,
 )
-from clue_research.claimstore import WorkspaceScope, claims_for, current_value
+from clue_research.claimstore import WorkspaceScope, claims_for, current_value, insert_claim
 from clue_research.durable import AccountSpec, BudgetEngine, DbBudgetStore, ResearchPlan
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account
@@ -296,6 +301,7 @@ def test_e2_snapshot_materializes_through_mechanical_and_agent_paths_then_verifi
                 account_entity_id=fixture.selected_account_id,
                 research_directive=directive,
             )
+            assert bindings.availability is AccountResolverBindingAvailability.READY
             deep_icp = await get_icp_version(
                 conn,
                 WORKSPACE_ID,
@@ -317,7 +323,7 @@ def test_e2_snapshot_materializes_through_mechanical_and_agent_paths_then_verifi
                 session_factory=conn_factory,
                 pre_spend_gate=PreSpendGateImpl(conn_factory=conn_factory),
                 config_store=_fixture_config_store(),
-                resolver_bindings=bindings,
+                resolver_bindings=bindings.bindings,
             )
             assert len(mechanical.claim_refs) == 1
             assert mechanical.cost_cents == 0
@@ -492,9 +498,96 @@ def test_e2_snapshot_materializes_through_mechanical_and_agent_paths_then_verifi
                 account_entity_id=fixture.selected_account_id,
                 research_directive=directive,
             )
-            assert replay_bindings["exa_deep"].resolve(
+            assert replay_bindings.bindings["exa_deep"].resolve(
                 account.as_entity(),
                 await _field(conn, _OPERATIONAL),
+            )
+
+            forged = operational[0].model_copy(
+                update={
+                    "id": new_claim_id(),
+                    "run_id": new_run_id(),
+                    "source_snapshot_ref": str(uuid4()),
+                }
+            )
+            savepoint = await conn.begin_nested()
+            with pytest.raises(DBAPIError, match="claim external research lineage"):
+                await insert_claim(conn, forged)
+            await savepoint.rollback()
+
+            result_key = str(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT artifact_key FROM external_research_result_artifact "
+                            "WHERE snapshot_id=:snapshot_id ORDER BY ordinal LIMIT 1"
+                        ),
+                        {"snapshot_id": acquired.snapshot.snapshot_id},
+                    )
+                ).scalar_one()
+            )
+            await storage.delete(result_key)
+            with pytest.raises(ExaDeepSnapshotError, match="artifact blob is missing"):
+                await provider.resolver_bindings(
+                    workspace_id=WORKSPACE_ID,
+                    project_run_id=PROJECT_RUN_ID,
+                    account_entity_id=fixture.selected_account_id,
+                    research_directive=directive,
+                )
+            await storage.put(result_key, b"{}", media_type="application/json")
+            with pytest.raises(ExaDeepSnapshotError, match="content-addressed metadata"):
+                await provider.resolver_bindings(
+                    workspace_id=WORKSPACE_ID,
+                    project_run_id=PROJECT_RUN_ID,
+                    account_entity_id=fixture.selected_account_id,
+                    research_directive=directive,
+                )
+
+    run_async(scenario())
+
+
+def test_e2_reports_exa_not_applicable_without_blocking_other_sources(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn() as conn:
+            fixture = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+            )
+            _, account_spec = await confirmed_account_research_direction(
+                conn,
+                workspace_id=WORKSPACE_ID,
+                project_id=PROJECT_ID,
+                product_id=PRODUCT_ID,
+                account_id=fixture.selected_account_id,
+                icp_key=fixture.deep_icp_key,
+                icp_version=fixture.deep_icp_version,
+                field_keys=(_OPERATIONAL,),
+                allowed_source_keys=("sumble_teams", "sumble_people"),
+            )
+            assert account_spec.research_directive is not None
+            account = await get_account(conn, fixture.selected_account_id)
+            assert account is not None
+            provider = ExaDeepSnapshotResolverProvider(
+                storage=storage,
+                conn_factory=_TaskReentrantConnectionFactory(conn),
+            )
+            resolution = await provider.resolver_bindings(
+                workspace_id=WORKSPACE_ID,
+                project_run_id=PROJECT_RUN_ID,
+                account_entity_id=fixture.selected_account_id,
+                research_directive=account_spec.research_directive,
+            )
+            assert resolution.availability is AccountResolverBindingAvailability.NOT_APPLICABLE
+            assert (
+                list(
+                    resolution.bindings["exa_deep"].resolve(
+                        account.as_entity(),
+                        await _field(conn, _OPERATIONAL),
+                    )
+                )
+                == []
             )
 
     run_async(scenario())
@@ -520,8 +613,8 @@ def test_e2_materializer_fails_closed_on_cross_account_or_missing_snapshot(tmp_p
             account = await get_account(conn, fixture.selected_account_id)
             assert account is not None
             conn_factory = conn_session_factory(conn)
-            with pytest.raises(ExaDeepSnapshotError, match="at least one ready snapshot"):
-                await build_exa_deep_snapshot_resolver(
+            with pytest.raises(ExaDeepSnapshotError, match="requires a ready snapshot"):
+                await _build_exa_deep_snapshot_resolver(
                     account=account,
                     snapshots=(),
                     allowed_field_keys=_E2_FIELDS,
@@ -617,13 +710,13 @@ def test_e2_ignores_expired_snapshots_and_newer_null_shadows_older_value(
                 storage=storage,
                 conn_factory=conn_factory,
             )
-            with pytest.raises(ExaDeepSnapshotError, match="at least one ready snapshot"):
-                await provider.resolver_bindings(
-                    workspace_id=WORKSPACE_ID,
-                    project_run_id=PROJECT_RUN_ID,
-                    account_entity_id=fixture.selected_account_id,
-                    research_directive=directive,
-                )
+            missing = await provider.resolver_bindings(
+                workspace_id=WORKSPACE_ID,
+                project_run_id=PROJECT_RUN_ID,
+                account_entity_id=fixture.selected_account_id,
+                research_directive=directive,
+            )
+            assert missing.availability.value == "required_missing"
 
             older = await ExaDeepAcquisitionCoordinator(
                 transport=_Transport(
@@ -662,14 +755,17 @@ def test_e2_ignores_expired_snapshots_and_newer_null_shadows_older_value(
                 account_entity_id=fixture.selected_account_id,
                 research_directive=directive,
             )
-            assert list(
-                bindings["exa_deep"].resolve(
-                    account.as_entity(),
-                    await _field(conn, _OPERATIONAL),
+            assert (
+                list(
+                    bindings.bindings["exa_deep"].resolve(
+                        account.as_entity(),
+                        await _field(conn, _OPERATIONAL),
+                    )
                 )
-            ) == []
-            with pytest.raises(ExaDeepSnapshotError, match="outside the exact effective directive"):
-                await build_exa_deep_snapshot_resolver(
+                == []
+            )
+            with pytest.raises(ExaDeepSnapshotError, match="outside the effective directive"):
+                await _build_exa_deep_snapshot_resolver(
                     account=account,
                     snapshots=(older.snapshot,),
                     allowed_field_keys=(_STRATEGIC,),
