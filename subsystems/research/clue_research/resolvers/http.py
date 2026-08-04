@@ -48,6 +48,10 @@ class ProviderResponseError(ResolverError):
     request / auth / not-found — or a malformed body). Distinct from a *hard miss* (empty list, a
     correct empty+flagged output) and from a *transient* fault (:class:`RetryableResolverError`)."""
 
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
 
 class CredentialError(ResolverError):
     """No credential resolved for a manifest ``auth_ref`` (the referenced ``CLUE_*`` key is unset).
@@ -69,7 +73,7 @@ def classify_status(status: int, *, source_key: str, url: str) -> None:
     detail = f"{source_key}: HTTP {status} from {url}"
     if status in _RETRYABLE_STATUS:
         raise RetryableResolverError(detail)
-    raise ProviderResponseError(detail)
+    raise ProviderResponseError(detail, status_code=status)
 
 
 def resolve_credential(

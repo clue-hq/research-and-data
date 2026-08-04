@@ -615,6 +615,34 @@ Deliver one bounded request per admitted aspect/account bundle rather than one p
 **Gate E1:** two requested fields share one authorized call, settle once, materialize independently,
 and fresh-process replay makes zero HTTP calls and writes no duplicate equivalent claim.
 
+**Implemented 2026-08-04 — Gate E1 closed without a live paid call.**
+
+- The provider-neutral `external_research_operation` ledger now records exact workspace/project /
+  account / ICP / confirmed-directive lineage, immutable request content and digests, shared-budget
+  reservation, dispatch lease, attempts, raw/result/normalization artifacts, ready snapshots and a
+  separately immutable provider-reported cost receipt. Alembic revision `bc0612c57713` has one
+  head and passed a clean isolated head-to-base-to-head migration smoke.
+- The Exa acquisition compiler deterministically packs admitted registry fields under the E0
+  eight-field, ten-property and two-level schema limits. Directional questions remain query-only;
+  one two-field account bundle produces one request fingerprint and one transport call.
+- The coordinator captures and binds the request before dispatch, calls only an injected zero-retry
+  transport outside database transactions, and makes `ready` unrepresentable until the response,
+  provider request id, retained result artifacts, grounding normalization, snapshot and receipt are
+  durable. The dormant real HTTP transport resolves `CLUE_EXA_API_KEY` only at call time and forces
+  the shared HTTP wrapper to zero retries; it is not composed or invoked in this slice. E1 itself
+  writes no claim; independent field materialization remains E2-owned.
+- Active dispatch leases cause concurrent callers to join. An expired/crashed lease, unexpected
+  post-dispatch exception, malformed success, missing settlement data or reported cost above the
+  reservation becomes terminal `spend_outcome_unknown` with no automatic retry. Proven 400/401 /
+  402/403/404 and pre-dispatch failures terminate as not charged.
+- Exact-operation replay and exact-wire/exact-directive freshness reuse return the stored snapshot
+  with zero transport. The offline snapshot loader has no transport dependency, preserving the
+  rule that resolver/materializer reads cannot perform network calls.
+- Provider-free DB acceptance covers coalescing, exactly-once seven-cent settlement, immutable
+  attempts/snapshots/receipts, two retained result artifacts, two independently retained normalized
+  fields, all-null paid misses, zero claim writes, fresh-process replay, freshness reuse, active
+  join, crash quarantine and pre/post-dispatch failure classification.
+
 ### Slice E2 — Snapshot-backed Exa materialization and verification
 
 **Owns:** Exa snapshot resolver/normalizer, field-plan override, account-agent integration tests.

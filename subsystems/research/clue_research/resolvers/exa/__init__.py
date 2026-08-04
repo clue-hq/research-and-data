@@ -311,6 +311,17 @@ def _as_http_request(
     )
 
 
+def build_exa_deep_http_request(
+    request: ExaDeepSearchRequest,
+    token: SecretStr | None,
+    *,
+    config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
+) -> HttpRequest:
+    """Build E1's already-compiled coalesced request without dispatching it."""
+
+    return _as_http_request(request, token, config=config)
+
+
 def build_exa_request(
     account: AccountEntity,
     field: FieldDef,
@@ -754,6 +765,7 @@ __all__ = [
     "ExaDeepSearchResponse",
     "ExaDeepSynthesisBackend",
     "build_exa_request",
+    "build_exa_deep_http_request",
     "compile_exa_deep_request",
     "exa_field_alias",
     "field_key_from_exa_alias",
