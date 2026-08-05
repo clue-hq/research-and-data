@@ -87,6 +87,7 @@ class ExaDeepContactAcquisitionPreflight(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     request: ExternalResearchAcquisitionRequest
+    intent_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     exa_request: ExaDeepContactSearchRequest
     target_lock: ExaDeepContactTargetLock
     field_source_plans: tuple[EffectiveFieldSourcePlan, ...] = Field(min_length=1)
@@ -267,6 +268,7 @@ def compile_exa_contact_acquisition_plan(
         preflights.append(
             ExaDeepContactAcquisitionPreflight(
                 request=durable,
+                intent_sha256=intent_sha,
                 exa_request=wire,
                 target_lock=target_lock,
                 field_source_plans=source_plans,
