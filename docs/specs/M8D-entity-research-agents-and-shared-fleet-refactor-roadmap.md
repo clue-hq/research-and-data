@@ -1,7 +1,7 @@
 # M8D — Entity research agents and shared fleet refactor roadmap
 ## `langchain.agents.create_agent` account/contact units over one durable fleet substrate
 
-> **Status:** R0–R2 accepted; R3–R10 have not started.
+> **Status:** R0–R3 accepted; R4–R10 have not started.
 > **Recorded:** 2026-08-06. **Working branch at record time:**
 > `platform/c8-account-profiling-integration`.
 >
@@ -580,6 +580,11 @@ allowlists, typed finalization, journaling, and bounded facet contract.
 
 **Exit gate:** executable evidence proves account/contact/facet units are constructed through
 `langchain.agents.create_agent()` and not `create_deep_agent()`.
+
+**Accepted 2026-08-06:** the single role-configured factory, exact resource/context/tool authority,
+Postgres checkpoint and append-only history/tool journal, guarded parallel calls, external-wait
+receipt, depth-one facet boundary, engine-receipt-only entity finalization, R2 driver adapter, and
+executable evidence are recorded in `M8D-R3-shared-create-agent-runtime-acceptance.md`.
 
 ### R4 — Governed tools and complete persisted result projection
 
