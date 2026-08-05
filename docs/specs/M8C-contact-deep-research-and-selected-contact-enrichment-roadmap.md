@@ -892,7 +892,8 @@ remains V1.
 ### V0 — Offline and database acceptance
 
 **Status:** mechanically accepted. Binding matrix, populated-database findings, corrections, and
-verification record: `M8C-V0-offline-database-acceptance.md`.
+verification record: `M8C-V0-offline-database-acceptance.md`. Categorized open/resolved findings:
+`M8C-V0-failure-ledger.md`.
 
 Run the combined regression matrix with fake transports only:
 
