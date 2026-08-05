@@ -1,7 +1,7 @@
 # M8D — Entity research agents and shared fleet refactor roadmap
 ## `langchain.agents.create_agent` account/contact units over one durable fleet substrate
 
-> **Status:** R0 accepted; R1–R10 have not started.
+> **Status:** R0–R1 accepted; R2–R10 have not started.
 > **Recorded:** 2026-08-06. **Working branch at record time:**
 > `platform/c8-account-profiling-integration`.
 >
@@ -555,6 +555,10 @@ the removed flow.
 
 **Exit gate:** no new provider operation can originate from the quarantined orchestration; valid
 provider/durability/claim infrastructure remains green; unrelated worktree changes are untouched.
+
+**Accepted 2026-08-06:** the fail-loud phase seam, exact-address replay-only tool boundary,
+production composition cut, historical profile/recipe treatment, tests, and known unrelated
+repository failures are recorded in `M8D-R1-active-path-quarantine-acceptance.md`.
 
 ### R2 — Subject-neutral fleet/job contract
 

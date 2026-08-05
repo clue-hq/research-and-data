@@ -17,6 +17,10 @@ from clue_agents.registry import (
     AgentToolCatalog,
     AgentToolContract,
 )
+from clue_api.entity_research_quarantine import (
+    ENTITY_RESEARCH_AGENT_NOT_COMPOSED,
+    QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES,
+)
 from clue_toolbelt import ToolEffectClass, ToolRegistry, UnknownTool
 
 __all__ = [
@@ -34,7 +38,6 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     AgentRole.RESEARCH: "v6",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
-    AgentRole.ACCOUNT_RESEARCH: "v3",
 }
 
 
@@ -67,7 +70,6 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
         AgentRole.RESEARCH,
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,
-        AgentRole.ACCOUNT_RESEARCH,
     ),
     "import_accounts": (),
     # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10). These are the tools the
@@ -86,7 +88,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "propose_source": (AgentRole.HEAD_OF_ABM,),
     "record_interview_answer": (AgentRole.HEAD_OF_ABM,),
     "recheck_research_view": (),
-    "research_account_gaps": (AgentRole.ACCOUNT_RESEARCH,),
+    "research_account_gaps": (),
     "resolve_committee": (AgentRole.RESEARCH,),
     "resume_run": (),
     "retry_ingestion": (),
@@ -210,7 +212,7 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     if name == "draft_account_research_directive":
         return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@2" else ()
     if name == "research_account_gaps":
-        return (AgentRole.ACCOUNT_RESEARCH,) if address == "research_account_gaps@2" else ()
+        return ()
     if name == "profile_contact":
         return (AgentRole.RESEARCH,) if address == "profile_contact@2" else ()
     return C6_AGENT_TOOL_AUTHORITY.get(name, ())
@@ -224,6 +226,8 @@ def c6_roles_for_tool(address: str) -> tuple[AgentRole, ...]:
 
 
 def _unavailable_reason(address: str, name: str) -> str | None:
+    if address in QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES:
+        return ENTITY_RESEARCH_AGENT_NOT_COMPOSED
     if address == "research_account_gaps@1":
         return "replaced_by_replay_safe_v2"
     if address == "profile_contact@1":
@@ -316,7 +320,6 @@ def build_agent_profile_registry(
         AgentRole.RESEARCH,
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,
-        AgentRole.ACCOUNT_RESEARCH,
     ):
         expected = {
             descriptor.address

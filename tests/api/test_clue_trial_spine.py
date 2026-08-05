@@ -50,7 +50,6 @@ from clue_research.resolvers.sumble import (
 )
 from clue_spine import confirm_project_product
 from tests.db.conftest import run_async
-from tests.lock_factory import ProcessLocalLockFactory
 
 _FIXTURES = Path(__file__).parents[1] / "fixtures" / "clue_trial" / "sumble"
 
@@ -133,10 +132,7 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
             settings=settings,
             gateway=gateway,
             storage=storage,
-            lock_factory=ProcessLocalLockFactory(),
             channels=ChannelRegistry(),
-            committee_sources=(),
-            profile_account_fn=_fixture_account_profile,
         )
         http = FixtureSumbleHttp()
         spine_snapshots = MutableSumbleSnapshotLookup()

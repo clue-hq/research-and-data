@@ -36,6 +36,7 @@ from clue_api.agent_registry_wiring import (
     ToolRegistryAgentCatalog,
     build_agent_profile_registry,
 )
+from clue_api.entity_research_quarantine import QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES
 from clue_api.toolbelt_wiring import build_toolbelt
 from tests.api.conftest import hermetic_flag_env
 from tests.api.test_agent_registry_wiring import CATALOG_ROOT
@@ -182,7 +183,10 @@ def test_the_map_never_advertises_anything_the_surface_withholds(
     assert {"record_interview_answer", "inspect_statement_history"} <= advertised
     # And the same parser over the *unrestricted* role does see everything the surface removed —
     # otherwise this test would keep passing if the map stopped advertising anything at all.
-    assert withheld <= _advertised_capabilities(
+    replay_only_names = {
+        address.partition("@")[0] for address in QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES
+    }
+    assert withheld - replay_only_names <= _advertised_capabilities(
         registry.resolve(AgentRole.HEAD_OF_ABM).generated_resource_map
     )
 
