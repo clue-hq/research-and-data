@@ -1,0 +1,633 @@
+"""Exa Search Deep composition behind the provider-neutral M8D R4 semantic tool seam."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager
+from typing import Any, cast
+from uuid import NAMESPACE_URL, UUID, uuid5
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_agents.entity_research_contracts import canonical_sha256
+from clue_agents.entity_research_runtime import EntityResearchExternalWait
+from clue_api.entity_research_tools import (
+    EntityResearchProviderAction,
+    EntityResearchResultIntegrityError,
+    ExternalResearchProjectionDraft,
+)
+from clue_api.exa_contact_acquisition import ExaDeepContactAcquisitionService
+from clue_api.exa_contact_materialization import ExaDeepContactSnapshotMaterializer
+from clue_api.exa_deep_acquisition import ExaDeepAcquisitionOutcome
+from clue_core import (
+    ContactResearchIntent,
+    ContactResearchPolicyPin,
+    ExternalResearchSnapshotId,
+    RunId,
+    decode_jsonb_scalar,
+)
+from clue_core.entity_research import (
+    GovernedResearchToolRequest,
+    ResearchClaimDelta,
+    ResearchEvidenceProjection,
+    ResearchFieldOutcome,
+    ResearchFieldResultProjection,
+    ResearchSubjectType,
+)
+from clue_research.durable.external_research import ExternalResearchOperationRow
+from clue_research.resolvers.exa import SOURCE_KEY
+from clue_storage import StorageBackend, read_verified_artifact
+
+ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
+_EVIDENCE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r4:research-evidence")
+_MATERIALIZATION_RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r4:exa-contact-materialization-run")
+
+
+def _evidence_ref(
+    *, operation_id: UUID, field_key: str, artifact_key: str, evidence_span: str
+) -> str:
+    digest = hashlib.sha256(evidence_span.encode()).hexdigest()
+    return (
+        "research-evidence:"
+        f"{uuid5(_EVIDENCE_NAMESPACE, f'{operation_id}:{field_key}:{artifact_key}:{digest}')}"
+    )
+
+
+class ExaEntityResearchProjectionBuilder:
+    """Project Exa normalization plus claim-engine decisions into the frozen R0 result shape."""
+
+    def __init__(
+        self,
+        *,
+        storage: StorageBackend,
+        conn_factory: ConnFactory,
+    ) -> None:
+        self._storage = storage
+        self._conn_factory = conn_factory
+
+    async def build(
+        self,
+        *,
+        request: GovernedResearchToolRequest,
+        operation_id: UUID,
+        snapshot_id: UUID,
+    ) -> ExternalResearchProjectionDraft:
+        async with self._conn_factory() as conn:
+            snapshot = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT snapshot.workspace_id, snapshot.normalization_artifact_key,
+                                   snapshot.provider_request_id, operation.subject_kind::text,
+                                   operation.account_id, operation.contact_id,
+                                   operation.source_key
+                            FROM external_research_snapshot snapshot
+                            JOIN external_research_operation operation
+                              ON operation.id=snapshot.operation_id
+                             AND operation.workspace_id=snapshot.workspace_id
+                            WHERE snapshot.id=:snapshot_id
+                              AND snapshot.operation_id=:operation_id
+                            """
+                        ),
+                        {"snapshot_id": snapshot_id, "operation_id": operation_id},
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if snapshot is None:
+                raise EntityResearchResultIntegrityError("Exa projection snapshot is absent")
+            target_id = (
+                snapshot["account_id"]
+                if request.subject_type is ResearchSubjectType.ACCOUNT
+                else snapshot["contact_id"]
+            )
+            if (
+                str(snapshot["workspace_id"]) != str(await self._request_workspace(conn, request))
+                or str(snapshot["subject_kind"]) != request.subject_type.value
+                or target_id != request.target_entity_id
+                or str(snapshot["source_key"]) != SOURCE_KEY
+            ):
+                raise EntityResearchResultIntegrityError(
+                    "Exa projection crosses exact workspace or subject"
+                )
+            _, normalization_bytes = await read_verified_artifact(
+                conn,
+                self._storage,
+                storage_key=str(snapshot["normalization_artifact_key"]),
+                workspace_id=str(snapshot["workspace_id"]),
+            )
+            try:
+                normalization = cast(dict[str, Any], json.loads(normalization_bytes))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise EntityResearchResultIntegrityError(
+                    "Exa normalization artifact is malformed"
+                ) from exc
+            result_artifacts = {
+                str(row["source_url"]): str(row["artifact_key"])
+                for row in (
+                    (
+                        await conn.execute(
+                            text(
+                                """
+                                SELECT source_url, artifact_key
+                                FROM external_research_result_artifact
+                                WHERE snapshot_id=:snapshot_id
+                                """
+                            ),
+                            {"snapshot_id": snapshot_id},
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+            }
+            claims = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT id, entity_id, field_key, value_json, source_key, source_url,
+                                   artifact_key, evidence_span, confidence,
+                                   verification_status::text, corroborations,
+                                   source_operation_ref, source_snapshot_ref, collected_at
+                            FROM claim
+                            WHERE entity_id=:target_entity_id
+                              AND field_key=ANY(:field_keys)
+                              AND source_operation_ref=:operation_ref
+                              AND source_snapshot_ref=:snapshot_ref
+                              AND superseded_by IS NULL
+                            ORDER BY collected_at DESC, id
+                            """
+                        ),
+                        {
+                            "target_entity_id": request.target_entity_id,
+                            "field_keys": list(request.field_keys),
+                            "operation_ref": str(operation_id),
+                            "snapshot_ref": str(snapshot_id),
+                        },
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            claims_by_field: dict[str, list[Mapping[str, object]]] = {
+                field_key: [] for field_key in request.field_keys
+            }
+            for row in claims:
+                claims_by_field[str(row["field_key"])].append(cast(Mapping[str, object], row))
+            field_results: list[ResearchFieldResultProjection] = []
+            for field_key in request.field_keys:
+                field_results.append(
+                    await self._field(
+                        conn,
+                        request=request,
+                        field_key=field_key,
+                        operation_id=operation_id,
+                        snapshot_id=snapshot_id,
+                        normalization_artifact_key=str(snapshot["normalization_artifact_key"]),
+                        provider_request_id=str(snapshot["provider_request_id"]),
+                        normalization=normalization,
+                        result_artifacts=result_artifacts,
+                        claims=claims_by_field[field_key],
+                    )
+                )
+            fields = tuple(field_results)
+        return ExternalResearchProjectionDraft(
+            operation_id=operation_id,
+            snapshot_id=snapshot_id,
+            requested_field_keys=request.field_keys,
+            fields=fields,
+        )
+
+    async def _request_workspace(
+        self, conn: AsyncConnection, request: GovernedResearchToolRequest
+    ) -> str:
+        return cast(
+            str,
+            (
+                await conn.execute(
+                    text(
+                        "SELECT workspace_id FROM entity_research_tool_request "
+                        "WHERE tool_request_id=:tool_request_id"
+                    ),
+                    {"tool_request_id": request.tool_call_id},
+                )
+            ).scalar_one(),
+        )
+
+    async def bundle_field_keys(
+        self,
+        snapshot_id: ExternalResearchSnapshotId,
+        *,
+        admitted_field_keys: Sequence[str],
+    ) -> tuple[str, ...]:
+        """Read the immutable wire schema to partition a multi-bundle semantic result."""
+
+        async with self._conn_factory() as conn:
+            payload = (
+                await conn.execute(
+                    text(
+                        "SELECT request_json FROM external_research_operation operation "
+                        "JOIN external_research_snapshot snapshot "
+                        "ON snapshot.operation_id=operation.id WHERE snapshot.id=:snapshot_id"
+                    ),
+                    {"snapshot_id": snapshot_id},
+                )
+            ).scalar_one()
+        if not isinstance(payload, Mapping):
+            raise EntityResearchResultIntegrityError("Exa stored wire request is malformed")
+        wire = payload.get("request_payload")
+        if not isinstance(wire, Mapping):
+            raise EntityResearchResultIntegrityError("Exa stored request payload is malformed")
+        schema = wire.get("outputSchema")
+        if not isinstance(schema, Mapping) or not isinstance(schema.get("properties"), Mapping):
+            raise EntityResearchResultIntegrityError("Exa stored wire schema is malformed")
+        from clue_research.resolvers.exa.deep_contract import field_key_from_exa_alias
+
+        keys = tuple(
+            str(field_key_from_exa_alias(str(alias)))
+            for alias in cast(Mapping[str, object], schema["properties"])
+        )
+        if not set(keys).issubset(admitted_field_keys):
+            raise EntityResearchResultIntegrityError("Exa bundle widened governed fields")
+        return keys
+
+    async def _field(
+        self,
+        conn: AsyncConnection,
+        *,
+        request: GovernedResearchToolRequest,
+        field_key: str,
+        operation_id: UUID,
+        snapshot_id: UUID,
+        normalization_artifact_key: str,
+        provider_request_id: str,
+        normalization: Mapping[str, Any],
+        result_artifacts: Mapping[str, str],
+        claims: Sequence[Mapping[str, object]],
+    ) -> ResearchFieldResultProjection:
+        if claims:
+            conflict = (
+                await conn.execute(
+                    text(
+                        """
+                            SELECT conflicting_claim_ids
+                            FROM conflict_flag
+                            WHERE entity_id=:entity_id AND field_key=:field_key
+                              AND resolved_by IS NULL
+                            """
+                    ),
+                    {"entity_id": request.target_entity_id, "field_key": field_key},
+                )
+            ).scalar_one_or_none()
+            current_claims = list(claims)
+            if conflict:
+                conflict_ids = [UUID(str(value)) for value in conflict]
+                extra = (
+                    (
+                        await conn.execute(
+                            text(
+                                """
+                                SELECT id, entity_id, field_key, value_json, source_key,
+                                       source_url, artifact_key, evidence_span, confidence,
+                                       verification_status::text, corroborations,
+                                       source_operation_ref, source_snapshot_ref, collected_at
+                                FROM claim WHERE id=ANY(:claim_ids)
+                                ORDER BY collected_at DESC, id
+                                """
+                            ),
+                            {"claim_ids": conflict_ids},
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                current_claims = [cast(Mapping[str, object], row) for row in extra]
+                return ResearchFieldResultProjection(
+                    field_key=field_key,
+                    outcome=ResearchFieldOutcome.CONFLICT,
+                    claim_delta=ResearchClaimDelta.CONFLICTING,
+                    claim_refs=tuple(f"claim:{row['id']}" for row in current_claims),
+                    decision_refs=(f"conflict:{request.target_entity_id}:{field_key}",),
+                    evidence=self._claim_evidence(
+                        field_key=field_key,
+                        operation_id=operation_id,
+                        provider_request_id=provider_request_id,
+                        claims=current_claims,
+                    ),
+                    confidence=max(float(cast(float, row["confidence"])) for row in current_claims),
+                    verification_status="flagged_conflict",
+                )
+            winner = current_claims[0]
+            corroborating = any(int(cast(int, row["corroborations"])) > 0 for row in current_claims)
+            return ResearchFieldResultProjection(
+                field_key=field_key,
+                outcome=ResearchFieldOutcome.FOUND,
+                value=decode_jsonb_scalar(winner["value_json"]),
+                claim_delta=(
+                    ResearchClaimDelta.CORROBORATING
+                    if corroborating
+                    else ResearchClaimDelta.ACCEPTED
+                ),
+                claim_refs=tuple(f"claim:{row['id']}" for row in current_claims),
+                evidence=self._claim_evidence(
+                    field_key=field_key,
+                    operation_id=operation_id,
+                    provider_request_id=provider_request_id,
+                    claims=current_claims,
+                ),
+                confidence=max(float(cast(float, row["confidence"])) for row in current_claims),
+                verification_status=str(winner["verification_status"]),
+            )
+
+        synthesis_fields = {
+            str(item["field_key"]): item
+            for item in normalization.get("synthesis", {}).get("fields", [])
+        }
+        if field_key in synthesis_fields:
+            raise EntityResearchResultIntegrityError(
+                f"Exa normalized {field_key!r}, but claim materialization is incomplete"
+            )
+        matching = self._citations(normalization, field_key=field_key)
+        rejected = [
+            item
+            for item in matching
+            if item.get("target_binding") in {"unresolved", "contradictory"}
+        ]
+        if rejected:
+            evidence = self._citation_evidence(
+                field_key=field_key,
+                operation_id=operation_id,
+                provider_request_id=provider_request_id,
+                citations=rejected,
+                result_artifacts=result_artifacts,
+            )
+            reasons = tuple(
+                str(reason)
+                for item in rejected
+                for reason in cast(Sequence[object], item.get("reason_codes", ()))
+            )
+            return ResearchFieldResultProjection(
+                field_key=field_key,
+                outcome=ResearchFieldOutcome.REJECTED,
+                claim_delta=ResearchClaimDelta.REJECTED,
+                decision_refs=(
+                    f"artifact:{normalization_artifact_key}#/citations/{field_key}",
+                    *(f"target-binding-reason:{reason}" for reason in dict.fromkeys(reasons)),
+                ),
+                evidence=evidence,
+                confidence=max(
+                    (float(self._citation(item).get("confidence", 0.0)) for item in rejected),
+                    default=None,
+                ),
+                verification_status="target_rejected",
+            )
+        unsupported = [
+            item
+            for item in matching
+            if self._citation(item).get("status") in {"unsupported", "below_confidence"}
+        ]
+        if unsupported:
+            evidence = self._citation_evidence(
+                field_key=field_key,
+                operation_id=operation_id,
+                provider_request_id=provider_request_id,
+                citations=unsupported,
+                result_artifacts=result_artifacts,
+            )
+            return ResearchFieldResultProjection(
+                field_key=field_key,
+                outcome=ResearchFieldOutcome.UNSUPPORTED,
+                claim_delta=ResearchClaimDelta.NONE,
+                evidence=evidence,
+                verification_status="unsupported_grounding",
+            )
+        return ResearchFieldResultProjection(
+            field_key=field_key,
+            outcome=ResearchFieldOutcome.NULL,
+            claim_delta=ResearchClaimDelta.NONE,
+            verification_status="explicit_null",
+        )
+
+    @staticmethod
+    def _citations(normalization: Mapping[str, Any], *, field_key: str) -> list[Mapping[str, Any]]:
+        values: list[Mapping[str, Any]] = []
+        for raw in normalization.get("citations", []):
+            if not isinstance(raw, Mapping):
+                continue
+            citation = ExaEntityResearchProjectionBuilder._citation(raw)
+            if str(citation.get("field_key", "")) == field_key:
+                values.append(raw)
+        return values
+
+    @staticmethod
+    def _citation(value: Mapping[str, Any]) -> Mapping[str, Any]:
+        nested = value.get("citation")
+        return nested if isinstance(nested, Mapping) else value
+
+    def _claim_evidence(
+        self,
+        *,
+        field_key: str,
+        operation_id: UUID,
+        provider_request_id: str,
+        claims: Sequence[Mapping[str, object]],
+    ) -> tuple[ResearchEvidenceProjection, ...]:
+        evidence: list[ResearchEvidenceProjection] = []
+        seen: set[tuple[str, str]] = set()
+        for claim in claims:
+            artifact_key = str(claim["artifact_key"])
+            span = str(claim["evidence_span"])
+            identity = (artifact_key, span)
+            if not artifact_key or not span or identity in seen:
+                continue
+            seen.add(identity)
+            evidence.append(
+                ResearchEvidenceProjection(
+                    evidence_ref=_evidence_ref(
+                        operation_id=operation_id,
+                        field_key=field_key,
+                        artifact_key=artifact_key,
+                        evidence_span=span,
+                    ),
+                    source_key=str(claim["source_key"]),
+                    provider_source_id=provider_request_id,
+                    source_url=str(claim["source_url"]),
+                    artifact_ref=f"artifact:{artifact_key}",
+                    evidence_span=span,
+                )
+            )
+        return tuple(evidence)
+
+    def _citation_evidence(
+        self,
+        *,
+        field_key: str,
+        operation_id: UUID,
+        provider_request_id: str,
+        citations: Sequence[Mapping[str, Any]],
+        result_artifacts: Mapping[str, str],
+    ) -> tuple[ResearchEvidenceProjection, ...]:
+        evidence: list[ResearchEvidenceProjection] = []
+        for item in citations:
+            citation = self._citation(item)
+            span = citation.get("evidence_span")
+            source_url = citation.get("source_url")
+            if not isinstance(span, str) or not span or not isinstance(source_url, str):
+                continue
+            artifact_key = result_artifacts.get(source_url)
+            if artifact_key is None:
+                raise EntityResearchResultIntegrityError(
+                    "Exa citation has no retained result artifact"
+                )
+            evidence.append(
+                ResearchEvidenceProjection(
+                    evidence_ref=_evidence_ref(
+                        operation_id=operation_id,
+                        field_key=field_key,
+                        artifact_key=artifact_key,
+                        evidence_span=span,
+                    ),
+                    source_key=SOURCE_KEY,
+                    provider_source_id=provider_request_id,
+                    source_url=source_url,
+                    artifact_ref=f"artifact:{artifact_key}",
+                    evidence_span=span,
+                )
+            )
+        return tuple(evidence)
+
+
+class ExaContactSemanticResearchAction(EntityResearchProviderAction):
+    """Reuse C3/C4 acquisition and claim materialization for one exact contact job."""
+
+    def __init__(
+        self,
+        *,
+        intent: ContactResearchIntent,
+        effective_policy: ContactResearchPolicyPin,
+        acquisition: ExaDeepContactAcquisitionService,
+        materializer: ExaDeepContactSnapshotMaterializer,
+        projector: ExaEntityResearchProjectionBuilder,
+        run_id: RunId,
+        observation_window: str,
+    ) -> None:
+        self._intent = intent
+        self._policy = effective_policy
+        self._acquisition = acquisition
+        self._materializer = materializer
+        self._projector = projector
+        self._run_id = run_id
+        self._observation_window = observation_window
+
+    async def execute(
+        self,
+        request: GovernedResearchToolRequest,
+        *,
+        before_dispatch: Callable[[ExternalResearchOperationRow], Awaitable[None]],
+    ) -> Sequence[ExternalResearchProjectionDraft]:
+        facet_fields = tuple(
+            str(field_key)
+            for field_key in self._intent.field_keys
+            if str(field_key).startswith("contact.facet.")
+        )
+        if (
+            request.subject_type is not ResearchSubjectType.CONTACT
+            or request.target_entity_id != self._intent.contact_entity_id
+            or request.parent_account_id != self._intent.account_entity_id
+            or set(request.source_keys) != {SOURCE_KEY}
+            or not set(request.field_keys).issubset(facet_fields)
+        ):
+            raise EntityResearchResultIntegrityError(
+                "Exa contact semantic request differs from exact selected intent"
+            )
+        observation_window = self._observation_window
+        reuse_context_ref: str | None = None
+        if request.parent_operation_ref is not None:
+            assert request.follow_up_reason is not None
+            assert request.parent_observation_ref is not None
+            reuse_context_ref = canonical_sha256(
+                {
+                    "parent_operation_ref": request.parent_operation_ref,
+                    "parent_observation_ref": request.parent_observation_ref,
+                    "follow_up_reason": request.follow_up_reason.value,
+                    "field_keys": request.field_keys,
+                    "questions": request.questions,
+                }
+            )
+            observation_window = (
+                f"{observation_window}:follow-up:"
+                f"{reuse_context_ref[:16]}:"
+                f"{request.follow_up_reason.value}"
+            )
+        acquired = await self._acquisition.acquire_intent(
+            intent=self._intent,
+            effective_policy=self._policy,
+            observation_window=observation_window,
+            before_dispatch=before_dispatch,
+            field_keys=request.field_keys,
+            directional_questions=request.questions,
+            reuse_context_ref=reuse_context_ref,
+        )
+        waiting = [
+            result
+            for result in acquired.results
+            if result.outcome is ExaDeepAcquisitionOutcome.JOINED_IN_FLIGHT
+        ]
+        if waiting:
+            first = waiting[0]
+            raise EntityResearchExternalWait(
+                wait_ref=f"external-research-operation:{first.operation.operation_id}",
+                current_state_sha256=request.tool_input_sha256,
+            )
+        ready = [
+            result
+            for result in acquired.results
+            if result.outcome
+            in {ExaDeepAcquisitionOutcome.READY, ExaDeepAcquisitionOutcome.REPLAYED}
+            and result.snapshot is not None
+        ]
+        if len(ready) != len(acquired.results):
+            raise EntityResearchResultIntegrityError(
+                "Exa contact action did not produce a settled ready snapshot"
+            )
+        await self._materializer.materialize(
+            intent=self._intent,
+            effective_policy=self._policy,
+            run_id=RunId(
+                uuid5(
+                    _MATERIALIZATION_RUN_NAMESPACE,
+                    f"{self._run_id}:{request.tool_call_id}",
+                )
+            ),
+            field_keys=request.field_keys,
+            snapshot_reference_ids=tuple(
+                str(result.snapshot.snapshot_id) for result in ready if result.snapshot is not None
+            ),
+        )
+        drafts: list[ExternalResearchProjectionDraft] = []
+        for result in ready:
+            assert result.snapshot is not None
+            bundle_fields = await self._projector.bundle_field_keys(
+                result.snapshot.snapshot_id,
+                admitted_field_keys=request.field_keys,
+            )
+            drafts.append(
+                await self._projector.build(
+                    request=request.model_copy(update={"field_keys": bundle_fields}),
+                    operation_id=UUID(str(result.operation.operation_id)),
+                    snapshot_id=UUID(str(result.snapshot.snapshot_id)),
+                )
+            )
+        return tuple(drafts)
+
+
+__all__ = [
+    "ExaContactSemanticResearchAction",
+    "ExaEntityResearchProjectionBuilder",
+]

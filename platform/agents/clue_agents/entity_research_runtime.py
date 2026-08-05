@@ -12,6 +12,8 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any, Protocol, cast, runtime_checkable
 from uuid import uuid4
 
@@ -59,6 +61,38 @@ class EntityResearchExternalWait(EntityResearchRuntimeError):
 
 class EntityResearchFinalizationRejected(EntityResearchRuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ActiveEntityResearchToolExecution:
+    """Trusted task-local authority visible only while one governed handler executes.
+
+    LangChain tool argument schemas deliberately exclude tenancy, job, target, budget, and
+    causation identifiers.  R4 obtains those values from this engine-owned context after the R3
+    journal and execution guard have admitted the call.  ``ContextVar`` preserves isolation when
+    the agent runs independent tools concurrently in the same model round.
+    """
+
+    context: EntityResearchRuntimeContext
+    call: EntityResearchToolCall
+    journal_event_ref: str
+
+
+_ACTIVE_TOOL_EXECUTION: ContextVar[ActiveEntityResearchToolExecution | None] = ContextVar(
+    "active_entity_research_tool_execution",
+    default=None,
+)
+
+
+def current_entity_research_tool_execution() -> ActiveEntityResearchToolExecution:
+    """Return the exact admitted tool execution or fail outside a governed R3 invocation."""
+
+    active = _ACTIVE_TOOL_EXECUTION.get()
+    if active is None:
+        raise EntityResearchRuntimeError(
+            "entity research semantic tool was invoked outside the governed create_agent runtime"
+        )
+    return active
 
 
 @runtime_checkable
@@ -306,7 +340,17 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
                 call=call,
                 journal_event_ref=event_ref,
             )
-            result = await handler(request)
+            token = _ACTIVE_TOOL_EXECUTION.set(
+                ActiveEntityResearchToolExecution(
+                    context=self._context,
+                    call=call,
+                    journal_event_ref=event_ref,
+                )
+            )
+            try:
+                result = await handler(request)
+            finally:
+                _ACTIVE_TOOL_EXECUTION.reset(token)
             await self._guard.observe_tool_result(
                 context=self._context,
                 call=call,

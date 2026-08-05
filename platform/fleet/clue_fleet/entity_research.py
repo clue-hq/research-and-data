@@ -136,9 +136,9 @@ class EntityResearchRunRow(BaseModel):
     research_run_id: UUID
     run_kind: ResearchRunKind
     subject_type: ResearchSubjectType
-    workspace_id: UUID
-    project_id: UUID
-    product_id: UUID
+    workspace_id: NonEmptyStr
+    project_id: NonEmptyStr
+    product_id: NonEmptyStr
     project_run_id: UUID
     selection_id: UUID
     lifecycle: ResearchRunLifecycleContract
@@ -169,9 +169,9 @@ class EntityResearchJobRow(BaseModel):
     subject_type: ResearchSubjectType
     subject_entity_id: UUID
     parent_account_id: UUID | None
-    workspace_id: UUID
-    project_id: UUID
-    product_id: UUID
+    workspace_id: NonEmptyStr
+    project_id: NonEmptyStr
+    product_id: NonEmptyStr
     project_run_id: UUID
     authorization: EntityResearchJobAuthorization
     authorization_sha256: Sha256

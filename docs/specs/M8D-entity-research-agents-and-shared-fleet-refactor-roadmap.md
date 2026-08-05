@@ -1,7 +1,7 @@
 # M8D — Entity research agents and shared fleet refactor roadmap
 ## `langchain.agents.create_agent` account/contact units over one durable fleet substrate
 
-> **Status:** R0–R3 accepted; R4–R10 have not started.
+> **Status:** R0–R4 accepted; R5–R10 have not started.
 > **Recorded:** 2026-08-06. **Working branch at record time:**
 > `platform/c8-account-profiling-integration`.
 >
@@ -593,6 +593,11 @@ research-result projection/read surfaces and provider-operation causation.
 
 **Exit gate:** a tool persists raw, normalized, evidence, claim-delta, cost, and lineage state
 before returning a complete agent-usable result.
+
+**Accepted 2026-08-06:** exact semantic-tool authority, journal-before-dispatch provider
+causation, lossless result/evidence projection, replay-versus-cause separation, additive follow-up
+lineage, subject erasure, isolated-Postgres verification, and the retained R1 production boundary
+are recorded in `M8D-R4-governed-tools-and-persisted-results-acceptance.md`.
 
 ### R5 — Account research agent
 

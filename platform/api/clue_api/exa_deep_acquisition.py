@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -179,6 +179,7 @@ class ExaDeepAcquisitionPreflight(BaseModel):
 
 ExaDeepAnyAcquisitionPreflight = ExaDeepAcquisitionPreflight | ExaDeepContactAcquisitionPreflight
 ExaDeepAnyNormalization = ExaDeepNormalization | ExaDeepContactNormalization
+ExaDeepBeforeDispatch = Callable[[ExternalResearchOperationRow], Awaitable[None]]
 
 
 class ExaDeepAcquisitionResult(BaseModel):
@@ -227,13 +228,23 @@ class ExaDeepAcquisitionCoordinator:
         self._lease = timedelta(seconds=dispatch_lease_seconds)
         self._clock = clock or (lambda: datetime.now(UTC))
 
-    async def acquire(self, preflight: ExaDeepAnyAcquisitionPreflight) -> ExaDeepAcquisitionResult:
+    async def acquire(
+        self,
+        preflight: ExaDeepAnyAcquisitionPreflight,
+        *,
+        before_dispatch: ExaDeepBeforeDispatch | None = None,
+    ) -> ExaDeepAcquisitionResult:
         operation, created = await self._reserve(preflight)
         terminal = await self._terminal_result(
             operation, request=preflight.request, replay=not created
         )
         if terminal is not None:
             return terminal
+        # R4 binds the durable agent-tool cause here: after the provider operation exists, but
+        # before the dispatch attempt can be claimed.  A callback failure leaves the operation
+        # planned and proves that no provider traffic escaped an incomplete causation journal.
+        if before_dispatch is not None:
+            await before_dispatch(operation)
         now = self._clock()
         async with self._conn_factory() as conn:
             claim = await claim_external_research_dispatch(
@@ -1078,6 +1089,7 @@ __all__ = [
     "ExaDeepAcquisitionPreflight",
     "ExaDeepAcquisitionResult",
     "ExaDeepAcquisitionTransport",
+    "ExaDeepBeforeDispatch",
     "ExaDeepHttpAcquisitionTransport",
     "compile_exa_deep_acquisition_plan",
     "load_exa_deep_snapshot",

@@ -332,9 +332,11 @@ class EntityResearchSelection(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     selection_id: UUID
-    workspace_id: UUID
-    project_id: UUID
-    product_id: UUID
+    # Object-spine identifiers are opaque text, not entity UUIDs.  Their authoritative
+    # workspace/project/product tables use text primary keys.
+    workspace_id: NonEmptyStr
+    project_id: NonEmptyStr
+    product_id: NonEmptyStr
     project_run_id: UUID
     subject_type: ResearchSubjectType
     account_entity_id: UUID | None = None
@@ -422,9 +424,9 @@ class EntityResearchJobAuthorization(BaseModel):
     subject_type: ResearchSubjectType
     subject_entity_id: UUID
     parent_account_id: UUID | None = None
-    workspace_id: UUID
-    project_id: UUID
-    product_id: UUID
+    workspace_id: NonEmptyStr
+    project_id: NonEmptyStr
+    product_id: NonEmptyStr
     project_run_id: UUID
     selection: EntityResearchSelection
     agent_profile_ref: NonEmptyStr
