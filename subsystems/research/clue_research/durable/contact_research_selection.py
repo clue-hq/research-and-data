@@ -179,7 +179,8 @@ async def latest_contact_research_selection(
                 "WHERE selection.workspace_id=:workspace_id "
                 "AND selection.project_run_id=:project_run_id "
                 f"AND selection.account_id=:account_id {cancelled_sql} "
-                "ORDER BY selection.created_at DESC, selection.id DESC LIMIT 1"
+                "ORDER BY (selection.body_json->>'approved_at')::timestamptz DESC, "
+                "selection.created_at DESC, selection.id DESC LIMIT 1"
             ),
             {
                 "workspace_id": workspace_id,

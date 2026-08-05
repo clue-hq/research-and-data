@@ -5,13 +5,17 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.contact_eligibility import ContactEligibilityResolver
 from clue_core import (
+    CONTACT_CHANNEL_FIELD_KEYS,
+    CONTACT_PROFESSIONAL_FIELD_KEYS,
     ClaimId,
+    ContactChannelOperationState,
     EntityId,
     EntityType,
     ResearchAvailability,
@@ -40,8 +44,12 @@ from clue_research.discovery_scoring import (
 from clue_research.durable import (
     AccountRunRow,
     ProjectRunRow,
+    contact_channel_operation_is_usable,
+    contact_research_selection_cancellation,
     find_account_runs_for_entity,
     get_project_run,
+    latest_contact_research_selection,
+    list_contact_channel_operations_for_selection,
     list_subject_activity,
 )
 from clue_research.identity import (
@@ -445,17 +453,135 @@ class DbCoverageViewReader:
         subject: ResearchSubjectRef,
     ) -> CoverageViewRead:
         if subject.entity_type is EntityType.CONTACT:
+            selection = await latest_contact_research_selection(
+                self._conn,
+                workspace_id=request.workspace_id,
+                project_run_id=request.project_run_id,
+                account_id=self._scope.account_entity_id,
+                include_cancelled=True,
+            )
+            cancellation = (
+                None
+                if selection is None
+                else await contact_research_selection_cancellation(
+                    self._conn,
+                    workspace_id=request.workspace_id,
+                    selection_id=selection.selection_id,
+                )
+            )
+            target = (
+                None
+                if selection is None or cancellation is not None
+                else next(
+                    (
+                        item
+                        for item in selection.body.targets
+                        if item.contact_entity_id == subject.entity_id
+                    ),
+                    None,
+                )
+            )
+            if selection is None or cancellation is not None or target is None:
+                reason = (
+                    "contact_research_selection_cancelled"
+                    if cancellation is not None
+                    else "contact_not_selected_for_research"
+                )
+                return CoverageViewRead(
+                    summary=ResearchCoverageSummary(
+                        required_field_count=0,
+                        filled_field_count=0,
+                        terminal_gap_count=0,
+                        blocked_field_count=0,
+                        budget_exhausted_field_count=0,
+                    ),
+                    section=ResearchSectionSeed(
+                        kind=ResearchSectionKind.COVERAGE_GAPS,
+                        reason_codes=(reason,),
+                    ),
+                )
+            resolver = ContactEligibilityResolver(
+                project_run_id=request.project_run_id,
+                product_id=request.product_id,
+                conn_factory=lambda: _borrowed_connection(self._conn),
+            )
+            governed = await resolver.resolve_contact(
+                contact_entity_id=subject.entity_id,
+                account_entity_id=self._scope.account_entity_id,
+                workspace_id=request.workspace_id,
+            )
+            contact_required = {str(value) for value in target.field_keys}
+            contact_filled: set[str] = set()
+            contact_blocked: set[str] = set()
+            if governed is not None:
+                for item in governed.claims:
+                    field = str(item.claim.field_key)
+                    if field not in contact_required:
+                        continue
+                    if field in CONTACT_PROFESSIONAL_FIELD_KEYS:
+                        contact_filled.add(field)
+                    elif field.startswith("contact.facet."):
+                        if item.personalization_eligible:
+                            contact_filled.add(field)
+                        else:
+                            contact_blocked.add(field)
+            channel_operations = await list_contact_channel_operations_for_selection(
+                self._conn,
+                workspace_id=request.workspace_id,
+                project_run_id=request.project_run_id,
+                account_id=self._scope.account_entity_id,
+                contact_id=subject.entity_id,
+                selection_id=selection.selection_id,
+                selection_sha256=selection.selection_sha256,
+            )
+            observed_at = datetime.now(UTC)
+            for channel, field in CONTACT_CHANNEL_FIELD_KEYS.items():
+                if field not in contact_required:
+                    continue
+                operations = tuple(
+                    item for item in channel_operations if item.operation.request.channel is channel
+                )
+                usable = False
+                for authorized in operations:
+                    operation = authorized.operation
+                    if (
+                        operation.state is ContactChannelOperationState.SUCCEEDED
+                        and operation.validation is not None
+                        and operation.validation.delivery_eligible
+                        and await contact_channel_operation_is_usable(
+                            self._conn,
+                            workspace_id=request.workspace_id,
+                            operation_id=operation.operation_id,
+                            now=observed_at,
+                        )
+                    ):
+                        usable = True
+                        break
+                if usable:
+                    contact_filled.add(field)
+                elif operations:
+                    contact_blocked.add(field)
+            contact_terminal = contact_required - contact_filled - contact_blocked
+            selection_ref = (
+                f"contact-selection:{selection.selection_id}:{selection.selection_sha256}"
+            )
+            operation_refs = tuple(item.authorization_ref for item in channel_operations)
             return CoverageViewRead(
                 summary=ResearchCoverageSummary(
-                    required_field_count=0,
-                    filled_field_count=0,
-                    terminal_gap_count=0,
-                    blocked_field_count=0,
+                    coverage_ref_ids=(selection_ref, *operation_refs),
+                    required_field_count=len(contact_required),
+                    filled_field_count=len(contact_filled),
+                    terminal_gap_count=len(contact_terminal),
+                    blocked_field_count=len(contact_blocked),
                     budget_exhausted_field_count=0,
                 ),
                 section=ResearchSectionSeed(
                     kind=ResearchSectionKind.COVERAGE_GAPS,
-                    reason_codes=("contact_coverage_not_persisted",),
+                    reason_codes=(
+                        ("contact_coverage_complete",)
+                        if not contact_terminal and not contact_blocked
+                        else ("contact_coverage_gaps_present",)
+                    ),
                 ),
             )
         plan = self._scope.account_run.plan_json

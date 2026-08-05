@@ -62,6 +62,19 @@ from clue_core.contact_channel import (
     ContactChannelValidatorResult,
     new_contact_channel_operation_id,
 )
+from clue_core.contact_handoff import (
+    ContactChannelCoverage,
+    ContactChannelCoverageState,
+    ContactContentBundle,
+    ContactContentHandoff,
+    ContactDeliveryChannelRef,
+    ContactDraftingContextRef,
+    ContactDraftingFallback,
+    ContactHandoffClaimKind,
+    ContactHandoffClaimRef,
+    ContactHandoffCoverage,
+    ContactHandoffExclusion,
+)
 from clue_core.contact_research import (
     CONTACT_CHANNEL_FIELD_KEYS,
     CONTACT_PROFESSIONAL_FIELD_KEYS,
@@ -637,6 +650,18 @@ __all__ = [
     "ContactResearchTarget",
     "classify_contact_provider_failure",
     "new_contact_research_selection_id",
+    # reference-only selected-contact handoff (M8C C7)
+    "ContactChannelCoverage",
+    "ContactChannelCoverageState",
+    "ContactContentBundle",
+    "ContactContentHandoff",
+    "ContactDeliveryChannelRef",
+    "ContactDraftingContextRef",
+    "ContactDraftingFallback",
+    "ContactHandoffClaimKind",
+    "ContactHandoffClaimRef",
+    "ContactHandoffCoverage",
+    "ContactHandoffExclusion",
     # durable asynchronous discovery contracts (M6A D0)
     "FIRST_PAGE_CURSOR",
     "SEAL_TERMINAL_FIELD_STATES",

@@ -57,6 +57,7 @@ from clue_core import (
     UseDecision,
     UseReason,
     VerificationStatus,
+    new_contact_research_selection_id,
     new_entity_id,
 )
 from clue_research.adapters.exa_websets import (
@@ -70,7 +71,10 @@ from clue_research.adapters.exa_websets import (
 )
 from clue_research.claimstore import insert_claim, load_core_pack
 from clue_research.compliance import DataSubjectRightsImpl, load_compliance_pack
-from clue_research.durable import contact_channel_is_usable
+from clue_research.durable import (
+    contact_channel_is_usable,
+    list_contact_channel_operations_for_selection,
+)
 from clue_research.identity import get_contact, stamp_reuse
 from clue_research.sources import seed_source_manifests
 from clue_storage import FsStorage
@@ -606,6 +610,19 @@ def test_c5_email_validates_promotes_replays_and_objection_suppresses(
             assert completed.operation.validation.delivery_eligible
             assert completed.operation.acquisition_units_charged == Decimal(7)
             assert completed.operation.validation_units_charged == Decimal(1)
+            direct_authority = await list_contact_channel_operations_for_selection(
+                conn,
+                workspace_id=intent.workspace_id,
+                project_run_id=intent.project_run_id,
+                account_id=intent.account_entity_id,
+                contact_id=intent.contact_entity_id,
+                selection_id=intent.selection_id,
+                selection_sha256=intent.selection_sha256,
+            )
+            assert len(direct_authority) == 1
+            assert direct_authority[0].authorization_ref == (
+                f"contact-channel-operation:{completed.operation.operation_id}"
+            )
             spent_after = Decimal(
                 (
                     await conn.execute(
@@ -635,6 +652,32 @@ def test_c5_email_validates_promotes_replays_and_objection_suppresses(
                 observation_window="c5-success-fresh-window",
             )
             assert fresh_window_reuse.outcome is ContactChannelEnrichmentOutcome.REPLAYED
+            exact_selection_authority = await list_contact_channel_operations_for_selection(
+                conn,
+                workspace_id=intent.workspace_id,
+                project_run_id=intent.project_run_id,
+                account_id=intent.account_entity_id,
+                contact_id=intent.contact_entity_id,
+                selection_id=intent.selection_id,
+                selection_sha256=intent.selection_sha256,
+            )
+            assert len(exact_selection_authority) == 1
+            assert exact_selection_authority[0].reused
+            assert exact_selection_authority[0].authorization_ref.startswith(
+                "contact-channel-reuse:"
+            )
+            assert (
+                await list_contact_channel_operations_for_selection(
+                    conn,
+                    workspace_id=intent.workspace_id,
+                    project_run_id=intent.project_run_id,
+                    account_id=intent.account_entity_id,
+                    contact_id=intent.contact_entity_id,
+                    selection_id=new_contact_research_selection_id(),
+                    selection_sha256=intent.selection_sha256,
+                )
+                == ()
+            )
             assert transport.import_calls == transport.create_calls == transport.poll_calls == 1
             assert validator.calls == 1
             spent_after_replay = Decimal(

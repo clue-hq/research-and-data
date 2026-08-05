@@ -1303,6 +1303,39 @@ async def list_due_contact_external_research_project_runs(
     return tuple(ProjectRunId(row.project_run_id) for row in rows)
 
 
+async def list_contact_external_research_operations(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_run_id: ProjectRunId,
+    account_id: EntityId,
+    contact_id: EntityId,
+) -> tuple[ExternalResearchOperationRow, ...]:
+    """Read exact-contact acquisition history for C7 coverage; never dispatch a provider."""
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_OPERATION_COLUMNS} FROM external_research_operation "
+                    "WHERE workspace_id=:workspace_id AND project_run_id=:project_run_id "
+                    "AND subject_kind='contact' AND account_id=:account_id "
+                    "AND contact_id=:contact_id ORDER BY terminal_at DESC NULLS FIRST, id DESC"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "project_run_id": project_run_id,
+                    "account_id": account_id,
+                    "contact_id": contact_id,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(_operation(row) for row in rows)
+
+
 __all__ = [
     "ExternalResearchCostReconciliationRow",
     "ExternalResearchDispatchClaim",
@@ -1325,6 +1358,7 @@ __all__ = [
     "get_external_research_snapshot",
     "list_external_research_result_artifacts",
     "list_due_contact_external_research_project_runs",
+    "list_contact_external_research_operations",
     "list_ready_external_research_snapshots",
     "mark_external_research_spend_unknown",
     "reconcile_external_research_cost",

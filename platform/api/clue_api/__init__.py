@@ -102,6 +102,10 @@ from clue_api.composition import (
     production_binding_classifier,
     register_profiling_workers,
 )
+from clue_api.contact_content_handoff import (
+    ContactContentHandoffService,
+    build_contact_content_handoff_service,
+)
 from clue_api.contact_eligibility import (
     ContactEligibilityResolver,
     GovernedCommitteeContact,
@@ -371,6 +375,9 @@ __all__ = [
     "build_contact_eligibility_resolver",
     "build_governed_committee_view_reader",
     "build_production_handoff_committee_reader",
+    # M8C C7 reference-only research-to-content bridge
+    "ContactContentHandoffService",
+    "build_contact_content_handoff_service",
     # M12.3 handoff API + emit wiring
     "create_handoff_app",
     "create_handoff_router",

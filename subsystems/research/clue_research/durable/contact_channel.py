@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -12,9 +13,11 @@ from clue_core import (
     ContactChannelAcquisitionRequest,
     ContactChannelOperation,
     ContactChannelOperationId,
+    ContactResearchSelectionId,
     EntityId,
     ProjectPhase,
     ProjectRunId,
+    Sha256Hex,
     new_contact_channel_operation_id,
 )
 from clue_research.durable.provider_spend import (
@@ -37,6 +40,16 @@ class ContactChannelReplayConflict(ContactChannelRepositoryError):
 
 class ContactChannelBudgetExceeded(ContactChannelRepositoryError):
     pass
+
+
+@dataclass(frozen=True)
+class ContactChannelAuthorizedOperation:
+    """One validated source operation plus its exact-selection authorization receipt."""
+
+    operation: ContactChannelOperation
+    authorization_ref: str
+    authorized_at: datetime
+    reused: bool = False
 
 
 _COLUMNS = (
@@ -98,6 +111,147 @@ async def get_contact_channel_operation(
     if row is None:
         raise ContactChannelNotFound(str(operation_id))
     return _operation(row)
+
+
+async def list_contact_channel_operations_for_contact(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_run_id: ProjectRunId,
+    account_id: EntityId,
+    contact_id: EntityId,
+) -> tuple[ContactChannelOperation, ...]:
+    """Read exact-run channel history for C7 coverage/delivery projection.
+
+    The rows contain request and validation receipts but never the observed email/phone value.
+    Newest rows are first so a projection can choose one current disposition per channel.
+    """
+
+    rows = (
+        await conn.execute(
+            text(
+                f"SELECT {_COLUMNS} FROM contact_channel_operation "
+                "WHERE workspace_id=:workspace_id AND project_run_id=:project_run_id "
+                "AND account_id=:account_id AND contact_id=:contact_id "
+                "ORDER BY created_at DESC, id DESC"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "project_run_id": project_run_id,
+                "account_id": account_id,
+                "contact_id": contact_id,
+            },
+        )
+    ).all()
+    return tuple(_operation(row) for row in rows)
+
+
+async def list_contact_channel_operations_for_selection(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_run_id: ProjectRunId,
+    account_id: EntityId,
+    contact_id: EntityId,
+    selection_id: ContactResearchSelectionId,
+    selection_sha256: Sha256Hex,
+) -> tuple[ContactChannelAuthorizedOperation, ...]:
+    """Read only channel operations authorized by the exact current selection.
+
+    A fresh result may be reused across observation windows or project runs, but C7 may expose it
+    only through the immutable reuse receipt created for this exact selection. Merely finding an
+    older successful operation for the same contact/channel is not delivery authority.
+    """
+
+    history = await list_contact_channel_operations_for_contact(
+        conn,
+        workspace_id=workspace_id,
+        project_run_id=project_run_id,
+        account_id=account_id,
+        contact_id=contact_id,
+    )
+    authorized: list[ContactChannelAuthorizedOperation] = [
+        ContactChannelAuthorizedOperation(
+            operation=operation,
+            authorization_ref=f"contact-channel-operation:{operation.operation_id}",
+            authorized_at=operation.created_at or datetime.min.replace(tzinfo=UTC),
+        )
+        for operation in history
+        if operation.request.selection_id == selection_id
+        and operation.request.selection_sha256 == selection_sha256
+    ]
+    reuse_rows = (
+        await conn.execute(
+            text(
+                "SELECT id, request_json, source_operation_id, created_at "
+                "FROM contact_channel_reuse WHERE workspace_id=:workspace_id "
+                "AND project_run_id=:project_run_id AND selection_id=:selection_id "
+                "AND selection_sha256=:selection_sha256 ORDER BY created_at DESC, id DESC"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "project_run_id": project_run_id,
+                "selection_id": selection_id,
+                "selection_sha256": selection_sha256,
+            },
+        )
+    ).mappings()
+    for row in reuse_rows:
+        request = ContactChannelAcquisitionRequest.model_validate(row["request_json"])
+        if (
+            request.workspace_id != workspace_id
+            or request.project_run_id != project_run_id
+            or request.account_id != account_id
+            or request.contact_id != contact_id
+            or request.selection_id != selection_id
+            or request.selection_sha256 != selection_sha256
+        ):
+            raise ContactChannelReplayConflict(
+                "contact channel reuse receipt crosses its exact selection subject"
+            )
+        operation = await get_contact_channel_operation(
+            conn,
+            workspace_id=workspace_id,
+            operation_id=row["source_operation_id"],
+        )
+        if (
+            operation.request.account_id != account_id
+            or operation.request.contact_id != contact_id
+            or operation.request.channel is not request.channel
+            or operation.request.field_key != request.field_key
+            or operation.request.acquisition_source_key != request.acquisition_source_key
+            or operation.request.validation_source_key != request.validation_source_key
+        ):
+            raise ContactChannelReplayConflict(
+                "contact channel reuse receipt differs from its validated source operation"
+            )
+        authorized.append(
+            ContactChannelAuthorizedOperation(
+                operation=operation,
+                authorization_ref=(
+                    f"contact-channel-reuse:{row['id']}:source:{operation.operation_id}"
+                ),
+                authorized_at=row["created_at"],
+                reused=True,
+            )
+        )
+
+    by_operation: dict[ContactChannelOperationId, ContactChannelAuthorizedOperation] = {}
+    for item in authorized:
+        previous = by_operation.get(item.operation.operation_id)
+        if previous is None or (item.authorized_at, item.reused, item.authorization_ref) > (
+            previous.authorized_at,
+            previous.reused,
+            previous.authorization_ref,
+        ):
+            by_operation[item.operation.operation_id] = item
+    return tuple(
+        sorted(
+            by_operation.values(),
+            key=lambda item: (item.authorized_at, item.reused, item.authorization_ref),
+            reverse=True,
+        )
+    )
 
 
 async def find_contact_channel_operation(
@@ -612,7 +766,54 @@ async def contact_channel_is_usable(
     return value is not None
 
 
+async def contact_channel_operation_is_usable(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    operation_id: ContactChannelOperationId,
+    now: datetime,
+) -> bool:
+    """Apply current retention/suppression/objection policy to one exact C5 receipt."""
+
+    value = (
+        await conn.execute(
+            text(
+                """
+                SELECT 1 FROM contact_channel_operation operation
+                WHERE operation.workspace_id=:workspace_id
+                  AND operation.id=:operation_id
+                  AND operation.state='succeeded'
+                  AND operation.terminal_at
+                      + make_interval(secs =>
+                          (operation.request_json->>'retention_seconds')::integer) > :now
+                  AND operation.terminal_at
+                      + make_interval(secs =>
+                          (operation.request_json->>'freshness_seconds')::integer) > :now
+                  AND NOT EXISTS (
+                      SELECT 1 FROM contact_channel_suppression suppression
+                      WHERE suppression.workspace_id=operation.workspace_id
+                        AND suppression.contact_id=operation.contact_id
+                        AND suppression.channel=operation.channel
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM outreach_objected objection
+                      WHERE objection.workspace_id=operation.workspace_id
+                        AND objection.contact_entity_id=operation.contact_id
+                  )
+                """
+            ),
+            {
+                "workspace_id": workspace_id,
+                "operation_id": operation_id,
+                "now": now,
+            },
+        )
+    ).scalar_one_or_none()
+    return value is not None
+
+
 __all__ = [
+    "ContactChannelAuthorizedOperation",
     "ContactChannelBudgetExceeded",
     "ContactChannelNotFound",
     "ContactChannelReplayConflict",
@@ -621,9 +822,12 @@ __all__ = [
     "claim_contact_channel_submit",
     "claim_contact_channel_validation",
     "contact_channel_is_usable",
+    "contact_channel_operation_is_usable",
     "find_contact_channel_operation",
     "find_fresh_reusable_contact_channel_operation",
     "get_contact_channel_operation",
+    "list_contact_channel_operations_for_contact",
+    "list_contact_channel_operations_for_selection",
     "reserve_contact_channel_operation",
     "record_contact_channel_reuse",
     "suppress_contact_channels",
