@@ -8,7 +8,14 @@ import pytest
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import ExtractionMethod, IdentityBinding, ResearchMode, RunId, UseClass
+from clue_core import (
+    ClaimProvenanceKind,
+    ExtractionMethod,
+    IdentityBinding,
+    ResearchMode,
+    RunId,
+    UseClass,
+)
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.profiling.committee import (
     CURRENT_TITLE,
@@ -34,8 +41,8 @@ from ..conftest import (
 _RUN = RunId(UUID("28c10000-0000-4000-8000-000000000001"))
 _WORKSPACE = "workspace-m8c-c1"
 _ARTIFACT_BYTES = {
-    "sumble_people": b"c1 immutable people response",
-    "sumble_teams": b"c1 immutable teams response",
+    "fixture_people": b"c1 immutable people response",
+    "fixture_teams": b"c1 immutable teams response",
 }
 
 
@@ -58,7 +65,7 @@ def _fact(
     field_key: str,
     value: JsonValue,
     *,
-    source_key: str = "sumble_people",
+    source_key: str = "fixture_people",
     kind: CandidateFactProvenance = CandidateFactProvenance.PROVIDER_RETURNED,
 ) -> CandidateProfessionalFact:
     return CandidateProfessionalFact(
@@ -102,7 +109,7 @@ def test_snapshot_facts_replay_once_and_same_name_contacts_cannot_cross_write(
                             "source_url": "https://sumble.example/team/501",
                         }
                     ],
-                    source_key="sumble_teams",
+                    source_key="fixture_teams",
                     kind=CandidateFactProvenance.PROVIDER_MODELED,
                 ),
             )
@@ -166,7 +173,8 @@ def test_snapshot_facts_replay_once_and_same_name_contacts_cannot_cross_write(
                 assert claim.research_mode is ResearchMode.COMMITTEE_DISCOVERY
                 assert claim.identity_binding is IdentityBinding.STRONG
                 assert claim.use_class is UseClass.PROFESSIONAL_PUBLIC
-                assert claim.source_key == "sumble_people"
+                assert claim.source_key == "fixture_people"
+                assert claim.provenance_kind is ClaimProvenanceKind.PROVIDER_RETURNED
                 assert claim.source_url and claim.evidence_span and claim.artifact_key
                 assert claim.source_operation_ref and claim.source_snapshot_ref
                 assert claim.source_request_ref
@@ -176,7 +184,8 @@ def test_snapshot_facts_replay_once_and_same_name_contacts_cannot_cross_write(
                 conn, first.members[0].contact_entity_id, TEAM_MEMBERSHIP, scope=scope
             )
             assert len(team_claims) == 1
-            assert team_claims[0].source_key == "sumble_teams"
+            assert team_claims[0].source_key == "fixture_teams"
+            assert team_claims[0].provenance_kind is ClaimProvenanceKind.PROVIDER_MODELED
             assert team_claims[0].evidence_span is not None
             assert team_claims[0].evidence_span.startswith("provider_modeled")
 
@@ -190,6 +199,7 @@ def test_snapshot_facts_replay_once_and_same_name_contacts_cannot_cross_write(
             )[0]
             assert role_claim.extraction_method is ExtractionMethod.LLM_SYNTHESIS
             assert role_claim.source_key is None
+            assert role_claim.provenance_kind is ClaimProvenanceKind.PLATFORM_INFERRED
             assert team_claims[0].extraction_method is ExtractionMethod.API
 
     run_async(scenario())

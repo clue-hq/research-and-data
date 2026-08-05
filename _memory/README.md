@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-05-m8c-c1-selection-lineage-remediation.md` — closes both audited C1 findings:
+  bounded strong-first People/Teams union selection preserves organization-map representation;
+  typed immutable claim provenance plus exact database-enforced Sumble operation/snapshot/
+  artifact/account/contact lineage; clean full-suite and migration-smoke verification.
 - `2026-08-04-m8b-v0-offline-database-acceptance.md` — V0 complete mechanically: frozen
   32-case fault manifest, Sumble response-before-normalization durability and charged-drift
   quarantine, disposable migration/concurrency/fresh-process inspection, clean 3,337-test suite,

@@ -34,7 +34,11 @@ from clue_research.profiling.committee import (
     CandidateProfessionalFact,
     CommitteePersonCandidate,
 )
-from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY, normalize_people
+from clue_research.resolvers.sumble.people import (
+    PEOPLE_SOURCE_KEY,
+    SumblePersonRecord,
+    normalize_people,
+)
 from clue_research.resolvers.sumble.teams import (
     TEAMS_SOURCE_KEY,
     SumbleRelationshipBasis,
@@ -185,36 +189,41 @@ class SumbleCommitteeSource:
         # snapshot-backed source.
         effective_limit = min(limit, operation.request.people_limit)
         memberships = _memberships(teams.teams)
+        people_by_id = _people_by_provider_id(people.people)
+        selected_person_ids = _select_provider_person_ids(
+            people_ids=tuple(people_by_id),
+            membership_ids=tuple(memberships),
+            strong_ids=_strong_provider_person_ids(people_by_id, memberships),
+            limit=effective_limit,
+        )
         candidates: list[CommitteePersonCandidate] = []
-        seen_provider_ids: set[int] = set()
-        for person in people.people:
-            team_rows = memberships.get(person.provider_person_id, ())
-            candidates.append(
-                self._candidate(
-                    provider_person_id=person.provider_person_id,
-                    source_url=person.source_url,
-                    linkedin_url=person.linkedin_url,
-                    name=person.name,
-                    title=person.job_title,
-                    job_function=person.job_function,
-                    job_level=person.job_level,
-                    location=person.location,
-                    country=person.country,
-                    organization_id=person.current_employer_organization_id,
-                    organization_name=person.current_employer_name,
-                    role_start_date=person.current_role_start_date,
-                    team_rows=team_rows,
-                    direct_lineage=lineage_by_source[PEOPLE_SOURCE_KEY],
-                    teams_lineage=lineage_by_source[TEAMS_SOURCE_KEY],
-                    evidence_refs=(
-                        response_keys[PEOPLE_SOURCE_KEY],
-                        *((response_keys[TEAMS_SOURCE_KEY],) if team_rows else ()),
-                    ),
+        for provider_person_id in selected_person_ids:
+            team_rows = memberships.get(provider_person_id, ())
+            person = people_by_id.get(provider_person_id)
+            if person is not None:
+                candidates.append(
+                    self._candidate(
+                        provider_person_id=provider_person_id,
+                        source_url=person.source_url,
+                        linkedin_url=person.linkedin_url,
+                        name=person.name,
+                        title=person.job_title,
+                        job_function=person.job_function,
+                        job_level=person.job_level,
+                        location=person.location,
+                        country=person.country,
+                        organization_id=person.current_employer_organization_id,
+                        organization_name=person.current_employer_name,
+                        role_start_date=person.current_role_start_date,
+                        team_rows=team_rows,
+                        direct_lineage=lineage_by_source[PEOPLE_SOURCE_KEY],
+                        teams_lineage=lineage_by_source[TEAMS_SOURCE_KEY],
+                        evidence_refs=(
+                            response_keys[PEOPLE_SOURCE_KEY],
+                            *((response_keys[TEAMS_SOURCE_KEY],) if team_rows else ()),
+                        ),
+                    )
                 )
-            )
-            seen_provider_ids.add(person.provider_person_id)
-        for provider_person_id, team_rows in memberships.items():
-            if provider_person_id in seen_provider_ids:
                 continue
             member = team_rows[0][1]
             candidates.append(
@@ -237,7 +246,7 @@ class SumbleCommitteeSource:
                     evidence_refs=(response_keys[TEAMS_SOURCE_KEY],),
                 )
             )
-        return tuple(candidates[:effective_limit])
+        return tuple(candidates)
 
     def _candidate(
         self,
@@ -429,6 +438,84 @@ def _memberships(
         for member in team.related_people:
             grouped.setdefault(member.provider_person_id, []).append((team, member))
     return {key: tuple(value) for key, value in grouped.items()}
+
+
+def _people_by_provider_id(
+    people: tuple[SumblePersonRecord, ...],
+) -> dict[int, SumblePersonRecord]:
+    """Preserve provider order while refusing conflicting duplicate person identities."""
+
+    by_id: dict[int, SumblePersonRecord] = {}
+    for person in people:
+        provider_person_id = person.provider_person_id
+        existing = by_id.get(provider_person_id)
+        if existing is not None and existing != person:
+            raise SumbleCommitteeSnapshotUnavailable(
+                "Sumble People snapshot repeats one provider person id with conflicting content"
+            )
+        by_id.setdefault(provider_person_id, person)
+    return by_id
+
+
+def _select_provider_person_ids(
+    *,
+    people_ids: tuple[int, ...],
+    membership_ids: tuple[int, ...],
+    strong_ids: frozenset[int],
+    limit: int,
+) -> tuple[int, ...]:
+    """Bound the union without systematically discarding the paid organization graph.
+
+    Strong identities are selected before weak rows that the admission gate will drop. Within each
+    strength band, people present in both snapshots are richest and come first. Remaining capacity
+    alternates Teams-only and People-only identities, starting with Teams, while retaining provider
+    order inside each class. This guarantees Teams representation whenever the graph contains a
+    strong candidate and capacity remains; a full People page can no longer erase every Teams-only
+    row.
+    """
+
+    membership_set = set(membership_ids)
+    people_set = set(people_ids)
+    overlap = tuple(person_id for person_id in people_ids if person_id in membership_set)
+    teams_only = tuple(person_id for person_id in membership_ids if person_id not in people_set)
+    people_only = tuple(person_id for person_id in people_ids if person_id not in membership_set)
+    selected: list[int] = []
+    for strong in (True, False):
+        for person_id in overlap:
+            if (person_id in strong_ids) is strong and len(selected) < limit:
+                selected.append(person_id)
+        teams_band = [person_id for person_id in teams_only if (person_id in strong_ids) is strong]
+        people_band = [
+            person_id for person_id in people_only if (person_id in strong_ids) is strong
+        ]
+        while len(selected) < limit and (teams_band or people_band):
+            if teams_band and len(selected) < limit:
+                selected.append(teams_band.pop(0))
+            if people_band and len(selected) < limit:
+                selected.append(people_band.pop(0))
+        if len(selected) >= limit:
+            break
+    return tuple(selected)
+
+
+def _strong_provider_person_ids(
+    people: Mapping[int, SumblePersonRecord],
+    memberships: Mapping[int, tuple[tuple[SumbleTeamRecord, SumbleTeamMemberRecord], ...]],
+) -> frozenset[int]:
+    strong = {
+        person_id
+        for person_id, person in people.items()
+        if person.linkedin_url is not None and person.linkedin_url.strip()
+    }
+    strong.update(
+        person_id
+        for person_id, rows in memberships.items()
+        if any(
+            member.linkedin_url is not None and member.linkedin_url.strip()
+            for _team, member in rows
+        )
+    )
+    return frozenset(strong)
 
 
 def _decode(body: bytes) -> dict[str, object]:
