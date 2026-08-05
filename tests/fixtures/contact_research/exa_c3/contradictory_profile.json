@@ -1,0 +1,31 @@
+{
+  "requestId": "exa-contact-c3-contradictory-profile",
+  "results": [
+    {
+      "title": "Alex Rivera — Northstar Health",
+      "url": "https://www.linkedin.com/in/alex-rivera-northstar",
+      "text": "Alex Rivera of Northstar Health published Reducing Referral Friction.",
+      "highlights": ["Alex Rivera of Northstar Health published Reducing Referral Friction."]
+    }
+  ],
+  "output": {
+    "content": {
+      "f_636f6e746163742e66616365742e7075626c69636174696f6e73": [
+        {"title": "Reducing Referral Friction", "venue": "Northstar Health"}
+      ]
+    },
+    "grounding": [
+      {
+        "field": "f_636f6e746163742e66616365742e7075626c69636174696f6e73",
+        "confidence": "high",
+        "citations": [
+          {
+            "title": "Alex Rivera — Northstar Health",
+            "url": "https://www.linkedin.com/in/alex-rivera-northstar"
+          }
+        ]
+      }
+    ]
+  },
+  "costDollars": {"total": 0.06}
+}

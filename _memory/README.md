@@ -27,6 +27,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-05-m8c-c3-contact-exa-compiler.md` — C3 complete mechanically: exact-contact/employer
+  Exa Deep compiler, registry/source-plan authority, directional structured output, fail-closed
+  same-name parser, content-addressed fixtures, clean full-suite verification, and the C4 handoff.
 - `2026-08-05-m8c-c2-atomic-lineage-remediation.md` — closes both audited C2 blockers:
   the public reserve API solely owns semantic reuse serialization/capacity reservation, every
   Exa claim requires exact operation/snapshot/request/result-artifact lineage, provider doubles

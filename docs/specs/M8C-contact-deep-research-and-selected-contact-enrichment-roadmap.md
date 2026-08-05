@@ -3,7 +3,8 @@
 
 > **Status:** implementation underway; C0 contract/field/policy freeze, C1 snapshot-backed
 > professional materialization, and C2 exact contact-subject durability are mechanically
-> accepted. C3 contact-targeted Exa Deep compilation is next. **Recorded:**
+> accepted. C3 contact-targeted Exa Deep compilation is mechanically accepted; C4 durable contact
+> acquisition/materialization is next. **Recorded:**
 > 2026-08-05. **Parent capability:**
 > [M8B account-deep provider integration](M8B-exa-sumble-account-deep-integration-roadmap.md).
 > **Working branch at record time:** `platform/c8-account-profiling-integration`.
@@ -760,6 +761,9 @@ acceptance record:
 8. missing, partial, or mismatched Exa lineage fails at the claim-store database boundary.
 
 ### C3 — Contact-targeted Exa Deep contract and compiler
+
+**Status:** complete mechanically. Binding acceptance record:
+`M8C-C3-contact-exa-compiler-acceptance.md`.
 
 **Owns**
 

@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 from math import isfinite
 from typing import Annotated, Literal, cast
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import (
     BaseModel,
@@ -26,7 +28,7 @@ from pydantic import (
     model_validator,
 )
 
-from clue_core import FieldKey
+from clue_core import EntityId, FieldKey, normalize_host
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 BoundedQueryStr = Annotated[
@@ -59,6 +61,98 @@ _TYPE_SCHEMA_KEYS: dict[str, frozenset[str]] = {
     "object": frozenset({"properties", "required", "additionalProperties"}),
     "array": frozenset({"items", "maxItems"}),
 }
+
+
+def normalize_exa_profile_url(value: str) -> str:
+    """Canonicalize one professional-profile URL for exact target-lock comparison.
+
+    Query strings and fragments are not identity.  The path is case-folded and trailing slashes
+    are removed, matching the platform's strong-key comparison semantics without importing an
+    identity or verification implementation into the provider package.
+    """
+
+    host = normalize_host(value)
+    if not host:
+        raise ValueError("contact target profile URL must contain a host")
+    parsed = urlsplit(value)
+    if parsed.hostname is None:
+        parsed = urlsplit("//" + value)
+    path = parsed.path.rstrip("/").casefold()
+    if not path or path == "/":
+        raise ValueError("contact target profile URL must identify one profile path")
+    return urlunsplit(("https", host, path, "", ""))
+
+
+class ExaDeepContactTargetLock(BaseModel):
+    """Exact canonical person and employer context for one contact Search request.
+
+    This value is not sent as an extra provider member.  The contact compiler renders it into the
+    documented query/system-prompt fields and C4 will persist it beside the wire request.  Keeping
+    the typed value available locally lets response normalization reject a same-name result even
+    when the provider emitted schema-valid JSON.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    contact_entity_id: EntityId
+    employer_account_id: EntityId
+    canonical_full_name: NonEmptyStr
+    canonical_profile_url: NonEmptyStr
+    employer_name: NonEmptyStr
+    employer_domain: NonEmptyStr
+    current_title: NonEmptyStr | None = None
+    job_function: NonEmptyStr | None = None
+    location: NonEmptyStr | None = None
+    approved_profile_hosts: tuple[NonEmptyStr, ...] = ("linkedin.com",)
+    preferred_source_guidance: tuple[NonEmptyStr, ...] = (
+        "the canonical professional profile",
+        "official employer biographies and leadership pages",
+        "primary publication, conference, podcast, or event pages",
+    )
+    forbidden_source_guidance: tuple[NonEmptyStr, ...] = (
+        "people-search aggregators without inspectable primary evidence",
+        "unattributed snippets",
+        "email or phone enrichment",
+    )
+    start_published_date: datetime | None = None
+    end_published_date: datetime | None = None
+
+    @model_validator(mode="after")
+    def _exact_person_and_employer_are_strong(self) -> ExaDeepContactTargetLock:
+        canonical_profile = normalize_exa_profile_url(str(self.canonical_profile_url))
+        profile_host = normalize_host(canonical_profile)
+        approved_hosts = tuple(normalize_host(host) for host in self.approved_profile_hosts)
+        if not approved_hosts or any(not host for host in approved_hosts):
+            raise ValueError("contact target requires approved professional-profile hosts")
+        if len(approved_hosts) != len(set(approved_hosts)):
+            raise ValueError("approved professional-profile hosts must be unique")
+        if profile_host not in set(approved_hosts):
+            raise ValueError("contact target profile host is not approved by policy")
+        employer_domain = normalize_host(self.employer_domain)
+        if not employer_domain:
+            raise ValueError("contact target requires a canonical employer domain")
+        for label, values in (
+            ("preferred source guidance", self.preferred_source_guidance),
+            ("forbidden source guidance", self.forbidden_source_guidance),
+        ):
+            folded = tuple(value.casefold() for value in values)
+            if len(folded) != len(set(folded)):
+                raise ValueError(f"contact target {label} must be unique")
+        if (
+            self.start_published_date is not None
+            and self.end_published_date is not None
+            and self.start_published_date > self.end_published_date
+        ):
+            raise ValueError("contact target publication window is inverted")
+        return self
+
+    @property
+    def normalized_profile_url(self) -> str:
+        return normalize_exa_profile_url(str(self.canonical_profile_url))
+
+    @property
+    def normalized_employer_domain(self) -> str:
+        return normalize_host(self.employer_domain)
 
 
 def exa_field_alias(field_key: str) -> str:
@@ -465,7 +559,7 @@ def classify_exa_deep_http_failure(
 
 
 class ExaDeepSearchRequest(BaseModel):
-    """The accepted non-streaming account-deep request body sent to ``POST /search``."""
+    """The accepted non-streaming account/contact-deep body sent to ``POST /search``."""
 
     model_config = ConfigDict(
         frozen=True,
@@ -505,13 +599,35 @@ class ExaDeepSearchRequest(BaseModel):
         if not isinstance(properties, dict):  # independently type-safe after the validator above
             raise ValueError("outputSchema properties must be an object")
         prompt = self.system_prompt.casefold()
-        required_instructions = ("exact account", "source url", "leave the field null")
-        if any(instruction not in prompt for instruction in required_instructions):
+        required_instructions = ("source url", "leave the field null")
+        target_locked = "exact account" in prompt or (
+            "exact person" in prompt and "exact employer" in prompt
+        )
+        if not target_locked or any(
+            instruction not in prompt for instruction in required_instructions
+        ):
             raise ValueError("systemPrompt is missing target-lock or grounding instructions")
         expected_mappings = {(alias, field_key_from_exa_alias(alias)) for alias in properties}
         prompt_mappings = set(_PROMPT_FIELD_MAPPING.findall(self.system_prompt))
         if prompt_mappings != expected_mappings:
             raise ValueError("systemPrompt must contain exactly the provider-alias field mappings")
+        return self
+
+
+class ExaDeepContactSearchRequest(ExaDeepSearchRequest):
+    """Additive contact wire variant with the documented publication-date filters."""
+
+    start_published_date: datetime | None = Field(default=None, alias="startPublishedDate")
+    end_published_date: datetime | None = Field(default=None, alias="endPublishedDate")
+
+    @model_validator(mode="after")
+    def _published_window_is_ordered(self) -> ExaDeepContactSearchRequest:
+        if (
+            self.start_published_date is not None
+            and self.end_published_date is not None
+            and self.start_published_date > self.end_published_date
+        ):
+            raise ValueError("published-date filter window is inverted")
         return self
 
 
@@ -665,6 +781,8 @@ __all__ = [
     "EXA_OUTPUT_MAX_FIELDS",
     "EXA_OUTPUT_MAX_PROPERTIES",
     "ExaDeepCitation",
+    "ExaDeepContactTargetLock",
+    "ExaDeepContactSearchRequest",
     "ExaDeepContents",
     "ExaDeepCostDollars",
     "ExaDeepFieldSpec",
@@ -679,6 +797,7 @@ __all__ = [
     "classify_exa_deep_http_failure",
     "exa_field_alias",
     "field_key_from_exa_alias",
+    "normalize_exa_profile_url",
     "validate_exa_deep_exchange",
     "validate_exa_output_schema",
     "validate_exa_output_value",
