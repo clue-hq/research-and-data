@@ -54,10 +54,12 @@ from clue_research.durable import (
     contact_channel_operation_is_usable,
     contact_research_selection_cancellation,
     find_account_runs_for_entity,
+    get_project_run,
     latest_contact_research_selection,
     list_contact_channel_operations_for_selection,
     list_contact_external_research_operations,
 )
+from clue_research.identity import get_account
 
 
 @asynccontextmanager
@@ -322,6 +324,30 @@ class ContactContentHandoffService:
         product_id: str | None,
         composed_at: datetime,
     ) -> ContactContentHandoff:
+        # Validate the complete caller scope before reading account-run references.  In
+        # particular, the empty/cancelled-selection paths below include committee contact ids as
+        # useful same-scope exclusions, so resolving those ids before this guard would create a
+        # cross-workspace/project/product existence oracle.
+        project_run = await get_project_run(conn, project_run_id)
+        account = await get_account(conn, account_entity_id)
+        if (
+            project_run is None
+            or project_run.workspace_id != workspace_id
+            or project_run.project_id != project_id
+            or project_run.product_id != product_id
+            or account is None
+            or account.workspace_id != workspace_id
+            or account.merged_into is not None
+        ):
+            return self._empty(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                project_run_id=project_run_id,
+                account_entity_id=account_entity_id,
+                product_id=product_id,
+                composed_at=composed_at,
+                reason="contact_handoff_scope_not_found",
+            )
         account_runs = await find_account_runs_for_entity(
             conn, project_run_id=project_run_id, entity_id=account_entity_id
         )
