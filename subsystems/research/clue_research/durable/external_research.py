@@ -84,6 +84,9 @@ class ExternalResearchOperationRow(BaseModel):
     subject_kind: ExternalResearchSubjectKind
     account_id: EntityId
     contact_id: EntityId | None = None
+    contact_selection_id: UUID | None = None
+    contact_selection_sha256: str | None = None
+    contact_intent_sha256: str | None = None
     source_key: str
     observation_window: str
     freshness_seconds: int
@@ -103,6 +106,15 @@ class ExternalResearchOperationRow(BaseModel):
     @model_validator(mode="after")
     def _subject_is_exact(self) -> ExternalResearchOperationRow:
         _validate_subject_shape(subject_kind=self.subject_kind, contact_id=self.contact_id)
+        authority = (
+            self.contact_selection_id,
+            self.contact_selection_sha256,
+            self.contact_intent_sha256,
+        )
+        if any(authority) and not all(authority):
+            raise ValueError("external research carries partial contact selection authority")
+        if self.subject_kind is ExternalResearchSubjectKind.ACCOUNT and any(authority):
+            raise ValueError("account external research carries contact selection authority")
         return self
 
     @property
@@ -146,7 +158,8 @@ class ExternalResearchCostReconciliationRow(BaseModel):
 
 _OPERATION_COLUMNS = (
     "id AS operation_id, workspace_id, project_id, project_run_id, subject_kind::text, "
-    "account_id, contact_id, source_key, "
+    "account_id, contact_id, contact_selection_id, contact_selection_sha256, "
+    "contact_intent_sha256, source_key, "
     "observation_window, freshness_seconds, reuse_fingerprint, request_fingerprint, "
     "wire_request_sha256, state::text, "
     "spend_outcome::text, request_artifact_key, cost_cents_reserved, provider_request_id, "
@@ -313,6 +326,8 @@ async def find_reusable_external_research_operation(
                     "AND freshness_seconds=:freshness_seconds "
                     "AND reuse_fingerprint=:reuse_fingerprint "
                     "AND wire_request_sha256=:wire_request_sha256 "
+                    "AND NOT EXISTS (SELECT 1 FROM external_research_operation_stop stop "
+                    "WHERE stop.operation_id=external_research_operation.id) "
                     "AND (state IN ('planned', 'dispatching') "
                     "     OR (state='ready' AND fresh_until > :now)) "
                     "ORDER BY CASE WHEN state='ready' THEN 0 ELSE 1 END, "
@@ -407,7 +422,8 @@ async def reserve_external_research_operation(
             """
             INSERT INTO external_research_operation (
                 id, workspace_id, project_id, project_run_id, subject_kind, account_id,
-                contact_id, icp_key, icp_version, research_directive_id,
+                contact_id, contact_selection_id, contact_selection_sha256,
+                contact_intent_sha256, icp_key, icp_version, research_directive_id,
                 research_directive_version, research_directive_sha256, research_override_id,
                 research_override_sha256, source_key, observation_window, freshness_policy_ref,
                 freshness_seconds, reuse_fingerprint, request_fingerprint,
@@ -417,6 +433,7 @@ async def reserve_external_research_operation(
             ) VALUES (
                 :id, :workspace_id, :project_id, :project_run_id,
                 CAST(:subject_kind AS external_research_subject_kind), :account_id, :contact_id,
+                :contact_selection_id, :contact_selection_sha, :contact_intent_sha,
                 :icp_key, :icp_version, :directive_id, :directive_version, :directive_sha,
                 :override_id, :override_sha, :source_key, :observation_window,
                 :freshness_policy_ref, :freshness_seconds, :reuse_fingerprint,
@@ -435,6 +452,9 @@ async def reserve_external_research_operation(
             "subject_kind": request.subject_kind.value,
             "account_id": request.account_id,
             "contact_id": request.contact_id,
+            "contact_selection_id": None,
+            "contact_selection_sha": None,
+            "contact_intent_sha": None,
             "icp_key": request.icp_key,
             "icp_version": request.icp_version,
             "directive_id": pin.directive_id,
@@ -595,6 +615,20 @@ async def complete_external_research_success(
         raise ExternalResearchTransitionConflict(
             f"cannot settle external research from {operation.state.value}"
         )
+    stopped = (
+        await conn.execute(
+            text(
+                "SELECT 1 FROM external_research_operation_stop "
+                "WHERE workspace_id=:workspace_id AND operation_id=:operation_id"
+            ),
+            {"workspace_id": workspace_id, "operation_id": operation_id},
+        )
+    ).scalar_one_or_none()
+    if stopped is not None:
+        # The operation lock serializes this fence with cancellation/objection/erasure. The
+        # caller settles already-dispatched cost through the stopped-operation receipt; this
+        # transaction must not create a snapshot or materializable provider artifacts.
+        raise ExternalResearchTransitionConflict("external research authority was stopped")
     if provider_reported_cost_cents > operation.cost_cents_reserved:
         await _mark_unknown_sql(
             conn,
@@ -730,6 +764,94 @@ async def complete_external_research_success(
         adopted_at=now,
     )
     return snapshot
+
+
+async def complete_external_research_cancelled_after_dispatch(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    operation_id: ExternalResearchOperationId,
+    attempt_ordinal: int,
+    provider_request_id: str,
+    provider_reported_cost_cents: Decimal,
+    receipt_artifact_key: str,
+    failure_code: str,
+    now: datetime,
+) -> ExternalResearchOperationRow:
+    """Settle accepted provider work without creating a reusable/materializable snapshot."""
+
+    operation = await get_external_research_operation(
+        conn, workspace_id=workspace_id, operation_id=operation_id, for_update=True
+    )
+    if operation.state is not ExternalResearchOperationState.DISPATCHING:
+        return operation
+    if provider_reported_cost_cents > operation.cost_cents_reserved:
+        await _mark_unknown_sql(
+            conn,
+            operation=operation,
+            now=now,
+            failure_code="provider_cost_exceeds_reservation_after_stop",
+            failure_detail="stopped operation reported cost above its reservation",
+        )
+        return await get_external_research_operation(
+            conn, workspace_id=workspace_id, operation_id=operation_id
+        )
+    await conn.execute(
+        text(
+            "UPDATE external_research_attempt SET state='failed_terminal', "
+            "provider_request_id=:provider_request_id, failure_code=:failure_code, "
+            "failure_detail='authority stopped after provider dispatch', "
+            "dispatch_lease_expires_at=NULL, completed_at=:now WHERE "
+            "operation_id=:operation_id AND ordinal=:ordinal AND state='dispatching'"
+        ),
+        {
+            "operation_id": operation_id,
+            "ordinal": attempt_ordinal,
+            "provider_request_id": provider_request_id,
+            "failure_code": failure_code,
+            "now": now,
+        },
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO external_research_receipt (id, operation_id, workspace_id, source_key, "
+            "provider_request_id, cost_cents_reserved, provider_reported_cost_cents, "
+            "settled_cost_cents, reconciliation_state, receipt_artifact_key) VALUES "
+            "(:id, :operation_id, :workspace_id, :source_key, :provider_request_id, :reserved, "
+            ":reported, :reported, 'pending_provider_billing', :receipt_key)"
+        ),
+        {
+            "id": uuid4(),
+            "operation_id": operation_id,
+            "workspace_id": workspace_id,
+            "source_key": operation.source_key,
+            "provider_request_id": provider_request_id,
+            "reserved": operation.cost_cents_reserved,
+            "reported": provider_reported_cost_cents,
+            "receipt_key": receipt_artifact_key,
+        },
+    )
+    await conn.execute(
+        text("UPDATE project_run SET spent_cents=spent_cents+:cost WHERE id=:project_run_id"),
+        {"project_run_id": operation.project_run_id, "cost": provider_reported_cost_cents},
+    )
+    await conn.execute(
+        text(
+            "UPDATE external_research_operation SET state='cancelled', "
+            "spend_outcome='provider_reported', provider_request_id=:provider_request_id, "
+            "dispatch_lease_expires_at=NULL, failure_code=:failure_code, terminal_at=:now, "
+            "updated_at=:now WHERE id=:operation_id"
+        ),
+        {
+            "operation_id": operation_id,
+            "provider_request_id": provider_request_id,
+            "failure_code": failure_code,
+            "now": now,
+        },
+    )
+    return await get_external_research_operation(
+        conn, workspace_id=workspace_id, operation_id=operation_id
+    )
 
 
 async def complete_external_research_pre_dispatch_failure(
@@ -928,8 +1050,18 @@ async def adopt_external_research_snapshot(
         operation_id=operation_id,
         for_update=True,
     )
+    stopped = (
+        await conn.execute(
+            text(
+                "SELECT 1 FROM external_research_operation_stop "
+                "WHERE workspace_id=:workspace_id AND operation_id=:operation_id"
+            ),
+            {"workspace_id": request.workspace_id, "operation_id": operation_id},
+        )
+    ).scalar_one_or_none()
     if (
-        operation.state is not ExternalResearchOperationState.READY
+        stopped is not None
+        or operation.state is not ExternalResearchOperationState.READY
         or operation.fresh_until is None
         or operation.fresh_until <= now
         or operation.project_id != request.project_id
@@ -1136,6 +1268,9 @@ async def list_ready_external_research_snapshots(
     research_directive_sha256: str,
     research_override_id: UUID | None,
     research_override_sha256: str | None,
+    contact_selection_id: UUID | None = None,
+    contact_selection_sha256: str | None = None,
+    contact_intent_sha256: str | None = None,
     now: datetime | None = None,
 ) -> tuple[ExternalResearchSnapshotRef, ...]:
     """Ready snapshots for one exact subject/run/directive/source lineage.
@@ -1154,6 +1289,28 @@ async def list_ready_external_research_snapshots(
         account_id=account_id,
         contact_id=contact_id,
     )
+    contact_authority = (
+        contact_selection_id,
+        contact_selection_sha256,
+        contact_intent_sha256,
+    )
+    if any(value is not None for value in contact_authority) and not all(
+        value is not None for value in contact_authority
+    ):
+        raise ValueError("contact snapshot lookup requires complete selection authority")
+    contact_authority_sql = ""
+    contact_authority_params: dict[str, object] = {}
+    if contact_selection_id is not None:
+        contact_authority_sql = (
+            "AND operation.contact_selection_id=:contact_selection_id "
+            "AND operation.contact_selection_sha256=:contact_selection_sha256 "
+            "AND operation.contact_intent_sha256=:contact_intent_sha256 "
+        )
+        contact_authority_params = {
+            "contact_selection_id": contact_selection_id,
+            "contact_selection_sha256": contact_selection_sha256,
+            "contact_intent_sha256": contact_intent_sha256,
+        }
 
     rows = (
         (
@@ -1191,7 +1348,10 @@ async def list_ready_external_research_snapshots(
                     "AND operation.research_directive_sha256=:directive_sha256 "
                     "AND operation.research_override_id IS NOT DISTINCT FROM :override_id "
                     "AND operation.research_override_sha256 IS NOT DISTINCT FROM :override_sha "
+                    f"{contact_authority_sql}"
                     "AND operation.state='ready' "
+                    "AND NOT EXISTS (SELECT 1 FROM external_research_operation_stop stop "
+                    "WHERE stop.operation_id=operation.id) "
                     "AND snapshot.fresh_until > :now "
                     "ORDER BY operation.terminal_at DESC, snapshot.created_at DESC, "
                     "operation.id DESC"
@@ -1209,6 +1369,7 @@ async def list_ready_external_research_snapshots(
                     "override_id": research_override_id,
                     "override_sha": research_override_sha256,
                     "now": observed_at,
+                    **contact_authority_params,
                 },
             )
         )
@@ -1255,6 +1416,8 @@ async def find_active_external_research_operation_for_materialization(
                     "AND research_directive_sha256=:directive_sha256 "
                     "AND research_override_id IS NOT DISTINCT FROM :override_id "
                     "AND research_override_sha256 IS NOT DISTINCT FROM :override_sha "
+                    "AND NOT EXISTS (SELECT 1 FROM external_research_operation_stop stop "
+                    "WHERE stop.operation_id=external_research_operation.id) "
                     "AND state IN ('planned', 'dispatching') "
                     "ORDER BY created_at DESC LIMIT 1"
                 ),
@@ -1349,6 +1512,7 @@ __all__ = [
     "adopt_external_research_snapshot",
     "claim_external_research_dispatch",
     "complete_external_research_pre_dispatch_failure",
+    "complete_external_research_cancelled_after_dispatch",
     "complete_external_research_success",
     "find_external_research_operation",
     "find_active_external_research_operation_for_materialization",

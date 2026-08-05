@@ -240,6 +240,68 @@ async def _mark_contact_channel_artifacts(
             already_marked.add(str(artifact_key))
 
 
+async def _mark_contact_external_research_artifacts(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    contact_entity_id: EntityId,
+    erased_keys: list[str],
+) -> None:
+    """Sever all C4 Exa artifact edges for one erased/objected contact."""
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT subject.artifact_key
+                    FROM discovery_artifact_subject subject
+                    JOIN external_research_operation operation
+                      ON operation.workspace_id=subject.workspace_id
+                     AND operation.id::text=subject.reference_id
+                    WHERE subject.workspace_id=:workspace_id
+                      AND subject.subject_kind='contact'
+                      AND subject.subject_entity_id=:contact_id
+                      AND subject.reference_kind LIKE 'exa_deep_%'
+                      AND operation.subject_kind='contact'
+                      AND subject.tombstoned_at IS NULL
+                    ORDER BY subject.artifact_key
+                    """
+                ),
+                {"workspace_id": workspace_id, "contact_id": contact_entity_id},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    await conn.execute(
+        text(
+            """
+            UPDATE discovery_artifact_subject subject
+               SET tombstoned_at=COALESCE(subject.tombstoned_at, now())
+              FROM external_research_operation operation
+             WHERE operation.workspace_id=subject.workspace_id
+               AND operation.id::text=subject.reference_id
+               AND subject.workspace_id=:workspace_id
+               AND subject.subject_kind='contact'
+               AND subject.subject_entity_id=:contact_id
+               AND subject.reference_kind LIKE 'exa_deep_%'
+               AND operation.subject_kind='contact'
+               AND subject.tombstoned_at IS NULL
+            """
+        ),
+        {"workspace_id": workspace_id, "contact_id": contact_entity_id},
+    )
+    already_marked = set(erased_keys)
+    for artifact_key in rows:
+        if (
+            await erase_if_unreferenced(conn, str(artifact_key))
+            and artifact_key not in already_marked
+        ):
+            erased_keys.append(str(artifact_key))
+            already_marked.add(str(artifact_key))
+
+
 class TombstoneReason(StrEnum):
     """Why a claim was tombstoned (M10.5; the ``dsar_tombstone.reason``). Compliance-local closed
     vocabulary stored as ``text`` + CHECK (the ``use_decision.regime`` precedent), drift-guarded
@@ -589,6 +651,23 @@ class DataSubjectRights(Protocol):
     async def record_objection(self, contact_entity_id: EntityId) -> ObjectionResult: ...
 
 
+@runtime_checkable
+class ContactResearchPrivacyStopper(Protocol):
+    """API-root seam that stops provider work when privacy authority changes."""
+
+    async def stop(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        contact_id: EntityId,
+        reason_code: str,
+        authority_ref: str,
+        channel_field_keys: frozenset[str] | None = None,
+        stop_external: bool = True,
+    ) -> None: ...
+
+
 class DataSubjectRightsImpl:
     """The M10.5 :class:`DataSubjectRights` implementation, scoped to one controller
     (``workspace_id``
@@ -607,6 +686,7 @@ class DataSubjectRightsImpl:
         conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
         storage: StorageBackend | None = None,
+        contact_research_stopper: ContactResearchPrivacyStopper | None = None,
     ) -> None:
         self._workspace_id = workspace_id
         self._conn_factory = conn_factory
@@ -614,6 +694,7 @@ class DataSubjectRightsImpl:
         # PB-B2.5: the durable snapshot backend erasure must reach (refcounted blob deletion).
         # Optional — injected at the api root like Freshness; None = pre-B2 behavior (no blobs).
         self._storage = storage
+        self._contact_research_stopper = contact_research_stopper
 
     @property
     def _metric_sink(self) -> MetricSink:
@@ -711,6 +792,31 @@ class DataSubjectRightsImpl:
                     for claim in targets
                     if str(claim.field_key) in _CHANNEL_FIELDS
                 )
+                explicit_fields = scope.field_keys
+                only_channel_fields = (
+                    explicit_fields is not None
+                    and bool(explicit_fields)
+                    and explicit_fields.issubset(_CHANNEL_FIELDS)
+                )
+                if self._contact_research_stopper is not None:
+                    await self._contact_research_stopper.stop(
+                        conn,
+                        workspace_id=self._workspace_id,
+                        contact_id=contact_entity_id,
+                        reason_code=TombstoneReason.ERASURE.value,
+                        authority_ref=f"dsar-erasure:{run_id}",
+                        channel_field_keys=(
+                            erased_channel_fields if explicit_fields is not None else None
+                        ),
+                        stop_external=scope == ERASE_ALL or not only_channel_fields,
+                    )
+                if scope == ERASE_ALL or not only_channel_fields:
+                    await _mark_contact_external_research_artifacts(
+                        conn,
+                        workspace_id=self._workspace_id,
+                        contact_entity_id=contact_entity_id,
+                        erased_keys=erased_keys,
+                    )
                 if scope == ERASE_ALL or erased_channel_fields:
                     await _suppress_contact_channels(
                         conn,
@@ -791,6 +897,14 @@ class DataSubjectRightsImpl:
                     {"contact": str(contact_entity_id), "tenant": self._workspace_id},
                 )
                 newly_objected = marker.rowcount > 0
+                if self._contact_research_stopper is not None:
+                    await self._contact_research_stopper.stop(
+                        conn,
+                        workspace_id=self._workspace_id,
+                        contact_id=contact_entity_id,
+                        reason_code=TombstoneReason.OBJECTION.value,
+                        authority_ref=f"outreach-objection:{run_id}",
+                    )
                 hooks = [
                     c
                     for c in await dsar_private_claims(conn, contact_entity_id, self._workspace_id)
@@ -812,6 +926,12 @@ class DataSubjectRightsImpl:
                     reason=TombstoneReason.OBJECTION.value,
                 )
                 await _mark_contact_channel_artifacts(
+                    conn,
+                    workspace_id=self._workspace_id,
+                    contact_entity_id=contact_entity_id,
+                    erased_keys=erased_keys,
+                )
+                await _mark_contact_external_research_artifacts(
                     conn,
                     workspace_id=self._workspace_id,
                     contact_entity_id=contact_entity_id,

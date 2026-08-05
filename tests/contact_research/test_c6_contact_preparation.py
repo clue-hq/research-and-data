@@ -15,6 +15,7 @@ from tests.db.conftest import run_async
 from clue_api.contact_research_preparation import (
     ContactPreparationAdapterResult,
     RegisteredContactResearchPreparer,
+    build_production_contact_channel_coordinator,
     build_production_contact_research_preparer,
 )
 from clue_api.external_research_wake import ExternalResearchWakeDispatcher
@@ -356,3 +357,24 @@ def test_production_composition_refuses_channel_activation_without_real_validato
             storage=FsStorage(tmp_path),
             pre_spend_gate=_PassGate(),  # type: ignore[arg-type]
         )
+
+
+def test_production_composition_admits_an_explicit_validator_backed_channel_adapter(
+    tmp_path: Path,
+) -> None:
+    coordinator = build_production_contact_channel_coordinator(
+        transport=SimpleNamespace(),  # type: ignore[arg-type]
+        validator=SimpleNamespace(source_key="independent-validator"),  # type: ignore[arg-type]
+        storage=FsStorage(tmp_path),
+        pre_spend_gate=_PassGate(),  # type: ignore[arg-type]
+    )
+    preparer = build_production_contact_research_preparer(
+        Settings(_env_file=None, contact_channel_enrichment_enabled=True),
+        secrets=Secrets(_env_file=None, exa_api_key=None),
+        storage=FsStorage(tmp_path),
+        pre_spend_gate=_PassGate(),  # type: ignore[arg-type]
+        channel_coordinator=coordinator,
+    )
+
+    adapters = preparer._preparer._adapters  # noqa: SLF001 - production composition acceptance
+    assert type(adapters[-1]).__name__ == "ContactChannelPreparationAdapter"

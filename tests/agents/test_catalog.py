@@ -73,6 +73,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:content-drafter@v2",
         "profile:content-drafter@v3",
         "profile:content-drafter@v4",
+        "profile:content-drafter@v5",
         "profile:head-of-abm@v1",
         # Lexical, not numeric: the folder catalog sorts by address, so v10 sits beside v1.
         "profile:head-of-abm@v10",
@@ -86,6 +87,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v18",
         "profile:head-of-abm@v19",
         "profile:head-of-abm@v2",
+        "profile:head-of-abm@v20",
         "profile:head-of-abm@v3",
         "profile:head-of-abm@v4",
         "profile:head-of-abm@v5",
@@ -103,6 +105,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:reviewer@v2",
         "profile:reviewer@v3",
         "profile:reviewer@v4",
+        "profile:reviewer@v5",
     ]
     stage0 = skills.get("stage0-interview", "v2")
     assert "Only a human confirms" in stage0.body

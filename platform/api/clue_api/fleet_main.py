@@ -55,7 +55,9 @@ from clue_api.agent_platform_wiring import build_agent_platform_components
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
+from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.contact_research_preparation import (
+    build_production_contact_channel_coordinator,
     build_production_contact_research_preparer,
 )
 from clue_api.exa_deep_preparation import build_production_exa_deep_resolver_provider
@@ -113,7 +115,7 @@ from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
-from clue_core import ProjectPhase
+from clue_core import ContactChannelValidator, ProjectPhase
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import (
     CompatibilityLoader,
@@ -410,13 +412,13 @@ async def _account_agent_runtime_required(
         )
 
 
-async def _serve() -> None:
+async def _serve(*, contact_channel_validator: ContactChannelValidator | None = None) -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
     settings = load_settings()
     secrets = Secrets()
     storage = build_storage_backend(settings)
-    async with db_lifespan(), redis_lifespan():
+    async with db_lifespan(), redis_lifespan(), contextlib.AsyncExitStack() as provider_stack:
         register_compliance_wiring()
         register_narrative_wiring()
         async with transaction() as conn:
@@ -437,6 +439,28 @@ async def _serve() -> None:
         work_queue = DbWorkQueue(task_queue)
         gateway = build_platform_gateway(settings)
         pre_spend_gate = build_pre_spend_gate(conn_factory=transaction)
+        contact_channel_coordinator = None
+        if settings.contact_channel_enrichment_enabled:
+            if contact_channel_validator is None:
+                raise RuntimeError(
+                    "selected-contact channel enrichment is enabled without an explicitly "
+                    "accepted independent validator"
+                )
+            if secrets.exa_api_key is None:
+                raise RuntimeError(
+                    "selected-contact channel enrichment is enabled but CLUE_EXA_API_KEY is "
+                    "not configured"
+                )
+            contact_channel_transport = await provider_stack.enter_async_context(
+                ExaWebsetsClient(api_key=secrets.exa_api_key, lookup_attempts=1)
+            )
+            contact_channel_coordinator = build_production_contact_channel_coordinator(
+                transport=contact_channel_transport,
+                validator=contact_channel_validator,
+                storage=storage,
+                pre_spend_gate=pre_spend_gate,
+                conn_factory=transaction,
+            )
         sumble_committee_preparer = build_production_sumble_committee_preparer(
             settings,
             secrets=secrets,
@@ -462,6 +486,7 @@ async def _serve() -> None:
             storage=storage,
             pre_spend_gate=pre_spend_gate,
             conn_factory=transaction,
+            channel_coordinator=contact_channel_coordinator,
         )
         independent_contact_research = IndependentContactResearchService(
             preparer=contact_research_preparer,
@@ -479,6 +504,11 @@ async def _serve() -> None:
         )
         research_views = (
             build_production_research_view_runtime(storage=storage) if c7_enabled else None
+        )
+        contact_content_handoff = (
+            ContactContentHandoffService(research_views=research_views.composer)
+            if settings.c7_production_handoff_enabled and research_views is not None
+            else None
         )
         registry = build_toolbelt(
             storage=storage,
@@ -507,6 +537,7 @@ async def _serve() -> None:
             ),
             account_deep_full_unit_available=sumble_committee_preparer is not None,
             independent_contact_research=independent_contact_research,
+            contact_content_handoff=contact_content_handoff,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)

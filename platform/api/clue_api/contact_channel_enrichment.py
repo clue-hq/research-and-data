@@ -84,16 +84,22 @@ from clue_research.compliance import CONTACT_JURISDICTION, record_lawful_basis
 from clue_research.directives import effective_account_research_directive
 from clue_research.durable import (
     BudgetEngine,
+    ContactResearchOperationStop,
+    ContactResearchSelectionNotFound,
     DbBudgetStore,
     append_contact_channel_artifact,
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
     claim_contact_channel_submit,
     claim_contact_channel_validation,
+    contact_channel_operation_stop,
+    contact_research_selection_cancellation,
     find_contact_channel_operation,
     find_fresh_reusable_contact_channel_operation,
     get_contact_channel_operation,
+    get_contact_research_selection,
     get_project_run,
+    latest_contact_research_selection,
     record_contact_channel_reuse,
     reserve_contact_channel_operation,
     update_contact_channel_operation,
@@ -220,6 +226,38 @@ async def compile_contact_channel_preflight(
     """Prove the exact receipt/contact/channel/provider authority before any side effect."""
 
     intent.selection.require_effective_policy(effective_policy)
+    try:
+        stored_selection = await get_contact_research_selection(
+            conn,
+            workspace_id=intent.workspace_id,
+            selection_id=intent.selection_id,
+        )
+    except ContactResearchSelectionNotFound as exc:
+        raise ContactChannelEligibilityError(
+            "contact research selection is not durable authority"
+        ) from exc
+    if stored_selection != intent.selection:
+        raise ContactChannelEligibilityError(
+            "contact research selection differs from durable authority"
+        )
+    current_selection = await latest_contact_research_selection(
+        conn,
+        workspace_id=intent.workspace_id,
+        project_run_id=intent.project_run_id,
+        account_id=intent.account_entity_id,
+        include_cancelled=True,
+    )
+    if current_selection is None or current_selection.selection_id != intent.selection_id:
+        raise ContactChannelEligibilityError(
+            "contact research selection is not the current approved successor"
+        )
+    cancellation = await contact_research_selection_cancellation(
+        conn,
+        workspace_id=intent.workspace_id,
+        selection_id=intent.selection_id,
+    )
+    if cancellation is not None:
+        raise ContactChannelEligibilityError("contact research selection is cancelled")
     if not effective_policy.contact_reveals_enabled:
         raise ContactChannelEligibilityError("effective policy disables contact reveals")
     target = next(
@@ -528,7 +566,26 @@ class ExaContactChannelCoordinator:
                 now=now,
             )
         if claimed is None:
-            return await self._recover_submit(operation)
+            async with self._conn_factory() as conn:
+                current = await get_contact_channel_operation(
+                    conn,
+                    workspace_id=operation.request.workspace_id,
+                    operation_id=operation.operation_id,
+                )
+                stop = await contact_channel_operation_stop(
+                    conn,
+                    workspace_id=operation.request.workspace_id,
+                    operation_id=operation.operation_id,
+                )
+            if stop is not None and current.state is not ContactChannelOperationState.SUBMITTING:
+                return ContactChannelEnrichmentResult(
+                    outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                    operation=current,
+                )
+            # Only a durable SUBMITTING state can justify an external-id reconciliation call.
+            # A stop that won before dispatch leaves the operation CANCELLED and performs zero
+            # provider traffic; a stopped SUBMITTING operation must still determine actual spend.
+            return await self._recover_submit(current)
         import_request = build_exa_contact_channel_import(preflight)
         try:
             imported = await self._transport.create_import(import_request)
@@ -536,13 +593,22 @@ class ExaContactChannelCoordinator:
                 type=ExaWebsetEntityType.PERSON
             ):
                 raise ExaWebsetsContractDrift("Exa contact import response is not one person")
-            await self._record(
+            _, import_stop = await self._record_active(
                 claimed,
                 "import_create_sanitized",
                 imported.response.sanitized_bytes(),
                 f"{EXA_WEBSETS_API_BASE}/imports/{imported.response.id}",
                 imported.request_id,
             )
+            if import_stop is not None:
+                cancelled = await self._cancel_without_new_spend(
+                    claimed, reason_code=import_stop.reason_code
+                )
+                return ContactChannelEnrichmentResult(
+                    outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                    operation=cancelled,
+                    import_calls=1,
+                )
             await self._transport.upload_import_csv(
                 upload_url=imported.response.upload_url, content=preflight.csv_bytes
             )
@@ -587,7 +653,7 @@ class ExaContactChannelCoordinator:
                 upload_calls=1,
                 create_calls=1,
             )
-        await self._record(
+        _, create_stop = await self._record_active(
             claimed,
             "webset_create",
             exchange.response_body,
@@ -606,7 +672,11 @@ class ExaContactChannelCoordinator:
         async with self._conn_factory() as conn:
             stored = await update_contact_channel_operation(conn, operation=waiting)
         return ContactChannelEnrichmentResult(
-            outcome=ContactChannelEnrichmentOutcome.CREATED,
+            outcome=(
+                ContactChannelEnrichmentOutcome.CREATED
+                if create_stop is None
+                else ContactChannelEnrichmentOutcome.WAITING_EXTERNAL
+            ),
             operation=stored,
             import_calls=1,
             upload_calls=1,
@@ -624,7 +694,19 @@ class ExaContactChannelCoordinator:
             operation = await get_contact_channel_operation(
                 conn, workspace_id=workspace_id, operation_id=operation_id
             )
+            stop = await contact_channel_operation_stop(
+                conn, workspace_id=workspace_id, operation_id=operation_id
+            )
         self._require_frozen_policy(operation, effective_policy)
+        if stop is not None and operation.state not in {
+            ContactChannelOperationState.SUBMITTING,
+            ContactChannelOperationState.WAITING_EXTERNAL,
+            ContactChannelOperationState.VALIDATING,
+        }:
+            return ContactChannelEnrichmentResult(
+                outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                operation=operation,
+            )
         if operation.state is ContactChannelOperationState.SUCCEEDED:
             return ContactChannelEnrichmentResult(
                 outcome=ContactChannelEnrichmentOutcome.REPLAYED, operation=operation
@@ -671,13 +753,14 @@ class ExaContactChannelCoordinator:
         if operation.provider_operation_id is None:
             raise ContactChannelEnrichmentError("channel operation has no provider Webset")
         exchange = await self._transport.poll_webset(operation.provider_operation_id)
-        await self._record(
-            operation,
-            "webset_poll",
-            exchange.response_body,
-            f"{EXA_WEBSETS_API_BASE}/websets/{operation.provider_operation_id}",
-            exchange.request_id,
-        )
+        if stop is None:
+            await self._record_active(
+                operation,
+                "webset_poll",
+                exchange.response_body,
+                f"{EXA_WEBSETS_API_BASE}/websets/{operation.provider_operation_id}",
+                exchange.request_id,
+            )
         if exchange.webset.status is not ExaWebsetStatus.IDLE:
             waiting = operation.model_copy(
                 update={"next_poll_at": datetime.now(UTC) + self._poll_after}
@@ -743,16 +826,27 @@ class ExaContactChannelCoordinator:
             )
         item = items[0]
         value, references, reasoning = self._extract_item(operation, item, matching[0].id)
-        observation_bytes = json.dumps(
-            item.model_dump(mode="json", by_alias=True), sort_keys=True, separators=(",", ":")
-        ).encode()
-        observation_key = await self._record(
-            operation,
-            "person_item",
-            observation_bytes,
-            operation.request.canonical_profile_url,
-            None,
-        )
+        stop = await self._current_stop(operation)
+        if stop is not None:
+            acquisition_units = self._pricing.realized_units(
+                matching_search_results=0,
+                ordinary_enrichment_rows=0,
+                contact_values=int(value is not None),
+                resolved_import_results=1,
+            ).total_units
+            acquisition_cost = self._pricing.monetary_value(acquisition_units)
+            cancelled = await self._cancel_after_acquisition(
+                operation,
+                units=acquisition_units,
+                cost_cents=acquisition_cost,
+                reason_code=stop.reason_code,
+            )
+            return ContactChannelEnrichmentResult(
+                outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                operation=cancelled,
+                poll_calls=1,
+                item_calls=item_calls,
+            )
         acquisition_units = self._pricing.realized_units(
             matching_search_results=0,
             ordinary_enrichment_rows=0,
@@ -760,6 +854,30 @@ class ExaContactChannelCoordinator:
             resolved_import_results=1,
         ).total_units
         acquisition_cost = self._pricing.monetary_value(acquisition_units)
+        observation_bytes = json.dumps(
+            item.model_dump(mode="json", by_alias=True), sort_keys=True, separators=(",", ":")
+        ).encode()
+        observation_key, retention_stop = await self._record_active(
+            operation,
+            "person_item",
+            observation_bytes,
+            operation.request.canonical_profile_url,
+            None,
+        )
+        if retention_stop is not None:
+            cancelled = await self._cancel_after_acquisition(
+                operation,
+                units=acquisition_units,
+                cost_cents=acquisition_cost,
+                reason_code=retention_stop.reason_code,
+            )
+            return ContactChannelEnrichmentResult(
+                outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                operation=cancelled,
+                poll_calls=1,
+                item_calls=item_calls,
+            )
+        assert observation_key is not None
         if value is None:
             failed = operation.model_copy(
                 update={
@@ -774,7 +892,35 @@ class ExaContactChannelCoordinator:
                 }
             )
             async with self._conn_factory() as conn:
-                stored = await update_contact_channel_operation(conn, operation=failed)
+                current = await get_contact_channel_operation(
+                    conn,
+                    workspace_id=operation.request.workspace_id,
+                    operation_id=operation.operation_id,
+                    for_update=True,
+                )
+                final_stop = await contact_channel_operation_stop(
+                    conn,
+                    workspace_id=operation.request.workspace_id,
+                    operation_id=operation.operation_id,
+                )
+                stored = await update_contact_channel_operation(
+                    conn,
+                    operation=(
+                        failed
+                        if final_stop is None
+                        else current.model_copy(
+                            update={
+                                "state": ContactChannelOperationState.CANCELLED,
+                                "acquisition_spend_outcome": ContactChannelSpendOutcome.CHARGED,
+                                "acquisition_units_charged": acquisition_units,
+                                "acquisition_cost_cents_charged": acquisition_cost,
+                                "failure_code": final_stop.reason_code,
+                                "next_poll_at": None,
+                                "terminal_at": datetime.now(UTC),
+                            }
+                        )
+                    ),
+                )
                 await self._budget.record(
                     cost_cents=acquisition_cost,
                     scope=BudgetScope.RUN,
@@ -792,6 +938,43 @@ class ExaContactChannelCoordinator:
             # settlement are one commit boundary. A crash can therefore leave either the prior
             # pollable operation or the complete READY_TO_VALIDATE state, never a detached raw
             # channel claim or a charged operation missing its budget debit.
+            current = await get_contact_channel_operation(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+                for_update=True,
+            )
+            final_stop = await contact_channel_operation_stop(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
+            if final_stop is not None:
+                cancelled = current.model_copy(
+                    update={
+                        "state": ContactChannelOperationState.CANCELLED,
+                        "acquisition_spend_outcome": ContactChannelSpendOutcome.CHARGED,
+                        "acquisition_units_charged": acquisition_units,
+                        "acquisition_cost_cents_charged": acquisition_cost,
+                        "validation_spend_outcome": ContactChannelSpendOutcome.NOT_DISPATCHED,
+                        "failure_code": final_stop.reason_code,
+                        "next_poll_at": None,
+                        "terminal_at": datetime.now(UTC),
+                    }
+                )
+                stored = await update_contact_channel_operation(conn, operation=cancelled)
+                await self._budget.record(
+                    cost_cents=acquisition_cost,
+                    scope=BudgetScope.RUN,
+                    project_run_id=operation.request.project_run_id,
+                    conn=conn,
+                )
+                return ContactChannelEnrichmentResult(
+                    outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                    operation=stored,
+                    poll_calls=1,
+                    item_calls=item_calls,
+                )
             observed_claim = await self._write_observed_claim(
                 conn,
                 operation=operation,
@@ -894,8 +1077,17 @@ class ExaContactChannelCoordinator:
                     workspace_id=operation.request.workspace_id,
                     operation_id=operation.operation_id,
                 )
+                stop = await contact_channel_operation_stop(
+                    conn,
+                    workspace_id=operation.request.workspace_id,
+                    operation_id=operation.operation_id,
+                )
                 return ContactChannelEnrichmentResult(
-                    outcome=ContactChannelEnrichmentOutcome.JOINED_IN_FLIGHT,
+                    outcome=(
+                        ContactChannelEnrichmentOutcome.FAILED_TERMINAL
+                        if stop is not None
+                        else ContactChannelEnrichmentOutcome.JOINED_IN_FLIGHT
+                    ),
                     operation=current,
                 )
         validator_request = ContactChannelValidatorRequest(
@@ -932,6 +1124,19 @@ class ExaContactChannelCoordinator:
                 operation=failed,
                 validation_calls=1,
             )
+        stop = await self._current_stop(validating)
+        if stop is not None:
+            cancelled = await self._cancel_after_validation(
+                validating,
+                units=validator_result.provider_units_charged,
+                cost_cents=validator_result.provider_cost_cents_charged,
+                reason_code=stop.reason_code,
+            )
+            return ContactChannelEnrichmentResult(
+                outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                operation=cancelled,
+                validation_calls=1,
+            )
         validator_result = await self._enforce_corroboration(
             operation=validating,
             value=value,
@@ -963,7 +1168,7 @@ class ExaContactChannelCoordinator:
                     }
                 )
         validation_bytes = validator_result.model_dump_json().encode()
-        validation_key = await self._record(
+        validation_key, retention_stop = await self._record_active(
             validating,
             "independent_validation",
             validation_bytes,
@@ -971,6 +1176,19 @@ class ExaContactChannelCoordinator:
             validator_result.provider_reference_ids[0],
             source_key=operation.request.validation_source_key,
         )
+        if retention_stop is not None:
+            cancelled = await self._cancel_after_validation(
+                validating,
+                units=validator_result.provider_units_charged,
+                cost_cents=validator_result.provider_cost_cents_charged,
+                reason_code=retention_stop.reason_code,
+            )
+            return ContactChannelEnrichmentResult(
+                outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                operation=cancelled,
+                validation_calls=1,
+            )
+        assert validation_key is not None
         validation = validator_result.to_validation(
             channel=operation.request.channel,
             observed_claim_id=observed_claim.id,
@@ -1001,13 +1219,26 @@ class ExaContactChannelCoordinator:
             "use_policy_version": use.policy_version,
             "contains_raw_channel": False,
         }
-        receipt_key = await self._record(
+        receipt_key, receipt_stop = await self._record_active(
             validating,
             "terminal_receipt",
             json.dumps(receipt_payload, sort_keys=True, separators=(",", ":")).encode(),
             None,
             None,
         )
+        if receipt_stop is not None:
+            cancelled = await self._cancel_after_validation(
+                validating,
+                units=validator_result.provider_units_charged,
+                cost_cents=validator_result.provider_cost_cents_charged,
+                reason_code=receipt_stop.reason_code,
+            )
+            return ContactChannelEnrichmentResult(
+                outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                operation=cancelled,
+                validation_calls=1,
+            )
+        assert receipt_key is not None
         terminal = validating.model_copy(
             update={
                 "state": terminal_state,
@@ -1032,10 +1263,37 @@ class ExaContactChannelCoordinator:
                 operation_id=operation.operation_id,
                 for_update=True,
             )
+            stop = await contact_channel_operation_stop(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
             if current.state is not ContactChannelOperationState.VALIDATING:
                 return ContactChannelEnrichmentResult(
                     outcome=ContactChannelEnrichmentOutcome.REPLAYED,
                     operation=current,
+                    validation_calls=1,
+                )
+            if stop is not None:
+                cancelled = terminal.model_copy(
+                    update={
+                        "state": ContactChannelOperationState.CANCELLED,
+                        "validation": None,
+                        "validation_artifact_key": None,
+                        "receipt_artifact_key": None,
+                        "failure_code": stop.reason_code,
+                    }
+                )
+                stored = await update_contact_channel_operation(conn, operation=cancelled)
+                await self._budget.record(
+                    cost_cents=validator_result.provider_cost_cents_charged,
+                    scope=BudgetScope.RUN,
+                    project_run_id=operation.request.project_run_id,
+                    conn=conn,
+                )
+                return ContactChannelEnrichmentResult(
+                    outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                    operation=stored,
                     validation_calls=1,
                 )
             stored = await update_contact_channel_operation(conn, operation=terminal)
@@ -1072,6 +1330,130 @@ class ExaContactChannelCoordinator:
             validation_calls=1,
         )
 
+    async def _current_stop(
+        self, operation: ContactChannelOperation
+    ) -> ContactResearchOperationStop | None:
+        async with self._conn_factory() as conn:
+            return await contact_channel_operation_stop(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
+
+    async def _cancel_after_acquisition(
+        self,
+        operation: ContactChannelOperation,
+        *,
+        units: Decimal,
+        cost_cents: Decimal,
+        reason_code: str,
+    ) -> ContactChannelOperation:
+        cancelled = operation.model_copy(
+            update={
+                "state": ContactChannelOperationState.CANCELLED,
+                "acquisition_spend_outcome": ContactChannelSpendOutcome.CHARGED,
+                "acquisition_units_charged": units,
+                "acquisition_cost_cents_charged": cost_cents,
+                "validation_spend_outcome": ContactChannelSpendOutcome.NOT_DISPATCHED,
+                "failure_code": reason_code,
+                "next_poll_at": None,
+                "terminal_at": datetime.now(UTC),
+            }
+        )
+        async with self._conn_factory() as conn:
+            current = await get_contact_channel_operation(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+                for_update=True,
+            )
+            if current.state in {
+                ContactChannelOperationState.CANCELLED,
+                ContactChannelOperationState.SUCCEEDED,
+                ContactChannelOperationState.REJECTED,
+                ContactChannelOperationState.FAILED_TERMINAL,
+            }:
+                return current
+            stored = await update_contact_channel_operation(conn, operation=cancelled)
+            await self._budget.record(
+                cost_cents=cost_cents,
+                scope=BudgetScope.RUN,
+                project_run_id=operation.request.project_run_id,
+                conn=conn,
+            )
+            return stored
+
+    async def _cancel_without_new_spend(
+        self,
+        operation: ContactChannelOperation,
+        *,
+        reason_code: str,
+    ) -> ContactChannelOperation:
+        """Cancel already-settled acquisition work without debiting its cost a second time."""
+
+        async with self._conn_factory() as conn:
+            current = await get_contact_channel_operation(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+                for_update=True,
+            )
+            if current.state in {
+                ContactChannelOperationState.CANCELLED,
+                ContactChannelOperationState.SUCCEEDED,
+                ContactChannelOperationState.REJECTED,
+                ContactChannelOperationState.FAILED_TERMINAL,
+            }:
+                return current
+            return await update_contact_channel_operation(
+                conn,
+                operation=current.model_copy(
+                    update={
+                        "state": ContactChannelOperationState.CANCELLED,
+                        "failure_code": reason_code,
+                        "next_poll_at": None,
+                        "terminal_at": datetime.now(UTC),
+                    }
+                ),
+            )
+
+    async def _cancel_after_validation(
+        self,
+        operation: ContactChannelOperation,
+        *,
+        units: Decimal,
+        cost_cents: Decimal,
+        reason_code: str,
+    ) -> ContactChannelOperation:
+        cancelled = operation.model_copy(
+            update={
+                "state": ContactChannelOperationState.CANCELLED,
+                "validation_spend_outcome": ContactChannelSpendOutcome.CHARGED,
+                "validation_units_charged": units,
+                "validation_cost_cents_charged": cost_cents,
+                "failure_code": reason_code,
+                "next_poll_at": None,
+                "terminal_at": datetime.now(UTC),
+            }
+        )
+        async with self._conn_factory() as conn:
+            current = await get_contact_channel_operation(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+                for_update=True,
+            )
+            if current.state is not ContactChannelOperationState.VALIDATING:
+                return current
+            stored = await update_contact_channel_operation(conn, operation=cancelled)
+            await self._budget.record(
+                cost_cents=cost_cents,
+                scope=BudgetScope.RUN,
+                project_run_id=operation.request.project_run_id,
+                conn=conn,
+            )
+            return stored
+
     async def _reject_use_denied(
         self,
         operation: ContactChannelOperation,
@@ -1097,7 +1479,7 @@ class ExaContactChannelCoordinator:
             "usable_for_outreach": False,
             "contains_raw_channel": False,
         }
-        artifact_key = await self._record(
+        artifact_key, retention_stop = await self._record_active(
             operation,
             "platform_use_denial",
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(),
@@ -1105,7 +1487,16 @@ class ExaContactChannelCoordinator:
             None,
             source_key=operation.request.validation_source_key,
         )
-        receipt_key = await self._record(
+        if retention_stop is not None:
+            cancelled = await self._cancel_without_new_spend(
+                operation, reason_code=retention_stop.reason_code
+            )
+            return ContactChannelEnrichmentResult(
+                outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                operation=cancelled,
+            )
+        assert artifact_key is not None
+        receipt_key, receipt_stop = await self._record_active(
             operation,
             "terminal_receipt",
             json.dumps(
@@ -1120,6 +1511,15 @@ class ExaContactChannelCoordinator:
             None,
             None,
         )
+        if receipt_stop is not None:
+            cancelled = await self._cancel_without_new_spend(
+                operation, reason_code=receipt_stop.reason_code
+            )
+            return ContactChannelEnrichmentResult(
+                outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                operation=cancelled,
+            )
+        assert receipt_key is not None
         rejected = operation.model_copy(
             update={
                 "state": ContactChannelOperationState.REJECTED,
@@ -1132,9 +1532,40 @@ class ExaContactChannelCoordinator:
             }
         )
         async with self._conn_factory() as conn:
-            stored = await update_contact_channel_operation(conn, operation=rejected)
+            current = await get_contact_channel_operation(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+                for_update=True,
+            )
+            final_stop = await contact_channel_operation_stop(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
+            stored = await update_contact_channel_operation(
+                conn,
+                operation=(
+                    rejected
+                    if final_stop is None
+                    else current.model_copy(
+                        update={
+                            "state": ContactChannelOperationState.CANCELLED,
+                            "validation": None,
+                            "validation_artifact_key": None,
+                            "receipt_artifact_key": None,
+                            "failure_code": final_stop.reason_code,
+                            "terminal_at": datetime.now(UTC),
+                        }
+                    )
+                ),
+            )
         return ContactChannelEnrichmentResult(
-            outcome=ContactChannelEnrichmentOutcome.REJECTED,
+            outcome=(
+                ContactChannelEnrichmentOutcome.REJECTED
+                if final_stop is None
+                else ContactChannelEnrichmentOutcome.FAILED_TERMINAL
+            ),
             operation=stored,
         )
 
@@ -1166,6 +1597,55 @@ class ExaContactChannelCoordinator:
         self, preflight: ContactChannelPreflight
     ) -> tuple[ContactChannelOperation, bool]:
         async with self._conn_factory() as conn:
+            # Serialize operation creation with both selection cancellation and subject-level
+            # objection/erasure. These locks close the compiler-to-reservation race without ever
+            # holding a transaction across provider traffic.
+            selection_row = (
+                await conn.execute(
+                    text(
+                        "SELECT id FROM contact_research_selection "
+                        "WHERE workspace_id=:workspace_id AND id=:selection_id FOR UPDATE"
+                    ),
+                    {
+                        "workspace_id": preflight.request.workspace_id,
+                        "selection_id": preflight.request.selection_id,
+                    },
+                )
+            ).scalar_one_or_none()
+            if selection_row is None:
+                raise ContactChannelEligibilityError("selected-contact authority no longer exists")
+            await conn.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:subject_lock, 0))"),
+                {
+                    "subject_lock": (
+                        f"contact-research:{preflight.request.workspace_id}:"
+                        f"{preflight.request.contact_id}"
+                    )
+                },
+            )
+            blocked = (
+                await conn.execute(
+                    text(
+                        "SELECT EXISTS (SELECT 1 FROM contact_research_selection_cancellation "
+                        "WHERE selection_id=:selection_id) OR EXISTS (SELECT 1 FROM "
+                        "outreach_objected WHERE workspace_id=:workspace_id "
+                        "AND contact_entity_id=:contact_id) OR EXISTS (SELECT 1 FROM "
+                        "contact_channel_suppression WHERE workspace_id=:workspace_id "
+                        "AND contact_id=:contact_id AND channel=CAST(:channel AS "
+                        "contact_channel_kind))"
+                    ),
+                    {
+                        "workspace_id": preflight.request.workspace_id,
+                        "selection_id": preflight.request.selection_id,
+                        "contact_id": preflight.request.contact_id,
+                        "channel": preflight.request.channel.value,
+                    },
+                )
+            ).scalar_one()
+            if blocked:
+                raise ContactChannelEligibilityError(
+                    "selected-contact authority was cancelled, objected, or erased"
+                )
             existing = await find_contact_channel_operation(conn, request=preflight.request)
             if existing is not None:
                 return existing, False
@@ -1227,6 +1707,18 @@ class ExaContactChannelCoordinator:
         try:
             exchange = await self._transport.get_webset(operation.request.provider_external_id)
         except ExaWebsetNotFound:
+            stop = await self._current_stop(operation)
+            if stop is not None:
+                cancelled = await self._cancel_without_new_spend(
+                    operation, reason_code=stop.reason_code
+                )
+                return ContactChannelEnrichmentResult(
+                    outcome=ContactChannelEnrichmentOutcome.FAILED_TERMINAL,
+                    operation=cancelled,
+                    import_calls=import_calls,
+                    upload_calls=upload_calls,
+                    create_calls=create_calls,
+                )
             retryable = operation.model_copy(
                 update={
                     "state": ContactChannelOperationState.FAILED_RETRYABLE,
@@ -1272,7 +1764,7 @@ class ExaContactChannelCoordinator:
                 upload_calls=upload_calls,
                 create_calls=create_calls,
             )
-        await self._record(
+        await self._record_active(
             operation,
             "webset_create_recovered",
             exchange.response_body,
@@ -1396,7 +1888,7 @@ class ExaContactChannelCoordinator:
             }
         )
 
-    async def _record(
+    async def _record_active(
         self,
         operation: ContactChannelOperation,
         kind: str,
@@ -1405,8 +1897,28 @@ class ExaContactChannelCoordinator:
         request_id: str | None,
         *,
         source_key: str | None = None,
-    ) -> str:
+    ) -> tuple[str | None, ContactResearchOperationStop | None]:
+        """Retain subject data only while the exact operation remains unstopped.
+
+        The operation-row lock serializes this write with cancellation, objection, and erasure.
+        If retention wins, a waiting privacy transaction sees and purges it; if the stop wins,
+        provider/contact data cannot be recreated after the stop commits.
+        """
+
         async with self._conn_factory() as conn:
+            await get_contact_channel_operation(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+                for_update=True,
+            )
+            stop = await contact_channel_operation_stop(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
+            if stop is not None:
+                return None, stop
             key = await capture_discovery_artifact(
                 conn,
                 self._storage,
@@ -1433,7 +1945,7 @@ class ExaContactChannelCoordinator:
                 reference_kind=f"contact_channel_{kind}",
                 reference_id=str(operation.operation_id),
             )
-            return key
+            return key, None
 
     async def _fail(
         self, operation: ContactChannelOperation, code: str, *, unknown: bool
@@ -1464,6 +1976,27 @@ class ExaContactChannelCoordinator:
             }
         )
         async with self._conn_factory() as conn:
+            current = await get_contact_channel_operation(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+                for_update=True,
+            )
+            stop = await contact_channel_operation_stop(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
+            if stop is not None and not unknown:
+                update = current.model_copy(
+                    update={
+                        "state": ContactChannelOperationState.CANCELLED,
+                        "acquisition_spend_outcome": ContactChannelSpendOutcome.NOT_CHARGED,
+                        "failure_code": stop.reason_code,
+                        "terminal_at": datetime.now(UTC),
+                        "next_poll_at": None,
+                    }
+                )
             return await update_contact_channel_operation(conn, operation=update)
 
     def _extract_item(

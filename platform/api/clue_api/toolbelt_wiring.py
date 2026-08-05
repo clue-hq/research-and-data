@@ -66,6 +66,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.composition import build_pre_spend_gate
+from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.coverage_tools import (
     build_research_account_gaps_tool,
     build_research_account_gaps_v2_tool,
@@ -110,7 +111,9 @@ from clue_api.tool_outputs import (
     AccountGapEnrichmentOutput,
     CommitteeOutput,
     ConfirmIcpOutput,
+    ContactContentHandoffOutput,
     ContactProfileOutput,
+    ContactResearchSelectionApprovalOutput,
     DeepAccountOutput,
     DiscoverAccountsOutput,
     GovernedContactProfileOutput,
@@ -131,6 +134,9 @@ from clue_api.verification import build_verification_phase_handler
 from clue_config import DEFAULT_STAGE0_POLICY, Settings, load_settings
 from clue_core import (
     AccountEntity,
+    ContactContentHandoff,
+    ContactResearchSelection,
+    ContactResearchSelectionId,
     CostCents,
     EntityId,
     ICPSpec,
@@ -158,6 +164,9 @@ from clue_research.durable import (
     AccountDeepLaunchConflict,
     AccountDeepLaunchInvalid,
     BudgetEngine,
+    ContactResearchSelectionApprovalAuthority,
+    ContactResearchSelectionApprovalKind,
+    ContactResearchSelectionNotFound,
     DbBudgetStore,
     DbIdempotencyStore,
     DbProjectRunStore,
@@ -170,8 +179,11 @@ from clue_research.durable import (
     ProjectRunStatus,
     create_account_deep_launch,
     get_checkpoint,
+    get_contact_research_selection,
     get_project_run,
+    latest_contact_research_selection,
     preview_account_deep_launch,
+    store_contact_research_selection,
 )
 from clue_research.icp.rubric import TierCutoffs, rubric_from_slot
 from clue_research.icp.spec import get_active_icp, get_icp_version
@@ -248,6 +260,20 @@ def _parse_run_id(raw: str) -> ProjectRunId | None:
 def _parse_entity_id(raw: str) -> EntityId | None:
     try:
         return EntityId(UUID(raw))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def _parse_contact_selection_id(raw: str) -> ContactResearchSelectionId | None:
+    try:
+        return ContactResearchSelectionId(UUID(raw))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def _parse_account_run_id(raw: str) -> RunId | None:
+    try:
+        return RunId(UUID(raw))
     except (ValueError, AttributeError, TypeError):
         return None
 
@@ -355,6 +381,19 @@ class RunVerificationInput(ToolInput):
 
 class ComposeHandoffInput(ToolInput):
     project_run_id: str
+
+
+class ComposeContactContentHandoffInput(ToolInput):
+    project_id: str
+    project_run_id: str
+    account_entity_id: str
+    product_id: str | None = None
+
+
+class ApproveContactResearchSelectionInput(ToolInput):
+    selection: ContactResearchSelection
+    account_run_id: str
+    predecessor_selection_id: str
 
 
 class EstimateProjectInput(ToolInput):
@@ -1848,6 +1887,260 @@ class GovernedProfileContactTool(_CapabilityTool):
         )
 
 
+class ComposeContactContentHandoffTool(Tool):
+    """C7 read-only account x contact x persona projection for governed content consumers."""
+
+    name = "compose_contact_content_handoff"
+    version = "1"
+    input_model = ComposeContactContentHandoffInput
+    output_model = ContactContentHandoffOutput
+    model_description = (
+        "Read the current reference-only contact research handoff for one exact project run and "
+        "account. This never calls a research provider and never returns raw email or phone values."
+    )
+    replay = ReplaySafety(
+        policy=ReplayPolicy.EFFECT_FREE,
+        durable_identity="repeatable-read governed C7 projection",
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    effect_class = ToolEffectClass.READ
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("project_id", "project_run_id", "account_entity_id", "product_id")
+    )
+    pin_requirements = (
+        "project_run",
+        "account",
+        "contact_research_selection",
+        "research_view",
+        "use_policy",
+    )
+
+    def __init__(self, *, service: ContactContentHandoffService | None) -> None:
+        self._service = service
+
+    async def preconditions(
+        self,
+        inputs: ToolInput,
+        ctx: ToolContext,
+    ) -> Sequence[PreconditionFailure]:
+        del ctx
+        assert isinstance(inputs, ComposeContactContentHandoffInput)
+        if self._service is None:
+            return _fail(
+                "contact_content_handoff_not_composed",
+                "the governed C7 contact handoff reader is unavailable",
+            )
+        if _parse_run_id(inputs.project_run_id) is None:
+            return _fail("run_not_found", "no such project run")
+        if _parse_entity_id(inputs.account_entity_id) is None:
+            return _fail("account_not_found", "no such account entity")
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        del inputs
+        return ToolEstimate.free()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ComposeContactContentHandoffInput)
+        service = self._service
+        assert service is not None
+        project_run_id = _parse_run_id(inputs.project_run_id)
+        account_id = _parse_entity_id(inputs.account_entity_id)
+        assert project_run_id is not None and account_id is not None
+        handoff: ContactContentHandoff = await service.compose(
+            workspace_id=ctx.workspace_id,
+            project_id=inputs.project_id,
+            project_run_id=project_run_id,
+            account_entity_id=account_id,
+            product_id=inputs.product_id,
+        )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={"handoff": handoff.model_dump(mode="json")},
+        )
+
+
+def _successor_scope_matches(
+    successor: ContactResearchSelection,
+    predecessor: ContactResearchSelection,
+) -> bool:
+    current = predecessor.body
+    proposed = successor.body
+    return bool(
+        successor.selection_id != predecessor.selection_id
+        and proposed.workspace_id == current.workspace_id
+        and proposed.project_id == current.project_id
+        and proposed.project_run_id == current.project_run_id
+        and proposed.account_entity_id == current.account_entity_id
+        and proposed.research_directive == current.research_directive
+        and proposed.policy == current.policy
+        and proposed.source_profile_ref == current.source_profile_ref
+        and proposed.jurisdiction_policy_ref == current.jurisdiction_policy_ref
+        and proposed.use_policy_ref == current.use_policy_ref
+        and proposed.retention_policy_ref == current.retention_policy_ref
+    )
+
+
+class ApproveContactResearchSelectionTool(Tool):
+    """Persist a human-approved, exact successor to the current contact selection head."""
+
+    name = "approve_contact_research_selection"
+    version = "1"
+    input_model = ApproveContactResearchSelectionInput
+    output_model = ContactResearchSelectionApprovalOutput
+    model_description = (
+        "Approve one exact content-addressed successor to the current contact-research selection. "
+        "Agents can prepare the reviewed receipt but only an authenticated human can approve it."
+    )
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="database-backed contact selection approval receipt",
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    effect_class = ToolEffectClass.STEERING
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("account_run_id", "predecessor_selection_id")
+    )
+    pin_requirements = (
+        "project_run",
+        "account",
+        "research_directive",
+        "contact_research_selection",
+    )
+
+    def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
+        self._conn_factory = conn_factory
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> dict[str, object]:
+        assert isinstance(inputs, ApproveContactResearchSelectionInput)
+        predecessor_id = _parse_contact_selection_id(inputs.predecessor_selection_id)
+        exists = False
+        current = False
+        if predecessor_id is not None:
+            async with self._conn_factory() as conn:
+                try:
+                    predecessor = await get_contact_research_selection(
+                        conn,
+                        workspace_id=ctx.workspace_id,
+                        selection_id=predecessor_id,
+                    )
+                except ContactResearchSelectionNotFound:
+                    predecessor = None
+                if predecessor is not None:
+                    exists = True
+                    head = await latest_contact_research_selection(
+                        conn,
+                        workspace_id=ctx.workspace_id,
+                        project_run_id=predecessor.body.project_run_id,
+                        account_id=predecessor.body.account_entity_id,
+                        include_cancelled=True,
+                    )
+                    current = head is not None and head.selection_id == predecessor_id
+        return {
+            "predecessor_selection_id": inputs.predecessor_selection_id,
+            "predecessor_exists": exists,
+            "predecessor_is_current": current,
+            "successor_selection_id": str(inputs.selection.selection_id),
+            "successor_selection_sha256": inputs.selection.selection_sha256,
+        }
+
+    async def preconditions(
+        self,
+        inputs: ToolInput,
+        ctx: ToolContext,
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, ApproveContactResearchSelectionInput)
+        if ctx.actor != "human":
+            return _fail(
+                "human_required",
+                "only a human can approve a contact-research selection successor",
+            )
+        if ctx.actor_id is None or ctx.action_ref is None:
+            return _fail(
+                "trusted_human_receipt_required",
+                "selection approval requires authenticated human identity and action reference",
+            )
+        selection = inputs.selection
+        if (
+            selection.body.workspace_id != ctx.workspace_id
+            or selection.body.approved_by != ctx.actor_id
+        ):
+            return _fail(
+                "trusted_human_receipt_mismatch",
+                "selection scope or approval identity differs from the invocation context",
+            )
+        predecessor_id = _parse_contact_selection_id(inputs.predecessor_selection_id)
+        account_run_id = _parse_account_run_id(inputs.account_run_id)
+        if predecessor_id is None or account_run_id is None:
+            return _fail("contact_selection_not_found", "no such contact selection authority")
+        async with self._conn_factory() as conn:
+            try:
+                predecessor = await get_contact_research_selection(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    selection_id=predecessor_id,
+                )
+            except ContactResearchSelectionNotFound:
+                return _fail("contact_selection_not_found", "no such contact selection authority")
+            current = await latest_contact_research_selection(
+                conn,
+                workspace_id=ctx.workspace_id,
+                project_run_id=predecessor.body.project_run_id,
+                account_id=predecessor.body.account_entity_id,
+                include_cancelled=True,
+            )
+        if current is None or current.selection_id != predecessor_id:
+            return _fail(
+                "contact_selection_not_current",
+                "the named predecessor is not the current contact selection head",
+            )
+        if not _successor_scope_matches(selection, predecessor):
+            return _fail(
+                "contact_selection_scope_mismatch",
+                "the successor crosses its predecessor project, account, or policy authority",
+            )
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        del inputs
+        return ToolEstimate.free()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ApproveContactResearchSelectionInput)
+        if ctx.actor != "human" or ctx.actor_id is None or ctx.action_ref is None:
+            raise ValueError("trusted human selection approval receipt is missing")
+        predecessor_id = _parse_contact_selection_id(inputs.predecessor_selection_id)
+        account_run_id = _parse_account_run_id(inputs.account_run_id)
+        if predecessor_id is None or account_run_id is None:
+            raise ValueError("contact selection authority is malformed")
+        async with self._conn_factory() as conn:
+            stored = await store_contact_research_selection(
+                conn,
+                inputs.selection,
+                account_run_id=account_run_id,
+                predecessor_id=predecessor_id,
+                approval=ContactResearchSelectionApprovalAuthority(
+                    kind=ContactResearchSelectionApprovalKind.HUMAN_SUCCESSOR,
+                    operation_id=ctx.operation_id,
+                    approved_by=ctx.actor_id,
+                    action_ref=ctx.action_ref,
+                    approved_at=inputs.selection.body.approved_at,
+                ),
+            )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "selection_id": str(stored.selection_id),
+                "selection_sha256": stored.selection_sha256,
+                "predecessor_selection_id": str(predecessor_id),
+                "approval_ref": f"contact-research-selection-approval:{ctx.operation_id}",
+            },
+        )
+
+
 # =============================================================================================
 # verification / handoff tools
 # =============================================================================================
@@ -2257,6 +2550,7 @@ def build_toolbelt(
     account_gap_enrichment_starter: AccountGapEnrichmentStarter | None = None,
     account_deep_full_unit_available: bool | None = None,
     independent_contact_research: IndependentContactResearchRunner | None = None,
+    contact_content_handoff: ContactContentHandoffService | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -2368,6 +2662,14 @@ def build_toolbelt(
             ),
             make_default=make_default,
         )
+    registry.register(
+        ComposeContactContentHandoffTool(service=contact_content_handoff),
+        make_default=True,
+    )
+    registry.register(
+        ApproveContactResearchSelectionTool(conn_factory=conn_factory),
+        make_default=True,
+    )
     registry.register(
         EnrichSelectedAccountsTool(
             starter=targeted_enrichment_starter,

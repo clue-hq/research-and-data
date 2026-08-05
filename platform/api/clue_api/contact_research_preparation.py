@@ -27,8 +27,10 @@ from clue_api.exa_deep_acquisition import (
 from clue_config import OverlayStore, Secrets, Settings
 from clue_core import (
     CONTACT_PROFESSIONAL_FIELD_KEYS,
+    Claim,
     ClaimId,
     ContactChannel,
+    ContactChannelValidator,
     ContactPreparationStatus,
     ContactResearchIntent,
     ContactResearchPolicyPin,
@@ -39,9 +41,12 @@ from clue_core import (
     PreSpendGate,
     ProjectRunId,
     RunId,
+    UseDecision,
 )
 from clue_db import ConnFactory, transaction
+from clue_research.adapters.exa_websets import ExaWebsetsImportTransport
 from clue_research.claimstore import WorkspaceScope, claims_for
+from clue_research.compliance import UseGateImpl, load_workspace_policy
 from clue_research.durable import (
     ContactChannelBudgetExceeded,
     ProjectRunStatus,
@@ -55,6 +60,26 @@ from clue_storage import StorageBackend
 
 class ContactResearchPreparationError(RuntimeError):
     pass
+
+
+class _WorkspaceContactChannelUseGate:
+    """Resolve the tenant policy for each claim before the production C5 use decision."""
+
+    def __init__(self, *, conn_factory: ConnFactory) -> None:
+        self._conn_factory = conn_factory
+
+    async def evaluate(self, claim: Claim) -> UseDecision:
+        if claim.workspace_id is None:
+            raise ContactResearchPreparationError(
+                "a production contact-channel claim requires workspace authority"
+            )
+        async with self._conn_factory() as conn:
+            policy = await load_workspace_policy(conn, workspace_id=claim.workspace_id)
+        return await UseGateImpl(
+            claim.workspace_id,
+            policy=policy,
+            conn_factory=self._conn_factory,
+        ).evaluate(claim)
 
 
 class ContactPreparationAdapterResult(BaseModel):
@@ -741,6 +766,26 @@ class ContactResearchBatchPreparer:
         )
 
 
+def build_production_contact_channel_coordinator(
+    *,
+    transport: ExaWebsetsImportTransport,
+    validator: ContactChannelValidator,
+    storage: StorageBackend,
+    pre_spend_gate: PreSpendGate,
+    conn_factory: ConnFactory = transaction,
+) -> ExaContactChannelCoordinator:
+    """Compose the real C5 transport with an explicitly deployed independent validator."""
+
+    return ExaContactChannelCoordinator(
+        transport=transport,
+        validator=validator,
+        use_gate=_WorkspaceContactChannelUseGate(conn_factory=conn_factory),
+        pre_spend_gate=pre_spend_gate,
+        storage=storage,
+        conn_factory=conn_factory,
+    )
+
+
 def build_production_contact_research_preparer(
     settings: Settings,
     *,
@@ -819,5 +864,6 @@ __all__ = [
     "PreparedContactResearchBatch",
     "PreparedContactTarget",
     "RegisteredContactResearchPreparer",
+    "build_production_contact_channel_coordinator",
     "build_production_contact_research_preparer",
 ]
