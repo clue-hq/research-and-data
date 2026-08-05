@@ -5,9 +5,10 @@
 > professional materialization, C2 exact contact-subject durability, C3 contact-targeted Exa Deep
 > compilation, C4 durable contact acquisition/materialization, and C5 selected-contact channel
 > enrichment/validation, C6 provider-neutral preparation/wait/resume composition, and C7 governed
-> contact handoff/content consumption are mechanically accepted. C4/C5 paid provider canaries and
-> the concrete selected-channel validator deployment remain separately
-> authorization/configuration-gated; V0 is next. **Recorded:**
+> contact handoff/content consumption are mechanically accepted. V0 offline/database acceptance is
+> also complete against clean and prerequisite-populated isolated databases. C4/C5 paid provider
+> canaries and the concrete selected-channel validator deployment remain separately
+> authorization/configuration-gated; V1 is next. **Recorded:**
 > 2026-08-05. **Parent capability:**
 > [M8B account-deep provider integration](M8B-exa-sumble-account-deep-integration-roadmap.md).
 > **Working branch at record time:** `platform/c8-account-profiling-integration`.
@@ -889,6 +890,9 @@ remains V1.
 6. No content generator calls a research provider.
 
 ### V0 — Offline and database acceptance
+
+**Status:** mechanically accepted. Binding matrix, populated-database findings, corrections, and
+verification record: `M8C-V0-offline-database-acceptance.md`.
 
 Run the combined regression matrix with fake transports only:
 

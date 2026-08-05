@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-05-m8c-v0-offline-database-acceptance.md` — M8C V0 complete mechanically: frozen
+  55-gate C0–C7 matrix, prerequisite-populated synthetic database and zero-call fresh replay,
+  provider-id/count isolation repairs, clean 3,412-test full suite, migration/static gates, and the
+  separate V1 live-provider boundary.
 - `2026-08-05-m8c-c5-selected-contact-channel-enrichment.md` — C5 mechanically complete:
   exact selected-contact/channel authority, Exa one-person acquisition, independent validation,
   atomic split spend, governed identity promotion, replay, DSAR/retention, clean database
