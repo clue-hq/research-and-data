@@ -28,3 +28,10 @@
 ## Disposition
 
 C0 should be reopened. C1 should be reopened for the Teams/People selection bias and durable lineage validation. C2's core exit gates pass, but the lock composition and all-or-none Exa lineage checks should be hardened before C4 relies on them. Do not claim contact-targeted Exa live acceptance until C3/C4 exist.
+
+## Closing verification
+
+- The complete database-backed pytest suite passed at 100% on the clean isolated database.
+- Mypy passed all 525 source files and all 24 import-linter contracts passed.
+- Ruff lint passed across the tracked research/API/test paths. Repository formatting did not pass: three files changed by C1 (`committee/sources.py`, `test_sumble_committee_source_s2c.py`, and `test_c7_handoff_cutover.py`) require formatting. Untracked local skill folders also make a root-level Ruff lint invocation noisy and are unrelated to M8C.
+- No product implementation was changed during the audit. The only repository change is this durable audit record.
