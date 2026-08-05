@@ -111,6 +111,17 @@ class HandoffOutput(ToolOutput):
     narrative_emit_skipped: bool
 
 
+class ContactContentHandoffOutput(ToolOutput):
+    handoff: dict[str, object]
+
+
+class ContactResearchSelectionApprovalOutput(ToolOutput):
+    selection_id: str
+    selection_sha256: str
+    predecessor_selection_id: str
+    approval_ref: str
+
+
 class ProjectEstimateOutput(ToolOutput):
     discovered_count: int
     projected_deep_count: int

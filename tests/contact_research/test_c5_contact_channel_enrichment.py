@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
+from uuid import uuid4
 
 import pytest
 from pydantic import SecretStr
@@ -22,11 +24,14 @@ from tests.profiling.conftest import migrated_db as migrated_db
 from tests.profiling.conftest import require_profiling_db as require_profiling_db
 from tests.profiling.conftest import rollback_conn
 
+import clue_api.contact_channel_enrichment as contact_channel_module
 from clue_api.contact_channel_enrichment import (
     ContactChannelEligibilityError,
     ContactChannelEnrichmentOutcome,
     ExaContactChannelCoordinator,
+    compile_contact_channel_preflight,
 )
+from clue_api.storage_wiring import DurableContactResearchPrivacyStopper
 from clue_config import ContactResearchPolicy, Jurisdiction
 from clue_core import (
     AccountEntity,
@@ -37,6 +42,7 @@ from clue_core import (
     ClaimProvenanceKind,
     ContactChannel,
     ContactChannelAuthorization,
+    ContactChannelOperationState,
     ContactChannelValidationOutcome,
     ContactChannelValidatorRequest,
     ContactChannelValidatorResult,
@@ -72,8 +78,13 @@ from clue_research.adapters.exa_websets import (
 from clue_research.claimstore import insert_claim, load_core_pack
 from clue_research.compliance import DataSubjectRightsImpl, load_compliance_pack
 from clue_research.durable import (
+    ContactResearchSelectionApprovalAuthority,
+    ContactResearchSelectionApprovalKind,
+    ContactResearchSelectionNotFound,
     contact_channel_is_usable,
+    get_contact_channel_operation,
     list_contact_channel_operations_for_selection,
+    store_contact_research_selection,
 )
 from clue_research.identity import get_contact, stamp_reuse
 from clue_research.sources import seed_source_manifests
@@ -441,9 +452,36 @@ async def _channel_intent(
             "targets": (target,),
             "policy": policy.pin(),
             "budget_reservation_ref": f"budget:c5:{suffix}",
+            "approved_by": "human:c5-test",
+            "approved_at": datetime.now(UTC),
         }
     )
     selection = ContactResearchSelection.from_body(body, effective_policy=body.policy)
+    account_run_id = (
+        await conn.execute(
+            text(
+                "SELECT account_run_id FROM contact_research_selection "
+                "WHERE workspace_id=:workspace_id AND id=:selection_id"
+            ),
+            {
+                "workspace_id": base.intent.workspace_id,
+                "selection_id": base.intent.selection_id,
+            },
+        )
+    ).scalar_one()
+    selection = await store_contact_research_selection(
+        conn,
+        selection,
+        account_run_id=account_run_id,
+        predecessor_id=base.intent.selection_id,
+        approval=ContactResearchSelectionApprovalAuthority(
+            kind=ContactResearchSelectionApprovalKind.HUMAN_SUCCESSOR,
+            operation_id=uuid4(),
+            approved_by=body.approved_by,
+            action_ref=f"human-action:c5:{suffix}",
+            approved_at=body.approved_at,
+        ),
+    )
     intent = ContactResearchIntent.from_selection(
         selection, contact_entity_id=base.intent.contact_entity_id
     )
@@ -556,6 +594,57 @@ def test_c5_disabled_or_wrong_channel_causes_zero_provider_traffic(tmp_path: Pat
                     effective_policy=policy.pin(),
                     channel=ContactChannel.EMAIL,
                     observation_window="c5-unselected",
+                )
+            assert transport.import_calls == transport.create_calls == validator.calls == 0
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize("authority", ["forged", "predecessor"])
+def test_c5_requires_the_database_current_selection_before_provider_traffic(
+    tmp_path: Path,
+    authority: str,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn() as conn:
+            intent, policy, claim_id = await _channel_intent(
+                conn, storage, suffix=f"selection-{authority}"
+            )
+            contact = await get_contact(conn, intent.contact_entity_id)
+            assert contact is not None and contact.linkedin_url is not None
+            transport = _Transport(contact.linkedin_url)
+            validator = _Validator(claim_id)
+            coordinator = ExaContactChannelCoordinator(
+                transport=transport,
+                validator=validator,
+                use_gate=_UseGate(),
+                pre_spend_gate=_PassGate(),
+                storage=storage,
+                conn_factory=_TrackedConnFactory(conn),
+            )
+            if authority == "forged":
+                invalid_selection_id = new_contact_research_selection_id()
+            else:
+                invalid_selection_id = (
+                    await conn.execute(
+                        text(
+                            "SELECT predecessor_id FROM contact_research_selection "
+                            "WHERE id=:selection_id"
+                        ),
+                        {"selection_id": intent.selection_id},
+                    )
+                ).scalar_one()
+            invalid_intent = intent.model_copy(update={"selection_id": invalid_selection_id})
+
+            with pytest.raises(
+                (ContactChannelEligibilityError, ContactResearchSelectionNotFound),
+            ):
+                await coordinator.start(
+                    intent=invalid_intent,
+                    effective_policy=policy.pin(),
+                    channel=ContactChannel.EMAIL,
+                    observation_window=f"c5-selection-{authority}",
                 )
             assert transport.import_calls == transport.create_calls == validator.calls == 0
 
@@ -726,7 +815,10 @@ def test_c5_email_validates_promotes_replays_and_objection_suppresses(
             assert len(channel_artifact_keys) >= 7
             assert all([await storage.exists(key) for key in channel_artifact_keys])
             rights = DataSubjectRightsImpl(
-                intent.workspace_id, conn_factory=factory, storage=storage
+                intent.workspace_id,
+                conn_factory=factory,
+                storage=storage,
+                contact_research_stopper=DurableContactResearchPrivacyStopper(),
             )
             objected = await rights.record_objection(intent.contact_entity_id)
             assert objected.tombstoned_claim_ids
@@ -757,6 +849,237 @@ def test_c5_email_validates_promotes_replays_and_objection_suppresses(
             await rights.erase(intent.contact_entity_id)
             erased = await get_contact(conn, intent.contact_entity_id)
             assert erased is not None and erased.verified_email is None
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize("stop_kind", ("objection", "erasure"))
+def test_c5_privacy_stop_cancels_planned_operation_before_any_provider_call(
+    tmp_path: Path,
+    stop_kind: str,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / stop_kind / "artifacts")
+        async with rollback_conn() as conn:
+            intent, policy, claim_id = await _channel_intent(
+                conn,
+                storage,
+                suffix=f"active-{stop_kind}",
+            )
+            contact = await get_contact(conn, intent.contact_entity_id)
+            assert contact is not None and contact.linkedin_url is not None
+            factory = _TrackedConnFactory(conn)
+            transport = _Transport(contact.linkedin_url)
+            coordinator = ExaContactChannelCoordinator(
+                transport=transport,
+                validator=_Validator(claim_id),
+                use_gate=_UseGate(),
+                pre_spend_gate=_PassGate(),
+                storage=storage,
+                conn_factory=factory,
+            )
+            preflight = await compile_contact_channel_preflight(
+                conn,
+                intent=intent,
+                effective_policy=policy.pin(),
+                channel=ContactChannel.EMAIL,
+                observation_window=f"c5-active-{stop_kind}",
+            )
+            operation, created = await coordinator._reserve(preflight)
+            assert created
+            assert operation.state is ContactChannelOperationState.PLANNED
+
+            rights = DataSubjectRightsImpl(
+                intent.workspace_id,
+                conn_factory=factory,
+                storage=storage,
+                contact_research_stopper=DurableContactResearchPrivacyStopper(),
+            )
+            if stop_kind == "objection":
+                await rights.record_objection(intent.contact_entity_id)
+            else:
+                await rights.erase(intent.contact_entity_id)
+
+            stopped = await get_contact_channel_operation(
+                conn,
+                workspace_id=intent.workspace_id,
+                operation_id=operation.operation_id,
+            )
+            assert stopped is not None
+            assert stopped.state is ContactChannelOperationState.CANCELLED
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM contact_channel_operation_stop "
+                        "WHERE operation_id=:operation_id"
+                    ),
+                    {"operation_id": operation.operation_id},
+                )
+            ).scalar_one() == 1
+            with pytest.raises(ContactChannelEligibilityError):
+                await coordinator.start(
+                    intent=intent,
+                    effective_policy=policy.pin(),
+                    channel=ContactChannel.EMAIL,
+                    observation_window=f"c5-active-{stop_kind}",
+                )
+            assert transport.import_calls == transport.create_calls == transport.poll_calls == 0
+
+    run_async(scenario())
+
+
+def test_c5_privacy_stop_between_reservation_and_dispatch_causes_zero_provider_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn() as conn:
+            intent, policy, claim_id = await _channel_intent(
+                conn,
+                storage,
+                suffix="stop-before-submit-claim",
+            )
+            contact = await get_contact(conn, intent.contact_entity_id)
+            assert contact is not None and contact.linkedin_url is not None
+            factory = _TrackedConnFactory(conn)
+            transport = _Transport(contact.linkedin_url)
+            coordinator = ExaContactChannelCoordinator(
+                transport=transport,
+                validator=_Validator(claim_id),
+                use_gate=_UseGate(),
+                pre_spend_gate=_PassGate(),
+                storage=storage,
+                conn_factory=factory,
+            )
+            original_claim = contact_channel_module.claim_contact_channel_submit
+
+            async def object_then_claim(*args: Any, **kwargs: Any) -> object:
+                await DataSubjectRightsImpl(
+                    intent.workspace_id,
+                    conn_factory=factory,
+                    storage=storage,
+                    contact_research_stopper=DurableContactResearchPrivacyStopper(),
+                ).record_objection(intent.contact_entity_id)
+                return await original_claim(*args, **kwargs)
+
+            monkeypatch.setattr(
+                contact_channel_module,
+                "claim_contact_channel_submit",
+                object_then_claim,
+            )
+            result = await coordinator.start(
+                intent=intent,
+                effective_policy=policy.pin(),
+                channel=ContactChannel.EMAIL,
+                observation_window="c5-stop-before-submit-claim",
+            )
+
+            assert result.outcome is ContactChannelEnrichmentOutcome.FAILED_TERMINAL
+            assert result.operation.state is ContactChannelOperationState.CANCELLED
+            assert (
+                transport.import_calls
+                == transport.upload_calls
+                == transport.create_calls
+                == transport.lookup_calls
+                == transport.poll_calls
+                == transport.item_calls
+                == 0
+            )
+
+    run_async(scenario())
+
+
+def test_c5_objection_after_acquisition_dispatch_settles_without_channel_resurrection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn() as conn:
+            intent, policy, claim_id = await _channel_intent(
+                conn, storage, suffix="objection-after-dispatch"
+            )
+            contact = await get_contact(conn, intent.contact_entity_id)
+            assert contact is not None and contact.linkedin_url is not None
+            factory = _TrackedConnFactory(conn)
+            transport = _Transport(contact.linkedin_url)
+            validator = _Validator(claim_id)
+            coordinator = ExaContactChannelCoordinator(
+                transport=transport,
+                validator=validator,
+                use_gate=_UseGate(),
+                pre_spend_gate=_PassGate(),
+                storage=storage,
+                conn_factory=factory,
+                poll_after_seconds=1,
+            )
+            started = await coordinator.start(
+                intent=intent,
+                effective_policy=policy.pin(),
+                channel=ContactChannel.EMAIL,
+                observation_window="c5-objection-after-dispatch",
+            )
+            assert started.outcome is ContactChannelEnrichmentOutcome.CREATED
+            original_record_active = coordinator._record_active
+
+            async def object_before_person_retention(
+                operation: object,
+                kind: str,
+                body: bytes,
+                source_url: str | None,
+                request_id: str | None,
+                *,
+                source_key: str | None = None,
+            ) -> object:
+                if kind == "person_item":
+                    await DataSubjectRightsImpl(
+                        intent.workspace_id,
+                        conn_factory=factory,
+                        storage=storage,
+                        contact_research_stopper=DurableContactResearchPrivacyStopper(),
+                    ).record_objection(intent.contact_entity_id)
+                return await original_record_active(
+                    operation,  # type: ignore[arg-type]
+                    kind,
+                    body,
+                    source_url,
+                    request_id,
+                    source_key=source_key,
+                )
+
+            monkeypatch.setattr(
+                coordinator,
+                "_record_active",
+                object_before_person_retention,
+            )
+            completed = await coordinator.drive_once(
+                workspace_id=intent.workspace_id,
+                operation_id=started.operation.operation_id,
+                effective_policy=policy.pin(),
+            )
+
+            assert completed.outcome is ContactChannelEnrichmentOutcome.FAILED_TERMINAL
+            assert completed.operation.state is ContactChannelOperationState.CANCELLED
+            assert completed.operation.observed_claim_id is None
+            assert completed.operation.acquisition_spend_outcome.value == "charged"
+            assert validator.calls == 0
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM contact_channel_artifact "
+                        "WHERE operation_id=:operation_id AND artifact_kind='person_item'"
+                    ),
+                    {"operation_id": completed.operation.operation_id},
+                )
+            ).scalar_one() == 0
+            assert not await contact_channel_is_usable(
+                conn,
+                workspace_id=intent.workspace_id,
+                contact_id=intent.contact_entity_id,
+                channel=ContactChannel.EMAIL,
+                now=datetime.now(UTC),
+            )
 
     run_async(scenario())
 

@@ -21,8 +21,11 @@ from tests.profiling.conftest import require_profiling_db as require_profiling_d
 from tests.profiling.conftest import rollback_conn
 
 from clue_api.account_deep_source_policy import bind_healthcare_account_deep_source_override
+from clue_api.deep.orchestrator import deep_account_run_id
 from clue_api.exa_contact_acquisition import ExaDeepContactAcquisitionService
+from clue_api.exa_contact_compiler import compile_registered_exa_contact_plan
 from clue_api.exa_contact_materialization import (
+    ExaDeepContactSnapshotError,
     ExaDeepContactSnapshotMaterializer,
     ExaDeepContactSnapshotResolverProvider,
 )
@@ -39,19 +42,39 @@ from clue_core import (
     ContactResearchSelection,
     ContactResearchSelectionBody,
     ContactResearchTarget,
+    EntityType,
+    ExternalResearchOperationState,
+    ExtractionMethod,
     ICPCreatedFrom,
     IdentityBinding,
+    Persona,
     ProjectPhase,
+    ResearchMode,
     ResearchQuestion,
     UseClass,
+    contact_claim,
+    discovery_claim,
     new_claim_id,
     new_project_run_id,
     new_run_id,
+    revalidate_with,
 )
-from clue_research.claimstore import WorkspaceScope, claims_for
-from clue_research.durable import ProjectRunStatus, ensure_project_run, get_project_run
+from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim
+from clue_research.durable import (
+    ProjectRunStatus,
+    cancel_contact_research_selection,
+    directive_confirmation_selection_approval,
+    ensure_account_run,
+    ensure_project_run,
+    get_external_research_operation,
+    get_project_run,
+    pin_account_run_research_directive,
+    store_contact_research_selection,
+)
 from clue_research.icp import create_icp_spec, get_icp_version
-from clue_research.identity import insert_contact_entity
+from clue_research.identity import insert_contact_entity, stamp_reuse
+from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE, load_committee_pack
+from clue_research.profiling.committee.admission import DISCOVERY_PROVENANCE_FIELD
 from clue_research.resolvers.exa import ExaDeepContactNormalization
 from clue_storage import FsStorage, read_verified_artifact
 
@@ -121,6 +144,7 @@ async def _seed(
     *,
     suffix: str,
     contact_reveals_allowed: bool = False,
+    persist_selection: bool = True,
 ) -> _Seed:
     fixture = await seed_insight_health_account_deep_fixture(
         conn,
@@ -205,6 +229,7 @@ async def _seed(
     directive = account_spec.research_directive
     assert directive is not None
     policy = ContactResearchPolicy().pin()
+    placeholder_claim = new_claim_id()
     body = ContactResearchSelectionBody(
         workspace_id=WORKSPACE_ID,
         project_id=PROJECT_ID,
@@ -214,8 +239,8 @@ async def _seed(
         targets=(
             ContactResearchTarget(
                 contact_entity_id=contact_id,
-                committee_claim_ids=(new_claim_id(),),
-                strong_identity_claim_ids=(new_claim_id(),),
+                committee_claim_ids=(placeholder_claim,),
+                strong_identity_claim_ids=(placeholder_claim,),
                 field_keys=(_FIELD,),
                 directional_question_ids=(question.question_id,),
             ),
@@ -230,6 +255,108 @@ async def _seed(
         approved_at=datetime(2026, 8, 5, tzinfo=UTC),
     )
     selection = ContactResearchSelection.from_body(body, effective_policy=policy)
+    if persist_selection:
+        account_run_id = deep_account_run_id(project_run_id, fixture.selected_account_id)
+        await ensure_account_run(
+            conn,
+            account_run_id=account_run_id,
+            project_run_id=project_run_id,
+            entity_id=fixture.selected_account_id,
+            tier="high",
+        )
+        await pin_account_run_research_directive(
+            conn,
+            account_run_id=account_run_id,
+            pin=directive,
+        )
+        await load_committee_pack(conn)
+        discovery_id = await insert_claim(
+            conn,
+            stamp_reuse(
+                discovery_claim(
+                    entity_id=contact_id,
+                    entity_type=EntityType.CONTACT,
+                    field_key=DISCOVERY_PROVENANCE_FIELD,
+                    value_json={
+                        "matched_channel": "sumble_people",
+                        "matched_signal": "exact linkedin identity",
+                        "discovery_confidence": 0.99,
+                    },
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.API,
+                    confidence=0.99,
+                    run_id=account_run_id,
+                    research_mode=ResearchMode.COMMITTEE_DISCOVERY,
+                    found_via="sumble_people",
+                    matched_signal="exact linkedin identity",
+                    discovery_confidence=0.99,
+                    source_url=f"https://www.linkedin.com/in/alex-rivera-c4-{suffix}",
+                ),
+                workspace_id=WORKSPACE_ID,
+            ),
+        )
+
+        async def committee_claim(field_key: str, value: object):
+            return await insert_claim(
+                conn,
+                revalidate_with(
+                    stamp_reuse(
+                        contact_claim(
+                            entity_id=contact_id,
+                            field_key=field_key,
+                            value_json=value,  # type: ignore[arg-type]
+                            source_tier=2,
+                            extraction_method=ExtractionMethod.API,
+                            confidence=0.95,
+                            run_id=account_run_id,
+                            research_mode=ResearchMode.COMMITTEE_DISCOVERY,
+                            identity_binding=IdentityBinding.STRONG,
+                            use_class=UseClass.PROFESSIONAL_PUBLIC,
+                            source_url=f"https://sumble.com/people/alex-rivera-c4-{suffix}",
+                            evidence_span=f"Sumble returned {field_key} for the exact person",
+                        ),
+                        workspace_id=WORKSPACE_ID,
+                    ),
+                    source_key="sumble_people",
+                ),
+            )
+
+        role_id = await committee_claim(
+            ROLE_ON_COMMITTEE,
+            {
+                "role": Persona.CHAMPION.value,
+                "confidence": 0.95,
+                "plausible": True,
+                "rationale": "operations owner",
+            },
+        )
+        persona_id = await committee_claim(PERSONA, Persona.CHAMPION.value)
+        target = body.targets[0].model_copy(
+            update={
+                "committee_claim_ids": (role_id, persona_id),
+                "strong_identity_claim_ids": (discovery_id,),
+            }
+        )
+        body = body.model_copy(update={"targets": (target,)})
+        selection = ContactResearchSelection.from_body(body, effective_policy=policy)
+        approval = await directive_confirmation_selection_approval(
+            conn,
+            workspace_id=WORKSPACE_ID,
+            directive_id=directive.directive_id,
+        )
+        body = body.model_copy(
+            update={
+                "approved_by": approval.approved_by,
+                "approved_at": approval.approved_at,
+            }
+        )
+        selection = ContactResearchSelection.from_body(body, effective_policy=policy)
+        selection = await store_contact_research_selection(
+            conn,
+            selection,
+            account_run_id=account_run_id,
+            approval=approval,
+        )
     return _Seed(
         intent=ContactResearchIntent.from_selection(
             selection,
@@ -590,6 +717,195 @@ def test_c4_stale_policy_and_crash_replay_cause_no_duplicate_provider_call(
                 ).scalar_one()
             )
             assert count == 1
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+def test_c4_selection_cancellation_stops_planned_operation_before_provider_dispatch(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn() as conn:
+            seed = await _seed(conn, storage, suffix="cancel-before-dispatch")
+            factory = _TrackedConnFactory(conn)
+            transport = _Transport(_payload("supported.json"), factory)
+            coordinator = ExaDeepAcquisitionCoordinator(
+                transport=transport,
+                storage=storage,
+                conn_factory=factory,
+            )
+            plan = await compile_registered_exa_contact_plan(
+                conn,
+                intent=seed.intent,
+                effective_policy=seed.policy,
+                observation_window="contact-c4-cancel-before-dispatch",
+            )
+            operation, created = await coordinator._reserve(plan.bundles[0])
+            assert created
+            assert operation.state is ExternalResearchOperationState.PLANNED
+
+            await cancel_contact_research_selection(
+                conn,
+                workspace_id=seed.intent.workspace_id,
+                selection_id=seed.intent.selection_id,
+                cancelled_by="human:c4-stop-test",
+                reason_code="research_direction_changed",
+            )
+            stopped = await get_external_research_operation(
+                conn,
+                workspace_id=seed.intent.workspace_id,
+                operation_id=operation.operation_id,
+            )
+            assert stopped is not None
+            assert stopped.state is ExternalResearchOperationState.CANCELLED
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM external_research_operation_stop "
+                        "WHERE operation_id=:operation_id"
+                    ),
+                    {"operation_id": operation.operation_id},
+                )
+            ).scalar_one() == 1
+
+            replay = await coordinator.acquire(plan.bundles[0])
+            assert replay.outcome is ExaDeepAcquisitionOutcome.FAILED_TERMINAL
+            assert transport.calls == 0
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+def test_c4_stop_after_dispatch_settles_once_without_retaining_or_materializing_provider_data(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn() as conn:
+            seed = await _seed(conn, storage, suffix="cancel-after-dispatch")
+            factory = _TrackedConnFactory(conn)
+            transport = _Transport(_payload("supported.json"), factory)
+            coordinator = ExaDeepAcquisitionCoordinator(
+                transport=transport,
+                storage=storage,
+                conn_factory=factory,
+            )
+            original_capture = coordinator._capture_response
+
+            async def stop_before_response_retention(
+                operation: object, payload: Mapping[str, Any]
+            ) -> str | None:
+                await cancel_contact_research_selection(
+                    conn,
+                    workspace_id=seed.intent.workspace_id,
+                    selection_id=seed.intent.selection_id,
+                    cancelled_by="human:c4-dispatch-race",
+                    reason_code="privacy_stop_after_dispatch",
+                )
+                return await original_capture(operation, payload)  # type: ignore[arg-type]
+
+            monkeypatch.setattr(coordinator, "_capture_response", stop_before_response_retention)
+            plan = await compile_registered_exa_contact_plan(
+                conn,
+                intent=seed.intent,
+                effective_policy=seed.policy,
+                observation_window="contact-c4-cancel-after-dispatch",
+            )
+            result = await coordinator.acquire(plan.bundles[0])
+
+            assert result.outcome is ExaDeepAcquisitionOutcome.FAILED_TERMINAL
+            assert result.operation.state is ExternalResearchOperationState.CANCELLED
+            assert result.provider_calls == transport.calls == 1
+            counts = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT "
+                            "(SELECT count(*) FROM external_research_snapshot "
+                            "WHERE operation_id=:operation_id) AS snapshots, "
+                            "(SELECT count(*) FROM external_research_receipt "
+                            "WHERE operation_id=:operation_id) AS receipts, "
+                            "(SELECT count(*) FROM discovery_artifact_subject "
+                            "WHERE reference_id=:operation_id_text "
+                            "AND reference_kind IN ('exa_deep_response', "
+                            "'exa_deep_normalization', 'exa_deep_result')) AS provider_artifacts"
+                        ),
+                        {
+                            "operation_id": result.operation.operation_id,
+                            "operation_id_text": str(result.operation.operation_id),
+                        },
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert counts == {"snapshots": 0, "receipts": 1, "provider_artifacts": 0}
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+def test_c4_stopped_ready_snapshot_cannot_replay_or_materialize(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn() as conn:
+            seed = await _seed(conn, storage, suffix="stop-ready-snapshot")
+            factory = _TrackedConnFactory(conn)
+            coordinator = ExaDeepAcquisitionCoordinator(
+                transport=_Transport(_payload("supported.json"), factory),
+                storage=storage,
+                conn_factory=factory,
+            )
+            service = ExaDeepContactAcquisitionService(
+                coordinator=coordinator,
+                conn_factory=factory,
+            )
+            acquired = await service.acquire_intent(
+                intent=seed.intent,
+                effective_policy=seed.policy,
+                observation_window="contact-c4-stop-ready-snapshot",
+            )
+            assert acquired.results[0].outcome is ExaDeepAcquisitionOutcome.READY
+
+            await cancel_contact_research_selection(
+                conn,
+                workspace_id=seed.intent.workspace_id,
+                selection_id=seed.intent.selection_id,
+                cancelled_by="human:c4-ready-stop",
+                reason_code="selection_cancelled_after_ready",
+            )
+            replay = await service.acquire_intent(
+                intent=seed.intent,
+                effective_policy=seed.policy,
+                observation_window="contact-c4-stop-ready-snapshot",
+            )
+            assert replay.results[0].outcome is ExaDeepAcquisitionOutcome.FAILED_TERMINAL
+            with pytest.raises(ExaDeepContactSnapshotError):
+                await ExaDeepContactSnapshotMaterializer(
+                    provider=ExaDeepContactSnapshotResolverProvider(
+                        storage=storage,
+                        conn_factory=factory,
+                    ),
+                    conn_factory=factory,
+                ).materialize(
+                    intent=seed.intent,
+                    effective_policy=seed.policy,
+                    run_id=new_run_id(),
+                )
+            assert not await claims_for(
+                conn,
+                seed.intent.contact_entity_id,
+                _FIELD,
+                scope=WorkspaceScope.for_workspace(seed.intent.workspace_id),
+            )
 
     from tests.db.conftest import run_async
 

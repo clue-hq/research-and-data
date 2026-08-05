@@ -47,7 +47,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        # head-of-abm@v19 and research-specialist@v6 elect C6's exact-run profile_contact@2;
+        # head-of-abm@v20 and research-specialist@v6 elect C6's exact-run profile_contact@2;
         # v18 otherwise adds O3's progressively disclosed account-deep conversational skill;
         # the exact-set O2 launch and truthful A2 draft preview remain the governed primitives,
         # alongside S1/E1 targeted-enrichment and dynamic Client-KB proposal/materialization
@@ -57,12 +57,12 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # inspection-tool grants + delegation withholding) and task 1.4's:
         # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
         # nested authority, and B1 layer 2's engine-defaulted claim entity.
-        AgentRole.HEAD_OF_ABM: ("87f5edd597fc2acb71446516709a5df604b16ccf867aa8b6c0aeb6861e57c76a"),
+        AgentRole.HEAD_OF_ABM: ("963276a7db5540cae0899e083093aa8f0d126226a39806d252d5cf8f54cb2f84"),
         AgentRole.RESEARCH: "ad3e27fdb788088689f68f7cd7c395d2eaa6d0b08b6bac8dafb0497fc905d263",
         AgentRole.CONTENT_DRAFTER: (
-            "f4095d62dfc9bc734aa2acb111270a3f10e2242a252e96c229d464435b7a90bc"
+            "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
         ),
-        AgentRole.REVIEWER: "b4859443637154e4e10a6598f17c2f54b0688f6faea2696e9a7ff4cf3a3f0deb",
+        AgentRole.REVIEWER: "1cd0fc4e5c8276983c5e0b8d9a83904be82a95ed57f27c9c1dfd9f5a3887df46",
         AgentRole.ACCOUNT_RESEARCH: (
             "c4aa0f4f8c3d660d0dc5ef2ee85b7e39077c07f918d22118a5800cb63da35b06"
         ),
@@ -115,7 +115,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # The two proposal v1 addresses remain installed only for historical recipe replay. They add
     # inventory entries but cannot enter the current model surface; only propose_field@2 carries
     # the dynamic Client-KB authority.
-    assert len(by_address) == 48
+    assert len(by_address) == 50
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
@@ -139,6 +139,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["confirm_project_product@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert (
         by_address["confirm_account_research_directive@2"].status
+        is AgentCapabilityStatus.HUMAN_ONLY
+    )
+    assert (
+        by_address["approve_contact_research_selection@1"].status
         is AgentCapabilityStatus.HUMAN_ONLY
     )
     assert (

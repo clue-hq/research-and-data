@@ -32,10 +32,11 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_config import Secrets, Settings
-from clue_core import PhaseContext, PhaseHandler, PhaseResult, ProjectPhase
+from clue_core import EntityId, PhaseContext, PhaseHandler, PhaseResult, ProjectPhase
 from clue_db import ConnFactory, transaction
 from clue_obs.otel import MetricSink
 from clue_research.compliance import DataSubjectRightsImpl
+from clue_research.durable import stop_contact_research_operations
 from clue_storage import (
     SnapshotSink,
     StorageBackend,
@@ -49,6 +50,7 @@ __all__ = [
     "SnapshotBindingPhaseHandler",
     "bind_snapshots_around_deep",
     "build_data_subject_rights",
+    "DurableContactResearchPrivacyStopper",
     "run_orphan_blob_sweep",
     "DEFAULT_ORPHAN_SWEEP_GRACE",
 ]
@@ -56,6 +58,31 @@ __all__ = [
 # The default reconciliation grace for the orphan-blob sweep — far beyond any transaction lifetime,
 # so the sweep never races an in-flight upload whose ``artifact`` row is inserted-but-not-committed.
 DEFAULT_ORPHAN_SWEEP_GRACE: timedelta = timedelta(hours=24)
+
+
+class DurableContactResearchPrivacyStopper:
+    """Bind compliance's privacy-stop seam to the unified C4/C5 durable operation control."""
+
+    async def stop(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        contact_id: EntityId,
+        reason_code: str,
+        authority_ref: str,
+        channel_field_keys: frozenset[str] | None = None,
+        stop_external: bool = True,
+    ) -> None:
+        await stop_contact_research_operations(
+            conn,
+            workspace_id=workspace_id,
+            contact_id=contact_id,
+            reason_code=reason_code,
+            authority_ref=authority_ref,
+            channel_field_keys=channel_field_keys,
+            stop_external=stop_external,
+        )
 
 
 def build_storage_backend(
@@ -140,6 +167,7 @@ def build_data_subject_rights(
         conn_factory=conn_factory,
         sink=sink,
         storage=storage,
+        contact_research_stopper=DurableContactResearchPrivacyStopper(),
     )
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -19,10 +19,12 @@ from tests.profiling.conftest import migrated_db as migrated_db
 from tests.profiling.conftest import require_profiling_db as require_profiling_db
 
 from clue_api.contact_content_handoff import ContactContentHandoffService
+from clue_api.toolbelt_wiring import build_toolbelt
 from clue_api.trial.discovery_fixture import PRODUCT_ID, PROJECT_ID, WORKSPACE_ID
 from clue_core import (
     AccountStatus,
     Claim,
+    ContactContentHandoff,
     ContactDraftingFallback,
     ContactResearchSelection,
     ContactResearchSelectionId,
@@ -34,11 +36,14 @@ from clue_core import (
     VerificationStatus,
     account_claim,
     contact_claim,
+    new_operation_id,
 )
 from clue_research.claimstore import insert_claim, load_core_pack
 from clue_research.durable import (
     AccountRunStatus,
     AccountRunSubPhase,
+    ContactResearchSelectionApprovalAuthority,
+    ContactResearchSelectionApprovalKind,
     cancel_contact_research_selection,
     save_references,
     set_account_sub_phase,
@@ -53,6 +58,7 @@ from clue_research.profiling.committee import (
 )
 from clue_research.profiling.fields import FACET_PUBLICATIONS, load_deep_profiling_pack
 from clue_storage import FsStorage
+from clue_toolbelt import ToolContext, invoke_tool
 
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
 
@@ -178,6 +184,13 @@ def test_production_projection_is_reference_only_governed_and_names_skipped_cont
                 selection,
                 account_run_id=seed.account_run_id,
                 predecessor_id=initial.selection_id,
+                approval=ContactResearchSelectionApprovalAuthority(
+                    kind=ContactResearchSelectionApprovalKind.HUMAN_SUCCESSOR,
+                    operation_id=uuid4(),
+                    approved_by=successor_body.approved_by,
+                    action_ref="human-action:m8c-c7-successor",
+                    approved_at=successor_body.approved_at,
+                ),
             )
             skipped_id = await insert_contact_entity(
                 conn,
@@ -257,6 +270,42 @@ def test_production_projection_is_reference_only_governed_and_names_skipped_cont
             assert payload["bundles"][0]["drafting_context"]["professional_claims"][0][
                 "claim_id"
             ] == str(title.id)
+
+            # The real toolbelt binding serves the same governed reference-only projection to the
+            # reviewed content/reviewer profiles; it is not merely a directly callable service.
+            registry = build_toolbelt(
+                storage=None,
+                gateway=None,
+                conn_factory=conn_session_factory(conn),
+                contact_content_handoff=service,
+            )
+            tool_result = await invoke_tool(
+                registry,
+                "compose_contact_content_handoff",
+                {
+                    "project_id": PROJECT_ID,
+                    "project_run_id": str(seed.project_run_id),
+                    "account_entity_id": str(seed.account_id),
+                    "product_id": PRODUCT_ID,
+                },
+                ToolContext(
+                    workspace_id=WORKSPACE_ID,
+                    actor="agent",
+                    conn_factory=conn_session_factory(conn),
+                    operation_id=new_operation_id(),
+                ),
+                idempotency_ttl_s=86_400,
+            )
+            tool_handoff = ContactContentHandoff.model_validate(tool_result.references["handoff"])
+            assert tool_handoff.workspace_id == handoff.workspace_id
+            assert tool_handoff.project_run_id == handoff.project_run_id
+            assert tuple(item.contact_entity_id for item in tool_handoff.bundles) == (
+                seed.contact_id,
+            )
+            assert (
+                tool_handoff.bundles[0].drafting_context.professional_claims[0].claim_id == title.id
+            )
+            assert "value_json" not in tool_handoff.model_dump_json()
 
             await cancel_contact_research_selection(
                 conn,

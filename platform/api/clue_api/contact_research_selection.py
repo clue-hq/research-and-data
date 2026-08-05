@@ -36,6 +36,7 @@ from clue_research.directives import (
 )
 from clue_research.durable import (
     contact_research_selection_cancellation,
+    directive_confirmation_selection_approval,
     get_account_run,
     latest_contact_research_selection,
     store_contact_research_selection,
@@ -215,6 +216,7 @@ class ContactResearchSelectionMaterializer:
             if (
                 directive is None
                 or directive.confirmed_by is None
+                or directive.confirming_turn_ref is None
                 or directive.confirmed_at is None
                 or effective.project_id != directive.project_id
                 or not effective.privacy_policy.contact_profiling_allowed
@@ -322,10 +324,16 @@ class ContactResearchSelectionMaterializer:
                 approved_at=directive.confirmed_at,
             )
             selection = ContactResearchSelection.from_body(body, effective_policy=policy)
+            approval = await directive_confirmation_selection_approval(
+                conn,
+                workspace_id=workspace_id,
+                directive_id=directive.directive_id,
+            )
             return await store_contact_research_selection(
                 conn,
                 selection,
                 account_run_id=account_run_id,
+                approval=approval,
             )
 
     async def _validate_existing(

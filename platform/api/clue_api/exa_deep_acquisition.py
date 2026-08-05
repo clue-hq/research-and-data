@@ -19,6 +19,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.exa_contact_compiler import ExaDeepContactAcquisitionPreflight
@@ -32,6 +33,11 @@ from clue_core import (
     ResearchDirectivePin,
     RetryableResolverError,
 )
+from clue_research.durable.contact_research_control import (
+    ContactResearchOperationStop,
+    bind_external_research_contact_authority,
+    external_research_operation_stop,
+)
 from clue_research.durable.discovery import (
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
@@ -42,8 +48,10 @@ from clue_research.durable.external_research import (
     ExternalResearchResultArtifactInput,
     adopt_external_research_snapshot,
     claim_external_research_dispatch,
+    complete_external_research_cancelled_after_dispatch,
     complete_external_research_pre_dispatch_failure,
     complete_external_research_success,
+    find_external_research_operation,
     find_reusable_external_research_operation,
     mark_external_research_spend_unknown,
     reserve_external_research_operation,
@@ -310,6 +318,32 @@ class ExaDeepAcquisitionCoordinator:
                 operation=unknown,
                 provider_calls=1,
             )
+        stop = await self._stop(claim.operation)
+        if stop is not None:
+            try:
+                response = parse_exa_deep_response(preflight.exa_request, payload)
+                normalization = _normalize_preflight(preflight, response)
+            except Exception as exc:
+                unknown = await self._mark_unknown(
+                    claim.operation,
+                    failure_code="stopped_response_cost_unknown",
+                    failure_detail=f"stopped Exa response could not be settled: {exc}",
+                    provider_request_id=(
+                        str(payload.get("requestId")) if payload.get("requestId") else None
+                    ),
+                )
+                return ExaDeepAcquisitionResult(
+                    outcome=ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN,
+                    operation=unknown,
+                    provider_calls=1,
+                )
+            return await self._settle_stopped(
+                claim.operation,
+                attempt_ordinal=claim.attempt_ordinal,
+                response=response,
+                reported_cost=normalization.synthesis.cost_cents,
+                reason_code=stop.reason_code,
+            )
         response_key: str | None = None
         provider_request_id = payload.get("requestId")
         if not isinstance(provider_request_id, str) or not provider_request_id.strip():
@@ -327,6 +361,32 @@ class ExaDeepAcquisitionCoordinator:
                 outcome=ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN,
                 operation=unknown,
                 provider_calls=1,
+            )
+        if response_key is None:
+            stop = await self._stop(claim.operation)
+            if stop is None:  # pragma: no cover - the response fence makes this invariant
+                raise RuntimeError("response persistence stopped without durable stop authority")
+            try:
+                response = parse_exa_deep_response(preflight.exa_request, payload)
+                normalization = _normalize_preflight(preflight, response)
+            except Exception as exc:
+                unknown = await self._mark_unknown(
+                    claim.operation,
+                    failure_code="stopped_response_cost_unknown",
+                    failure_detail=f"stopped Exa response could not be settled: {exc}",
+                    provider_request_id=provider_request_id,
+                )
+                return ExaDeepAcquisitionResult(
+                    outcome=ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN,
+                    operation=unknown,
+                    provider_calls=1,
+                )
+            return await self._settle_stopped(
+                claim.operation,
+                attempt_ordinal=claim.attempt_ordinal,
+                response=response,
+                reported_cost=normalization.synthesis.cost_cents,
+                reason_code=stop.reason_code,
             )
         try:
             response = parse_exa_deep_response(preflight.exa_request, payload)
@@ -355,6 +415,15 @@ class ExaDeepAcquisitionCoordinator:
             )
         except Exception as exc:
             current = await self._get(claim.operation)
+            stop = await self._stop(current)
+            if stop is not None and current.state is ExternalResearchOperationState.DISPATCHING:
+                return await self._settle_stopped(
+                    current,
+                    attempt_ordinal=claim.attempt_ordinal,
+                    response=response,
+                    reported_cost=normalization.synthesis.cost_cents,
+                    reason_code=stop.reason_code,
+                )
             terminal = await self._terminal_result(current, request=preflight.request, replay=False)
             if terminal is not None and current.state is ExternalResearchOperationState.READY:
                 return terminal.model_copy(update={"provider_calls": 1})
@@ -381,12 +450,77 @@ class ExaDeepAcquisitionCoordinator:
         )
         async with self._conn_factory() as conn:
             now = self._clock()
+            if isinstance(preflight, ExaDeepContactAcquisitionPreflight):
+                selection_row = (
+                    await conn.execute(
+                        text(
+                            "SELECT id FROM contact_research_selection "
+                            "WHERE workspace_id=:workspace_id AND id=:selection_id FOR UPDATE"
+                        ),
+                        {
+                            "workspace_id": preflight.request.workspace_id,
+                            "selection_id": preflight.selection_id,
+                        },
+                    )
+                ).scalar_one_or_none()
+                if selection_row is None:
+                    raise RuntimeError("selected-contact authority no longer exists")
+                exact_operation = await find_external_research_operation(
+                    conn,
+                    workspace_id=preflight.request.workspace_id,
+                    source_key=preflight.request.source_key,
+                    request_fingerprint=preflight.request.request_fingerprint,
+                    observation_window=preflight.request.observation_window,
+                )
+                await conn.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:subject_lock, 0))"),
+                    {
+                        "subject_lock": (
+                            f"contact-research:{preflight.request.workspace_id}:"
+                            f"{preflight.request.contact_id}"
+                        )
+                    },
+                )
+                blocked = (
+                    await conn.execute(
+                        text(
+                            "SELECT EXISTS (SELECT 1 FROM "
+                            "contact_research_selection_cancellation "
+                            "WHERE selection_id=:selection_id) OR EXISTS (SELECT 1 FROM "
+                            "outreach_objected WHERE workspace_id=:workspace_id "
+                            "AND contact_entity_id=:contact_id)"
+                        ),
+                        {
+                            "workspace_id": preflight.request.workspace_id,
+                            "selection_id": preflight.selection_id,
+                            "contact_id": preflight.request.contact_id,
+                        },
+                    )
+                ).scalar_one()
+                if blocked:
+                    if exact_operation is not None:
+                        # A unified stop makes the operation terminal and non-reusable. Return the
+                        # exact stopped operation so the public acquisition boundary can report its
+                        # normal terminal outcome without dispatching or leaking an internal error.
+                        return exact_operation, False
+                    raise RuntimeError(
+                        "selected-contact authority was cancelled or has a standing objection"
+                    )
             reusable = await find_reusable_external_research_operation(
                 conn,
                 request=preflight.request,
                 now=now,
             )
             if reusable is not None:
+                if isinstance(preflight, ExaDeepContactAcquisitionPreflight):
+                    await bind_external_research_contact_authority(
+                        conn,
+                        workspace_id=preflight.request.workspace_id,
+                        operation_id=reusable.operation_id,
+                        selection_id=preflight.selection_id,
+                        selection_sha256=preflight.selection_sha256,
+                        contact_intent_sha256=preflight.intent_sha256,
+                    )
                 return reusable, False
             captured_key = await capture_discovery_artifact(
                 conn,
@@ -405,6 +539,15 @@ class ExaDeepAcquisitionCoordinator:
                 request_artifact_key=request_key,
                 now=now,
             )
+            if isinstance(preflight, ExaDeepContactAcquisitionPreflight):
+                await bind_external_research_contact_authority(
+                    conn,
+                    workspace_id=preflight.request.workspace_id,
+                    operation_id=operation.operation_id,
+                    selection_id=preflight.selection_id,
+                    selection_sha256=preflight.selection_sha256,
+                    contact_intent_sha256=preflight.intent_sha256,
+                )
             if created:
                 await _bind_artifact(conn, operation, request_key, "exa_deep_request")
             return operation, created
@@ -419,6 +562,15 @@ class ExaDeepAcquisitionCoordinator:
         normalization: ExaDeepAnyNormalization,
     ) -> ExaDeepAcquisitionResult:
         reported_cost = normalization.synthesis.cost_cents
+        stop = await self._stop(operation)
+        if stop is not None:
+            return await self._settle_stopped(
+                operation,
+                attempt_ordinal=attempt_ordinal,
+                response=response,
+                reported_cost=reported_cost,
+                reason_code=stop.reason_code,
+            )
         if reported_cost > operation.cost_cents_reserved:
             unknown = await self._mark_unknown(
                 operation,
@@ -563,8 +715,28 @@ class ExaDeepAcquisitionCoordinator:
         self,
         operation: ExternalResearchOperationRow,
         payload: Mapping[str, Any],
-    ) -> str:
+    ) -> str | None:
+        from clue_research.durable.external_research import get_external_research_operation
+
         async with self._conn_factory() as conn:
+            # Serialize raw-response retention with cancellation/objection/erasure. If retention
+            # wins, a waiting DSAR sees and purges the new artifact; if the stop wins, raw provider
+            # data cannot be recreated after that stop commits.
+            await get_external_research_operation(
+                conn,
+                workspace_id=operation.workspace_id,
+                operation_id=operation.operation_id,
+                for_update=True,
+            )
+            if (
+                await external_research_operation_stop(
+                    conn,
+                    workspace_id=operation.workspace_id,
+                    operation_id=operation.operation_id,
+                )
+                is not None
+            ):
+                return None
             key = await capture_discovery_artifact(
                 conn,
                 self._storage,
@@ -587,6 +759,62 @@ class ExaDeepAcquisitionCoordinator:
                 operation_id=operation.operation_id,
             )
 
+    async def _stop(
+        self, operation: ExternalResearchOperationRow
+    ) -> ContactResearchOperationStop | None:
+        async with self._conn_factory() as conn:
+            return await external_research_operation_stop(
+                conn,
+                workspace_id=operation.workspace_id,
+                operation_id=operation.operation_id,
+            )
+
+    async def _settle_stopped(
+        self,
+        operation: ExternalResearchOperationRow,
+        *,
+        attempt_ordinal: int,
+        response: ExaDeepSearchResponse,
+        reported_cost: Decimal,
+        reason_code: str,
+    ) -> ExaDeepAcquisitionResult:
+        receipt_payload = {
+            "contract": "external-research-stopped-after-dispatch-v1",
+            "operation_id": str(operation.operation_id),
+            "source_key": operation.source_key,
+            "provider_request_id": response.request_id,
+            "provider_reported_cost_cents": str(reported_cost),
+            "stop_reason": reason_code,
+            "contains_provider_result": False,
+        }
+        async with self._conn_factory() as conn:
+            receipt_key = await capture_discovery_artifact(
+                conn,
+                self._storage,
+                workspace_id=operation.workspace_id,
+                content=_json_bytes(receipt_payload),
+                media_type="application/json",
+                source_key=operation.source_key,
+                source_url=None,
+            )
+            settled = await complete_external_research_cancelled_after_dispatch(
+                conn,
+                workspace_id=operation.workspace_id,
+                operation_id=operation.operation_id,
+                attempt_ordinal=attempt_ordinal,
+                provider_request_id=response.request_id,
+                provider_reported_cost_cents=reported_cost,
+                receipt_artifact_key=receipt_key,
+                failure_code=reason_code,
+                now=self._clock(),
+            )
+            await _bind_artifact(conn, settled, receipt_key, "exa_deep_stopped_receipt")
+        return ExaDeepAcquisitionResult(
+            outcome=ExaDeepAcquisitionOutcome.FAILED_TERMINAL,
+            operation=settled,
+            provider_calls=1,
+        )
+
     async def _terminal_result(
         self,
         operation: ExternalResearchOperationRow,
@@ -594,6 +822,11 @@ class ExaDeepAcquisitionCoordinator:
         request: ExternalResearchAcquisitionRequest,
         replay: bool,
     ) -> ExaDeepAcquisitionResult | None:
+        if await self._stop(operation) is not None:
+            return ExaDeepAcquisitionResult(
+                outcome=ExaDeepAcquisitionOutcome.FAILED_TERMINAL,
+                operation=operation,
+            )
         if operation.state is ExternalResearchOperationState.READY:
             async with self._conn_factory() as conn:
                 snapshot = await adopt_external_research_snapshot(
@@ -807,6 +1040,8 @@ def _request_artifact(
         artifact.update(
             {
                 "contract": "exa-search-contact-deep-acquisition-c4-request-v1",
+                "contact_selection_id": str(preflight.selection_id),
+                "contact_selection_sha256": preflight.selection_sha256,
                 "contact_intent_sha256": preflight.intent_sha256,
                 "contact_target_lock": preflight.target_lock.model_dump(mode="json"),
                 "field_source_plans": [

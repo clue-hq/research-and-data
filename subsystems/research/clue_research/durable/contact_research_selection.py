@@ -8,6 +8,7 @@ original receipt.  Provider adapters consume only the validated core model recon
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
@@ -19,8 +20,10 @@ from clue_core import (
     ContactResearchSelectionId,
     EntityId,
     ProjectRunId,
+    ResearchDirectiveId,
     RunId,
 )
+from clue_research.durable.contact_research_control import stop_contact_research_operations
 
 
 class ContactResearchSelectionRepositoryError(RuntimeError):
@@ -33,6 +36,23 @@ class ContactResearchSelectionNotFound(ContactResearchSelectionRepositoryError):
 
 class ContactResearchSelectionReplayConflict(ContactResearchSelectionRepositoryError):
     pass
+
+
+class ContactResearchSelectionApprovalKind(StrEnum):
+    DIRECTIVE_CONFIRMATION = "directive_confirmation"
+    HUMAN_SUCCESSOR = "human_successor"
+
+
+class ContactResearchSelectionApprovalAuthority(BaseModel):
+    """Trusted ambient approval captured by a platform service, never from selection inputs."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: ContactResearchSelectionApprovalKind
+    operation_id: UUID
+    approved_by: str
+    action_ref: str
+    approved_at: datetime
 
 
 class ContactResearchSelectionCancellation(BaseModel):
@@ -67,24 +87,138 @@ def _cancellation(row: object) -> ContactResearchSelectionCancellation:
 _SELECTION_COLUMNS = "id, account_run_id, selection_sha256, body_json, predecessor_id, created_at"
 
 
+async def directive_confirmation_selection_approval(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    directive_id: ResearchDirectiveId,
+) -> ContactResearchSelectionApprovalAuthority:
+    """Resolve the trusted human confirmation receipt for an initial automatic selection."""
+
+    row = (
+        await conn.execute(
+            text(
+                "SELECT confirmation_operation_id, confirmed_by, confirming_turn_ref, "
+                "confirmed_at FROM account_research_directive WHERE workspace_id=:workspace_id "
+                "AND directive_id=:directive_id AND status IN ('confirmed', 'superseded')"
+            ),
+            {"workspace_id": workspace_id, "directive_id": directive_id},
+        )
+    ).first()
+    if row is None or any(
+        value is None
+        for value in (
+            row.confirmation_operation_id,
+            row.confirmed_by,
+            row.confirming_turn_ref,
+            row.confirmed_at,
+        )
+    ):
+        raise ContactResearchSelectionRepositoryError(
+            "initial contact selection requires a durable human directive confirmation"
+        )
+    return ContactResearchSelectionApprovalAuthority(
+        kind=ContactResearchSelectionApprovalKind.DIRECTIVE_CONFIRMATION,
+        operation_id=row.confirmation_operation_id,
+        approved_by=row.confirmed_by,
+        action_ref=row.confirming_turn_ref,
+        approved_at=row.confirmed_at,
+    )
+
+
 async def store_contact_research_selection(
     conn: AsyncConnection,
     selection: ContactResearchSelection,
     *,
     account_run_id: RunId,
+    approval: ContactResearchSelectionApprovalAuthority | None = None,
     predecessor_id: ContactResearchSelectionId | None = None,
 ) -> ContactResearchSelection:
-    """Persist once by exact run/account/content; a conflicting id/content fails closed."""
+    """Persist one approved selection or exact replay under a linear current-head lock."""
 
     body = selection.body
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:scope_lock, 0))"),
+        {"scope_lock": (f"{body.workspace_id}:{body.project_run_id}:{body.account_entity_id}")},
+    )
+    existing_row = (
+        await conn.execute(
+            text(
+                f"SELECT {_SELECTION_COLUMNS} FROM contact_research_selection "
+                "WHERE workspace_id=:workspace_id AND project_run_id=:project_run_id "
+                "AND account_id=:account_id AND selection_sha256=:selection_sha256"
+            ),
+            {
+                "workspace_id": body.workspace_id,
+                "project_run_id": body.project_run_id,
+                "account_id": body.account_entity_id,
+                "selection_sha256": selection.selection_sha256,
+            },
+        )
+    ).first()
+    if existing_row is not None:
+        stored, stored_account_run_id = _selection(existing_row)
+        if stored.body != body or stored_account_run_id != account_run_id:
+            raise ContactResearchSelectionReplayConflict(
+                "contact research selection digest was reused with different immutable authority"
+            )
+        return stored
+
+    if approval is None:
+        raise ContactResearchSelectionRepositoryError(
+            "a new contact research selection requires trusted approval authority"
+        )
+    if approval.approved_by != body.approved_by or approval.approved_at != body.approved_at:
+        raise ContactResearchSelectionRepositoryError(
+            "selection body approval differs from trusted approval authority"
+        )
+    if (approval.kind is ContactResearchSelectionApprovalKind.DIRECTIVE_CONFIRMATION) != (
+        predecessor_id is None
+    ):
+        raise ContactResearchSelectionRepositoryError(
+            "only directive confirmation can approve an initial selection; "
+            "a successor requires explicit human authority"
+        )
+
+    approval_id = uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO contact_research_selection_approval (id, workspace_id, project_id, "
+            "project_run_id, account_run_id, account_id, directive_id, directive_version, "
+            "directive_sha256, selection_sha256, predecessor_id, authority_kind, "
+            "approval_operation_id, approved_by, action_ref, approved_at) VALUES "
+            "(:id, :workspace_id, :project_id, :project_run_id, :account_run_id, :account_id, "
+            ":directive_id, :directive_version, :directive_sha256, :selection_sha256, "
+            ":predecessor_id, :authority_kind, :approval_operation_id, :approved_by, "
+            ":action_ref, :approved_at)"
+        ),
+        {
+            "id": approval_id,
+            "workspace_id": body.workspace_id,
+            "project_id": body.project_id,
+            "project_run_id": body.project_run_id,
+            "account_run_id": account_run_id,
+            "account_id": body.account_entity_id,
+            "directive_id": body.research_directive.directive_id,
+            "directive_version": body.research_directive.version,
+            "directive_sha256": body.research_directive.canonical_json_sha256,
+            "selection_sha256": selection.selection_sha256,
+            "predecessor_id": predecessor_id,
+            "authority_kind": approval.kind.value,
+            "approval_operation_id": approval.operation_id,
+            "approved_by": approval.approved_by,
+            "action_ref": approval.action_ref,
+            "approved_at": approval.approved_at,
+        },
+    )
     result = await conn.execute(
         text(
             "INSERT INTO contact_research_selection (id, workspace_id, project_id, "
             "project_run_id, account_run_id, account_id, directive_id, directive_version, "
-            "directive_sha256, selection_sha256, body_json, predecessor_id) VALUES "
+            "directive_sha256, selection_sha256, body_json, predecessor_id, approval_id) VALUES "
             "(:id, :workspace_id, :project_id, :project_run_id, :account_run_id, :account_id, "
             ":directive_id, :directive_version, :directive_sha256, :selection_sha256, "
-            "CAST(:body_json AS jsonb), :predecessor_id) ON CONFLICT "
+            "CAST(:body_json AS jsonb), :predecessor_id, :approval_id) ON CONFLICT "
             "(workspace_id, project_run_id, account_id, selection_sha256) DO NOTHING"
         ),
         {
@@ -100,6 +234,7 @@ async def store_contact_research_selection(
             "selection_sha256": selection.selection_sha256,
             "body_json": body.model_dump_json(),
             "predecessor_id": predecessor_id,
+            "approval_id": approval_id,
         },
     )
     row = (
@@ -178,9 +313,10 @@ async def latest_contact_research_selection(
                 f"SELECT {_SELECTION_COLUMNS} FROM contact_research_selection selection "
                 "WHERE selection.workspace_id=:workspace_id "
                 "AND selection.project_run_id=:project_run_id "
-                f"AND selection.account_id=:account_id {cancelled_sql} "
-                "ORDER BY (selection.body_json->>'approved_at')::timestamptz DESC, "
-                "selection.created_at DESC, selection.id DESC LIMIT 1"
+                "AND selection.account_id=:account_id "
+                "AND NOT EXISTS (SELECT 1 FROM contact_research_selection successor "
+                "WHERE successor.predecessor_id=selection.id) "
+                f"{cancelled_sql} LIMIT 1"
             ),
             {
                 "workspace_id": workspace_id,
@@ -202,6 +338,17 @@ async def cancel_contact_research_selection(
 ) -> ContactResearchSelectionCancellation:
     """Append one durable stop control; exact retries are idempotent, changes conflict."""
 
+    locked = (
+        await conn.execute(
+            text(
+                "SELECT id FROM contact_research_selection "
+                "WHERE workspace_id=:workspace_id AND id=:selection_id FOR UPDATE"
+            ),
+            {"workspace_id": workspace_id, "selection_id": selection_id},
+        )
+    ).scalar_one_or_none()
+    if locked is None:
+        raise ContactResearchSelectionNotFound(str(selection_id))
     cancellation_id = uuid4()
     await conn.execute(
         text(
@@ -238,6 +385,14 @@ async def cancel_contact_research_selection(
         raise ContactResearchSelectionReplayConflict(
             "contact research cancellation was replayed with different authority"
         )
+    await stop_contact_research_operations(
+        conn,
+        workspace_id=workspace_id,
+        contact_id=None,
+        selection_id=selection_id,
+        reason_code=f"selection_cancelled:{reason_code}",
+        authority_ref=f"contact-research-selection-cancellation:{stored.cancellation_id}",
+    )
     return stored
 
 
@@ -261,12 +416,15 @@ async def contact_research_selection_cancellation(
 
 
 __all__ = [
+    "ContactResearchSelectionApprovalAuthority",
+    "ContactResearchSelectionApprovalKind",
     "ContactResearchSelectionCancellation",
     "ContactResearchSelectionNotFound",
     "ContactResearchSelectionReplayConflict",
     "ContactResearchSelectionRepositoryError",
     "cancel_contact_research_selection",
     "contact_research_selection_cancellation",
+    "directive_confirmation_selection_approval",
     "get_contact_research_selection",
     "latest_contact_research_selection",
     "store_contact_research_selection",

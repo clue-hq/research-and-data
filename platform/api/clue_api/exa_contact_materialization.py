@@ -207,6 +207,13 @@ async def _build_exa_contact_snapshot_resolver(
             )
         if request_artifact.get("contact_intent_sha256") != intent.sha256():
             raise ExaDeepContactSnapshotError("stored contact request belongs to another intent")
+        if (
+            request_artifact.get("contact_selection_id") != str(intent.selection_id)
+            or request_artifact.get("contact_selection_sha256") != intent.selection_sha256
+        ):
+            raise ExaDeepContactSnapshotError(
+                "stored contact request belongs to another selected-contact authority"
+            )
         try:
             durable_request = ExternalResearchAcquisitionRequest.model_validate(
                 request_artifact["lineage"]
@@ -222,6 +229,8 @@ async def _build_exa_contact_snapshot_resolver(
             config = ExaDeepConfig.model_validate(request_artifact["exa_config"])
             ExaDeepContactAcquisitionPreflight(
                 request=durable_request,
+                selection_id=intent.selection_id,
+                selection_sha256=intent.selection_sha256,
                 intent_sha256=intent.sha256(),
                 exa_request=request,
                 target_lock=target,
@@ -420,6 +429,9 @@ class ExaDeepContactSnapshotResolverProvider:
                 research_directive_sha256=intent.research_directive.canonical_json_sha256,
                 research_override_id=intent.research_directive.override_id,
                 research_override_sha256=intent.research_directive.override_sha256,
+                contact_selection_id=intent.selection_id,
+                contact_selection_sha256=intent.selection_sha256,
+                contact_intent_sha256=intent.sha256(),
             )
         return await _build_exa_contact_snapshot_resolver(
             intent=intent,

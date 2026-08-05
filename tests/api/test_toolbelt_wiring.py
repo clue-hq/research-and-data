@@ -17,6 +17,7 @@ existence leak).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -24,12 +25,18 @@ from sqlalchemy import text
 
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_core import (
+    ContactResearchPolicyPin,
+    ContactResearchSelection,
+    ContactResearchSelectionBody,
+    ContactResearchTarget,
     EntityType,
     ExtractionMethod,
     ICPCreatedFrom,
     ProjectRunId,
+    ResearchDirectivePin,
     ResearchMode,
     discovery_claim,
+    new_contact_research_selection_id,
     new_operation_id,
 )
 from clue_research.claimstore import insert_claim
@@ -51,6 +58,46 @@ from tests.profiling.conftest import conn_session_factory, rollback_conn, seed_p
 
 TTL = 86400.0
 _UUID = lambda: str(uuid4())  # noqa: E731
+
+
+def _matrix_contact_selection() -> ContactResearchSelection:
+    account_id = uuid4()
+    directive_id = uuid4()
+    policy = ContactResearchPolicyPin()
+    body = ContactResearchSelectionBody(
+        workspace_id="matrix",
+        project_id="project_missing",
+        project_run_id=uuid4(),
+        account_entity_id=account_id,
+        research_directive=ResearchDirectivePin(
+            directive_id=directive_id,
+            directive_ref=f"research-directive:{directive_id}:v1",
+            version=1,
+            canonical_json_sha256="0" * 64,
+            account_id=account_id,
+        ),
+        targets=(
+            ContactResearchTarget(
+                contact_entity_id=uuid4(),
+                committee_claim_ids=(uuid4(),),
+                strong_identity_claim_ids=(uuid4(),),
+                field_keys=("contact.current_title",),
+            ),
+        ),
+        policy=policy,
+        source_profile_ref="source-profile:matrix",
+        jurisdiction_policy_ref="jurisdiction:matrix",
+        use_policy_ref="use:matrix",
+        retention_policy_ref="retention:matrix",
+        budget_reservation_ref="budget:matrix",
+        approved_by="human:matrix",
+        approved_at=datetime.now(UTC),
+    )
+    return ContactResearchSelection.from_body(
+        body,
+        effective_policy=policy,
+        selection_id=new_contact_research_selection_id(),
+    )
 
 
 # tool -> ("precondition", exact reason tuple) | ("success", a required reference key)
@@ -80,6 +127,14 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "profile_contact": ("precondition", ("contact_research_not_composed",)),
     "run_verification": ("precondition", ("run_not_found",)),
     "compose_handoff": ("precondition", ("run_not_found",)),
+    "compose_contact_content_handoff": (
+        "precondition",
+        ("contact_content_handoff_not_composed",),
+    ),
+    "approve_contact_research_selection": (
+        "precondition",
+        ("trusted_human_receipt_mismatch",),
+    ),
     "compose_dossier": ("precondition", ("research_view_feature_disabled",)),
     "get_research_view": ("precondition", ("research_view_feature_disabled",)),
     "recheck_research_view": ("precondition", ("research_view_feature_disabled",)),
@@ -122,6 +177,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
 
 
 def _bodies() -> dict[str, dict[str, object]]:
+    matrix_selection = _matrix_contact_selection()
     return {
         "reverse_profile": {"name": "Acme Robotics", "website": "https://acme.example"},
         "synthesize_icps": {"client_entity_id": _UUID()},
@@ -161,6 +217,16 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "run_verification": {"project_run_id": _UUID()},
         "compose_handoff": {"project_run_id": _UUID()},
+        "compose_contact_content_handoff": {
+            "project_id": "project_missing",
+            "project_run_id": _UUID(),
+            "account_entity_id": _UUID(),
+        },
+        "approve_contact_research_selection": {
+            "selection": matrix_selection.model_dump(mode="json"),
+            "account_run_id": _UUID(),
+            "predecessor_selection_id": _UUID(),
+        },
         "compose_dossier": {
             "project_id": "project_missing",
             "project_run_id": _UUID(),
@@ -704,10 +770,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # draft/human-confirm direction tools; proposal writes, research_account_gaps, and the A2
     # tools retain @1 replay contracts alongside their current @2 contracts; O2 adds the exact-set
     # account-deep launch boundary.
-    assert len(registry.names()) == 42
+    assert len(registry.names()) == 44
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 48
+    assert len(registry) == 50
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

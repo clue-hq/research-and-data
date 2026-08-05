@@ -326,6 +326,10 @@ async def find_fresh_reusable_contact_channel_operation(
                   AND operation.acquisition_source_key=:acquisition_source_key
                   AND operation.validation_source_key=:validation_source_key
                   AND operation.state='succeeded'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM contact_channel_operation_stop stop
+                      WHERE stop.operation_id=operation.id
+                  )
                   AND operation.request_json->>'provider_contract_version'=
                       :provider_contract_version
                   AND operation.request_json->>'validation_contract_version'=
@@ -549,7 +553,9 @@ async def claim_contact_channel_submit(
             text(
                 "UPDATE contact_channel_operation SET state='submitting', started_at=:now "
                 "WHERE workspace_id=:workspace_id AND id=:operation_id AND state IN "
-                "('planned', 'failed_retryable') RETURNING id"
+                "('planned', 'failed_retryable') AND NOT EXISTS (SELECT 1 FROM "
+                "contact_channel_operation_stop stop WHERE stop.operation_id="
+                "contact_channel_operation.id) RETURNING id"
             ),
             {"workspace_id": workspace_id, "operation_id": operation_id, "now": now},
         )
@@ -577,7 +583,9 @@ async def claim_contact_channel_validation(
                 "UPDATE contact_channel_operation SET state='validating', started_at=:now, "
                 "next_poll_at=:lease_until, validation_spend_outcome='unknown' "
                 "WHERE workspace_id=:workspace_id AND id=:operation_id "
-                "AND state='ready_to_validate' RETURNING id"
+                "AND state='ready_to_validate' AND NOT EXISTS (SELECT 1 FROM "
+                "contact_channel_operation_stop stop WHERE stop.operation_id="
+                "contact_channel_operation.id) RETURNING id"
             ),
             {
                 "workspace_id": workspace_id,
@@ -736,6 +744,10 @@ async def contact_channel_is_usable(
                   AND operation.contact_id=:contact_id
                   AND operation.channel=CAST(:channel AS contact_channel_kind)
                   AND operation.state='succeeded'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM contact_channel_operation_stop stop
+                      WHERE stop.operation_id=operation.id
+                  )
                   AND operation.terminal_at
                       + make_interval(secs =>
                           (operation.request_json->>'retention_seconds')::integer) > :now
@@ -783,6 +795,10 @@ async def contact_channel_operation_is_usable(
                 WHERE operation.workspace_id=:workspace_id
                   AND operation.id=:operation_id
                   AND operation.state='succeeded'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM contact_channel_operation_stop stop
+                      WHERE stop.operation_id=operation.id
+                  )
                   AND operation.terminal_at
                       + make_interval(secs =>
                           (operation.request_json->>'retention_seconds')::integer) > :now

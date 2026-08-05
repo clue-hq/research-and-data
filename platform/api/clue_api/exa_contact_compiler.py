@@ -24,6 +24,7 @@ from clue_core import (
     ContactEntity,
     ContactResearchIntent,
     ContactResearchPolicyPin,
+    ContactResearchSelectionId,
     EffectiveFieldSourcePlan,
     EntityScope,
     ExternalResearchAcquisitionRequest,
@@ -87,6 +88,8 @@ class ExaDeepContactAcquisitionPreflight(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     request: ExternalResearchAcquisitionRequest
+    selection_id: ContactResearchSelectionId
+    selection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     intent_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     exa_request: ExaDeepContactSearchRequest
     target_lock: ExaDeepContactTargetLock
@@ -268,6 +271,8 @@ def compile_exa_contact_acquisition_plan(
         preflights.append(
             ExaDeepContactAcquisitionPreflight(
                 request=durable,
+                selection_id=intent.selection_id,
+                selection_sha256=intent.selection_sha256,
                 intent_sha256=intent_sha,
                 exa_request=wire,
                 target_lock=target_lock,
