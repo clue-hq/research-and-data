@@ -23,11 +23,15 @@ class FleetTaskKind(StrEnum):
     * ``ACCOUNT_JOB`` — one per-account deep-research job inside a run's ``deep`` phase (the
       REQ-10 tier-priority queue unit). Drained only by the run's current driver (the lease keeps
       drivers exclusive), ordered by ``priority`` (tier rank) under the concurrency window.
+    * ``EXECUTE_GRAPH`` — one durable recipe execution in the shared top-level leased worker.
+    * ``ENTITY_RESEARCH_JOB`` — one M8D account or contact research subject. Both types use this
+      same mechanical kind; exact subject authority lives in the immutable job envelope.
     """
 
     DRIVE_RUN = "drive_run"
     ACCOUNT_JOB = "account_job"
     EXECUTE_GRAPH = "execute_graph"
+    ENTITY_RESEARCH_JOB = "entity_research_job"
 
 
 class FleetTaskStatus(StrEnum):

@@ -320,16 +320,29 @@ def build_multi_work_worker(
     *,
     driver: RunDriver,
     graph_handler: WorkHandler,
+    entity_research_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
     worker_id: str | None = None,
 ) -> LeasedWorkWorker:
-    """C5.3 production drain: unchanged project-run handler plus recipe graph handler."""
+    """One leased drain for project runs, recipe graphs, and optional entity-research jobs.
+
+    R2 adds only the composition seam.  Production deliberately omits the optional handler until
+    R3 supplies the governed ``create_agent()`` driver, preserving R1's fail-loud quarantine.
+    """
+    if (
+        entity_research_handler is not None
+        and entity_research_handler.kind is not FleetTaskKind.ENTITY_RESEARCH_JOB
+    ):
+        raise ValueError("entity_research_handler must own entity_research_job tasks")
+    handlers = [
+        _OwnedRunGuardHandler(ProjectRunWorkHandler(driver)),
+        graph_handler,
+    ]
+    if entity_research_handler is not None:
+        handlers.append(entity_research_handler)
     return LeasedWorkWorker(
-        handlers=(
-            _OwnedRunGuardHandler(ProjectRunWorkHandler(driver)),
-            graph_handler,
-        ),
+        handlers=tuple(handlers),
         queue=queue if queue is not None else DbWorkQueue(),
         leases=leases if leases is not None else DbWorkLeaseStore(),
         worker_id=worker_id,
