@@ -18,6 +18,15 @@
 > email/phone acquisition and independent validation, provider-neutral wait/resume composition,
 > and the verified research handoff consumed by later content scaling. It does **not** create a
 > second contact fleet, a Sumble-specific orchestrator, or a content-generation subsystem.
+>
+> **Successor orchestration roadmap (2026-08-06):**
+> [M8D](M8D-entity-research-agents-and-shared-fleet-refactor-roadmap.md) supersedes M8C's active
+> entity-agent ownership/composition for future runs. Contact research becomes a distinct,
+> separately user-approved run over the same mechanical fleet substrate, with one
+> `langchain.agents.create_agent()` unit per explicitly selected contact; selection may include
+> committee or non-committee identity-resolved contacts. M8C remains authoritative historical
+> evidence for its professional claims, contact durability, Exa/channel provider contracts,
+> selection, governance, replay, and handoff work.
 
 ## 1. Authority and relationship to the existing system
 
