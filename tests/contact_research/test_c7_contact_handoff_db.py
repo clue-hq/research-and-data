@@ -279,4 +279,33 @@ def test_production_projection_is_reference_only_governed_and_names_skipped_cont
                 skipped_id,
             }
 
+            # Exact scope is resolved before the cancelled/no-selection branches inspect the
+            # account-run committee index.  A caller cannot use those honest same-scope exclusion
+            # lists as a cross-workspace/project/product contact-id oracle.
+            for foreign_scope in (
+                {
+                    "workspace_id": "foreign-m8c-c7-workspace",
+                    "project_id": PROJECT_ID,
+                    "product_id": PRODUCT_ID,
+                },
+                {
+                    "workspace_id": WORKSPACE_ID,
+                    "project_id": "foreign-m8c-c7-project",
+                    "product_id": PRODUCT_ID,
+                },
+                {
+                    "workspace_id": WORKSPACE_ID,
+                    "project_id": PROJECT_ID,
+                    "product_id": "foreign-m8c-c7-product",
+                },
+            ):
+                rejected = await service.compose(
+                    project_run_id=seed.project_run_id,
+                    account_entity_id=seed.account_id,
+                    **foreign_scope,
+                )
+                assert rejected.bundles == ()
+                assert rejected.exclusions == ()
+                assert rejected.reason_codes == ("contact_handoff_scope_not_found",)
+
     run_async(scenario())
