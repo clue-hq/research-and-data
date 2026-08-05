@@ -26,6 +26,7 @@ from clue_api.fleet_wiring import (
     build_fleet_deep_scheduler,
     build_fleet_run_driver,
     build_fleet_worker,
+    build_multi_work_worker,
     enqueue_run_drive,
     register_boot_handlers,
     tier_priority_from_rubric,
@@ -43,6 +44,8 @@ from clue_fleet import (
     FleetTaskKind,
     ProjectRunWorker,
     QueueBackedScheduler,
+    WorkContext,
+    WorkResult,
     default_tier_priority,
     enqueue_drive,
 )
@@ -147,6 +150,39 @@ def test_build_fleet_worker_threads_every_fleet_setting() -> None:
     assert worker._lease_ttl == timedelta(seconds=40.0)
     assert worker._heartbeat_interval == 5.0
     assert worker._task_stale_after == timedelta(seconds=80.0)
+
+
+class _CompositionHandler:
+    def __init__(self, kind: FleetTaskKind) -> None:
+        self.kind = kind
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        return WorkResult(outcome="unused", references={"work_id": str(context.work_id)})
+
+
+def test_multi_worker_accepts_one_optional_subject_neutral_entity_handler() -> None:
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    entity = _CompositionHandler(FleetTaskKind.ENTITY_RESEARCH_JOB)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        entity_research_handler=entity,
+        worker_id="shared-worker",
+    )
+    assert set(worker._handlers) == {
+        FleetTaskKind.DRIVE_RUN,
+        FleetTaskKind.EXECUTE_GRAPH,
+        FleetTaskKind.ENTITY_RESEARCH_JOB,
+    }
+
+    with pytest.raises(ValueError, match="must own entity_research_job"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            entity_research_handler=graph,
+        )
 
 
 # --- the resume-surface helper (spec §2.4): re-driving is a fresh enqueue_drive -------------------

@@ -1,7 +1,7 @@
 # M8D — Entity research agents and shared fleet refactor roadmap
 ## `langchain.agents.create_agent` account/contact units over one durable fleet substrate
 
-> **Status:** R0–R1 accepted; R2–R10 have not started.
+> **Status:** R0–R2 accepted; R3–R10 have not started.
 > **Recorded:** 2026-08-06. **Working branch at record time:**
 > `platform/c8-account-profiling-integration`.
 >
@@ -567,6 +567,11 @@ research runs without duplicating the fleet.
 
 **Exit gate:** account/contact jobs share execution machinery but remain separately launched,
 scoped, budgeted, cancelled, observed, and finalized.
+
+**Accepted 2026-08-06:** the immutable run/job authority, shared queue/lease handler, exact
+checkpoint wait/wake, cancellation fencing, receipt-only finalization, per-run concurrency/budget
+scope, disposable-database migration proof, and R1-preserving composition boundary are recorded in
+`M8D-R2-subject-neutral-fleet-acceptance.md`.
 
 ### R3 — Shared `create_agent()` runtime
 
