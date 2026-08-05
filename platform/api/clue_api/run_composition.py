@@ -13,19 +13,17 @@ per-run :class:`~clue_research.durable.PhaseHandlerRegistry` + a per-run ``Proje
 one :class:`BudgetEngine`). The state-machine object is cheap; the durable state is shared, so two
 ICPs on one worker never collide on a phase slot.
 
-**D2 — the composer passes everything production was missing.** Each composition binds: ``storage =
-build_storage_backend()`` (every phase born snapshot-wrapped); the fleet
-:class:`~clue_fleet.QueueBackedScheduler` for DEEP with ``lock_factory`` (Doc C §4 single-flight
-**on**) and ``priority_for`` derived from the ICP rubric's tier bands (rubric-derived tier priority
-**on**) — closing the B1-wiring residuals; the settings-built gateway threaded into DEEP /
-VERIFICATION / DISCOVERY / the reverse-profiling faithfulness judge; and the per-run high-tier
-account resolver shared by DEEP, VERIFICATION, and the HANDOFF retention sweep.
+**M8D R1 — the entity-research slot is quarantined.** The valid phase, storage, discovery,
+verification, and handoff substrates remain composed per run. ``DEEP`` is intentionally bound to
+one fail-loud handler, however: it raises ``entity_research_agent_not_composed`` before the former
+account scheduler, provider preparation, committee preparation, or contact progression can run.
+R2–R5 replace that empty slot with the subject-neutral fleet and ``create_agent()`` entity units.
 
 **Composed phase set (per registry):**
 
 * REVERSE_PROFILING / ICP_CONFIRMED / DISCOVERY / SCORING / TIER_CHECKPOINT — via
   :mod:`clue_api.phase_wiring`, snapshot-wrapped (D3).
-* DEEP — :func:`build_deep_phase_handler` over the loaded ``ICPSpec`` + the fleet scheduler.
+* DEEP — the M8D R1 active-path quarantine; no legacy entity-research work is scheduled.
 * VERIFICATION — :func:`build_verification_phase_handler` over the shared gateway + the high-tier
   resolver.
 * REVIEW — folded in from :func:`register_boot_handlers` (the process-wide-composable handler set).
@@ -46,38 +44,27 @@ changes no ``durable``/``research`` code.
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from clue_api.account_research_wiring import AccountResolverBindingProvider
-from clue_api.agent_platform_wiring import DbAgentOwnershipRouter, RoutedAccountProfiler
-from clue_api.composition import build_pre_spend_gate
 from clue_api.contact_eligibility import (
     build_contact_eligibility_resolver,
     build_production_handoff_committee_reader,
 )
-from clue_api.contact_research_preparation import ContactStagePreparer
-from clue_api.deep import CommitteePreparer, ProfileAccountFn
-from clue_api.deep.composition import (
-    DeepPhaseComposition,
-    build_deep_phase_handler,
-    build_high_tier_resolver,
-)
+from clue_api.deep.composition import build_high_tier_resolver
 from clue_api.discovery_seal import (
     DbSealedDiscoveryAccountManifestReader,
     DiscoveryBatchStarter,
     DiscoveryRequiredFieldResolver,
 )
-from clue_api.fleet_wiring import (
-    build_fleet_deep_scheduler,
-    register_boot_handlers,
-    tier_priority_from_rubric,
+from clue_api.entity_research_quarantine import (
+    EntityResearchQuarantineComposition,
+    EntityResearchQuarantinePhaseHandler,
 )
+from clue_api.fleet_wiring import register_boot_handlers
 from clue_api.handoff_retention import build_retention_sweeping_handoff_handler
 from clue_api.handoff_wiring import build_handoff_phase_handler
-from clue_api.locks import lazy_account_lock_factory
 from clue_api.narrative_wiring import build_handoff_assembler
-from clue_api.observability_wiring import build_observability_surface
 from clue_api.phase_wiring import (
     build_reverse_profiling_handler,
     register_discovery_handler,
@@ -89,28 +76,18 @@ from clue_api.phase_wiring import (
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.run_events_wiring import NullRunEventEmitter, RunEventEmitter
 from clue_api.storage_wiring import build_storage_backend
-from clue_api.supervisor_wiring import (
-    ApiDeepCanaryController,
-    ApiRunAggregateReader,
-    RunControlAccountAdmission,
-    RunControlledPreSpendGate,
-    SupervisorActions,
-)
 from clue_api.verification import build_verification_phase_handler
-from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
+from clue_config import Secrets, Settings, default_gateway_config, load_settings
 from clue_core import (
     ICPSpec,
     LLMGateway,
     PhaseContext,
     PhaseHandler,
     PhaseResult,
-    PreSpendGate,
     ProjectPhase,
     ProjectRunId,
 )
 from clue_db import ConnFactory, transaction
-from clue_execution import DbExecutionJournal, DbRunControlStore, SupervisorEngine
-from clue_fleet import TierPriority, default_tier_priority
 from clue_gateway import build_gateway
 from clue_obs import get_logger
 from clue_research.discovery_scoring.discovery import ChannelRegistry
@@ -119,15 +96,12 @@ from clue_research.durable import (
     DbIdempotencyStore,
     DbProjectRunStore,
     IdempotencyStore,
-    LockFactory,
     PhaseHandlerRegistry,
     ProjectRun,
     ProjectRunRow,
     ProjectRunStore,
 )
-from clue_research.icp.rubric import rubric_from_slot
 from clue_research.icp.spec import get_icp_version
-from clue_research.profiling import CommitteeSource, profile_account
 from clue_research.stage0 import ClientInput
 from clue_research.verification import FaithfulnessJudgeImpl
 from clue_storage import StorageBackend
@@ -178,7 +152,7 @@ class ComposedRun:
     run: ProjectRun
     registry: PhaseHandlerRegistry
     spec: ICPSpec
-    deep: DeepPhaseComposition
+    deep: EntityResearchQuarantineComposition
     phases: frozenset[ProjectPhase]
 
 
@@ -281,8 +255,6 @@ class ComposingRunDriver:
         budget_engine: BudgetEngine | None = None,
         gateway: LLMGateway | None = None,
         storage: StorageBackend | None = None,
-        lock_factory: LockFactory | None = None,
-        committee_sources: Sequence[CommitteeSource] = (),
         channels: ChannelRegistry | None = None,
         discovery_batch_starter: DiscoveryBatchStarter | None = None,
         discovery_required_field_resolver: DiscoveryRequiredFieldResolver | None = None,
@@ -291,16 +263,7 @@ class ComposingRunDriver:
         cache_size: int | None = None,
         session_factory: ConnFactory = transaction,
         event_emitter: RunEventEmitter | None = None,
-        controls: DbRunControlStore | None = None,
-        supervisor_actions: SupervisorActions | None = None,
-        execution_journal: DbExecutionJournal | None = None,
         project_execution_router: ProjectExecutionRouter | None = None,
-        account_agent_profiler: ProfileAccountFn | None = None,
-        profile_account_fn: ProfileAccountFn | None = None,
-        committee_preparer: CommitteePreparer | None = None,
-        account_resolver_provider: AccountResolverBindingProvider | None = None,
-        contact_preparer: ContactStagePreparer | None = None,
-        pre_spend_gate: PreSpendGate | None = None,
     ) -> None:
         self._settings = settings if settings is not None else load_settings()
         self._store: ProjectRunStore = store if store is not None else DbProjectRunStore()
@@ -308,29 +271,12 @@ class ComposingRunDriver:
         self._budget = budget_engine if budget_engine is not None else BudgetEngine()
         self._gateway = gateway if gateway is not None else build_platform_gateway(self._settings)
         self._storage = storage if storage is not None else build_storage_backend(self._settings)
-        self._lock_factory: LockFactory = (
-            lock_factory if lock_factory is not None else lazy_account_lock_factory()
-        )
-        self._committee_sources = tuple(committee_sources)
         self._channels = channels if channels is not None else ChannelRegistry()
         self._discovery_batch_starter = discovery_batch_starter
         self._discovery_required_field_resolver = discovery_required_field_resolver
         self._client_input_provider = client_input_provider
         self._session_factory = session_factory
-        self._controls = controls
-        self._supervisor_actions = supervisor_actions
-        self._execution_journal = execution_journal
         self._project_execution_router = project_execution_router
-        self._account_agent_profiler = account_agent_profiler
-        self._profile_account_fn = profile_account_fn
-        self._committee_preparer = committee_preparer
-        self._account_resolver_provider = account_resolver_provider
-        self._contact_preparer = contact_preparer
-        self._pre_spend_gate = pre_spend_gate
-        if (controls is None) != (supervisor_actions is None):
-            raise ValueError("controls and supervisor_actions must be supplied together")
-        if controls is not None and execution_journal is None:
-            raise ValueError("supervised composition requires an execution journal")
         # D8: the SSE run-event emitter fired at every advance boundary. Defaults to the no-op
         # emitter (a composer driven in a unit test emits nothing); ``fleet_main`` binds the
         # production ``DbRunEventEmitter`` over the ``run_event`` outbox so the detached worker's
@@ -394,26 +340,6 @@ class ComposingRunDriver:
     async def _load_spec(self, workspace_id: str, icp_key: str, icp_version: int) -> ICPSpec | None:
         async with self._session_factory() as conn:
             return await get_icp_version(conn, workspace_id, icp_key, icp_version)
-
-    def _priority_for(self, spec: ICPSpec) -> TierPriority:
-        """The DEEP scheduler's tier priority, from the ICP rubric's tier bands (rubric-stable band
-        ordering — the run's approved ``tier_cutoffs`` carry the same band labels; sourcing from the
-        rubric makes the priority correct even when the registry is composed at an early phase,
-        before ``tier_checkpoint`` writes the run's cutoffs). Falls back to the stock ladder when
-        the spec carries no rubric bands (nothing to rank)."""
-        # Authority split (deliberate, bounded): the run's approved ``tier_cutoffs`` decide *who* is
-        # high-tier (the scheduler reads them off ``ctx.params`` per account); the rubric's band
-        # *order* decides *when* — the drain priority among the already-selected high-tier accounts.
-        # Sourcing priority from the (stable) rubric rather than the run cutoffs keeps it correct
-        # even when the registry is composed at an early phase, before ``tier_checkpoint`` writes
-        # the cutoffs. A checkpoint-supplied band *rename* (a cutoffs edit that introduces a band
-        # label the rubric never had) simply falls through to the stock ladder here — unranked, not
-        # mis-ranked — which is acceptable for ordering (WHO is still governed by the run cutoffs).
-        rubric = rubric_from_slot(spec.scoring_rubric)
-        cutoffs = rubric.tier_cutoffs if rubric is not None else None
-        if cutoffs is not None and cutoffs.bands:
-            return tier_priority_from_rubric(cutoffs)
-        return default_tier_priority
 
     async def _compose(self, row: ProjectRunRow) -> ComposedRun:
         spec = await self._spec_loader(row.workspace_id, row.icp_key, row.icp_version)
@@ -486,92 +412,11 @@ class ComposingRunDriver:
             register=registry.register,
         )
 
-        # DEEP — campaign-scoped (one ICPSpec) over the fleet scheduler; single-flight + rubric
-        # priority ON (D2 / the B1-wiring residuals).
-        priority_for = self._priority_for(spec)
-        policy = get_config(row.workspace_id, row.icp_key).supervisor_policy
-        account_admission = (
-            RunControlAccountAdmission(
-                controls=self._controls,
-                conn_factory=self._session_factory,
-            )
-            if self._controls is not None
-            else None
-        )
-        scheduler = build_fleet_deep_scheduler(
-            self._settings,
-            lock_factory=self._lock_factory,
-            priority_for=priority_for,
-            account_admission=account_admission,
-        )
-        base_gate = self._pre_spend_gate or build_pre_spend_gate()
-        pre_spend_gate = (
-            RunControlledPreSpendGate(
-                inner=base_gate,
-                controls=self._controls,
-                conn_factory=self._session_factory,
-            )
-            if self._controls is not None
-            else base_gate
-        )
-        canary_controller = None
-        if (
-            self._controls is not None
-            and self._supervisor_actions is not None
-            and self._execution_journal is not None
-        ):
-            aggregate_reader = ApiRunAggregateReader(
-                observability=build_observability_surface(
-                    budget=self._budget,
-                    conn_factory=self._session_factory,
-                ),
-                stalled_after_s=policy.stalled_account_age_s,
-                conn_factory=self._session_factory,
-            )
-            supervisor = SupervisorEngine(
-                aggregates=aggregate_reader,
-                policy=policy,
-                conn_factory=self._session_factory,
-                journal=self._execution_journal,
-                gateway=self._gateway,
-            )
-            canary_controller = ApiDeepCanaryController(
-                policy=policy,
-                controls=self._controls,
-                supervisor=supervisor,
-                actions=self._supervisor_actions,
-                priority_for=priority_for,
-                conn_factory=self._session_factory,
-            )
-        deep = build_deep_phase_handler(
-            spec=spec,
-            gateway=self._gateway,
-            # M8 role inference is a direct LLM gateway call, not a research-product
-            # resolver.  Bind the same deployment-configured synthesis model used by
-            # other platform reasoning surfaces; leaving this unset makes a ready
-            # Sumble snapshot fail only when committee materialisation begins.
-            role_model=self._settings.synthesis_model,
-            committee_sources=self._committee_sources,
-            storage=self._storage,
-            scheduler=scheduler,
-            high_tier_resolver=high_tier_resolver,
-            pre_spend_gate=pre_spend_gate,
-            canary_controller=canary_controller,
-            committee_preparer=self._committee_preparer,
-            account_resolver_provider=self._account_resolver_provider,
-            contact_preparer=self._contact_preparer,
-            profile_account_fn=(
-                self._profile_account_fn
-                if self._profile_account_fn is not None
-                else RoutedAccountProfiler(
-                    router=DbAgentOwnershipRouter(
-                        settings=self._settings,
-                        conn_factory=self._session_factory,
-                    ),
-                    legacy=profile_account,
-                    deepagent=self._account_agent_profiler,
-                )
-            ),
+        # M8D R1: DEEP is intentionally uncomposed until the governed ``create_agent()`` entity
+        # runtime lands.  Crucially, this composition contains no scheduler, provider preparer,
+        # mechanical account profiler, committee walker, or contact fan-out to fall back to.
+        deep = EntityResearchQuarantineComposition(
+            handler=EntityResearchQuarantinePhaseHandler()
         )
         registry.register(deep.handler)
 
@@ -612,8 +457,6 @@ class ComposingRunDriver:
             ledger=self._ledger,
         )
         phases = registry.phases()
-        committee_sources = len(self._committee_sources)
-        committee_preparer = self._committee_preparer is not None
         # One structured log per composition (cache fill), not per advance.
         log.info(
             "composer.registry_composed",
@@ -621,20 +464,7 @@ class ComposingRunDriver:
             icp_key=row.icp_key,
             icp_version=row.icp_version,
             phases=sorted(phase.value for phase in phases),
-            committee_sources=committee_sources,
-            committee_preparer=committee_preparer,
+            entity_research=deep.reason_code,
             handoff_narrative_emit=self._settings.c7_production_handoff_enabled,
         )
-        if committee_sources == 0 and not committee_preparer:
-            # Zero committee sources ⇒ DEEP resolves no buying committee ⇒ required output #3 (the
-            # per-account committee) is silently empty. Loud so a misconfigured run is visible, not
-            # a quiet blank (a valid state only for a run that intends account-only research).
-            log.warning(
-                "composer.committee_sources_empty",
-                workspace_id=row.workspace_id,
-                icp_key=row.icp_key,
-                icp_version=row.icp_version,
-                reason="no CommitteeSource wired — DEEP will resolve an empty buying committee "
-                "(required output #3 empty)",
-            )
         return ComposedRun(run=run, registry=registry, spec=spec, deep=deep, phases=phases)

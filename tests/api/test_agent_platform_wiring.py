@@ -99,7 +99,7 @@ def test_account_agent_plan_budget_uses_the_strictest_durable_ceiling() -> None:
     )
 
 
-def test_durable_owner_is_sticky_across_configuration_changes(
+def test_durable_owner_remains_historical_but_r1_never_wakes_account_deepagent(
     require_c68_db: None,
 ) -> None:
     del require_c68_db
@@ -128,7 +128,7 @@ def test_durable_owner_is_sticky_across_configuration_changes(
             )
             assert first.owner is AgentOwner.DEEPAGENT
             assert first.selection_source == "allowlist"
-            assert await _account_agent_runtime_required(
+            assert not await _account_agent_runtime_required(
                 _settings(),
                 conn_factory=factory,
             )

@@ -73,7 +73,7 @@ def test_human_steering_and_replay_blocked_tools_are_structurally_absent() -> No
         descriptors[address].replay.policy is ReplayPolicy.UNCERTIFIED
         for address in _REPLAY_BLOCKED
     )
-    assert c6_roles_for_tool("research_account_gaps@2")
+    assert not c6_roles_for_tool("research_account_gaps@2")
     assert descriptors["research_account_gaps@2"].recipe_safe
 
 

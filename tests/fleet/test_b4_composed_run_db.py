@@ -21,7 +21,7 @@ import pytest
 from sqlalchemy import text
 from tests._workspace import seed_project, seed_workspace
 from tests.api.test_storage_wiring import FakeStorage
-from tests.fleet.conftest import ProcessLocalLockFactory, run_async
+from tests.fleet.conftest import run_async
 
 from clue_api.run_composition import ComposingRunDriver
 from clue_config import GatewayConfig, load_settings
@@ -136,9 +136,7 @@ def test_composed_worker_drives_reverse_profiling_through_handoff() -> None:
                     ),
                     gateway=build_gateway(GatewayConfig(stub=True)),
                     storage=FakeStorage(),  # type: ignore[arg-type]
-                    lock_factory=ProcessLocalLockFactory(),  # process-local single-flight, no redis
                     channels=ChannelRegistry(),  # empty: discovery finds nothing, advances
-                    committee_sources=(),
                     client_input_provider=provide_client_input,
                 )
                 queue = DbTaskQueue()

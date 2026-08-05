@@ -7,15 +7,20 @@ and the :class:`~clue_fleet.ProjectRunWorker` from :class:`~clue_config.Settings
 ``CLUE_FLEET_*`` knobs), then hand off to :func:`~clue_fleet.run_worker` (the shell that owns
 SIGTERM/SIGINT → graceful drain). Structured logging via :func:`clue_obs.setup`.
 
-**The B4 composing driver drives whole runs.** The worker never *composes* phase handlers inside a
-run — it drives the injected ``RunDriver``. Since PB-B4 slice 1 that driver is the
+**The B4 composing driver drives runs through the active composition.** The worker never
+*composes* phase handlers inside a run — it drives the injected ``RunDriver``. Since PB-B4 slice 1
+that driver is the
 :class:`~clue_api.run_composition.ComposingRunDriver`: it composes a **per-project-run** phase
 registry (LRU-cached) on each run's first advance — every phase of the
 sequence, including the campaign-scoped DEEP/VERIFICATION (each holds one ``ICPSpec``) that could
 not live in the single process-default registry (two ICPs would collide on the DEEP slot). The
-process-wide-composable boot handlers (REVIEW) are re-folded into every per-run registry. So the
-worker cleanly drives the full ``reverse_profiling → … → handoff`` sequence, single-flight and
-rubric priority on (closing CLAUDE.md ``[B4×fleet]`` + the B1-wiring residuals).
+process-wide-composable boot handlers (REVIEW) are re-folded into every per-run registry.
+
+M8D R1 deliberately leaves the DEEP entity-research slot fail-closed. A new run reaching it raises
+``entity_research_agent_not_composed``; this entrypoint does not build the superseded account
+deepagent, pre-agent account/contact acquisition, committee preparer, or automatic contact
+progression. Provider lifecycle workers remain active only to drain and persist already-authorized
+durable operations and to support discovery paths that are outside this quarantine.
 
 :func:`~clue_api.fleet_wiring.register_boot_handlers` still runs at boot as a composition-machinery
 health check, and the worker **refuses to start** (a clean error exit) if that set is empty (a
@@ -29,9 +34,9 @@ degenerate no-composer deployment). Two honest limits remain:
   C7.6 closed the HANDOFF gap: the per-run composer now binds the production governed committee
   reader and the real materialise-then-outbox M12 handler. See :mod:`clue_api.run_composition`.
 
-This entrypoint also runs the B2 **orphan-blob sweep** and the provider-neutral DEEP wake path for
-due Sumble committee operations as background tasks alongside the worker (started with it,
-cancelled on drain). Sweep/wake errors are logged and never fatal to the worker.
+This entrypoint also runs the B2 **orphan-blob sweep** and provider lifecycle wake paths as
+background tasks alongside the worker (started with it, cancelled on drain). Sweep/wake errors are
+logged and never fatal to the worker; they do not originate new quarantined entity-research work.
 """
 
 from __future__ import annotations
@@ -40,31 +45,14 @@ import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
 
-from sqlalchemy import text
-
-from clue_agents import AgentRole
-from clue_api.account_research_turn_wiring import (
-    DbCompiledContextCardReader,
-    PreparedAccountResearchTurnRunner,
-    build_account_research_context,
-)
-from clue_api.account_research_wiring import AccountResearchAgentRuntime, GovernedAccountProfiler
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
-from clue_api.agent_execution_wiring import DbAgentPlanJournal
-from clue_api.agent_platform_wiring import build_agent_platform_components
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
 from clue_api.contact_content_handoff import ContactContentHandoffService
-from clue_api.contact_research_preparation import (
-    build_production_contact_channel_coordinator,
-    build_production_contact_research_preparer,
-)
-from clue_api.exa_deep_preparation import build_production_exa_deep_resolver_provider
 from clue_api.exa_targeted_enrichment import (
     ExaTargetedEnrichmentCoordinator,
     ExaTargetedEnrichmentWorker,
-    build_production_exa_targeted_starter,
 )
 from clue_api.exa_websets_acquisition import ExaWebsetsDiscoveryStarter
 from clue_api.exa_websets_lifecycle import (
@@ -86,14 +74,8 @@ from clue_api.external_research_wake import (
     ExternalResearchWakeDispatcher,
     registered_external_research_wake_sources,
 )
-from clue_api.fleet_wiring import (
-    build_account_lock_factory,
-    build_multi_work_worker,
-    enqueue_run_drive,
-    register_boot_handlers,
-)
-from clue_api.independent_contact_research import IndependentContactResearchService
-from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
+from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, register_boot_handlers
+from clue_api.memory_wiring import memory_write_factory_builder
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
@@ -108,14 +90,11 @@ from clue_api.research_view_runtime import build_production_research_view_runtim
 from clue_api.run_composition import ComposingRunDriver, build_platform_gateway
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
-from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
-from clue_api.sumble_committee_inputs import DurableSumbleCommitteeInputResolver
-from clue_api.sumble_committee_preparation import build_production_sumble_committee_preparer
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
-from clue_core import ContactChannelValidator, ProjectPhase
+from clue_config import Secrets, Settings, get_config, load_settings
+from clue_core import ProjectPhase
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import (
     CompatibilityLoader,
@@ -390,35 +369,24 @@ async def _account_agent_runtime_required(
     *,
     conn_factory: ConnFactory = transaction,
 ) -> bool:
-    """Keep sticky deepagent-owned runs resumable after rollout switches are reduced."""
+    """Compatibility probe: R1 never wakes the retired account deepagent runtime.
 
-    configured_cohort = (
-        settings.agent_runtime_routing_enabled
-        and settings.agent_account_routing_enabled
-        and (bool(settings.agent_workspace_allowlist) or settings.agent_canary_percent > 0)
-    )
-    if configured_cohort:
-        return True
-    async with conn_factory() as conn:
-        return bool(
-            (
-                await conn.execute(
-                    text(
-                        "SELECT EXISTS (SELECT 1 FROM agent_runtime_route "
-                        "WHERE surface='account_research' AND owner='deepagent')"
-                    )
-                )
-            ).scalar_one()
-        )
+    Sticky ownership rows remain durable historical evidence, but they no longer authorize new
+    execution.  Keeping this internal probe returning ``False`` lets older operational callers
+    observe the quarantine without reconstructing the retired runtime.
+    """
+
+    del settings, conn_factory
+    return False
 
 
-async def _serve(*, contact_channel_validator: ContactChannelValidator | None = None) -> None:
+async def _serve() -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
     settings = load_settings()
     secrets = Secrets()
     storage = build_storage_backend(settings)
-    async with db_lifespan(), redis_lifespan(), contextlib.AsyncExitStack() as provider_stack:
+    async with db_lifespan(), redis_lifespan():
         register_compliance_wiring()
         register_narrative_wiring()
         async with transaction() as conn:
@@ -439,60 +407,6 @@ async def _serve(*, contact_channel_validator: ContactChannelValidator | None = 
         work_queue = DbWorkQueue(task_queue)
         gateway = build_platform_gateway(settings)
         pre_spend_gate = build_pre_spend_gate(conn_factory=transaction)
-        contact_channel_coordinator = None
-        if settings.contact_channel_enrichment_enabled:
-            if contact_channel_validator is None:
-                raise RuntimeError(
-                    "selected-contact channel enrichment is enabled without an explicitly "
-                    "accepted independent validator"
-                )
-            if secrets.exa_api_key is None:
-                raise RuntimeError(
-                    "selected-contact channel enrichment is enabled but CLUE_EXA_API_KEY is "
-                    "not configured"
-                )
-            contact_channel_transport = await provider_stack.enter_async_context(
-                ExaWebsetsClient(api_key=secrets.exa_api_key, lookup_attempts=1)
-            )
-            contact_channel_coordinator = build_production_contact_channel_coordinator(
-                transport=contact_channel_transport,
-                validator=contact_channel_validator,
-                storage=storage,
-                pre_spend_gate=pre_spend_gate,
-                conn_factory=transaction,
-            )
-        sumble_committee_preparer = build_production_sumble_committee_preparer(
-            settings,
-            secrets=secrets,
-            inputs=DurableSumbleCommitteeInputResolver(
-                settings=settings,
-                storage=storage,
-                conn_factory=transaction,
-            ),
-            storage=storage,
-            pre_spend_gate=pre_spend_gate,
-            conn_factory=transaction,
-        )
-        exa_account_resolver_provider = build_production_exa_deep_resolver_provider(
-            settings,
-            secrets=secrets,
-            storage=storage,
-            pre_spend_gate=pre_spend_gate,
-            conn_factory=transaction,
-        )
-        contact_research_preparer = build_production_contact_research_preparer(
-            settings,
-            secrets=secrets,
-            storage=storage,
-            pre_spend_gate=pre_spend_gate,
-            conn_factory=transaction,
-            channel_coordinator=contact_channel_coordinator,
-        )
-        independent_contact_research = IndependentContactResearchService(
-            preparer=contact_research_preparer,
-            pre_spend_gate=pre_spend_gate,
-            conn_factory=transaction,
-        )
         c7_enabled = any(
             (
                 settings.c7_research_view_read_enabled,
@@ -525,18 +439,6 @@ async def _serve(*, contact_channel_validator: ContactChannelValidator | None = 
                 research_views.snapshots if research_views is not None else None
             ),
             research_view_recheck=(research_views.recheck if research_views is not None else None),
-            targeted_enrichment_starter=build_production_exa_targeted_starter(
-                settings,
-                secrets=secrets,
-                storage=storage,
-            ),
-            account_gap_enrichment_starter=build_production_sumble_account_gap_starter(
-                settings,
-                secrets=secrets,
-                storage=storage,
-            ),
-            account_deep_full_unit_available=sumble_committee_preparer is not None,
-            independent_contact_research=independent_contact_research,
             contact_content_handoff=contact_content_handoff,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
@@ -582,53 +484,10 @@ async def _serve(*, contact_channel_validator: ContactChannelValidator | None = 
             controls=controls,
             max_concurrency=settings.recipe_executor_max_concurrency,
         )
-        account_agent_profiler = None
         agent_workspace_factory = None
-        if await _account_agent_runtime_required(settings):
-            agent_components = build_agent_platform_components(
-                settings=settings,
-                secrets=secrets,
-                gateway_config=default_gateway_config(),
-                storage=storage,
-                tools=registry,
-            )
-            agent_workspace_factory = agent_components.workspaces
-            account_runtime = AccountResearchAgentRuntime(
-                profiles=agent_components.profiles,
-                models=agent_components.models,
-                turns=agent_components.turns,
-                artifacts=agent_components.artifacts,
-                tools=registry,
-            )
-            account_context = build_account_research_context(
-                resolved_profile=agent_components.profiles.resolve(AgentRole.ACCOUNT_RESEARCH),
-                artifacts=agent_components.artifacts,
-                cards=DbCompiledContextCardReader(),
-                memory=memory_assembly_factory(settings, transaction),
-            )
-            account_turns = PreparedAccountResearchTurnRunner(
-                settings=settings,
-                runtime=account_runtime,
-                profiles=agent_components.profiles,
-                workspaces=agent_components.workspaces,
-                artifacts=agent_components.artifacts,
-                turns=agent_components.turns,
-                history=agent_components.history,
-                contexts=account_context,
-                tools=registry,
-                tool_invoker=tool_invoker,
-                executor=executor,
-                compatibility=compatibility,
-                plans=DbAgentPlanJournal(),
-                recipes=recipe_reader,
-                starter=starter,
-                parameters=execution_parameters,
-            )
-            account_agent_profiler = GovernedAccountProfiler(turns=account_turns)
-            log.info("fleet.agent_account_runtime.composed")
-
-        # Bind the selected account owner into the existing DEEP slot. With the switches off—or
-        # for non-selected workspaces—the durable router chooses the mechanical profiler.
+        # M8D R1 deliberately composes no account/contact entity agent or pre-agent provider
+        # preparer.  The driver's DEEP slot is the loud quarantine until R3 installs the shared
+        # ``create_agent()`` runtime.
         driver = ComposingRunDriver(
             settings=settings,
             gateway=gateway,
@@ -643,17 +502,8 @@ async def _serve(*, contact_channel_validator: ContactChannelValidator | None = 
                 secrets=secrets,
                 storage=storage,
             ),
-            lock_factory=build_account_lock_factory(),
             event_emitter=build_run_event_emitter(),
-            controls=controls,
-            supervisor_actions=deferred_supervisor_actions,
-            execution_journal=journal,
             project_execution_router=project_execution_router,
-            account_agent_profiler=account_agent_profiler,
-            committee_preparer=sumble_committee_preparer,
-            account_resolver_provider=exa_account_resolver_provider,
-            contact_preparer=contact_research_preparer,
-            pre_spend_gate=pre_spend_gate,
         )
         register_execution_control_tools(
             ExecutionControlServices(

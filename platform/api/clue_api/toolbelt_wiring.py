@@ -74,6 +74,7 @@ from clue_api.coverage_tools import (
 from clue_api.deep.composition import build_high_tier_resolver
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
+from clue_api.entity_research_quarantine import quarantine_entity_research_tool
 from clue_api.exa_targeted_enrichment import (
     DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY,
     ExaTargetedEligibilityError,
@@ -2645,20 +2646,22 @@ def build_toolbelt(
         # the governed v2 implementation.  ToolRegistry deliberately refuses two defaults.
         make_default = tool_type is not ProfileContactTool
         registry.register(
-            tool_type(
-                settings=resolved_settings,
-                gateway=gateway,
-                channels=channels if channels is not None else ChannelRegistry(),
-                committee_sources=committee_sources,
-                run_machine=machine,
-                queue=queue,
-                conn_factory=conn_factory,
-                pre_spend_gate=gate,
-                lock_factory=locks,
-                storage=storage,
-                project_execution_router=project_execution_router,
-                account_deep_full_unit_available=full_unit_available,
-                independent_contact_research=independent_contact_research,
+            quarantine_entity_research_tool(
+                tool_type(
+                    settings=resolved_settings,
+                    gateway=gateway,
+                    channels=channels if channels is not None else ChannelRegistry(),
+                    committee_sources=committee_sources,
+                    run_machine=machine,
+                    queue=queue,
+                    conn_factory=conn_factory,
+                    pre_spend_gate=gate,
+                    lock_factory=locks,
+                    storage=storage,
+                    project_execution_router=project_execution_router,
+                    account_deep_full_unit_available=full_unit_available,
+                    independent_contact_research=independent_contact_research,
+                )
             ),
             make_default=make_default,
         )
@@ -2671,35 +2674,43 @@ def build_toolbelt(
         make_default=True,
     )
     registry.register(
-        EnrichSelectedAccountsTool(
-            starter=targeted_enrichment_starter,
-            conn_factory=conn_factory,
+        quarantine_entity_research_tool(
+            EnrichSelectedAccountsTool(
+                starter=targeted_enrichment_starter,
+                conn_factory=conn_factory,
+            )
         ),
         make_default=True,
     )
     registry.register(
-        EnrichAccountGapsTool(
-            starter=account_gap_enrichment_starter,
-            conn_factory=conn_factory,
-            cents_per_credit=resolved_settings.sumble_cents_per_credit,
+        quarantine_entity_research_tool(
+            EnrichAccountGapsTool(
+                starter=account_gap_enrichment_starter,
+                conn_factory=conn_factory,
+                cents_per_credit=resolved_settings.sumble_cents_per_credit,
+            )
         ),
         make_default=True,
     )
     registry.register(
-        build_research_account_gaps_tool(
-            gateway=gateway,
-            conn_factory=conn_factory,
-            pre_spend_gate=gate,
-            lock_factory=locks,
+        quarantine_entity_research_tool(
+            build_research_account_gaps_tool(
+                gateway=gateway,
+                conn_factory=conn_factory,
+                pre_spend_gate=gate,
+                lock_factory=locks,
+            )
         ),
         make_default=True,
     )
     registry.register(
-        build_research_account_gaps_v2_tool(
-            gateway=gateway,
-            conn_factory=conn_factory,
-            pre_spend_gate=gate,
-            lock_factory=locks,
+        quarantine_entity_research_tool(
+            build_research_account_gaps_v2_tool(
+                gateway=gateway,
+                conn_factory=conn_factory,
+                pre_spend_gate=gate,
+                lock_factory=locks,
+            )
         ),
         make_default=False,
     )

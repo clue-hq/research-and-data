@@ -20,7 +20,6 @@ from clue_gateway import build_gateway
 from clue_research.durable import ProjectRunRow, ProjectRunStatus
 from tests.api.test_storage_wiring import FakeStorage
 from tests.db.conftest import run_async
-from tests.fleet.conftest import ProcessLocalLockFactory
 
 
 def _row(phase: ProjectPhase, status: ProjectRunStatus, run_id) -> ProjectRunRow:
@@ -60,7 +59,6 @@ def _driver(**kwargs: object) -> ComposingRunDriver:
         settings=load_settings(_env_file=None),
         gateway=build_gateway(GatewayConfig(stub=True)),
         storage=FakeStorage(),  # type: ignore[arg-type]
-        lock_factory=ProcessLocalLockFactory(),  # type: ignore[arg-type]
         spec_loader=spec_loader,
         **kwargs,  # type: ignore[arg-type]
     )

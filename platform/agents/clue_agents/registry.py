@@ -55,7 +55,6 @@ _REQUIRED_ACTIVE_ROLES = frozenset(
         AgentRole.RESEARCH,
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,
-        AgentRole.ACCOUNT_RESEARCH,
     }
 )
 
@@ -650,15 +649,18 @@ class AgentProfileRegistry:
         withheld = surface_policy.withheld_tools if surface_policy is not None else frozenset()
         for contract in self._tool_inventory:
             address = contract.pin.address
-            if address in effective_addresses:
-                status = AgentCapabilityStatus.AVAILABLE
-                reason = "effective_profile_tool"
-            elif contract.pin.name in withheld:
+            if contract.pin.name in withheld:
                 # Named honestly: withheld *by this surface*, not missing from the role's
                 # reviewed authority. The generated map already carries the surface's framing.
                 assert surface_policy is not None
                 status = AgentCapabilityStatus.PROFILE_UNAVAILABLE
                 reason = surface_policy.withheld_reason_code
+            elif contract.unavailable_reason_code == "entity_research_agent_not_composed":
+                status = AgentCapabilityStatus.REPLAY_BLOCKED
+                reason = contract.unavailable_reason_code
+            elif address in effective_addresses:
+                status = AgentCapabilityStatus.AVAILABLE
+                reason = "effective_profile_tool"
             elif not contract.available:
                 status = AgentCapabilityStatus.RETIRED_OR_MISSING
                 reason = contract.unavailable_reason_code or "tool_unavailable"
