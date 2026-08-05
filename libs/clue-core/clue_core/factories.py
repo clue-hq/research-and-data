@@ -23,6 +23,7 @@ from pydantic import JsonValue, TypeAdapter
 from clue_core.claim import Claim, DiscoveryProvenance
 from clue_core.enums import (
     ClaimFlavor,
+    ClaimProvenanceKind,
     EntityType,
     ExtractionMethod,
     IdentityBinding,
@@ -155,6 +156,7 @@ def account_claim(
     corroborations: int = 0,
     observed_at: UtcDatetime | None = None,
     cost_cents: CostCents = Decimal(0),
+    provenance_kind: ClaimProvenanceKind | None = None,
 ) -> Claim:
     """Construct an account claim (no personal-data provenance)."""
     return Claim(
@@ -170,6 +172,7 @@ def account_claim(
         corroborations=corroborations,
         observed_at=observed_at,
         cost_cents=cost_cents,
+        provenance_kind=provenance_kind,
         run_id=run_id,
         research_mode=research_mode,
     )
@@ -192,6 +195,7 @@ def contact_claim(
     corroborations: int = 0,
     observed_at: UtcDatetime | None = None,
     cost_cents: CostCents = Decimal(0),
+    provenance_kind: ClaimProvenanceKind | None = None,
 ) -> Claim:
     """Construct a contact claim. ``identity_binding`` and ``use_class`` are **required** —
     a personal claim carries its governance provenance from the moment it exists."""
@@ -208,6 +212,7 @@ def contact_claim(
         corroborations=corroborations,
         observed_at=observed_at,
         cost_cents=cost_cents,
+        provenance_kind=provenance_kind,
         run_id=run_id,
         research_mode=research_mode,
         identity_binding=identity_binding,

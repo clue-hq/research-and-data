@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from clue_core.enums import (
     ClaimFlavor,
+    ClaimProvenanceKind,
     EntityType,
     ExtractionMethod,
     IdentityBinding,
@@ -119,6 +120,10 @@ class Claim(BaseModel):
     source_operation_ref: str | None = None
     source_snapshot_ref: str | None = None
     source_request_ref: str | None = None
+    # Typed assertion/derivation provenance. This is orthogonal to extraction_method: an API may
+    # return a literal attribute or a provider-modeled relationship, and both are still API
+    # extraction. Nullable for legacy and claim classes that have not adopted this discriminator.
+    provenance_kind: ClaimProvenanceKind | None = None
     source_tier: SourceTier
     extraction_method: ExtractionMethod
     evidence_span: str | None = None  # mandatory for tier-4 *promotion*, not construction

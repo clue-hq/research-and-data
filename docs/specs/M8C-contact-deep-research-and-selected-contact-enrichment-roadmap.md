@@ -704,7 +704,8 @@ occurs without explicit live-call authorization and preflight evidence.
 
 ### C1 — Sumble snapshot-backed professional fact materialization
 
-**Status:** complete. Binding acceptance record:
+**Status:** complete after adversarial candidate-selection and lineage remediation. Binding
+acceptance record:
 `M8C-C1-sumble-professional-materialization-acceptance.md`.
 
 **Owns**
@@ -712,6 +713,8 @@ occurs without explicit live-call authorization and preflight evidence.
 - registered professional-public fields;
 - mapping existing Sumble committee snapshots to grounded contact claims;
 - provider-returned versus modeled relationship provenance;
+- balanced bounded People/Teams candidate composition that cannot starve the organization graph;
+- substrate-validated operation/snapshot/artifact/account/contact lineage;
 - strong contact/account association; and
 - handoff inclusion for eligible professional facts.
 
@@ -724,6 +727,9 @@ occurs without explicit live-call authorization and preflight evidence.
 3. Every value has field-level evidence/source metadata.
 4. One candidate cannot write facts onto another same-name contact.
 5. Provider facts and platform role inference remain visibly distinct.
+6. A full People page cannot cause every Teams-only candidate to be discarded before admission.
+7. Fabricated, missing, cross-account/contact, or semantically mismatched Sumble professional
+   lineage is rejected by the claim-store database boundary.
 
 ### C2 — Exact contact-subject durability hardening
 

@@ -16,6 +16,7 @@ from sqlalchemy.exc import DBAPIError
 
 from clue_core import (
     Claim,
+    ClaimProvenanceKind,
     EntityType,
     ExtractionMethod,
     ResearchMode,
@@ -71,7 +72,8 @@ def test_db_enums_match_core() -> None:
                         "SELECT t.typname, e.enumlabel "
                         "FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid "
                         "WHERE t.typname IN "
-                        "('entity_type','extraction_method','research_mode','verification_status')"
+                        "('entity_type','extraction_method','research_mode','verification_status',"
+                        "'claim_provenance_kind')"
                     )
                 )
             ).all()
@@ -82,6 +84,7 @@ def test_db_enums_match_core() -> None:
         assert by_type["extraction_method"] == {m.value for m in ExtractionMethod}
         assert by_type["research_mode"] == {m.value for m in ResearchMode}
         assert by_type["verification_status"] == {m.value for m in VerificationStatus}
+        assert by_type["claim_provenance_kind"] == {m.value for m in ClaimProvenanceKind}
 
     run_async(_run())
 
@@ -110,6 +113,7 @@ def test_claim_schema_present_at_head() -> None:
             "field_key",
             "value_json",
             "source_url",
+            "provenance_kind",
             "source_tier",
             "extraction_method",
             "evidence_span",

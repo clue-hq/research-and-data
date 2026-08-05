@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import (
     AspectContext,
     ClaimId,
+    ClaimProvenanceKind,
     CostCents,
     EntityId,
     EntityType,
@@ -151,6 +152,7 @@ async def _write_committee_claim(
         confidence=confidence,
         run_id=run_id,
         research_mode=ResearchMode.COMMITTEE_DISCOVERY,
+        provenance_kind=ClaimProvenanceKind.PLATFORM_INFERRED,
         identity_binding=identity_binding,
         use_class=UseClass.PROFESSIONAL_PUBLIC,
         source_url=source_url,
@@ -246,6 +248,8 @@ async def _write_professional_fact(
             and existing.source_operation_ref == fact.source_operation_ref
             and existing.source_snapshot_ref == fact.source_snapshot_ref
             and existing.source_request_ref == fact.source_request_ref
+            and existing.provenance_kind is not None
+            and existing.provenance_kind.value == fact.provenance_kind.value
             and existing.identity_binding is IdentityBinding.STRONG
             and existing.use_class is UseClass.PROFESSIONAL_PUBLIC
         )
@@ -265,6 +269,7 @@ async def _write_professional_fact(
         confidence=fact.confidence,
         run_id=run_id,
         research_mode=ResearchMode.COMMITTEE_DISCOVERY,
+        provenance_kind=ClaimProvenanceKind(fact.provenance_kind.value),
         identity_binding=IdentityBinding.STRONG,
         use_class=UseClass.PROFESSIONAL_PUBLIC,
         source_url=fact.source_url,
