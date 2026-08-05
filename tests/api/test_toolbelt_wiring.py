@@ -77,7 +77,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     ),
     "run_deep_account": ("precondition", ("no_active_icp",)),
     "resolve_committee": ("precondition", ("account_not_found",)),
-    "profile_contact": ("precondition", ("account_not_found",)),
+    "profile_contact": ("precondition", ("contact_research_not_composed",)),
     "run_verification": ("precondition", ("run_not_found",)),
     "compose_handoff": ("precondition", ("run_not_found",)),
     "compose_dossier": ("precondition", ("research_view_feature_disabled",)),
@@ -155,9 +155,9 @@ def _bodies() -> dict[str, dict[str, object]]:
         "run_deep_account": {"account_entity_id": _UUID(), "icp_key": "matrix", "tier": "top"},
         "resolve_committee": {"account_entity_id": _UUID()},
         "profile_contact": {
+            "project_run_id": _UUID(),
             "contact_entity_id": _UUID(),
             "account_entity_id": _UUID(),
-            "tier": "top",
         },
         "run_verification": {"project_run_id": _UUID()},
         "compose_handoff": {"project_run_id": _UUID()},
@@ -618,7 +618,7 @@ def test_account_tools_fail_closed_on_workspace_scope(  # noqa: F811
                 }[name]
 
             async def codes(name: str, account_id: str) -> tuple[str, ...]:
-                tool = registry.get(name)
+                tool = registry.get(name, "1") if name == "profile_contact" else registry.get(name)
                 failures = await tool.preconditions(tool.input_model(**body(name, account_id)), ctx)
                 return tuple(f.reason_code for f in failures)
 
@@ -672,7 +672,7 @@ def test_profile_contact_refuses_cross_account_contact(  # noqa: F811
                 conn, account_entity_id=acc_b, full_name="Kai Roe"
             )
 
-            tool = registry.get("profile_contact")
+            tool = registry.get("profile_contact", "1")
 
             async def codes(contact_id: str, account_id: str) -> tuple[str, ...]:
                 failures = await tool.preconditions(
@@ -705,7 +705,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # tools retain @1 replay contracts alongside their current @2 contracts; O2 adds the exact-set
     # account-deep launch boundary.
     assert len(registry.names()) == 42
-    assert len(registry) == 47
+    # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
+    # project-run-scoped profile_contact@2 as the name-only default.
+    assert len(registry) == 48
+    assert registry.descriptor("profile_contact").version == "2"
+    assert registry.descriptor("profile_contact", "1").version == "1"
     assert {
         item.address for item in registry.all_descriptors() if item.name == "research_account_gaps"
     } == {

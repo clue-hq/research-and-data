@@ -29,7 +29,9 @@ from clue_config import (
     get_config,
 )
 from clue_core import (
+    CONTACT_CHANNEL_FIELD_KEYS,
     AspectContext,
+    ClaimId,
     EntityId,
     EntityType,
     FieldClass,
@@ -42,6 +44,7 @@ from clue_core import (
     WorkerStatus,
 )
 from clue_db import ConnFactory
+from clue_research.claimstore import WorkspaceScope, claims_by_ids
 from clue_research.icp.spec import get_icp_version
 from clue_research.identity import get_account, get_contact, surviving_id
 from clue_research.profiling.contact.binding import DEFAULT_BINDING_CLASSIFIER, BindingClassifier
@@ -86,6 +89,7 @@ async def profile_contact(
     spec: ICPSpec | None = None,
     facet_subworker_budget: int = 0,
     field_keys: Sequence[str] | None = None,
+    prepared_claim_refs: Sequence[ClaimId] | None = None,
     binding_classifier: BindingClassifier = DEFAULT_BINDING_CLASSIFIER,
     use_class_tagger: UseClassTagger = DEFAULT_USE_CLASS_TAGGER,
     pre_spend_gate: PreSpendGate | None = None,
@@ -101,7 +105,10 @@ async def profile_contact(
     ``max_facet_workers_per_aspect`` for this tier, ``0`` ⇒ single-level depth) — M8.4 requests at
     most this many facet sub-workers; the M7 ``SpawnGuard`` is the hard cap. ``workspace_id`` binds
     the
-    tenant-private contact claims.
+    tenant-private contact claims. When ``prepared_claim_refs`` is supplied, the C6 external
+    preparation seam has already acquired and materialized the selected fields. The worker then
+    performs a reference-only projection and never enters the resolver waterfall; that is the
+    runtime no-network-under-claim-transaction boundary for composed contact research.
 
     ``thresholds`` (the waterfall stop bar, lever 1) and ``plan_policy`` (the planner tier reach,
     lever 2) default to the per-run layered config keyed by ``(workspace_id, icp_key)``; pass them
@@ -122,6 +129,47 @@ async def profile_contact(
     )
     if account is None:
         raise ValueError(f"account {account_entity_id} not found — cannot target-lock the contact")
+
+    if prepared_claim_refs is not None:
+        channel_fields = set(CONTACT_CHANNEL_FIELD_KEYS.values())
+        selected_fields = tuple(
+            dict.fromkeys(
+                field_key for field_key in (field_keys or ()) if field_key not in channel_fields
+            )
+        )
+        claims = await claims_by_ids(
+            conn,
+            prepared_claim_refs,
+            scope=WorkspaceScope.for_workspace(workspace_id),
+        )
+        by_field: dict[str, list[ProfileClaimView]] = {
+            field_key: [] for field_key in selected_fields
+        }
+        for claim_id in prepared_claim_refs:
+            claim = claims.get(claim_id)
+            if (
+                claim is None
+                or claim.entity_id != contact.id
+                or str(claim.field_key) not in by_field
+            ):
+                continue
+            by_field[str(claim.field_key)].append(
+                ProfileClaimView(
+                    claim_id=claim.id,
+                    value_json=claim.value_json,
+                    evidence_span=claim.evidence_span,
+                    source_tier=claim.source_tier,
+                    identity_binding=claim.identity_binding,
+                    use_class=claim.use_class,
+                )
+            )
+        return ContactProfileResult(
+            contact_entity_id=contact.id,
+            account_entity_id=account.id,
+            profile_claims=tuple(view for views in by_field.values() for view in views),
+            fields_filled=sum(bool(views) for views in by_field.values()),
+            fields_empty=sum(not views for views in by_field.values()),
+        )
 
     gaps = await compute_contact_gap_fields(
         conn, contact.id, workspace_id=workspace_id, field_keys=field_keys

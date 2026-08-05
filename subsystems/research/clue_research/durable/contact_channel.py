@@ -14,6 +14,7 @@ from clue_core import (
     ContactChannelOperationId,
     EntityId,
     ProjectPhase,
+    ProjectRunId,
     new_contact_channel_operation_id,
 )
 from clue_research.durable.provider_spend import (
@@ -122,6 +123,31 @@ async def find_contact_channel_operation(
         )
     ).first()
     return None if row is None else _operation(row)
+
+
+async def list_due_contact_channel_project_runs(
+    conn: AsyncConnection,
+    *,
+    now: datetime,
+    limit: int = 100,
+) -> tuple[ProjectRunId, ...]:
+    """Return owning runs for due C5 polls/validation recovery; never call a provider here."""
+
+    if limit < 1:
+        raise ValueError("contact channel due-run limit must be positive")
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT project_run_id, min(next_poll_at) AS due_at "
+                "FROM contact_channel_operation WHERE next_poll_at IS NOT NULL "
+                "AND next_poll_at <= :now AND state IN "
+                "('waiting_external', 'ready_to_validate', 'validating', 'failed_retryable') "
+                "GROUP BY project_run_id ORDER BY due_at, project_run_id LIMIT :limit"
+            ),
+            {"now": now, "limit": limit},
+        )
+    ).all()
+    return tuple(ProjectRunId(row.project_run_id) for row in rows)
 
 
 async def find_fresh_reusable_contact_channel_operation(

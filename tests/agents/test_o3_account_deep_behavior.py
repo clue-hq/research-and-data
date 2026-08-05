@@ -66,7 +66,7 @@ def test_research_specialist_separates_plan_review_from_admitted_execution() -> 
     with hermetic_flag_env():
         registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     specialist = registry.resolve(AgentRole.RESEARCH)
-    body = specialist.open_skill("skill:research-task@v2")
+    body = specialist.open_skill("skill:research-task@v3")
 
     assert "pre-launch plan review" in body
     assert "Invoke no spending tool" in body

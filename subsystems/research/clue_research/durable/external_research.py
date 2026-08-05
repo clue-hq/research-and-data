@@ -30,6 +30,7 @@ from clue_core import (
     ExternalResearchSpendOutcome,
     ExternalResearchSubjectKind,
     ProjectPhase,
+    ProjectRunId,
     UtcDatetime,
     new_external_research_operation_id,
     new_external_research_snapshot_id,
@@ -1278,6 +1279,30 @@ async def find_active_external_research_operation_for_materialization(
     return None if row is None else _operation(row)
 
 
+async def list_due_contact_external_research_project_runs(
+    conn: AsyncConnection,
+    *,
+    now: datetime,
+    limit: int = 100,
+) -> tuple[ProjectRunId, ...]:
+    """Find contact operations whose interrupted dispatch lease needs a fresh run wake."""
+
+    if limit < 1:
+        raise ValueError("external contact due-run limit must be positive")
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT project_run_id, min(dispatch_lease_expires_at) AS due_at "
+                "FROM external_research_operation WHERE subject_kind='contact' "
+                "AND state='dispatching' AND dispatch_lease_expires_at <= :now "
+                "GROUP BY project_run_id ORDER BY due_at, project_run_id LIMIT :limit"
+            ),
+            {"now": now, "limit": limit},
+        )
+    ).all()
+    return tuple(ProjectRunId(row.project_run_id) for row in rows)
+
+
 __all__ = [
     "ExternalResearchCostReconciliationRow",
     "ExternalResearchDispatchClaim",
@@ -1299,6 +1324,7 @@ __all__ = [
     "get_external_research_operation",
     "get_external_research_snapshot",
     "list_external_research_result_artifacts",
+    "list_due_contact_external_research_project_runs",
     "list_ready_external_research_snapshots",
     "mark_external_research_spend_unknown",
     "reconcile_external_research_cost",

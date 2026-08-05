@@ -4,8 +4,9 @@
 > **Status:** implementation underway; C0 contract/field/policy freeze, C1 snapshot-backed
 > professional materialization, C2 exact contact-subject durability, C3 contact-targeted Exa Deep
 > compilation, C4 durable contact acquisition/materialization, and C5 selected-contact channel
-> enrichment/validation are mechanically accepted. C4/C5 paid provider canaries remain separately
-> authorization-gated; C6 provider-neutral preparation/wait/resume composition is next. **Recorded:**
+> enrichment/validation and C6 provider-neutral preparation/wait/resume composition are
+> mechanically accepted. C4/C5 paid provider canaries and the concrete selected-channel validator
+> deployment remain separately authorization/configuration-gated; C7 is next. **Recorded:**
 > 2026-08-05. **Parent capability:**
 > [M8B account-deep provider integration](M8B-exa-sumble-account-deep-integration-roadmap.md).
 > **Working branch at record time:** `platform/c8-account-profiling-integration`.
@@ -837,6 +838,11 @@ record: `M8C-C5-selected-contact-channel-enrichment-acceptance.md`.
 8. DSAR/objection removes or suppresses all required channel uses.
 
 ### C6 — Provider-neutral preparation, wait/resume, and production composition
+
+**Status:** mechanically accepted. The binding implementation and verification record is
+`M8C-C6-provider-neutral-contact-composition-acceptance.md`. Paid provider behavior remains a V1
+gate; enabling selected-channel enrichment without a concrete validator-backed coordinator fails
+production composition rather than substituting a test adapter.
 
 **Owns**
 
