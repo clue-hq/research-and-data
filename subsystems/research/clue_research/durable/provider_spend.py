@@ -103,6 +103,19 @@ _OUTSTANDING_SQL = text(
                   WHERE reconciliation.operation_id = operation.id
               )
           )
+        UNION ALL
+        SELECT
+            CASE
+                WHEN operation.acquisition_spend_outcome IN ('charged', 'not_charged') THEN 0
+                ELSE (operation.request_json->>'acquisition_budget_cap_cents')::numeric
+            END
+            + CASE
+                WHEN operation.validation_spend_outcome IN ('charged', 'not_charged') THEN 0
+                ELSE (operation.request_json->>'validation_budget_cap_cents')::numeric
+            END AS reserved
+        FROM contact_channel_operation operation
+        WHERE operation.project_run_id = :project_run_id
+          AND operation.state NOT IN ('succeeded', 'rejected', 'failed_terminal', 'cancelled')
     ) reservations
     """
 )

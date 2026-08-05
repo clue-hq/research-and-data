@@ -122,6 +122,122 @@ _ATTR_SCANNED = "compliance.retention.scanned"
 # ``validate_field=False`` (it is intentionally not a valid field value); the tombstone is REJECTED
 # so the merge never serves it regardless.
 _REDACTION_SENTINEL: dict[str, bool] = {"__erased__": True}
+_CHANNEL_FIELDS = frozenset({"core.work_email", "core.direct_phone"})
+
+
+async def _suppress_contact_channels(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    contact_entity_id: EntityId,
+    reason: str,
+    field_keys: frozenset[str] | None = None,
+) -> None:
+    channels = []
+    if field_keys is None or "core.work_email" in field_keys:
+        channels.append("email")
+    if field_keys is None or "core.direct_phone" in field_keys:
+        channels.append("phone")
+    for channel in channels:
+        await conn.execute(
+            text(
+                "INSERT INTO contact_channel_suppression "
+                "(workspace_id, contact_id, channel, reason) VALUES "
+                "(:workspace_id, :contact_id, CAST(:channel AS contact_channel_kind), :reason) "
+                "ON CONFLICT (workspace_id, contact_id, channel) "
+                "DO UPDATE SET reason=EXCLUDED.reason"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "contact_id": contact_entity_id,
+                "channel": channel,
+                "reason": reason,
+            },
+        )
+
+
+async def _mark_contact_channel_artifacts(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    contact_entity_id: EntityId,
+    erased_keys: list[str],
+    field_keys: frozenset[str] | None = None,
+) -> None:
+    """Sever and erase every C5 artifact edge for the in-scope contact channels.
+
+    C5 request/CSV, provider response, validation, and receipt artifacts are all explicitly bound
+    to the contact. Only the observation artifact is also cited by a claim, so claim tombstoning
+    alone is insufficient for DSAR or retention. This helper closes that copy surface while
+    retaining the append-only ledger rows and content hashes for audit.
+    """
+
+    channels = []
+    if field_keys is None or "core.work_email" in field_keys:
+        channels.append("email")
+    if field_keys is None or "core.direct_phone" in field_keys:
+        channels.append("phone")
+    if not channels:
+        return
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT subject.artifact_key
+                    FROM discovery_artifact_subject subject
+                    JOIN contact_channel_operation operation
+                      ON operation.workspace_id=subject.workspace_id
+                     AND operation.id::text=subject.reference_id
+                    WHERE subject.workspace_id=:workspace_id
+                      AND subject.subject_kind='contact'
+                      AND subject.subject_entity_id=:contact_id
+                      AND subject.reference_kind LIKE 'contact_channel_%'
+                      AND subject.tombstoned_at IS NULL
+                      AND operation.channel::text = ANY(:channels)
+                    ORDER BY subject.artifact_key
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "contact_id": contact_entity_id,
+                    "channels": channels,
+                },
+            )
+        )
+        .scalars()
+        .all()
+    )
+    await conn.execute(
+        text(
+            """
+            UPDATE discovery_artifact_subject subject
+               SET tombstoned_at=COALESCE(subject.tombstoned_at, now())
+              FROM contact_channel_operation operation
+             WHERE operation.workspace_id=subject.workspace_id
+               AND operation.id::text=subject.reference_id
+               AND subject.workspace_id=:workspace_id
+               AND subject.subject_kind='contact'
+               AND subject.subject_entity_id=:contact_id
+               AND subject.reference_kind LIKE 'contact_channel_%'
+               AND subject.tombstoned_at IS NULL
+               AND operation.channel::text = ANY(:channels)
+            """
+        ),
+        {
+            "workspace_id": workspace_id,
+            "contact_id": contact_entity_id,
+            "channels": channels,
+        },
+    )
+    already_marked = set(erased_keys)
+    for artifact_key in rows:
+        if (
+            await erase_if_unreferenced(conn, str(artifact_key))
+            and artifact_key not in already_marked
+        ):
+            erased_keys.append(str(artifact_key))
+            already_marked.add(str(artifact_key))
 
 
 class TombstoneReason(StrEnum):
@@ -590,6 +706,39 @@ class DataSubjectRightsImpl:
                     run_id=run_id,
                     erased_keys=erased_keys,
                 )
+                erased_channel_fields = frozenset(
+                    str(claim.field_key)
+                    for claim in targets
+                    if str(claim.field_key) in _CHANNEL_FIELDS
+                )
+                if scope == ERASE_ALL or erased_channel_fields:
+                    await _suppress_contact_channels(
+                        conn,
+                        workspace_id=self._workspace_id,
+                        contact_entity_id=contact_entity_id,
+                        reason=TombstoneReason.ERASURE.value,
+                        field_keys=None if scope == ERASE_ALL else erased_channel_fields,
+                    )
+                    await _mark_contact_channel_artifacts(
+                        conn,
+                        workspace_id=self._workspace_id,
+                        contact_entity_id=contact_entity_id,
+                        erased_keys=erased_keys,
+                        field_keys=None if scope == ERASE_ALL else erased_channel_fields,
+                    )
+                if scope == ERASE_ALL or "core.work_email" in erased_channel_fields:
+                    await conn.execute(
+                        text(
+                            "UPDATE contact_entity SET verified_email=NULL, "
+                            "canonical_version=canonical_version+1, updated_at=now() "
+                            "WHERE id=:contact_id AND workspace_id=:workspace_id "
+                            "AND verified_email IS NOT NULL"
+                        ),
+                        {
+                            "contact_id": contact_entity_id,
+                            "workspace_id": self._workspace_id,
+                        },
+                    )
                 await _purge_legacy_handoff_payloads(
                     conn,
                     contact_entity_id=contact_entity_id,
@@ -623,11 +772,10 @@ class DataSubjectRightsImpl:
 
     async def record_objection(self, contact_entity_id: EntityId) -> ObjectionResult:
         """Register a GDPR Art. 21 objection: durably mark the contact ``outreach_objected`` and
-        tombstone its live ``contact.facet.*`` outreach hooks (so ``current_value``/handoff stop
-        surfacing them — a substrate exclusion, D-OBJ, not a use-gate reason). Objection blocks
-        outreach *use*; it is not a full erasure of the contact's structural/committee data. The
-        marker lets :meth:`RetentionSweep.sweep_objections` re-suppress any hooks collected
-        later."""
+        tombstone live personal-facet and channel outreach hooks (so ``current_value``/handoff
+        stop surfacing them — a substrate exclusion, D-OBJ, not a use-gate reason). Objection
+        blocks outreach *use*; it is not a full erasure of structural/committee data. The marker
+        lets :meth:`RetentionSweep.sweep_objections` re-suppress hooks collected later."""
         run_id = new_run_id()
         erased_keys: list[str] = []
         with traced_step(SPAN_COMPLIANCE_DSAR, **{ATTR_ENTITY_ID: str(contact_entity_id)}) as span:
@@ -655,6 +803,18 @@ class DataSubjectRightsImpl:
                     contact_entity_id=contact_entity_id,
                     scope_desc="contact.facet.*",
                     run_id=run_id,
+                    erased_keys=erased_keys,
+                )
+                await _suppress_contact_channels(
+                    conn,
+                    workspace_id=self._workspace_id,
+                    contact_entity_id=contact_entity_id,
+                    reason=TombstoneReason.OBJECTION.value,
+                )
+                await _mark_contact_channel_artifacts(
+                    conn,
+                    workspace_id=self._workspace_id,
+                    contact_entity_id=contact_entity_id,
                     erased_keys=erased_keys,
                 )
                 await _purge_legacy_handoff_payloads(
@@ -840,6 +1000,34 @@ class RetentionSweep:
             sink=self._metric_sink,
             erased_keys=erased_keys,
         )
+        if str(candidate.field_key) in _CHANNEL_FIELDS:
+            await _suppress_contact_channels(
+                conn,
+                workspace_id=target.workspace_id,
+                contact_entity_id=candidate.entity_id,
+                reason=TombstoneReason.RETENTION_EXPIRY.value,
+                field_keys=frozenset({str(candidate.field_key)}),
+            )
+            await _mark_contact_channel_artifacts(
+                conn,
+                workspace_id=target.workspace_id,
+                contact_entity_id=candidate.entity_id,
+                erased_keys=erased_keys,
+                field_keys=frozenset({str(candidate.field_key)}),
+            )
+            if str(candidate.field_key) == "core.work_email":
+                await conn.execute(
+                    text(
+                        "UPDATE contact_entity SET verified_email=NULL, "
+                        "canonical_version=canonical_version+1, updated_at=now() "
+                        "WHERE id=:contact_id AND workspace_id=:workspace_id "
+                        "AND verified_email IS NOT NULL"
+                    ),
+                    {
+                        "contact_id": candidate.entity_id,
+                        "workspace_id": target.workspace_id,
+                    },
+                )
         await _purge_legacy_handoff_payloads(
             conn,
             contact_entity_id=candidate.entity_id,
@@ -882,6 +1070,18 @@ class RetentionSweep:
                         erased_keys=erased_keys,
                     )
                     tombstoned.extend(contact_tombstones)
+                    await _suppress_contact_channels(
+                        conn,
+                        workspace_id=str(workspace_id),
+                        contact_entity_id=contact_id,
+                        reason=TombstoneReason.OBJECTION.value,
+                    )
+                    await _mark_contact_channel_artifacts(
+                        conn,
+                        workspace_id=str(workspace_id),
+                        contact_entity_id=contact_id,
+                        erased_keys=erased_keys,
+                    )
                     await _purge_legacy_handoff_payloads(
                         conn,
                         contact_entity_id=contact_id,
@@ -906,10 +1106,11 @@ class RetentionSweep:
 
 
 def _is_outreach_hook(claim: Claim) -> bool:
-    """Whether a claim is an outreach personalization hook — a ``contact.facet.*`` personal claim
-    (the field-class the use-gate polices). Objection blocks these; non-hook structural/committee
-    claims are left intact."""
-    return (
+    """Whether a claim is an outreach hook: a personal facet or delivery-channel claim.
+
+    Objection blocks these; non-hook structural and committee claims are left intact.
+    """
+    return str(claim.field_key) in _CHANNEL_FIELDS or (
         claim.entity_type is EntityType.CONTACT
         and classify_field_key(claim.field_key) is FieldClass.CONTACT_FACET
     )

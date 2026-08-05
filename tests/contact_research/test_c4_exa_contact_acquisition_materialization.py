@@ -120,6 +120,7 @@ async def _seed(
     storage: FsStorage,
     *,
     suffix: str,
+    contact_reveals_allowed: bool = False,
 ) -> _Seed:
     fixture = await seed_insight_health_account_deep_fixture(
         conn,
@@ -199,6 +200,7 @@ async def _seed(
         allowed_source_keys=("exa_deep",),
         questions=(question,),
         contact_profiling_allowed=True,
+        contact_reveals_allowed=contact_reveals_allowed,
     )
     directive = account_spec.research_directive
     assert directive is not None

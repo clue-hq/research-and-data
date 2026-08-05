@@ -46,6 +46,7 @@ from clue_research.identity.entities import (
     insert_account_entity,
     insert_contact_entity,
     mark_merged,
+    promote_contact_verified_email,
     resolve_alias,
     set_status,
     surviving_id,
@@ -115,6 +116,7 @@ __all__ = [
     # entity store (M2.1)
     "insert_account_entity",
     "insert_contact_entity",
+    "promote_contact_verified_email",
     "update_account",
     "set_status",
     "mark_merged",

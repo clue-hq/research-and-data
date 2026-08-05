@@ -432,7 +432,12 @@ async def resolve_field(
                 # every written claim (decision #6): a public-footprint fact drops the tenant; a
                 # crm_import / scoring / resonance / personal claim is bound tenant-private. A
                 # private-classifying claim with no workspace_id fails loud here (no silent leak).
-                final = stamp_reuse(final, workspace_id=workspace_id, policy=reuse_policy)
+                final = stamp_reuse(
+                    final,
+                    workspace_id=workspace_id,
+                    policy=reuse_policy,
+                    declared_scope=field_def.reuse_scope,
+                )
                 if product_id is not None:
                     final = revalidate_with(final, product_id=product_id)
                 refs.append(await insert_claim(conn, final))

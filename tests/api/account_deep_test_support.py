@@ -46,6 +46,7 @@ async def confirmed_account_research_direction(
     allowed_source_keys: Sequence[str] = ("sumble_teams", "sumble_people", "exa_deep"),
     questions: Sequence[ResearchQuestion] = (),
     contact_profiling_allowed: bool = False,
+    contact_reveals_allowed: bool = False,
 ) -> tuple[ResearchDirectiveBody, Any]:
     """Create one real human-confirmed A2 directive on a borrowed test transaction."""
 
@@ -72,7 +73,7 @@ async def confirmed_account_research_direction(
         ),
         privacy_policy=ResearchPrivacyPolicy(
             contact_profiling_allowed=contact_profiling_allowed,
-            contact_reveals_allowed=False,
+            contact_reveals_allowed=contact_reveals_allowed,
         ),
         effort_policy=ResearchEffortPolicy(
             tier="high",

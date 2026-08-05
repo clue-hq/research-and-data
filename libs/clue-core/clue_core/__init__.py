@@ -50,6 +50,18 @@ from clue_core.committee_eligibility import (
     new_committee_eligibility_decision_id,
 )
 from clue_core.compliance import UseDecision, UseGate, is_outreach_promotable
+from clue_core.contact_channel import (
+    ContactChannelAcquisitionRequest,
+    ContactChannelOperation,
+    ContactChannelOperationId,
+    ContactChannelOperationState,
+    ContactChannelSpendOutcome,
+    ContactChannelValidationOutcome,
+    ContactChannelValidator,
+    ContactChannelValidatorRequest,
+    ContactChannelValidatorResult,
+    new_contact_channel_operation_id,
+)
 from clue_core.contact_research import (
     CONTACT_CHANNEL_FIELD_KEYS,
     CONTACT_PROFESSIONAL_FIELD_KEYS,
@@ -545,6 +557,17 @@ __all__ = [
     "AccountGapSnapshotState",
     "AccountGapSpendOutcome",
     "new_account_gap_operation_id",
+    # selected-contact channel acquisition and validation (M8C C5)
+    "ContactChannelAcquisitionRequest",
+    "ContactChannelOperation",
+    "ContactChannelOperationId",
+    "ContactChannelOperationState",
+    "ContactChannelSpendOutcome",
+    "ContactChannelValidationOutcome",
+    "ContactChannelValidator",
+    "ContactChannelValidatorRequest",
+    "ContactChannelValidatorResult",
+    "new_contact_channel_operation_id",
     # durable Sumble committee acquisition (M6A S2B)
     "CommitteeAcquisitionAttempt",
     "CommitteeAcquisitionOperation",

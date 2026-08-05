@@ -88,6 +88,9 @@ class ContactResearchPolicyPin(BaseModel):
     exa_websets_contract_ref: str = Field(
         default="exa-websets-reference@2026-08-05-non-authorizing", min_length=1
     )
+    channel_validation_contract_ref: str = Field(
+        default="channel-validator-reference@2026-08-05-non-authorizing", min_length=1
+    )
     max_selected_contacts: int = Field(default=3, ge=1, le=20)
     max_fields_per_contact: int = Field(default=8, ge=1, le=32)
     exa_max_results: int = Field(default=50, ge=1, le=50)
@@ -95,6 +98,7 @@ class ContactResearchPolicyPin(BaseModel):
     professional_source_plan: tuple[str, ...] = ("sumble_people", "sumble_teams")
     personal_facet_source_plan: tuple[str, ...] = ("exa_deep",)
     channel_reveal_source_plan: tuple[str, ...] = ()
+    channel_validation_source_plan: tuple[str, ...] = ()
     professional_freshness_days: int = Field(default=30, ge=1, le=365)
     personal_facet_freshness_days: int = Field(default=30, ge=1, le=365)
     contact_reveals_enabled: bool = False
@@ -102,6 +106,13 @@ class ContactResearchPolicyPin(BaseModel):
     phone_reveal_native_unit_cap: int = Field(default=0, ge=0)
     email_reveal_budget_cents: int = Field(default=0, ge=0)
     phone_reveal_budget_cents: int = Field(default=0, ge=0)
+    email_validation_native_unit_cap: int = Field(default=0, ge=0)
+    phone_validation_native_unit_cap: int = Field(default=0, ge=0)
+    email_validation_budget_cents: int = Field(default=0, ge=0)
+    phone_validation_budget_cents: int = Field(default=0, ge=0)
+    channel_freshness_days: int = Field(default=30, ge=1, le=365)
+    channel_retention_days: int = Field(default=90, ge=1, le=730)
+    email_identity_promotion_allowed: bool = False
     phone_identity_promotion_allowed: bool = False
     approved_strong_profile_hosts: tuple[str, ...] = ("linkedin.com",)
 
@@ -111,6 +122,7 @@ class ContactResearchPolicyPin(BaseModel):
             ("professional source plan", self.professional_source_plan),
             ("personal facet source plan", self.personal_facet_source_plan),
             ("channel reveal source plan", self.channel_reveal_source_plan),
+            ("channel validation source plan", self.channel_validation_source_plan),
             ("strong profile hosts", self.approved_strong_profile_hosts),
         ):
             if len(set(values)) != len(values):
@@ -126,15 +138,31 @@ class ContactResearchPolicyPin(BaseModel):
             self.phone_reveal_native_unit_cap,
             self.email_reveal_budget_cents,
             self.phone_reveal_budget_cents,
+            self.email_validation_native_unit_cap,
+            self.phone_validation_native_unit_cap,
+            self.email_validation_budget_cents,
+            self.phone_validation_budget_cents,
         )
         if not self.contact_reveals_enabled and (
-            self.channel_reveal_source_plan or any(reveal_budgets)
+            self.channel_reveal_source_plan
+            or self.channel_validation_source_plan
+            or any(reveal_budgets)
         ):
             raise ValueError("disabled contact reveals require no provider plan and zero budgets")
         if self.contact_reveals_enabled and (
-            not self.channel_reveal_source_plan or not any(reveal_budgets)
+            not self.channel_reveal_source_plan
+            or not self.channel_validation_source_plan
+            or not any(reveal_budgets)
         ):
-            raise ValueError("enabled contact reveals require providers and a non-zero reservation")
+            raise ValueError(
+                "enabled contact reveals require acquisition and validation providers and a "
+                "non-zero reservation"
+            )
+        if self.contact_reveals_enabled and (
+            "non-authorizing" in self.exa_websets_contract_ref
+            or "non-authorizing" in self.channel_validation_contract_ref
+        ):
+            raise ValueError("enabled contact reveals require accepted provider contracts")
         return self
 
     def canonical_bytes(self) -> bytes:
@@ -334,11 +362,15 @@ class ContactChannelValidation(BaseModel):
             if self.identity_binding is not IdentityBinding.STRONG:
                 raise ValueError("verified email identity requires strong identity binding")
         if self.state is ContactChannelState.REJECTED and not (
-            self.corroboration is ChannelIdentityCorroboration.CONFLICTED
-            or self.reachability is ChannelReachability.UNREACHABLE
+            self.corroboration is not ChannelIdentityCorroboration.MATCHED
+            or self.reachability is not ChannelReachability.REACHABLE
             or self.use_decision is ChannelUseDecision.DENIED
+            or self.identity_binding is not IdentityBinding.STRONG
         ):
-            raise ValueError("rejected channel requires a conflict, unreachable result, or denial")
+            raise ValueError(
+                "rejected channel requires weak identity, failed corroboration/reachability, "
+                "or a use denial"
+            )
         return self
 
     @property
@@ -365,27 +397,40 @@ class ContactChannelAuthorization(BaseModel):
     provider_source_keys: tuple[str, ...] = ()
     provider_native_unit_cap: int = Field(default=0, ge=0)
     budget_cap_cents: int = Field(default=0, ge=0)
+    validation_source_keys: tuple[str, ...] = ()
+    validation_native_unit_cap: int = Field(default=0, ge=0)
+    validation_budget_cap_cents: int = Field(default=0, ge=0)
     independent_validation_required: bool = False
 
     @model_validator(mode="after")
     def _authorization_is_fail_closed(self) -> ContactChannelAuthorization:
         if len(set(self.provider_source_keys)) != len(self.provider_source_keys):
             raise ValueError("channel provider source keys must be unique")
+        if len(set(self.validation_source_keys)) != len(self.validation_source_keys):
+            raise ValueError("channel validation source keys must be unique")
+        if set(self.provider_source_keys).intersection(self.validation_source_keys):
+            raise ValueError("channel validation source must be independent from acquisition")
         if not self.allowed and (
             self.provider_source_keys
             or self.provider_native_unit_cap
             or self.budget_cap_cents
+            or self.validation_source_keys
+            or self.validation_native_unit_cap
+            or self.validation_budget_cap_cents
             or self.independent_validation_required
         ):
             raise ValueError("a disallowed channel cannot reserve a provider or budget")
         if self.allowed and (
             not self.provider_source_keys
+            or len(self.provider_source_keys) != 1
+            or len(self.validation_source_keys) != 1
             or not self.independent_validation_required
             or self.provider_native_unit_cap < 1
+            or self.validation_native_unit_cap < 1
         ):
             raise ValueError(
                 "an allowed reveal requires an admitted provider, native-unit cap, and "
-                "independent validation"
+                "one independent validator, and independent validation"
             )
         return self
 
@@ -452,8 +497,10 @@ def _source_plan_for(
         sources.extend(policy.personal_facet_source_plan)
     if CONTACT_CHANNEL_FIELD_KEYS[ContactChannel.EMAIL] in field_tokens:
         sources.extend(target.email.provider_source_keys)
+        sources.extend(target.email.validation_source_keys)
     if CONTACT_CHANNEL_FIELD_KEYS[ContactChannel.PHONE] in field_tokens:
         sources.extend(target.phone.provider_source_keys)
+        sources.extend(target.phone.validation_source_keys)
     return tuple(dict.fromkeys(sources))
 
 
@@ -490,8 +537,18 @@ class ContactResearchSelectionBody(BaseModel):
             raise ValueError("contact selection exceeds the effective policy contact cap")
 
         channel_totals = {
-            ContactChannel.EMAIL: {"native": 0, "money": 0},
-            ContactChannel.PHONE: {"native": 0, "money": 0},
+            ContactChannel.EMAIL: {
+                "native": 0,
+                "money": 0,
+                "validation_native": 0,
+                "validation_money": 0,
+            },
+            ContactChannel.PHONE: {
+                "native": 0,
+                "money": 0,
+                "validation_native": 0,
+                "validation_money": 0,
+            },
         }
         for target in self.targets:
             if len(target.field_keys) > self.policy.max_fields_per_contact:
@@ -523,19 +580,35 @@ class ContactResearchSelectionBody(BaseModel):
                     raise ValueError(
                         "contact selection channel provider is outside the effective policy plan"
                     )
+                if not set(authorization.validation_source_keys).issubset(
+                    self.policy.channel_validation_source_plan
+                ):
+                    raise ValueError(
+                        "contact selection channel validator is outside the effective policy plan"
+                    )
                 channel_totals[channel]["native"] += authorization.provider_native_unit_cap
                 channel_totals[channel]["money"] += authorization.budget_cap_cents
+                channel_totals[channel]["validation_native"] += (
+                    authorization.validation_native_unit_cap
+                )
+                channel_totals[channel]["validation_money"] += (
+                    authorization.validation_budget_cap_cents
+                )
 
-        for channel, native_cap, money_cap in (
+        for channel, native_cap, money_cap, validation_native_cap, validation_money_cap in (
             (
                 ContactChannel.EMAIL,
                 self.policy.email_reveal_native_unit_cap,
                 self.policy.email_reveal_budget_cents,
+                self.policy.email_validation_native_unit_cap,
+                self.policy.email_validation_budget_cents,
             ),
             (
                 ContactChannel.PHONE,
                 self.policy.phone_reveal_native_unit_cap,
                 self.policy.phone_reveal_budget_cents,
+                self.policy.phone_validation_native_unit_cap,
+                self.policy.phone_validation_budget_cents,
             ),
         ):
             if channel_totals[channel]["native"] > native_cap:
@@ -545,6 +618,15 @@ class ContactResearchSelectionBody(BaseModel):
             if channel_totals[channel]["money"] > money_cap:
                 raise ValueError(
                     f"contact selection exceeds the effective {channel.value} money cap"
+                )
+            if channel_totals[channel]["validation_native"] > validation_native_cap:
+                raise ValueError(
+                    f"contact selection exceeds the effective {channel.value} validation "
+                    "native-unit cap"
+                )
+            if channel_totals[channel]["validation_money"] > validation_money_cap:
+                raise ValueError(
+                    f"contact selection exceeds the effective {channel.value} validation money cap"
                 )
         return self
 
