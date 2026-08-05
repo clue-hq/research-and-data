@@ -90,6 +90,17 @@ class Settings(BaseSettings):
     # Exa's public endpoint currently admits up to 100, but the accepted Clue policy cap is 50.
     exa_account_deep_max_results: int = Field(default=50, ge=1, le=50)
     exa_account_deep_max_additional_queries: int = Field(default=10, ge=0, le=10)
+    # Independent default-off authorization for exact selected-contact Exa Search (M8C C6).
+    # Account-profile acquisition never implicitly enables personal/contact research.
+    # Env: CLUE_EXA_CONTACT_DEEP_ACQUISITION_ENABLED.
+    exa_contact_deep_acquisition_enabled: bool = False
+    # Exact selected-contact channel work remains independently default-off and additionally
+    # requires a concrete validator binding at composition. A coarse directive flag cannot enable
+    # this deployment switch. Env: CLUE_CONTACT_CHANNEL_ENRICHMENT_ENABLED.
+    contact_channel_enrichment_enabled: bool = False
+    # One provider-neutral due-operation scan serves committee and contact waits in C6.
+    # Env: CLUE_EXTERNAL_RESEARCH_WAKE_WORKER_INTERVAL_S.
+    external_research_wake_worker_interval_s: float = Field(default=1.0, gt=0)
     # Independent authorization for the bounded, pre-seal Sumble organization-field waterfall.
     # This is deliberately separate from post-selection S1: enabling optional jobs/technology work
     # must not silently authorize discovery-stage spend, or vice versa.

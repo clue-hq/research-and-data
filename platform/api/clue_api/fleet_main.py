@@ -55,6 +55,9 @@ from clue_api.agent_platform_wiring import build_agent_platform_components
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
+from clue_api.contact_research_preparation import (
+    build_production_contact_research_preparer,
+)
 from clue_api.exa_deep_preparation import build_production_exa_deep_resolver_provider
 from clue_api.exa_targeted_enrichment import (
     ExaTargetedEnrichmentCoordinator,
@@ -77,12 +80,17 @@ from clue_api.execution_wiring import (
     StorageParameterArtifactStore,
     build_tool_invoker,
 )
+from clue_api.external_research_wake import (
+    ExternalResearchWakeDispatcher,
+    registered_external_research_wake_sources,
+)
 from clue_api.fleet_wiring import (
     build_account_lock_factory,
     build_multi_work_worker,
     enqueue_run_drive,
     register_boot_handlers,
 )
+from clue_api.independent_contact_research import IndependentContactResearchService
 from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.project_execution_router import (
@@ -101,7 +109,6 @@ from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
 from clue_api.sumble_committee_inputs import DurableSumbleCommitteeInputResolver
 from clue_api.sumble_committee_preparation import build_production_sumble_committee_preparer
-from clue_api.sumble_committee_wake import SumbleCommitteeWakeWorker
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
@@ -210,32 +217,45 @@ def _start_agent_cleanup(
     return asyncio.create_task(_agent_cleanup_loop(settings, job))
 
 
-async def _sumble_committee_wake_loop(
+async def _external_research_wake_loop(
     settings: Settings,
-    worker: SumbleCommitteeWakeWorker,
+    worker: ExternalResearchWakeDispatcher,
     *,
     sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
 ) -> None:
-    """Wake due S2 operations without putting provider logic in the DEEP orchestrator."""
+    """Wake due registered external operations without provider logic in the fleet loop."""
 
     while True:
         try:
             completed = await worker.run_due()
             if completed:
-                log.info("fleet.sumble_committee.woke", run_count=completed)
+                log.info("fleet.external_research.woke", run_count=completed)
         except Exception:  # noqa: BLE001 - one wake scan must not sink the fleet
-            log.warning("fleet.sumble_committee.wake_error", exc_info=True)
-        await sleep(settings.sumble_committee_wake_worker_interval_s)
+            log.warning("fleet.external_research.wake_error", exc_info=True)
+        await sleep(settings.external_research_wake_worker_interval_s)
 
 
-def _start_sumble_committee_wake(settings: Settings) -> asyncio.Task[None] | None:
-    if not settings.sumble_committee_acquisition_enabled:
-        log.info("fleet.sumble_committee.disabled")
+def _start_external_research_wake(settings: Settings) -> asyncio.Task[None] | None:
+    if not any(
+        (
+            settings.sumble_committee_acquisition_enabled,
+            settings.exa_contact_deep_acquisition_enabled,
+            settings.contact_channel_enrichment_enabled,
+        )
+    ):
+        log.info("fleet.external_research.wake_disabled")
         return None
     return asyncio.create_task(
-        _sumble_committee_wake_loop(
+        _external_research_wake_loop(
             settings,
-            SumbleCommitteeWakeWorker(project_run_waker=enqueue_run_drive),
+            ExternalResearchWakeDispatcher(
+                project_run_waker=enqueue_run_drive,
+                sources=registered_external_research_wake_sources(
+                    committee_enabled=settings.sumble_committee_acquisition_enabled,
+                    contact_external_enabled=settings.exa_contact_deep_acquisition_enabled,
+                    contact_channel_enabled=settings.contact_channel_enrichment_enabled,
+                ),
+            ),
         )
     )
 
@@ -436,6 +456,18 @@ async def _serve() -> None:
             pre_spend_gate=pre_spend_gate,
             conn_factory=transaction,
         )
+        contact_research_preparer = build_production_contact_research_preparer(
+            settings,
+            secrets=secrets,
+            storage=storage,
+            pre_spend_gate=pre_spend_gate,
+            conn_factory=transaction,
+        )
+        independent_contact_research = IndependentContactResearchService(
+            preparer=contact_research_preparer,
+            pre_spend_gate=pre_spend_gate,
+            conn_factory=transaction,
+        )
         c7_enabled = any(
             (
                 settings.c7_research_view_read_enabled,
@@ -474,6 +506,7 @@ async def _serve() -> None:
                 storage=storage,
             ),
             account_deep_full_unit_available=sumble_committee_preparer is not None,
+            independent_contact_research=independent_contact_research,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -588,6 +621,7 @@ async def _serve() -> None:
             account_agent_profiler=account_agent_profiler,
             committee_preparer=sumble_committee_preparer,
             account_resolver_provider=exa_account_resolver_provider,
+            contact_preparer=contact_research_preparer,
             pre_spend_gate=pre_spend_gate,
         )
         register_execution_control_tools(
@@ -655,7 +689,7 @@ async def _serve() -> None:
             secrets=secrets,
             storage=storage,
         )
-        sumble_committee_wake = _start_sumble_committee_wake(settings)
+        external_research_wake = _start_external_research_wake(settings)
         try:
             await run_worker(worker)
         finally:
@@ -664,7 +698,7 @@ async def _serve() -> None:
                 agent_cleanup,
                 exa_discovery,
                 exa_targeted_enrichment,
-                sumble_committee_wake,
+                external_research_wake,
             ):
                 if background is None:
                     continue

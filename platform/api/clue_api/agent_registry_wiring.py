@@ -30,8 +30,8 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v18",
-    AgentRole.RESEARCH: "v5",
+    AgentRole.HEAD_OF_ABM: "v19",
+    AgentRole.RESEARCH: "v6",
     AgentRole.CONTENT_DRAFTER: "v4",
     AgentRole.REVIEWER: "v4",
     AgentRole.ACCOUNT_RESEARCH: "v3",
@@ -206,6 +206,8 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
         return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@2" else ()
     if name == "research_account_gaps":
         return (AgentRole.ACCOUNT_RESEARCH,) if address == "research_account_gaps@2" else ()
+    if name == "profile_contact":
+        return (AgentRole.RESEARCH,) if address == "profile_contact@2" else ()
     return C6_AGENT_TOOL_AUTHORITY.get(name, ())
 
 
@@ -219,6 +221,8 @@ def c6_roles_for_tool(address: str) -> tuple[AgentRole, ...]:
 def _unavailable_reason(address: str, name: str) -> str | None:
     if address == "research_account_gaps@1":
         return "replaced_by_replay_safe_v2"
+    if address == "profile_contact@1":
+        return "replaced_by_governed_v2"
     return _RESERVED_REASON.get(name)
 
 

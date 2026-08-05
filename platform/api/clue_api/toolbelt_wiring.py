@@ -81,6 +81,7 @@ from clue_api.exa_targeted_enrichment import (
 )
 from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.fleet_wiring import enqueue_run_drive
+from clue_api.independent_contact_research import IndependentContactResearchRunner
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
 from clue_api.phase_wiring import build_discovery_handler, build_scoring_handler
@@ -112,6 +113,7 @@ from clue_api.tool_outputs import (
     ContactProfileOutput,
     DeepAccountOutput,
     DiscoverAccountsOutput,
+    GovernedContactProfileOutput,
     HandoffOutput,
     ImportAccountsOutput,
     PhaseAccountsOutput,
@@ -341,6 +343,12 @@ class ProfileContactInput(ToolInput):
     icp_key: str | None = None
 
 
+class GovernedProfileContactInput(ToolInput):
+    project_run_id: str
+    contact_entity_id: str
+    account_entity_id: str
+
+
 class RunVerificationInput(ToolInput):
     project_run_id: str
 
@@ -398,6 +406,7 @@ class _CapabilityTool(Tool):
         storage: StorageBackend | None,
         project_execution_router: ProjectExecutionRouter | None,
         account_deep_full_unit_available: bool,
+        independent_contact_research: IndependentContactResearchRunner | None,
     ) -> None:
         self._settings = settings
         self._gateway = gateway
@@ -411,6 +420,7 @@ class _CapabilityTool(Tool):
         self._storage = storage
         self._project_execution_router = project_execution_router
         self._account_deep_full_unit_available = account_deep_full_unit_available
+        self._independent_contact_research = independent_contact_research
 
     def _require_gateway(self) -> LLMGateway:
         if self._gateway is None:
@@ -1744,6 +1754,100 @@ class ProfileContactTool(_CapabilityTool):
         )
 
 
+class GovernedProfileContactTool(_CapabilityTool):
+    """C6 independent-contact entry: exact project run, selection, preparation, then claims."""
+
+    name = "profile_contact"
+    version = "2"
+    input_model = GovernedProfileContactInput
+    output_model = GovernedContactProfileOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project run + account + selected contact + immutable provider receipts",
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "project_run_id",
+            "contact_entity_id",
+            "account_entity_id",
+        )
+    )
+    pin_requirements = (
+        "project_run",
+        "account",
+        "contact",
+        "research_directive",
+        "contact_research_selection",
+        "field_registry",
+        "source_registry",
+    )
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        return ToolEstimate(
+            cost_cents=Decimal(0),
+            detail={"basis": "durable selection and provider-specific reservations"},
+        )
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, GovernedProfileContactInput)
+        if self._independent_contact_research is None:
+            return _fail(
+                "contact_research_not_composed",
+                "provider-neutral contact research is unavailable",
+            )
+        run = await self._load_run(inputs.project_run_id, ctx)
+        if run is None:
+            return _fail("run_not_found", "no such project run")
+        contact = _parse_entity_id(inputs.contact_entity_id)
+        if contact is None:
+            return _fail("contact_not_found", "no such contact entity")
+        async with ctx.conn_factory() as conn:
+            account = await self._load_account(
+                self.name,
+                inputs.account_entity_id,
+                ctx,
+                conn,
+            )
+            if account is None:
+                return _fail("account_not_found", "no such account entity")
+            loaded = await get_contact(conn, contact)
+            if loaded is None or loaded.account_entity_id != account.id:
+                return _fail("contact_not_found", "no such contact entity")
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, GovernedProfileContactInput)
+        runner = self._independent_contact_research
+        assert runner is not None
+        project_run_id = _parse_run_id(inputs.project_run_id)
+        account = _parse_entity_id(inputs.account_entity_id)
+        contact = _parse_entity_id(inputs.contact_entity_id)
+        assert project_run_id is not None and account is not None and contact is not None
+        result = await runner.run(
+            workspace_id=ctx.workspace_id,
+            project_run_id=project_run_id,
+            account_entity_id=account,
+            contact_entity_id=contact,
+        )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "contact_entity_id": str(result.contact_entity_id),
+                "project_run_id": str(result.project_run_id),
+                "status": result.preparation.status.value,
+                "selection_ref": result.selection_ref,
+                "claim_refs": [str(claim_id) for claim_id in result.claim_refs],
+                "fields_filled": result.fields_filled,
+            },
+        )
+
+
 # =============================================================================================
 # verification / handoff tools
 # =============================================================================================
@@ -2113,6 +2217,7 @@ _TOOL_TYPES: tuple[type[_CapabilityTool], ...] = (
     RunDeepAccountTool,
     ResolveCommitteeTool,
     ProfileContactTool,
+    GovernedProfileContactTool,
     RunVerificationTool,
     ComposeHandoffTool,
     EstimateProjectTool,
@@ -2151,6 +2256,7 @@ def build_toolbelt(
     targeted_enrichment_starter: TargetedEnrichmentStarter | None = None,
     account_gap_enrichment_starter: AccountGapEnrichmentStarter | None = None,
     account_deep_full_unit_available: bool | None = None,
+    independent_contact_research: IndependentContactResearchRunner | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -2241,6 +2347,9 @@ def build_toolbelt(
     )
     registry = ToolRegistry()
     for tool_type in _TOOL_TYPES:
+        # C6 keeps the v1 address for exact historical pins, but the name-only alias must elect
+        # the governed v2 implementation.  ToolRegistry deliberately refuses two defaults.
+        make_default = tool_type is not ProfileContactTool
         registry.register(
             tool_type(
                 settings=resolved_settings,
@@ -2255,8 +2364,9 @@ def build_toolbelt(
                 storage=storage,
                 project_execution_router=project_execution_router,
                 account_deep_full_unit_available=full_unit_available,
+                independent_contact_research=independent_contact_research,
             ),
-            make_default=True,
+            make_default=make_default,
         )
     registry.register(
         EnrichSelectedAccountsTool(

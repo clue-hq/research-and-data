@@ -56,6 +56,7 @@ from clue_api.contact_eligibility import (
     build_contact_eligibility_resolver,
     build_production_handoff_committee_reader,
 )
+from clue_api.contact_research_preparation import ContactStagePreparer
 from clue_api.deep import CommitteePreparer, ProfileAccountFn
 from clue_api.deep.composition import (
     DeepPhaseComposition,
@@ -298,6 +299,7 @@ class ComposingRunDriver:
         profile_account_fn: ProfileAccountFn | None = None,
         committee_preparer: CommitteePreparer | None = None,
         account_resolver_provider: AccountResolverBindingProvider | None = None,
+        contact_preparer: ContactStagePreparer | None = None,
         pre_spend_gate: PreSpendGate | None = None,
     ) -> None:
         self._settings = settings if settings is not None else load_settings()
@@ -323,6 +325,7 @@ class ComposingRunDriver:
         self._profile_account_fn = profile_account_fn
         self._committee_preparer = committee_preparer
         self._account_resolver_provider = account_resolver_provider
+        self._contact_preparer = contact_preparer
         self._pre_spend_gate = pre_spend_gate
         if (controls is None) != (supervisor_actions is None):
             raise ValueError("controls and supervisor_actions must be supplied together")
@@ -556,6 +559,7 @@ class ComposingRunDriver:
             canary_controller=canary_controller,
             committee_preparer=self._committee_preparer,
             account_resolver_provider=self._account_resolver_provider,
+            contact_preparer=self._contact_preparer,
             profile_account_fn=(
                 self._profile_account_fn
                 if self._profile_account_fn is not None

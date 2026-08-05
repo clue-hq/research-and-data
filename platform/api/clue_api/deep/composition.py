@@ -60,6 +60,7 @@ from clue_api.composition import (
     load_research_packs,
     production_binding_classifier,
 )
+from clue_api.contact_research_preparation import ContactStagePreparer
 from clue_api.deep.committee_preparation import CommitteePreparer
 from clue_api.deep.handler import (
     CheckpointerFactory,
@@ -390,6 +391,7 @@ def build_deep_phase_handler(
     profile_account_fn: ProfileAccountFn | None = None,
     committee_preparer: CommitteePreparer | None = None,
     account_resolver_provider: AccountResolverBindingProvider | None = None,
+    contact_preparer: ContactStagePreparer | None = None,
 ) -> DeepPhaseComposition:
     """Construct the fully-wired DEEP phase for one campaign's ICP and return the bundle (M8A.6).
 
@@ -469,6 +471,7 @@ def build_deep_phase_handler(
         budget_cap_cents=budget_cap_cents,
         committee_preparer=committee_preparer,
         account_resolver_provider=account_resolver_provider,
+        contact_preparer=contact_preparer,
     )
 
     if scheduler is None:

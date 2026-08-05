@@ -96,6 +96,15 @@ class ContactProfileOutput(ToolOutput):
     profile_claims: int
 
 
+class GovernedContactProfileOutput(ToolOutput):
+    contact_entity_id: str
+    project_run_id: str
+    status: str
+    selection_ref: str | None
+    claim_refs: list[str]
+    fields_filled: int
+
+
 class HandoffOutput(ToolOutput):
     project_run_id: str
     handoffs: int
