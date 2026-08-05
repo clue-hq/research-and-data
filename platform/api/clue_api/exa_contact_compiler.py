@@ -19,7 +19,6 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CONTACT_PROFESSIONAL_FIELD_KEYS,
     AccountEntity,
     ContactEntity,
     ContactResearchIntent,
@@ -167,6 +166,7 @@ def compile_exa_contact_acquisition_plan(
     observation_window: str,
     cost_cents_reserved_per_bundle: Decimal,
     config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
+    reuse_context_ref: str | None = None,
 ) -> ExaDeepContactAcquisitionPlan:
     """Compile deterministic contact preflights without credential lookup or provider traffic."""
 
@@ -236,6 +236,8 @@ def compile_exa_contact_acquisition_plan(
             "freshness_policy_ref": intent.freshness_policy_ref,
             "wire_request_sha256": wire_sha,
         }
+        if reuse_context_ref is not None:
+            reuse_payload["follow_up_context_ref"] = reuse_context_ref
         reuse_fingerprint = _sha256(_json_bytes(reuse_payload))
         request_fingerprint = _sha256(
             _json_bytes(
@@ -292,8 +294,11 @@ async def compile_registered_exa_contact_plan(
     start_published_date: datetime | None = None,
     end_published_date: datetime | None = None,
     config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
+    field_keys: Sequence[str] | None = None,
+    directional_questions: Sequence[str] | None = None,
+    reuse_context_ref: str | None = None,
 ) -> ExaDeepContactAcquisitionPlan:
-    """Resolve every C3 authority from Postgres, then invoke the transport-free compiler."""
+    """Resolve every C3 authority, optionally narrowing to one governed semantic tool call."""
 
     intent.selection.require_effective_policy(effective_policy)
     if SOURCE_KEY not in intent.source_plan:
@@ -381,15 +386,42 @@ async def compile_registered_exa_contact_plan(
             "contact selection references unknown confirmed questions: "
             + ", ".join(sorted(missing_questions))
         )
-    questions = tuple(question_by_id[key].text for key in intent.directional_question_ids)
+    selected_intent_questions = tuple(
+        question_by_id[key].text for key in intent.directional_question_ids
+    )
+    questions = (
+        selected_intent_questions if directional_questions is None else tuple(directional_questions)
+    )
+    if (
+        len(questions) != len(set(questions))
+        or not set(questions).issubset(selected_intent_questions)
+        or (directional_questions is not None and not questions)
+    ):
+        raise ValueError(
+            "contact Exa questions must be a non-empty unique subset of the confirmed intent"
+        )
+
+    selected_field_keys = (
+        tuple(str(field_key) for field_key in intent.field_keys)
+        if field_keys is None
+        else tuple(field_keys)
+    )
+    selected_intent_fields = {
+        str(field_key)
+        for field_key in intent.field_keys
+        if classify_field_key(field_key) is FieldClass.CONTACT_FACET
+    }
+    if (
+        not selected_field_keys
+        or len(selected_field_keys) != len(set(selected_field_keys))
+        or not set(selected_field_keys).issubset(selected_intent_fields)
+    ):
+        raise ValueError(
+            "contact Exa fields must be a non-empty unique subset of selected facet fields"
+        )
 
     admitted: list[ExaDeepContactAdmittedField] = []
-    for field_key in intent.field_keys:
-        if str(field_key) in CONTACT_PROFESSIONAL_FIELD_KEYS:
-            continue
-        if classify_field_key(field_key) is not FieldClass.CONTACT_FACET:
-            # Channel fields belong to C5 and are never silently folded into contact Search.
-            continue
+    for field_key in selected_field_keys:
         definition = await get_effective_field(
             conn,
             scope=FieldRegistryScope.for_workspace(intent.workspace_id),
@@ -442,6 +474,7 @@ async def compile_registered_exa_contact_plan(
         observation_window=observation_window,
         cost_cents_reserved_per_bundle=Decimal(source.cost_cents),
         config=config,
+        reuse_context_ref=reuse_context_ref,
     )
 
 

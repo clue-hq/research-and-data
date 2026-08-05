@@ -389,15 +389,24 @@ class ExaDeepContactSnapshotResolverProvider:
         *,
         intent: ContactResearchIntent,
         effective_policy: ContactResearchPolicyPin,
+        allowed_field_keys: Collection[str] | None = None,
+        snapshot_reference_ids: Collection[str] | None = None,
     ) -> ExaDeepContactResolverBundle:
         intent.selection.require_effective_policy(effective_policy)
         if SOURCE_KEY not in intent.source_plan:
             raise ExaDeepContactSnapshotError("selected contact intent does not authorize Exa")
-        facet_fields = frozenset(
+        selected_facet_fields = frozenset(
             str(field_key)
             for field_key in intent.field_keys
             if classify_field_key(field_key) is FieldClass.CONTACT_FACET
         )
+        facet_fields = (
+            selected_facet_fields if allowed_field_keys is None else frozenset(allowed_field_keys)
+        )
+        if not facet_fields.issubset(selected_facet_fields):
+            raise ExaDeepContactSnapshotError(
+                "contact materialization fields widen the selected intent"
+            )
         if not facet_fields:
             raise ExaDeepContactSnapshotError("selected contact intent has no Exa facet fields")
         async with self._conn_factory() as conn:
@@ -433,6 +442,15 @@ class ExaDeepContactSnapshotResolverProvider:
                 contact_selection_sha256=intent.selection_sha256,
                 contact_intent_sha256=intent.sha256(),
             )
+        if snapshot_reference_ids is not None:
+            wanted = frozenset(snapshot_reference_ids)
+            snapshots = tuple(
+                snapshot for snapshot in snapshots if str(snapshot.snapshot_id) in wanted
+            )
+            if {str(snapshot.snapshot_id) for snapshot in snapshots} != wanted:
+                raise ExaDeepContactSnapshotError(
+                    "contact materialization named an absent ready snapshot"
+                )
         return await _build_exa_contact_snapshot_resolver(
             intent=intent,
             snapshots=snapshots,
@@ -461,10 +479,23 @@ class ExaDeepContactSnapshotMaterializer:
         effective_policy: ContactResearchPolicyPin,
         run_id: RunId,
         pre_spend_gate: PreSpendGate | None = None,
+        field_keys: Collection[str] | None = None,
+        snapshot_reference_ids: Collection[str] | None = None,
     ) -> ExaDeepContactMaterializationResult:
+        selected_fields = (
+            tuple(
+                str(field_key)
+                for field_key in intent.field_keys
+                if classify_field_key(field_key) is FieldClass.CONTACT_FACET
+            )
+            if field_keys is None
+            else tuple(field_keys)
+        )
         bundle = await self._provider.resolver_bundle(
             intent=intent,
             effective_policy=effective_policy,
+            allowed_field_keys=selected_fields,
+            snapshot_reference_ids=snapshot_reference_ids,
         )
         results: list[ExaDeepContactMaterializedField] = []
         async with self._conn_factory() as conn:
@@ -485,7 +516,7 @@ class ExaDeepContactSnapshotMaterializer:
             if spec is None:
                 raise ExaDeepContactSnapshotError("contact snapshot ICP pin cannot be resolved")
             with bind_resolver_overrides({SOURCE_KEY: bundle.resolver}):
-                for field_key in intent.field_keys:
+                for field_key in selected_fields:
                     if classify_field_key(field_key) is not FieldClass.CONTACT_FACET:
                         continue
                     stored_plan = bundle.source_plans.get(str(field_key))

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 
@@ -13,6 +13,7 @@ from clue_api.exa_contact_compiler import compile_registered_exa_contact_plan
 from clue_api.exa_deep_acquisition import (
     ExaDeepAcquisitionCoordinator,
     ExaDeepAcquisitionResult,
+    ExaDeepBeforeDispatch,
 )
 from clue_core import ContactResearchIntent, ContactResearchPolicyPin
 from clue_research.resolvers.exa import DEFAULT_EXA_CONFIG, ExaDeepConfig
@@ -52,6 +53,10 @@ class ExaDeepContactAcquisitionService:
         start_published_date: datetime | None = None,
         end_published_date: datetime | None = None,
         config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
+        before_dispatch: ExaDeepBeforeDispatch | None = None,
+        field_keys: Sequence[str] | None = None,
+        directional_questions: Sequence[str] | None = None,
+        reuse_context_ref: str | None = None,
     ) -> ExaDeepContactAcquisitionBatchResult:
         """Acquire only a database-proven selected intent; a rejected compile makes zero calls."""
 
@@ -64,13 +69,16 @@ class ExaDeepContactAcquisitionService:
                 start_published_date=start_published_date,
                 end_published_date=end_published_date,
                 config=config,
+                field_keys=field_keys,
+                directional_questions=directional_questions,
+                reuse_context_ref=reuse_context_ref,
             )
 
         # This loop is deliberately outside the compiler/claim transaction. Each coordinator call
         # uses short reserve/settlement transactions around one external HTTP request.
         results: list[ExaDeepAcquisitionResult] = []
         for bundle in plan.bundles:
-            results.append(await self._coordinator.acquire(bundle))
+            results.append(await self._coordinator.acquire(bundle, before_dispatch=before_dispatch))
         return ExaDeepContactAcquisitionBatchResult(
             intent_sha256=plan.intent_sha256,
             results=tuple(results),

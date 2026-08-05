@@ -1,0 +1,743 @@
+"""M8D R4 live-Postgres Exa fixture proof from governed tool call through lossless reads."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+from uuid import UUID, uuid4
+
+import pytest
+from langchain_core.messages import AIMessage
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_agents.contracts import ModelPolicy
+from clue_agents.entity_research_contracts import (
+    EntityAgentRole,
+    EntityResearchAgentDefinition,
+    EntityResearchResource,
+    EntityResearchResourceBundle,
+    EntityResearchRuntimeContext,
+    EntityResearchToolBinding,
+    EntityResearchToolCall,
+    canonical_sha256,
+)
+from clue_agents.entity_research_runtime import (
+    ActiveEntityResearchToolExecution,
+    EntityResearchAgentFactory,
+    EntityResearchAgentRuntime,
+)
+from clue_agents.entity_research_tools import ReadResearchEvidenceInput
+from clue_agents.model import ScriptedAgentChatModel
+from clue_api.entity_research_runtime_wiring import DbEntityResearchAgentJournal
+from clue_api.entity_research_tools import (
+    EntityResearchProviderCausationStore,
+    EntityResearchResultStore,
+    EntityResearchToolAuthorityError,
+    EntityResearchToolRequestStore,
+    GovernedEntityResearchToolFactory,
+    ProviderActionBinding,
+)
+from clue_api.exa_contact_acquisition import ExaDeepContactAcquisitionService
+from clue_api.exa_contact_materialization import (
+    ExaDeepContactSnapshotMaterializer,
+    ExaDeepContactSnapshotResolverProvider,
+)
+from clue_api.exa_deep_acquisition import ExaDeepAcquisitionCoordinator
+from clue_api.exa_entity_research_tools import (
+    ExaContactSemanticResearchAction,
+    ExaEntityResearchProjectionBuilder,
+)
+from clue_core import EntityId, new_run_id
+from clue_core.entity_research import (
+    EntityAgentToolSurface,
+    EntityResearchJobAuthorization,
+    EntityResearchSelection,
+    GovernedResearchToolRequest,
+    ResearchFollowUpReason,
+    ResearchOperationKind,
+    ResearchRunKind,
+    ResearchRunLifecycleContract,
+    ResearchSelectionBasis,
+    ResearchSubjectType,
+    SelectedResearchSubject,
+)
+from clue_fleet import (
+    DbEntityResearchJobStore,
+    EntityResearchJobEnvelope,
+    EntityResearchRunEnvelope,
+)
+from clue_research.compliance import DataSubjectRightsImpl
+from clue_storage import FsStorage, get_artifact
+from tests.agents.test_entity_research_runtime_r3 import (
+    Checkpointers,
+    Finalizer,
+    Guard,
+    Models,
+    _context,
+    _proposal,
+    _tool,
+)
+from tests.contact_research.test_c4_exa_contact_acquisition_materialization import (
+    _FIELD,
+    _payload,
+    _seed,
+    _TrackedConnFactory,
+    _Transport,
+)
+from tests.profiling.conftest import migrated_db as migrated_db
+from tests.profiling.conftest import require_profiling_db as require_profiling_db
+from tests.profiling.conftest import rollback_conn
+
+pytestmark = pytest.mark.usefixtures("require_profiling_db")
+
+_QUESTION = "Which attributable publications discuss referral operations?"
+
+
+class _TransactionalTrackedConnFactory(_TrackedConnFactory):
+    """Mirror a real ConnFactory transaction while retaining the no-I/O-under-DB assertion."""
+
+    @asynccontextmanager
+    async def __call__(self) -> AsyncIterator[AsyncConnection]:
+        self.active += 1
+        try:
+            async with self.conn.begin_nested():
+                yield self.conn
+        finally:
+            self.active -= 1
+
+
+def _fleet_envelope(seed: Any, *, profile_sha256: str) -> EntityResearchRunEnvelope:
+    intent = seed.intent
+    legacy_target = intent.selection.body.targets[0]
+    strong_refs = tuple(f"claim:{value}" for value in legacy_target.strong_identity_claim_ids)
+    committee_refs = tuple(f"claim:{value}" for value in legacy_target.committee_claim_ids)
+    selection = EntityResearchSelection(
+        selection_id=uuid4(),
+        workspace_id=intent.workspace_id,
+        project_id=intent.project_id,
+        product_id="prd_fixture_aura_ai",
+        project_run_id=UUID(str(intent.project_run_id)),
+        subject_type=ResearchSubjectType.CONTACT,
+        account_entity_id=UUID(str(intent.account_entity_id)),
+        subjects=(
+            SelectedResearchSubject(
+                subject_entity_id=UUID(str(intent.contact_entity_id)),
+                basis=ResearchSelectionBasis.COMMITTEE_MEMBER,
+                strong_identity_claim_refs=strong_refs,
+                association_evidence_refs=strong_refs,
+                committee_claim_refs=committee_refs,
+            ),
+        ),
+        directive_ref=f"account-research-directive:{intent.research_directive.directive_id}",
+        directive_sha256=intent.research_directive.canonical_json_sha256,
+        field_plan_ref=f"contact-field-plan:{intent.selection_id}",
+        source_plan_ref=intent.source_profile_ref,
+        admitted_field_keys=(_FIELD,),
+        admitted_source_keys=("exa_deep",),
+        research_questions=(_QUESTION,),
+        facet_keys=("publications",),
+        policy_refs=(
+            intent.selection.body.jurisdiction_policy_ref,
+            intent.selection.body.use_policy_ref,
+            intent.selection.body.retention_policy_ref,
+        ),
+        budget_envelope_ref=intent.budget_reservation_ref,
+        approval_refs=(f"contact-selection:{intent.selection_id}",),
+        confirmed_by=intent.selection.body.approved_by,
+        confirmed_at=intent.selection.body.approved_at,
+    )
+    research_run_id = uuid4()
+    lifecycle = ResearchRunLifecycleContract(
+        run_id=research_run_id,
+        run_kind=ResearchRunKind.CONTACT_RESEARCH,
+        selection=selection,
+        user_confirmed_launch=True,
+        operations=(ResearchOperationKind.CONTACT_RESEARCH,),
+    )
+    authorization = EntityResearchJobAuthorization(
+        job_id=uuid4(),
+        research_run_id=research_run_id,
+        subject_type=ResearchSubjectType.CONTACT,
+        subject_entity_id=selection.subjects[0].subject_entity_id,
+        parent_account_id=selection.account_entity_id,
+        workspace_id=selection.workspace_id,
+        project_id=selection.project_id,
+        product_id=selection.product_id,
+        project_run_id=selection.project_run_id,
+        selection=selection,
+        agent_profile_ref="agent-profile:contact-research:v1",
+        agent_profile_sha256=profile_sha256,
+        checkpoint_thread_id=f"checkpoint:{research_run_id}:{intent.contact_entity_id}",
+        attempt_id=uuid4(),
+        lease_id=uuid4(),
+    )
+    return EntityResearchRunEnvelope(
+        lifecycle=lifecycle,
+        jobs=(
+            EntityResearchJobEnvelope(
+                authorization=authorization,
+                priority=0,
+                budget_envelope_ref=selection.budget_envelope_ref,
+                budget_cap_cents=Decimal("20"),
+            ),
+        ),
+        budget_cap_cents=Decimal("20"),
+        concurrency_limit=1,
+    )
+
+
+def _runtime_context(
+    *,
+    authorization: EntityResearchJobAuthorization,
+    state_sha256: str,
+    profile_body: str,
+    agent_turn_id: UUID,
+) -> EntityResearchRuntimeContext:
+    base = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
+    profile = EntityResearchResource(
+        kind="profile",
+        ref=authorization.agent_profile_ref,
+        version="v1",
+        sha256=authorization.agent_profile_sha256,
+        body=profile_body,
+    )
+    return EntityResearchRuntimeContext(
+        agent_execution_id=authorization.attempt_id,
+        agent_turn_id=agent_turn_id,
+        role=EntityAgentRole.CONTACT,
+        authorization=authorization,
+        resources=EntityResearchResourceBundle(
+            profile=profile,
+            prompt=base.resources.prompt,
+            skills=base.resources.skills,
+        ),
+        tool_surface=EntityAgentToolSurface(
+            subject_type=ResearchSubjectType.CONTACT,
+            tool_names=base.tool_surface.tool_names,
+        ),
+        stop_policy=base.stop_policy,
+        facet_contract=base.facet_contract,
+        current_state_sha256=state_sha256,
+        job_budget_cap_cents=Decimal("20"),
+        job_spent_cents=Decimal("0"),
+        run_budget_remaining_cents=Decimal("20"),
+    )
+
+
+def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn() as conn:
+            seed = await _seed(conn, storage, suffix="m8d-r4")
+            connection = _TransactionalTrackedConnFactory(conn)
+            profile_body = "role: contact-research\nframework: langchain-create-agent\n"
+            profile_sha = hashlib.sha256(profile_body.encode()).hexdigest()
+            envelope = _fleet_envelope(seed, profile_sha256=profile_sha)
+            store = DbEntityResearchJobStore(conn_factory=connection)
+            await store.launch(envelope)
+            authorization = envelope.jobs[0].authorization
+            job = await store.get_job(authorization.job_id)
+            assert job is not None
+
+            transport = _Transport(_payload("supported.json"), connection)
+            coordinator = ExaDeepAcquisitionCoordinator(
+                transport=transport,
+                storage=storage,
+                conn_factory=connection,
+            )
+            acquisition = ExaDeepContactAcquisitionService(
+                coordinator=coordinator,
+                conn_factory=connection,
+            )
+            materializer = ExaDeepContactSnapshotMaterializer(
+                provider=ExaDeepContactSnapshotResolverProvider(
+                    storage=storage,
+                    conn_factory=connection,
+                ),
+                conn_factory=connection,
+            )
+            projector = ExaEntityResearchProjectionBuilder(
+                storage=storage,
+                conn_factory=connection,
+            )
+            action = ExaContactSemanticResearchAction(
+                intent=seed.intent,
+                effective_policy=seed.policy,
+                acquisition=acquisition,
+                materializer=materializer,
+                projector=projector,
+                run_id=new_run_id(),
+                observation_window="m8d-r4-governed-contact",
+            )
+            request_store = EntityResearchToolRequestStore(conn_factory=connection)
+            causation = EntityResearchProviderCausationStore(conn_factory=connection)
+            result_store = EntityResearchResultStore(
+                storage=storage,
+                conn_factory=connection,
+                inline_max_bytes=1,
+            )
+            tool_factory = GovernedEntityResearchToolFactory(
+                requests=request_store,
+                causation=causation,
+                results=result_store,
+            )
+
+            async def run_turn(
+                turn_id: UUID,
+                call_id: str,
+                *,
+                parent_operation_ref: str | None = None,
+                parent_observation_ref: str | None = None,
+                follow_up_reason: ResearchFollowUpReason | None = None,
+            ) -> EntityResearchRuntimeContext:
+                context = _runtime_context(
+                    authorization=authorization,
+                    state_sha256=job.current_state_sha256,
+                    profile_body=profile_body,
+                    agent_turn_id=turn_id,
+                )
+                provider_names = {
+                    "research_contact_deep",
+                    "enrich_contact",
+                    "reveal_contact_channel",
+                    "validate_contact_channel",
+                }
+                engine_names = (
+                    set(context.tool_surface.tool_names)
+                    - provider_names
+                    - {
+                        "read_research_result",
+                        "read_evidence",
+                    }
+                )
+                bindings = tool_factory.compose(
+                    surface=context.tool_surface,
+                    provider_actions={
+                        name: ProviderActionBinding(
+                            action=action,
+                            version=1,
+                        )
+                        for name in provider_names
+                    },
+                    engine_tools={
+                        name: EntityResearchToolBinding(tool=_tool(name), version=1)
+                        for name in engine_names
+                    },
+                )
+                proposal = _proposal(context)
+                tool_args: dict[str, object] = {
+                    "field_keys": [_FIELD],
+                    "source_keys": ["exa_deep"],
+                    "questions": [_QUESTION],
+                }
+                if parent_operation_ref is not None:
+                    tool_args.update(
+                        {
+                            "parent_operation_ref": parent_operation_ref,
+                            "parent_observation_ref": parent_observation_ref,
+                            "follow_up_reason": follow_up_reason,
+                        }
+                    )
+                model = ScriptedAgentChatModel(
+                    responses=(
+                        AIMessage(
+                            content="",
+                            tool_calls=[
+                                {
+                                    "name": "research_contact_deep",
+                                    "args": tool_args,
+                                    "id": call_id,
+                                }
+                            ],
+                        ),
+                        AIMessage(
+                            content="",
+                            tool_calls=[
+                                {
+                                    "name": "ResearchFinalizationProposal",
+                                    "args": proposal.model_dump(mode="json"),
+                                    "id": f"final-{call_id}",
+                                }
+                            ],
+                        ),
+                    )
+                )
+                journal = DbEntityResearchAgentJournal(conn_factory=connection)
+                guard = Guard()
+                runtime = EntityResearchAgentRuntime(
+                    factory=EntityResearchAgentFactory(
+                        models=Models(model),
+                        journal=journal,
+                        guard=guard,
+                    ),
+                    checkpointers=Checkpointers(),
+                    journal=journal,
+                    finalizer=Finalizer(),
+                )
+                definition = EntityResearchAgentDefinition(
+                    context=context,
+                    model_policy=ModelPolicy(
+                        model_id="test-model",
+                        timeout_s=5,
+                        max_retries=0,
+                        max_output_tokens=4096,
+                        temperature=0,
+                    ),
+                    tools=bindings,
+                    task_instruction="Research the exact contact with governed persisted tools.",
+                )
+                await runtime.run(definition=definition)
+                return context
+
+            first_context = await run_turn(uuid4(), "r4-exa-first")
+            assert transport.calls == 1
+            tool_event = (
+                await conn.execute(
+                    text(
+                        """
+                            SELECT payload_json FROM entity_research_agent_event
+                            WHERE agent_turn_id=:turn_id AND event_kind='tool_completed'
+                            ORDER BY event_seq DESC LIMIT 1
+                            """
+                    ),
+                    {"turn_id": first_context.agent_turn_id},
+                )
+            ).scalar_one()
+            tool_message = tool_event["result"]
+            assert tool_message["type"] == "tool"
+            assert tool_message["data"]["status"] == "success"
+            batch = json.loads(tool_message["data"]["content"])
+            assert "results" in batch, batch
+            result = batch["results"][0]
+            assert result["delivery"] == "indexed_complete"
+            assert result["fields"][0]["outcome"] == "found"
+            assert result["fields"][0]["claim_delta"] == "accepted"
+            assert result["fields"][0]["value"] is None
+            assert result["fields"][0]["value_ref"]
+            assert result["fields"][0]["evidence"]
+            assert Decimal(result["cost_cents"]) == Decimal("8")
+            result_ref = result["result_ref"]
+            evidence_ref = result["fields"][0]["evidence"][0]["evidence_ref"]
+
+            operation_id = UUID(
+                result["operation_ref"].removeprefix("external-research-operation:")
+            )
+            cause = await causation.causation_for(operation_id)
+            assert cause is not None
+            assert cause.agent_turn_id == first_context.agent_turn_id
+            assert cause.tool_name == "research_contact_deep"
+            assert cause.agent_turn_started_at <= cause.tool_call_recorded_at
+            assert cause.tool_call_recorded_at <= cause.provider_operation_reserved_at
+            assert cause.provider_operation_reserved_at <= cause.provider_dispatched_at
+
+            active = ActiveEntityResearchToolExecution(
+                context=first_context,
+                call=EntityResearchToolCall(
+                    tool_call_id="read-r4-result",
+                    tool_name="read_research_result",
+                    tool_version=1,
+                    tool_input_sha256=canonical_sha256({"result_ref": result_ref}),
+                    arguments={"result_ref": result_ref},
+                ),
+                journal_event_ref=f"entity-agent-event:{uuid4()}",
+            )
+            complete = await result_store.read_result(
+                active=active,
+                result_ref=result_ref,
+            )
+            assert complete.delivery.value == "inline_complete"
+            assert complete.fields[0].value is not None
+            page = await result_store.read_evidence(
+                active=active,
+                request=ReadResearchEvidenceInput(
+                    evidence_ref=evidence_ref,
+                    max_bytes=128,
+                ),
+            )
+            assert page.content
+            assert len(page.content_sha256) == 64
+
+            foreign = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
+            with pytest.raises(EntityResearchToolAuthorityError, match="outside the exact job"):
+                await result_store.read_result(
+                    active=active.__class__(
+                        context=foreign,
+                        call=active.call,
+                        journal_event_ref=active.journal_event_ref,
+                    ),
+                    result_ref=result_ref,
+                )
+
+            second_context = await run_turn(uuid4(), "r4-exa-replay")
+            assert transport.calls == 1
+            observations = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT disposition FROM entity_research_provider_observation
+                            WHERE operation_id=:operation_id ORDER BY created_at, observation_id
+                            """
+                        ),
+                        {"operation_id": operation_id},
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert sorted(observations) == ["caused", "replay_observation"]
+            assert second_context.agent_turn_id != first_context.agent_turn_id
+            replay_request_row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                        SELECT research_run_id, job_id, subject_type, target_entity_id,
+                               parent_account_id, agent_turn_id, agent_execution_id,
+                               tool_request_id AS tool_call_id, tool_name, tool_version,
+                               tool_input_sha256,
+                               field_plan_ref, source_plan_ref, field_keys, source_keys,
+                               questions, budget_reservation_key, idempotency_key,
+                               parent_operation_ref, parent_observation_ref, follow_up_reason
+                        FROM entity_research_tool_request
+                        WHERE agent_turn_id=:agent_turn_id
+                        """
+                        ),
+                        {"agent_turn_id": second_context.agent_turn_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            replay_request = GovernedResearchToolRequest.model_validate(
+                {
+                    **dict(replay_request_row),
+                    "field_keys": tuple(replay_request_row["field_keys"]),
+                    "source_keys": tuple(replay_request_row["source_keys"]),
+                    "questions": tuple(replay_request_row["questions"]),
+                }
+            )
+            retained_cause = await causation.bind_before_dispatch(
+                request=replay_request,
+                operation=await causation.get_operation(operation_id),
+            )
+            assert retained_cause.tool_request_id != replay_request.tool_call_id
+            cause_count = int(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM entity_research_provider_observation "
+                            "WHERE operation_id=:operation_id AND disposition='caused'"
+                        ),
+                        {"operation_id": operation_id},
+                    )
+                ).scalar_one()
+            )
+            assert cause_count == 1
+
+            follow_up_context = await run_turn(
+                uuid4(),
+                "r4-exa-follow-up",
+                parent_operation_ref=result["operation_ref"],
+                parent_observation_ref=result_ref,
+                follow_up_reason=ResearchFollowUpReason.EVIDENCE_VERIFICATION,
+            )
+            assert transport.calls == 2
+            follow_up_operation = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT observation.operation_id
+                        FROM entity_research_provider_observation observation
+                        JOIN entity_research_tool_request request_row
+                          ON request_row.tool_request_id=observation.tool_request_id
+                        WHERE request_row.agent_turn_id=:agent_turn_id
+                          AND observation.disposition='caused'
+                        """
+                    ),
+                    {"agent_turn_id": follow_up_context.agent_turn_id},
+                )
+            ).scalar_one()
+            assert follow_up_operation != operation_id
+            follow_up_cause = await causation.causation_for(follow_up_operation)
+            assert follow_up_cause is not None
+            assert follow_up_cause.parent_operation_ref == result["operation_ref"]
+            assert follow_up_cause.parent_observation_ref == result_ref
+            assert follow_up_cause.follow_up_reason is ResearchFollowUpReason.EVIDENCE_VERIFICATION
+            follow_up_event = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT payload_json FROM entity_research_agent_event
+                        WHERE agent_turn_id=:turn_id AND event_kind='tool_completed'
+                        ORDER BY event_seq DESC LIMIT 1
+                        """
+                    ),
+                    {"turn_id": follow_up_context.agent_turn_id},
+                )
+            ).scalar_one()
+            follow_up_result = json.loads(follow_up_event["result"]["data"]["content"])["results"][
+                0
+            ]
+            assert follow_up_result["operation_ref"] == (
+                f"external-research-operation:{follow_up_operation}"
+            )
+            # A second Exa observation is additive lineage, not independent-source
+            # corroboration; its claim delta therefore remains an accepted candidate.
+            assert follow_up_result["fields"][0]["claim_delta"] == "accepted"
+            counts = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT
+                              (SELECT count(*) FROM entity_research_tool_request) AS requests,
+                              (SELECT count(*) FROM entity_research_result) AS results,
+                              (SELECT count(*) FROM external_research_operation
+                               WHERE contact_id=:contact_id) AS operations,
+                              (SELECT count(*) FROM external_research_receipt receipt
+                               JOIN external_research_operation operation
+                                 ON operation.id=receipt.operation_id
+                               WHERE operation.contact_id=:contact_id) AS receipts
+                            """
+                        ),
+                        {"contact_id": seed.intent.contact_entity_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert dict(counts) == {
+                "requests": 3,
+                "results": 3,
+                "operations": 2,
+                "receipts": 2,
+            }
+
+            result_id = UUID(result_ref.removeprefix("research-result:"))
+            with pytest.raises(DBAPIError, match="append-only"):
+                async with conn.begin_nested():
+                    await conn.execute(
+                        text(
+                            "UPDATE entity_research_result SET delivery='inline_complete' "
+                            "WHERE result_id=:result_id"
+                        ),
+                        {"result_id": result_id},
+                    )
+
+            result_artifact_keys = tuple(
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT DISTINCT artifact_key
+                            FROM discovery_artifact_subject
+                            WHERE workspace_id=:workspace_id
+                              AND subject_kind='contact'
+                              AND subject_entity_id=:contact_id
+                              AND reference_kind IN
+                                  ('entity_research_result', 'entity_research_value')
+                              AND tombstoned_at IS NULL
+                            ORDER BY artifact_key
+                            """
+                        ),
+                        {
+                            "workspace_id": seed.intent.workspace_id,
+                            "contact_id": seed.intent.contact_entity_id,
+                        },
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert result_artifact_keys
+            await DataSubjectRightsImpl(
+                seed.intent.workspace_id,
+                conn_factory=connection,
+                storage=storage,
+            ).erase(EntityId(seed.intent.contact_entity_id))
+            for artifact_key in result_artifact_keys:
+                assert not await storage.exists(str(artifact_key))
+                record = await get_artifact(conn, str(artifact_key))
+                assert record is not None and record.erased_at is not None
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+def test_causation_failure_leaves_operation_planned_and_makes_zero_provider_calls(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn() as conn:
+            seed = await _seed(conn, storage, suffix="m8d-r4-cause-failure")
+            connection = _TransactionalTrackedConnFactory(conn)
+            transport = _Transport(_payload("supported.json"), connection)
+            acquisition = ExaDeepContactAcquisitionService(
+                coordinator=ExaDeepAcquisitionCoordinator(
+                    transport=transport,
+                    storage=storage,
+                    conn_factory=connection,
+                ),
+                conn_factory=connection,
+            )
+
+            async def reject_cause(operation: object) -> None:
+                del operation
+                raise RuntimeError("causation journal unavailable")
+
+            with pytest.raises(RuntimeError, match="causation journal unavailable"):
+                await acquisition.acquire_intent(
+                    intent=seed.intent,
+                    effective_policy=seed.policy,
+                    observation_window="m8d-r4-cause-failure",
+                    before_dispatch=reject_cause,
+                    field_keys=(_FIELD,),
+                    directional_questions=(_QUESTION,),
+                )
+
+            assert transport.calls == 0
+            operation = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                        SELECT id, state::text FROM external_research_operation
+                        WHERE contact_id=:contact_id
+                          AND observation_window LIKE 'm8d-r4-cause-failure:%'
+                        """
+                        ),
+                        {"contact_id": seed.intent.contact_entity_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert operation["state"] == "planned"
+            attempt_count = int(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM external_research_attempt "
+                            "WHERE operation_id=:operation_id"
+                        ),
+                        {"operation_id": operation["id"]},
+                    )
+                ).scalar_one()
+            )
+            assert attempt_count == 0
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())

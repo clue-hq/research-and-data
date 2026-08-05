@@ -247,7 +247,7 @@ async def _mark_contact_external_research_artifacts(
     contact_entity_id: EntityId,
     erased_keys: list[str],
 ) -> None:
-    """Sever all C4 Exa artifact edges for one erased/objected contact."""
+    """Sever provider and lossless-result artifact edges for one erased/objected contact."""
 
     rows = (
         (
@@ -256,14 +256,18 @@ async def _mark_contact_external_research_artifacts(
                     """
                     SELECT DISTINCT subject.artifact_key
                     FROM discovery_artifact_subject subject
-                    JOIN external_research_operation operation
+                    LEFT JOIN external_research_operation operation
                       ON operation.workspace_id=subject.workspace_id
                      AND operation.id::text=subject.reference_id
                     WHERE subject.workspace_id=:workspace_id
                       AND subject.subject_kind='contact'
                       AND subject.subject_entity_id=:contact_id
-                      AND subject.reference_kind LIKE 'exa_deep_%'
-                      AND operation.subject_kind='contact'
+                      AND (
+                        (subject.reference_kind LIKE 'exa_deep_%'
+                         AND operation.subject_kind='contact')
+                        OR subject.reference_kind IN
+                           ('entity_research_result', 'entity_research_value')
+                      )
                       AND subject.tombstoned_at IS NULL
                     ORDER BY subject.artifact_key
                     """
@@ -279,14 +283,22 @@ async def _mark_contact_external_research_artifacts(
             """
             UPDATE discovery_artifact_subject subject
                SET tombstoned_at=COALESCE(subject.tombstoned_at, now())
-              FROM external_research_operation operation
-             WHERE operation.workspace_id=subject.workspace_id
-               AND operation.id::text=subject.reference_id
-               AND subject.workspace_id=:workspace_id
+             WHERE subject.workspace_id=:workspace_id
                AND subject.subject_kind='contact'
                AND subject.subject_entity_id=:contact_id
-               AND subject.reference_kind LIKE 'exa_deep_%'
-               AND operation.subject_kind='contact'
+               AND (
+                 subject.reference_kind IN
+                    ('entity_research_result', 'entity_research_value')
+                 OR (
+                   subject.reference_kind LIKE 'exa_deep_%'
+                   AND EXISTS (
+                     SELECT 1 FROM external_research_operation operation
+                     WHERE operation.workspace_id=subject.workspace_id
+                       AND operation.id::text=subject.reference_id
+                       AND operation.subject_kind='contact'
+                   )
+                 )
+               )
                AND subject.tombstoned_at IS NULL
             """
         ),
