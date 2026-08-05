@@ -193,7 +193,16 @@ def test_sumble_preparer_waits_then_returns_exact_snapshot_source_without_resubm
             assert replay.preparation.operation_ref == operation_ref
             assert tuple(transport.calls) == calls_at_ready
             assert (
-                await conn.execute(text("SELECT count(*) FROM committee_acquisition_operation"))
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM committee_acquisition_operation "
+                        "WHERE workspace_id=:workspace_id AND account_id=:account_id"
+                    ),
+                    {
+                        "workspace_id": request.workspace_id,
+                        "account_id": request.account_id,
+                    },
+                )
             ).scalar_one() == 1
 
     run_async(scenario())

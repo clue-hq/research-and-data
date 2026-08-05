@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid5
+from uuid import UUID, uuid4, uuid5
 
 import pytest
 from sqlalchemy import text
@@ -84,6 +84,12 @@ def _payload(name: str) -> SumbleRawPayload:
 class _CommitteeTransport:
     def __init__(self, *, crash_on_teams: BaseException | None = None) -> None:
         self.calls: list[str] = []
+        # Provider operation ids are globally unique in the durable substrate.  Recorded fixture
+        # ids describe the response shape, but reusing them for every fake operation makes this
+        # transport invalid on a realistically pre-populated V0 database.  Give each transport
+        # instance provider-like unique ids while retaining every other captured field.
+        self._teams_operation_id = str(uuid4())
+        self._people_request_id = str(uuid4())
         self._people = iter(
             (
                 _payload("people_pending.json"),
@@ -102,6 +108,7 @@ class _CommitteeTransport:
         if self._crash_on_teams is not None:
             raise self._crash_on_teams
         payload = _payload("teams_succeeded.json")
+        payload["id"] = self._teams_operation_id
         return SumbleTeamsResponse.model_validate(payload), payload
 
     def submit_people(
@@ -111,15 +118,17 @@ class _CommitteeTransport:
         assert maximum_credits == 16
         self.calls.append("people_submit")
         payload = next(self._people)
+        payload["request_id"] = self._people_request_id
         return SumblePeopleResponse.model_validate(payload), payload
 
     def poll_people(
         self, request_id: str, *, maximum_credits: int
     ) -> tuple[SumblePeopleResponse, SumbleRawPayload]:
-        assert request_id == "019fc850-0000-7000-8000-000000000101"
+        assert request_id == self._people_request_id
         assert maximum_credits == 16
         self.calls.append("people_poll")
         payload = next(self._people)
+        payload["request_id"] = self._people_request_id
         return SumblePeopleResponse.model_validate(payload), payload
 
 
@@ -156,6 +165,7 @@ class _ChargedSchemaDriftTransport(_CommitteeTransport):
         assert maximum_credits == 12
         self.calls.append("teams")
         payload = _payload("teams_succeeded.json")
+        payload["id"] = self._teams_operation_id
         payload["teams"][0]["team_id"] = None
         return SumbleTeamsResponse.model_validate(payload), payload
 

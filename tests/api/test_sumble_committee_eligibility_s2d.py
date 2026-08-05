@@ -161,10 +161,28 @@ def test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operat
             failed = {item.condition for item in result.eligibility.conditions if not item.passed}
             assert failed == {failed_condition}
             assert (
-                await conn.execute(text("SELECT count(*) FROM committee_acquisition_operation"))
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM committee_acquisition_operation "
+                        "WHERE workspace_id=:workspace_id AND account_id=:account_id"
+                    ),
+                    {
+                        "workspace_id": request.workspace_id,
+                        "account_id": request.account_id,
+                    },
+                )
             ).scalar_one() == 0
             assert (
-                await conn.execute(text("SELECT count(*) FROM committee_eligibility_decision"))
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM committee_eligibility_decision "
+                        "WHERE workspace_id=:workspace_id AND account_id=:account_id"
+                    ),
+                    {
+                        "workspace_id": request.workspace_id,
+                        "account_id": request.account_id,
+                    },
+                )
             ).scalar_one() == 1
             assert (
                 await conn.execute(
@@ -220,7 +238,16 @@ def test_s2d_project_budget_rejection_precedes_operation_reservation(tmp_path: P
             )
             assert starter.calls == 0
             assert (
-                await conn.execute(text("SELECT count(*) FROM committee_acquisition_operation"))
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM committee_acquisition_operation "
+                        "WHERE workspace_id=:workspace_id AND account_id=:account_id"
+                    ),
+                    {
+                        "workspace_id": request.workspace_id,
+                        "account_id": request.account_id,
+                    },
+                )
             ).scalar_one() == 0
 
     run_async(scenario())
@@ -287,7 +314,16 @@ def test_s2d_eligible_acquires_resumes_and_fresh_replay_reuses_without_calls(
             assert replay.acquisition is None
             assert len(transport.calls) == provider_calls
             assert (
-                await conn.execute(text("SELECT count(*) FROM committee_acquisition_operation"))
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM committee_acquisition_operation "
+                        "WHERE workspace_id=:workspace_id AND account_id=:account_id"
+                    ),
+                    {
+                        "workspace_id": request.workspace_id,
+                        "account_id": request.account_id,
+                    },
+                )
             ).scalar_one() == 1
 
             nested = await conn.begin_nested()

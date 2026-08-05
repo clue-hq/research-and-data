@@ -1,0 +1,464 @@
+{
+  "spec": "M8C Slice V0",
+  "provider_mode": "fake-transports-only",
+  "database_mode": "fresh-isolated-postgres-with-synthetic-prerequisites",
+  "required_categories": [
+    "directive_selection_lifecycle",
+    "sumble_professional_materialization",
+    "contact_identity_exactness",
+    "exa_contact_research",
+    "channel_reveal_validation",
+    "pre_spend_source_plan",
+    "durability_wait_resume_replay",
+    "verification_privacy_freshness",
+    "handoff_content_contract",
+    "migration_static_enum",
+    "m8b_account_committee_regression"
+  ],
+  "prerequisite_fixture": {
+    "nodeid": "tests/api/test_account_deep_v0_fresh_process.py::test_v0_fresh_process_replay_inspects_complete_durable_state",
+    "proves": "a disposable database is migrated, seeded with the exact synthetic Stage-0, ICP, discovery, tier, account-launch, committee-operation, snapshot, artifact, and claim prerequisites, then replayed from a fresh process"
+  },
+  "slice_gate_counts": {
+    "C0": 8,
+    "C1": 7,
+    "C2": 8,
+    "C3": 5,
+    "C4": 7,
+    "C5": 8,
+    "C6": 6,
+    "C7": 6
+  },
+  "cases": [
+    {
+      "gate": "C0.1",
+      "category": "directive_selection_lifecycle",
+      "nodeid": "tests/contact_research/test_c0_contracts.py::test_canonical_field_meanings_are_unique_and_company_phone_is_not_person_phone",
+      "proves": "canonical professional and channel field meanings do not collide"
+    },
+    {
+      "gate": "C0.2",
+      "category": "sumble_professional_materialization",
+      "nodeid": "tests/contact_research/test_c0_contracts.py::test_provider_contract_versions_and_request_field_authority_are_explicit",
+      "proves": "entitled Sumble v9 remains runtime authority and public v3 stays non-authorizing"
+    },
+    {
+      "gate": "C0.3",
+      "category": "channel_reveal_validation",
+      "nodeid": "tests/contact_research/test_c0_contracts.py::test_channel_validation_is_not_identity_promotion_or_use_permission",
+      "proves": "channel validation, identity verification, and use permission are distinct"
+    },
+    {
+      "gate": "C0.4",
+      "category": "pre_spend_source_plan",
+      "nodeid": "tests/contact_research/test_c0_contracts.py::test_provider_contract_versions_and_request_field_authority_are_explicit",
+      "proves": "every request field is bound to captured provider authority"
+    },
+    {
+      "gate": "C0.5",
+      "category": "directive_selection_lifecycle",
+      "nodeid": "tests/contact_research/test_c0_contracts.py::test_selection_and_intent_hashes_change_with_effective_policy",
+      "proves": "policy, identity, field, source, and channel authority changes alter durable fingerprints"
+    },
+    {
+      "gate": "C0.6",
+      "category": "migration_static_enum",
+      "nodeid": "tests/contact_research/test_v0_acceptance_manifest.py::test_c0_acceptance_record_is_frozen_before_later_slice_execution",
+      "proves": "the frozen reviewed C0 acceptance record precedes later provider and migration slices"
+    },
+    {
+      "gate": "C0.7",
+      "category": "directive_selection_lifecycle",
+      "nodeid": "tests/contact_research/test_c0_contracts.py::test_selection_and_intent_fail_closed_on_cross_authority_or_policy_widening",
+      "proves": "cross-account, over-cap, widened-field, widened-source, and widened-channel intents fail before compilation"
+    },
+    {
+      "gate": "C0.8",
+      "category": "durability_wait_resume_replay",
+      "nodeid": "tests/contact_research/test_c0_contracts.py::test_c0_provider_failure_envelopes_classify_without_error_body_assumptions",
+      "proves": "pre-dispatch and possible-dispatch provider failures classify independently of vendor error bodies"
+    },
+    {
+      "gate": "C1.1",
+      "category": "sumble_professional_materialization",
+      "nodeid": "tests/profiling/committee/test_professional_materialization_c1.py::test_snapshot_facts_replay_once_and_same_name_contacts_cannot_cross_write",
+      "proves": "a ready snapshot materializes equivalent professional claims once on replay"
+    },
+    {
+      "gate": "C1.2",
+      "category": "sumble_professional_materialization",
+      "nodeid": "tests/api/test_sumble_committee_source_s2c.py::test_s2c_reads_only_ready_exact_account_snapshots_and_survives_no_provider_calls",
+      "proves": "snapshot-backed professional materialization adds no provider request or credit"
+    },
+    {
+      "gate": "C1.3",
+      "category": "sumble_professional_materialization",
+      "nodeid": "tests/profiling/committee/test_professional_materialization_c1.py::test_snapshot_facts_replay_once_and_same_name_contacts_cannot_cross_write",
+      "proves": "every professional value retains exact evidence, artifact, source, operation, snapshot, and request metadata"
+    },
+    {
+      "gate": "C1.4",
+      "category": "contact_identity_exactness",
+      "nodeid": "tests/profiling/committee/test_professional_materialization_c1.py::test_snapshot_facts_replay_once_and_same_name_contacts_cannot_cross_write",
+      "proves": "same-name contacts with different strong identities cannot cross-write facts"
+    },
+    {
+      "gate": "C1.5",
+      "category": "sumble_professional_materialization",
+      "nodeid": "tests/profiling/committee/test_professional_materialization_c1.py::test_snapshot_facts_replay_once_and_same_name_contacts_cannot_cross_write",
+      "proves": "provider-returned, provider-modeled, and platform-inferred claims remain visibly distinct"
+    },
+    {
+      "gate": "C1.6",
+      "category": "sumble_professional_materialization",
+      "nodeid": "tests/api/test_sumble_committee_source_s2c.py::test_s2c_bounded_union_prefers_strong_and_preserves_teams_representation",
+      "proves": "a full People page cannot starve Teams-only organization-map candidates"
+    },
+    {
+      "gate": "C1.7",
+      "category": "contact_identity_exactness",
+      "nodeid": "tests/api/test_sumble_committee_source_s2c.py::test_s2c_reads_only_ready_exact_account_snapshots_and_survives_no_provider_calls",
+      "proves": "missing, fabricated, mismatched, cross-account/contact, mutated, and erased Sumble lineage fails at the database boundary"
+    },
+    {
+      "gate": "C2.1",
+      "category": "contact_identity_exactness",
+      "nodeid": "tests/durable/test_external_research_contact_c2.py::test_c2_projects_exact_subject_and_blocks_account_or_same_name_cross_reuse",
+      "proves": "account and contact external-research snapshots cannot cross-satisfy"
+    },
+    {
+      "gate": "C2.2",
+      "category": "contact_identity_exactness",
+      "nodeid": "tests/durable/test_external_research_contact_c2.py::test_c2_projects_exact_subject_and_blocks_account_or_same_name_cross_reuse",
+      "proves": "one contact cannot reuse another by name or employer"
+    },
+    {
+      "gate": "C2.3",
+      "category": "durability_wait_resume_replay",
+      "nodeid": "tests/durable/test_external_research_contact_c2_process.py::test_c2_concurrency_crash_and_fresh_process_replay",
+      "proves": "concurrent reservation elects one operation"
+    },
+    {
+      "gate": "C2.4",
+      "category": "durability_wait_resume_replay",
+      "nodeid": "tests/durable/test_external_research_contact_c2_process.py::test_c2_concurrency_crash_and_fresh_process_replay",
+      "proves": "crash and restart do not duplicate dispatch, snapshot, receipt, or charge"
+    },
+    {
+      "gate": "C2.5",
+      "category": "durability_wait_resume_replay",
+      "nodeid": "tests/durable/test_external_research_contact_c2_process.py::test_c2_concurrency_crash_and_fresh_process_replay",
+      "proves": "fresh-process replay uses durable state with zero HTTP"
+    },
+    {
+      "gate": "C2.6",
+      "category": "migration_static_enum",
+      "nodeid": "tests/db/test_db_migrations.py::test_up_down_up_is_clean",
+      "proves": "isolated migration upgrade, downgrade, and re-upgrade is clean"
+    },
+    {
+      "gate": "C2.7",
+      "category": "durability_wait_resume_replay",
+      "nodeid": "tests/durable/test_external_research_contact_c2_process.py::test_c2_concurrency_crash_and_fresh_process_replay",
+      "proves": "the public reservation race cannot duplicate an operation or capacity reservation"
+    },
+    {
+      "gate": "C2.8",
+      "category": "contact_identity_exactness",
+      "nodeid": "tests/durable/test_external_research_contact_c2.py::test_c2_projects_exact_subject_and_blocks_account_or_same_name_cross_reuse",
+      "proves": "missing, partial, or mismatched Exa lineage fails at the database boundary"
+    },
+    {
+      "gate": "C3.1",
+      "category": "exa_contact_research",
+      "nodeid": "tests/contact_research/test_c3_exa_contact_compiler.py::test_contact_compiler_is_exact_bounded_registry_shaped_and_channel_free",
+      "proves": "the compiler emits only registered contact-facet fields"
+    },
+    {
+      "gate": "C3.2",
+      "category": "pre_spend_source_plan",
+      "nodeid": "tests/contact_research/test_c3_exa_contact_compiler.py::test_contact_compiler_rejects_non_facet_fields_and_non_exa_authority",
+      "proves": "every emitted field requires exact exa_deep authority in the effective plan"
+    },
+    {
+      "gate": "C3.3",
+      "category": "contact_identity_exactness",
+      "nodeid": "tests/contact_research/test_c3_exa_contact_compiler.py::test_contact_and_employer_disambiguators_change_both_fingerprints",
+      "proves": "contact and employer disambiguators alter request and reuse fingerprints"
+    },
+    {
+      "gate": "C3.4",
+      "category": "exa_contact_research",
+      "nodeid": "tests/contact_research/test_c3_exa_contact_compiler.py::test_contact_parser_preserves_exact_and_rejected_target_bindings",
+      "proves": "unsupported, ungrounded, contradictory, and same-name wrong-employer output fails closed"
+    },
+    {
+      "gate": "C3.5",
+      "category": "exa_contact_research",
+      "nodeid": "tests/contact_research/test_c3_exa_contact_compiler.py::test_registered_compiler_resolves_real_registry_directive_and_source_plan",
+      "proves": "the compiler gate runs from durable registry/directive/source-plan state without a credential or provider call"
+    },
+    {
+      "gate": "C4.1",
+      "category": "pre_spend_source_plan",
+      "nodeid": "tests/contact_research/test_c6_contact_preparation.py::test_registered_preparer_closes_db_context_before_adapter_and_cancellation_is_zero_call",
+      "proves": "cancelled or no-longer-eligible contact authority reaches no Exa adapter"
+    },
+    {
+      "gate": "C4.2",
+      "category": "exa_contact_research",
+      "nodeid": "tests/contact_research/test_c4_exa_contact_acquisition_materialization.py::test_c4_acquires_once_settles_once_materializes_governed_claim_and_replays",
+      "proves": "one eligible intent creates exactly one fake-provider request"
+    },
+    {
+      "gate": "C4.3",
+      "category": "durability_wait_resume_replay",
+      "nodeid": "tests/contact_research/test_c6_contact_preparation.py::test_registered_preparer_closes_db_context_before_adapter_and_cancellation_is_zero_call",
+      "proves": "external contact acquisition runs after the claim database context closes"
+    },
+    {
+      "gate": "C4.4",
+      "category": "exa_contact_research",
+      "nodeid": "tests/contact_research/test_c4_exa_contact_acquisition_materialization.py::test_c4_acquires_once_settles_once_materializes_governed_claim_and_replays",
+      "proves": "a ready contact snapshot becomes grounded governed claims"
+    },
+    {
+      "gate": "C4.5",
+      "category": "contact_identity_exactness",
+      "nodeid": "tests/contact_research/test_c4_exa_contact_acquisition_materialization.py::test_c4_rejected_target_evidence_is_retained_but_never_becomes_a_claim",
+      "proves": "same-name or wrong-employer evidence is retained for audit but cannot promote"
+    },
+    {
+      "gate": "C4.6",
+      "category": "pre_spend_source_plan",
+      "nodeid": "tests/contact_research/test_c4_exa_contact_acquisition_materialization.py::test_c4_acquires_once_settles_once_materializes_governed_claim_and_replays",
+      "proves": "provider-reported cost settles exactly once"
+    },
+    {
+      "gate": "C4.7",
+      "category": "durability_wait_resume_replay",
+      "nodeid": "tests/contact_research/test_c4_exa_contact_acquisition_materialization.py::test_c4_acquires_once_settles_once_materializes_governed_claim_and_replays",
+      "proves": "ready-snapshot replay returns equivalent claims with zero provider traffic"
+    },
+    {
+      "gate": "C5.1",
+      "category": "channel_reveal_validation",
+      "nodeid": "tests/contact_research/test_c5_contact_channel_enrichment.py::test_c5_disabled_or_wrong_channel_causes_zero_provider_traffic",
+      "proves": "disabled contact reveals cause zero acquisition or validator traffic"
+    },
+    {
+      "gate": "C5.2",
+      "category": "channel_reveal_validation",
+      "nodeid": "tests/contact_research/test_c5_contact_channel_enrichment.py::test_c5_disabled_or_wrong_channel_causes_zero_provider_traffic",
+      "proves": "email authority cannot authorize phone and phone authority cannot authorize email"
+    },
+    {
+      "gate": "C5.3",
+      "category": "directive_selection_lifecycle",
+      "nodeid": "tests/contact_research/test_c5_contact_channel_enrichment.py::test_c5_disabled_or_wrong_channel_causes_zero_provider_traffic",
+      "proves": "a non-selected contact causes zero reveal traffic"
+    },
+    {
+      "gate": "C5.4",
+      "category": "channel_reveal_validation",
+      "nodeid": "tests/contact_research/test_c5_contact_channel_enrichment.py::test_c5_email_validates_promotes_replays_and_objection_suppresses",
+      "proves": "a raw observation does not write verified identity before independent validation"
+    },
+    {
+      "gate": "C5.5",
+      "category": "verification_privacy_freshness",
+      "nodeid": "tests/contact_research/test_c5_contact_channel_enrichment.py::test_c5_failed_validation_never_promotes_identity",
+      "proves": "failed, conflicting, weak, self-corroborated, or use-denied channels remain unusable"
+    },
+    {
+      "gate": "C5.6",
+      "category": "pre_spend_source_plan",
+      "nodeid": "tests/contact_research/test_c5_contact_channel_enrichment.py::test_c5_email_validates_promotes_replays_and_objection_suppresses",
+      "proves": "acquisition and validation costs settle once per independently authorized channel"
+    },
+    {
+      "gate": "C5.7",
+      "category": "durability_wait_resume_replay",
+      "nodeid": "tests/contact_research/test_c5_contact_channel_enrichment.py::test_c5_email_validates_promotes_replays_and_objection_suppresses",
+      "proves": "same-window and cross-window replay spends zero acquisition or validation units"
+    },
+    {
+      "gate": "C5.8",
+      "category": "verification_privacy_freshness",
+      "nodeid": "tests/contact_research/test_c5_contact_channel_enrichment.py::test_c5_email_validates_promotes_replays_and_objection_suppresses",
+      "proves": "objection and erasure suppress channel use, tombstone claims, and purge subject artifacts"
+    },
+    {
+      "gate": "C6.1",
+      "category": "durability_wait_resume_replay",
+      "nodeid": "tests/contact_research/test_c6_contact_preparation.py::test_registered_preparer_closes_db_context_before_adapter_and_cancellation_is_zero_call",
+      "proves": "the orchestrator consumes one provider-neutral preparation seam"
+    },
+    {
+      "gate": "C6.2",
+      "category": "m8b_account_committee_regression",
+      "nodeid": "tests/contact_research/test_c6_contact_preparation.py::test_external_wake_deduplicates_runs_and_only_reoffers_owning_project_runs",
+      "proves": "contact waits reuse the existing fleet and project phase"
+    },
+    {
+      "gate": "C6.3",
+      "category": "durability_wait_resume_replay",
+      "nodeid": "tests/api/deep/test_orchestrator.py::test_contact_preparation_waits_outside_stage_transactions_and_resumes_exact_fields",
+      "proves": "WAITING_EXTERNAL preserves committee state and resumes exact prepared fields without repeating account or committee work"
+    },
+    {
+      "gate": "C6.4",
+      "category": "directive_selection_lifecycle",
+      "nodeid": "tests/contact_research/test_c6_contact_selection_db.py::test_selection_is_content_elected_and_cancelled_authority_cannot_auto_resurrect",
+      "proves": "selection replay is content-elected and durable cancellation prevents silent resurrection or duplicate spend"
+    },
+    {
+      "gate": "C6.5",
+      "category": "directive_selection_lifecycle",
+      "nodeid": "tests/contact_research/test_c6_contact_selection_db.py::test_independent_contact_uses_same_selection_and_preparation_seam",
+      "proves": "independent contact profiling works from the same exact selection and preparation authority"
+    },
+    {
+      "gate": "C6.6",
+      "category": "m8b_account_committee_regression",
+      "nodeid": "tests/api/deep/test_orchestrator.py::test_fresh_run_sequences_account_then_committee_then_contacts",
+      "proves": "the existing account, committee, and bounded contact sequence remains green"
+    },
+    {
+      "gate": "C7.1",
+      "category": "handoff_content_contract",
+      "nodeid": "tests/contact_research/test_c7_contact_handoff_db.py::test_production_projection_is_reference_only_governed_and_names_skipped_contacts",
+      "proves": "every projected fact is an eligible exact-scope claim reference"
+    },
+    {
+      "gate": "C7.2",
+      "category": "verification_privacy_freshness",
+      "nodeid": "tests/contact_research/test_c7_contact_handoff_contract.py::test_drafting_context_accepts_only_strong_use_cleared_facets",
+      "proves": "personal facets require strong binding and an allowed use decision"
+    },
+    {
+      "gate": "C7.3",
+      "category": "channel_reveal_validation",
+      "nodeid": "tests/contact_research/test_c7_contact_handoff_contract.py::test_delivery_ref_is_separate_and_cannot_accept_a_raw_channel_value",
+      "proves": "unvalidated or disallowed channel values cannot enter delivery eligibility"
+    },
+    {
+      "gate": "C7.4",
+      "category": "handoff_content_contract",
+      "nodeid": "tests/contact_research/test_c7_contact_handoff_contract.py::test_content_consumer_receives_claim_refs_and_delivery_refs_only",
+      "proves": "generic drafting context contains no raw email or phone"
+    },
+    {
+      "gate": "C7.5",
+      "category": "handoff_content_contract",
+      "nodeid": "tests/contact_research/test_c7_contact_handoff_contract.py::test_missing_personal_evidence_requires_explicit_safe_fallback",
+      "proves": "missing contact evidence produces explicit coverage and safe fallback"
+    },
+    {
+      "gate": "C7.6",
+      "category": "handoff_content_contract",
+      "nodeid": "tests/contact_research/test_c7_contact_handoff_db.py::test_production_projection_is_reference_only_governed_and_names_skipped_contacts",
+      "proves": "the content projection is reference-only and cannot invoke a research provider"
+    }
+  ],
+  "support_cases": [
+    {
+      "id": "exact_source_plan_authority",
+      "category": "pre_spend_source_plan",
+      "nodeid": "tests/verification/test_prespend_gate.py::test_content_addressed_effective_plan_is_the_exact_gate_authority"
+    },
+    {
+      "id": "identity_binding_same_name_negative",
+      "category": "verification_privacy_freshness",
+      "nodeid": "tests/api/deep/test_identity_binding_ac4.py::test_born_binding_weak_and_unpromotable_on_same_name"
+    },
+    {
+      "id": "use_gate_truth_table",
+      "category": "verification_privacy_freshness",
+      "nodeid": "tests/compliance/test_use_gate.py::test_is_outreach_promotable_truth_table"
+    },
+    {
+      "id": "personal_freshness_expiry",
+      "category": "verification_privacy_freshness",
+      "nodeid": "tests/verification/test_freshness.py::test_evaluate_personal_claim_expires"
+    },
+    {
+      "id": "dsar_no_current_value",
+      "category": "verification_privacy_freshness",
+      "nodeid": "tests/compliance/test_dsar.py::test_erase_excludes_from_current_value"
+    },
+    {
+      "id": "dsar_snapshot_purge",
+      "category": "verification_privacy_freshness",
+      "nodeid": "tests/compliance/test_dsar_snapshots.py::test_erase_deletes_the_orphaned_snapshot"
+    },
+    {
+      "id": "enum_parity",
+      "category": "migration_static_enum",
+      "nodeid": "tests/claimstore/test_provenance_flavors.py::test_flavor_enums_match_core"
+    },
+    {
+      "id": "m8b_fault_manifest",
+      "category": "m8b_account_committee_regression",
+      "nodeid": "tests/api/test_account_deep_v0_manifest.py::test_v0_fault_matrix_is_complete_and_every_entry_is_executable"
+    },
+    {
+      "id": "m8b_fresh_process_fixture",
+      "category": "m8b_account_committee_regression",
+      "nodeid": "tests/api/test_account_deep_v0_fresh_process.py::test_v0_fresh_process_replay_inspects_complete_durable_state"
+    },
+    {
+      "id": "m8b_exa_snapshot_replay",
+      "category": "m8b_account_committee_regression",
+      "nodeid": "tests/api/test_account_deep_launch_o2.py::test_production_exa_preparation_acquires_once_then_replays_from_the_snapshot"
+    },
+    {
+      "id": "m8b_sumble_wait_settle_replay",
+      "category": "m8b_account_committee_regression",
+      "nodeid": "tests/api/test_sumble_committee_acquisition_s2b.py::test_s2b_async_wait_charge_settlement_zero_call_replay_and_dsar"
+    },
+    {
+      "id": "m8b_sumble_eligibility",
+      "category": "m8b_account_committee_regression",
+      "nodeid": "tests/api/test_sumble_committee_eligibility_s2d.py::test_s2d_each_ineligible_condition_is_independent_and_creates_no_paid_operation"
+    }
+  ],
+  "command_gates": [
+    {
+      "id": "single_alembic_head",
+      "category": "migration_static_enum",
+      "command": ".venv/bin/alembic heads"
+    },
+    {
+      "id": "migration_reversibility",
+      "category": "migration_static_enum",
+      "command": ".venv/bin/alembic upgrade head; .venv/bin/alembic downgrade base; .venv/bin/alembic upgrade head"
+    },
+    {
+      "id": "mypy",
+      "category": "migration_static_enum",
+      "command": ".venv/bin/mypy"
+    },
+    {
+      "id": "ruff_format",
+      "category": "migration_static_enum",
+      "command": ".venv/bin/ruff format --check libs subsystems platform tests --exclude subsystems/research/clue_research/profiling/committee/sources.py --exclude tests/api/test_c7_handoff_cutover.py",
+      "known_unrelated_baseline": "the two excluded tracked files predate M8C V0 and remain recorded in the V0 failure ledger"
+    },
+    {
+      "id": "ruff_lint",
+      "category": "migration_static_enum",
+      "command": ".venv/bin/ruff check libs subsystems platform tests"
+    },
+    {
+      "id": "import_linter",
+      "category": "migration_static_enum",
+      "command": ".venv/bin/lint-imports"
+    },
+    {
+      "id": "full_repository_regression",
+      "category": "m8b_account_committee_regression",
+      "command": ".venv/bin/pytest"
+    }
+  ]
+}
