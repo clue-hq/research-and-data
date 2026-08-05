@@ -28,3 +28,17 @@
 - All test-owned V0 databases were dropped after evidence capture; shared development state was
   not modified.
 - No live Exa, Sumble, channel-provider, validator, or model traffic; V1 remains separate.
+
+## Failure ledger
+
+- `docs/specs/M8C-V0-failure-ledger.md` is the binding classification record.
+- Open actual V0 product-code failures: zero.
+- Open test debt: reused-database global seed/order pollution; clean isolated databases pass.
+- Untested: all eleven V1 live gates, including provider behavior, real cost, live wait/resume,
+  downstream claim-ref consumption, and fresh-process zero-traffic replay.
+- Expected gates stay fail-closed: paid-call authorization, credentials/entitlement, Exa activation,
+  concrete independent channel validator binding, personal-data authority, budget, and fresh-snapshot
+  eligibility.
+- The 25 clean-suite skips resolve to 14 Redis-gated cases, 7 MinIO/S3 cases, 2 destructive
+  committed-operation gates, 1 Sumble MCP live-auth probe, and 1 seed-manifest-contingent
+  identity-binding fixture case.

@@ -5,6 +5,7 @@
 - **Recorded:** 2026-08-05
 - **Status:** mechanically accepted with fake transports on clean and prerequisite-populated
   isolated databases; V1 remains the separate live-provider gate
+- **Failure ledger:** `M8C-V0-failure-ledger.md`
 
 V0 verifies the integrated mechanics of M8C C0–C7. It does not claim Exa, Sumble, channel-provider,
 validator, or model behavior. Every provider activation switch was explicitly disabled for the
@@ -107,3 +108,6 @@ V0 proves offline mechanics and database durability only. M8C still requires V1 
 authorized, bounded account/contact canary proving real provider traffic, live response semantics,
 durable receipts and costs, detached wait/resume, content handoff, and fresh-process zero-provider
 replay. Missing credentials, fake transports, and this V0 acceptance cannot satisfy V1.
+
+Observed failures, order-dependent behavior, untested requirements, expected gates, and unrelated
+repository findings are classified separately in `M8C-V0-failure-ledger.md`.
