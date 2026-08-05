@@ -197,8 +197,13 @@ def test_selection_enforces_aggregate_channel_provider_and_budget_caps() -> None
     policy = ContactResearchPolicy(
         contact_reveals_enabled=True,
         channel_reveal_source_plan=("approved_email_provider",),
+        channel_validation_source_plan=("approved_email_validator",),
+        exa_websets_contract_ref="accepted-test-websets-contract",
+        channel_validation_contract_ref="accepted-test-validator-contract",
         email_reveal_native_unit_cap=1,
         email_reveal_budget_cents=25,
+        email_validation_native_unit_cap=1,
+        email_validation_budget_cents=10,
     ).pin()
     target = body.targets[0].model_copy(
         update={
@@ -209,6 +214,9 @@ def test_selection_enforces_aggregate_channel_provider_and_budget_caps() -> None
                 provider_source_keys=("approved_email_provider",),
                 provider_native_unit_cap=1,
                 budget_cap_cents=25,
+                validation_source_keys=("approved_email_validator",),
+                validation_native_unit_cap=1,
+                validation_budget_cap_cents=10,
                 independent_validation_required=True,
             ),
         }
@@ -220,7 +228,7 @@ def test_selection_enforces_aggregate_channel_provider_and_budget_caps() -> None
         ContactResearchSelection.from_body(authorized, effective_policy=authorized.policy),
         contact_entity_id=target.contact_entity_id,
     )
-    assert intent.source_plan == ("approved_email_provider",)
+    assert intent.source_plan == ("approved_email_provider", "approved_email_validator")
 
     second = target.model_copy(update={"contact_entity_id": new_entity_id()})
     with pytest.raises(ValidationError, match="effective email native-unit cap"):

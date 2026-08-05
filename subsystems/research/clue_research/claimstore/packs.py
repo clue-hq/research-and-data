@@ -303,11 +303,30 @@ CORE_PACK: tuple[SeedField, ...] = (
     _seed(
         "core.work_email",
         "str",
-        PassKind.SCORING,
-        tier_plan=("apollo", "clay"),
+        PassKind.DEEP,
+        tier_plan=("exa_websets",),
         freshness_ttl=timedelta(days=30),
+        gate="selected-contact-channel",
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
         value_schema={"type": "string"},
-        description="Work email address.",
+        description=(
+            "Selected contact's observed work email. It is delivery data until independent "
+            "corroboration, reachability, use permission, and optional identity promotion pass."
+        ),
+    ),
+    _seed(
+        "core.direct_phone",
+        "str",
+        PassKind.DEEP,
+        tier_plan=("exa_websets",),
+        freshness_ttl=timedelta(days=30),
+        gate="selected-contact-channel",
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        value_schema={"type": "string"},
+        description=(
+            "Selected contact's observed direct phone. It remains delivery data and never becomes "
+            "an identity key."
+        ),
     ),
     _seed(
         "core.primary_tech_stack",

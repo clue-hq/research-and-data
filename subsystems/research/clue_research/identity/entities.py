@@ -233,6 +233,52 @@ async def insert_contact_entity(
     return EntityId(result.scalar_one())
 
 
+async def promote_contact_verified_email(
+    conn: AsyncConnection,
+    *,
+    contact_entity_id: EntityId,
+    verified_email: str,
+) -> None:
+    """Apply an already-governed email promotion to one canonical contact.
+
+    This is deliberately a narrow identity mutation, not a validator. C5 must first prove its
+    observed claim, strong independent validation, exact operation, and use decision. The entity
+    layer only enforces canonical ownership, no conflicting strong key, and idempotent replay.
+    """
+
+    normalized = _normalize_strong_text(verified_email)
+    if normalized is None:
+        raise ValueError("verified email promotion requires a non-empty email")
+    row = (
+        await conn.execute(
+            text("SELECT verified_email, merged_into FROM contact_entity WHERE id=:id FOR UPDATE"),
+            {"id": contact_entity_id},
+        )
+    ).one_or_none()
+    if row is None or row.merged_into is not None:
+        raise ValueError("verified email promotion requires a canonical contact")
+    if row.verified_email is not None and row.verified_email != normalized:
+        raise ValueError("contact already has a different verified email")
+    owner = (
+        await conn.execute(
+            text("SELECT id FROM contact_entity WHERE verified_email=:email AND id<>:id LIMIT 1"),
+            {"email": normalized, "id": contact_entity_id},
+        )
+    ).scalar_one_or_none()
+    if owner is not None:
+        raise ValueError("verified email belongs to another contact")
+    if row.verified_email == normalized:
+        return
+    await conn.execute(
+        text(
+            "UPDATE contact_entity SET verified_email=:email, "
+            "canonical_version=canonical_version+1, "
+            "updated_at=now() WHERE id=:id"
+        ),
+        {"email": normalized, "id": contact_entity_id},
+    )
+
+
 async def update_account(
     conn: AsyncConnection,
     entity_id: EntityId,

@@ -71,7 +71,7 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
     _entry(
         "exa_websets",
         modality=Modality.STRUCTURED,
-        entity_scope=EntityScope.ACCOUNT,
+        entity_scope=EntityScope.BOTH,
         tier=2,
         yields=(
             "core.account_name",
@@ -85,6 +85,8 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
             "core.company_linkedin_url",
             "core.company_email",
             "core.company_phone",
+            "core.work_email",
+            "core.direct_phone",
             "core.primary_tech_stack",
             "account.total_funding",
             "account.recent_funding",
@@ -92,7 +94,7 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         provider="exa",
         auth_ref="CLUE_EXA_API_KEY",
         freshness_profile="operation_window",
-        version=2,
+        version=3,
     ),
     _entry(
         "clay",
@@ -128,6 +130,19 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         identity_binding=IdentityBinding.WEAK,
         auth_ref="CLUE_ZOOMINFO_API_KEY",
         freshness_profile="daily",
+    ),
+    _entry(
+        "channel_validator",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.CONTACT,
+        tier=1,
+        yields=("core.work_email", "core.direct_phone"),
+        provider="channel-validator",
+        # The concrete independent validator is selected and injected at composition time. This
+        # provider-neutral seam must not invent an unresolvable credential reference.
+        auth_ref=None,
+        freshness_profile="operation_window",
+        version=1,
     ),
     _entry(
         "builtwith",

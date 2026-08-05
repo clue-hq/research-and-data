@@ -66,7 +66,11 @@ def classify_reuse_scope(
 
 
 def stamp_reuse(
-    claim: Claim, *, workspace_id: str | None, policy: ReusePolicy = DEFAULT_REUSE_POLICY
+    claim: Claim,
+    *,
+    workspace_id: str | None,
+    policy: ReusePolicy = DEFAULT_REUSE_POLICY,
+    declared_scope: ReuseScope | None = None,
 ) -> Claim:
     """Return a copy of ``claim`` with its ``reuse_scope`` classified and ``workspace_id`` set
     accordingly — the helper every writer (resolver, scorer, synthesizer) calls before
@@ -82,7 +86,11 @@ def stamp_reuse(
     the scope — the boundary is fail-closed (substrate §2; the model/DB CHECK is the backstop, but a
     clear error at the write site beats a CHECK violation)."""
     scope = classify_reuse_scope(
-        claim.field_key, claim.extraction_method, claim.source_tier, policy
+        claim.field_key,
+        claim.extraction_method,
+        claim.source_tier,
+        policy,
+        declared_scope=declared_scope,
     )
     if scope is ReuseScope.TENANT_PRIVATE:
         if workspace_id is None:

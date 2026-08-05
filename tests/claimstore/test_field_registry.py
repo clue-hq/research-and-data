@@ -28,7 +28,6 @@ pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 _SCORING_SEED = {
     "core.employee_count",
     "core.primary_domain",
-    "core.work_email",
     "core.primary_tech_stack",
     "account.recent_funding",
 }
@@ -36,6 +35,8 @@ _DEEP_SEED = {
     "account.hiring_velocity_eng",
     "account.operational_pain",
     "account.strategic_moves",
+    "core.work_email",
+    "core.direct_phone",
     "account.resonance.culture",
     "contact.facet.recent_post",
 }
