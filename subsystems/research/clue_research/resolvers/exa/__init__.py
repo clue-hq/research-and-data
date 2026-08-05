@@ -17,14 +17,24 @@ import copy
 import re
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
 
-from clue_core import AccountEntity, FieldDef, FieldKey, ResolverError, RetryableResolverError
+from clue_core import (
+    AccountEntity,
+    FieldDef,
+    FieldKey,
+    ResolverError,
+    RetryableResolverError,
+    normalize_host,
+)
 from clue_research.resolvers.exa.deep_contract import (
     ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS,
     EXA_OUTPUT_MAX_FIELDS,
+    ExaDeepContactSearchRequest,
+    ExaDeepContactTargetLock,
     ExaDeepContents,
     ExaDeepFailureClass,
     ExaDeepFieldSpec,
@@ -36,6 +46,7 @@ from clue_research.resolvers.exa.deep_contract import (
     ExaDeepTextOptions,
     exa_field_alias,
     field_key_from_exa_alias,
+    normalize_exa_profile_url,
     validate_exa_deep_exchange,
 )
 from clue_research.resolvers.grounded import (
@@ -140,6 +151,73 @@ class ExaDeepNormalization(BaseModel):
         return self
 
 
+class ExaDeepContactBindingStatus(StrEnum):
+    """Whether one citation binds a schema-valid value to the exact selected contact."""
+
+    EXACT = "exact"
+    UNRESOLVED = "unresolved"
+    CONTRADICTORY = "contradictory"
+    NOT_EVALUATED = "not_evaluated"
+
+
+class ExaDeepContactCitationAttribution(BaseModel):
+    """Generic grounding plus the separate person/employer target-lock decision."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    citation: ExaDeepCitationAttribution
+    target_binding: ExaDeepContactBindingStatus
+    reason_codes: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _binding_and_grounding_are_coherent(self) -> ExaDeepContactCitationAttribution:
+        if len(set(self.reason_codes)) != len(self.reason_codes):
+            raise ValueError("contact target-binding reason codes must be unique")
+        if self.citation.status != "selected" and (
+            self.target_binding is not ExaDeepContactBindingStatus.NOT_EVALUATED
+        ):
+            raise ValueError("only a grounded selected citation may be contact-target evaluated")
+        if self.citation.status == "selected" and (
+            self.target_binding is ExaDeepContactBindingStatus.NOT_EVALUATED
+        ):
+            raise ValueError("a grounded contact citation requires a target-binding decision")
+        if self.target_binding is ExaDeepContactBindingStatus.EXACT and self.reason_codes:
+            raise ValueError("an exact contact binding cannot carry rejection reasons")
+        if (
+            self.target_binding
+            in {
+                ExaDeepContactBindingStatus.UNRESOLVED,
+                ExaDeepContactBindingStatus.CONTRADICTORY,
+            }
+            and not self.reason_codes
+        ):
+            raise ValueError("a rejected contact binding requires a reason code")
+        return self
+
+
+class ExaDeepContactNormalization(BaseModel):
+    """Contact-safe projection: only exact person+employer citations become candidates."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    request_id: str = Field(min_length=1)
+    all_null: bool
+    target_lock: ExaDeepContactTargetLock
+    synthesis: SynthesisResult
+    citations: tuple[ExaDeepContactCitationAttribution, ...] = ()
+
+    @model_validator(mode="after")
+    def _only_exact_citations_materialize(self) -> ExaDeepContactNormalization:
+        exact = sum(
+            item.target_binding is ExaDeepContactBindingStatus.EXACT for item in self.citations
+        )
+        if len(self.synthesis.fields) != exact:
+            raise ValueError("contact synthesis must contain exactly the exact-bound citations")
+        if self.all_null and self.synthesis.fields:
+            raise ValueError("an all-null contact response cannot emit synthesized fields")
+        return self
+
+
 DEFAULT_EXA_CONFIG = ExaDeepConfig()
 
 
@@ -162,6 +240,44 @@ class ExaDeepRequestFailure(ResolverError):
 
 def _single_line(value: str) -> str:
     return " ".join(value.split())
+
+
+def validate_exa_contact_request_target(
+    request: ExaDeepSearchRequest,
+    target: ExaDeepContactTargetLock,
+) -> ExaDeepContactSearchRequest:
+    """Prove a reconstructed wire request still carries the exact persisted contact lock."""
+
+    if not isinstance(request, ExaDeepContactSearchRequest):
+        raise ValueError("contact normalization requires the contact Search request variant")
+    name = _single_line(target.canonical_full_name)
+    employer = _single_line(target.employer_name)
+    domain = target.normalized_employer_domain
+    expected_query_fragments = (f'"{name}"', f'"{employer}"', f"({domain})")
+    if any(fragment not in request.query for fragment in expected_query_fragments):
+        raise ValueError(
+            "contact Search request does not render its persisted person/employer lock"
+        )
+    expected_prompt_fragments = (
+        f'"{name}"',
+        f'"{employer}"',
+        domain,
+        target.normalized_profile_url,
+    )
+    if any(fragment not in request.system_prompt for fragment in expected_prompt_fragments):
+        raise ValueError("contact Search prompt does not render its persisted target lock")
+    if (
+        request.start_published_date != target.start_published_date
+        or request.end_published_date != target.end_published_date
+    ):
+        raise ValueError("contact Search publication bounds differ from the persisted target lock")
+    properties = request.output_schema.get("properties")
+    if not isinstance(properties, dict) or any(
+        not str(field_key_from_exa_alias(alias)).startswith("contact.facet.")
+        for alias in properties
+    ):
+        raise ValueError("contact Search request contains a non-facet output field")
+    return request
 
 
 def _identity_query_suffix(account: AccountEntity) -> str:
@@ -223,6 +339,32 @@ def _compile_additional_queries(
     return compiled or None
 
 
+def _compile_output_schema(
+    fields: Sequence[ExaDeepFieldSpec],
+) -> tuple[dict[str, JsonValue], str]:
+    if not fields or len(fields) > EXA_OUTPUT_MAX_FIELDS:
+        raise ValueError(
+            f"Exa Deep requires between one and {EXA_OUTPUT_MAX_FIELDS} admitted fields"
+        )
+    by_key = {spec.field_key: spec for spec in fields}
+    if len(by_key) != len(fields):
+        raise ValueError("Exa Deep field specs must have unique field keys")
+    aliases = {key: exa_field_alias(key) for key in sorted(by_key)}
+    properties: dict[str, JsonValue] = {
+        aliases[key]: _nullable_schema(by_key[key].value_schema) for key in sorted(by_key)
+    }
+    field_map = "; ".join(f"{aliases[key]}={key}" for key in sorted(by_key))
+    return (
+        {
+            "type": "object",
+            "properties": properties,
+            "required": list(properties),
+            "additionalProperties": False,
+        },
+        field_map,
+    )
+
+
 def compile_exa_deep_request(
     account: AccountEntity,
     fields: Sequence[ExaDeepFieldSpec],
@@ -238,14 +380,6 @@ def compile_exa_deep_request(
     effective-registry specs, so prompt text cannot enlarge the data contract.
     """
 
-    if not fields or len(fields) > EXA_OUTPUT_MAX_FIELDS:
-        raise ValueError(
-            f"Exa Deep requires between one and {EXA_OUTPUT_MAX_FIELDS} admitted fields"
-        )
-    by_key = {spec.field_key: spec for spec in fields}
-    if len(by_key) != len(fields):
-        raise ValueError("Exa Deep field specs must have unique field keys")
-
     intent = _single_line(research_intent).rstrip(".")
     if not intent:
         raise ValueError("research_intent must be non-empty")
@@ -258,17 +392,7 @@ def compile_exa_deep_request(
     domain = registrable_host(account.primary_domain)
     target = f"{account_name} at {domain}" if domain is not None else account_name
     prompt_target = f"at {domain}" if domain is not None else f'named "{account_name}"'
-    aliases = {key: exa_field_alias(key) for key in sorted(by_key)}
-    properties: dict[str, JsonValue] = {
-        aliases[key]: _nullable_schema(by_key[key].value_schema) for key in sorted(by_key)
-    }
-    field_map = "; ".join(f"{aliases[key]}={key}" for key in sorted(by_key))
-    output_schema: dict[str, JsonValue] = {
-        "type": "object",
-        "properties": properties,
-        "required": list(properties),
-        "additionalProperties": False,
-    }
+    output_schema, field_map = _compile_output_schema(fields)
     return ExaDeepSearchRequest(
         query=(
             f"Research the exact account {target} for {intent}.{_identity_query_suffix(account)}"
@@ -292,6 +416,94 @@ def compile_exa_deep_request(
         ),
         stream=False,
     )
+
+
+def compile_exa_contact_deep_request(
+    target: ExaDeepContactTargetLock,
+    fields: Sequence[ExaDeepFieldSpec],
+    *,
+    directional_questions: Sequence[str] = (),
+    config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
+) -> ExaDeepContactSearchRequest:
+    """Compile one bounded Search request for an already-known canonical contact.
+
+    Contact Search is research, not people discovery.  Only registered ``contact.facet.*`` specs
+    supplied by the API compiler can become output members; the canonical profile and employer
+    are identity constraints, never requested output.  Email and phone therefore cannot be added
+    through a question or prompt.
+    """
+
+    if config.search_type != "deep-reasoning":
+        raise ValueError("contact Exa policy requires bounded deep-reasoning search")
+    if any(not str(field.field_key).startswith("contact.facet.") for field in fields):
+        raise ValueError("contact Exa Deep may emit only registered contact.facet fields")
+    output_schema, field_map = _compile_output_schema(fields)
+    if len(directional_questions) > config.max_additional_queries:
+        raise ValueError("contact directional questions exceed the effective Exa policy cap")
+    if len(directional_questions) > _MAX_ADDITIONAL_QUERIES:
+        raise ValueError("Exa Deep admits at most ten additional queries")
+    name = _single_line(target.canonical_full_name)
+    employer = _single_line(target.employer_name)
+    domain = target.normalized_employer_domain
+    profile = target.normalized_profile_url
+    disambiguators = [f"canonical profile {profile}"]
+    if target.current_title is not None:
+        disambiguators.append(f"current title {_single_line(target.current_title)}")
+    if target.job_function is not None:
+        disambiguators.append(f"job function {_single_line(target.job_function)}")
+    if target.location is not None:
+        disambiguators.append(f"location {_single_line(target.location)}")
+    compiled_questions = tuple(
+        f'"{name}" at "{employer}" ({domain}) {_single_line(question)}'
+        for question in directional_questions
+    )
+    if any(question.endswith(f"({domain}) ") for question in compiled_questions):
+        raise ValueError("contact directional questions must be non-empty")
+    if len(compiled_questions) != len(set(compiled_questions)):
+        raise ValueError("contact directional questions must be unique")
+    preferred = "; ".join(target.preferred_source_guidance)
+    forbidden = "; ".join(target.forbidden_source_guidance)
+    date_instruction = ""
+    if target.start_published_date is not None or target.end_published_date is not None:
+        date_instruction = (
+            " Respect the request publication-date bounds; do not invent a date for an undated "
+            "source."
+        )
+    request = ExaDeepContactSearchRequest(
+        query=(
+            f'Research the exact person "{name}" at the exact employer "{employer}" '
+            f"({domain}); identity constraints: {', '.join(disambiguators)}. Find only "
+            "publicly attributable evidence for the requested contact facets."
+        ),
+        search_type=config.search_type,
+        num_results=config.num_results,
+        additional_queries=compiled_questions or None,
+        system_prompt=(
+            f'Research only the exact person "{name}" and exact employer "{employer}" at '
+            f"{domain}. The canonical professional profile is {profile}. Treat a same-name "
+            "person, a different professional-profile URL, a different or unresolved employer, "
+            "and an unattributed statement as unsupported; leave the field null. Retain every "
+            f"source URL and direct evidence. Prefer: {preferred}. Do not use: {forbidden}. Never "
+            "return or infer email or phone in this operation. Every value must be attributable "
+            f"to both the exact person and exact employer.{date_instruction} Use this exact "
+            f"property map: {field_map}."
+        ),
+        output_schema=output_schema,
+        start_published_date=target.start_published_date,
+        end_published_date=target.end_published_date,
+        contents=ExaDeepContents(
+            highlights=ExaDeepHighlightOptions(
+                query=(
+                    f'Find direct evidence naming "{name}" and binding that person to '
+                    f'"{employer}" ({domain}) for the requested facets.'
+                ),
+                max_characters=config.highlight_max_characters,
+            ),
+            text=ExaDeepTextOptions(max_characters=config.text_max_characters),
+        ),
+        stream=False,
+    )
+    return validate_exa_contact_request_target(request, target)
 
 
 def _as_http_request(
@@ -581,6 +793,140 @@ def normalize_exa_deep_snapshot(
     )
 
 
+def _contact_target_binding(
+    result: ExaDeepResult,
+    target: ExaDeepContactTargetLock,
+) -> tuple[ExaDeepContactBindingStatus, tuple[str, ...]]:
+    """Classify one retained source independently of the provider's structured assertion."""
+
+    source_url = str(result.url)
+    source_host = normalize_host(source_url)
+    approved_profile_hosts = {normalize_host(host) for host in target.approved_profile_hosts}
+    source_profile: str | None = None
+    if source_host in approved_profile_hosts:
+        try:
+            source_profile = normalize_exa_profile_url(source_url)
+        except ValueError:
+            source_profile = None
+    if source_profile is not None and source_profile != target.normalized_profile_url:
+        return ExaDeepContactBindingStatus.CONTRADICTORY, ("professional_profile_mismatch",)
+
+    corpus = " ".join(
+        (
+            result.title,
+            source_url,
+            result.text or "",
+            *result.highlights,
+        )
+    )
+    corpus_tokens = _tokens(corpus)
+    name_tokens = _tokens(target.canonical_full_name)
+    employer_tokens = _tokens(target.employer_name)
+    person_matches = source_profile == target.normalized_profile_url or (
+        bool(name_tokens) and name_tokens.issubset(corpus_tokens)
+    )
+    employer_matches = (
+        source_host == target.normalized_employer_domain
+        or target.normalized_employer_domain in corpus.casefold()
+        or (bool(employer_tokens) and employer_tokens.issubset(corpus_tokens))
+    )
+    if person_matches and employer_matches:
+        return ExaDeepContactBindingStatus.EXACT, ()
+    reasons: list[str] = []
+    if not person_matches:
+        reasons.append("exact_person_unresolved")
+    if not employer_matches:
+        reasons.append("exact_employer_unresolved_or_mismatched")
+    return ExaDeepContactBindingStatus.UNRESOLVED, tuple(reasons)
+
+
+def normalize_exa_contact_deep_snapshot(
+    request: ExaDeepContactSearchRequest,
+    response: ExaDeepSearchResponse,
+    *,
+    target: ExaDeepContactTargetLock,
+    config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
+) -> ExaDeepContactNormalization:
+    """Normalize structured contact output and enforce the local exact-person/employer lock.
+
+    Schema validation and lexical field support run first through the account/contact-neutral E0
+    normalizer.  A citation that passes those checks still produces no candidate unless its
+    retained result binds both the canonical person and canonical employer.  Contradictory and
+    unresolved sources stay in the immutable attribution surface for review/audit.
+    """
+
+    validate_exa_contact_request_target(request, target)
+    generic = normalize_exa_deep_snapshot(request, response, config=config)
+    result_by_url = {str(result.url): result for result in response.results}
+    values = {
+        field_key_from_exa_alias(alias): value for alias, value in response.output.content.items()
+    }
+    citations: list[ExaDeepContactCitationAttribution] = []
+    fields: list[SynthesizedField] = []
+    for citation in generic.citations:
+        if citation.status != "selected":
+            citations.append(
+                ExaDeepContactCitationAttribution(
+                    citation=citation,
+                    target_binding=ExaDeepContactBindingStatus.NOT_EVALUATED,
+                )
+            )
+            continue
+        result = result_by_url.get(citation.source_url)
+        if result is None:  # response validation already makes this unreachable
+            raise ValueError("selected contact citation has no retained result")
+        binding, reasons = _contact_target_binding(result, target)
+        citations.append(
+            ExaDeepContactCitationAttribution(
+                citation=citation,
+                target_binding=binding,
+                reason_codes=reasons,
+            )
+        )
+        if binding is not ExaDeepContactBindingStatus.EXACT:
+            continue
+        if citation.evidence_span is None or citation.retrieved_text is None:
+            raise ValueError("exact contact citation lacks inspectable evidence")
+        fields.append(
+            SynthesizedField(
+                field_key=citation.field_key,
+                value=values[citation.field_key],
+                source_url=citation.source_url,
+                evidence_span=citation.evidence_span,
+                retrieved_text=citation.retrieved_text,
+                confidence=citation.confidence,
+            )
+        )
+    return ExaDeepContactNormalization(
+        request_id=response.request_id,
+        all_null=generic.all_null,
+        target_lock=target,
+        synthesis=SynthesisResult(
+            fields=tuple(fields),
+            cost_cents=generic.synthesis.cost_cents,
+        ),
+        citations=tuple(citations),
+    )
+
+
+def parse_and_normalize_exa_contact_deep_response(
+    request: ExaDeepContactSearchRequest,
+    payload: Mapping[str, Any],
+    *,
+    target: ExaDeepContactTargetLock,
+    config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
+) -> ExaDeepContactNormalization:
+    """Fail-closed C3 parser entry point used by fixtures now and durable C4 acquisition later."""
+
+    response = parse_exa_deep_response(request, payload)
+    return normalize_exa_contact_deep_snapshot(
+        request,
+        response,
+        target=target,
+        config=config,
+    )
+
+
 def normalize_exa_deep_response(
     request: ExaDeepSearchRequest,
     response: ExaDeepSearchResponse,
@@ -756,6 +1102,11 @@ __all__ = [
     "SOURCE_KEY",
     "DEFAULT_EXA_CONFIG",
     "ExaDeepConfig",
+    "ExaDeepContactBindingStatus",
+    "ExaDeepContactCitationAttribution",
+    "ExaDeepContactNormalization",
+    "ExaDeepContactSearchRequest",
+    "ExaDeepContactTargetLock",
     "ExaDeepCitationAttribution",
     "ExaDeepFailureClass",
     "ExaDeepFieldSpec",
@@ -767,12 +1118,16 @@ __all__ = [
     "build_exa_request",
     "build_exa_deep_http_request",
     "compile_exa_deep_request",
+    "compile_exa_contact_deep_request",
     "exa_field_alias",
     "field_key_from_exa_alias",
     "make_backend",
     "normalize_exa_deep_response",
     "normalize_exa_deep_snapshot",
+    "normalize_exa_contact_deep_snapshot",
     "normalize_exa_response",
     "parse_exa_deep_response",
+    "parse_and_normalize_exa_contact_deep_response",
     "register_exa_deep_resolver",
+    "validate_exa_contact_request_target",
 ]

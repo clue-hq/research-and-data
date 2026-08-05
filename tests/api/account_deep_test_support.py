@@ -19,6 +19,7 @@ from clue_core import (
     ResearchDirectiveId,
     ResearchEffortPolicy,
     ResearchPrivacyPolicy,
+    ResearchQuestion,
     ResearchSourcePolicy,
     new_operation_id,
 )
@@ -43,6 +44,8 @@ async def confirmed_account_research_direction(
     icp_version: int,
     field_keys: Sequence[str],
     allowed_source_keys: Sequence[str] = ("sumble_teams", "sumble_people", "exa_deep"),
+    questions: Sequence[ResearchQuestion] = (),
+    contact_profiling_allowed: bool = False,
 ) -> tuple[ResearchDirectiveBody, Any]:
     """Create one real human-confirmed A2 directive on a borrowed test transaction."""
 
@@ -56,6 +59,7 @@ async def confirmed_account_research_direction(
     body = ResearchDirectiveBody(
         account_scope=ResearchAccountScope(explicit_account_ids=(account_id,)),
         field_keys=tuple(field_keys),
+        questions=tuple(questions),
         committee_plan=ResearchCommitteePlan(
             functions=("Operations",),
             levels=("Director",),
@@ -67,7 +71,7 @@ async def confirmed_account_research_direction(
             preferred_source_keys=("exa_deep",) if "exa_deep" in allowed_source_keys else (),
         ),
         privacy_policy=ResearchPrivacyPolicy(
-            contact_profiling_allowed=False,
+            contact_profiling_allowed=contact_profiling_allowed,
             contact_reveals_allowed=False,
         ),
         effort_policy=ResearchEffortPolicy(

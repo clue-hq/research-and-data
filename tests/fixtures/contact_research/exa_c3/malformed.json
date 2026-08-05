@@ -1,0 +1,20 @@
+{
+  "requestId": "exa-contact-c3-malformed",
+  "results": [
+    {
+      "title": "Unattributed publication",
+      "url": "https://example.org/unattributed",
+      "text": "Reducing Referral Friction",
+      "highlights": ["Reducing Referral Friction"]
+    }
+  ],
+  "output": {
+    "content": {
+      "f_636f6e746163742e66616365742e7075626c69636174696f6e73": [
+        {"title": "Reducing Referral Friction"}
+      ]
+    },
+    "grounding": []
+  },
+  "costDollars": {"total": 0.05}
+}

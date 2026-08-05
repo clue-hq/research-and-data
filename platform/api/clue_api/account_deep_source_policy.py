@@ -50,6 +50,15 @@ async def bind_healthcare_account_deep_source_override(
         conn,
         HEALTHCARE_ACCOUNT_DEEP_PACK_KEY,
         workspace_id,
+        (WeightedSource(source_key="exa_deep", weight=SourceWeight.HIGH, rank=1),),
+        field_class=FieldClass.CONTACT_FACET,
+        icp_key=icp_key,
+        version=version,
+    )
+    await register_source_profile_override(
+        conn,
+        HEALTHCARE_ACCOUNT_DEEP_PACK_KEY,
+        workspace_id,
         (
             WeightedSource(source_key="sumble_tech_stack", weight=SourceWeight.HIGH, rank=1),
             WeightedSource(source_key=official_page_source, weight=SourceWeight.HIGH, rank=2),

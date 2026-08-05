@@ -81,9 +81,9 @@ class ContactResearchPolicyPin(BaseModel):
     sumble_public_reference_ref: str = Field(
         default="sumble-public-v3@2026-08-05-non-authorizing", min_length=1
     )
-    # Capability/reference authority only. C3 owns the exact contact-targeted compiler contract.
+    # C3's accepted contact-targeted compiler contract; C4 still owns dispatch/live acquisition.
     exa_search_contract_ref: str = Field(
-        default="exa-search-capability@2026-08-05-c3-compiler-required", min_length=1
+        default="m8c-c3-exa-contact-compiler@2026-08-05", min_length=1
     )
     exa_websets_contract_ref: str = Field(
         default="exa-websets-reference@2026-08-05-non-authorizing", min_length=1

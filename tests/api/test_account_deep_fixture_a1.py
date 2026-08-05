@@ -399,6 +399,7 @@ def test_a1_fixture_is_deep_eligible_additive_and_read_only_on_replay(
                 "firecrawl_site",
                 "exa_deep",
             )
+            assert by_class[FieldClass.CONTACT_FACET] == ("exa_deep",)
             assert all("parallel_task" not in sources for sources in by_class.values())
 
             batch = await get_discovery_batch(
