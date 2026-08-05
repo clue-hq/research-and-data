@@ -1,0 +1,10 @@
+{
+  "applies_to": ["sumble_v9", "exa_search"],
+  "fixture_kind": "owned_transport_envelope",
+  "status_code": 401,
+  "retry_after_seconds": null,
+  "expected_failure_class": "authentication",
+  "expected_pre_dispatch": "hard",
+  "expected_post_dispatch": "hard",
+  "provider_body_contract": "opaque"
+}

@@ -1,0 +1,10 @@
+{
+  "applies_to": ["sumble_v9", "exa_search"],
+  "fixture_kind": "owned_transport_envelope",
+  "status_code": 402,
+  "retry_after_seconds": null,
+  "expected_failure_class": "insufficient_credit",
+  "expected_pre_dispatch": "budget_paused",
+  "expected_post_dispatch": "budget_paused",
+  "provider_body_contract": "opaque"
+}
