@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-05-m8c-c2-atomic-lineage-remediation.md` — closes both audited C2 blockers:
+  the public reserve API solely owns semantic reuse serialization/capacity reservation, every
+  Exa claim requires exact operation/snapshot/request/result-artifact lineage, provider doubles
+  use honest fixture source identities, and clean full-suite/migration verification is green.
 - `2026-08-05-m8c-c1-selection-lineage-remediation.md` — closes both audited C1 findings:
   bounded strong-first People/Teams union selection preserves organization-map representation;
   typed immutable claim provenance plus exact database-enforced Sumble operation/snapshot/

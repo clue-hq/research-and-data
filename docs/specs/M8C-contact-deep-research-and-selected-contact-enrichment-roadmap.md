@@ -733,7 +733,8 @@ acceptance record:
 
 ### C2 — Exact contact-subject durability hardening
 
-**Status:** complete. Binding acceptance record:
+**Status:** complete after atomic-reservation and mandatory-Exa-lineage remediation. Binding
+acceptance record:
 `M8C-C2-contact-subject-durability-acceptance.md`.
 
 **Owns**
@@ -743,7 +744,9 @@ acceptance record:
 - required indexes and reversible migration, if schema changes are needed;
 - merged-contact canonicalization behavior;
 - contact-specific request fingerprint and replay tests; and
-- provider-neutral wake-dispatch foundation.
+- provider-neutral wake-dispatch foundation;
+- one atomic public reuse/reservation boundary; and
+- mandatory exact operation/snapshot/request/result-artifact lineage for every `exa_deep` claim.
 
 **Exit gate**
 
@@ -752,7 +755,9 @@ acceptance record:
 3. concurrent submit elects one operation;
 4. crash/restart performs no duplicate submit or charge;
 5. replay from a fresh process performs zero HTTP; and
-6. migration smoke has exactly one Alembic head on an isolated database.
+6. migration smoke has exactly one Alembic head on an isolated database;
+7. a direct public-reserve race cannot duplicate an operation or capacity reservation; and
+8. missing, partial, or mismatched Exa lineage fails at the claim-store database boundary.
 
 ### C3 — Contact-targeted Exa Deep contract and compiler
 

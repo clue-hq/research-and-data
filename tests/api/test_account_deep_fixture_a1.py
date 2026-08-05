@@ -61,12 +61,15 @@ from clue_config import ConfigOverlay, ConfigVersion, OverlayStore
 from clue_core import (
     DiscoveryBatchState,
     DiscoveryOperationState,
+    EntityScope,
     ExtractionMethod,
     FieldClass,
+    Modality,
     PhaseContext,
     PhaseStatus,
     ProjectPhase,
     ResearchMode,
+    SourceManifest,
     WorkerStatus,
     new_operation_id,
     new_run_id,
@@ -89,12 +92,21 @@ from clue_research.durable import (
     get_discovery_operation,
     get_project_run,
 )
-from clue_research.icp import get_active_icp, get_icp_version, get_source_profile
+from clue_research.icp import (
+    SourceWeight,
+    WeightedSource,
+    get_active_icp,
+    get_icp_version,
+    get_source_profile,
+    register_source_profile_override,
+)
 from clue_research.profiling import profile_account
 from clue_research.sources import (
+    RegistrySourceManifest,
     bind_resolver,
     get_resolver,
     is_resolver_bound,
+    register_source,
     unbind_resolver,
 )
 from clue_research.verification import PreSpendGateImpl
@@ -104,12 +116,16 @@ from tests.db.conftest import run_async
 from tests.profiling.conftest import FakeGateway
 from tests.stage0.conftest import rollback_conn
 
+_RECORDED_DEEP_SOURCE = "fixture_recorded_account_deep"
+
 
 @pytest.fixture(autouse=True)
 def _restore_recorded_resolver_bindings() -> Iterator[None]:
     """The A1 doubles must not leak into later tests or replace a production test binding."""
 
-    source_keys = {record.source_key for record in DEFAULT_RECORDED_FIELDS}
+    source_keys = {record.source_key for record in DEFAULT_RECORDED_FIELDS} | {
+        _RECORDED_DEEP_SOURCE
+    }
     previous = {
         source_key: get_resolver(source_key)
         for source_key in source_keys
@@ -206,10 +222,63 @@ async def _seed(
 def _bind_recorded_resolvers(
     result: InsightHealthAccountDeepFixtureResult,
 ) -> dict[str, RecordedAccountDeepResolver]:
-    resolvers = build_recorded_account_resolvers(result)
-    for source_key, resolver in resolvers.items():
-        bind_resolver(source_key, resolver)
-    return resolvers
+    recorded = build_recorded_account_resolvers(result)
+    bound: dict[str, RecordedAccountDeepResolver] = {}
+    for source_key, resolver in recorded.items():
+        bound_key = _RECORDED_DEEP_SOURCE if source_key == "exa_deep" else source_key
+        bind_resolver(bound_key, resolver)
+        bound[bound_key] = resolver
+    return bound
+
+
+async def _install_recorded_source_policy(conn: AsyncConnection) -> None:
+    """Select a truthful source identity for A1's network-free recorded resolver.
+
+    The persisted fixture itself retains the production Exa policy. Only tests that execute its
+    provider double install this rolled-back override, so they cannot create ``exa_deep`` claims
+    without the E1/E2 operation and snapshot lineage.
+    """
+    await register_source(
+        conn,
+        RegistrySourceManifest(
+            manifest=SourceManifest(
+                source_key=_RECORDED_DEEP_SOURCE,
+                modality=Modality.TEXT,
+                entity_scope=EntityScope.ACCOUNT,
+                yields=("account", "account.resonance"),
+                tier=4,
+                cost_cents=Decimal(0),
+            ),
+            active=True,
+            version=1,
+        ),
+    )
+    slots = {
+        FieldClass.ACCOUNT: (
+            WeightedSource(source_key="sumble_jobs", weight=SourceWeight.HIGH, rank=1),
+            WeightedSource(source_key="firecrawl_site", weight=SourceWeight.HIGH, rank=2),
+            WeightedSource(source_key=_RECORDED_DEEP_SOURCE, weight=SourceWeight.MEDIUM, rank=3),
+        ),
+        FieldClass.CORE: (
+            WeightedSource(source_key="sumble_tech_stack", weight=SourceWeight.HIGH, rank=1),
+            WeightedSource(source_key="firecrawl_site", weight=SourceWeight.HIGH, rank=2),
+            WeightedSource(source_key=_RECORDED_DEEP_SOURCE, weight=SourceWeight.MEDIUM, rank=3),
+        ),
+        FieldClass.ACCOUNT_RESONANCE: (
+            WeightedSource(source_key="firecrawl_site", weight=SourceWeight.HIGH, rank=1),
+            WeightedSource(source_key=_RECORDED_DEEP_SOURCE, weight=SourceWeight.MEDIUM, rank=2),
+        ),
+    }
+    for field_class, sources in slots.items():
+        await register_source_profile_override(
+            conn,
+            "healthcare_practice",
+            WORKSPACE_ID,
+            sources,
+            field_class=field_class,
+            icp_key=DEEP_ICP_KEY,
+            version=2,
+        )
 
 
 def _fixture_config_store() -> OverlayStore:
@@ -564,6 +633,7 @@ def test_a1_direct_profiler_fills_non_empty_deep_gaps_and_replays_without_calls(
                 conn, WORKSPACE_ID, fixture.deep_icp_key, fixture.deep_icp_version
             )
             assert spec is not None
+            await _install_recorded_source_policy(conn)
             resolvers = _bind_recorded_resolvers(fixture)
             account_run_id = new_run_id()
             session_factory = _TaskReentrantConnectionFactory(conn)
@@ -619,17 +689,17 @@ def test_a1_direct_profiler_fills_non_empty_deep_gaps_and_replays_without_calls(
             expected = {
                 "account.hiring_velocity_eng": ("sumble_jobs", 1, ExtractionMethod.API),
                 "account.operational_pain": (
-                    "exa_deep",
+                    _RECORDED_DEEP_SOURCE,
                     4,
                     ExtractionMethod.LLM_SYNTHESIS,
                 ),
                 "account.strategic_moves": (
-                    "exa_deep",
+                    _RECORDED_DEEP_SOURCE,
                     4,
                     ExtractionMethod.LLM_SYNTHESIS,
                 ),
                 "account.resonance.culture": (
-                    "exa_deep",
+                    _RECORDED_DEEP_SOURCE,
                     4,
                     ExtractionMethod.LLM_SYNTHESIS,
                 ),
@@ -654,7 +724,8 @@ def test_a1_direct_profiler_fills_non_empty_deep_gaps_and_replays_without_calls(
                 assert claim.source_url
                 assert claim.evidence_span
                 assert ACCOUNT_DOMAIN in claim.evidence_span or ACCOUNT_NAME in claim.evidence_span
-                assert claim.artifact_key == fixture.provider_artifact_keys[source_key]
+                artifact_source = "exa_deep" if source_key == _RECORDED_DEEP_SOURCE else source_key
+                assert claim.artifact_key == fixture.provider_artifact_keys[artifact_source]
 
             governed = (
                 (
@@ -672,9 +743,9 @@ def test_a1_direct_profiler_fills_non_empty_deep_gaps_and_replays_without_calls(
             )
             assert [(row["field_key"], row["source_key"]) for row in governed] == [
                 ("account.hiring_velocity_eng", "sumble_jobs"),
-                ("account.operational_pain", "exa_deep"),
-                ("account.resonance.culture", "exa_deep"),
-                ("account.strategic_moves", "exa_deep"),
+                ("account.operational_pain", _RECORDED_DEEP_SOURCE),
+                ("account.resonance.culture", _RECORDED_DEEP_SOURCE),
+                ("account.strategic_moves", _RECORDED_DEEP_SOURCE),
             ]
             assert all(row["decision"] == "pass" for row in governed)
             assert all(row["effective_plan_sha256"] for row in governed)
@@ -727,6 +798,7 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
                 conn, WORKSPACE_ID, fixture.deep_icp_key, fixture.deep_icp_version
             )
             assert spec is not None
+            await _install_recorded_source_policy(conn)
             _, account_spec = await confirmed_account_research_direction(
                 conn,
                 workspace_id=WORKSPACE_ID,
@@ -738,6 +810,11 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
                 # The core tech-stack field is already populated by the fixture and is not a
                 # registered deep-research field. Confirm only the four actual Pass-B gaps.
                 field_keys=(DEEP_FIELD_KEYS[0], *DEEP_FIELD_KEYS[2:]),
+                allowed_source_keys=(
+                    "sumble_teams",
+                    "sumble_people",
+                    _RECORDED_DEEP_SOURCE,
+                ),
             )
             directive = account_spec.research_directive
             assert directive is not None
@@ -844,9 +921,9 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
             )
             assert [(row["field_key"], row["source_key"]) for row in governed_rows] == [
                 ("account.hiring_velocity_eng", "sumble_jobs"),
-                ("account.operational_pain", "exa_deep"),
-                ("account.resonance.culture", "exa_deep"),
-                ("account.strategic_moves", "exa_deep"),
+                ("account.operational_pain", _RECORDED_DEEP_SOURCE),
+                ("account.resonance.culture", _RECORDED_DEEP_SOURCE),
+                ("account.strategic_moves", _RECORDED_DEEP_SOURCE),
             ]
             assert all(row["decision"] == "pass" for row in governed_rows)
             assert all(row["effective_plan_sha256"] for row in governed_rows)
@@ -868,9 +945,9 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
             )
             assert [(row["field_key"], row["source_key"]) for row in production_claims] == [
                 ("account.hiring_velocity_eng", "sumble_jobs"),
-                ("account.operational_pain", "exa_deep"),
-                ("account.resonance.culture", "exa_deep"),
-                ("account.strategic_moves", "exa_deep"),
+                ("account.operational_pain", _RECORDED_DEEP_SOURCE),
+                ("account.resonance.culture", _RECORDED_DEEP_SOURCE),
+                ("account.strategic_moves", _RECORDED_DEEP_SOURCE),
             ]
             assert committee.calls and committee.calls[0][0] == fixture.selected_account_id
             assert gateway.complete_calls == 2

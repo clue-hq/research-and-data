@@ -256,7 +256,7 @@ async def get_external_research_operation(
     return _operation(row)
 
 
-async def lock_external_research_reuse(
+async def _lock_external_research_reuse(
     conn: AsyncConnection,
     *,
     workspace_id: str,
@@ -350,16 +350,28 @@ async def reserve_external_research_operation(
     *,
     request: ExternalResearchAcquisitionRequest,
     request_artifact_key: str,
+    now: datetime,
 ) -> tuple[ExternalResearchOperationRow, bool]:
-    """Reserve once under the shared project-run lock; exact replay consumes no new capacity."""
+    """Atomically reuse or reserve one semantic request without duplicate capacity.
 
-    await _require_canonical_subject(
+    This function is the sole lock owner.  Callers may perform an unlocked reusable lookup as a
+    fast path, but correctness never depends on composing a separate lock/lookup before reserve.
+    Under the transaction-scoped reuse lock we repeat the semantic lookup, validate exact replay,
+    check provider-spend capacity, and insert the planned operation.
+    """
+
+    await _lock_external_research_reuse(
         conn,
         workspace_id=request.workspace_id,
-        subject_kind=request.subject_kind,
-        account_id=request.account_id,
-        contact_id=request.contact_id,
+        reuse_fingerprint=request.reuse_fingerprint,
     )
+    reusable = await find_reusable_external_research_operation(
+        conn,
+        request=request,
+        now=now,
+    )
+    if reusable is not None:
+        return reusable, False
     existing = await find_external_research_operation(
         conn,
         workspace_id=request.workspace_id,
@@ -1288,7 +1300,6 @@ __all__ = [
     "get_external_research_snapshot",
     "list_external_research_result_artifacts",
     "list_ready_external_research_snapshots",
-    "lock_external_research_reuse",
     "mark_external_research_spend_unknown",
     "reconcile_external_research_cost",
     "reserve_external_research_operation",
