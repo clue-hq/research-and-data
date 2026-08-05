@@ -16,6 +16,14 @@
 > governs platform interaction; Doc A governs agent mechanics; M06A/M8/M8A/M11 govern their
 > provider-neutral data and execution contracts; this document governs the integration work that
 > joins them for the account-deep product capability.
+>
+> **Successor orchestration roadmap (2026-08-06):**
+> [M8D](M8D-entity-research-agents-and-shared-fleet-refactor-roadmap.md) supersedes M8B's active
+> entity-agent ownership/composition for future runs: account/contact units use
+> `langchain.agents.create_agent()`, providers run only through their governed tool calls, account
+> and contact fleets are separately user-launched over one shared fleet substrate, and agents
+> receive complete persisted research results. M8B remains authoritative historical evidence for
+> its provider, durability, claim, committee, replay, and live-acceptance work.
 
 ## 1. Outcome
 
