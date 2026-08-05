@@ -1,9 +1,9 @@
 # M8C — Contact-deep research and selected-contact enrichment roadmap
 ## Sumble professional graph + Exa Deep contact research + governed channel enrichment
 
-> **Status:** implementation underway; C0 contract/field/policy freeze and C1 snapshot-backed
-> professional materialization are mechanically accepted. C2 exact contact-subject durability is
-> next. **Recorded:**
+> **Status:** implementation underway; C0 contract/field/policy freeze, C1 snapshot-backed
+> professional materialization, and C2 exact contact-subject durability are mechanically
+> accepted. C3 contact-targeted Exa Deep compilation is next. **Recorded:**
 > 2026-08-05. **Parent capability:**
 > [M8B account-deep provider integration](M8B-exa-sumble-account-deep-integration-roadmap.md).
 > **Working branch at record time:** `platform/c8-account-profiling-integration`.
@@ -721,6 +721,9 @@ occurs without explicit live-call authorization and preflight evidence.
 5. Provider facts and platform role inference remain visibly distinct.
 
 ### C2 — Exact contact-subject durability hardening
+
+**Status:** complete. Binding acceptance record:
+`M8C-C2-contact-subject-durability-acceptance.md`.
 
 **Owns**
 

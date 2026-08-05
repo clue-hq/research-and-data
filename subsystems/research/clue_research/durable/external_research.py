@@ -13,12 +13,13 @@ from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     EntityId,
+    EntityType,
     ExternalResearchAcquisitionRequest,
     ExternalResearchCostDisposition,
     ExternalResearchOperationId,
@@ -27,12 +28,14 @@ from clue_core import (
     ExternalResearchSnapshotId,
     ExternalResearchSnapshotRef,
     ExternalResearchSpendOutcome,
+    ExternalResearchSubjectKind,
     ProjectPhase,
     UtcDatetime,
     new_external_research_operation_id,
     new_external_research_snapshot_id,
 )
 from clue_research.durable.provider_spend import require_provider_spend_capacity
+from clue_research.identity import get_account, get_contact, surviving_id
 
 
 class ExternalResearchLedgerError(RuntimeError):
@@ -59,6 +62,17 @@ class ExternalResearchDispatchDecision(StrEnum):
     QUARANTINED_STALE_DISPATCH = "quarantined_stale_dispatch"
 
 
+def _validate_subject_shape(
+    *,
+    subject_kind: ExternalResearchSubjectKind,
+    contact_id: EntityId | None,
+) -> None:
+    if subject_kind is ExternalResearchSubjectKind.ACCOUNT and contact_id is not None:
+        raise ValueError("account external research cannot carry a contact id")
+    if subject_kind is ExternalResearchSubjectKind.CONTACT and contact_id is None:
+        raise ValueError("contact external research requires a contact id")
+
+
 class ExternalResearchOperationRow(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -66,7 +80,9 @@ class ExternalResearchOperationRow(BaseModel):
     workspace_id: str
     project_id: str
     project_run_id: UUID
+    subject_kind: ExternalResearchSubjectKind
     account_id: EntityId
+    contact_id: EntityId | None = None
     source_key: str
     observation_window: str
     freshness_seconds: int
@@ -82,6 +98,20 @@ class ExternalResearchOperationRow(BaseModel):
     fresh_until: UtcDatetime | None = None
     failure_code: str | None = None
     terminal_at: UtcDatetime | None = None
+
+    @model_validator(mode="after")
+    def _subject_is_exact(self) -> ExternalResearchOperationRow:
+        _validate_subject_shape(subject_kind=self.subject_kind, contact_id=self.contact_id)
+        return self
+
+    @property
+    def subject_entity_id(self) -> EntityId:
+        """The exact entity a provider-neutral dispatcher/materializer must route."""
+
+        if self.subject_kind is ExternalResearchSubjectKind.CONTACT:
+            assert self.contact_id is not None
+            return self.contact_id
+        return self.account_id
 
 
 class ExternalResearchDispatchClaim(BaseModel):
@@ -114,7 +144,8 @@ class ExternalResearchCostReconciliationRow(BaseModel):
 
 
 _OPERATION_COLUMNS = (
-    "id AS operation_id, workspace_id, project_id, project_run_id, account_id, source_key, "
+    "id AS operation_id, workspace_id, project_id, project_run_id, subject_kind::text, "
+    "account_id, contact_id, source_key, "
     "observation_window, freshness_seconds, reuse_fingerprint, request_fingerprint, "
     "wire_request_sha256, state::text, "
     "spend_outcome::text, request_artifact_key, cost_cents_reserved, provider_request_id, "
@@ -124,6 +155,46 @@ _OPERATION_COLUMNS = (
 
 def _operation(row: object) -> ExternalResearchOperationRow:
     return ExternalResearchOperationRow.model_validate(row)
+
+
+async def _require_canonical_subject(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    subject_kind: ExternalResearchSubjectKind,
+    account_id: EntityId,
+    contact_id: EntityId | None,
+) -> None:
+    """Fail closed unless the subject is the current canonical entity under the exact account.
+
+    A merge never rewrites immutable provider history. New work must be recompiled for the
+    survivor, yielding a survivor-specific request fingerprint; loser snapshots are not silently
+    adopted through a name/employer match.
+    """
+
+    _validate_subject_shape(subject_kind=subject_kind, contact_id=contact_id)
+    account = await get_account(conn, account_id)
+    if (
+        account is None
+        or account.workspace_id != workspace_id
+        or await surviving_id(conn, account_id, EntityType.ACCOUNT) != account_id
+    ):
+        raise ExternalResearchReplayConflict(
+            "external research account subject is missing, foreign, or non-canonical"
+        )
+    if subject_kind is ExternalResearchSubjectKind.ACCOUNT:
+        return
+    assert contact_id is not None
+    contact = await get_contact(conn, contact_id)
+    if (
+        contact is None
+        or contact.workspace_id != workspace_id
+        or contact.account_entity_id != account_id
+        or await surviving_id(conn, contact_id, EntityType.CONTACT) != contact_id
+    ):
+        raise ExternalResearchReplayConflict(
+            "external research contact must be the canonical contact under the exact account"
+        )
 
 
 async def find_external_research_operation(
@@ -213,6 +284,13 @@ async def find_reusable_external_research_operation(
 ) -> ExternalResearchOperationRow | None:
     """Find one semantic-equivalent active operation or a still-fresh ready snapshot."""
 
+    await _require_canonical_subject(
+        conn,
+        workspace_id=request.workspace_id,
+        subject_kind=request.subject_kind,
+        account_id=request.account_id,
+        contact_id=request.contact_id,
+    )
     pin = request.research_directive
     row = (
         (
@@ -220,7 +298,10 @@ async def find_reusable_external_research_operation(
                 text(
                     f"SELECT {_OPERATION_COLUMNS} FROM external_research_operation "
                     "WHERE workspace_id=:workspace_id AND project_id=:project_id "
-                    "AND account_id=:account_id AND source_key=:source_key "
+                    "AND subject_kind=CAST(:subject_kind AS external_research_subject_kind) "
+                    "AND account_id=:account_id "
+                    "AND contact_id IS NOT DISTINCT FROM :contact_id "
+                    "AND source_key=:source_key "
                     "AND icp_key=:icp_key AND icp_version=:icp_version "
                     "AND research_directive_id=:directive_id "
                     "AND research_directive_version=:directive_version "
@@ -239,7 +320,9 @@ async def find_reusable_external_research_operation(
                 {
                     "workspace_id": request.workspace_id,
                     "project_id": request.project_id,
+                    "subject_kind": request.subject_kind.value,
                     "account_id": request.account_id,
+                    "contact_id": request.contact_id,
                     "source_key": request.source_key,
                     "icp_key": request.icp_key,
                     "icp_version": request.icp_version,
@@ -270,6 +353,13 @@ async def reserve_external_research_operation(
 ) -> tuple[ExternalResearchOperationRow, bool]:
     """Reserve once under the shared project-run lock; exact replay consumes no new capacity."""
 
+    await _require_canonical_subject(
+        conn,
+        workspace_id=request.workspace_id,
+        subject_kind=request.subject_kind,
+        account_id=request.account_id,
+        contact_id=request.contact_id,
+    )
     existing = await find_external_research_operation(
         conn,
         workspace_id=request.workspace_id,
@@ -365,7 +455,9 @@ def _assert_replay(
     request_artifact_key: str,
 ) -> None:
     if (
-        stored.account_id != request.account_id
+        stored.subject_kind is not request.subject_kind
+        or stored.account_id != request.account_id
+        or stored.contact_id != request.contact_id
         or stored.project_run_id != request.project_run_id
         or stored.reuse_fingerprint != request.reuse_fingerprint
         or stored.wire_request_sha256 != request.wire_request_sha256
@@ -519,11 +611,14 @@ async def complete_external_research_success(
         text(
             """
             INSERT INTO external_research_snapshot (
-                id, operation_id, workspace_id, account_id, source_key, request_fingerprint,
+                id, operation_id, workspace_id, subject_kind, account_id, contact_id, source_key,
+                request_fingerprint,
                 request_artifact_key, response_artifact_key, normalization_artifact_key,
                 provider_request_id, provider_reported_cost_cents, all_null, fresh_until
             ) VALUES (
-                :id, :operation_id, :workspace_id, :account_id, :source_key,
+                :id, :operation_id, :workspace_id,
+                CAST(:subject_kind AS external_research_subject_kind), :account_id, :contact_id,
+                :source_key,
                 :request_fingerprint, :request_key, :response_key, :normalization_key,
                 :provider_request_id, :reported_cost, :all_null, :fresh_until
             )
@@ -533,7 +628,9 @@ async def complete_external_research_success(
             "id": snapshot_id,
             "operation_id": operation_id,
             "workspace_id": workspace_id,
+            "subject_kind": operation.subject_kind.value,
             "account_id": operation.account_id,
+            "contact_id": operation.contact_id,
             "source_key": operation.source_key,
             "request_fingerprint": operation.request_fingerprint,
             "request_key": operation.request_artifact_key,
@@ -769,10 +866,13 @@ async def _insert_snapshot_use(
     await conn.execute(
         text(
             "INSERT INTO external_research_snapshot_use ("
-            "workspace_id, project_id, project_run_id, account_id, source_key, snapshot_id, "
+            "workspace_id, project_id, project_run_id, subject_kind, account_id, contact_id, "
+            "source_key, snapshot_id, "
             "reuse_fingerprint, consumer_request_fingerprint, consumer_observation_window, "
             "adopted_at) VALUES ("
-            ":workspace_id, :project_id, :project_run_id, :account_id, :source_key, "
+            ":workspace_id, :project_id, :project_run_id, "
+            "CAST(:subject_kind AS external_research_subject_kind), :account_id, :contact_id, "
+            ":source_key, "
             ":snapshot_id, :reuse_fingerprint, :consumer_fingerprint, :consumer_window, :now) "
             "ON CONFLICT (workspace_id, project_run_id, snapshot_id) DO NOTHING"
         ),
@@ -780,7 +880,9 @@ async def _insert_snapshot_use(
             "workspace_id": operation.workspace_id,
             "project_id": operation.project_id,
             "project_run_id": project_run_id,
+            "subject_kind": operation.subject_kind.value,
             "account_id": operation.account_id,
+            "contact_id": operation.contact_id,
             "source_key": operation.source_key,
             "snapshot_id": snapshot.snapshot_id,
             "reuse_fingerprint": operation.reuse_fingerprint,
@@ -800,6 +902,13 @@ async def adopt_external_research_snapshot(
 ) -> ExternalResearchSnapshotRef:
     """Bind a fresh semantic-equivalent snapshot to the consuming project run exactly once."""
 
+    await _require_canonical_subject(
+        conn,
+        workspace_id=request.workspace_id,
+        subject_kind=request.subject_kind,
+        account_id=request.account_id,
+        contact_id=request.contact_id,
+    )
     operation = await get_external_research_operation(
         conn,
         workspace_id=request.workspace_id,
@@ -811,7 +920,9 @@ async def adopt_external_research_snapshot(
         or operation.fresh_until is None
         or operation.fresh_until <= now
         or operation.project_id != request.project_id
+        or operation.subject_kind is not request.subject_kind
         or operation.account_id != request.account_id
+        or operation.contact_id != request.contact_id
         or operation.source_key != request.source_key
         or operation.reuse_fingerprint != request.reuse_fingerprint
         or operation.wire_request_sha256 != request.wire_request_sha256
@@ -957,6 +1068,7 @@ async def get_external_research_snapshot(
             await conn.execute(
                 text(
                     "SELECT id AS snapshot_id, operation_id, workspace_id, account_id, "
+                    "subject_kind::text, contact_id, "
                     "source_key, request_fingerprint, request_artifact_key, "
                     "response_artifact_key, normalization_artifact_key, provider_request_id, "
                     "provider_reported_cost_cents, all_null, fresh_until "
@@ -1003,6 +1115,8 @@ async def list_ready_external_research_snapshots(
     workspace_id: str,
     project_run_id: UUID,
     account_id: EntityId,
+    subject_kind: ExternalResearchSubjectKind = ExternalResearchSubjectKind.ACCOUNT,
+    contact_id: EntityId | None = None,
     source_key: str,
     research_directive_id: UUID,
     research_directive_version: int,
@@ -1011,7 +1125,7 @@ async def list_ready_external_research_snapshots(
     research_override_sha256: str | None,
     now: datetime | None = None,
 ) -> tuple[ExternalResearchSnapshotRef, ...]:
-    """Ready snapshots for one exact account run/directive/source lineage.
+    """Ready snapshots for one exact subject/run/directive/source lineage.
 
     Materialization never searches by account alone: an older directive, different override,
     sibling project run, or expired snapshot must not become evidence for the current operation.
@@ -1020,13 +1134,21 @@ async def list_ready_external_research_snapshots(
     """
 
     observed_at = now or datetime.now(UTC)
+    await _require_canonical_subject(
+        conn,
+        workspace_id=workspace_id,
+        subject_kind=subject_kind,
+        account_id=account_id,
+        contact_id=contact_id,
+    )
 
     rows = (
         (
             await conn.execute(
                 text(
                     "SELECT snapshot.id AS snapshot_id, snapshot.operation_id, "
-                    "snapshot.workspace_id, snapshot.account_id, snapshot.source_key, "
+                    "snapshot.workspace_id, snapshot.subject_kind::text, snapshot.account_id, "
+                    "snapshot.contact_id, snapshot.source_key, "
                     "snapshot.request_fingerprint, snapshot.request_artifact_key, "
                     "snapshot.response_artifact_key, snapshot.normalization_artifact_key, "
                     "snapshot.provider_request_id, snapshot.provider_reported_cost_cents, "
@@ -1040,7 +1162,17 @@ async def list_ready_external_research_snapshots(
                     "AND snapshot_use.workspace_id=snapshot.workspace_id "
                     "WHERE operation.workspace_id=:workspace_id "
                     "AND snapshot_use.project_run_id=:project_run_id "
-                    "AND operation.account_id=:account_id AND operation.source_key=:source_key "
+                    "AND operation.subject_kind=CAST(:subject_kind AS "
+                    "external_research_subject_kind) "
+                    "AND snapshot.subject_kind=operation.subject_kind "
+                    "AND snapshot_use.subject_kind=operation.subject_kind "
+                    "AND operation.account_id=:account_id "
+                    "AND snapshot.account_id=operation.account_id "
+                    "AND snapshot_use.account_id=operation.account_id "
+                    "AND operation.contact_id IS NOT DISTINCT FROM :contact_id "
+                    "AND snapshot.contact_id IS NOT DISTINCT FROM operation.contact_id "
+                    "AND snapshot_use.contact_id IS NOT DISTINCT FROM operation.contact_id "
+                    "AND operation.source_key=:source_key "
                     "AND operation.research_directive_id=:directive_id "
                     "AND operation.research_directive_version=:directive_version "
                     "AND operation.research_directive_sha256=:directive_sha256 "
@@ -1054,7 +1186,9 @@ async def list_ready_external_research_snapshots(
                 {
                     "workspace_id": workspace_id,
                     "project_run_id": project_run_id,
+                    "subject_kind": subject_kind.value,
                     "account_id": account_id,
+                    "contact_id": contact_id,
                     "source_key": source_key,
                     "directive_id": research_directive_id,
                     "directive_version": research_directive_version,
@@ -1077,6 +1211,8 @@ async def find_active_external_research_operation_for_materialization(
     workspace_id: str,
     project_run_id: UUID,
     account_id: EntityId,
+    subject_kind: ExternalResearchSubjectKind = ExternalResearchSubjectKind.ACCOUNT,
+    contact_id: EntityId | None = None,
     source_key: str,
     research_directive_id: UUID,
     research_directive_version: int,
@@ -1084,13 +1220,23 @@ async def find_active_external_research_operation_for_materialization(
     research_override_id: UUID | None,
     research_override_sha256: str | None,
 ) -> ExternalResearchOperationRow | None:
+    await _require_canonical_subject(
+        conn,
+        workspace_id=workspace_id,
+        subject_kind=subject_kind,
+        account_id=account_id,
+        contact_id=contact_id,
+    )
     row = (
         (
             await conn.execute(
                 text(
                     f"SELECT {_OPERATION_COLUMNS} FROM external_research_operation "
                     "WHERE workspace_id=:workspace_id AND project_run_id=:project_run_id "
-                    "AND account_id=:account_id AND source_key=:source_key "
+                    "AND subject_kind=CAST(:subject_kind AS external_research_subject_kind) "
+                    "AND account_id=:account_id "
+                    "AND contact_id IS NOT DISTINCT FROM :contact_id "
+                    "AND source_key=:source_key "
                     "AND research_directive_id=:directive_id "
                     "AND research_directive_version=:directive_version "
                     "AND research_directive_sha256=:directive_sha256 "
@@ -1102,7 +1248,9 @@ async def find_active_external_research_operation_for_materialization(
                 {
                     "workspace_id": workspace_id,
                     "project_run_id": project_run_id,
+                    "subject_kind": subject_kind.value,
                     "account_id": account_id,
+                    "contact_id": contact_id,
                     "source_key": source_key,
                     "directive_id": research_directive_id,
                     "directive_version": research_directive_version,

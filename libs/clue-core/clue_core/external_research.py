@@ -127,7 +127,9 @@ class ExternalResearchSnapshotRef(BaseModel):
     snapshot_id: ExternalResearchSnapshotId
     operation_id: ExternalResearchOperationId
     workspace_id: NonEmptyStr
+    subject_kind: ExternalResearchSubjectKind
     account_id: EntityId
+    contact_id: EntityId | None = None
     source_key: NonEmptyStr
     request_fingerprint: Sha256Hex
     request_artifact_key: NonEmptyStr
@@ -137,6 +139,14 @@ class ExternalResearchSnapshotRef(BaseModel):
     provider_reported_cost_cents: Decimal = Field(ge=0)
     all_null: bool
     fresh_until: UtcDatetime
+
+    @model_validator(mode="after")
+    def _subject_is_exact(self) -> ExternalResearchSnapshotRef:
+        if self.subject_kind is ExternalResearchSubjectKind.ACCOUNT and self.contact_id is not None:
+            raise ValueError("account snapshot cannot carry a contact id")
+        if self.subject_kind is ExternalResearchSubjectKind.CONTACT and self.contact_id is None:
+            raise ValueError("contact snapshot requires a contact id")
+        return self
 
 
 class ExternalResearchPreparationOutcome(StrEnum):
