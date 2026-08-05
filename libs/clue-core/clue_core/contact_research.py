@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from clue_core.discovery import Sha256Hex
 from clue_core.enums import IdentityBinding
-from clue_core.field import FieldKey
+from clue_core.field import FieldClass, FieldKey, classify_field_key
 from clue_core.primitives import ClaimId, EntityId, ProjectRunId, UtcDatetime
 from clue_core.research_directive import ResearchDirectivePin
 
@@ -61,6 +61,191 @@ CONTACT_CHANNEL_FIELD_KEYS = {
     ContactChannel.EMAIL: "core.work_email",
     ContactChannel.PHONE: "core.direct_phone",
 }
+
+
+class ContactResearchPolicyPin(BaseModel):
+    """The exact resolved contact-research policy embedded in an authorization receipt.
+
+    ``clue_config`` owns layering and produces this pin from the effective workspace/ICP policy.
+    Embedding the resolved values makes the receipt self-validating and content-addresses every
+    cap, source family, freshness rule, provider-contract reference, and reveal permission that can
+    affect downstream work.  A later durable compiler must still prove that the pin came from the
+    effective config revision; it cannot widen a receipt after approval.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    policy_version: int = Field(default=1, ge=1)
+    contract_ref: str = Field(default="M8C-C0@2026-08-05", min_length=1)
+    sumble_runtime_contract_ref: str = Field(default="sumble-rest-v9@2026-08-05", min_length=1)
+    sumble_public_reference_ref: str = Field(
+        default="sumble-public-v3@2026-08-05-non-authorizing", min_length=1
+    )
+    # Capability/reference authority only. C3 owns the exact contact-targeted compiler contract.
+    exa_search_contract_ref: str = Field(
+        default="exa-search-capability@2026-08-05-c3-compiler-required", min_length=1
+    )
+    exa_websets_contract_ref: str = Field(
+        default="exa-websets-reference@2026-08-05-non-authorizing", min_length=1
+    )
+    max_selected_contacts: int = Field(default=3, ge=1, le=20)
+    max_fields_per_contact: int = Field(default=8, ge=1, le=32)
+    exa_max_results: int = Field(default=50, ge=1, le=50)
+    exa_max_additional_queries: int = Field(default=10, ge=0, le=10)
+    professional_source_plan: tuple[str, ...] = ("sumble_people", "sumble_teams")
+    personal_facet_source_plan: tuple[str, ...] = ("exa_deep",)
+    channel_reveal_source_plan: tuple[str, ...] = ()
+    professional_freshness_days: int = Field(default=30, ge=1, le=365)
+    personal_facet_freshness_days: int = Field(default=30, ge=1, le=365)
+    contact_reveals_enabled: bool = False
+    email_reveal_native_unit_cap: int = Field(default=0, ge=0)
+    phone_reveal_native_unit_cap: int = Field(default=0, ge=0)
+    email_reveal_budget_cents: int = Field(default=0, ge=0)
+    phone_reveal_budget_cents: int = Field(default=0, ge=0)
+    phone_identity_promotion_allowed: bool = False
+    approved_strong_profile_hosts: tuple[str, ...] = ("linkedin.com",)
+
+    @model_validator(mode="after")
+    def _policy_is_bounded_and_fail_closed(self) -> ContactResearchPolicyPin:
+        for label, values in (
+            ("professional source plan", self.professional_source_plan),
+            ("personal facet source plan", self.personal_facet_source_plan),
+            ("channel reveal source plan", self.channel_reveal_source_plan),
+            ("strong profile hosts", self.approved_strong_profile_hosts),
+        ):
+            if len(set(values)) != len(values):
+                raise ValueError(f"contact research {label} must be unique")
+            if any(not value.strip() for value in values):
+                raise ValueError(f"contact research {label} cannot contain an empty value")
+        if not self.professional_source_plan or not self.personal_facet_source_plan:
+            raise ValueError("contact research requires professional and personal-facet plans")
+        if self.phone_identity_promotion_allowed:
+            raise ValueError("phone remains delivery data and can never be an identity key")
+        reveal_budgets = (
+            self.email_reveal_native_unit_cap,
+            self.phone_reveal_native_unit_cap,
+            self.email_reveal_budget_cents,
+            self.phone_reveal_budget_cents,
+        )
+        if not self.contact_reveals_enabled and (
+            self.channel_reveal_source_plan or any(reveal_budgets)
+        ):
+            raise ValueError("disabled contact reveals require no provider plan and zero budgets")
+        if self.contact_reveals_enabled and (
+            not self.channel_reveal_source_plan or not any(reveal_budgets)
+        ):
+            raise ValueError("enabled contact reveals require providers and a non-zero reservation")
+        return self
+
+    def canonical_bytes(self) -> bytes:
+        return json.dumps(
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+
+    def sha256(self) -> Sha256Hex:
+        return hashlib.sha256(self.canonical_bytes()).hexdigest()
+
+    @property
+    def freshness_policy_ref(self) -> str:
+        return f"contact-research-freshness:{self.sha256()}"
+
+
+class ContactProviderFailureClass(StrEnum):
+    """Closed failure categories shared by future C3/C4/C5 contact providers."""
+
+    VALIDATION = "validation"
+    AUTHENTICATION = "authentication"
+    INSUFFICIENT_CREDIT = "insufficient_credit"
+    RATE_LIMIT = "rate_limit"
+    SERVER = "server"
+    TRANSPORT = "transport"
+
+
+class ContactProviderFailureDisposition(StrEnum):
+    HARD = "hard"
+    BUDGET_PAUSED = "budget_paused"
+    RETRYABLE = "retryable"
+    SPEND_UNKNOWN = "spend_unknown"
+
+
+class ContactProviderFailure(BaseModel):
+    """Body-independent HTTP failure classification with honest dispatch/spend semantics."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status_code: int | None = Field(default=None, ge=100, le=599)
+    failure_class: ContactProviderFailureClass
+    disposition: ContactProviderFailureDisposition
+    dispatched: bool
+    retry_after_seconds: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _retry_after_is_rate_limit_only(self) -> ContactProviderFailure:
+        if self.retry_after_seconds is not None and (
+            self.failure_class is not ContactProviderFailureClass.RATE_LIMIT
+        ):
+            raise ValueError("Retry-After is valid only for a rate-limit response")
+        return self
+
+
+def classify_contact_provider_failure(
+    status_code: int | None,
+    *,
+    dispatched: bool,
+    retry_after_seconds: int | None = None,
+) -> ContactProviderFailure:
+    """Classify a provider failure without trusting an undocumented error-body schema.
+
+    A transport failure or retryable HTTP response after possible dispatch is spend-unknown. Before
+    dispatch it is retryable. Authentication/validation are hard, while an explicit 402 is the
+    independently governed insufficient-credit/budget pause. This is intentionally provider-neutral:
+    Sumble and Exa bodies may change, but HTTP status, dispatch evidence, and
+    ``Retry-After`` are the executable contract.
+    """
+
+    if status_code is not None and 200 <= status_code <= 299:
+        raise ValueError("a successful HTTP status is not a provider failure")
+    if status_code in {401, 403}:
+        failure_class = ContactProviderFailureClass.AUTHENTICATION
+        disposition = ContactProviderFailureDisposition.HARD
+    elif status_code == 402:
+        failure_class = ContactProviderFailureClass.INSUFFICIENT_CREDIT
+        disposition = ContactProviderFailureDisposition.BUDGET_PAUSED
+    elif status_code == 429:
+        failure_class = ContactProviderFailureClass.RATE_LIMIT
+        disposition = (
+            ContactProviderFailureDisposition.SPEND_UNKNOWN
+            if dispatched
+            else ContactProviderFailureDisposition.RETRYABLE
+        )
+    elif status_code is not None and 500 <= status_code <= 599:
+        failure_class = ContactProviderFailureClass.SERVER
+        disposition = (
+            ContactProviderFailureDisposition.SPEND_UNKNOWN
+            if dispatched
+            else ContactProviderFailureDisposition.RETRYABLE
+        )
+    elif status_code is None or status_code in {408, 425}:
+        failure_class = ContactProviderFailureClass.TRANSPORT
+        disposition = (
+            ContactProviderFailureDisposition.SPEND_UNKNOWN
+            if dispatched
+            else ContactProviderFailureDisposition.RETRYABLE
+        )
+    else:
+        failure_class = ContactProviderFailureClass.VALIDATION
+        disposition = ContactProviderFailureDisposition.HARD
+    return ContactProviderFailure(
+        status_code=status_code,
+        failure_class=failure_class,
+        disposition=disposition,
+        dispatched=dispatched,
+        retry_after_seconds=retry_after_seconds,
+    )
 
 
 class ChannelIdentityCorroboration(StrEnum):
@@ -236,6 +421,42 @@ class ContactResearchTarget(BaseModel):
         return self
 
 
+def _validate_target_field_scope(target: ContactResearchTarget) -> None:
+    professional = set(CONTACT_PROFESSIONAL_FIELD_KEYS)
+    channels = set(CONTACT_CHANNEL_FIELD_KEYS.values())
+    for field_key in target.field_keys:
+        token = str(field_key)
+        if token in professional or token in channels:
+            continue
+        if classify_field_key(field_key) is FieldClass.CONTACT_FACET:
+            continue
+        raise ValueError(
+            f"contact research target field {token!r} is not a professional fact, "
+            "personal facet, or separately authorized channel"
+        )
+
+
+def _source_plan_for(
+    target: ContactResearchTarget,
+    policy: ContactResearchPolicyPin,
+) -> tuple[str, ...]:
+    """Compile the complete, ordered, non-widenable source plan for one selected contact."""
+
+    field_tokens = {str(field_key) for field_key in target.field_keys}
+    sources: list[str] = []
+    if field_tokens.intersection(CONTACT_PROFESSIONAL_FIELD_KEYS):
+        sources.extend(policy.professional_source_plan)
+    if any(
+        classify_field_key(field_key) is FieldClass.CONTACT_FACET for field_key in target.field_keys
+    ):
+        sources.extend(policy.personal_facet_source_plan)
+    if CONTACT_CHANNEL_FIELD_KEYS[ContactChannel.EMAIL] in field_tokens:
+        sources.extend(target.email.provider_source_keys)
+    if CONTACT_CHANNEL_FIELD_KEYS[ContactChannel.PHONE] in field_tokens:
+        sources.extend(target.phone.provider_source_keys)
+    return tuple(dict.fromkeys(sources))
+
+
 class ContactResearchSelectionBody(BaseModel):
     """The content-addressed execution body of a selected-contact receipt."""
 
@@ -246,7 +467,8 @@ class ContactResearchSelectionBody(BaseModel):
     project_run_id: ProjectRunId
     account_entity_id: EntityId
     research_directive: ResearchDirectivePin
-    targets: tuple[ContactResearchTarget, ...] = Field(min_length=1, max_length=64)
+    targets: tuple[ContactResearchTarget, ...] = Field(min_length=1, max_length=20)
+    policy: ContactResearchPolicyPin
     source_profile_ref: str = Field(min_length=1)
     jurisdiction_policy_ref: str = Field(min_length=1)
     use_policy_ref: str = Field(min_length=1)
@@ -257,9 +479,73 @@ class ContactResearchSelectionBody(BaseModel):
 
     @model_validator(mode="after")
     def _selection_is_scoped(self) -> ContactResearchSelectionBody:
+        if self.research_directive.account_id != self.account_entity_id:
+            raise ValueError(
+                "contact selection directive must belong to the exact selected account"
+            )
         contact_ids = tuple(target.contact_entity_id for target in self.targets)
         if len(set(contact_ids)) != len(contact_ids):
             raise ValueError("a contact selection cannot repeat a canonical contact")
+        if len(self.targets) > self.policy.max_selected_contacts:
+            raise ValueError("contact selection exceeds the effective policy contact cap")
+
+        channel_totals = {
+            ContactChannel.EMAIL: {"native": 0, "money": 0},
+            ContactChannel.PHONE: {"native": 0, "money": 0},
+        }
+        for target in self.targets:
+            if len(target.field_keys) > self.policy.max_fields_per_contact:
+                raise ValueError("contact selection target exceeds the effective policy field cap")
+            if target.exa_max_results > self.policy.exa_max_results:
+                raise ValueError("contact selection target exceeds the effective Exa result cap")
+            if len(target.directional_question_ids) > self.policy.exa_max_additional_queries:
+                raise ValueError(
+                    "contact selection target exceeds the effective additional-query cap"
+                )
+            _validate_target_field_scope(target)
+            for channel, authorization in (
+                (ContactChannel.EMAIL, target.email),
+                (ContactChannel.PHONE, target.phone),
+            ):
+                channel_field = CONTACT_CHANNEL_FIELD_KEYS[channel]
+                if authorization.allowed != (channel_field in target.field_keys):
+                    raise ValueError(
+                        f"{channel.value} authorization must exactly match selection of "
+                        f"{channel_field}"
+                    )
+                if not authorization.allowed:
+                    continue
+                if not self.policy.contact_reveals_enabled:
+                    raise ValueError("contact selection cannot enable a policy-disabled reveal")
+                if not set(authorization.provider_source_keys).issubset(
+                    self.policy.channel_reveal_source_plan
+                ):
+                    raise ValueError(
+                        "contact selection channel provider is outside the effective policy plan"
+                    )
+                channel_totals[channel]["native"] += authorization.provider_native_unit_cap
+                channel_totals[channel]["money"] += authorization.budget_cap_cents
+
+        for channel, native_cap, money_cap in (
+            (
+                ContactChannel.EMAIL,
+                self.policy.email_reveal_native_unit_cap,
+                self.policy.email_reveal_budget_cents,
+            ),
+            (
+                ContactChannel.PHONE,
+                self.policy.phone_reveal_native_unit_cap,
+                self.policy.phone_reveal_budget_cents,
+            ),
+        ):
+            if channel_totals[channel]["native"] > native_cap:
+                raise ValueError(
+                    f"contact selection exceeds the effective {channel.value} native-unit cap"
+                )
+            if channel_totals[channel]["money"] > money_cap:
+                raise ValueError(
+                    f"contact selection exceeds the effective {channel.value} money cap"
+                )
         return self
 
     def canonical_bytes(self) -> bytes:
@@ -295,13 +581,26 @@ class ContactResearchSelection(BaseModel):
         cls,
         body: ContactResearchSelectionBody,
         *,
+        effective_policy: ContactResearchPolicyPin,
         selection_id: ContactResearchSelectionId | None = None,
     ) -> ContactResearchSelection:
+        if body.policy != effective_policy:
+            raise ValueError(
+                "contact research selection policy differs from the effective config policy"
+            )
         return cls(
             selection_id=selection_id or new_contact_research_selection_id(),
             body=body,
             selection_sha256=body.sha256(),
         )
+
+    def require_effective_policy(self, effective_policy: ContactResearchPolicyPin) -> None:
+        """Fail closed when a later compiler resolves a different effective policy revision."""
+
+        if self.body.policy != effective_policy:
+            raise ValueError(
+                "contact research selection no longer matches the effective config policy"
+            )
 
 
 class ContactResearchIntent(BaseModel):
@@ -316,6 +615,7 @@ class ContactResearchIntent(BaseModel):
     contact_entity_id: EntityId
     selection_id: ContactResearchSelectionId
     selection_sha256: Sha256Hex
+    selection: ContactResearchSelection
     research_directive: ResearchDirectivePin
     field_keys: tuple[FieldKey, ...] = Field(min_length=1, max_length=32)
     directional_question_ids: tuple[str, ...] = Field(default=(), max_length=32)
@@ -325,7 +625,7 @@ class ContactResearchIntent(BaseModel):
     budget_reservation_ref: str = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _intent_lists_are_unique(self) -> ContactResearchIntent:
+    def _intent_is_an_exact_selection_projection(self) -> ContactResearchIntent:
         for label, values in (
             ("field keys", self.field_keys),
             ("directional question ids", self.directional_question_ids),
@@ -333,7 +633,98 @@ class ContactResearchIntent(BaseModel):
         ):
             if len(set(values)) != len(values):
                 raise ValueError(f"contact research intent {label} must be unique")
+        body = self.selection.body
+        if (
+            self.selection_id != self.selection.selection_id
+            or self.selection_sha256 != self.selection.selection_sha256
+        ):
+            raise ValueError("contact research intent selection reference is inconsistent")
+        if (
+            self.workspace_id != body.workspace_id
+            or self.project_id != body.project_id
+            or self.project_run_id != body.project_run_id
+            or self.account_entity_id != body.account_entity_id
+            or self.research_directive != body.research_directive
+            or self.source_profile_ref != body.source_profile_ref
+            or self.budget_reservation_ref != body.budget_reservation_ref
+        ):
+            raise ValueError("contact research intent widens or changes its parent selection")
+        target = next(
+            (
+                candidate
+                for candidate in body.targets
+                if candidate.contact_entity_id == self.contact_entity_id
+            ),
+            None,
+        )
+        if target is None:
+            raise ValueError("contact research intent contact is absent from its parent selection")
+        if (
+            self.field_keys != target.field_keys
+            or self.directional_question_ids != target.directional_question_ids
+        ):
+            raise ValueError(
+                "contact research intent fields/questions differ from the selected target"
+            )
+        if self.source_plan != _source_plan_for(target, body.policy):
+            raise ValueError("contact research intent source plan differs from effective policy")
+        if self.freshness_policy_ref != body.policy.freshness_policy_ref:
+            raise ValueError(
+                "contact research intent freshness policy differs from effective policy"
+            )
         return self
+
+    @classmethod
+    def from_selection(
+        cls,
+        selection: ContactResearchSelection,
+        *,
+        contact_entity_id: EntityId,
+    ) -> ContactResearchIntent:
+        """Derive the sole valid exact-contact intent projection from an approved selection."""
+
+        body = selection.body
+        target = next(
+            (
+                candidate
+                for candidate in body.targets
+                if candidate.contact_entity_id == contact_entity_id
+            ),
+            None,
+        )
+        if target is None:
+            raise ValueError("cannot derive contact intent for an unselected contact")
+        return cls(
+            workspace_id=body.workspace_id,
+            project_id=body.project_id,
+            project_run_id=body.project_run_id,
+            account_entity_id=body.account_entity_id,
+            contact_entity_id=target.contact_entity_id,
+            selection_id=selection.selection_id,
+            selection_sha256=selection.selection_sha256,
+            selection=selection,
+            research_directive=body.research_directive,
+            field_keys=target.field_keys,
+            directional_question_ids=target.directional_question_ids,
+            source_plan=_source_plan_for(target, body.policy),
+            source_profile_ref=body.source_profile_ref,
+            freshness_policy_ref=body.policy.freshness_policy_ref,
+            budget_reservation_ref=body.budget_reservation_ref,
+        )
+
+    def canonical_bytes(self) -> bytes:
+        return json.dumps(
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+
+    def sha256(self) -> Sha256Hex:
+        """Stable intent material; C3 adds its exact provider wire contract to the fingerprint."""
+
+        return hashlib.sha256(self.canonical_bytes()).hexdigest()
 
 
 class ContactPreparationStatus(StrEnum):
@@ -405,12 +796,17 @@ __all__ = [
     "ContactChannelState",
     "ContactChannelValidation",
     "ContactPreparationStatus",
+    "ContactProviderFailure",
+    "ContactProviderFailureClass",
+    "ContactProviderFailureDisposition",
     "ContactResearchIntent",
+    "ContactResearchPolicyPin",
     "ContactResearchPreparation",
     "ContactResearchPreparer",
     "ContactResearchSelection",
     "ContactResearchSelectionBody",
     "ContactResearchSelectionId",
     "ContactResearchTarget",
+    "classify_contact_provider_failure",
     "new_contact_research_selection_id",
 ]

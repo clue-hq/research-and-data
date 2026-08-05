@@ -673,7 +673,7 @@ occurs without explicit live-call authorization and preflight evidence.
 
 ### C0 — Contract, field, and policy freeze
 
-**Status:** complete. Binding acceptance record:
+**Status:** complete after adversarial C0 authority/contract remediation. Binding acceptance record:
 `M8C-C0-contact-research-contract-acceptance.md`.
 
 **Owns**
@@ -682,7 +682,8 @@ occurs without explicit live-call authorization and preflight evidence.
 - professional and channel field keys/entity scopes;
 - independent-validation state machine;
 - current Sumble endpoint/version/entitlement and fixtures;
-- Exa contact Deep and optional Websets enrichment wire contracts;
+- Exa Search capability/account-compatibility authority and optional Websets feasibility only;
+  C3 owns the exact contact-targeted Exa wire contract and compiler;
 - native cost units, charge events, errors, rate limits, retry/spend-unknown rules;
 - source-plan defaults and separate reveal budgets; and
 - privacy, jurisdiction, retention, and approval policy refs.
@@ -696,6 +697,10 @@ occurs without explicit live-call authorization and preflight evidence.
 4. Every request field maps to provider docs or a captured entitled canary.
 5. Request fingerprints and reuse/freshness rules are specified.
 6. Review signs off before migrations or live adapter work.
+7. The receipt embeds the resolved policy and rejects cross-account, over-cap, widened-source,
+   widened-field, or widened-channel intents before provider compilation.
+8. Validation, authentication, insufficient-credit, rate-limit, server, and transport failures have
+   an executable body-independent classification for both pre- and post-dispatch states.
 
 ### C1 — Sumble snapshot-backed professional fact materialization
 

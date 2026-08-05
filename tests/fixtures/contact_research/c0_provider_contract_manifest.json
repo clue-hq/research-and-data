@@ -1,5 +1,19 @@
 {
   "reviewed_at": "2026-08-05",
+  "adversarially_remediated_at": "2026-08-05",
+  "provider_failure_contract": {
+    "classifier": "clue_core.classify_contact_provider_failure",
+    "provider_body_contract": "opaque",
+    "authority": "owned HTTP status + dispatch + Retry-After envelope; provider error bodies are not parsed or invented",
+    "applies_to": ["sumble_v9", "exa_search"],
+    "fixture_paths": [
+      "tests/fixtures/contact_research/provider_failures/http_validation_422.json",
+      "tests/fixtures/contact_research/provider_failures/http_auth_401.json",
+      "tests/fixtures/contact_research/provider_failures/http_insufficient_credit_402.json",
+      "tests/fixtures/contact_research/provider_failures/http_rate_limit_429.json",
+      "tests/fixtures/contact_research/provider_failures/http_server_503.json"
+    ]
+  },
   "sumble": {
     "runtime_contract": {
       "api_version": "v9",
@@ -31,6 +45,7 @@
             "tests/fixtures/providers/sumble/v9/people_pending.json",
             "tests/fixtures/providers/sumble/v9/people_running.json",
             "tests/fixtures/providers/sumble/v9/people_succeeded.json",
+            "tests/fixtures/providers/sumble/v9/people_empty_succeeded.json",
             "tests/fixtures/providers/sumble/v9/people_failed.json"
           ]
         },
@@ -60,7 +75,8 @@
           "retry_contract": "pre-dispatch transient errors retry; post-dispatch ambiguity is spend_unknown until reconciled",
           "rate_limit_contract": "shared account-level Sumble limit; durable dispatcher owns throttling",
           "fixture_paths": [
-            "tests/fixtures/providers/sumble/v9/teams_succeeded.json"
+            "tests/fixtures/providers/sumble/v9/teams_succeeded.json",
+            "tests/fixtures/providers/sumble/v9/teams_empty_succeeded.json"
           ]
         }
       ]
@@ -79,6 +95,9 @@
   "exa_search": {
     "runtime_contract": {
       "source_key": "exa_deep",
+      "authority_scope": "provider capability and inherited account-level wire evidence only",
+      "contact_targeted_compiler_authorized": false,
+      "contact_targeted_compiler_owner": "M8C C3",
       "method": "POST",
       "endpoint": "/search",
       "search_type": "deep-reasoning",
@@ -99,10 +118,11 @@
       },
       "retry_contract": "pre-dispatch transient errors retry; any ambiguous post-dispatch failure is spend_unknown",
       "rate_limit_contract": "Retry-After aware transport; durable operation owns retry state",
-      "fixture_paths": [
+      "account_compatibility_fixture_paths": [
         "tests/fixtures/providers/exa/search/deep_request.json",
         "tests/fixtures/providers/exa/search/deep_response.json"
-      ]
+      ],
+      "failure_contract_ref": "provider_failure_contract"
     }
   },
   "exa_websets": {

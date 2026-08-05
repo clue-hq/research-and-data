@@ -3,7 +3,8 @@
 - **Parent roadmap:** `M8C-contact-deep-research-and-selected-contact-enrichment-roadmap.md`
 - **Branch:** `platform/c8-account-profiling-integration`
 - **Frozen:** 2026-08-05
-- **Status:** mechanically accepted; no migration, live provider request, reveal, or identity mutation
+- **Status:** mechanically accepted after adversarial authority/contract remediation; no migration,
+  live provider request, reveal, or identity mutation
 
 This record freezes the provider-neutral selected-contact authorization, preparation outcome,
 professional field vocabulary, and channel-validation semantics that C1 and later M8C slices may
@@ -17,10 +18,19 @@ consume. It does not add a project phase or a provider branch to `AccountDeepOrc
 workspace, project/run, exact canonical account, confirmed research-directive pin, selected
 canonical contacts, committee and strong-identity claim references, admitted fields/questions,
 separate email/phone permissions, source/policy/retention references, budget reservation, and
-approver/time. A later selection is a successor; it cannot change a request pinned to an earlier
-digest.
+approver/time. It also embeds the complete resolved `ContactResearchPolicyPin`: provider-contract
+references, source plans, freshness rules, selected-contact/field/query/result caps, and separate
+channel native-unit/money caps. The body rejects a directive for another account, any unsupported
+field class, an over-cap target, an unapproved provider, unused/widened channel authority, or an
+aggregate reveal reservation above policy. `from_body` additionally requires the independently
+resolved effective policy to equal the embedded pin. A later selection is a successor; it cannot
+change a request pinned to an earlier digest.
 
-`ContactResearchIntent` is one exact-contact input derived from that selection. The provider-neutral
+`ContactResearchIntent` is one exact-contact input derived only through `from_selection`. It embeds
+its parent receipt and validates every redundant authority member against it: workspace,
+project/run, account, directive, contact, fields/questions, source profile, source plan, freshness,
+and budget. Direct construction with a foreign contact/account, changed selection digest, widened
+field/question set, or alternate source plan fails validation. The provider-neutral
 `ContactResearchPreparer` returns only `READY`, `WAITING_EXTERNAL`, `BUDGET_PAUSED`,
 `NOT_ELIGIBLE`, or `FAILED` plus durable references. Network and polling remain outside claim
 transactions. `READY` requires an immutable snapshot reference; `WAITING_EXTERNAL` requires an
@@ -97,8 +107,11 @@ public v3 documentation   -> reference/evaluation only
 future migration/reveal   -> new acceptance + entitlement canary required
 ```
 
-Exa Search request fields are pinned to the official Search reference and the existing M8B
-request/response canary. Exa Websets person import plus email/phone enrichment is recorded only as
+Exa Search capability fields are pinned to the official Search reference and the existing M8B
+**account-level compatibility** request/response canary. They are not represented as an accepted
+contact wire request: C3 owns the exact-person/employer target lock, registry-shaped schema,
+directional questions, parser negatives, and contact request fingerprint. Exa Websets person import
+plus email/phone enrichment is recorded only as
 a plausible C5 option; it is not runtime-authorized until charging, binding, empty-result,
 independent-validation, and replay semantics are canary-proven.
 
@@ -107,6 +120,14 @@ The machine-readable field-to-authority map is
 reference is `tests/fixtures/providers/sumble/v3/public_people_contract.json`.
 
 ## 3. Errors, rates, charging, and spend uncertainty
+
+Provider error bodies are deliberately opaque unless a documented schema exists. C0 owns a stable
+HTTP envelope over status, whether dispatch may have occurred, and parsed `Retry-After`; it never
+invents or branches on an undocumented vendor message. The executable classifier covers validation
+(422/other hard 4xx), authentication (401/403), insufficient credit (402), rate limit (429), server
+(5xx), timeout/too-early, and transport-without-status. A retryable/ambiguous result after possible
+dispatch is `spend_unknown`; the same transient before dispatch is retryable. Explicit
+authentication/validation remains hard and 402 becomes `budget_paused`.
 
 - Sumble native cost is credits. v9 People settles once on the first successful poll; repeated
   success is zero incremental credit. Teams settles from the successful returned rows/attributes.
@@ -141,7 +162,11 @@ reference is `tests/fixtures/providers/sumble/v3/public_people_contract.json`.
 ## 5. C0 exit evidence
 
 The C0 contract tests prove field meanings do not collide, selection digest tampering fails,
+cross-account or non-selected intent construction fails, effective layered policy caps and exact
+source/channel plans execute inside the receipt, policy changes alter selection/intent hashes,
 channel validation and identity verification are distinct, disabled reveals cannot carry a
 provider/budget, layered policy overrides remain auditable, every executable request field has a
-documentation/canary authority, both Sumble versions have dated fixtures, and every referenced
-fixture exists. No migration or live adapter work is introduced by C0.
+documentation/canary authority, Sumble success/empty/pending/running/failed shapes parse, all five
+HTTP failure classes execute in both dispatch states, the Exa fixtures are explicitly account-only
+compatibility evidence, both Sumble versions have dated fixtures, and every referenced fixture
+exists. No migration or live adapter work is introduced by C0.

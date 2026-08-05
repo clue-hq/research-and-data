@@ -1,0 +1,10 @@
+{
+  "applies_to": ["sumble_v9", "exa_search"],
+  "fixture_kind": "owned_transport_envelope",
+  "status_code": 429,
+  "retry_after_seconds": 30,
+  "expected_failure_class": "rate_limit",
+  "expected_pre_dispatch": "retryable",
+  "expected_post_dispatch": "spend_unknown",
+  "provider_body_contract": "opaque"
+}
