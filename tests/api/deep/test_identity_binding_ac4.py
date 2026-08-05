@@ -26,6 +26,7 @@ from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver, clear_resolver_bindings
 from clue_research.verification import classify_binding
 from tests.profiling.conftest import (
+    TEST_FACET_SOURCE,
     FakeCommitteeSource,
     FakeFacetResolver,
     FakeGateway,
@@ -39,7 +40,7 @@ from tests.profiling.conftest import (
 
 _RUN = UUID("a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4")
 _TENANT = "acme"
-_FACET_SOURCE = "exa_deep"
+_FACET_SOURCE = TEST_FACET_SOURCE
 
 
 def _composition_classifier() -> BindingClassifier:

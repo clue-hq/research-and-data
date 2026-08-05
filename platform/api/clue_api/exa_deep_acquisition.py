@@ -44,7 +44,6 @@ from clue_research.durable.external_research import (
     complete_external_research_pre_dispatch_failure,
     complete_external_research_success,
     find_reusable_external_research_operation,
-    lock_external_research_reuse,
     mark_external_research_spend_unknown,
     reserve_external_research_operation,
 )
@@ -383,15 +382,11 @@ class ExaDeepAcquisitionCoordinator:
             content_address(request_bytes),
         )
         async with self._conn_factory() as conn:
-            await lock_external_research_reuse(
-                conn,
-                workspace_id=preflight.request.workspace_id,
-                reuse_fingerprint=preflight.request.reuse_fingerprint,
-            )
+            now = self._clock()
             reusable = await find_reusable_external_research_operation(
                 conn,
                 request=preflight.request,
-                now=self._clock(),
+                now=now,
             )
             if reusable is not None:
                 return reusable, False
@@ -410,6 +405,7 @@ class ExaDeepAcquisitionCoordinator:
                 conn,
                 request=preflight.request,
                 request_artifact_key=request_key,
+                now=now,
             )
             if created:
                 await _bind_artifact(conn, operation, request_key, "exa_deep_request")

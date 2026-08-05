@@ -4,8 +4,8 @@
 - **Depends on:** accepted M8C C0 subject contracts and the M8B external-research ledger
 - **Branch:** `platform/c8-account-profiling-integration`
 - **Accepted:** 2026-08-05
-- **Status:** mechanically accepted; no provider call, contact field materialization, reveal, or
-  fleet scheduling
+- **Status:** mechanically accepted after atomic-reservation and mandatory-Exa-lineage
+  remediation; no provider call, contact field materialization, reveal, or fleet scheduling
 
 C2 makes the existing provider-neutral external-research ledger safe for exact-contact work before
 C3 compiles contact-targeted Exa requests. It preserves the account-deep behavior accepted in M8B:
@@ -45,8 +45,15 @@ Exa contact compiler that will generate these fingerprints from its exact-person
 request; C2 owns the ledger rule that prevents a compiler or caller from replaying them across
 subjects.
 
-Concurrent acquisition continues to use the existing provider-neutral transaction-scoped reuse
-lock. Once the winner reserves the operation, the other process joins it. Dispatch lease ownership,
+`reserve_external_research_operation(...)` is now the sole owner of the provider-neutral,
+transaction-scoped reuse lock. Under that lock it repeats semantic reuse lookup, exact replay
+validation, shared-capacity admission, and insertion. A caller may use an unlocked lookup only as
+an optimization; correctness no longer depends on manually composing
+`lock -> lookup -> reserve`. Two fresh processes that call the public reserve function directly
+elect one operation, including when their exact request fingerprints/windows differ but their
+immutable wire request and semantic reuse identity are the same.
+
+Once the winner reserves the operation, the other process joins it. Dispatch lease ownership,
 attempt ordinal, receipt, snapshot, and spend settlement remain generic to the operation rather
 than branching on provider or subject kind.
 
@@ -67,16 +74,23 @@ snapshot and performs no HTTP or additional settlement.
 
 ## 4. Migration
 
-Alembic revision `9e3afe93b8e1` is reversible and remains the repository's sole head. It adds:
+Alembic revision `9e3afe93b8e1` adds C2's exact subject shape. Follow-up revision
+`f9281fac77e1` closes the audited reservation and Exa-lineage gaps and is the repository's sole
+head. Together they add:
 
 - exact subject columns, foreign keys, and shape checks to snapshots and snapshot-use receipts;
 - operation-canonicality, operation/snapshot equality, and snapshot-use equality triggers;
 - contact-aware account/contact ready, snapshot, and adoption indexes; and
-- exact account-versus-contact external-research claim-lineage enforcement.
+- exact account-versus-contact external-research claim-lineage enforcement;
+- a database check requiring every `exa_deep` claim to carry operation, snapshot, provider-request,
+  and result-artifact references; and
+- an upgrade preflight that rejects legacy Exa rows with missing lineage instead of fabricating a
+  backfill.
 
-Upgrade backfills every existing snapshot and use receipt from its immutable operation subject.
-Downgrade restores the prior account-only snapshot/use schema, indexes, and claim-lineage
-validator.
+The first upgrade backfills every existing snapshot and use receipt from its immutable operation
+subject. The hardening upgrade accepts only already-complete Exa lineage. Downgrade restores C2's
+exact-subject but formerly optional Exa-lineage validator, then the prior account-only
+snapshot/use schema and indexes.
 
 ## 5. Exit-gate evidence
 
@@ -85,22 +99,27 @@ The C2 tests prove:
 1. account and contact snapshots cannot cross-satisfy;
 2. two same-name contacts with different LinkedIn strong keys cannot reuse or materialize one
    another's operation, snapshot, use receipt, or claim lineage;
-3. two fresh processes racing under the reuse lock elect exactly one operation;
+3. two fresh processes calling the public reserve API directly elect exactly one operation;
 4. a simulated post-dispatch crash produces one attempt and no duplicate submit or charge;
 5. ready replay in a new process adopts the same snapshot with zero provider calls;
 6. a merged loser is rejected while its immutable history remains auditable;
 7. account-deep E1/E2 acquisition and materialization remain compatible; and
-8. the migration passes upgrade to head, downgrade to the prior head, upgrade to head, and the
-   complete head-to-base-to-head smoke on an isolated database.
+8. exact Exa lineage succeeds, while all-null, partial, wrong-subject, wrong-snapshot, and
+   wrong-result-artifact lineage fail at the database boundary;
+9. pre-E1 resolver/verification doubles cannot impersonate the production `exa_deep` source; and
+10. the migration passes upgrade to head, downgrade to the prior head, upgrade to head, and the
+    complete head-to-base-to-head smoke on an isolated database.
 
 Verification recorded on 2026-08-05:
 
-- 22 focused C0/C1/C2 and E1/E2 compatibility tests passed;
-- the complete live-DB pytest suite reached 100% with exit code 0 from 3,391 collected tests;
+- the focused C2, E1/E2, A1, contact-governance, resolver, and verification regressions passed;
+- the complete clean-database pytest suite reached 100% with exit code 0 from 3,398 collected
+  tests;
 - Ruff lint and format checks passed on every C2 Python file;
 - mypy passed across all 525 source files;
 - all 24 import-linter contracts passed; and
-- `alembic heads` and the post-suite database state both reported only `9e3afe93b8e1`.
+- downgrade `f9281fac77e1 -> 26eaa6262063`, re-upgrade, and `alembic heads` reported only
+  `f9281fac77e1`.
 
 All provider-call counters in C2 acceptance remained zero. The durable response and $0.03
 settlement used by the process test are synthetic ledger inputs, not an Exa or Sumble call or

@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -74,6 +75,7 @@ from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+TEST_FACET_SOURCE = "fixture_contact_facet"
 
 
 def _alembic_config() -> Config:
@@ -177,16 +179,15 @@ async def seed_packs(conn: AsyncConnection) -> None:
 
 
 async def register_facet_source(
-    conn: AsyncConnection, source_key: str = "exa_deep", *, tier: int = 4
+    conn: AsyncConnection, source_key: str = TEST_FACET_SOURCE, *, tier: int = 4
 ) -> None:
-    """Register the facet ``tier_plan`` source a test binds its fake resolver to.
+    """Register and select the provider-neutral source a facet test binds its fake resolver to.
 
     M8.4's fill now runs through the shared waterfall engine, which (correctly) SKIPS an
     unregistered source instead of resolving it — so a bound fake must sit behind a real manifest.
-    ``exa_deep`` is also a committed production seed (v1: BOTH scope, cost 10) on a persistent
-    schema, so the test variant registers at **version 2** — a versioned update inside the test's
-    rolled-back transaction (the rerun-idempotency pattern, cf. the AC-6 gate test) — which also
-    makes the manifest deterministic regardless of suite order. ``tier`` lets the sanctioned
+    A fake must never impersonate ``exa_deep``: real Exa claims require immutable operation,
+    snapshot, request, and result-artifact lineage. This helper therefore installs a test-only
+    source and rewrites the rolled-back facet field plans to select it. ``tier`` lets sanctioned
     lower-tier fixtures bind a genuine tier-3 manifest (the engine enforces claim tier == manifest
     tier)."""
     await register_source(
@@ -201,8 +202,15 @@ async def register_facet_source(
                 cost_cents=Decimal(0),
             ),
             active=True,
-            version=2,
+            version=1,
         ),
+    )
+    await conn.execute(
+        text(
+            "UPDATE field_definition SET tier_plan=jsonb_build_array(CAST(:source_key AS text)) "
+            "WHERE field_key LIKE 'contact.facet.%'"
+        ),
+        {"source_key": source_key},
     )
 
 

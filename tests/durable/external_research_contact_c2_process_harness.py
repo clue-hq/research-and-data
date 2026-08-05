@@ -22,7 +22,6 @@ from clue_research.durable import (
     complete_external_research_success,
     find_external_research_operation,
     find_reusable_external_research_operation,
-    lock_external_research_reuse,
     reserve_external_research_operation,
 )
 from clue_research.durable.discovery import capture_discovery_artifact
@@ -156,24 +155,12 @@ async def _reserve(state_path: Path, key: str) -> dict[str, object]:
     request = _request_from(state, key)
     artifact_key = str(state[f"{key.removesuffix('_request')}_request_key"])
     async with db_lifespan() as engine, engine.begin() as conn:
-        await lock_external_research_reuse(
-            conn,
-            workspace_id=request.workspace_id,
-            reuse_fingerprint=request.reuse_fingerprint,
-        )
-        reusable = await find_reusable_external_research_operation(
+        operation, created = await reserve_external_research_operation(
             conn,
             request=request,
+            request_artifact_key=artifact_key,
             now=_START,
         )
-        if reusable is not None:
-            operation, created = reusable, False
-        else:
-            operation, created = await reserve_external_research_operation(
-                conn,
-                request=request,
-                request_artifact_key=artifact_key,
-            )
     return {
         "operation_id": str(operation.operation_id),
         "created": created,

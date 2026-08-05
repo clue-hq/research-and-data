@@ -25,6 +25,7 @@ from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver, clear_resolver_bindings
 
 from ..conftest import (
+    TEST_FACET_SOURCE,
     FakeFacetResolver,
     insert_test_account,
     insert_test_contact,
@@ -36,7 +37,7 @@ from ..conftest import (
 
 _RUN = UUID("66666666-6666-6666-6666-666666666666")
 _TENANT = "acme"
-_FACET_SOURCE = "exa_deep"
+_FACET_SOURCE = TEST_FACET_SOURCE
 
 
 _DEFAULT_SPAN = object()  # sentinel: distinguishes "use the default span" from "explicitly None"

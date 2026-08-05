@@ -9,17 +9,21 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     AccountEntity,
     Claim,
     Entity,
     EntityId,
+    EntityScope,
     ExtractionMethod,
     FieldDef,
+    Modality,
     PassKind,
     ResearchMode,
     ReuseScope,
+    SourceManifest,
     VerificationStatus,
     account_claim,
     new_entity_id,
@@ -33,12 +37,20 @@ from clue_research.resolvers import (
 )
 from clue_research.resolvers.exa import ExaDeepRequestFailure
 from clue_research.resolvers.exa.deep_contract import ExaDeepFailureClass
-from clue_research.sources import StopReason, bind_resolver, get_resolver, resolve_field
+from clue_research.sources import (
+    RegistrySourceManifest,
+    StopReason,
+    bind_resolver,
+    get_resolver,
+    register_source,
+    resolve_field,
+)
 
 from .conftest import rollback_conn, run_async
 
 _PAIN = "account.operational_pain"
 _MODE = ResearchMode.ACCOUNT_PROFILING
+_FIXTURE_SYNTHESIS_SOURCE = "fixture_tier4_synthesis"
 
 
 class _Accounts:
@@ -68,13 +80,42 @@ def _account(domain: str = "acme.com") -> AccountEntity:
     )
 
 
-def _field(key: str = _PAIN) -> FieldDef:
+def _field(
+    key: str = _PAIN, *, tier_plan: tuple[str, ...] = ("exa_deep", "parallel_task")
+) -> FieldDef:
     return FieldDef(
         field_key=key,
         value_type="str",
-        tier_plan=("exa_deep", "parallel_task"),
+        tier_plan=tier_plan,
         pass_kind=PassKind.DEEP,
     )
+
+
+async def _register_fixture_synthesis_source(conn: AsyncConnection) -> None:
+    """Install the tier-4 test identity used when a resolver double writes claims.
+
+    The resolver behavior remains under test, but a double cannot write with ``exa_deep``
+    provenance because it has no durable provider operation/snapshot lineage.
+    """
+    await register_source(
+        conn,
+        RegistrySourceManifest(
+            manifest=SourceManifest(
+                source_key=_FIXTURE_SYNTHESIS_SOURCE,
+                modality=Modality.TEXT,
+                entity_scope=EntityScope.ACCOUNT,
+                yields=("account", "account.resonance"),
+                tier=4,
+                cost_cents=Decimal(10),
+            ),
+            active=True,
+            version=1,
+        ),
+    )
+
+
+def _fixture_field(key: str = _PAIN) -> FieldDef:
+    return _field(key, tier_plan=(_FIXTURE_SYNTHESIS_SOURCE,))
 
 
 def _on_entity_field(key: str = _PAIN, conf: float = 0.9) -> SynthesizedField:
@@ -109,7 +150,9 @@ async def _claims(conn: object, entity_id: EntityId, field_key: str) -> list[Cla
     return list(await claims_for(conn, entity_id, field_key, scope=ALL_WORKSPACES))  # type: ignore[arg-type]
 
 
-def test_exa_fires_through_the_waterfall_with_engine_stamped_provenance(require_db: None) -> None:
+def test_exa_resolver_runs_through_fixture_source_without_forging_exa_lineage(
+    require_db: None,
+) -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             account = _account()
@@ -119,12 +162,14 @@ def test_exa_fires_through_the_waterfall_with_engine_stamped_provenance(require_
                     SynthesisResult(fields=(_on_entity_field(),), cost_cents=Decimal(9))
                 ),
             )
+            bind_resolver(_FIXTURE_SYNTHESIS_SOURCE, get_resolver("exa_deep"))
+            await _register_fixture_synthesis_source(conn)
             entity = account.as_entity()
             run_id = new_run_id()
-            result = await resolve_field(conn, entity, _field(), mode=_MODE, run_id=run_id)
+            result = await resolve_field(conn, entity, _fixture_field(), mode=_MODE, run_id=run_id)
             assert result.stop_reason is StopReason.CONFIDENT_HIT
             (claim,) = await _claims(conn, entity.entity_id, _PAIN)
-            assert claim.source_key == "exa_deep"  # engine-stamped
+            assert claim.source_key == _FIXTURE_SYNTHESIS_SOURCE  # engine-stamped
             assert claim.source_tier == 4
             assert claim.extraction_method is ExtractionMethod.LLM_SYNTHESIS
             assert claim.run_id == run_id and claim.research_mode is _MODE  # restamped
@@ -161,13 +206,16 @@ def test_swap_seam_waterfall_call_site_unchanged(require_db: None) -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             account = _account()
-            bind_resolver("exa_deep", _StubTier4Resolver())  # swap behind the same key
+            await _register_fixture_synthesis_source(conn)
+            bind_resolver(_FIXTURE_SYNTHESIS_SOURCE, _StubTier4Resolver())
             entity = account.as_entity()
-            result = await resolve_field(conn, entity, _field(), mode=_MODE, run_id=new_run_id())
+            result = await resolve_field(
+                conn, entity, _fixture_field(), mode=_MODE, run_id=new_run_id()
+            )
             assert result.stop_reason is StopReason.CONFIDENT_HIT
             (claim,) = await _claims(conn, entity.entity_id, _PAIN)
             assert claim.value_json == "swapped synthesis value"
-            assert claim.source_key == "exa_deep"
+            assert claim.source_key == _FIXTURE_SYNTHESIS_SOURCE
 
     run_async(_run())
 
@@ -201,11 +249,15 @@ def test_realized_cost_recorded_on_the_step(require_db: None) -> None:
                     SynthesisResult(fields=(_on_entity_field(),), cost_cents=Decimal(7))
                 ),
             )
+            bind_resolver(_FIXTURE_SYNTHESIS_SOURCE, get_resolver("exa_deep"))
+            await _register_fixture_synthesis_source(conn)
             result = await resolve_field(
-                conn, account.as_entity(), _field(), mode=_MODE, run_id=new_run_id()
+                conn, account.as_entity(), _fixture_field(), mode=_MODE, run_id=new_run_id()
             )
-            exa_step = next(s for s in result.per_tier if s.source_key == "exa_deep")
-            assert exa_step.cost_cents == Decimal(7)
+            synthesis_step = next(
+                s for s in result.per_tier if s.source_key == _FIXTURE_SYNTHESIS_SOURCE
+            )
+            assert synthesis_step.cost_cents == Decimal(7)
             assert result.total_cost_cents == Decimal(7)
 
     run_async(_run())
@@ -234,7 +286,7 @@ def test_resonance_synthesis_is_tenant_private(require_db: None) -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             account = _account()
-            field = _field("account.resonance.culture")
+            field = _fixture_field("account.resonance.culture")
             culture = SynthesizedField(
                 field_key="account.resonance.culture",
                 value="Acme has a low-trust, high-burnout culture",
@@ -247,6 +299,8 @@ def test_resonance_synthesis_is_tenant_private(require_db: None) -> None:
                 accounts=_Accounts(account),
                 backend=_StubBackend(SynthesisResult(fields=(culture,), cost_cents=Decimal(9))),
             )
+            bind_resolver(_FIXTURE_SYNTHESIS_SOURCE, get_resolver("exa_deep"))
+            await _register_fixture_synthesis_source(conn)
             entity = account.as_entity()
             result = await resolve_field(
                 conn, entity, field, mode=_MODE, run_id=new_run_id(), workspace_id="client-1"

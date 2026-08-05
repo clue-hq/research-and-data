@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -42,7 +43,6 @@ from clue_research.durable import (
     get_external_research_snapshot,
     list_external_research_result_artifacts,
     list_ready_external_research_snapshots,
-    lock_external_research_reuse,
     reserve_external_research_operation,
 )
 from clue_research.durable.discovery import capture_discovery_artifact
@@ -127,15 +127,11 @@ async def _ready_contact_snapshot(
     request_key = await _artifact(
         conn, storage, workspace_id=request.workspace_id, label=f"request-{request.contact_id}"
     )
-    await lock_external_research_reuse(
-        conn,
-        workspace_id=request.workspace_id,
-        reuse_fingerprint=request.reuse_fingerprint,
-    )
     operation, created = await reserve_external_research_operation(
         conn,
         request=request,
         request_artifact_key=request_key,
+        now=now,
     )
     assert created
     dispatch = await claim_external_research_dispatch(
@@ -284,13 +280,36 @@ def test_c2_projects_exact_subject_and_blocks_account_or_same_name_cross_reuse(
                 }
             )
             await insert_claim(conn, exact_claim)
+            for missing_refs in (
+                {
+                    "source_operation_ref": None,
+                    "source_snapshot_ref": None,
+                    "source_request_ref": None,
+                },
+                {"source_snapshot_ref": None},
+            ):
+                missing_lineage_claim = exact_claim.model_copy(
+                    update={"id": new_claim_id(), **missing_refs}
+                )
+                lineage_savepoint = await conn.begin_nested()
+                with pytest.raises(DBAPIError, match="require complete operation"):
+                    await insert_claim(conn, missing_lineage_claim)
+                await lineage_savepoint.rollback()
+
             wrong_contact_claim = exact_claim.model_copy(
                 update={"id": new_claim_id(), "entity_id": contact_b}
             )
-            lineage_savepoint = await conn.begin_nested()
-            with pytest.raises(DBAPIError, match="lineage does not match"):
-                await insert_claim(conn, wrong_contact_claim)
-            await lineage_savepoint.rollback()
+            for mismatched_claim in (
+                wrong_contact_claim,
+                exact_claim.model_copy(
+                    update={"id": new_claim_id(), "source_snapshot_ref": str(uuid4())}
+                ),
+                exact_claim.model_copy(update={"id": new_claim_id(), "artifact_key": request_key}),
+            ):
+                lineage_savepoint = await conn.begin_nested()
+                with pytest.raises(DBAPIError, match="lineage does not match"):
+                    await insert_claim(conn, mismatched_claim)
+                await lineage_savepoint.rollback()
 
             exact = await list_ready_external_research_snapshots(
                 conn,
@@ -352,6 +371,7 @@ def test_c2_projects_exact_subject_and_blocks_account_or_same_name_cross_reuse(
                     conn,
                     request=tampered,
                     request_artifact_key=request_key,
+                    now=now,
                 )
             with pytest.raises(ExternalResearchReplayConflict):
                 await adopt_external_research_snapshot(
@@ -508,8 +528,23 @@ def test_c2_active_materialization_lookup_is_subject_exact(tmp_path: Path) -> No
                 conn,
                 request=request,
                 request_artifact_key=request_key,
+                now=datetime(2026, 8, 5, 5, 30, tzinfo=UTC),
             )
             assert created
+            semantic_alias = request.model_copy(
+                update={
+                    "request_fingerprint": _sha("request:semantic-alias"),
+                    "observation_window": "window:c2:semantic-alias",
+                }
+            )
+            reused, alias_created = await reserve_external_research_operation(
+                conn,
+                request=semantic_alias,
+                request_artifact_key=request_key,
+                now=datetime(2026, 8, 5, 5, 30, tzinfo=UTC),
+            )
+            assert not alias_created
+            assert reused.operation_id == operation.operation_id
             exact = await find_active_external_research_operation_for_materialization(
                 conn,
                 workspace_id=seed.workspace_id,

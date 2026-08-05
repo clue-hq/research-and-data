@@ -16,6 +16,7 @@ from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver
 
 from ..conftest import (
+    TEST_FACET_SOURCE,
     FakeFacetResolver,
     insert_test_account,
     insert_test_contact,
@@ -27,7 +28,7 @@ from ..conftest import (
 
 _RUN = UUID("88888888-8888-8888-8888-888888888888")
 _TENANT = "acme"
-_FACET_SOURCE = "exa_deep"
+_FACET_SOURCE = TEST_FACET_SOURCE
 
 
 async def _field(conn):  # type: ignore[no-untyped-def]
