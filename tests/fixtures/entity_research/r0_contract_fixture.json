@@ -1,0 +1,406 @@
+{
+  "authority": {
+    "contract_version": "m8d-r0-v1",
+    "components": [
+      {
+        "component_id": "head-of-abm",
+        "component_class": "platform_deepagent",
+        "framework": "deepagents.create_deep_agent",
+        "subject_type": null,
+        "chooses_research_tools": false,
+        "dispatches_provider_requests": false
+      },
+      {
+        "component_id": "shared-research-fleet",
+        "component_class": "fleet_shell",
+        "framework": null,
+        "subject_type": null,
+        "chooses_research_tools": false,
+        "dispatches_provider_requests": false
+      },
+      {
+        "component_id": "entity-job-controller",
+        "component_class": "job_controller",
+        "framework": null,
+        "subject_type": null,
+        "chooses_research_tools": false,
+        "dispatches_provider_requests": false
+      },
+      {
+        "component_id": "account-research-agent",
+        "component_class": "entity_agent",
+        "framework": "langchain.agents.create_agent",
+        "subject_type": "account",
+        "chooses_research_tools": true,
+        "dispatches_provider_requests": false
+      },
+      {
+        "component_id": "contact-research-agent",
+        "component_class": "entity_agent",
+        "framework": "langchain.agents.create_agent",
+        "subject_type": "contact",
+        "chooses_research_tools": true,
+        "dispatches_provider_requests": false
+      },
+      {
+        "component_id": "facet-research-agent",
+        "component_class": "facet_agent",
+        "framework": "langchain.agents.create_agent",
+        "subject_type": "contact",
+        "chooses_research_tools": true,
+        "dispatches_provider_requests": false
+      },
+      {
+        "component_id": "governed-provider-engine",
+        "component_class": "engine_service",
+        "framework": null,
+        "subject_type": null,
+        "chooses_research_tools": false,
+        "dispatches_provider_requests": true
+      }
+    ],
+    "tool_surfaces": [
+      {
+        "subject_type": "account",
+        "tool_names": [
+          "read_account_research_state",
+          "research_account_deep",
+          "enrich_account",
+          "inspect_account_evidence",
+          "discover_buying_committee",
+          "assess_account_coverage",
+          "read_research_result",
+          "read_evidence",
+          "delegate_account_facet",
+          "finalize_account_research"
+        ],
+        "exposes_provider_sdk": false
+      },
+      {
+        "subject_type": "contact",
+        "tool_names": [
+          "read_contact_research_state",
+          "research_contact_deep",
+          "enrich_contact",
+          "inspect_contact_evidence",
+          "reveal_contact_channel",
+          "validate_contact_channel",
+          "assess_contact_coverage",
+          "read_research_result",
+          "read_evidence",
+          "delegate_contact_facet",
+          "finalize_contact_research"
+        ],
+        "exposes_provider_sdk": false
+      }
+    ]
+  },
+  "account_selection": {
+    "selection_id": "44444444-4444-4444-8444-444444444441",
+    "workspace_id": "00000000-0000-4000-8000-000000000001",
+    "project_id": "00000000-0000-4000-8000-000000000002",
+    "product_id": "00000000-0000-4000-8000-000000000003",
+    "project_run_id": "00000000-0000-4000-8000-000000000004",
+    "subject_type": "account",
+    "account_entity_id": null,
+    "subjects": [
+      {
+        "subject_entity_id": "11111111-1111-4111-8111-111111111111",
+        "basis": "account_selection",
+        "strong_identity_claim_refs": [],
+        "association_evidence_refs": [],
+        "committee_claim_refs": []
+      }
+    ],
+    "directive_ref": "artifact:directive:account:v1",
+    "directive_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "field_plan_ref": "field-plan:account:v1",
+    "source_plan_ref": "source-plan:account:v1",
+    "admitted_field_keys": [
+      "account.operational_pain",
+      "account.hiring_velocity_eng"
+    ],
+    "admitted_source_keys": ["exa_deep", "sumble_jobs", "official_page"],
+    "research_questions": ["Where is administrative work creating avoidable burden?"],
+    "facet_keys": ["account.workflow"],
+    "channel_permissions": [],
+    "policy_refs": ["policy:research:v1", "policy:personal-data:v1"],
+    "budget_envelope_ref": "budget:account-run:v1",
+    "approval_refs": ["approval:account-launch:v1"],
+    "confirmed_by": "user:owner",
+    "confirmed_at": "2026-08-06T10:00:00Z"
+  },
+  "contact_selection": {
+    "selection_id": "44444444-4444-4444-8444-444444444442",
+    "workspace_id": "00000000-0000-4000-8000-000000000001",
+    "project_id": "00000000-0000-4000-8000-000000000002",
+    "product_id": "00000000-0000-4000-8000-000000000003",
+    "project_run_id": "00000000-0000-4000-8000-000000000004",
+    "subject_type": "contact",
+    "account_entity_id": "11111111-1111-4111-8111-111111111111",
+    "subjects": [
+      {
+        "subject_entity_id": "22222222-2222-4222-8222-222222222222",
+        "basis": "committee_member",
+        "strong_identity_claim_refs": ["claim:contact-identity:1"],
+        "association_evidence_refs": ["evidence:current-employment:1"],
+        "committee_claim_refs": ["claim:committee-role:1"]
+      },
+      {
+        "subject_entity_id": "33333333-3333-4333-8333-333333333333",
+        "basis": "user_selected_associated_contact",
+        "strong_identity_claim_refs": ["claim:contact-identity:2"],
+        "association_evidence_refs": ["evidence:current-employment:2"],
+        "committee_claim_refs": []
+      }
+    ],
+    "directive_ref": "artifact:directive:contact:v1",
+    "directive_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "field_plan_ref": "field-plan:contact:v1",
+    "source_plan_ref": "source-plan:contact:v1",
+    "admitted_field_keys": ["contact.professional_priorities", "contact.facet.public_hobbies"],
+    "admitted_source_keys": ["exa_deep", "sumble_people"],
+    "research_questions": ["What public professional interests are safely attributable?"],
+    "facet_keys": ["public_appearances", "published_work"],
+    "channel_permissions": ["email", "phone"],
+    "policy_refs": ["policy:research:v1", "policy:contact-use:v1"],
+    "budget_envelope_ref": "budget:contact-run:v1",
+    "approval_refs": ["approval:contact-launch:v1", "approval:email:v1", "approval:phone:v1"],
+    "confirmed_by": "user:owner",
+    "confirmed_at": "2026-08-06T10:30:00Z"
+  },
+  "account_lifecycle": {
+    "run_id": "55555555-5555-4555-8555-555555555551",
+    "run_kind": "account_research",
+    "selection": "$account_selection",
+    "user_confirmed_launch": true,
+    "operations": ["account_profile", "committee_discovery"],
+    "automatic_successor_run": false
+  },
+  "contact_lifecycle": {
+    "run_id": "55555555-5555-4555-8555-555555555552",
+    "run_kind": "contact_research",
+    "selection": "$contact_selection",
+    "user_confirmed_launch": true,
+    "operations": ["contact_research"],
+    "automatic_successor_run": false
+  },
+  "non_committee_contact_job": {
+    "job_id": "66666666-6666-4666-8666-666666666661",
+    "research_run_id": "55555555-5555-4555-8555-555555555552",
+    "subject_type": "contact",
+    "subject_entity_id": "33333333-3333-4333-8333-333333333333",
+    "parent_account_id": "11111111-1111-4111-8111-111111111111",
+    "workspace_id": "00000000-0000-4000-8000-000000000001",
+    "project_id": "00000000-0000-4000-8000-000000000002",
+    "product_id": "00000000-0000-4000-8000-000000000003",
+    "project_run_id": "00000000-0000-4000-8000-000000000004",
+    "selection": "$contact_selection",
+    "agent_profile_ref": "agent-profile:contact-research:v1",
+    "agent_profile_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "checkpoint_thread_id": "checkpoint:contact:3333",
+    "attempt_id": "77777777-7777-4777-8777-777777777771",
+    "lease_id": "77777777-7777-4777-8777-777777777772"
+  },
+  "qualitative_source_plan": {
+    "field_key": "account.operational_pain",
+    "applicable_source_keys": ["exa_deep", "official_page"],
+    "attempts": [
+      {"strategy": "qualitative_deep", "source_key": "exa_deep"},
+      {"strategy": "contradiction_check", "source_key": "official_page"}
+    ]
+  },
+  "tool_request": {
+    "research_run_id": "55555555-5555-4555-8555-555555555551",
+    "job_id": "66666666-6666-4666-8666-666666666662",
+    "subject_type": "account",
+    "target_entity_id": "11111111-1111-4111-8111-111111111111",
+    "parent_account_id": null,
+    "agent_turn_id": "88888888-8888-4888-8888-888888888881",
+    "agent_execution_id": "88888888-8888-4888-8888-888888888882",
+    "tool_call_id": "88888888-8888-4888-8888-888888888883",
+    "tool_name": "research_account_deep",
+    "tool_version": 1,
+    "tool_input_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "field_plan_ref": "field-plan:account:v1",
+    "source_plan_ref": "source-plan:account:v1",
+    "field_keys": ["account.operational_pain", "account.resonance.culture"],
+    "source_keys": ["exa_deep"],
+    "questions": ["What evidence shows operational burden and employee frustration?"],
+    "budget_reservation_key": "budget-key:account-exa:1",
+    "idempotency_key": "tool-request:account-exa:1",
+    "parent_operation_ref": null,
+    "parent_observation_ref": null,
+    "follow_up_reason": null
+  },
+  "tool_result": {
+    "subject_type": "account",
+    "target_entity_id": "11111111-1111-4111-8111-111111111111",
+    "operation_ref": "operation:exa-deep:1",
+    "result_ref": "research-result:exa-deep:1",
+    "request_artifact_ref": "artifact:exa-request:1",
+    "raw_response_artifact_refs": ["artifact:exa-raw:1"],
+    "retained_result_artifact_refs": ["artifact:exa-page:1"],
+    "normalized_result_artifact_ref": "artifact:exa-normalized:1",
+    "provider_receipt_ref": "receipt:exa:1",
+    "cost_settlement_ref": "settlement:exa:1",
+    "requested_field_keys": ["account.operational_pain", "account.resonance.culture"],
+    "fields": [
+      {
+        "field_key": "account.operational_pain",
+        "outcome": "found",
+        "value": "Referral intake is manually reconciled across fax and phone queues.",
+        "value_ref": "artifact:value:operational-pain:1",
+        "claim_delta": "accepted",
+        "claim_refs": ["claim:operational-pain:1"],
+        "decision_refs": ["verification:operational-pain:1"],
+        "evidence": [
+          {
+            "evidence_ref": "evidence:operational-pain:1",
+            "source_key": "exa_deep",
+            "provider_source_id": "exa-result:1",
+            "source_url": "https://example.org/careers/referral-coordinator",
+            "artifact_ref": "artifact:exa-page:1",
+            "evidence_span": "Coordinates incoming referrals received by fax and phone."
+          }
+        ],
+        "confidence": 0.84,
+        "verification_status": "supported"
+      },
+      {
+        "field_key": "account.resonance.culture",
+        "outcome": "null",
+        "value": null,
+        "value_ref": null,
+        "claim_delta": "none",
+        "claim_refs": [],
+        "decision_refs": [],
+        "evidence": [],
+        "confidence": null,
+        "verification_status": "not_found"
+      }
+    ],
+    "delivery": "inline_complete",
+    "read_tool_address": null,
+    "provider_reported_cost_cents": "2.10",
+    "cost_cents": "2.10"
+  },
+  "causation": {
+    "subject_type": "account",
+    "target_entity_id": "11111111-1111-4111-8111-111111111111",
+    "provider_operation_ref": "operation:exa-deep:1",
+    "agent_turn_id": "88888888-8888-4888-8888-888888888881",
+    "agent_execution_id": "88888888-8888-4888-8888-888888888882",
+    "tool_call_id": "88888888-8888-4888-8888-888888888883",
+    "tool_name": "research_account_deep",
+    "tool_version": 1,
+    "tool_input_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "agent_turn_started_at": "2026-08-06T11:00:00Z",
+    "tool_call_recorded_at": "2026-08-06T11:00:01Z",
+    "provider_operation_reserved_at": "2026-08-06T11:00:02Z",
+    "provider_dispatched_at": "2026-08-06T11:00:03Z",
+    "parent_operation_ref": null,
+    "parent_observation_ref": null,
+    "follow_up_reason": null
+  },
+  "follow_up_causation": {
+    "subject_type": "account",
+    "target_entity_id": "11111111-1111-4111-8111-111111111111",
+    "provider_operation_ref": "operation:exa-deep:2",
+    "agent_turn_id": "88888888-8888-4888-8888-888888888884",
+    "agent_execution_id": "88888888-8888-4888-8888-888888888885",
+    "tool_call_id": "88888888-8888-4888-8888-888888888886",
+    "tool_name": "research_account_deep",
+    "tool_version": 1,
+    "tool_input_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "agent_turn_started_at": "2026-08-06T11:10:00Z",
+    "tool_call_recorded_at": "2026-08-06T11:10:01Z",
+    "provider_operation_reserved_at": "2026-08-06T11:10:02Z",
+    "provider_dispatched_at": "2026-08-06T11:10:03Z",
+    "parent_operation_ref": "operation:exa-deep:1",
+    "parent_observation_ref": "research-result:exa-deep:1",
+    "follow_up_reason": "evidence_verification"
+  },
+  "facet_policy": {
+    "enabled": true,
+    "max_depth": 1,
+    "max_children": 2,
+    "children_may_delegate": false,
+    "shares_parent_budget": true
+  },
+  "parallel_execution": {
+    "subject_type": "account",
+    "target_entity_id": "11111111-1111-4111-8111-111111111111",
+    "engine_authorized": true,
+    "concurrency_cap": 2,
+    "calls": [
+      {
+        "tool_call_id": "99999999-9999-4999-8999-999999999991",
+        "tool_name": "research_account_deep",
+        "source_family": "exa",
+        "field_keys": ["account.operational_pain", "account.strategic_moves"],
+        "budget_reservation_ref": "budget-reservation:exa:1",
+        "purpose": "independent_source",
+        "facet_key": null,
+        "depends_on_tool_call_ids": [],
+        "overlap_authorization_ref": null
+      },
+      {
+        "tool_call_id": "99999999-9999-4999-8999-999999999992",
+        "tool_name": "enrich_account",
+        "source_family": "sumble",
+        "field_keys": ["account.hiring_velocity_eng"],
+        "budget_reservation_ref": "budget-reservation:sumble:1",
+        "purpose": "independent_source",
+        "facet_key": null,
+        "depends_on_tool_call_ids": [],
+        "overlap_authorization_ref": null
+      }
+    ],
+    "provider_rate_limit_refs": ["rate-limit:exa", "rate-limit:sumble"],
+    "wait_policy": "persist_release_slot_resume_same_checkpoint"
+  },
+  "finalization_proposal": {
+    "proposal_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+    "subject_type": "account",
+    "target_entity_id": "11111111-1111-4111-8111-111111111111",
+    "outcome": "completed",
+    "current_state_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "coverage_ledger_ref": "coverage-ledger:account:1",
+    "claim_delta_ledger_ref": "claim-delta-ledger:account:1",
+    "spend_reconciliation_ref": "spend-reconciliation:account:1",
+    "identity_use_verification_ref": "verification-ledger:account:1",
+    "completed_field_keys": ["account.operational_pain"],
+    "unresolved_field_keys": [],
+    "claim_refs": ["claim:operational-pain:1"],
+    "evidence_refs": ["evidence:operational-pain:1"],
+    "result_refs": ["research-result:exa-deep:1"],
+    "unresolved_reasons": [],
+    "review_flags": [],
+    "pending_operation_refs": []
+  },
+  "finalization_receipt": {
+    "receipt_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+    "proposal": "$finalization_proposal",
+    "proposal_ref": "finalization-proposal:account:1",
+    "engine_actor": "engine:entity-research-finalizer",
+    "accepted_at": "2026-08-06T11:30:00Z",
+    "accepted_state_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "verification": {
+      "no_pending_operations": true,
+      "evidence_complete": true,
+      "coverage_matches": true,
+      "spend_reconciled": true,
+      "identity_use_verification_complete": true,
+      "policy_scope_respected": true,
+      "current_state_matches": true
+    }
+  },
+  "terminal_job_status": {
+    "job_id": "66666666-6666-4666-8666-666666666662",
+    "state": "terminal",
+    "finalization_outcome": "completed",
+    "finalization_receipt_ref": "finalization-receipt:account:1",
+    "model_final_message_ref": "artifact:model-final-message:1"
+  }
+}

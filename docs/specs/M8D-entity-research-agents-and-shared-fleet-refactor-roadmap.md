@@ -1,7 +1,7 @@
 # M8D — Entity research agents and shared fleet refactor roadmap
 ## `langchain.agents.create_agent` account/contact units over one durable fleet substrate
 
-> **Status:** discussion-approved implementation roadmap; implementation has not started.
+> **Status:** R0 accepted; R1–R10 have not started.
 > **Recorded:** 2026-08-06. **Working branch at record time:**
 > `platform/c8-account-profiling-integration`.
 >
@@ -532,6 +532,10 @@ provider-operation causation, finalization, selection, facet, and concurrency co
 
 **Exit gate:** tests fail against every forbidden old flow and pass against contract fixtures;
 implementation has not yet been widened.
+
+**Accepted 2026-08-06:** the frozen contracts, schema fingerprints, canonical fixture, 56-case
+forbidden-flow battery, verification evidence, and no-widening boundary are recorded in
+`M8D-R0-authority-contract-acceptance.md`.
 
 ### R1 — Cleanup and active-path quarantine
 
