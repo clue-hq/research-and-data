@@ -23,8 +23,15 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import CONTACT_PROFESSIONAL_FIELD_KEYS, FieldDef, PassKind, Persona
-from clue_research.claimstore import SeedField, load_pack
+from clue_core import (
+    CONTACT_PROFESSIONAL_FIELD_KEYS,
+    EntityType,
+    FieldDef,
+    PassKind,
+    Persona,
+    ResearchSectionKind,
+)
+from clue_research.claimstore import ResearchViewFieldRoute, SeedField, load_pack
 
 # --- field keys (conventions §3: plain contact.* committee facts) -----------
 ROLE_ON_COMMITTEE = "contact.role_on_committee"
@@ -138,9 +145,14 @@ def _committee_field(
 
 
 def _professional_field(
-    field_key: str, *, value_type: str, value_schema: dict[str, Any], description: str
+    field_key: str,
+    *,
+    value_type: str,
+    value_schema: dict[str, Any],
+    description: str,
+    ordinal: int,
 ) -> SeedField:
-    """A 30-day, snapshot-produced professional field with no waterfall tier plan."""
+    """A 30-day professional fact routed into the governed contact research view."""
 
     return SeedField(
         field_def=FieldDef(
@@ -153,6 +165,14 @@ def _professional_field(
         ),
         value_schema=value_schema,
         description=description,
+        research_view_route=ResearchViewFieldRoute(
+            field_key=field_key,
+            entity_type=EntityType.CONTACT,
+            section_kind=ResearchSectionKind.PROFESSIONAL_SIGNALS,
+            context_scope="project_run_pinned",
+            product_mode="neutral_or_exact",
+            ordinal=ordinal,
+        ),
     )
 
 
@@ -183,18 +203,21 @@ COMMITTEE_PACK: tuple[SeedField, ...] = (
         value_type="str",
         value_schema={"type": "string"},
         description="Provider-returned current professional title for an admitted contact.",
+        ordinal=10,
     ),
     _professional_field(
         JOB_FUNCTION,
         value_type="str",
         value_schema={"type": "string"},
         description="Provider-returned current job function for an admitted contact.",
+        ordinal=20,
     ),
     _professional_field(
         JOB_LEVEL,
         value_type="str",
         value_schema={"type": "string"},
         description="Provider-returned current job level for an admitted contact.",
+        ordinal=30,
     ),
     _professional_field(
         TEAM_MEMBERSHIP,
@@ -203,12 +226,14 @@ COMMITTEE_PACK: tuple[SeedField, ...] = (
         description=(
             "Provider-modeled organization-team membership with explicit relationship basis."
         ),
+        ordinal=40,
     ),
     _professional_field(
         CURRENT_LOCATION,
         value_type="object",
         value_schema=_CURRENT_LOCATION_SCHEMA,
         description="Provider-returned current professional location/country.",
+        ordinal=50,
     ),
     _professional_field(
         ORGANIZATION_RELATIONSHIP,
@@ -217,6 +242,7 @@ COMMITTEE_PACK: tuple[SeedField, ...] = (
         description=(
             "Exact-account current-employment relationship with returned or modeled basis."
         ),
+        ordinal=60,
     ),
 )
 

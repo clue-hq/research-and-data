@@ -10,12 +10,14 @@ import pytest
 
 from clue_core import (
     CONTACT_PROFESSIONAL_FIELD_KEYS,
+    EntityType,
     ExtractionMethod,
     FieldClass,
     IdentityBinding,
     PassKind,
     Persona,
     ResearchMode,
+    ResearchSectionKind,
     ReuseScope,
     UseClass,
     classify_field_key,
@@ -30,6 +32,7 @@ from clue_research.claimstore import (
     current_value,
     get_field,
     insert_claim,
+    list_research_view_routes,
     validate_value,
 )
 from clue_research.identity import stamp_reuse
@@ -85,6 +88,29 @@ def test_pack_load_is_idempotent(require_profiling_db: None) -> None:
             await load_committee_pack(conn)
             await load_committee_pack(conn)  # second load is a no-op, not an error
             assert await get_field(conn, PERSONA) is not None
+
+    run_async(scenario())
+
+
+def test_professional_fields_route_to_contact_view_but_channels_never_do(
+    require_profiling_db: None,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await load_committee_pack(conn)
+            routes = await list_research_view_routes(
+                conn,
+                entity_type=EntityType.CONTACT,
+                view_schema_version="1.0",
+            )
+            by_field = {item.field_key: item for item in routes}
+            for ordinal, field_key in enumerate(CONTACT_PROFESSIONAL_FIELD_KEYS, start=1):
+                route = by_field[field_key]
+                assert route.section_kind is ResearchSectionKind.PROFESSIONAL_SIGNALS
+                assert route.context_scope == "project_run_pinned"
+                assert route.ordinal == ordinal * 10
+            assert "core.work_email" not in by_field
+            assert "core.direct_phone" not in by_field
 
     run_async(scenario())
 

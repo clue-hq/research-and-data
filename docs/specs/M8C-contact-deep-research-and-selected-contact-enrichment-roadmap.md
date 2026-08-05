@@ -4,9 +4,10 @@
 > **Status:** implementation underway; C0 contract/field/policy freeze, C1 snapshot-backed
 > professional materialization, C2 exact contact-subject durability, C3 contact-targeted Exa Deep
 > compilation, C4 durable contact acquisition/materialization, and C5 selected-contact channel
-> enrichment/validation and C6 provider-neutral preparation/wait/resume composition are
-> mechanically accepted. C4/C5 paid provider canaries and the concrete selected-channel validator
-> deployment remain separately authorization/configuration-gated; C7 is next. **Recorded:**
+> enrichment/validation, C6 provider-neutral preparation/wait/resume composition, and C7 governed
+> contact handoff/content consumption are mechanically accepted. C4/C5 paid provider canaries and
+> the concrete selected-channel validator deployment remain separately
+> authorization/configuration-gated; V0 is next. **Recorded:**
 > 2026-08-05. **Parent capability:**
 > [M8B account-deep provider integration](M8B-exa-sumble-account-deep-integration-roadmap.md).
 > **Working branch at record time:** `platform/c8-account-profiling-integration`.
@@ -864,6 +865,11 @@ production composition rather than substituting a test adapter.
 6. Existing account and committee paths regress green.
 
 ### C7 — Handoff and content-consumption bridge
+
+**Status:** mechanically accepted. The binding implementation and verification record is
+`M8C-C7-contact-handoff-content-bridge-acceptance.md`. C7 is a reference-only projection and makes
+no provider call; combined fake-transport acceptance remains V0 and live provider acceptance
+remains V1.
 
 **Owns**
 
