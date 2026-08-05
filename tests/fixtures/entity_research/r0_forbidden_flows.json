@@ -1,0 +1,441 @@
+{
+  "contract_version": "m8d-r0-v1",
+  "cases": [
+    {
+      "case_id": "old-entity-deepagent",
+      "model": "EntityResearchAuthorityContract",
+      "base": "authority",
+      "mutations": [{"op": "set", "path": ["components", 3, "framework"], "value": "deepagents.create_deep_agent"}],
+      "expected_error": "entity and facet agents must use langchain.agents.create_agent"
+    },
+    {
+      "case_id": "agent-dispatches-provider",
+      "model": "EntityResearchAuthorityContract",
+      "base": "authority",
+      "mutations": [{"op": "set", "path": ["components", 3, "dispatches_provider_requests"], "value": true}],
+      "expected_error": "agents may request governed tools but never dispatch providers"
+    },
+    {
+      "case_id": "controller-chooses-research-tools",
+      "model": "EntityResearchAuthorityContract",
+      "base": "authority",
+      "mutations": [{"op": "set", "path": ["components", 2, "chooses_research_tools"], "value": true}],
+      "expected_error": "fleet, controllers, and engines cannot choose research tools"
+    },
+    {
+      "case_id": "controller-dispatches-provider",
+      "model": "EntityResearchAuthorityContract",
+      "base": "authority",
+      "mutations": [{"op": "set", "path": ["components", 2, "dispatches_provider_requests"], "value": true}],
+      "expected_error": "fleet shell and job controllers cannot dispatch provider requests"
+    },
+    {
+      "case_id": "duplicate-contact-agent-class",
+      "model": "EntityResearchAuthorityContract",
+      "base": "authority",
+      "mutations": [{
+        "op": "append",
+        "path": ["components"],
+        "value": {
+          "component_id": "second-contact-research-agent",
+          "component_class": "entity_agent",
+          "framework": "langchain.agents.create_agent",
+          "subject_type": "contact",
+          "chooses_research_tools": true,
+          "dispatches_provider_requests": false
+        }
+      }],
+      "expected_error": "manifest requires one account and one contact entity-agent class"
+    },
+    {
+      "case_id": "duplicate-contact-tool-surface",
+      "model": "EntityResearchAuthorityContract",
+      "base": "authority",
+      "mutations": [{
+        "op": "append",
+        "path": ["tool_surfaces"],
+        "value": {
+          "subject_type": "contact",
+          "tool_names": [
+            "read_contact_research_state",
+            "research_contact_deep",
+            "enrich_contact",
+            "inspect_contact_evidence",
+            "assess_contact_coverage",
+            "read_research_result",
+            "read_evidence",
+            "finalize_contact_research"
+          ],
+          "exposes_provider_sdk": false
+        }
+      }],
+      "expected_error": "every entity-agent class requires one matching tool surface"
+    },
+    {
+      "case_id": "gap-only-account-agent-surface",
+      "model": "EntityAgentToolSurface",
+      "base": "authority.tool_surfaces.0",
+      "mutations": [{"op": "set", "path": ["tool_names"], "value": ["research_account_gaps"]}],
+      "expected_error": "research_account_gaps is a superseded entity-agent tool"
+    },
+    {
+      "case_id": "provider-sdk-tool-exposed",
+      "model": "EntityAgentToolSurface",
+      "base": "authority.tool_surfaces.0",
+      "mutations": [{"op": "append", "path": ["tool_names"], "value": "exa_search_sdk"}],
+      "expected_error": "entity-agent tool surface contains ungoverned tools"
+    },
+    {
+      "case_id": "provider-sdk-flag-exposed",
+      "model": "EntityAgentToolSurface",
+      "base": "authority.tool_surfaces.1",
+      "mutations": [{"op": "set", "path": ["exposes_provider_sdk"], "value": true}],
+      "expected_error": "entity agents receive governed semantic tools, never provider SDKs"
+    },
+    {
+      "case_id": "channel-reveal-without-validation",
+      "model": "EntityAgentToolSurface",
+      "base": "authority.tool_surfaces.1",
+      "mutations": [{"op": "remove", "path": ["tool_names", 5]}],
+      "expected_error": "contact channel observation and validation tools must be paired"
+    },
+    {
+      "case_id": "account-selection-authorizes-contact-channel",
+      "model": "EntityResearchSelection",
+      "base": "account_selection",
+      "mutations": [{"op": "append", "path": ["channel_permissions"], "value": "email"}],
+      "expected_error": "account research selection cannot authorize contact channels"
+    },
+    {
+      "case_id": "account-selection-carries-contact-identity-evidence",
+      "model": "EntityResearchSelection",
+      "base": "account_selection",
+      "mutations": [{"op": "append", "path": ["subjects", 0, "strong_identity_claim_refs"], "value": "claim:contact-identity:wrong-axis"}],
+      "expected_error": "account selection cannot carry contact identity evidence"
+    },
+    {
+      "case_id": "contact-selection-admits-account-field",
+      "model": "EntityResearchSelection",
+      "base": "contact_selection",
+      "mutations": [{"op": "set", "path": ["admitted_field_keys"], "value": ["account.operational_pain"]}],
+      "expected_error": "entity research selection contains a field outside the contact axis"
+    },
+    {
+      "case_id": "contact-selection-without-strong-identity",
+      "model": "EntityResearchSelection",
+      "base": "contact_selection",
+      "mutations": [{"op": "set", "path": ["subjects", 1, "strong_identity_claim_refs"], "value": []}],
+      "expected_error": "selected contacts require strong identity evidence"
+    },
+    {
+      "case_id": "contact-selection-without-account-association",
+      "model": "EntityResearchSelection",
+      "base": "contact_selection",
+      "mutations": [{"op": "set", "path": ["subjects", 1, "association_evidence_refs"], "value": []}],
+      "expected_error": "selected contacts require exact-account association evidence"
+    },
+    {
+      "case_id": "committee-selection-without-committee-proof",
+      "model": "EntityResearchSelection",
+      "base": "contact_selection",
+      "mutations": [{"op": "set", "path": ["subjects", 0, "committee_claim_refs"], "value": []}],
+      "expected_error": "committee-selected contacts require committee claim evidence"
+    },
+    {
+      "case_id": "contact-job-target-not-selected",
+      "model": "EntityResearchJobAuthorization",
+      "base": "non_committee_contact_job",
+      "mutations": [{"op": "set", "path": ["subject_entity_id"], "value": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"}],
+      "expected_error": "entity job target is not present in the exact selection"
+    },
+    {
+      "case_id": "contact-job-cross-project-scope",
+      "model": "EntityResearchJobAuthorization",
+      "base": "non_committee_contact_job",
+      "mutations": [{"op": "set", "path": ["project_id"], "value": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"}],
+      "expected_error": "entity job scope differs from its exact selection"
+    },
+    {
+      "case_id": "contact-job-wrong-parent-account",
+      "model": "EntityResearchJobAuthorization",
+      "base": "non_committee_contact_job",
+      "mutations": [{"op": "set", "path": ["parent_account_id"], "value": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"}],
+      "expected_error": "contact job requires its selection's exact parent account"
+    },
+    {
+      "case_id": "unconfirmed-account-launch",
+      "model": "ResearchRunLifecycleContract",
+      "base": "account_lifecycle",
+      "mutations": [{"op": "set", "path": ["user_confirmed_launch"], "value": false}],
+      "expected_error": "entity research runs require an explicit user-confirmed launch"
+    },
+    {
+      "case_id": "automatic-account-to-contact-successor",
+      "model": "ResearchRunLifecycleContract",
+      "base": "account_lifecycle",
+      "mutations": [{"op": "set", "path": ["automatic_successor_run"], "value": true}],
+      "expected_error": "account and contact research runs cannot launch successors automatically"
+    },
+    {
+      "case_id": "account-run-performs-contact-research",
+      "model": "ResearchRunLifecycleContract",
+      "base": "account_lifecycle",
+      "mutations": [{"op": "append", "path": ["operations"], "value": "contact_research"}],
+      "expected_error": "account research run cannot perform contact deep research"
+    },
+    {
+      "case_id": "contact-run-performs-account-research",
+      "model": "ResearchRunLifecycleContract",
+      "base": "contact_lifecycle",
+      "mutations": [{"op": "append", "path": ["operations"], "value": "account_profile"}],
+      "expected_error": "contact run contains account-owned operations"
+    },
+    {
+      "case_id": "duplicate-account-run-operation",
+      "model": "ResearchRunLifecycleContract",
+      "base": "account_lifecycle",
+      "mutations": [{"op": "append", "path": ["operations"], "value": "account_profile"}],
+      "expected_error": "entity research run operations must be unique"
+    },
+    {
+      "case_id": "manufactured-deterministic-first-attempt",
+      "model": "FieldResearchSourcePlan",
+      "base": "qualitative_source_plan",
+      "mutations": [{"op": "set", "path": ["attempts", 0, "source_key"], "value": "deterministic_exact"}],
+      "expected_error": "field research attempt names a source absent from the effective source plan"
+    },
+    {
+      "case_id": "contact-tool-request-without-parent-account",
+      "model": "GovernedResearchToolRequest",
+      "base": "tool_request",
+      "mutations": [{"op": "set", "path": ["subject_type"], "value": "contact"}],
+      "expected_error": "contact tool request requires the exact parent account"
+    },
+    {
+      "case_id": "follow-up-tool-request-with-partial-lineage",
+      "model": "GovernedResearchToolRequest",
+      "base": "tool_request",
+      "mutations": [{"op": "set", "path": ["parent_operation_ref"], "value": "operation:exa-deep:0"}],
+      "expected_error": "follow-up tool request requires complete parent observation lineage"
+    },
+    {
+      "case_id": "account-tool-request-uses-contact-tool",
+      "model": "GovernedResearchToolRequest",
+      "base": "tool_request",
+      "mutations": [{"op": "set", "path": ["tool_name"], "value": "research_contact_deep"}],
+      "expected_error": "tool request is outside its entity-agent semantic tool surface"
+    },
+    {
+      "case_id": "account-tool-request-uses-contact-field",
+      "model": "GovernedResearchToolRequest",
+      "base": "tool_request",
+      "mutations": [{"op": "set", "path": ["field_keys"], "value": ["contact.professional_priorities"]}],
+      "expected_error": "governed tool request contains a field outside the account axis"
+    },
+    {
+      "case_id": "lossy-result-without-raw-snapshot",
+      "model": "PersistedResearchToolResult",
+      "base": "tool_result",
+      "mutations": [{"op": "set", "path": ["raw_response_artifact_refs"], "value": []}],
+      "expected_error": "at least 1 item"
+    },
+    {
+      "case_id": "lossy-result-omits-requested-field",
+      "model": "PersistedResearchToolResult",
+      "base": "tool_result",
+      "mutations": [{"op": "remove", "path": ["fields", 1]}],
+      "expected_error": "result projection must index every requested field exactly once"
+    },
+    {
+      "case_id": "lossy-inline-result-omits-found-value",
+      "model": "PersistedResearchToolResult",
+      "base": "tool_result",
+      "mutations": [{"op": "set", "path": ["fields", 0, "value"], "value": null}],
+      "expected_error": "inline-complete found fields require their complete values"
+    },
+    {
+      "case_id": "found-result-without-evidence",
+      "model": "PersistedResearchToolResult",
+      "base": "tool_result",
+      "mutations": [{"op": "set", "path": ["fields", 0, "evidence"], "value": []}],
+      "expected_error": "found field requires retained evidence"
+    },
+    {
+      "case_id": "rejected-result-without-decision-record",
+      "model": "PersistedResearchToolResult",
+      "base": "tool_result",
+      "mutations": [
+        {"op": "set", "path": ["fields", 0, "outcome"], "value": "rejected"},
+        {"op": "set", "path": ["fields", 0, "claim_delta"], "value": "rejected"},
+        {"op": "set", "path": ["fields", 0, "decision_refs"], "value": []}
+      ],
+      "expected_error": "rejected claim delta requires durable decision references"
+    },
+    {
+      "case_id": "account-result-contains-contact-field",
+      "model": "PersistedResearchToolResult",
+      "base": "tool_result",
+      "mutations": [
+        {"op": "set", "path": ["requested_field_keys", 1], "value": "contact.professional_priorities"},
+        {"op": "set", "path": ["fields", 1, "field_key"], "value": "contact.professional_priorities"}
+      ],
+      "expected_error": "persisted research result contains a field outside the account axis"
+    },
+    {
+      "case_id": "provider-dispatch-precedes-tool-journal",
+      "model": "ProviderOperationCausation",
+      "base": "causation",
+      "mutations": [{"op": "set", "path": ["provider_dispatched_at"], "value": "2026-08-06T10:59:00Z"}],
+      "expected_error": "provider operation must follow agent start, tool journal, and durable reservation"
+    },
+    {
+      "case_id": "follow-up-provider-operation-with-partial-lineage",
+      "model": "ProviderOperationCausation",
+      "base": "follow_up_causation",
+      "mutations": [{"op": "set", "path": ["parent_observation_ref"], "value": null}],
+      "expected_error": "follow-up causation requires parent operation, observation, and reason"
+    },
+    {
+      "case_id": "recursive-facet-child",
+      "model": "FacetDelegationContract",
+      "base": "facet_policy",
+      "mutations": [{"op": "set", "path": ["children_may_delegate"], "value": true}],
+      "expected_error": "facet children cannot delegate"
+    },
+    {
+      "case_id": "facet-separate-budget",
+      "model": "FacetDelegationContract",
+      "base": "facet_policy",
+      "mutations": [{"op": "set", "path": ["shares_parent_budget"], "value": false}],
+      "expected_error": "facet children must draw from the parent budget"
+    },
+    {
+      "case_id": "facet-depth-exceeds-one",
+      "model": "FacetDelegationContract",
+      "base": "facet_policy",
+      "mutations": [{"op": "set", "path": ["max_depth"], "value": 2}],
+      "expected_error": "enabled facet delegation is depth one with one or two children"
+    },
+    {
+      "case_id": "facet-child-count-exceeds-two",
+      "model": "FacetDelegationContract",
+      "base": "facet_policy",
+      "mutations": [{"op": "set", "path": ["max_children"], "value": 3}],
+      "expected_error": "enabled facet delegation is depth one with one or two children"
+    },
+    {
+      "case_id": "disabled-facet-reserves-children",
+      "model": "FacetDelegationContract",
+      "base": "facet_policy",
+      "mutations": [{"op": "set", "path": ["enabled"], "value": false}],
+      "expected_error": "disabled facet delegation must reserve zero depth and children"
+    },
+    {
+      "case_id": "parallel-calls-without-engine-admission",
+      "model": "ParallelToolExecutionContract",
+      "base": "parallel_execution",
+      "mutations": [{"op": "set", "path": ["engine_authorized"], "value": false}],
+      "expected_error": "parallel entity-agent tool execution requires engine authorization"
+    },
+    {
+      "case_id": "parallel-dependent-follow-up",
+      "model": "ParallelToolExecutionContract",
+      "base": "parallel_execution",
+      "mutations": [{"op": "append", "path": ["calls", 1, "depends_on_tool_call_ids"], "value": "99999999-9999-4999-8999-999999999991"}],
+      "expected_error": "a tool call cannot run beside another call it depends on"
+    },
+    {
+      "case_id": "parallel-calls-share-budget-reservation",
+      "model": "ParallelToolExecutionContract",
+      "base": "parallel_execution",
+      "mutations": [{"op": "set", "path": ["calls", 1, "budget_reservation_ref"], "value": "budget-reservation:exa:1"}],
+      "expected_error": "parallel calls require separate atomic budget reservations"
+    },
+    {
+      "case_id": "parallel-overlap-without-corroboration-authority",
+      "model": "ParallelToolExecutionContract",
+      "base": "parallel_execution",
+      "mutations": [{"op": "set", "path": ["calls", 1, "field_keys"], "value": ["account.operational_pain"]}],
+      "expected_error": "overlapping parallel field work requires explicit corroboration"
+    },
+    {
+      "case_id": "parallel-duplicate-provider-work",
+      "model": "ParallelToolExecutionContract",
+      "base": "parallel_execution",
+      "mutations": [
+        {"op": "set", "path": ["calls", 1, "tool_name"], "value": "research_account_deep"},
+        {"op": "set", "path": ["calls", 1, "source_family"], "value": "exa"}
+      ],
+      "expected_error": "parallel calls to one research provider require distinct admitted facets"
+    },
+    {
+      "case_id": "account-parallel-batch-contains-contact-field",
+      "model": "ParallelToolExecutionContract",
+      "base": "parallel_execution",
+      "mutations": [{"op": "set", "path": ["calls", 1, "field_keys"], "value": ["contact.professional_priorities"]}],
+      "expected_error": "parallel tool execution contains a field outside the account axis"
+    },
+    {
+      "case_id": "finalization-with-pending-provider-work",
+      "model": "ResearchFinalizationProposal",
+      "base": "finalization_proposal",
+      "mutations": [{"op": "append", "path": ["pending_operation_refs"], "value": "operation:pending:1"}],
+      "expected_error": "finalization cannot be proposed while provider work is pending"
+    },
+    {
+      "case_id": "completed-finalization-with-unresolved-gap",
+      "model": "ResearchFinalizationProposal",
+      "base": "finalization_proposal",
+      "mutations": [
+        {"op": "append", "path": ["unresolved_field_keys"], "value": "account.resonance.culture"},
+        {"op": "append", "path": ["unresolved_reasons"], "value": "No inspectable evidence was found."}
+      ],
+      "expected_error": "completed finalization cannot retain unresolved fields"
+    },
+    {
+      "case_id": "needs-review-without-durable-flags",
+      "model": "ResearchFinalizationProposal",
+      "base": "finalization_proposal",
+      "mutations": [{"op": "set", "path": ["outcome"], "value": "needs_review"}],
+      "expected_error": "needs_review finalization requires durable review flags"
+    },
+    {
+      "case_id": "account-finalization-contains-contact-field",
+      "model": "ResearchFinalizationProposal",
+      "base": "finalization_proposal",
+      "mutations": [{"op": "set", "path": ["completed_field_keys"], "value": ["contact.professional_priorities"]}],
+      "expected_error": "finalization proposal contains a field outside the account axis"
+    },
+    {
+      "case_id": "finalization-accepts-stale-state",
+      "model": "ResearchFinalizationReceipt",
+      "base": "finalization_receipt",
+      "mutations": [{"op": "set", "path": ["accepted_state_sha256"], "value": "0000000000000000000000000000000000000000000000000000000000000000"}],
+      "expected_error": "finalization receipt does not accept the proposed current state"
+    },
+    {
+      "case_id": "finalization-skips-spend-reconciliation",
+      "model": "ResearchFinalizationReceipt",
+      "base": "finalization_receipt",
+      "mutations": [{"op": "set", "path": ["verification", "spend_reconciled"], "value": false}],
+      "expected_error": "engine cannot accept finalization before every verification passes"
+    },
+    {
+      "case_id": "model-message-alone-marks-terminal",
+      "model": "EntityResearchJobStatus",
+      "base": "terminal_job_status",
+      "mutations": [
+        {"op": "set", "path": ["finalization_outcome"], "value": null},
+        {"op": "set", "path": ["finalization_receipt_ref"], "value": null}
+      ],
+      "expected_error": "terminal entity job requires an accepted finalization receipt"
+    },
+    {
+      "case_id": "waiting-job-carries-terminal-authority",
+      "model": "EntityResearchJobStatus",
+      "base": "terminal_job_status",
+      "mutations": [{"op": "set", "path": ["state"], "value": "waiting_external"}],
+      "expected_error": "non-terminal entity job cannot carry finalization authority"
+    }
+  ]
+}
