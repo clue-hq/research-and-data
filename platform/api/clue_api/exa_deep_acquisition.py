@@ -21,6 +21,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.exa_contact_compiler import ExaDeepContactAcquisitionPreflight
 from clue_config import Secrets
 from clue_core import (
     AccountEntity,
@@ -52,6 +53,7 @@ from clue_research.resolvers.exa import (
     DEFAULT_EXA_CONFIG,
     SOURCE_KEY,
     ExaDeepConfig,
+    ExaDeepContactNormalization,
     ExaDeepFieldSpec,
     ExaDeepNormalization,
     ExaDeepRequestFailure,
@@ -59,6 +61,7 @@ from clue_research.resolvers.exa import (
     ExaDeepSearchResponse,
     build_exa_deep_http_request,
     compile_exa_deep_request,
+    normalize_exa_contact_deep_snapshot,
     normalize_exa_deep_snapshot,
     parse_exa_deep_response,
 )
@@ -166,6 +169,10 @@ class ExaDeepAcquisitionPreflight(BaseModel):
     exa_config: ExaDeepConfig = DEFAULT_EXA_CONFIG
 
 
+ExaDeepAnyAcquisitionPreflight = ExaDeepAcquisitionPreflight | ExaDeepContactAcquisitionPreflight
+ExaDeepAnyNormalization = ExaDeepNormalization | ExaDeepContactNormalization
+
+
 class ExaDeepAcquisitionResult(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -212,7 +219,7 @@ class ExaDeepAcquisitionCoordinator:
         self._lease = timedelta(seconds=dispatch_lease_seconds)
         self._clock = clock or (lambda: datetime.now(UTC))
 
-    async def acquire(self, preflight: ExaDeepAcquisitionPreflight) -> ExaDeepAcquisitionResult:
+    async def acquire(self, preflight: ExaDeepAnyAcquisitionPreflight) -> ExaDeepAcquisitionResult:
         operation, created = await self._reserve(preflight)
         terminal = await self._terminal_result(
             operation, request=preflight.request, replay=not created
@@ -323,9 +330,7 @@ class ExaDeepAcquisitionCoordinator:
             )
         try:
             response = parse_exa_deep_response(preflight.exa_request, payload)
-            normalization = normalize_exa_deep_snapshot(
-                preflight.exa_request, response, config=preflight.exa_config
-            )
+            normalization = _normalize_preflight(preflight, response)
         except Exception as exc:
             unknown = await self._mark_unknown(
                 claim.operation,
@@ -367,16 +372,9 @@ class ExaDeepAcquisitionCoordinator:
             )
 
     async def _reserve(
-        self, preflight: ExaDeepAcquisitionPreflight
+        self, preflight: ExaDeepAnyAcquisitionPreflight
     ) -> tuple[ExternalResearchOperationRow, bool]:
-        request_bytes = _json_bytes(
-            {
-                "lineage": preflight.request.model_dump(mode="json"),
-                "wire_request": preflight.exa_request.model_dump(
-                    mode="json", by_alias=True, exclude_none=True
-                ),
-            }
-        )
+        request_bytes = _json_bytes(_request_artifact(preflight))
         request_key = artifact_key(
             preflight.request.workspace_id,
             content_address(request_bytes),
@@ -413,12 +411,12 @@ class ExaDeepAcquisitionCoordinator:
 
     async def _persist_success(
         self,
-        preflight: ExaDeepAcquisitionPreflight,
+        preflight: ExaDeepAnyAcquisitionPreflight,
         operation: ExternalResearchOperationRow,
         attempt_ordinal: int,
         response_key: str,
         response: ExaDeepSearchResponse,
-        normalization: ExaDeepNormalization,
+        normalization: ExaDeepAnyNormalization,
     ) -> ExaDeepAcquisitionResult:
         reported_cost = normalization.synthesis.cost_cents
         if reported_cost > operation.cost_cents_reserved:
@@ -768,8 +766,8 @@ async def _bind_artifact(
         conn,
         workspace_id=operation.workspace_id,
         artifact_key_value=artifact_key,
-        subject_kind="account",
-        subject_entity_id=operation.account_id,
+        subject_kind=operation.subject_kind.value,
+        subject_entity_id=operation.subject_entity_id,
         reference_kind=reference_kind,
         reference_id=str(operation.operation_id),
     )
@@ -787,6 +785,55 @@ def _json_bytes(value: object) -> bytes:
 
 def _sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
+
+
+def _request_artifact(
+    preflight: ExaDeepAnyAcquisitionPreflight,
+) -> dict[str, object]:
+    """Lossless immutable input needed to validate an offline snapshot.
+
+    Account E1 artifacts retain their accepted shape. Contact C4 adds the exact target lock,
+    field-level source authorities, and effective parser policy so a fresh process can recompute
+    contact-safe normalization without consulting mutable identity or configuration state.
+    """
+
+    artifact: dict[str, object] = {
+        "lineage": preflight.request.model_dump(mode="json"),
+        "wire_request": preflight.exa_request.model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        ),
+    }
+    if isinstance(preflight, ExaDeepContactAcquisitionPreflight):
+        artifact.update(
+            {
+                "contract": "exa-search-contact-deep-acquisition-c4-request-v1",
+                "contact_intent_sha256": preflight.intent_sha256,
+                "contact_target_lock": preflight.target_lock.model_dump(mode="json"),
+                "field_source_plans": [
+                    plan.model_dump(mode="json") for plan in preflight.field_source_plans
+                ],
+                "exa_config": preflight.exa_config.model_dump(mode="json"),
+            }
+        )
+    return artifact
+
+
+def _normalize_preflight(
+    preflight: ExaDeepAnyAcquisitionPreflight,
+    response: ExaDeepSearchResponse,
+) -> ExaDeepAnyNormalization:
+    if isinstance(preflight, ExaDeepContactAcquisitionPreflight):
+        return normalize_exa_contact_deep_snapshot(
+            preflight.exa_request,
+            response,
+            target=preflight.target_lock,
+            config=preflight.exa_config,
+        )
+    return normalize_exa_deep_snapshot(
+        preflight.exa_request,
+        response,
+        config=preflight.exa_config,
+    )
 
 
 __all__ = [

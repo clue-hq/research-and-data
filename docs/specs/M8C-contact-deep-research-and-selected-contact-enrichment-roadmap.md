@@ -2,9 +2,10 @@
 ## Sumble professional graph + Exa Deep contact research + governed channel enrichment
 
 > **Status:** implementation underway; C0 contract/field/policy freeze, C1 snapshot-backed
-> professional materialization, and C2 exact contact-subject durability are mechanically
-> accepted. C3 contact-targeted Exa Deep compilation is mechanically accepted; C4 durable contact
-> acquisition/materialization is next. **Recorded:**
+> professional materialization, C2 exact contact-subject durability, C3 contact-targeted Exa Deep
+> compilation, and C4 durable contact acquisition/materialization are mechanically accepted.
+> C4's paid one-contact canary remains separately authorization-gated; C5 selected-contact channel
+> enrichment is next. **Recorded:**
 > 2026-08-05. **Parent capability:**
 > [M8B account-deep provider integration](M8B-exa-sumble-account-deep-integration-roadmap.md).
 > **Working branch at record time:** `platform/c8-account-profiling-integration`.
@@ -784,10 +785,15 @@ acceptance record:
 
 ### C4 — Durable Exa contact acquisition and snapshot-backed resolver
 
+**Status:** complete mechanically; paid one-contact live acceptance remains separately
+authorization-gated. Binding acceptance record:
+`M8C-C4-exa-contact-acquisition-materialization-acceptance.md`.
+
 **Owns**
 
 - submit/acquire through the generic external-research operation;
-- immutable contact snapshots and actual Exa settlement;
+- immutable contact snapshots and exactly-once settlement of Exa's provider-reported endpoint cost
+  estimate, with final provider-billing evidence left to the existing reconciliation seam;
 - ready-snapshot lookup by exact contact;
 - snapshot-backed provider-neutral contact resolver;
 - materialization through the existing `fill_contact_field`; and

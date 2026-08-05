@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-05-m8c-c4-exa-contact-acquisition-materialization.md` — C4 complete mechanically:
+  transaction-free exact-contact Exa dispatch, immutable snapshots and honest one-time cost
+  settlement, exact-target replay through governed `fill_contact_field`, crash/same-name/malformed
+  defenses, clean database verification, and the separately authorized live-canary/C5-C6 handoff.
 - `2026-08-05-m8c-c3-contact-exa-compiler.md` — C3 complete mechanically: exact-contact/employer
   Exa Deep compiler, registry/source-plan authority, directional structured output, fail-closed
   same-name parser, content-addressed fixtures, clean full-suite verification, and the C4 handoff.
