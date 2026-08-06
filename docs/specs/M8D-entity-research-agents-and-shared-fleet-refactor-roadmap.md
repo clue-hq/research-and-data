@@ -623,6 +623,12 @@ aggregation, and return-to-user behavior.
 **Exit gate:** all account jobs finish or suspend honestly; the account run ends and exposes its
 results/review queue without starting contact research.
 
+**Accepted 2026-08-06:** the action-scoped exact-set compiler, atomic content-addressed launch,
+bounded queue concurrency, deterministic canary/supervision, scoped pause/resume/reprioritize and
+cancellation, honest wait/failure suspension, terminal result/review aggregation, account-only
+return, run-scoped production composition, isolated-Postgres evidence, and retained R10 live-call
+boundary are recorded in `M8D-R6-account-research-fleet-acceptance.md`.
+
 ### R7 — Contact selection and independent launch
 
 Generalize selection authority to exact user-chosen identity-resolved contacts, whether committee
