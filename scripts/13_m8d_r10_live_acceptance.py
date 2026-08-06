@@ -745,7 +745,8 @@ async def _ledger(*, account_run_id: UUID, contact_run_id: UUID) -> dict[str, An
                            JOIN entity_research_result_field field_row
                              ON field_row.result_id=evidence.result_id
                             AND field_row.ordinal=evidence.field_ordinal
-                           JOIN entity_research_result result USING (result_id)
+                           JOIN entity_research_result result
+                             ON result.result_id=evidence.result_id
                            JOIN entity_research_tool_request request_row
                              ON request_row.tool_request_id=result.tool_request_id
                            WHERE request_row.research_run_id IN
