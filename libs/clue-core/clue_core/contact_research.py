@@ -539,6 +539,20 @@ class ContactResearchTarget(BaseModel):
             if classify_field_key(value) is FieldClass.CONTACT_FACET
         )
 
+    @property
+    def execution_budget_cap_cents(self) -> Decimal:
+        """Exact all-in agent budget: research plus separately governed channel stages."""
+
+        channel_cents = sum(
+            (
+                authorization.budget_cap_cents + authorization.validation_budget_cap_cents
+                for authorization in (self.email, self.phone)
+                if authorization.allowed
+            ),
+            0,
+        )
+        return self.research_budget_cap_cents + Decimal(channel_cents)
+
 
 def _validate_target_field_scope(target: ContactResearchTarget) -> None:
     professional = set(CONTACT_PROFESSIONAL_FIELD_KEYS)
@@ -743,6 +757,15 @@ class ContactResearchSelectionBody(BaseModel):
 
     def sha256(self) -> Sha256Hex:
         return hashlib.sha256(self.canonical_bytes()).hexdigest()
+
+    @property
+    def execution_budget_cap_cents(self) -> Decimal:
+        """All selected contact research and channel authority projected into one fleet cap."""
+
+        return sum(
+            (target.execution_budget_cap_cents for target in self.targets),
+            Decimal(0),
+        )
 
 
 class ContactResearchSelection(BaseModel):

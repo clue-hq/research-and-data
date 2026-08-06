@@ -6,7 +6,7 @@ import csv
 import hashlib
 import io
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -130,6 +130,7 @@ class ContactChannelEnrichmentOutcome(StrEnum):
     REJECTED = "rejected"
     REPLAYED = "replayed"
     JOINED_IN_FLIGHT = "joined_in_flight"
+    READY_TO_VALIDATE = "ready_to_validate"
     FAILED_RETRYABLE = "failed_retryable"
     FAILED_TERMINAL = "failed_terminal"
     SPEND_OUTCOME_UNKNOWN = "spend_outcome_unknown"
@@ -464,6 +465,9 @@ class ExaContactChannelCoordinator:
         effective_policy: ContactResearchPolicyPin,
         channel: ContactChannel,
         observation_window: str,
+        defer_validation: bool = False,
+        before_acquisition_dispatch: Callable[[ContactChannelOperation], Awaitable[None]]
+        | None = None,
     ) -> ContactChannelEnrichmentResult:
         now = datetime.now(UTC)
         async with self._conn_factory() as conn:
@@ -521,6 +525,11 @@ class ExaContactChannelCoordinator:
                 outcome=ContactChannelEnrichmentOutcome.REJECTED, operation=operation
             )
         if operation.state is ContactChannelOperationState.READY_TO_VALIDATE:
+            if defer_validation:
+                return ContactChannelEnrichmentResult(
+                    outcome=ContactChannelEnrichmentOutcome.READY_TO_VALIDATE,
+                    operation=operation,
+                )
             return await self._validate_ready(operation, effective_policy=effective_policy)
         if operation.state is ContactChannelOperationState.VALIDATING:
             if operation.next_poll_at is not None and operation.next_poll_at > now:
@@ -586,6 +595,8 @@ class ExaContactChannelCoordinator:
             # A stop that won before dispatch leaves the operation CANCELLED and performs zero
             # provider traffic; a stopped SUBMITTING operation must still determine actual spend.
             return await self._recover_submit(current)
+        if before_acquisition_dispatch is not None:
+            await before_acquisition_dispatch(claimed)
         import_request = build_exa_contact_channel_import(preflight)
         try:
             imported = await self._transport.create_import(import_request)
@@ -689,6 +700,7 @@ class ExaContactChannelCoordinator:
         workspace_id: str,
         operation_id: ContactChannelOperationId,
         effective_policy: ContactResearchPolicyPin,
+        defer_validation: bool = False,
     ) -> ContactChannelEnrichmentResult:
         async with self._conn_factory() as conn:
             operation = await get_contact_channel_operation(
@@ -716,6 +728,11 @@ class ExaContactChannelCoordinator:
                 outcome=ContactChannelEnrichmentOutcome.REJECTED, operation=operation
             )
         if operation.state is ContactChannelOperationState.READY_TO_VALIDATE:
+            if defer_validation:
+                return ContactChannelEnrichmentResult(
+                    outcome=ContactChannelEnrichmentOutcome.READY_TO_VALIDATE,
+                    operation=operation,
+                )
             return await self._validate_ready(operation, effective_policy=effective_policy)
         if operation.state is ContactChannelOperationState.VALIDATING:
             now = datetime.now(UTC)
@@ -1003,14 +1020,46 @@ class ExaContactChannelCoordinator:
                 project_run_id=operation.request.project_run_id,
                 conn=conn,
             )
+        if defer_validation:
+            return ContactChannelEnrichmentResult(
+                outcome=ContactChannelEnrichmentOutcome.READY_TO_VALIDATE,
+                operation=ready,
+                poll_calls=1,
+                item_calls=item_calls,
+            )
         validated = await self._validate_ready(ready, effective_policy=effective_policy)
         return validated.model_copy(update={"poll_calls": 1, "item_calls": item_calls})
+
+    async def validate_ready(
+        self,
+        *,
+        workspace_id: str,
+        operation_id: ContactChannelOperationId,
+        effective_policy: ContactResearchPolicyPin,
+        before_validation_dispatch: Callable[[ContactChannelOperation], Awaitable[None]]
+        | None = None,
+    ) -> ContactChannelEnrichmentResult:
+        """Validate one acquired channel only when a separate semantic tool authorized it."""
+
+        async with self._conn_factory() as conn:
+            operation = await get_contact_channel_operation(
+                conn,
+                workspace_id=workspace_id,
+                operation_id=operation_id,
+            )
+        return await self._validate_ready(
+            operation,
+            effective_policy=effective_policy,
+            before_validation_dispatch=before_validation_dispatch,
+        )
 
     async def _validate_ready(
         self,
         operation: ContactChannelOperation,
         *,
         effective_policy: ContactResearchPolicyPin,
+        before_validation_dispatch: Callable[[ContactChannelOperation], Awaitable[None]]
+        | None = None,
     ) -> ContactChannelEnrichmentResult:
         """Apply platform use policy, then lease and dispatch the independent validator once."""
 
@@ -1103,6 +1152,8 @@ class ExaContactChannelCoordinator:
             employer_domain=operation.request.employer_domain,
             observed_claim_id=observed_claim.id,
         )
+        if before_validation_dispatch is not None:
+            await before_validation_dispatch(validating)
         validator_result = await self._validator.validate(validator_request)
         if (
             validator_result.provider_units_charged > operation.request.validation_native_unit_cap

@@ -794,7 +794,7 @@ class ContactResearchFleetLauncher:
                 raise ContactResearchFleetLaunchError(
                     "contact launch selection is outside its account/project authority"
                 )
-            estimated = body.budget_cap_cents
+            estimated = body.execution_budget_cap_cents
             if (
                 request.expected_estimated_cost_cents != estimated
                 or request.approved_budget_cap_cents != estimated
@@ -895,7 +895,7 @@ class ContactResearchFleetLauncher:
                     ),
                     policy_refs=policy_refs,
                     budget_envelope_ref=intent.budget_reservation_ref,
-                    budget_cap_cents=intent.budget_cap_cents,
+                    budget_cap_cents=target.execution_budget_cap_cents,
                     approval_refs=approval_refs,
                 )
                 target_authorities[contact_id] = target_authority
@@ -1182,7 +1182,7 @@ class ContactResearchFleetLauncher:
                     "intent": intent.model_dump_json(),
                     "intent_sha": intent.sha256(),
                     "target": target.model_dump_json(),
-                    "budget_cap": intent.budget_cap_cents,
+                    "budget_cap": target.execution_budget_cap_cents,
                 },
             )
         if inserted.rowcount == 0:

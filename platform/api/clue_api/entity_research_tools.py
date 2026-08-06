@@ -2382,6 +2382,39 @@ class GovernedEntityResearchToolFactory:
         )
         return tuple(bindings[name] for name in surface.tool_names)
 
+    def compose_facet(
+        self,
+        *,
+        subject_type: ResearchSubjectType,
+        provider_action: ProviderActionBinding,
+    ) -> tuple[EntityResearchToolBinding, ...]:
+        """Compose the R3 non-recursive facet subset without widening its parent surface.
+
+        ``EntityAgentToolSurface`` describes a complete parent entity-agent class.  A facet child
+        deliberately receives only one governed deep-research action plus the lossless R4 read
+        tools, so it cannot enrich, reveal channels, delegate recursively, assess the parent, or
+        finalize the parent job.
+        """
+
+        tool_name = (
+            "research_account_deep"
+            if subject_type is ResearchSubjectType.ACCOUNT
+            else "research_contact_deep"
+        )
+        provider = EntityResearchToolBinding(
+            tool=self._provider_tool(
+                name=tool_name,
+                action=provider_action.action,
+                args_schema=provider_action.args_schema,
+            ),
+            version=provider_action.version,
+        )
+        return (
+            provider,
+            EntityResearchToolBinding(tool=self._read_result_tool(), version=1),
+            EntityResearchToolBinding(tool=self._read_evidence_tool(), version=1),
+        )
+
     def _provider_tool(
         self,
         *,

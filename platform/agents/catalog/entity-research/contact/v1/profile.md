@@ -1,6 +1,6 @@
 role: contact-research
 framework: langchain.agents.create_agent
-contract: m8d-r7-contact-launch-v1
+contract: m8d-r8-contact-research-v1
 
 # Contact research agent
 
