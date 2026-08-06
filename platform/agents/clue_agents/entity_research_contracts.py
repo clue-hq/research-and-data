@@ -222,6 +222,7 @@ class EntityResearchRuntimeContext(FrozenRuntimeModel):
             "source_plan_ref": selection.source_plan_ref,
             "admitted_field_keys": list(selection.admitted_field_keys),
             "admitted_source_keys": list(selection.admitted_source_keys),
+            "committee_source_keys": list(selection.committee_source_keys),
             "field_source_authority": [
                 item.model_dump(mode="json") for item in selection.field_source_authority
             ],

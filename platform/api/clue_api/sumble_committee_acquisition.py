@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -186,7 +186,12 @@ class SumbleCommitteeAcquisitionCoordinator:
         self._poll_after = timedelta(seconds=poll_after_seconds)
         self._rate_limiter = rate_limiter
 
-    async def start(self, preflight: SumbleCommitteePreflight) -> SumbleCommitteeResult:
+    async def start(
+        self,
+        preflight: SumbleCommitteePreflight,
+        *,
+        before_dispatch: Callable[[CommitteeAcquisitionOperation], Awaitable[None]] | None = None,
+    ) -> SumbleCommitteeResult:
         operation, _created = await self._reserve(preflight)
         terminal = self._terminal_result(operation, replay=True)
         if terminal is not None:
@@ -242,6 +247,8 @@ class SumbleCommitteeAcquisitionCoordinator:
                 )
             else:
                 try:
+                    if before_dispatch is not None:
+                        await before_dispatch(operation)
                     await self._dispatch_teams(operation, preflight)
                     provider_calls += 1
                 except SumbleCommitteeRateLimited:
@@ -265,6 +272,8 @@ class SumbleCommitteeAcquisitionCoordinator:
             if people.state is CommitteeSnapshotState.SUCCEEDED:
                 return await self._finish_ready(operation, provider_calls=provider_calls)
             try:
+                if before_dispatch is not None:
+                    await before_dispatch(operation)
                 response = await self._dispatch_people_submit(operation, preflight)
                 provider_calls += 1
             except SumbleCommitteeRateLimited:
@@ -285,6 +294,8 @@ class SumbleCommitteeAcquisitionCoordinator:
 
         if operation.state is CommitteeAcquisitionState.POLLING_PEOPLE:
             try:
+                if before_dispatch is not None:
+                    await before_dispatch(operation)
                 response = await self._dispatch_people_poll(operation, preflight)
                 provider_calls += 1
             except SumbleCommitteeRateLimited:

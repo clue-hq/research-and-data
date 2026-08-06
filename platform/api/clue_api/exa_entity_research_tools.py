@@ -6,9 +6,11 @@ import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
+from decimal import Decimal
 from typing import Any, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -24,11 +26,22 @@ from clue_api.entity_research_tools import (
 )
 from clue_api.exa_contact_acquisition import ExaDeepContactAcquisitionService
 from clue_api.exa_contact_materialization import ExaDeepContactSnapshotMaterializer
-from clue_api.exa_deep_acquisition import ExaDeepAcquisitionOutcome
+from clue_api.exa_deep_acquisition import (
+    ExaDeepAcquisitionCoordinator,
+    ExaDeepAcquisitionOutcome,
+    compile_exa_deep_acquisition_plan,
+)
+from clue_api.exa_deep_materialization import ExaDeepSnapshotResolverProvider
 from clue_core import (
     ContactResearchIntent,
     ContactResearchPolicyPin,
+    Entity,
+    EntityId,
+    EntityType,
     ExternalResearchSnapshotId,
+    ProjectRunId,
+    ResearchDirectivePin,
+    ResearchMode,
     RunId,
     decode_jsonb_scalar,
 )
@@ -40,13 +53,25 @@ from clue_core.entity_research import (
     ResearchFieldResultProjection,
     ResearchSubjectType,
 )
+from clue_research.claimstore import FieldRegistryScope, get_effective_field
 from clue_research.durable.external_research import ExternalResearchOperationRow
-from clue_research.resolvers.exa import SOURCE_KEY
+from clue_research.identity import get_account
+from clue_research.resolvers.exa import (
+    DEFAULT_EXA_CONFIG,
+    SOURCE_KEY,
+    ExaDeepConfig,
+    ExaDeepFieldSpec,
+)
+from clue_research.resolvers.exa.deep_contract import field_key_from_exa_alias
+from clue_research.sources import bind_resolver_overrides, resolve_field
 from clue_storage import StorageBackend, read_verified_artifact
 
 ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 _EVIDENCE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r4:research-evidence")
 _MATERIALIZATION_RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r4:exa-contact-materialization-run")
+_ACCOUNT_MATERIALIZATION_RUN_NAMESPACE = uuid5(
+    NAMESPACE_URL, "clue:m8d:r5:exa-account-materialization-run"
+)
 
 
 def _external_operation_id(reference: str) -> UUID:
@@ -735,7 +760,244 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
         return tuple(drafts)
 
 
+class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
+    """Bundle qualitative fields and materialize only the agent-selected Exa attempt."""
+
+    def __init__(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        project_run_id: ProjectRunId,
+        account_id: EntityId,
+        icp_key: str,
+        icp_version: int,
+        research_directive: ResearchDirectivePin,
+        acquisition: ExaDeepAcquisitionCoordinator,
+        snapshots: ExaDeepSnapshotResolverProvider,
+        projector: ExaEntityResearchProjectionBuilder,
+        conn_factory: ConnFactory,
+        observation_window: str,
+        research_intent: str,
+        freshness_policy_ref: str,
+        freshness_seconds: int,
+        cost_cents_reserved_per_bundle: Decimal,
+        config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
+    ) -> None:
+        self._workspace_id = workspace_id
+        self._project_id = project_id
+        self._project_run_id = project_run_id
+        self._account_id = account_id
+        self._icp_key = icp_key
+        self._icp_version = icp_version
+        self._directive = research_directive
+        self._acquisition = acquisition
+        self._snapshots = snapshots
+        self._projector = projector
+        self._conn_factory = conn_factory
+        self._observation_window = observation_window
+        self._research_intent = research_intent
+        self._freshness_policy_ref = freshness_policy_ref
+        self._freshness_seconds = freshness_seconds
+        self._reserved_per_bundle = cost_cents_reserved_per_bundle
+        self._config = config
+
+    async def execute(
+        self,
+        request: GovernedResearchToolRequest,
+        *,
+        before_dispatch: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
+    ) -> Sequence[ExternalResearchProjectionDraft]:
+        if (
+            request.subject_type is not ResearchSubjectType.ACCOUNT
+            or request.target_entity_id != self._account_id
+            or set(request.source_keys) != {SOURCE_KEY}
+            or not request.field_keys
+        ):
+            raise EntityResearchResultIntegrityError(
+                "Exa account request differs from the exact selected account/source"
+            )
+        async with self._conn_factory() as conn:
+            account = await get_account(conn, self._account_id)
+            if account is None or account.workspace_id != self._workspace_id:
+                raise EntityResearchResultIntegrityError("Exa account target is absent or foreign")
+            effective_fields = []
+            for field_key in request.field_keys:
+                effective = await get_effective_field(
+                    conn,
+                    scope=FieldRegistryScope.for_workspace(self._workspace_id),
+                    field_key=field_key,
+                )
+                if (
+                    effective is None
+                    or effective.value_schema is None
+                    or SOURCE_KEY not in effective.field_def.tier_plan
+                ):
+                    raise EntityResearchResultIntegrityError(
+                        f"Exa field {field_key!r} lacks an effective schema/source authorization"
+                    )
+                effective_fields.append(effective)
+        intent = self._research_intent
+        observation_window = self._observation_window
+        if request.parent_operation_ref is not None:
+            intent = (
+                f"{intent}\n\nAdditive follow-up reason: {request.follow_up_reason}. "
+                "Use the prior result as context and seek new evidence.\n"
+                f"Prior result context:\n{request.prior_research_context}"
+            )
+            follow_up_digest = canonical_sha256(
+                {
+                    "tool": str(request.tool_call_id),
+                    "prior": request.prior_result_sha256,
+                }
+            )
+            observation_window = f"{observation_window}:follow-up:{follow_up_digest[:16]}"
+        plan = compile_exa_deep_acquisition_plan(
+            workspace_id=self._workspace_id,
+            project_id=self._project_id,
+            project_run_id=self._project_run_id,
+            account=account,
+            icp_key=self._icp_key,
+            icp_version=self._icp_version,
+            research_directive=self._directive,
+            fields=tuple(
+                ExaDeepFieldSpec(
+                    field_key=effective.field_def.field_key,
+                    value_schema=cast(dict[str, JsonValue], effective.value_schema),
+                )
+                for effective in effective_fields
+            ),
+            research_intent=intent,
+            additional_queries=request.questions,
+            observation_window=observation_window,
+            freshness_policy_ref=self._freshness_policy_ref,
+            freshness_seconds=self._freshness_seconds,
+            cost_cents_reserved_per_bundle=self._reserved_per_bundle,
+            config=self._config,
+        )
+        caused_refs: set[str] = set()
+        operation_fields: dict[UUID, tuple[str, ...]] = {}
+        acquired = []
+        for bundle in plan.bundles:
+            properties = cast(Mapping[str, object], bundle.exa_request.output_schema["properties"])
+            bundle_fields = tuple(str(field_key_from_exa_alias(alias)) for alias in properties)
+
+            async def bind_external_before_dispatch(
+                row: ExternalResearchOperationRow,
+                *,
+                exact_fields: tuple[str, ...] = bundle_fields,
+            ) -> None:
+                operation_fields[row.operation_id] = exact_fields
+                descriptor = await self._projector.operation(
+                    row,
+                    disposition=ProviderObservationDisposition.CAUSED,
+                    include_dispatch=False,
+                    field_keys=exact_fields,
+                )
+                observation = await before_dispatch(descriptor)
+                if (
+                    observation.tool_request_id == request.tool_call_id
+                    and observation.disposition == ProviderObservationDisposition.CAUSED.value
+                ):
+                    caused_refs.add(descriptor.operation_ref)
+
+            item = await self._acquisition.acquire(
+                bundle, before_dispatch=bind_external_before_dispatch
+            )
+            operation_fields.setdefault(item.operation.operation_id, bundle_fields)
+            acquired.append(item)
+        waiting = [
+            item for item in acquired if item.outcome is ExaDeepAcquisitionOutcome.JOINED_IN_FLIGHT
+        ]
+        if waiting:
+            raise EntityResearchProviderWait(
+                await self._projector.operation(
+                    waiting[0].operation,
+                    disposition=ProviderObservationDisposition.JOINED,
+                    include_dispatch=True,
+                    field_keys=operation_fields[waiting[0].operation.operation_id],
+                )
+            )
+        ready = [
+            item
+            for item in acquired
+            if item.outcome in {ExaDeepAcquisitionOutcome.READY, ExaDeepAcquisitionOutcome.REPLAYED}
+            and item.snapshot is not None
+        ]
+        if len(ready) != len(acquired):
+            raise EntityResearchResultIntegrityError(
+                "Exa account action did not produce settled ready snapshots"
+            )
+        bindings = await self._snapshots.resolver_bindings(
+            workspace_id=self._workspace_id,
+            project_run_id=self._project_run_id,
+            account_entity_id=self._account_id,
+            research_directive=self._directive,
+        )
+        resolver = bindings.bindings.get(SOURCE_KEY)
+        if resolver is None:
+            raise EntityResearchResultIntegrityError(
+                "ready Exa account snapshots did not produce a snapshot resolver"
+            )
+        run_id = RunId(
+            uuid5(
+                _ACCOUNT_MATERIALIZATION_RUN_NAMESPACE,
+                f"{request.research_run_id}:{request.tool_call_id}",
+            )
+        )
+        with bind_resolver_overrides({SOURCE_KEY: resolver}):
+            for effective in effective_fields:
+                async with self._conn_factory() as conn:
+                    materialization = await resolve_field(
+                        conn,
+                        Entity(entity_id=self._account_id, entity_type=EntityType.ACCOUNT),
+                        effective.field_def.model_copy(update={"tier_plan": (SOURCE_KEY,)}),
+                        mode=ResearchMode.ACCOUNT_PROFILING,
+                        run_id=run_id,
+                        workspace_id=self._workspace_id,
+                    )
+                    if not materialization.claim_refs:
+                        step_summary = ",".join(
+                            f"{step.source_key}:{step.outcome.value}:{step.n_claims}"
+                            for step in materialization.per_tier
+                        )
+                        raise EntityResearchResultIntegrityError(
+                            "Exa normalized field failed offline claim materialization: "
+                            f"{effective.field_def.field_key}; "
+                            f"stop={materialization.stop_reason.value}; steps={step_summary}"
+                        )
+        drafts: list[ExternalResearchProjectionDraft] = []
+        for item in ready:
+            assert item.snapshot is not None
+            operation_ref = f"external-research-operation:{item.operation.operation_id}"
+            operation = await self._projector.operation(
+                item.operation,
+                disposition=(
+                    ProviderObservationDisposition.CAUSED
+                    if operation_ref in caused_refs
+                    else ProviderObservationDisposition.REPLAY
+                ),
+                include_dispatch=True,
+                field_keys=operation_fields[item.operation.operation_id],
+            )
+            bundle_fields = await self._projector.bundle_field_keys(
+                item.snapshot.snapshot_id,
+                admitted_field_keys=request.field_keys,
+            )
+            drafts.append(
+                await self._projector.build(
+                    request=request.model_copy(update={"field_keys": bundle_fields}),
+                    operation=operation,
+                    snapshot_id=UUID(str(item.snapshot.snapshot_id)),
+                )
+            )
+        return tuple(drafts)
+
+
 __all__ = [
+    "ExaAccountSemanticResearchAction",
     "ExaContactSemanticResearchAction",
     "ExaEntityResearchProjectionBuilder",
 ]
