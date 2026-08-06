@@ -1,22 +1,12 @@
-"""M8A.6 AC-4 — a deep contact's born ``identity_binding`` is the authoritative M9 verdict.
-
-The deferred M9.4×M8.4 stamp (CLAUDE.md), closed at the deep composition root: the composition
-injects ``verification.classify_binding`` (behind M8.4's ``BindingClassifier``) into the contact
-callable, so a ``contact.facet.*`` claim written by ``profile_contact`` is **born** with the
-immutable binding the M9 classifier would assign — not the M8 default placeholder. These drive the
-deep contact callable with the composition's wired classifier and assert the born column equals the
-``classify_binding`` verdict — STRONG on a verified handle, WEAK (unpromotable) on a same-name hit.
-"""
+"""The retained M9 binding adapter stamps contact claims correctly outside retired composition."""
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from clue_api.deep import build_deep_phase_handler
+from clue_api.composition import VerificationBindingClassifier
 from clue_core import (
     Claim,
-    ICPCreatedFrom,
-    ICPSpec,
     IdentityBinding,
 )
 from clue_research.claimstore import WorkspaceScope, claims_for
@@ -27,9 +17,7 @@ from clue_research.sources import bind_resolver, clear_resolver_bindings
 from clue_research.verification import classify_binding
 from tests.profiling.conftest import (
     TEST_FACET_SOURCE,
-    FakeCommitteeSource,
     FakeFacetResolver,
-    FakeGateway,
     insert_test_account,
     insert_test_contact,
     register_facet_source,
@@ -43,14 +31,10 @@ _TENANT = "acme"
 _FACET_SOURCE = TEST_FACET_SOURCE
 
 
-def _composition_classifier() -> BindingClassifier:
-    """The binding classifier the deep composition root wires (the authoritative M9 verdict behind
-    M8.4's seam) — the object ``profile_contact`` is handed in production."""
-    return build_deep_phase_handler(
-        spec=ICPSpec(workspace_id=_TENANT, icp_key="seg1", created_from=ICPCreatedFrom.SYNTHESIS),
-        gateway=FakeGateway(),
-        committee_sources=[FakeCommitteeSource(source_key="apollo_people", tier=2)],
-    ).binding_classifier
+def _binding_classifier() -> BindingClassifier:
+    """The reusable M9 adapter R5 will compose behind the entity-agent tool service."""
+
+    return VerificationBindingClassifier()
 
 
 def _profile_one_facet(
@@ -77,7 +61,7 @@ def _profile_one_facet(
                     workspace_id=_TENANT,
                     tier="top",
                     field_keys=(FACET_STATED_INTERESTS,),
-                    binding_classifier=_composition_classifier(),
+                    binding_classifier=_binding_classifier(),
                 )
                 written = (
                     await claims_for(
@@ -148,8 +132,6 @@ def test_born_binding_weak_and_unpromotable_on_same_name(require_profiling_db: N
 
 
 def test_composition_classifier_is_the_verification_adapter() -> None:
-    """The composition's classifier is the M9 ``classify_binding`` adapter (not the M8 default) — so
-    the born binding above is the authoritative verdict, not the placeholder (DB-free check)."""
-    from clue_api.composition import VerificationBindingClassifier
+    """The retained adapter is the M9 ``classify_binding`` implementation, not a placeholder."""
 
-    assert isinstance(_composition_classifier(), VerificationBindingClassifier)
+    assert isinstance(_binding_classifier(), VerificationBindingClassifier)

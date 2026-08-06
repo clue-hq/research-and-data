@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-06-m8d-r0-r4-adversarial-fixes.md` — closes every reviewed R0-R4 P1/P2:
+  exact field/source authority, full legacy quarantine, globally scoped checkpoints, immutable
+  state/finalization history, provider-neutral causation/results, multi-contact projections,
+  bounded follow-up context, lossless UTF-8 reads, checkpoint-aware DSAR, and fresh-DB gates.
 - `2026-08-06-m8d-r4-governed-tools-persisted-results.md` — R4 accepted: exact semantic tool
   authority, provider-operation causation before dispatch, complete lossless persisted results,
   Exa contact composition, replay/follow-up lineage, DSAR reach, isolated-DB regression evidence,

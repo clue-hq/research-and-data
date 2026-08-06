@@ -326,6 +326,27 @@ class SelectedResearchSubject(BaseModel):
     committee_claim_refs: tuple[NonEmptyStr, ...] = ()
 
 
+class FieldSourceAuthority(BaseModel):
+    """Exact source keys authorized for one selected/requested field.
+
+    R0 previously stored fields and sources as independent sets.  That admitted an invalid
+    cross-product: a source selected for field A could be submitted for field B.  This value is the
+    executable relation.  Strategy labels are intentionally absent; an agent chooses a semantic
+    tool and an exact source, while the frozen effective source plan remains the authority.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    field_key: NonEmptyStr
+    source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _sources_are_unique(self) -> Self:
+        if len(self.source_keys) != len(set(self.source_keys)):
+            raise ValueError("field source authority cannot repeat a source")
+        return self
+
+
 class EntityResearchSelection(BaseModel):
     """Exact user-confirmed account/contact set for one separately launched run."""
 
@@ -347,6 +368,7 @@ class EntityResearchSelection(BaseModel):
     source_plan_ref: NonEmptyStr
     admitted_field_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
     admitted_source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    field_source_authority: tuple[FieldSourceAuthority, ...] = Field(min_length=1)
     research_questions: tuple[NonEmptyStr, ...] = Field(min_length=1)
     facet_keys: tuple[NonEmptyStr, ...] = ()
     channel_permissions: tuple[ContactChannel, ...] = ()
@@ -411,6 +433,16 @@ class EntityResearchSelection(BaseModel):
             self.admitted_field_keys,
             context="entity research selection",
         )
+        authority_fields = tuple(item.field_key for item in self.field_source_authority)
+        if len(authority_fields) != len(set(authority_fields)):
+            raise ValueError("selected field source authority must be unique by field")
+        if set(authority_fields) != set(self.admitted_field_keys):
+            raise ValueError("selected field source authority must cover every admitted field")
+        authority_sources = {
+            source_key for item in self.field_source_authority for source_key in item.source_keys
+        }
+        if authority_sources != set(self.admitted_source_keys):
+            raise ValueError("selected sources must equal the union of per-field source authority")
         return self
 
 
@@ -503,7 +535,6 @@ class ResearchRunLifecycleContract(BaseModel):
 class PlannedSourceAttempt(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    strategy: NonEmptyStr
     source_key: NonEmptyStr
 
 
@@ -521,8 +552,8 @@ class FieldResearchSourcePlan(BaseModel):
         allowed = frozenset(self.applicable_source_keys)
         if len(allowed) != len(self.applicable_source_keys):
             raise ValueError("applicable field sources must be unique")
-        attempt_pairs = [(attempt.strategy, attempt.source_key) for attempt in self.attempts]
-        if len(attempt_pairs) != len(set(attempt_pairs)):
+        attempt_keys = [attempt.source_key for attempt in self.attempts]
+        if len(attempt_keys) != len(set(attempt_keys)):
             raise ValueError("field research attempts must be unique")
         for attempt in self.attempts:
             if attempt.source_key not in allowed:
@@ -550,14 +581,17 @@ class GovernedResearchToolRequest(BaseModel):
     tool_input_sha256: Sha256
     field_plan_ref: NonEmptyStr
     source_plan_ref: NonEmptyStr
-    field_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    field_keys: tuple[NonEmptyStr, ...] = ()
     source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    field_source_authority: tuple[FieldSourceAuthority, ...] = ()
     questions: tuple[NonEmptyStr, ...] = Field(min_length=1)
     budget_reservation_key: NonEmptyStr
     idempotency_key: NonEmptyStr
     parent_operation_ref: NonEmptyStr | None = None
     parent_observation_ref: NonEmptyStr | None = None
     follow_up_reason: ResearchFollowUpReason | None = None
+    prior_result_sha256: Sha256 | None = None
+    prior_research_context: NonEmptyStr | None = None
 
     @model_validator(mode="after")
     def _request_is_exact(self) -> Self:
@@ -585,12 +619,42 @@ class GovernedResearchToolRequest(BaseModel):
         )
         if self.tool_name not in allowed_tools:
             raise ValueError("tool request is outside its entity-agent semantic tool surface")
-        _assert_field_axis(self.subject_type, self.field_keys, context="governed tool request")
-        lineage = (self.parent_operation_ref, self.parent_observation_ref, self.follow_up_reason)
+        if self.tool_name == "discover_buying_committee":
+            if self.subject_type is not ResearchSubjectType.ACCOUNT:
+                raise ValueError("committee discovery requires an account research job")
+            if self.field_keys or self.field_source_authority:
+                raise ValueError(
+                    "committee discovery enumerates contacts and cannot manufacture account fields"
+                )
+        else:
+            if not self.field_keys:
+                raise ValueError("field-producing research tool requires selected fields")
+            _assert_field_axis(self.subject_type, self.field_keys, context="governed tool request")
+            authority_fields = tuple(item.field_key for item in self.field_source_authority)
+            if len(authority_fields) != len(set(authority_fields)):
+                raise ValueError("tool field source authority must be unique by field")
+            if set(authority_fields) != set(self.field_keys):
+                raise ValueError("tool field source authority must cover every requested field")
+            authority_sources = {
+                source_key
+                for item in self.field_source_authority
+                for source_key in item.source_keys
+            }
+            if authority_sources != set(self.source_keys):
+                raise ValueError("tool sources must equal the union of per-field source authority")
+        lineage = (
+            self.parent_operation_ref,
+            self.parent_observation_ref,
+            self.follow_up_reason,
+            self.prior_result_sha256,
+            self.prior_research_context,
+        )
         if any(value is not None for value in lineage) and not all(
             value is not None for value in lineage
         ):
-            raise ValueError("follow-up tool request requires complete parent observation lineage")
+            raise ValueError(
+                "follow-up tool request requires parent lineage and exact prior research context"
+            )
         return self
 
 
@@ -675,6 +739,31 @@ class ResearchFieldResultProjection(BaseModel):
         return self
 
 
+class ResearchDiscoveredSubjectProjection(BaseModel):
+    """One identity-admitted contact discovered by an account-scoped committee operation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    subject_type: Literal[ResearchSubjectType.CONTACT]
+    target_entity_id: UUID
+    parent_account_id: UUID
+    strong_identity_claim_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    association_evidence_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    fields: tuple[ResearchFieldResultProjection, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _contact_projection_is_exact(self) -> Self:
+        field_keys = tuple(field.field_key for field in self.fields)
+        if len(field_keys) != len(set(field_keys)):
+            raise ValueError("discovered contact projection cannot repeat a field")
+        _assert_field_axis(
+            ResearchSubjectType.CONTACT,
+            field_keys,
+            context="discovered contact projection",
+        )
+        return self
+
+
 class PersistedResearchToolResult(BaseModel):
     """Complete persisted provider result or complete index returned to an entity agent."""
 
@@ -690,8 +779,9 @@ class PersistedResearchToolResult(BaseModel):
     normalized_result_artifact_ref: NonEmptyStr
     provider_receipt_ref: NonEmptyStr
     cost_settlement_ref: NonEmptyStr
-    requested_field_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
-    fields: tuple[ResearchFieldResultProjection, ...] = Field(min_length=1)
+    requested_field_keys: tuple[NonEmptyStr, ...] = ()
+    fields: tuple[ResearchFieldResultProjection, ...] = ()
+    discovered_subjects: tuple[ResearchDiscoveredSubjectProjection, ...] = ()
     delivery: ResearchResultDelivery
     read_tool_address: NonEmptyStr | None = None
     provider_reported_cost_cents: Decimal = Field(ge=0)
@@ -705,11 +795,24 @@ class PersistedResearchToolResult(BaseModel):
         returned = tuple(field.field_key for field in self.fields)
         if len(returned) != len(set(returned)) or set(returned) != set(requested):
             raise ValueError("result projection must index every requested field exactly once")
-        _assert_field_axis(
-            self.subject_type,
-            self.requested_field_keys,
-            context="persisted research result",
-        )
+        if requested:
+            _assert_field_axis(
+                self.subject_type,
+                self.requested_field_keys,
+                context="persisted research result",
+            )
+        if not self.fields and not self.discovered_subjects:
+            raise ValueError("persisted result requires fields or discovered subjects")
+        discovered_ids = tuple(item.target_entity_id for item in self.discovered_subjects)
+        if len(discovered_ids) != len(set(discovered_ids)):
+            raise ValueError("persisted result cannot repeat a discovered subject")
+        if self.discovered_subjects:
+            if self.subject_type is not ResearchSubjectType.ACCOUNT:
+                raise ValueError("only account research may return discovered contacts")
+            if any(
+                item.parent_account_id != self.target_entity_id for item in self.discovered_subjects
+            ):
+                raise ValueError("discovered contact belongs to a different parent account")
         for references, message in (
             (
                 self.raw_response_artifact_refs,
@@ -725,17 +828,23 @@ class PersistedResearchToolResult(BaseModel):
         if self.delivery is ResearchResultDelivery.INLINE_COMPLETE:
             if self.read_tool_address is not None:
                 raise ValueError("inline-complete result does not require a lossless read tool")
+            all_fields = self.fields + tuple(
+                field for subject in self.discovered_subjects for field in subject.fields
+            )
             if any(
                 field.outcome is ResearchFieldOutcome.FOUND and field.value is None
-                for field in self.fields
+                for field in all_fields
             ):
                 raise ValueError("inline-complete found fields require their complete values")
         else:
             if self.read_tool_address is None:
                 raise ValueError("indexed-complete result requires a lossless read tool")
+            all_fields = self.fields + tuple(
+                field for subject in self.discovered_subjects for field in subject.fields
+            )
             if any(
                 field.outcome is ResearchFieldOutcome.FOUND and field.value_ref is None
-                for field in self.fields
+                for field in all_fields
             ):
                 raise ValueError("indexed-complete found fields require durable value references")
         return self
@@ -1016,6 +1125,7 @@ __all__ = [
     "EntityResearchJobStatus",
     "EntityResearchSelection",
     "FacetDelegationContract",
+    "FieldSourceAuthority",
     "FieldResearchSourcePlan",
     "FinalizationVerification",
     "GovernedResearchToolRequest",
@@ -1028,6 +1138,7 @@ __all__ = [
     "ResearchClaimDelta",
     "ResearchComponentClass",
     "ResearchComponentContract",
+    "ResearchDiscoveredSubjectProjection",
     "ResearchEvidenceProjection",
     "ResearchFieldOutcome",
     "ResearchFieldResultProjection",

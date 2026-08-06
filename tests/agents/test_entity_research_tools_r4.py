@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from langchain_core.messages import AIMessage
 
-from clue_agents.entity_research_contracts import EntityAgentRole, EntityResearchToolBinding
+from clue_agents.entity_research_contracts import (
+    EntityAgentRole,
+    EntityResearchToolBinding,
+    EntityResearchToolCall,
+    canonical_sha256,
+)
 from clue_agents.entity_research_runtime import (
+    ActiveEntityResearchToolExecution,
     EntityResearchAgentFactory,
     EntityResearchAgentRuntime,
     EntityResearchRuntimeError,
@@ -20,14 +30,19 @@ from clue_agents.entity_research_tools import EntityResearchSemanticToolInput
 from clue_agents.model import ScriptedAgentChatModel
 from clue_api.entity_research_tools import (
     EntityResearchProviderCausationStore,
+    EntityResearchResultIntegrityError,
     EntityResearchResultStore,
     EntityResearchToolAuthorityError,
     EntityResearchToolRequestStore,
     GovernedEntityResearchToolFactory,
     ProviderActionBinding,
+    ProviderObservationDisposition,
+    ProviderOperationReservation,
 )
 from clue_core.entity_research import (
+    FieldSourceAuthority,
     GovernedResearchToolRequest,
+    PersistedResearchToolResult,
     ResearchSubjectType,
 )
 from clue_storage import FsStorage
@@ -86,6 +101,147 @@ def test_model_facing_research_schema_contains_intent_and_no_engine_authority() 
         "idempotency_key",
     }
     assert forbidden.isdisjoint(properties)
+
+
+def test_semantic_request_cannot_apply_one_fields_source_to_another_field() -> None:
+    async def scenario() -> None:
+        context = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
+        selection = context.authorization.selection
+        original_field = selection.admitted_field_keys[0]
+        second_field = "contact.facet.professional_interests"
+        widened_selection = selection.model_copy(
+            update={
+                "admitted_field_keys": (original_field, second_field),
+                "admitted_source_keys": ("exa_deep", "sumble_people"),
+                "field_source_authority": (
+                    FieldSourceAuthority(
+                        field_key=original_field,
+                        source_keys=("exa_deep",),
+                    ),
+                    FieldSourceAuthority(
+                        field_key=second_field,
+                        source_keys=("sumble_people",),
+                    ),
+                ),
+            }
+        )
+        context = context.model_copy(
+            update={
+                "authorization": context.authorization.model_copy(
+                    update={"selection": widened_selection}
+                )
+            }
+        )
+        arguments = {
+            "field_keys": [original_field],
+            "source_keys": ["sumble_people"],
+            "questions": [selection.research_questions[0]],
+        }
+        active = ActiveEntityResearchToolExecution(
+            context=context,
+            call=EntityResearchToolCall(
+                tool_call_id="cross-product-attempt",
+                tool_name="research_contact_deep",
+                tool_version=1,
+                tool_input_sha256=canonical_sha256(arguments),
+                arguments=arguments,
+            ),
+            journal_event_ref=f"entity-agent-event:{uuid4()}",
+        )
+        with pytest.raises(EntityResearchToolAuthorityError, match="no authorized requested"):
+            await EntityResearchToolRequestStore(conn_factory=_unused_conn).record(
+                active=active,
+                semantic=EntityResearchSemanticToolInput.model_validate(arguments),
+            )
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+def test_provider_operation_contract_is_not_tied_to_external_research_ids() -> None:
+    operation = ProviderOperationReservation(
+        provider_kind="sumble_people",
+        operation_ref="sumble-committee-operation:opaque-provider-id",
+        workspace_id="workspace-a",
+        project_id="project-a",
+        project_run_id=uuid4(),
+        subject_type=ResearchSubjectType.ACCOUNT,
+        target_entity_id=uuid4(),
+        source_key="sumble_people",
+        field_keys=(),
+        request_artifact_ref="artifact:sumble-request",
+        reserved_at=datetime.now(UTC),
+        observation_disposition=ProviderObservationDisposition.CAUSED,
+    )
+    assert operation.provider_kind == "sumble_people"
+    assert operation.operation_ref == "sumble-committee-operation:opaque-provider-id"
+
+
+def test_result_message_bound_cannot_be_below_inline_threshold(tmp_path: Any) -> None:
+    with pytest.raises(ValueError, match="cannot be below"):
+        EntityResearchResultStore(
+            storage=FsStorage(tmp_path / "bounded"),
+            conn_factory=_unused_conn,
+            inline_max_bytes=1024,
+            message_max_bytes=1023,
+        )
+
+
+def test_final_index_is_remeasured_against_agent_message_bound(tmp_path: Any) -> None:
+    fixture = json.loads(
+        (
+            Path(__file__).parents[1] / "fixtures" / "entity_research" / "r0_contract_fixture.json"
+        ).read_text()
+    )
+    result = PersistedResearchToolResult.model_validate(fixture["tool_result"])
+    store = EntityResearchResultStore(
+        storage=FsStorage(tmp_path / "remeasure"),
+        conn_factory=_unused_conn,
+        inline_max_bytes=1,
+        message_max_bytes=256,
+    )
+    with pytest.raises(EntityResearchResultIntegrityError, match="agent-message bound"):
+        store._agent_message_bytes(result)
+
+
+def test_bounded_follow_up_context_retains_discovered_subject_identity_and_fields() -> None:
+    store = EntityResearchToolRequestStore(
+        conn_factory=_unused_conn,
+        prior_context_max_bytes=1024,
+    )
+    parent = {
+        "result_ref": "research-result:parent",
+        "operation_ref": "sumble-committee-operation:parent",
+        "subject_type": "account",
+        "target_entity_id": str(uuid4()),
+        "padding": "x" * 2_000,
+        "fields": [],
+        "discovered_subjects": [
+            {
+                "subject_type": "contact",
+                "target_entity_id": str(uuid4()),
+                "parent_account_id": str(uuid4()),
+                "identity_claim_refs": ["claim:identity"],
+                "association_evidence_refs": ["claim:association"],
+                "fields": [
+                    {
+                        "field_key": "contact.role.current_title",
+                        "outcome": "found",
+                        "value": "Chief Operating Officer",
+                        "claim_refs": ["claim:title"],
+                        "verification_status": "supported",
+                    }
+                ],
+            }
+        ],
+    }
+    compact = json.loads(store._bounded_prior_context(json.dumps(parent).encode("utf-8")))
+    assert "padding" not in compact
+    subject = compact["discovered_subjects"][0]
+    assert subject["identity_claim_refs"] == ["claim:identity"]
+    assert subject["association_evidence_refs"] == ["claim:association"]
+    assert subject["fields"][0]["value"] == "Chief Operating Officer"
 
 
 def test_exact_account_and_contact_surfaces_compose_without_provider_sdks(

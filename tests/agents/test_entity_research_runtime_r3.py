@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
@@ -44,6 +46,7 @@ from clue_agents.entity_research_runtime import (
     EntityResearchExecutionGuard,
     EntityResearchExternalWait,
     EntityResearchFinalizationEngine,
+    EntityResearchRuntimeError,
 )
 from clue_agents.model import ScriptedAgentChatModel
 from clue_core.entity_research import (
@@ -509,20 +512,87 @@ def test_exact_construction_uses_profile_prompt_skills_model_and_task_identity(
     assert context.resources.skills[0].body in system_prompt
     exact_context = definition.exact_model_context()
     assert exact_context["model_policy"] == definition.model_policy.model_dump(mode="json")
-    assert exact_context["task_instruction_sha256"] == canonical_sha256(
-        definition.task_instruction
-    )
+    assert exact_context["task_instruction_sha256"] == canonical_sha256(definition.task_instruction)
 
     changed_task = definition.model_copy(update={"task_instruction": "A different task."})
     changed_model = definition.model_copy(
         update={
-            "model_policy": definition.model_policy.model_copy(
-                update={"model_id": "another-model"}
-            )
+            "model_policy": definition.model_policy.model_copy(update={"model_id": "another-model"})
         }
     )
     assert canonical_sha256(changed_task.exact_model_context()) != canonical_sha256(exact_context)
     assert canonical_sha256(changed_model.exact_model_context()) != canonical_sha256(exact_context)
+
+
+def test_checkpoint_threads_are_globally_scoped_even_when_raw_ids_collide() -> None:
+    first = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+    second = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+    second = second.model_copy(
+        update={
+            "authorization": second.authorization.model_copy(
+                update={
+                    "checkpoint_thread_id": first.authorization.checkpoint_thread_id,
+                }
+            )
+        }
+    )
+
+    assert first.authorization.checkpoint_thread_id == second.authorization.checkpoint_thread_id
+    assert first.authorization.research_run_id != second.authorization.research_run_id
+    assert first.effective_checkpoint_thread_id != second.effective_checkpoint_thread_id
+    assert first.effective_checkpoint_thread_id.startswith("entity-research:")
+    assert len(first.effective_checkpoint_thread_id.removeprefix("entity-research:")) == 64
+
+
+def test_consecutive_zero_yield_limit_spans_interleaved_model_rounds() -> None:
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        definition = _definition(context)
+        journal = Journal()
+        middleware = runtime_module._EntityResearchRuntimeMiddleware(  # type: ignore[attr-defined]
+            definition=definition,
+            journal=journal,
+            guard=Guard(),
+        )
+        batch = json.dumps(
+            {
+                "tool_request_ref": "entity-research-tool-request:test",
+                "results": [{"result_ref": "research-result:test"}],
+                "current_state_sha256": "a" * 64,
+                "yield_count": 0,
+            }
+        )
+        messages = (
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "research_account_deep", "args": {}, "id": "zero-call-1"}],
+            ),
+            ToolMessage(content=batch, tool_call_id="zero-call-1"),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "research_account_deep", "args": {}, "id": "zero-call-2"}],
+            ),
+            ToolMessage(content=batch, tool_call_id="zero-call-2"),
+        )
+        handler_called = False
+
+        async def handler(_request: object) -> object:
+            nonlocal handler_called
+            handler_called = True
+            return AIMessage(content="should not run")
+
+        with pytest.raises(EntityResearchRuntimeError, match="consecutive zero-yield limit"):
+            await middleware.awrap_model_call(
+                SimpleNamespace(
+                    tools=[binding.tool for binding in definition.tools],
+                    messages=messages,
+                ),
+                handler,
+            )
+        assert not handler_called
+        assert not journal.events
+
+    run_async(run())
 
 
 def test_external_wait_returns_exact_durable_checkpoint_for_r2_driver() -> None:

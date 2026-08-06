@@ -121,6 +121,16 @@
       "account.hiring_velocity_eng"
     ],
     "admitted_source_keys": ["exa_deep", "sumble_jobs", "official_page"],
+    "field_source_authority": [
+      {
+        "field_key": "account.operational_pain",
+        "source_keys": ["exa_deep", "official_page"]
+      },
+      {
+        "field_key": "account.hiring_velocity_eng",
+        "source_keys": ["sumble_jobs", "official_page"]
+      }
+    ],
     "research_questions": ["Where is administrative work creating avoidable burden?"],
     "facet_keys": ["account.workflow"],
     "channel_permissions": [],
@@ -160,6 +170,16 @@
     "source_plan_ref": "source-plan:contact:v1",
     "admitted_field_keys": ["contact.professional_priorities", "contact.facet.public_hobbies"],
     "admitted_source_keys": ["exa_deep", "sumble_people"],
+    "field_source_authority": [
+      {
+        "field_key": "contact.professional_priorities",
+        "source_keys": ["sumble_people"]
+      },
+      {
+        "field_key": "contact.facet.public_hobbies",
+        "source_keys": ["exa_deep"]
+      }
+    ],
     "research_questions": ["What public professional interests are safely attributable?"],
     "facet_keys": ["public_appearances", "published_work"],
     "channel_permissions": ["email", "phone"],
@@ -206,8 +226,8 @@
     "field_key": "account.operational_pain",
     "applicable_source_keys": ["exa_deep", "official_page"],
     "attempts": [
-      {"strategy": "qualitative_deep", "source_key": "exa_deep"},
-      {"strategy": "contradiction_check", "source_key": "official_page"}
+      {"source_key": "exa_deep"},
+      {"source_key": "official_page"}
     ]
   },
   "tool_request": {
@@ -226,12 +246,18 @@
     "source_plan_ref": "source-plan:account:v1",
     "field_keys": ["account.operational_pain", "account.resonance.culture"],
     "source_keys": ["exa_deep"],
+    "field_source_authority": [
+      {"field_key": "account.operational_pain", "source_keys": ["exa_deep"]},
+      {"field_key": "account.resonance.culture", "source_keys": ["exa_deep"]}
+    ],
     "questions": ["What evidence shows operational burden and employee frustration?"],
     "budget_reservation_key": "budget-key:account-exa:1",
     "idempotency_key": "tool-request:account-exa:1",
     "parent_operation_ref": null,
     "parent_observation_ref": null,
-    "follow_up_reason": null
+    "follow_up_reason": null,
+    "prior_result_sha256": null,
+    "prior_research_context": null
   },
   "tool_result": {
     "subject_type": "account",

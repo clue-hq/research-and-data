@@ -13,11 +13,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.entity_research_contracts import canonical_sha256
-from clue_agents.entity_research_runtime import EntityResearchExternalWait
 from clue_api.entity_research_tools import (
     EntityResearchProviderAction,
+    EntityResearchProviderWait,
     EntityResearchResultIntegrityError,
     ExternalResearchProjectionDraft,
+    ProviderObservationDisposition,
+    ProviderOperationObservation,
+    ProviderOperationReservation,
 )
 from clue_api.exa_contact_acquisition import ExaDeepContactAcquisitionService
 from clue_api.exa_contact_materialization import ExaDeepContactSnapshotMaterializer
@@ -46,6 +49,16 @@ _EVIDENCE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r4:research-evidence")
 _MATERIALIZATION_RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r4:exa-contact-materialization-run")
 
 
+def _external_operation_id(reference: str) -> UUID:
+    prefix = "external-research-operation:"
+    if not reference.startswith(prefix):
+        raise EntityResearchResultIntegrityError("Exa adapter received another operation type")
+    try:
+        return UUID(reference.removeprefix(prefix))
+    except ValueError as exc:
+        raise EntityResearchResultIntegrityError("Exa operation reference is malformed") from exc
+
+
 def _evidence_ref(
     *, operation_id: UUID, field_key: str, artifact_key: str, evidence_span: str
 ) -> str:
@@ -68,13 +81,72 @@ class ExaEntityResearchProjectionBuilder:
         self._storage = storage
         self._conn_factory = conn_factory
 
+    async def operation(
+        self,
+        row: ExternalResearchOperationRow,
+        *,
+        disposition: ProviderObservationDisposition,
+        include_dispatch: bool,
+        field_keys: tuple[str, ...],
+    ) -> ProviderOperationReservation:
+        """Project the external ledger's immutable authority into the provider-neutral bridge."""
+
+        async with self._conn_factory() as conn:
+            operation = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT operation.created_at,
+                                   (SELECT min(attempt.dispatched_at)
+                                    FROM external_research_attempt attempt
+                                    WHERE attempt.operation_id=operation.id
+                                      AND attempt.dispatched_at IS NOT NULL) AS dispatched_at
+                            FROM external_research_operation operation
+                            WHERE operation.id=:operation_id
+                              AND operation.workspace_id=:workspace_id
+                            """
+                        ),
+                        {
+                            "operation_id": row.operation_id,
+                            "workspace_id": row.workspace_id,
+                        },
+                    )
+                )
+                .mappings()
+                .first()
+            )
+        if operation is None:
+            raise EntityResearchResultIntegrityError("Exa operation disappeared before projection")
+        return ProviderOperationReservation(
+            provider_kind="external_research",
+            operation_ref=f"external-research-operation:{row.operation_id}",
+            workspace_id=row.workspace_id,
+            project_id=row.project_id,
+            project_run_id=row.project_run_id,
+            subject_type=ResearchSubjectType(row.subject_kind.value),
+            target_entity_id=UUID(str(row.subject_entity_id)),
+            parent_account_id=(
+                UUID(str(row.account_id))
+                if row.subject_kind.value == ResearchSubjectType.CONTACT.value
+                else None
+            ),
+            source_key=row.source_key,
+            field_keys=field_keys,
+            request_artifact_ref=f"artifact:{row.request_artifact_key}",
+            reserved_at=operation["created_at"],
+            dispatched_at=operation["dispatched_at"] if include_dispatch else None,
+            observation_disposition=disposition,
+        )
+
     async def build(
         self,
         *,
         request: GovernedResearchToolRequest,
-        operation_id: UUID,
+        operation: ProviderOperationReservation,
         snapshot_id: UUID,
     ) -> ExternalResearchProjectionDraft:
+        operation_id = _external_operation_id(operation.operation_ref)
         async with self._conn_factory() as conn:
             snapshot = (
                 (
@@ -198,8 +270,8 @@ class ExaEntityResearchProjectionBuilder:
                 )
             fields = tuple(field_results)
         return ExternalResearchProjectionDraft(
-            operation_id=operation_id,
-            snapshot_id=snapshot_id,
+            operation=operation,
+            snapshot_ref=f"external-research-snapshot:{snapshot_id}",
             requested_field_keys=request.field_keys,
             fields=fields,
         )
@@ -529,7 +601,9 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
         self,
         request: GovernedResearchToolRequest,
         *,
-        before_dispatch: Callable[[ExternalResearchOperationRow], Awaitable[None]],
+        before_dispatch: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
     ) -> Sequence[ExternalResearchProjectionDraft]:
         facet_fields = tuple(
             str(field_key)
@@ -556,6 +630,7 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
                     "parent_operation_ref": request.parent_operation_ref,
                     "parent_observation_ref": request.parent_observation_ref,
                     "follow_up_reason": request.follow_up_reason.value,
+                    "prior_result_sha256": request.prior_result_sha256,
                     "field_keys": request.field_keys,
                     "questions": request.questions,
                 }
@@ -565,14 +640,31 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
                 f"{reuse_context_ref[:16]}:"
                 f"{request.follow_up_reason.value}"
             )
+        caused_refs: set[str] = set()
+
+        async def bind_external_before_dispatch(row: ExternalResearchOperationRow) -> None:
+            descriptor = await self._projector.operation(
+                row,
+                disposition=ProviderObservationDisposition.CAUSED,
+                include_dispatch=False,
+                field_keys=request.field_keys,
+            )
+            observation = await before_dispatch(descriptor)
+            if (
+                observation.tool_request_id == request.tool_call_id
+                and observation.disposition == ProviderObservationDisposition.CAUSED.value
+            ):
+                caused_refs.add(descriptor.operation_ref)
+
         acquired = await self._acquisition.acquire_intent(
             intent=self._intent,
             effective_policy=self._policy,
             observation_window=observation_window,
-            before_dispatch=before_dispatch,
+            before_dispatch=bind_external_before_dispatch,
             field_keys=request.field_keys,
             directional_questions=request.questions,
             reuse_context_ref=reuse_context_ref,
+            prior_research_context=request.prior_research_context,
         )
         waiting = [
             result
@@ -581,9 +673,13 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
         ]
         if waiting:
             first = waiting[0]
-            raise EntityResearchExternalWait(
-                wait_ref=f"external-research-operation:{first.operation.operation_id}",
-                current_state_sha256=request.tool_input_sha256,
+            raise EntityResearchProviderWait(
+                await self._projector.operation(
+                    first.operation,
+                    disposition=ProviderObservationDisposition.JOINED,
+                    include_dispatch=True,
+                    field_keys=request.field_keys,
+                )
             )
         ready = [
             result
@@ -613,6 +709,18 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
         drafts: list[ExternalResearchProjectionDraft] = []
         for result in ready:
             assert result.snapshot is not None
+            operation_ref = f"external-research-operation:{result.operation.operation_id}"
+            disposition = (
+                ProviderObservationDisposition.CAUSED
+                if operation_ref in caused_refs
+                else ProviderObservationDisposition.REPLAY
+            )
+            operation = await self._projector.operation(
+                result.operation,
+                disposition=disposition,
+                include_dispatch=True,
+                field_keys=request.field_keys,
+            )
             bundle_fields = await self._projector.bundle_field_keys(
                 result.snapshot.snapshot_id,
                 admitted_field_keys=request.field_keys,
@@ -620,7 +728,7 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
             drafts.append(
                 await self._projector.build(
                     request=request.model_copy(update={"field_keys": bundle_fields}),
-                    operation_id=UUID(str(result.operation.operation_id)),
+                    operation=operation,
                     snapshot_id=UUID(str(result.snapshot.snapshot_id)),
                 )
             )

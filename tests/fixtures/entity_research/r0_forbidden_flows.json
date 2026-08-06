@@ -201,8 +201,8 @@
       "case_id": "manufactured-deterministic-first-attempt",
       "model": "FieldResearchSourcePlan",
       "base": "qualitative_source_plan",
-      "mutations": [{"op": "set", "path": ["attempts", 0, "source_key"], "value": "deterministic_exact"}],
-      "expected_error": "field research attempt names a source absent from the effective source plan"
+      "mutations": [{"op": "set", "path": ["attempts", 0, "strategy"], "value": "deterministic_exact"}],
+      "expected_error": "Extra inputs are not permitted"
     },
     {
       "case_id": "contact-tool-request-without-parent-account",
@@ -216,7 +216,7 @@
       "model": "GovernedResearchToolRequest",
       "base": "tool_request",
       "mutations": [{"op": "set", "path": ["parent_operation_ref"], "value": "operation:exa-deep:0"}],
-      "expected_error": "follow-up tool request requires complete parent observation lineage"
+      "expected_error": "follow-up tool request requires parent lineage and exact prior research context"
     },
     {
       "case_id": "account-tool-request-uses-contact-tool",

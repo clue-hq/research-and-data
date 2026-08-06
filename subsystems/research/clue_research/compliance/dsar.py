@@ -601,6 +601,88 @@ async def _purge_legacy_handoff_payloads(
     )
 
 
+async def _erase_entity_research_runtime_payloads(
+    conn: AsyncConnection,
+    *,
+    contact_entity_id: EntityId,
+    workspace_id: str,
+) -> None:
+    """Redact agent journals and delete exact LangGraph threads for one erased contact.
+
+    Journal identity, ordering, tool names, and hashes remain as audit. Personal model/tool bodies
+    take the migration-governed one-way redaction transition. LangGraph checkpoints are internal
+    replay state rather than audit records, so their exact globally-namespaced threads are removed.
+    """
+
+    thread_ids = tuple(
+        str(value)
+        for value in (
+            await conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT checkpoint_thread_id
+                    FROM entity_research_agent_turn
+                    WHERE workspace_id=:workspace_id
+                      AND subject_type='contact'
+                      AND target_entity_id=:contact_entity_id
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "contact_entity_id": contact_entity_id,
+                },
+            )
+        ).scalars()
+    )
+    await conn.execute(
+        text(
+            """
+            UPDATE entity_research_agent_event event_row
+            SET payload_json=jsonb_build_object('erased', true),
+                payload_erased_at=COALESCE(payload_erased_at, now())
+            FROM entity_research_agent_turn turn_row
+            WHERE event_row.agent_turn_id=turn_row.agent_turn_id
+              AND turn_row.workspace_id=:workspace_id
+              AND turn_row.subject_type='contact'
+              AND turn_row.target_entity_id=:contact_entity_id
+              AND event_row.payload_erased_at IS NULL
+            """
+        ),
+        {
+            "workspace_id": workspace_id,
+            "contact_entity_id": contact_entity_id,
+        },
+    )
+    await conn.execute(
+        text(
+            """
+            UPDATE entity_research_agent_turn
+            SET context_json=jsonb_build_object('erased', true),
+                erased_at=COALESCE(erased_at, now())
+            WHERE workspace_id=:workspace_id
+              AND subject_type='contact'
+              AND target_entity_id=:contact_entity_id
+              AND erased_at IS NULL
+            """
+        ),
+        {
+            "workspace_id": workspace_id,
+            "contact_entity_id": contact_entity_id,
+        },
+    )
+    if not thread_ids:
+        return
+    for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+        exists = (
+            await conn.execute(text("SELECT to_regclass(:table_name)"), {"table_name": table})
+        ).scalar_one()
+        if exists is not None:
+            await conn.execute(
+                text(f"DELETE FROM {table} WHERE thread_id=ANY(:thread_ids)"),  # noqa: S608
+                {"thread_ids": list(thread_ids)},
+            )
+
+
 async def _tombstone_with_dependents(
     conn: AsyncConnection,
     targets: Sequence[Claim],
@@ -862,6 +944,12 @@ class DataSubjectRightsImpl:
                     contact_entity_id=contact_entity_id,
                     workspace_id=self._workspace_id,
                 )
+                if scope == ERASE_ALL:
+                    await _erase_entity_research_runtime_payloads(
+                        conn,
+                        contact_entity_id=contact_entity_id,
+                        workspace_id=self._workspace_id,
+                    )
             # Phase 2 — the physical blob deletes, only now that the tombstones committed.
             await _purge_marked(
                 self._conn_factory,

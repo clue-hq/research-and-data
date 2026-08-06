@@ -128,10 +128,12 @@ def test_system_seed_is_promoted_digest_exact_and_replay_safe() -> None:
                     {"revision_ids": [item.recipe_revision_id for item in first]},
                 )
             ).mappings()
+            definition_count = len(definitions)
+            recipe_count = len({definition.recipe_key for definition in definitions})
             assert {row["event_type"]: row["count"] for row in events} == {
-                "promoted": 8,
-                "proposed": 8,
-                "superseded": 5,
+                "promoted": definition_count,
+                "proposed": definition_count,
+                "superseded": definition_count - recipe_count,
             }
 
             mismatch = definitions[0].model_copy(update={"max_nodes": 129})

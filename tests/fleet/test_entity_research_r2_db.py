@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 from tests.fleet.conftest import rollback_conn, run_async
 from tests.fleet.entity_research_r2_helpers import finalization_receipt, run_envelope
@@ -181,6 +182,7 @@ def test_wait_releases_task_and_exact_wake_resumes_same_checkpoint_then_finalize
 
             begin = await begin_entity_research_job(conn, job_id, fence=fence)
             assert begin.admitted and begin.job.state is ResearchJobState.RUNNING
+            initial_state_sha256 = begin.job.current_state_sha256
             waiting = await wait_entity_research_job(
                 conn,
                 job_id,
@@ -220,6 +222,19 @@ def test_wait_releases_task_and_exact_wake_resumes_same_checkpoint_then_finalize
             resumed = await begin_entity_research_job(conn, job_id, fence=second_fence)
             assert resumed.admitted
             assert resumed.job.checkpoint_ref == "checkpoint:account:1"
+            stale_receipt = finalization_receipt(
+                job_id=job_id,
+                subject_type=resumed.job.subject_type,
+                target_entity_id=resumed.job.subject_entity_id,
+                current_state_sha256=initial_state_sha256,
+            )
+            with pytest.raises(EntityResearchInvalidTransition, match="stale job state"):
+                await finalize_entity_research_job(
+                    conn,
+                    job_id,
+                    fence=second_fence,
+                    receipt=stale_receipt,
+                )
             receipt = finalization_receipt(
                 job_id=job_id,
                 subject_type=resumed.job.subject_type,
@@ -254,6 +269,25 @@ def test_wait_releases_task_and_exact_wake_resumes_same_checkpoint_then_finalize
             ]
             run = await store.get_run(envelope.lifecycle.run_id)
             assert run is not None and run.state is EntityResearchRunState.TERMINAL
+
+            for statement in (
+                "UPDATE entity_research_job_finalization SET engine_actor='mutated' "
+                "WHERE job_id=:job_id",
+                "DELETE FROM entity_research_job_event WHERE job_id=:job_id",
+            ):
+                with pytest.raises(DBAPIError, match="append-only"):
+                    async with conn.begin_nested():
+                        await conn.execute(text(statement), {"job_id": job_id})
+
+            with pytest.raises(DBAPIError, match="authority is immutable"):
+                async with conn.begin_nested():
+                    await conn.execute(
+                        text(
+                            "UPDATE entity_research_job SET initial_state_sha256=:sha "
+                            "WHERE job_id=:job_id"
+                        ),
+                        {"job_id": job_id, "sha": "f" * 64},
+                    )
 
     run_async(scenario())
 

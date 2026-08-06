@@ -660,12 +660,13 @@ async def launch_entity_research_run(
                         (job_id, research_run_id, subject_type, subject_entity_id,
                          parent_account_id, workspace_id, project_id, product_id, project_run_id,
                          authorization_json, authorization_sha256, priority, budget_envelope_ref,
-                         budget_cap_cents, checkpoint_thread_id, current_state_sha256)
+                         budget_cap_cents, checkpoint_thread_id, initial_state_sha256,
+                         current_state_sha256)
                     VALUES
                         (:job_id, :run_id, :subject_type, :subject_id, :parent_account_id,
                          :workspace_id, :project_id, :product_id, :project_run_id,
                          CAST(:authorization AS jsonb), :authorization_sha, :priority, :budget_ref,
-                         :budget_cap, :checkpoint_thread_id, :state_sha)
+                         :budget_cap, :checkpoint_thread_id, :state_sha, :state_sha)
                     ON CONFLICT DO NOTHING
                     RETURNING job_id
                     """

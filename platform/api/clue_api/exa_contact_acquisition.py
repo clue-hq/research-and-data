@@ -57,6 +57,7 @@ class ExaDeepContactAcquisitionService:
         field_keys: Sequence[str] | None = None,
         directional_questions: Sequence[str] | None = None,
         reuse_context_ref: str | None = None,
+        prior_research_context: str | None = None,
     ) -> ExaDeepContactAcquisitionBatchResult:
         """Acquire only a database-proven selected intent; a rejected compile makes zero calls."""
 
@@ -72,6 +73,7 @@ class ExaDeepContactAcquisitionService:
                 field_keys=field_keys,
                 directional_questions=directional_questions,
                 reuse_context_ref=reuse_context_ref,
+                prior_research_context=prior_research_context,
             )
 
         # This loop is deliberately outside the compiler/claim transaction. Each coordinator call

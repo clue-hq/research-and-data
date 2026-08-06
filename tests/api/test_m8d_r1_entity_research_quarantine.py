@@ -11,6 +11,7 @@ import pytest
 from clue_api.entity_research_quarantine import (
     ENTITY_RESEARCH_AGENT_NOT_COMPOSED,
     QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES,
+    EntityResearchAgentNotComposed,
     ReplayOnlyEntityResearchTool,
     quarantine_entity_research_tool,
 )
@@ -94,16 +95,30 @@ def test_production_composition_does_not_reference_quarantined_collaborators() -
         "platform/api/clue_api/run_composition.py",
     ):
         tree = ast.parse((root / relative).read_text())
-        referenced = {
-            node.id
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Name)
-        } | {
-            node.attr
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Attribute)
+        referenced = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)} | {
+            node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
         }
         assert forbidden.isdisjoint(referenced), relative
+
+
+def test_retired_deep_composition_addresses_fail_before_registration() -> None:
+    """No caller can bypass the two normal roots by invoking the old public registrant directly."""
+
+    from clue_api.deep.composition import build_deep_phase_handler, register_deep_phase_handler
+
+    with pytest.raises(EntityResearchAgentNotComposed):
+        build_deep_phase_handler()
+
+    registered: list[object] = []
+    with pytest.raises(EntityResearchAgentNotComposed):
+        register_deep_phase_handler(
+            spec=object(),
+            gateway=object(),
+            committee_sources=(),
+            storage=None,
+            register=registered.append,
+        )
+    assert registered == []
 
 
 def test_new_invocation_refuses_before_former_provider_body() -> None:
