@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from clue_core import Confidence, CostCents, EntityId
+from clue_core import Confidence, CostCents, EntityId, UtcDatetime
 
 # The reserved channel label for lookalike expansion from seed/customer/import entities (staged-flow
 # §3; Doc B §4 hybrid). Distinct from a structured-DB/web channel's ``source_key`` so the gate and
@@ -44,9 +44,14 @@ class CandidateRecord(BaseModel):
     source_url: str | None = None  # the candidate's domain/URL where applicable
     raw_name: str | None = None  # the unresolved company name as the source returned it
     candidate_domain: str | None = None  # the candidate's web domain, if the source returned one
+    candidate_geo: dict[str, JsonValue] | None = None
     matched_signal: str = ""  # which ICP filter/signal this record matched (for provenance)
     confidence: Confidence = 0.5  # the channel's confidence the record is a real, relevant company
     cost_cents: CostCents = Decimal(0)  # the spend attributed to producing this record
+    artifact_key: str | None = None  # immutable raw record snapshot, when the channel has one
+    evidence_span: str | None = None
+    discovery_evidence: dict[str, JsonValue] = Field(default_factory=dict)
+    observed_at: UtcDatetime | None = None
 
     @model_validator(mode="after")
     def _check_grounded(self) -> CandidateRecord:
@@ -75,10 +80,15 @@ class CandidateHypothesis(BaseModel):
     source_url: str | None = None
     raw_name: str | None = None
     candidate_domain: str | None = None
+    candidate_geo: dict[str, JsonValue] | None = None
     matched_signal: str = ""
     resolver_confidence: Confidence = 0.5
     cost_cents: CostCents = Decimal(0)
     seed_entity_id: EntityId | None = None  # set when matched_channel == LOOKALIKE_CHANNEL
+    artifact_key: str | None = None
+    evidence_span: str | None = None
+    discovery_evidence: dict[str, JsonValue] = Field(default_factory=dict)
+    observed_at: UtcDatetime | None = None
 
     @model_validator(mode="after")
     def _check_grounded(self) -> CandidateHypothesis:
@@ -105,10 +115,15 @@ class CandidateHypothesis(BaseModel):
             source_url=record.source_url,
             raw_name=record.raw_name,
             candidate_domain=record.candidate_domain,
+            candidate_geo=record.candidate_geo,
             matched_signal=record.matched_signal,
             resolver_confidence=record.confidence,
             cost_cents=record.cost_cents,
             seed_entity_id=seed_entity_id,
+            artifact_key=record.artifact_key,
+            evidence_span=record.evidence_span,
+            discovery_evidence=record.discovery_evidence,
+            observed_at=record.observed_at,
         )
 
 

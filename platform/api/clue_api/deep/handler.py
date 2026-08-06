@@ -55,6 +55,10 @@ from clue_api.deep.orchestrator import (
 from clue_core import (
     BudgetVerdict,
     CostCents,
+    DeepAccountExternalWait,
+    DeepExternalWait,
+    DeepExternalWakeReason,
+    ExternalResearchPreparationOutcome,
     PhaseContext,
     PhaseHandler,
     PhaseResult,
@@ -65,6 +69,7 @@ from clue_core import (
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet import GovernedPartialAccount
+from clue_obs import get_logger
 from clue_research.durable import (
     AccountRunStatus,
     AccountScheduler,
@@ -74,6 +79,8 @@ from clue_research.durable import (
     set_status,
 )
 from clue_research.sources import SourceCallObserver, bind_source_call_observer
+
+log = get_logger("clue_api.deep.handler")
 
 # --- injected seams ----------------------------------------------------------
 
@@ -201,6 +208,7 @@ class _AccountOutcome:
     succeeded: bool
     budget_stop: BudgetVerdict | None
     manifest: dict[str, JsonValue]
+    external_wait: DeepAccountExternalWait | None = None
 
 
 def _budget_stop(result: AccountDeepResult) -> BudgetVerdict | None:
@@ -242,12 +250,39 @@ def _succeeded_outcome(result: AccountDeepResult) -> _AccountOutcome:
     account that ran to ``CONTACTS_COMPLETE`` is ``completed`` (Doc C §7 coverage-confidence)."""
     stop = _budget_stop(result)
     manifest = build_handoff_skeleton(result).manifest().model_dump(mode="json")
-    manifest["status"] = "partial" if stop is not None else "completed"
+    preparation = result.external_preparation
+    ineligible = (
+        preparation is not None
+        and preparation.outcome is ExternalResearchPreparationOutcome.INELIGIBLE
+    )
+    manifest["status"] = (
+        "governed_partial" if ineligible else "partial" if stop is not None else "completed"
+    )
+    if ineligible:
+        assert preparation is not None
+        manifest["reason_code"] = preparation.reason_code
+        manifest["control_refs"] = list(preparation.audit_refs)
     return _AccountOutcome(
         cost_cents=result.cost_cents,
         succeeded=True,
         budget_stop=stop,
         manifest=manifest,
+    )
+
+
+def _waiting_outcome(result: AccountDeepResult) -> _AccountOutcome:
+    preparation = result.external_preparation
+    assert preparation is not None
+    return _AccountOutcome(
+        cost_cents=result.cost_cents,
+        succeeded=True,
+        budget_stop=None,
+        manifest={},
+        external_wait=DeepAccountExternalWait(
+            account_entity_id=result.entity_id,
+            account_run_id=result.account_run_id,
+            preparation=preparation,
+        ),
     )
 
 
@@ -331,6 +366,12 @@ class DeepPhaseHandler:
                 # The call raised, so there is no result to read the cost from — recover whatever
                 # the orchestrator committed stage-by-stage before the crash so the burn-down stays
                 # honest (finalize also flips the row to FAILED).
+                log.exception(
+                    "deep.account_failed",
+                    project_run_id=str(project_run_id),
+                    account_run_id=str(run_id),
+                    account_entity_id=str(spec.entity_id),
+                )
                 cost = await self._finalize_failed_account(run_id)
                 return _AccountOutcome(
                     cost_cents=cost,
@@ -338,6 +379,15 @@ class DeepPhaseHandler:
                     budget_stop=None,
                     manifest=_failed_manifest(spec, run_id, cost_cents=cost),
                 )
+            if (
+                result.external_preparation is not None
+                and result.external_preparation.outcome
+                is ExternalResearchPreparationOutcome.WAITING_EXTERNAL
+            ):
+                # Account-profile acquisition may wait before the first completed sub-phase. The
+                # provider operation is durable and resumable, so this is a project-level external
+                # wait—not an unresolved account failure.
+                return _waiting_outcome(result)
             if result.sub_phase is None:
                 # The account did not resolve — ``profile_account`` returned FAILED with no aspects
                 # and the orchestrator short-circuited before discovery without advancing the marker
@@ -395,7 +445,8 @@ class DeepPhaseHandler:
             async with self._checkpointer_factory() as checkpointer:
                 outcomes = await _run_cohort(plan.canary, checkpointer=checkpointer)
                 gate: DeepCanaryGateResult | None = None
-                if plan.enabled:
+                canary_waiting = any(item.external_wait is not None for item in outcomes)
+                if plan.enabled and not canary_waiting:
                     assert controller is not None
                     gate = await controller.evaluate(ctx, plan.canary)
                     if gate.proceed:
@@ -412,9 +463,14 @@ class DeepPhaseHandler:
                     )
 
         cost = sum((outcome.cost_cents for outcome in outcomes), Decimal(0))
-        processed = sum(1 for outcome in outcomes if outcome.succeeded)
+        processed = sum(
+            1 for outcome in outcomes if outcome.succeeded and outcome.external_wait is None
+        )
         failed = sum(1 for outcome in outcomes if not outcome.succeeded)
         paused = any(outcome.budget_stop is BudgetVerdict.GRACEFUL_STOP for outcome in outcomes)
+        pending = tuple(
+            outcome.external_wait for outcome in outcomes if outcome.external_wait is not None
+        )
         payload: dict[str, JsonValue] = {
             "deep_count": len(specs),
             "accounts_failed": failed,
@@ -428,12 +484,24 @@ class DeepPhaseHandler:
                 "observation_id": gate.observation_id,
                 "diagnosis_id": gate.diagnosis_id,
             }
+        status = (
+            PhaseStatus.PAUSED
+            if paused or (plan.enabled and gate is not None and not gate.proceed)
+            else PhaseStatus.WAITING_EXTERNAL
+            if pending
+            else PhaseStatus.COMPLETED
+        )
+        if status is PhaseStatus.WAITING_EXTERNAL:
+            retry_times = tuple(item.preparation.retry_after for item in pending)
+            assert retry_times and all(value is not None for value in retry_times)
+            wait = DeepExternalWait(
+                pending_accounts=pending,
+                next_poll_at=min(value for value in retry_times if value is not None),
+                wake_reason=DeepExternalWakeReason.SCHEDULED_POLL,
+            )
+            payload = wait.model_dump(mode="json")
         return PhaseResult(
-            status=(
-                PhaseStatus.PAUSED
-                if paused or (plan.enabled and gate is not None and not gate.proceed)
-                else PhaseStatus.COMPLETED
-            ),
+            status=status,
             accounts_processed=processed,
             cost_cents=cost,
             payload=payload,

@@ -19,10 +19,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from enum import StrEnum
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 
 from clue_core import ClaimId, CostCents, EntityId, Estimate, parse_cost_cents
+from clue_research.discovery_scoring.tiering.selection import DiscoveryCriteriaAccountView
 from clue_research.icp.rubric import TierCutoffs
 
 # The key under which the M7 state machine threads the client's ``resume(...)`` decision into the
@@ -129,6 +131,33 @@ class CheckpointReview(BaseModel):
     coverage: JsonValue | None = None
 
 
+class DiscoveryCriteriaCheckpointReview(BaseModel):
+    """Human checkpoint when numeric scoring is explicitly disabled.
+
+    The rows expose Exa criterion observations and their claim references, plus terminal required-
+    field states.  They intentionally carry no fit or intent numbers.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: CheckpointStatus
+    scoring_mode: str = "disabled"
+    selection_mode: str = "discovery_criteria"
+    selection_policy_version: str
+    discovery_batch_id: str
+    discovery_seal_sha256: str
+    approved_tier: str
+    selection_distribution: dict[str, int]
+    accounts: tuple[DiscoveryCriteriaAccountView, ...]
+    approval_candidate_account_ids: tuple[EntityId, ...]
+    requested_approved_account_ids: tuple[EntityId, ...] | None = None
+    approval_selection_error: str | None = None
+    estimate: Estimate
+    cap_cents: CostCents | None = None
+    projected_over_cap: bool = False
+    coverage: JsonValue | None = None
+
+
 class CheckpointDecision(BaseModel):
     """The client's ``resume(...)`` decision, parsed from the phase ``params`` (M7 secure-input).
 
@@ -143,6 +172,8 @@ class CheckpointDecision(BaseModel):
     action: CheckpointAction | None = None
     cutoffs: TierCutoffs | None = None
     budget_cap_cents: CostCents | None = None
+    approved_account_ids: tuple[EntityId, ...] | None = None
+    approval_selection_error: str | None = None
 
     @classmethod
     def from_params(cls, params: Mapping[str, JsonValue]) -> CheckpointDecision:
@@ -176,4 +207,31 @@ class CheckpointDecision(BaseModel):
         # through.
         cap = parse_cost_cents(raw.get("budget_cap_cents"))
 
-        return cls(action=action, cutoffs=cutoffs, budget_cap_cents=cap)
+        approved_account_ids: tuple[EntityId, ...] | None = None
+        approval_selection_error: str | None = None
+        if "approved_account_ids" in raw:
+            approved_raw = raw.get("approved_account_ids")
+            if not isinstance(approved_raw, list):
+                approval_selection_error = "approved_account_ids must be a list of account ids"
+            else:
+                parsed: list[EntityId] = []
+                try:
+                    parsed = [
+                        EntityId(UUID(value)) for value in approved_raw if isinstance(value, str)
+                    ]
+                except (TypeError, ValueError, AttributeError):
+                    approval_selection_error = "approved_account_ids contains an invalid account id"
+                if len(parsed) != len(approved_raw):
+                    approval_selection_error = "approved_account_ids contains an invalid account id"
+                elif len(parsed) != len(set(parsed)):
+                    approval_selection_error = "approved_account_ids must not contain duplicates"
+                else:
+                    approved_account_ids = tuple(parsed)
+
+        return cls(
+            action=action,
+            cutoffs=cutoffs,
+            budget_cap_cents=cap,
+            approved_account_ids=approved_account_ids,
+            approval_selection_error=approval_selection_error,
+        )

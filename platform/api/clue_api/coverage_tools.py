@@ -26,10 +26,12 @@ from clue_core import (
 )
 from clue_core import (
     EntityId,
+    EntityScope,
     FieldDef,
     LLMGateway,
     PreSpendGate,
     ProjectRunId,
+    ResearchMode,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import get_field
@@ -47,7 +49,9 @@ from clue_research.durable import (
     get_project_run,
     list_account_runs,
 )
+from clue_research.icp import get_icp_version
 from clue_research.identity import get_account
+from clue_research.sources import plan_sources
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
@@ -241,6 +245,28 @@ class ResearchAccountGapsTool(Tool):
                 if field is not None:
                     loaded_defs.append(field)
             defs = tuple(loaded_defs)
+            spec = await get_icp_version(
+                conn,
+                ctx.workspace_id,
+                run.icp_key,
+                run.icp_version,
+            )
+            if spec is None:
+                raise RuntimeError("account research run lost its pinned ICP version")
+            effective_source_plans = {}
+            for field in defs:
+                source_plan = await plan_sources(
+                    conn,
+                    spec=spec,
+                    entity=account.as_entity(),
+                    field=str(field.field_key),
+                    mode=ResearchMode.ACCOUNT_PROFILING,
+                    entity_tier=inputs.tier,
+                    entity_scope=EntityScope.ACCOUNT,
+                )
+                if source_plan.effective_source_plan is None:
+                    raise RuntimeError("source planner did not return exact field authority")
+                effective_source_plans[str(field.field_key)] = source_plan.effective_source_plan
             remaining = (
                 None
                 if run.budget_cap_cents is None
@@ -294,6 +320,7 @@ class ResearchAccountGapsTool(Tool):
                 requested_round=(
                     inputs.round if isinstance(inputs, ResearchAccountGapsV2Input) else None
                 ),
+                effective_source_plans=effective_source_plans,
             )
         references: dict[str, object] = {
             "project_run_id": inputs.project_run_id,

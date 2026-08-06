@@ -215,16 +215,21 @@ def test_memory_caps_validate_and_default() -> None:
 
 
 def test_no_production_code_outside_memory_touches_the_substrate() -> None:
-    """Backstop to import-linter Rule S1/S3: no non-test module outside ``clue_memory`` imports
-    the package at all — and nothing anywhere outside it names the private ``_store``."""
+    """Only the API composition root imports the public memory seam; nobody names ``_store``."""
     roots = [_REPO_ROOT / "libs", _REPO_ROOT / "subsystems", _REPO_ROOT / "platform"]
     offenders: list[str] = []
+    public_composition_roots = {
+        (_REPO_ROOT / "platform/api/clue_api/memory_wiring.py").resolve(),
+    }
     for root in roots:
         for path in root.rglob("*.py"):
             if "clue_memory" in path.parts:
                 continue
             source = path.read_text()
-            if re.search(r"^\s*(from|import)\s+clue_memory", source, re.MULTILINE):
+            if (
+                re.search(r"^\s*(from|import)\s+clue_memory", source, re.MULTILINE)
+                and path.resolve() not in public_composition_roots
+            ):
                 offenders.append(str(path))
             if "_store" in source and "clue_memory" in source:
                 offenders.append(f"{path} (names the private _store)")

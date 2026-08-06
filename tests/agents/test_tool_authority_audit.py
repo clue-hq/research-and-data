@@ -1,4 +1,4 @@
-"""Current C6 replay/authority audit over the complete 35-tool C7 registry."""
+"""Current C6 replay/authority audit over the complete tool registry."""
 
 from __future__ import annotations
 
@@ -36,12 +36,24 @@ _C65_CERTIFIED = {
 def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(C6_AGENT_TOOL_AUTHORITY) == set(registry.names())
-    # 35 → 37 with PC-C8 task 1.5's two inspection tools, granted to the Head of ABM in the
-    # slice-1 closing round (profile v10) — they are read-only, effect-free, and the only way the
-    # project card's `omissions` cursors resolve.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 37
+    # Every addition must have a reviewed role decision here. O2 added the account-deep launch
+    # boundary; M8D R10 retires it from every active role (exact historical replay only) and
+    # promotes the separately confirmed account/contact entity-research launch and read tools.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 48
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["confirm_account_research_directive"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["approve_contact_research_selection"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["launch_account_deep"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["launch_account_research"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["launch_contact_research"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["read_account_research_run"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["read_contact_research_run"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["compose_contact_content_handoff"] == (
+        AgentRole.CONTENT_DRAFTER,
+        AgentRole.REVIEWER,
+    )
 
     for descriptor in registry.all_descriptors():
         roles = c6_roles_for_tool(descriptor.address)
@@ -66,7 +78,7 @@ def test_human_steering_and_replay_blocked_tools_are_structurally_absent() -> No
         descriptors[address].replay.policy is ReplayPolicy.UNCERTIFIED
         for address in _REPLAY_BLOCKED
     )
-    assert c6_roles_for_tool("research_account_gaps@2")
+    assert not c6_roles_for_tool("research_account_gaps@2")
     assert descriptors["research_account_gaps@2"].recipe_safe
 
 

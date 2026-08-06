@@ -338,6 +338,12 @@ class DeepAgentTurnRuntime:
                 raise
             except BaseException as exc:
                 await self._execution.recover(execution_id=constitution.execution_id)
+                log.error(
+                    "agent.runtime_failed",
+                    error_type=type(exc).__name__,
+                    error=str(exc),
+                    exc_info=True,
+                )
                 return AgentTurnOutcome(
                     turn_id=request.turn_id,
                     execution_id=constitution.execution_id,

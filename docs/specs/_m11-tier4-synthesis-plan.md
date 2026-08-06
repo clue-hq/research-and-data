@@ -100,16 +100,15 @@ DRY consequence: the swap test (Exa↔Parallel↔stub) and every tier-4 discipli
 - **`build_exa_request(account, field, token, cfg)`** — the entity-bound query (target-lock):
   `site:<primary_domain>` + canonical name + `hq_geo` disambiguators + `aliases` + a field-intent
   phrase; POST to the Exa research/answer endpoint with highlights on. Pure; unit-tested.
-- **`normalize_exa_response(payload, field, cfg)`** — map each returned result/citation to a
-  `SynthesizedField`: `value` = the highlighted passage (the grounded value), `evidence_span` = that
-  highlight, `source_url` = the result url, `retrieved_text` = the result text/highlight context,
-  `confidence` = the normalized Exa score. A result with no highlight/url (no grounding) is dropped.
-  Pure; unit-tested against fixtures (the recorded-fixture path — finalized when live creds land).
-- **`HttpSynthesisBackend`** — a generic `SynthesisBackend` over `get_json` (the network is the
-  `# pragma: no cover` boundary; CI injects a backend double), parameterized by `build_request`/
-  `normalize`/`source_key`/`auth_ref` — the tier-4 analogue of `HttpEnrichmentBackend`.
-- **`register_exa_deep_resolver(*, accounts=None, backend=None, config=None)`** — wires the Exa
-  backend (or an injected double) into `register_synthesis_resolver("exa_deep", …)`.
+- **Historical M11 sketch, superseded by M8B E0-R2:** the current normalizer preserves the returned
+  structured value, recursively validates it against the admitted field schema, and selects only a
+  cited retained passage that supports that exact field. Every citation keeps an attribution even
+  when it is not promoted to a `SynthesizedField`; a valid all-null response settles as an empty
+  paid miss.
+- **`register_exa_deep_resolver(*, accounts=None, backend=None)`** — wires an injected backend into
+  `register_synthesis_resolver("exa_deep", …)`. Without one it binds a hard pre-dispatch placeholder;
+  resolver-time Exa HTTP is forbidden until M8B E1 supplies durable acquisition and ready-snapshot
+  replay. The E0 response harness accepts only an explicitly injected provider double.
 
 ### `api/synthesis_wiring.py` (PF-7 home) — M11.1 fills the Exa binding
 

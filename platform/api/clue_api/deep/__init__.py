@@ -19,6 +19,11 @@ M12-ready. The composition root that injects the concretes (M8A.6) builds agains
 
 from __future__ import annotations
 
+from clue_api.deep.committee_preparation import (
+    CommitteePreparer,
+    ExternalCommitteePreparationFailed,
+    PreparedCommitteeSources,
+)
 from clue_api.deep.composition import (
     DeepPhaseComposition,
     build_account_axis_registry,
@@ -74,6 +79,9 @@ __all__ = [
     "ProfileAccountFn",
     "DiscoverCommitteeFn",
     "ProfileContactFn",
+    "CommitteePreparer",
+    "PreparedCommitteeSources",
+    "ExternalCommitteePreparationFailed",
     # the account_run persistence seam (M8A.1)
     "AccountRunIO",
     "DbAccountRunIO",

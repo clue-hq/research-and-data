@@ -48,8 +48,12 @@ issue spec states the exact interface it exposes/consumes.
 | M4 | Source Layer & Source Intelligence | `layer:source-layer` | M1, M2, M3 | High | 6 | [M04](./M04-source-layer-and-source-intelligence.md) |
 | M5 | Stage 0 Front Edge | `layer:stage0` | M2, M3, M4 | Medium | 4 | [M05](./M05-stage0-front-edge.md) |
 | M6 | Discovery (mode M1) + Pass A Scoring | `layer:discovery-scoring` | M2, M3, M4 | High | 5 | [M06](./M06-discovery-and-pass-a-scoring.md) |
+| M6A | Durable Exa Websets discovery + gated Sumble enrichment | `layer:discovery-scoring` | M1–M4, M6, M7, M9 | High | Integration slices D0–D6, E1, S1–S2 | [M06A](./M06A-exa-websets-sumble-discovery-integration.md) |
 | M7 | Durable Execution | `layer:durable-exec` | M1, M4 | High | 5 | [M07](./M07-durable-execution.md) |
 | M8 | Deep Profiling (modes M2/M3/M4) | `layer:deep-profiling` | M4, M6, M7 | Medium | 5 | [M08](./M08-deep-profiling.md) |
+| M8B | Exa Deep + Sumble account-deep integration | `layer:deep-profiling` | M6A, M8, M8A, M9–M11 | High | Integration slices A0–V1 | [M8B](./M8B-exa-sumble-account-deep-integration-roadmap.md) |
+| M8C | Contact-deep research + selected-contact enrichment | `layer:deep-profiling` | M8B, M9, M10, M12 | High | Integration slices C0–C7, V0–V1 | [M8C](./M8C-contact-deep-research-and-selected-contact-enrichment-roadmap.md) |
+| M8D | Entity research agents + shared fleet refactor | `layer:deep-profiling` | M8B, M8C, C5–C7 | High | Refactor slices R0–R10 | [M8D](./M8D-entity-research-agents-and-shared-fleet-refactor-roadmap.md) |
 | M9 | Verification Layer | `layer:verification` | M1, M4 | High | 6 | [M09](./M09-verification-layer.md) |
 | M10 | Compliance & Personal-Data Governance | `layer:compliance` | M1, M8, M9 | Medium | 5 | [M10](./M10-compliance-and-personal-data.md) |
 | M11 | Tier-4 LLM Synthesis | `layer:llm-synthesis` | M4, M8, M9 | Medium | 3 | [M11](./M11-tier4-llm-synthesis.md) |

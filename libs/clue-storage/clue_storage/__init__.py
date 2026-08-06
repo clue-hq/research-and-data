@@ -1,6 +1,7 @@
 """clue-storage — durable, content-addressed artifact storage (Phase B2 / harness REQ-07)."""
 
 from clue_storage.artifacts import (
+    ArtifactIntegrityError,
     ArtifactRecord,
     PurgeResult,
     erase_if_unreferenced,
@@ -8,6 +9,7 @@ from clue_storage.artifacts import (
     live_claim_count,
     mark_erased,
     purge_erased_artifacts,
+    read_verified_artifact,
     record_artifact,
     sweep_orphan_blobs,
 )
@@ -28,6 +30,7 @@ from clue_storage.snapshot import PendingSnapshot, SnapshotSink, flush_snapshots
 __all__ = [
     "PUBLIC_SCOPE",
     "ArtifactNotFound",
+    "ArtifactIntegrityError",
     "ArtifactRecord",
     "FsStorage",
     "PendingSnapshot",
@@ -48,6 +51,7 @@ __all__ = [
     "mark_erased",
     "purge_erased_artifacts",
     "record_artifact",
+    "read_verified_artifact",
     "storage_from_settings",
     "sweep_orphan_blobs",
 ]

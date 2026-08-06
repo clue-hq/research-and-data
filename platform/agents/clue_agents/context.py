@@ -10,9 +10,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Literal, Protocol, runtime_checkable
-from uuid import uuid5
+from uuid import UUID, uuid5
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -265,7 +266,7 @@ class WorkspaceProductLayerSource:
 
 
 class ProjectLayerSource:
-    """L3 is exactly two required artifacts: the project card and the budget envelope.
+    """L3 holds the two base project artifacts plus explicitly constituted project inputs.
 
     One owner per concern (PC-C8 §2). The card is the whole bounded projection of durable project
     state, so the compiled ``project`` context card this source used to read as well is subsumed by
@@ -290,6 +291,10 @@ class ProjectLayerSource:
         candidates = (
             ("project_card", request.constitution.project_card_ref),
             ("budget", request.constitution.budget_envelope_ref),
+            *(
+                (item.name, item.artifact_ref)
+                for item in request.constitution.project_context_artifacts
+            ),
         )
         result: list[ContextCandidate] = []
         for name, ref in candidates:
@@ -330,6 +335,16 @@ class MemoryLayerSource:
         del profile, history
         if not self._requested_types or request.constitution.brand_id is None:
             return ()
+        account_refs = tuple(
+            ref for ref in request.constitution.focus_refs if ref.object_type == "account"
+        )
+        account_entity_id: UUID | None = None
+        if len(account_refs) == 1:
+            # A DomainObjectRef is generic and older/non-research account ids need not be UUIDs.
+            # The project preference still belongs in context; only the optional account scope is
+            # omitted when it cannot name the memory substrate's canonical account key.
+            with suppress(ValueError):
+                account_entity_id = UUID(account_refs[0].object_id)
         bundle = await self._assembly.assemble(
             AssemblyRequest(
                 scope_stack=ScopeStack(
@@ -337,6 +352,7 @@ class MemoryLayerSource:
                     brand_id=request.constitution.brand_id,
                     product_id=request.constitution.product_id,
                     project_id=request.constitution.project_id,
+                    account_entity_id=account_entity_id,
                 ),
                 recipe=self._recipe,
                 requested_types=self._requested_types,

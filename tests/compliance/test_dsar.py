@@ -650,6 +650,7 @@ def test_dsar_erases_the_rationale_of_a_verdict_keyed_on_the_entailment_question
     run_async(_run())
 
 
+@pytest.mark.usefixtures("require_compliance_db")
 def test_dsar_reaches_cross_subject_derivations_through_support_edges() -> None:
     """An account inference copied from a contact signal is erased through reverse lineage."""
 

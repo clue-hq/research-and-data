@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import (
     AspectContext,
     ClaimId,
+    ClaimProvenanceKind,
     CostCents,
     EntityId,
     EntityType,
@@ -43,6 +44,7 @@ from clue_core import (
     UseClass,
     WorkerResult,
     WorkerStatus,
+    canonical_json,
     contact_claim,
     revalidate_with,
 )
@@ -66,6 +68,7 @@ from clue_research.profiling.committee.roles import (
     infer_role,
 )
 from clue_research.profiling.committee.sources import (
+    CandidateProfessionalFact,
     CommitteePersonCandidate,
     CommitteeSource,
     order_committee_sources,
@@ -74,6 +77,10 @@ from clue_research.profiling.committee.stopping import CommitteeStoppingRule, Co
 
 # Default personas to consider when the ICP does not narrow them (D5: read per ICP version).
 _ALL_PERSONAS: tuple[Persona, ...] = tuple(Persona)
+
+
+class ProfessionalFactReplayConflict(RuntimeError):
+    """The same immutable snapshot identity attempted to write a different professional fact."""
 
 
 def _strong_key(candidate: CommitteePersonCandidate) -> str | None:
@@ -145,6 +152,7 @@ async def _write_committee_claim(
         confidence=confidence,
         run_id=run_id,
         research_mode=ResearchMode.COMMITTEE_DISCOVERY,
+        provenance_kind=ClaimProvenanceKind.PLATFORM_INFERRED,
         identity_binding=identity_binding,
         use_class=UseClass.PROFESSIONAL_PUBLIC,
         source_url=source_url,
@@ -207,6 +215,104 @@ async def _write_role_and_persona(
         product_id=product_id,
     )
     return role_claim_id, persona_claim_id
+
+
+async def _write_professional_fact(
+    conn: AsyncConnection,
+    contact_entity_id: EntityId,
+    fact: CandidateProfessionalFact,
+    *,
+    run_id: RunId,
+    workspace_id: str,
+    identity_binding: IdentityBinding,
+    product_id: str | None,
+) -> ClaimId:
+    """Materialize one snapshot fact exactly once after strong identity admission."""
+
+    if identity_binding is not IdentityBinding.STRONG:
+        raise ValueError("professional contact facts require strong contact/account admission")
+    scope = WorkspaceScope.for_workspace(workspace_id)
+    for existing in await claims_for(conn, contact_entity_id, fact.field_key, scope=scope):
+        if (
+            existing.run_id != run_id
+            or existing.source_key != fact.source_key
+            or existing.product_id != product_id
+        ):
+            continue
+        equivalent = (
+            canonical_json(existing.value_json) == canonical_json(fact.value_json)
+            and existing.source_tier == fact.source_tier
+            and existing.source_url == fact.source_url
+            and existing.evidence_span == fact.evidence_span
+            and existing.artifact_key == fact.artifact_key
+            and existing.source_operation_ref == fact.source_operation_ref
+            and existing.source_snapshot_ref == fact.source_snapshot_ref
+            and existing.source_request_ref == fact.source_request_ref
+            and existing.provenance_kind is not None
+            and existing.provenance_kind.value == fact.provenance_kind.value
+            and existing.identity_binding is IdentityBinding.STRONG
+            and existing.use_class is UseClass.PROFESSIONAL_PUBLIC
+        )
+        if not equivalent:
+            raise ProfessionalFactReplayConflict(
+                "immutable professional snapshot replay changed "
+                f"{fact.field_key!r} for contact {contact_entity_id}"
+            )
+        return existing.id
+
+    claim = contact_claim(
+        entity_id=contact_entity_id,
+        field_key=str(fact.field_key),
+        value_json=fact.value_json,
+        source_tier=fact.source_tier,
+        extraction_method=ExtractionMethod.API,
+        confidence=fact.confidence,
+        run_id=run_id,
+        research_mode=ResearchMode.COMMITTEE_DISCOVERY,
+        provenance_kind=ClaimProvenanceKind(fact.provenance_kind.value),
+        identity_binding=IdentityBinding.STRONG,
+        use_class=UseClass.PROFESSIONAL_PUBLIC,
+        source_url=fact.source_url,
+        evidence_span=fact.evidence_span,
+        observed_at=fact.observed_at,
+        cost_cents=Decimal(0),
+    )
+    claim = revalidate_with(
+        stamp_reuse(claim, workspace_id=workspace_id),
+        source_key=fact.source_key,
+        artifact_key=fact.artifact_key,
+        source_operation_ref=fact.source_operation_ref,
+        source_snapshot_ref=fact.source_snapshot_ref,
+        source_request_ref=fact.source_request_ref,
+        product_id=product_id,
+    )
+    return await insert_claim(conn, claim)
+
+
+async def _write_professional_facts(
+    conn: AsyncConnection,
+    contact_entity_id: EntityId,
+    candidate: CommitteePersonCandidate,
+    *,
+    run_id: RunId,
+    workspace_id: str,
+    identity_binding: IdentityBinding,
+    product_id: str | None,
+) -> tuple[ClaimId, ...]:
+    return tuple(
+        [
+            await _write_professional_fact(
+                conn,
+                contact_entity_id,
+                fact,
+                run_id=run_id,
+                workspace_id=workspace_id,
+                identity_binding=identity_binding,
+                product_id=product_id,
+            )
+            for fact in candidate.professional_facts
+        ]
+    )
 
 
 async def discover_committee(
@@ -356,6 +462,15 @@ async def discover_committee(
                 identity_binding=outcome.identity_binding,
                 product_id=spec.product_id if spec is not None else None,
             )
+            professional_claim_ids = await _write_professional_facts(
+                conn,
+                contact_entity_id,
+                candidate,
+                run_id=run_id,
+                workspace_id=workspace_id,
+                identity_binding=outcome.identity_binding,
+                product_id=spec.product_id if spec is not None else None,
+            )
             members.append(
                 CommitteeMemberRef(
                     contact_entity_id=contact_entity_id,
@@ -366,6 +481,7 @@ async def discover_committee(
                     discovery_claim_id=outcome.discovery_claim_id,
                     role_claim_id=role_claim_id,
                     persona_claim_id=persona_claim_id,
+                    professional_claim_ids=professional_claim_ids,
                 )
             )
             admitted += 1

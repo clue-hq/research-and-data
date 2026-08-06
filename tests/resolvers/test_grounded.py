@@ -142,6 +142,38 @@ def test_builds_tier4_synthesis_claim_with_span_url_confidence_cost() -> None:
     assert claim.value_json == "Acme runs brittle legacy ETL"
 
 
+def test_snapshot_lineage_is_all_or_nothing_and_reaches_the_claim() -> None:
+    account = _account()
+    with pytest.raises(ValueError, match="snapshot-backed synthesis requires"):
+        SynthesizedField(
+            field_key=_FIELD_KEY,
+            value="Acme fact",
+            source_url="https://acme.com/fact",
+            evidence_span="Acme fact",
+            retrieved_text="Acme fact",
+            confidence=0.9,
+            source_operation_ref="operation:1",
+        )
+
+    field = SynthesizedField(
+        field_key=_FIELD_KEY,
+        value="Acme fact",
+        source_url="https://acme.com/fact",
+        evidence_span="Acme fact",
+        retrieved_text="Acme fact",
+        confidence=0.9,
+        artifact_key="artifacts/exa/result.json",
+        source_operation_ref="operation:1",
+        source_snapshot_ref="snapshot:1",
+        source_request_ref="provider-request:1",
+    )
+    (claim,) = _resolver((field,), account=account).resolve(account.as_entity(), _field())
+    assert claim.artifact_key == "artifacts/exa/result.json"
+    assert claim.source_operation_ref == "operation:1"
+    assert claim.source_snapshot_ref == "snapshot:1"
+    assert claim.source_request_ref == "provider-request:1"
+
+
 def test_no_self_promotion_claims_are_unverified() -> None:
     account = _account()
     resolver = _resolver(

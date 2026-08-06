@@ -21,8 +21,11 @@ from clue_api.agent_platform_wiring import (
     evaluate_agent_canary,
     run_owned_agent_surface,
 )
-from clue_api.fleet_main import _account_agent_runtime_required
 from clue_config import Settings
+from clue_core import (
+    EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES,
+    USER_RESEARCH_INSTRUCTION_MAX_BYTES,
+)
 from clue_research.durable import AspectPlan, ResearchPlan
 from clue_research.identity import insert_account_entity
 from tests._workspace import seed_project, seed_workspace
@@ -69,7 +72,8 @@ def test_agent_rollout_defaults_are_off_and_validated(
 def test_account_context_policy_freezes_all_seven_layers_and_fresh_wake() -> None:
     policy = account_research_context_policy()
     assert tuple(item.layer for item in policy.budgets) == tuple(ContextLayer)
-    assert policy.budget_for(ContextLayer.L4_MEMORY) == 0
+    assert policy.budget_for(ContextLayer.L3_PROJECT) >= 2 * EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES
+    assert policy.budget_for(ContextLayer.L4_MEMORY) >= 2 * USER_RESEARCH_INSTRUCTION_MAX_BYTES
     assert policy.budget_for(ContextLayer.L6_CONVERSATION) == 0
 
 
@@ -94,7 +98,7 @@ def test_account_agent_plan_budget_uses_the_strictest_durable_ceiling() -> None:
     )
 
 
-def test_durable_owner_is_sticky_across_configuration_changes(
+def test_durable_owner_remains_historical_without_reactivating_account_deepagent(
     require_c68_db: None,
 ) -> None:
     del require_c68_db
@@ -104,10 +108,6 @@ def test_durable_owner_is_sticky_across_configuration_changes(
             workspace_id = "ws-c68-routing"
             await seed_workspace(conn, workspace_id)
             factory = conn_session_factory(conn)
-            assert not await _account_agent_runtime_required(
-                _settings(),
-                conn_factory=factory,
-            )
             enabled = DbAgentOwnershipRouter(
                 settings=_settings(
                     agent_runtime_routing_enabled=True,
@@ -123,11 +123,6 @@ def test_durable_owner_is_sticky_across_configuration_changes(
             )
             assert first.owner is AgentOwner.DEEPAGENT
             assert first.selection_source == "allowlist"
-            assert await _account_agent_runtime_required(
-                _settings(),
-                conn_factory=factory,
-            )
-
             disabled = DbAgentOwnershipRouter(settings=_settings(), conn_factory=factory)
             replay = await disabled.claim(
                 workspace_id=workspace_id,

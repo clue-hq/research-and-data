@@ -16,6 +16,11 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
+from clue_api.entity_research_quarantine import (
+    ENTITY_RESEARCH_AGENT_NOT_COMPOSED,
+    EntityResearchAgentNotComposed,
+    EntityResearchQuarantinePhaseHandler,
+)
 from clue_api.handoff_retention import RetentionSweepHandoffHandler
 from clue_api.handoff_wiring import HandoffPhaseHandler
 from clue_api.review.composition import ProjectRunResumeHook, _default_resume_run
@@ -27,6 +32,7 @@ from clue_api.run_composition import (
     _default_gateway,
     _MissingClientInputHandler,
 )
+from clue_api.storage_wiring import SnapshotBindingPhaseHandler
 from clue_config import GatewayConfig, load_settings
 from clue_core import (
     ICPCreatedFrom,
@@ -41,7 +47,6 @@ from clue_core import (
     phase_key,
 )
 from clue_db import db_lifespan, transaction
-from clue_fleet import QueueBackedScheduler
 from clue_gateway import build_gateway
 from clue_research.durable import (
     BudgetEngine,
@@ -56,7 +61,6 @@ from clue_research.durable.project_run import ProjectRunRow
 from tests._workspace import seed_project
 from tests.api.test_storage_wiring import FakeStorage
 from tests.db.conftest import run_async
-from tests.fleet.conftest import ProcessLocalLockFactory
 
 _ALL_PHASES = frozenset(ProjectPhase)
 
@@ -135,8 +139,7 @@ def _driver(specs: dict[tuple[str, str, int], ICPSpec], **kwargs: object) -> Com
     return ComposingRunDriver(
         settings=settings,  # type: ignore[arg-type]
         gateway=_stub_gateway(),  # type: ignore[arg-type]
-        storage=FakeStorage(),  # type: ignore[arg-type]
-        lock_factory=ProcessLocalLockFactory(),  # type: ignore[arg-type]
+        storage=FakeStorage(),
         spec_loader=spec_loader,
         **kwargs,  # type: ignore[arg-type]
     )
@@ -154,6 +157,61 @@ def test_composed_registry_holds_every_phase() -> None:
         assert composed.phases == _ALL_PHASES
         assert composed.spec.icp_key == "a"
         assert isinstance(composed.run, ProjectRun)
+
+    run_async(scenario())
+
+
+def test_composed_run_uses_loud_entity_research_quarantine() -> None:
+    async def scenario() -> None:
+        row = _row("a")
+        composed = await _driver({("ws", "a", 1): _spec("a")}).composed(row)
+        handler = composed.registry.get(ProjectPhase.DEEP)
+        assert isinstance(handler, EntityResearchQuarantinePhaseHandler)
+        assert composed.deep.handler is handler
+        assert composed.deep.reason_code == ENTITY_RESEARCH_AGENT_NOT_COMPOSED
+        with pytest.raises(EntityResearchAgentNotComposed) as excinfo:
+            await handler.run(
+                PhaseContext(
+                    project_run_id=row.id,
+                    project_id=row.project_id,
+                    brand_id=row.brand_id,
+                    phase=ProjectPhase.DEEP,
+                    workspace_id=row.workspace_id,
+                    icp_key=row.icp_key,
+                    icp_version=row.icp_version,
+                )
+            )
+        assert excinfo.value.reason_code == ENTITY_RESEARCH_AGENT_NOT_COMPOSED
+
+    run_async(scenario())
+
+
+def test_retired_deep_collaborators_are_absent_from_new_run_constructor() -> None:
+    import inspect
+
+    parameters = inspect.signature(ComposingRunDriver).parameters
+    assert {
+        "account_agent_profiler",
+        "account_resolver_provider",
+        "committee_preparer",
+        "contact_preparer",
+        "profile_account_fn",
+    }.isdisjoint(parameters)
+
+
+def test_composed_discovery_retains_injected_durable_batch_starter() -> None:
+    class _Starter:
+        async def ensure_started(self, ctx: PhaseContext) -> None:
+            raise AssertionError(f"construction-only test invoked starter for {ctx.project_run_id}")
+
+    async def scenario() -> None:
+        starter = _Starter()
+        composed = await _driver(
+            {("ws", "a", 1): _spec("a")}, discovery_batch_starter=starter
+        ).composed(_row("a"))
+        wrapped = composed.registry.get(ProjectPhase.DISCOVERY)
+        assert isinstance(wrapped, SnapshotBindingPhaseHandler)
+        assert wrapped._inner._starter is starter  # type: ignore[attr-defined]
 
     run_async(scenario())
 
@@ -214,16 +272,10 @@ def test_two_icps_compose_isolated_registries_no_cross_talk() -> None:
         deep_a = a.registry.get(ProjectPhase.DEEP)
         deep_b = b.registry.get(ProjectPhase.DEEP)
         assert deep_a is not None and deep_b is not None and deep_a is not deep_b
-        # Each composed DEEP handler is bound to its run's OWN spec — read off the RETAINED DEEP
-        # composition (the spec ``build_deep_phase_handler`` was actually constructed against), not
-        # the convenience ``ComposedRun.spec`` field a composer set from its own local.
-        assert a.deep.spec.icp_key == "a" and b.deep.spec.icp_key == "b"
-        assert a.deep.spec is not b.deep.spec
-        assert a.deep.spec.field_keys != b.deep.spec.field_keys
-        # D2's untested claim: the composed DEEP scheduler is the fleet queue-backed scheduler
-        # (single-flight + rubric-priority ON), not the in-process ``AccountScheduler`` default.
-        assert isinstance(a.deep.scheduler, QueueBackedScheduler)
-        assert isinstance(b.deep.scheduler, QueueBackedScheduler)
+        assert a.spec.icp_key == "a" and b.spec.icp_key == "b"
+        assert a.spec is not b.spec
+        assert a.spec.field_keys != b.spec.field_keys
+        assert a.deep.reason_code == b.deep.reason_code == ENTITY_RESEARCH_AGENT_NOT_COMPOSED
 
     run_async(scenario())
 

@@ -1,0 +1,17 @@
+{
+  "contract": "m8c-c3-exa-contact-compiler@2026-08-05",
+  "endpoint": "POST https://api.exa.ai/search",
+  "official_reference": "https://exa.ai/docs/reference/search",
+  "search_type": "deep-reasoning",
+  "max_results": 50,
+  "max_additional_queries": 10,
+  "subject": "one canonical contact under one canonical employer",
+  "channel_reveals": false,
+  "fixtures": {
+    "exa_c3/supported.json": "091a1eb07217d0759ce94ee596d26bd6d1f8408506aa694969ccfd211721c115",
+    "exa_c3/empty.json": "c24733b5b2df1629c04513c5f4276828dc53c5e2eab155e6cabb89a18ae6e769",
+    "exa_c3/malformed.json": "7ddb7d39da29946f37d0feabf050f45836160e464904e3fe80b977a41d631ea6",
+    "exa_c3/contradictory_profile.json": "89e44206a1ea2637be807f5607e75957cf8b57fd106ee42be9557fa3781e75a7",
+    "exa_c3/same_name_wrong_employer.json": "9dc8f7fb4035d441204e1caf31dd6d5f18fdb4acc91f4db617ef6a9a8a8f6946"
+  }
+}

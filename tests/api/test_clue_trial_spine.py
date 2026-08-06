@@ -11,6 +11,7 @@ from uuid import uuid4
 import pytest
 from pydantic import SecretStr
 
+from clue_api.entity_research_quarantine import EntityResearchAgentNotComposed
 from clue_api.run_composition import ComposingRunDriver
 from clue_api.stage0_trial import create_stage0_trial_session
 from clue_api.storage_wiring import build_storage_backend
@@ -50,7 +51,6 @@ from clue_research.resolvers.sumble import (
 )
 from clue_spine import confirm_project_product
 from tests.db.conftest import run_async
-from tests.lock_factory import ProcessLocalLockFactory
 
 _FIXTURES = Path(__file__).parents[1] / "fixtures" / "clue_trial" / "sumble"
 
@@ -125,6 +125,7 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
             storage_backend="fs",
             storage_fs_root=str(tmp_path / "artifacts"),
             c7_production_handoff_enabled=False,
+            c7_research_view_read_enabled=True,
         )
         storage = build_storage_backend(settings)
         gateway = build_gateway(GatewayConfig(stub=True))
@@ -132,10 +133,7 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
             settings=settings,
             gateway=gateway,
             storage=storage,
-            lock_factory=ProcessLocalLockFactory(),
             channels=ChannelRegistry(),
-            committee_sources=(),
-            profile_account_fn=_fixture_account_profile,
         )
         http = FixtureSumbleHttp()
         spine_snapshots = MutableSumbleSnapshotLookup()
@@ -271,19 +269,19 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
             ),
         )
         assert [claim.value_json for claim in jobs_claims] == [4]
-        assert "Software Engineer" in (jobs_claims[0].evidence_span or "")
+        # The query contract is retained in the request artifact; claim evidence cites the exact
+        # returned aggregate member from the immutable provider-response artifact.
+        assert jobs_claims[0].evidence_span == '"total":4'
 
-        completed = await spine.approve_direct_research(
-            state=state,
-            project_run_id=run.project_run_id,
-            account_entity_id=account_id,
-        )
-        assert completed.project_run.status is not ProjectRunStatus.FAILED
-        assert completed.project_run.phase in (ProjectPhase.REVIEW, ProjectPhase.HANDOFF)
-        assert completed.research_view is not None
-        subject = completed.research_view["subject"]
-        assert isinstance(subject, dict)
-        assert subject["entity_id"] == str(account_id)
+        # The S1 fixture proves discovery/scoring through the human tier checkpoint. R1 then
+        # quarantines its retired pre-agent DEEP path: approval may not silently fall back to the
+        # old account profiler while the replacement R5 agent composition is absent.
+        with pytest.raises(EntityResearchAgentNotComposed):
+            await spine.approve_direct_research(
+                state=state,
+                project_run_id=run.project_run_id,
+                account_entity_id=account_id,
+            )
 
     async def wrapped() -> None:
         async with db_lifespan():

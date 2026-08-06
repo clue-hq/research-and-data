@@ -199,9 +199,7 @@ class CurrentStatementGovernanceEvaluator:
         )
         current_direct = await current_field_claims_resolved_for_product(
             self._conn,
-            member_entity_ids=tuple(
-                EntityId(value) for value in self._member_entity_ids
-            ),
+            member_entity_ids=tuple(EntityId(value) for value in self._member_entity_ids),
             routes=routes,
             scope=scope,
             product_id=request.product_id,
@@ -213,9 +211,7 @@ class CurrentStatementGovernanceEvaluator:
             for claim_id, claim in roots.items()
             if claim.claim_flavor is ClaimFlavor.DERIVED
         )
-        resolutions = await self._dependencies.resolve_many(
-            self._conn, derived_ids, scope=scope
-        )
+        resolutions = await self._dependencies.resolve_many(self._conn, derived_ids, scope=scope)
         dependency_ids = tuple(
             dict.fromkeys(
                 claim_id
@@ -241,11 +237,7 @@ class CurrentStatementGovernanceEvaluator:
                     "SELECT field_key, freshness_ttl FROM field_definition "
                     "WHERE field_key IN :field_keys"
                 ).bindparams(bindparam("field_keys", expanding=True)),
-                {
-                    "field_keys": list(
-                        {str(candidate.claim.field_key) for candidate in candidates}
-                    )
-                },
+                {"field_keys": list({str(candidate.claim.field_key) for candidate in candidates})},
             )
         ).all()
         ttls: dict[str, timedelta | None] = {str(row[0]): row[1] for row in ttl_rows}
@@ -287,10 +279,7 @@ class CurrentStatementGovernanceEvaluator:
             if (
                 UUID(str(claim.entity_id)) not in self._member_entity_ids
                 or claim.entity_type is not subject.entity_type
-                or (
-                    claim.product_id is not None
-                    and claim.product_id != request.product_id
-                )
+                or (claim.product_id is not None and claim.product_id != request.product_id)
             ):
                 results[claim.id] = self._hidden(
                     claim,
@@ -312,9 +301,9 @@ class CurrentStatementGovernanceEvaluator:
             )
             freshness = self._freshness(claim, ttls.get(str(claim.field_key)))
             conflict = (
-                (UUID(str(claim.entity_id)), str(claim.field_key)) in conflicts
-                or claim.verification_status is VerificationStatus.FLAGGED
-            )
+                UUID(str(claim.entity_id)),
+                str(claim.field_key),
+            ) in conflicts or claim.verification_status is VerificationStatus.FLAGGED
 
             if claim.verification_status is VerificationStatus.REJECTED:
                 results[claim.id] = self._hidden(
@@ -335,10 +324,7 @@ class CurrentStatementGovernanceEvaluator:
                     reason="verification_incomplete",
                 )
                 continue
-            if (
-                claim.claim_flavor is ClaimFlavor.FIELD_CLAIM
-                and claim.id not in current_direct_ids
-            ):
+            if claim.claim_flavor is ClaimFlavor.FIELD_CLAIM and claim.id not in current_direct_ids:
                 results[claim.id] = self._hidden(
                     claim,
                     availability=ResearchAvailability.UNAVAILABLE,
@@ -387,9 +373,7 @@ class CurrentStatementGovernanceEvaluator:
                     )
                     for item in governed_personal
                 )
-                outreach = (
-                    OutreachDecision.ALLOWED if allowed else OutreachDecision.DENIED
-                )
+                outreach = OutreachDecision.ALLOWED if allowed else OutreachDecision.DENIED
                 if not allowed:
                     reasons.append("outreach_policy_denied")
             if conflict:
@@ -468,9 +452,7 @@ class ProductionStatementGovernanceReader:
         subject: ResearchSubjectRef,
         candidate: ResearchStatementCandidate,
     ) -> StatementGovernanceResult:
-        return (await self.resolve_statements(request, subject, (candidate,)))[
-            candidate.claim.id
-        ]
+        return (await self.resolve_statements(request, subject, (candidate,)))[candidate.claim.id]
 
 
 class ProductionEvidenceAccessAuthorizer:
@@ -574,9 +556,7 @@ class ProductionEvidenceAccessAuthorizer:
                 return EvidenceAccessDecision(
                     allowed=False,
                     action_kind=(
-                        EvidenceActionKind.REDACTED
-                        if erased
-                        else EvidenceActionKind.UNAVAILABLE
+                        EvidenceActionKind.REDACTED if erased else EvidenceActionKind.UNAVAILABLE
                     ),
                     claim_id=request.claim_id,
                     reason_codes=("claim_erased",) if erased else ("claim_unavailable",),
@@ -610,15 +590,11 @@ class ProductionEvidenceAccessAuthorizer:
                 (
                     item
                     for item in result.evidence_actions
-                    if item.action_id == request.action_id
-                    and item.kind is request.desired_action
+                    if item.action_id == request.action_id and item.kind is request.desired_action
                 ),
                 None,
             )
-            if (
-                result.state.availability is not ResearchAvailability.AVAILABLE
-                or action is None
-            ):
+            if result.state.availability is not ResearchAvailability.AVAILABLE or action is None:
                 return EvidenceAccessDecision(
                     allowed=False,
                     action_kind=(

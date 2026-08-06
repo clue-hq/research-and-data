@@ -43,10 +43,38 @@ DEFAULT_RETRIES: int = (
 )
 
 
+#: Bounded length for the sanitized provider error-body excerpt retained on a hard rejection.
+#: The body is the provider's own diagnostic (e.g. a 422 ``detail`` naming the invalid member)
+#: and is the difference between an actionable ledger row and a blind manual replay.
+PROVIDER_ERROR_BODY_EXCERPT_CHARS: int = 2_000
+
+
 class ProviderResponseError(ResolverError):
     """A provider returned a response we cannot use and a retry would not fix (a hard 4xx — bad
     request / auth / not-found — or a malformed body). Distinct from a *hard miss* (empty list, a
-    correct empty+flagged output) and from a *transient* fault (:class:`RetryableResolverError`)."""
+    correct empty+flagged output) and from a *transient* fault (:class:`RetryableResolverError`).
+
+    ``is_deterministic_rejection`` is True only for a hard 4xx *status*: the provider validated
+    and refused the request. A malformed 2xx body keeps it False — payment may have occurred, so
+    the caller must treat spend as unknown, never as a clean rejection.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        body_excerpt: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.body_excerpt = (
+            body_excerpt[:PROVIDER_ERROR_BODY_EXCERPT_CHARS] if body_excerpt else None
+        )
+
+    @property
+    def is_deterministic_rejection(self) -> bool:
+        return self.status_code is not None and 400 <= self.status_code < 500
 
 
 class CredentialError(ResolverError):
@@ -57,19 +85,21 @@ class CredentialError(ResolverError):
     """
 
 
-def classify_status(status: int, *, source_key: str, url: str) -> None:
+def classify_status(status: int, *, source_key: str, url: str, body: str | None = None) -> None:
     """Map an HTTP status to the resolver fault taxonomy (pure; the tested core of the wrapper).
 
     Returns ``None`` for a 2xx success. Raises :class:`~clue_core.RetryableResolverError`
     for a transient status (so M7 retries) and :class:`ProviderResponseError` for a hard 4xx/other
-    (so the run fails fast instead of looping on a request that can never succeed).
+    (so the run fails fast instead of looping on a request that can never succeed). ``body`` is
+    the provider's error payload; a bounded excerpt rides the hard error so the durable ledger can
+    retain the provider's own diagnostic instead of an opaque status.
     """
     if 200 <= status < 300:
         return
     detail = f"{source_key}: HTTP {status} from {url}"
     if status in _RETRYABLE_STATUS:
         raise RetryableResolverError(detail)
-    raise ProviderResponseError(detail)
+    raise ProviderResponseError(detail, status_code=status, body_excerpt=body)
 
 
 def resolve_credential(
@@ -125,7 +155,12 @@ def get_json(
             last_error = RetryableResolverError(f"{source_key}: transport error for {url}: {exc}")
             continue
         try:
-            classify_status(response.status_code, source_key=source_key, url=url)
+            classify_status(
+                response.status_code,
+                source_key=source_key,
+                url=url,
+                body=response.text[:PROVIDER_ERROR_BODY_EXCERPT_CHARS],
+            )
         except RetryableResolverError as exc:
             last_error = exc
             continue

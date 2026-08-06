@@ -28,7 +28,7 @@ from pydantic_core import PydanticSerializationError
 
 from clue_agents import AgentRole, AgentTurnRequest
 from clue_agents.contracts import MODEL_FORBIDDEN_AUTHORITY_KEYS, PlanToolStep, ToolPin
-from clue_api.agent_registry_wiring import build_agent_profile_registry
+from clue_api.agent_registry_wiring import C6_ACTIVE_PROFILE_VERSIONS, build_agent_profile_registry
 from clue_api.agent_runtime_wiring import GovernedAgentToolFactory
 from clue_api.stage0_tools import RecordInterviewAnswerInput
 from clue_api.toolbelt_wiring import build_toolbelt
@@ -266,7 +266,7 @@ def test_hiding_authority_does_not_mutate_the_shared_tool_input_model() -> None:
 def test_no_pinned_tool_exposes_trusted_authority_to_any_profile() -> None:
     registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     offenders: list[str] = []
-    for role in AgentRole:
+    for role in C6_ACTIVE_PROFILE_VERSIONS:
         resolved = registry.resolve(role)
         execution = _Execution()
         factory = GovernedAgentToolFactory(

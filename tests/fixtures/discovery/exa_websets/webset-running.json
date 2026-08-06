@@ -1,0 +1,55 @@
+{
+  "id": "ws_fixture_running",
+  "object": "webset",
+  "status": "running",
+  "externalId": "clue-fixture-running",
+  "title": "Fictional specialty-practice discovery",
+  "searches": [
+    {
+      "id": "ws_search_fixture_1",
+      "object": "webset_search",
+      "websetId": "ws_fixture_running",
+      "status": "running",
+      "query": "Independent specialty practices in the United States",
+      "entity": {"type": "company"},
+      "criteria": [
+        {"description": "Organization is an independent specialty practice", "successRate": 50.0}
+      ],
+      "count": 3,
+      "maxPeoplePerCompany": null,
+      "behavior": "override",
+      "exclude": [],
+      "scope": [],
+      "progress": {"found": 1, "analyzed": 7, "completion": 50.0, "timeLeft": null},
+      "recall": null,
+      "metadata": {},
+      "canceledAt": null,
+      "canceledReason": null,
+      "createdAt": "2026-08-03T08:00:00Z",
+      "updatedAt": "2026-08-03T08:01:00Z"
+    }
+  ],
+  "imports": [],
+  "enrichments": [
+    {
+      "id": "enr_fixture_linkedin",
+      "object": "webset_enrichment",
+      "status": "pending",
+      "websetId": "ws_fixture_running",
+      "title": "LinkedIn company URL",
+      "description": "Find the canonical LinkedIn company page URL",
+      "format": "url",
+      "options": null,
+      "instructions": "Find one canonical company profile URL.",
+      "metadata": {"clueFieldKey": "core.company_linkedin_url"},
+      "createdAt": "2026-08-03T08:00:00Z",
+      "updatedAt": "2026-08-03T08:00:00Z"
+    }
+  ],
+  "monitors": [],
+  "excludes": [],
+  "metadata": {"fixture": "current-contract"},
+  "dashboardUrl": "https://websets.exa.ai/websets/ws_fixture_running",
+  "createdAt": "2026-08-03T08:00:00Z",
+  "updatedAt": "2026-08-03T08:01:00Z"
+}

@@ -56,6 +56,7 @@ from clue_core import (
     CostCents,
     EntityId,
     ProjectRunId,
+    ResearchDirectivePin,
     RunId,
     WorkerResult,
     WorkerStatus,
@@ -73,6 +74,7 @@ from clue_research.durable.account_run import (
     ReferencesIndex,
     ensure_account_run,
     get_account_run,
+    pin_account_run_research_directive,
     save_plan,
     save_references,
     set_account_sub_phase,
@@ -118,6 +120,7 @@ class AccountRunStore(Protocol):
         tier: str,
         workspace_id: str | None,
         field_keys: Sequence[str] | None,
+        research_directive: ResearchDirectivePin | None = None,
     ) -> ResearchPlan:
         """Ensure the run row exists (idempotent on re-entry), compute the gap-fields, build the
         plan, persist it, advance the run to ``RUNNING``, and return the plan — the lead's entire
@@ -196,6 +199,7 @@ class DbAccountRunStore:
         tier: str,
         workspace_id: str | None,
         field_keys: Sequence[str] | None,
+        research_directive: ResearchDirectivePin | None = None,
     ) -> ResearchPlan:
         from clue_research.claimstore.tenancy import WorkspaceScope
 
@@ -212,8 +216,19 @@ class DbAccountRunStore:
                 entity_id=entity_id,
                 tier=tier,
             )
+            if research_directive is not None:
+                await pin_account_run_research_directive(
+                    conn,
+                    account_run_id=account_run_id,
+                    pin=research_directive,
+                )
             gaps = await compute_gap_fields(conn, entity_id, scope=scope, field_keys=field_keys)
-            plan = build_plan(gaps, tier=tier, recursion_policy=self._recursion_policy)
+            plan = build_plan(
+                gaps,
+                tier=tier,
+                recursion_policy=self._recursion_policy,
+                research_directive=research_directive,
+            )
             await save_plan(
                 conn,
                 account_run_id,
@@ -298,6 +313,7 @@ class _GraphState(TypedDict, total=False):
     tier: str
     workspace_id: str | None
     field_keys: list[str] | None
+    research_directive: dict[str, Any] | None
     # per-aspect Send payload (set on each parallel ``aspect_worker`` invocation, not the main run)
     aspect_spec: dict[str, Any]
     # produced as the graph advances
@@ -386,14 +402,19 @@ class AccountResearchGraph:
                 ATTR_TIER: state["tier"],
             },
         ) as span:
-            plan = await self._store.begin(
-                account_run_id=RunId(UUID(state["account_run_id"])),
-                project_run_id=ProjectRunId(UUID(state["project_run_id"])),
-                entity_id=EntityId(UUID(state["entity_id"])),
-                tier=state["tier"],
-                workspace_id=state.get("workspace_id"),
-                field_keys=tuple(field_keys) if field_keys else None,
-            )
+            begin_args: dict[str, Any] = {
+                "account_run_id": RunId(UUID(state["account_run_id"])),
+                "project_run_id": ProjectRunId(UUID(state["project_run_id"])),
+                "entity_id": EntityId(UUID(state["entity_id"])),
+                "tier": state["tier"],
+                "workspace_id": state.get("workspace_id"),
+                "field_keys": tuple(field_keys) if field_keys else None,
+            }
+            if state.get("research_directive") is not None:
+                begin_args["research_directive"] = ResearchDirectivePin.model_validate(
+                    state["research_directive"]
+                )
+            plan = await self._store.begin(**begin_args)
             apply_attributes(
                 span,
                 {
@@ -723,6 +744,7 @@ class AccountResearchGraph:
         account_run_id: RunId | None = None,
         workspace_id: str | None = None,
         field_keys: Sequence[str] | None = None,
+        research_directive: ResearchDirectivePin | None = None,
     ) -> AccountRunResult:
         """Research one account and return its references (M7.1).
 
@@ -742,6 +764,11 @@ class AccountResearchGraph:
             "tier": tier,
             "workspace_id": workspace_id,
             "field_keys": list(field_keys) if field_keys is not None else None,
+            "research_directive": (
+                research_directive.model_dump(mode="json")
+                if research_directive is not None
+                else None
+            ),
             "aspect_results": [],
         }
         snapshot = await graph.aget_state(config)

@@ -71,7 +71,12 @@ from clue_research.narrative import (
     load_narrative_pack,
     read_handoff,
 )
-from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE, load_committee_pack
+from clue_research.profiling.committee import (
+    CURRENT_TITLE,
+    PERSONA,
+    ROLE_ON_COMMITTEE,
+    load_committee_pack,
+)
 from clue_research.profiling.fields import FACET_NICKNAME
 from clue_spine import create_brand, create_product, create_project
 from tests._workspace import seed_workspace
@@ -352,13 +357,26 @@ def test_real_committee_materializes_narrative_and_c7_references() -> None:
                 account_run=account_run,
                 facet_allowed=False,
             )
+            professional_title = await _committee_claim(
+                conn,
+                contact=contact,
+                field_key=CURRENT_TITLE,
+                value="VP of Operations",
+                account_run=account_run,
+                binding=IdentityBinding.STRONG,
+                product_id=_PRODUCT_A,
+            )
             narrative = await _narrative(
                 conn,
                 account=account,
                 account_run=account_run,
                 product_id=_PRODUCT_A,
             )
-            await _ready(conn, account_run=account_run, refs=(role, persona, denied_facet))
+            await _ready(
+                conn,
+                account_run=account_run,
+                refs=(role, persona, denied_facet, professional_title),
+            )
 
             resolver = build_contact_eligibility_resolver(
                 project_run_id=run,
@@ -371,6 +389,9 @@ def test_real_committee_materializes_narrative_and_c7_references() -> None:
             )
             assert len(governed) == 1
             assert denied_facet.id in {item.claim.id for item in governed[0].display_claims}
+            assert professional_title.id in {
+                item.claim.id for item in governed[0].display_claims
+            }
             assert denied_facet.id not in {
                 item.claim.id for item in governed[0].personalization_claims
             }
@@ -405,7 +426,7 @@ def test_real_committee_materializes_narrative_and_c7_references() -> None:
             legacy_claim_ids = {
                 item.claim_id for item in assembled.handoff.committee[0].profile_claims
             }
-            assert {role.id, persona.id}.issubset(legacy_claim_ids)
+            assert {role.id, persona.id, professional_title.id}.issubset(legacy_claim_ids)
             assert denied_facet.id not in legacy_claim_ids
             assert [item.claim_id for item in assembled.handoff.value_narrative] == [narrative.id]
             assert len(publisher.published) == 1

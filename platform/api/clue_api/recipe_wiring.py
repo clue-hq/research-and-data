@@ -45,6 +45,11 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v5.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
+)
+
+# Kept on disk solely so already-pinned executions can resolve their exact historical definition.
+# R1 never seeds or promotes these recipes for new executions.
+HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES: tuple[str, ...] = (
     "account-research-unit-v1.json",
 )
 
@@ -335,7 +340,8 @@ def build_recipe_pin_registry(
                     await conn.execute(
                         text(
                             """
-                            SELECT id, workspace_id, canonical_name, canonical_domain, merged_into
+                            SELECT id, workspace_id, canonical_name,
+                                   primary_domain AS canonical_domain, merged_into
                             FROM account_entity
                             WHERE id = CAST(:key AS uuid) AND workspace_id = :workspace_id
                             """
@@ -1054,6 +1060,7 @@ def build_recipe_lifecycle(
 
 
 __all__ = [
+    "HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES",
     "STAGE0_POLICY_VERSION",
     "SYSTEM_RECIPE_FILENAMES",
     "VersionedPinResource",

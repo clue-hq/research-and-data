@@ -1,0 +1,114 @@
+{
+  "id": "019fc850-0000-7000-8000-000000000201",
+  "credits_used": 12,
+  "credits_remaining": 4972,
+  "total": 1,
+  "source_data_url": "https://sumble.com/l/org/insight-health/teams",
+  "teams": [
+    {
+      "team_id": 501,
+      "name": "Patient Access Operations",
+      "sumble_url": "https://sumble.com/l/team/patient-access-operations",
+      "attributes": {
+        "organization": {
+          "organization_id": 1726684,
+          "name": "Insight Health",
+          "sumble_url": "https://sumble.com/l/org/insight-health"
+        },
+        "breadcrumbs": [
+          {
+            "team_id": 500,
+            "name": "Operations",
+            "slug": "operations",
+            "sumble_url": "https://sumble.com/l/team/operations"
+          }
+        ],
+        "jobs_count": 4,
+        "technology_list": [
+          {
+            "name": "Epic",
+            "slug": "epic",
+            "used": true,
+            "jobs_count": 2
+          }
+        ],
+        "job_function_list": [
+          {
+            "name": "Operations",
+            "slug": "operations",
+            "jobs_count": 4
+          }
+        ],
+        "location_list": [
+          {
+            "name": "New York, United States",
+            "jobs_count": 4
+          }
+        ],
+        "last_activity": "2026-07-28T10:30:00Z"
+      },
+      "related_people": [
+        {
+          "person_id": 1001,
+          "sumble_url": "https://sumble.com/l/person/alex-ops",
+          "confidence": {
+            "score": 0.92,
+            "matched_features": [
+              {
+                "match_type": "team",
+                "name": "Patient Access Operations",
+                "slug": "patient-access-operations",
+                "is_parent": false,
+                "score": 0.72
+              },
+              {
+                "match_type": "job_function",
+                "name": "Operations",
+                "slug": "operations",
+                "is_parent": false,
+                "score": 0.2
+              }
+            ]
+          },
+          "attributes": {
+            "name": "Alex Morgan",
+            "linkedin_url": "https://www.linkedin.com/in/alex-morgan-ops",
+            "job_title": "VP of Operations",
+            "job_function": "Operations",
+            "job_level": "VP",
+            "location": "New York, New York, United States",
+            "country": "United States",
+            "current_employer": {
+              "organization_id": 1726684,
+              "name": "Insight Health",
+              "start_date": "2024-02"
+            }
+          }
+        }
+      ],
+      "job_posts": [
+        {
+          "job_id": 7001,
+          "sumble_url": "https://sumble.com/l/job/patient-access-manager",
+          "attributes": {
+            "title": "Patient Access Manager",
+            "posted_date": "2026-07-28T10:30:00Z",
+            "job_functions": [
+              {
+                "name": "Operations",
+                "slug": "operations"
+              }
+            ],
+            "job_levels": [
+              {
+                "name": "Manager"
+              }
+            ]
+          }
+        }
+      ],
+      "additive_provider_field": 1
+    }
+  ],
+  "additive_top_level_field": "tolerated"
+}

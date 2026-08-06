@@ -12,32 +12,26 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api import build_pre_spend_gate
-from clue_core import (
-    EntityScope,
-    Modality,
-    SourceManifest,
-)
 from clue_research.profiling import discover_committee, profile_contact
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import (
-    RegistrySourceManifest,
     bind_resolver,
     clear_resolver_bindings,
-    register_source,
 )
 from tests.profiling.conftest import (
+    TEST_FACET_SOURCE,
     FakeCommitteeSource,
     FakeFacetResolver,
     FakeGateway,
     insert_test_account,
     insert_test_contact,
+    register_facet_source,
     rollback_conn,
     run_async,
     seed_packs,
@@ -45,7 +39,7 @@ from tests.profiling.conftest import (
 
 _RUN = UUID("c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6")
 _TENANT = "acme"
-_FACET_SOURCE = "exa_deep"  # the seeded facet tier_plan source (resolver-absent in prod; faked)
+_FACET_SOURCE = TEST_FACET_SOURCE
 
 
 async def _gate_rows(conn: AsyncConnection) -> list[tuple[str, str | None, str]]:
@@ -119,27 +113,7 @@ def test_deep_contact_facet_fill_records_a_gate_decision(require_profiling_db: N
                 await seed_packs(conn)
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
-                # the facet gate keys on the source's manifest tier — register one for the source.
-                # ``exa_deep`` is also a production seed manifest (sources/seeds.py) other tests
-                # COMMIT via ``seed_source_manifests``; on a persistent schema its v1 row may
-                # already exist with a different definition, so register the test's variant at a
-                # higher version (a versioned update, rolled back with this transaction) to keep
-                # the test rerun-idempotent.
-                await register_source(
-                    conn,
-                    RegistrySourceManifest(
-                        manifest=SourceManifest(
-                            source_key=_FACET_SOURCE,
-                            modality=Modality.TEXT,
-                            entity_scope=EntityScope.CONTACT,
-                            yields=(FACET_STATED_INTERESTS,),
-                            tier=4,
-                            cost_cents=Decimal(0),
-                        ),
-                        active=True,
-                        version=2,
-                    ),
-                )
+                await register_facet_source(conn)
 
                 @asynccontextmanager
                 async def gate_conn() -> AsyncIterator[AsyncConnection]:

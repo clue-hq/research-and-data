@@ -905,6 +905,33 @@ def test_tagger_drop_removes_claim_and_does_not_stop_the_walk() -> None:
     run_async(_run())
 
 
+def test_budget_skip_continues_to_later_materialization_only_evidence() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "paid_first", tier=1, cost=Decimal(5))
+            await _register(conn, "snapshot_second", tier=2, cost=Decimal(5))
+            paid = _Fake([_claim(100, tier=1, confidence=_HI, cost=Decimal(5))])
+            snapshot = _Fake([_claim(101, tier=2, confidence=_HI)])
+            snapshot.materialization_only = True  # type: ignore[attr-defined]
+            bind_resolver("paid_first", paid)
+            bind_resolver("snapshot_second", snapshot)
+
+            result = await resolve_field(
+                conn,
+                _entity(),
+                _field(("paid_first", "snapshot_second")),
+                mode=_MODE,
+                run_id=new_run_id(),
+                budget_envelope=Decimal(0),
+            )
+            assert (paid.calls, snapshot.calls) == (0, 1)
+            assert result.per_tier[0].outcome is StepOutcome.BUDGET_SKIPPED
+            assert result.stop_reason is StopReason.CONFIDENT_HIT
+            assert result.total_cost_cents == 0
+
+    run_async(_run())
+
+
 def test_source_gate_false_skips_only_that_source_and_none_hooks_match_control() -> None:
     # source_gate=False skips exactly THAT source (GATE_SKIPPED) and the walk continues; and with
     # both hooks None (the default) the engine output is identical to a control run.

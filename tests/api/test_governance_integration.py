@@ -66,6 +66,7 @@ from clue_research.sources import RegistrySourceManifest, bind_resolver, registe
 from clue_research.verification import classify_binding
 from tests._workspace import seed_workspace
 from tests.profiling.conftest import (
+    TEST_FACET_SOURCE,
     FakeCommitteeSource,
     FakeFacetResolver,
     FakeGateway,
@@ -80,7 +81,7 @@ from tests.profiling.conftest import (
 
 _RUN = UUID("a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1")
 _TENANT = "acme"
-_FACET_SOURCE = "exa_deep"  # the seeded facet tier_plan source (resolver-absent in prod; faked)
+_FACET_SOURCE = TEST_FACET_SOURCE
 _COMMITTEE = [FakeCommitteeSource(source_key="apollo_people", tier=2)]
 
 

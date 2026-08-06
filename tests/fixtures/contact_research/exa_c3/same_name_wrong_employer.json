@@ -1,0 +1,31 @@
+{
+  "requestId": "exa-contact-c3-same-name",
+  "results": [
+    {
+      "title": "Alex Rivera speaks at Northstar Health forum",
+      "url": "https://northstar-health.example/events/alex-rivera",
+      "text": "Alex Rivera of Northstar Health presented Reducing Referral Friction.",
+      "highlights": ["Alex Rivera of Northstar Health presented Reducing Referral Friction."]
+    }
+  ],
+  "output": {
+    "content": {
+      "f_636f6e746163742e66616365742e7075626c69636174696f6e73": [
+        {"title": "Reducing Referral Friction", "venue": "Northstar Health"}
+      ]
+    },
+    "grounding": [
+      {
+        "field": "f_636f6e746163742e66616365742e7075626c69636174696f6e73",
+        "confidence": "high",
+        "citations": [
+          {
+            "title": "Alex Rivera speaks at Northstar Health forum",
+            "url": "https://northstar-health.example/events/alex-rivera"
+          }
+        ]
+      }
+    ]
+  },
+  "costDollars": {"total": 0.06}
+}

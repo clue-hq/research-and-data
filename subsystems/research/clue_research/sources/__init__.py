@@ -11,6 +11,11 @@ SDK (resolvers register themselves via ``bind_resolver``).
 
 from __future__ import annotations
 
+from clue_research.sources.authority import (
+    EffectiveSourcePlanConflict,
+    freeze_effective_source_plan,
+    load_effective_source_plan,
+)
 from clue_research.sources.manifest import RegistrySourceManifest
 from clue_research.sources.planner import (
     DEFAULT_SOURCE_PLANNER_CONFIG,
@@ -24,6 +29,7 @@ from clue_research.sources.registry import (
     SourceManifestRedefinitionError,
     SourceYieldError,
     bind_resolver,
+    bind_resolver_overrides,
     clear_resolver_bindings,
     entity_scope_serves,
     get_resolver,
@@ -69,6 +75,9 @@ from clue_research.sources.waterfall import (
 __all__ = [
     # manifest type
     "RegistrySourceManifest",
+    "EffectiveSourcePlanConflict",
+    "freeze_effective_source_plan",
+    "load_effective_source_plan",
     # DB registry
     "register_source",
     "get_source",
@@ -78,6 +87,7 @@ __all__ = [
     "entity_scope_serves",
     # resolver binding (in-process source_key -> Resolver dispatch)
     "bind_resolver",
+    "bind_resolver_overrides",
     "unbind_resolver",
     "is_resolver_bound",
     "get_resolver",

@@ -1,0 +1,142 @@
+{
+  "reviewed_at": "2026-08-05",
+  "adversarially_remediated_at": "2026-08-05",
+  "provider_failure_contract": {
+    "classifier": "clue_core.classify_contact_provider_failure",
+    "provider_body_contract": "opaque",
+    "authority": "owned HTTP status + dispatch + Retry-After envelope; provider error bodies are not parsed or invented",
+    "applies_to": ["sumble_v9", "exa_search"],
+    "fixture_paths": [
+      "tests/fixtures/contact_research/provider_failures/http_validation_422.json",
+      "tests/fixtures/contact_research/provider_failures/http_auth_401.json",
+      "tests/fixtures/contact_research/provider_failures/http_insufficient_credit_402.json",
+      "tests/fixtures/contact_research/provider_failures/http_rate_limit_429.json",
+      "tests/fixtures/contact_research/provider_failures/http_server_503.json"
+    ]
+  },
+  "sumble": {
+    "runtime_contract": {
+      "api_version": "v9",
+      "entitlement_evidence": "M06A-S2-sumble-committee-acceptance.md live bounded canary 2026-08-05",
+      "openapi_sha256": "c6f1324366a94844932ee3522caee6aa9f428f7d958a9956bea3425d18e2811c",
+      "migration_authorized": false,
+      "operations": [
+        {
+          "source_key": "sumble_people",
+          "method": "POST",
+          "endpoint": "/v9/people",
+          "lifecycle": "asynchronous submit and request_id poll",
+          "native_cost_unit": "credit",
+          "charge_event": "first succeeded poll; repeated succeeded polls report zero incremental credits",
+          "freshness_days": 30,
+          "request_fields": {
+            "filter.organization_ids": "pinned v9 OpenAPI and entitled canary",
+            "filter.query.query": "pinned v9 OpenAPI; only prevalidated expressions",
+            "select.attributes": "pinned v9 OpenAPI and entitled canary; explicit no-reveal allowlist",
+            "limit": "pinned v9 OpenAPI and entitled canary; 1..200",
+            "offset": "pinned v9 OpenAPI and entitled canary; 0..10000",
+            "order_by_column": "pinned v9 OpenAPI and entitled canary",
+            "order_by_direction": "pinned v9 OpenAPI and entitled canary",
+            "request_id": "pinned v9 asynchronous polling contract and entitled canary"
+          },
+          "retry_contract": "pre-dispatch transient errors retry; post-dispatch ambiguity is spend_unknown until reconciled",
+          "rate_limit_contract": "shared account-level Sumble limit; durable dispatcher owns throttling",
+          "fixture_paths": [
+            "tests/fixtures/providers/sumble/v9/people_pending.json",
+            "tests/fixtures/providers/sumble/v9/people_running.json",
+            "tests/fixtures/providers/sumble/v9/people_succeeded.json",
+            "tests/fixtures/providers/sumble/v9/people_empty_succeeded.json",
+            "tests/fixtures/providers/sumble/v9/people_failed.json"
+          ]
+        },
+        {
+          "source_key": "sumble_teams",
+          "method": "POST",
+          "endpoint": "/v9/teams",
+          "lifecycle": "synchronous",
+          "native_cost_unit": "credit",
+          "charge_event": "successful response according to returned teams, selected attributes, related people, and jobs",
+          "freshness_days": 30,
+          "request_fields": {
+            "filter.organization_ids": "pinned v9 OpenAPI and entitled canary",
+            "filter.query.query": "pinned v9 OpenAPI; only prevalidated expressions",
+            "filter.since": "pinned v9 OpenAPI",
+            "select.attributes": "pinned v9 OpenAPI and entitled canary; explicit no-reveal allowlist",
+            "select.related_people.attributes": "pinned v9 OpenAPI and entitled canary; explicit no-reveal allowlist",
+            "select.related_people.max_per_team": "pinned v9 OpenAPI and entitled canary",
+            "select.job_posts.components": "pinned v9 OpenAPI and entitled canary",
+            "select.job_posts.max_per_team": "pinned v9 OpenAPI and entitled canary",
+            "select.job_posts.since": "pinned v9 OpenAPI",
+            "limit": "pinned v9 OpenAPI and entitled canary; 1..200",
+            "offset": "pinned v9 OpenAPI and entitled canary; 0..10000",
+            "order_by_column": "pinned v9 OpenAPI and entitled canary",
+            "order_by_direction": "pinned v9 OpenAPI and entitled canary"
+          },
+          "retry_contract": "pre-dispatch transient errors retry; post-dispatch ambiguity is spend_unknown until reconciled",
+          "rate_limit_contract": "shared account-level Sumble limit; durable dispatcher owns throttling",
+          "fixture_paths": [
+            "tests/fixtures/providers/sumble/v9/teams_succeeded.json",
+            "tests/fixtures/providers/sumble/v9/teams_empty_succeeded.json"
+          ]
+        }
+      ]
+    },
+    "public_reference": {
+      "api_version": "v3",
+      "runtime_authorized": false,
+      "fixture_path": "tests/fixtures/providers/sumble/v3/public_people_contract.json"
+    },
+    "contact_reveal": {
+      "runtime_authorized": false,
+      "request_fields": {},
+      "reason": "No accepted Sumble channel-reveal contract or entitlement was captured in C0."
+    }
+  },
+  "exa_search": {
+    "runtime_contract": {
+      "source_key": "exa_deep",
+      "authority_scope": "provider capability and inherited account-level wire evidence only",
+      "contact_targeted_compiler_authorized": false,
+      "contact_targeted_compiler_owner": "M8C C3",
+      "method": "POST",
+      "endpoint": "/search",
+      "search_type": "deep-reasoning",
+      "native_cost_unit": "USD usage counters",
+      "charge_event": "provider usage for a dispatched search; response costDollars is settlement evidence, not a preflight quote",
+      "freshness_days": 30,
+      "request_fields": {
+        "query": "official Exa Search reference and M8B entitled canary",
+        "additionalQueries": "official Exa Search reference; 1..10",
+        "contents.text.maxCharacters": "official Exa Search reference and M8B entitled canary",
+        "contents.highlights.query": "official Exa Search reference and M8B entitled canary",
+        "contents.highlights.maxCharacters": "official Exa Search reference and M8B entitled canary",
+        "numResults": "official Exa Search reference; product cap 50",
+        "outputSchema": "official Exa Search structured-output reference and M8B entitled canary",
+        "systemPrompt": "official Exa Search reference and M8B entitled canary",
+        "stream": "official Exa Search reference and M8B entitled canary",
+        "type": "official Exa Search reference and M8B entitled canary"
+      },
+      "retry_contract": "pre-dispatch transient errors retry; any ambiguous post-dispatch failure is spend_unknown",
+      "rate_limit_contract": "Retry-After aware transport; durable operation owns retry state",
+      "account_compatibility_fixture_paths": [
+        "tests/fixtures/providers/exa/search/deep_request.json",
+        "tests/fixtures/providers/exa/search/deep_response.json"
+      ],
+      "failure_contract_ref": "provider_failure_contract"
+    }
+  },
+  "exa_websets": {
+    "reference_contract": {
+      "runtime_authorized_for_contact_enrichment": false,
+      "lifecycle": "asynchronous webset/import/enrichment with polling or webhook events",
+      "candidate_fields": [
+        "known person profile URL import",
+        "person entity",
+        "email enrichment",
+        "phone enrichment",
+        "external id"
+      ],
+      "reason": "C0 records feasibility only. C5 must canary-prove exact import, enrichment charging, binding, validation, and replay before authorization."
+    }
+  }
+}

@@ -20,6 +20,7 @@ from clue_research.sources import bind_resolver, clear_resolver_bindings
 from clue_spine import create_brand, create_product
 
 from ..conftest import (
+    TEST_FACET_SOURCE,
     FakeFacetResolver,
     icp_spec,
     insert_test_account,
@@ -32,8 +33,7 @@ from ..conftest import (
 
 _RUN = UUID("55555555-5555-5555-5555-555555555555")
 _TENANT = "acme"
-# The seeded facet fields' tier_plan source (resolver-absent in prod; we bind a fake here).
-_FACET_SOURCE = "exa_deep"
+_FACET_SOURCE = TEST_FACET_SOURCE
 
 
 async def _field_def(conn, field_key):  # type: ignore[no-untyped-def]

@@ -1,10 +1,10 @@
 """The durable fleet task queue (PB-B1) — the ``fleet_task`` table the worker drains.
 
-One table holds both task kinds (:class:`~clue_fleet.enums.FleetTaskKind`): ``drive_run`` jobs
-any worker may claim, and ``account_job`` rows that give the ``deep`` phase its tier-priority
-order (REQ-10 — "budget exhaustion still researched the *best* accounts first"). Rows are
-*fleet-plane* state: ``project_run_id`` rides as an opaque id (a soft FK, like every M7 table)
-and ``payload_json`` / ``result_ref_json`` carry references only, never blobs (substrate §5b).
+One table holds every mechanical task kind (:class:`~clue_fleet.enums.FleetTaskKind`): project-run
+drives, run-internal legacy account jobs, recipe graphs, and M8D subject-neutral entity-research
+jobs. Rows are *fleet-plane* state: ``work_id`` is an opaque UUID (the compatibility projection
+still calls it ``project_run_id``) and ``payload_json`` / ``result_ref_json`` carry references
+only, never blobs (substrate §5b).
 
 Semantics, all decided at the database (no read-then-write races):
 
@@ -221,6 +221,23 @@ _REQUEUE_FAILED_SQL = text(
     """
 )
 
+_CANCEL_WORK_SQL = text(
+    """
+    UPDATE fleet_task
+    SET status = 'done',
+        result_ref_json = CAST(:result_ref AS jsonb),
+        claimed_by = NULL,
+        claimed_at = NULL,
+        updated_at = now()
+    WHERE kind = CAST(:kind AS fleet_task_kind)
+      AND work_id = :work_id
+      AND (
+            status IN ('queued', 'claimed')
+            OR (status = 'done' AND result_ref_json->>'outcome' = 'waiting_external')
+          )
+    """
+)
+
 _REOFFER_GOVERNED_PARTIAL_SQL = text(
     """
     UPDATE fleet_task
@@ -392,6 +409,32 @@ async def requeue_failed_tasks(
     drive opens on re-entry). Returns how many rows were requeued."""
     result = await conn.execute(
         _REQUEUE_FAILED_SQL, {"kind": kind.value, "project_run_id": project_run_id}
+    )
+    return result.rowcount or 0
+
+
+async def cancel_work_tasks(
+    conn: AsyncConnection,
+    *,
+    kind: FleetTaskKind,
+    work_id: WorkId,
+    result_ref: dict[str, JsonValue] | None = None,
+) -> int:
+    """Atomically terminalize queued/claimed/suspended work so it cannot be reclaimed.
+
+    An in-flight holder is fenced because its later holder-guarded ``finish`` sees ``done`` and
+    updates zero rows. A durable external-wait marker is already ``done`` so it is rewritten only
+    when its recorded outcome is ``waiting_external``. Domain state must be cancelled in the same
+    transaction by the caller.
+    """
+
+    result = await conn.execute(
+        _CANCEL_WORK_SQL,
+        {
+            "kind": kind.value,
+            "work_id": work_id,
+            "result_ref": serialize_value_json(result_ref or {"outcome": "cancelled"}),
+        },
     )
     return result.rowcount or 0
 
@@ -664,6 +707,7 @@ __all__ = [
     "WorkQueue",
     "WorkTaskRow",
     "claim_next_task",
+    "cancel_work_tasks",
     "enqueue_task",
     "finish_task",
     "get_task",

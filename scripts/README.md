@@ -16,6 +16,10 @@ don't pass one).
 | 05 | `05_committee_discovery.py` | M3 committee discovery | `profiling.discover_committee` |
 | 06 | `06_contact_profiling.py` | M4 contact profiling | `profiling.profile_contact` |
 | 07 | `07_research_view_trial.py` | Read-only C7 production research-view inspection | `ProductionResearchViewComposer` |
+| 08 | `08_seed_discovery_fixture.py` | Reproducible Stage-0 handoff for discovery tests | `trial.discovery_fixture.seed_insight_health_discovery_fixture` |
+| 09 | `09_exa_websets_d2_canary.py` | Bounded live/replay Exa Websets D2 submit | `DurableExaWebsetSubmitter` |
+| 10 | `10_exa_websets_d4_materialization.py` | Zero-provider-call D4 materialization/replay | `ExaWebsetsD4Materializer` |
+| 11 | `11_exa_websets_d6_acceptance.py` | Bounded live/replay D6 production composition | `ComposingRunDriver` + durable Exa slices |
 
 ## One-time setup
 
@@ -143,3 +147,105 @@ Script 07 is intentionally different: it never seeds data and never performs acq
 the exact workspace/project/project-run/account-or-contact IDs produced by a normal governed
 research run. It then composes the persisted state through the same production readers used by the
 API. See `docs/runbooks/research-views.md` for the Exa-first inspection sequence.
+
+## Insight Health/Aura discovery fixture
+
+Script 08 builds the already-confirmed Stage-0 side of the account-discovery acceptance setup. It
+does not scrape or call a provider during seeding: first harvest the required public pages into the
+two default `.firecrawl/*.json` paths, create a dedicated database, migrate it, and run:
+
+```bash
+uv run python scripts/08_seed_discovery_fixture.py \
+  --database-url postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_discovery_fixture
+```
+
+It captures the page bodies into the configured artifact store, writes tier-2 unverified
+official-site claims, confirms the Aura neurosurgery ICP, evaluates discovery readiness, and leaves
+the durable project run at `discovery`. The default reference bundle is written under
+`.context/discovery-fixtures/insight-health-aura/`; Postgres and the artifact store remain
+authoritative. Repeating the exact command reuses the same claims, ICP, context, decision, and run.
+
+## Exa Websets D2 canary
+
+Script 09 consumes the named Stage-0 fixture and submits exactly one two-company Webset with no
+paid enrichment (20-credit maximum). It requires an explicit observation window. The first paid
+create is disabled unless `--allow-live-create` is present:
+
+```bash
+uv run python scripts/09_exa_websets_d2_canary.py \
+  --database-url postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_discovery_fixture \
+  --observation-window 2026-08-02-d2-live-v2 \
+  --generation 2 \
+  --allow-live-create
+```
+
+Repeat the command without `--allow-live-create` in a fresh process. A successful replay reports
+zero create and lookup calls and returns the same request fingerprint, operation id, provider id,
+and artifacts. A terminal attempt also replays without network I/O; retrying it requires a
+separately approved observation/generation rather than changing the old row.
+
+The configured Exa team must have Websets API access. A key that can use the web application but
+not the Websets API returns a durable, known-not-charged terminal failure and does not satisfy the
+D2 success gate.
+
+## Exa Websets D4 materialization
+
+Script 10 consumes only an existing D3-terminal batch and its immutable filesystem artifacts. It
+does not construct an Exa client or read an API key, so both the first D4 run and replay make zero
+provider calls:
+
+```bash
+uv run python scripts/10_exa_websets_d4_materialization.py \
+  --database-url postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_discovery_fixture \
+  --batch-id <D3-terminal-discovery-batch-id>
+```
+
+The first run reports created claims and admission/field-resolution summaries. Repeating it in a
+fresh process must report `outcome=replayed`, `claims_created=0`, stable claim ids, and
+`provider_calls_this_process=0`. D4 stops at `seal_pending`; D5 owns the actual batch seal.
+
+## Exa Websets D6 production-composition acceptance
+
+Script 11 consumes the Insight Health/Aura fixture from script 08 and drives the production
+composition through durable acquisition, reconciliation, D4 materialization, D5 seal, the explicit
+no-numeric-score selection mode, and the human tier checkpoint. It permits one two-row live create
+only with `--allow-live-create`; email and phone remain disabled unless
+`--include-contact-enrichments` is also supplied.
+
+```bash
+uv run python scripts/11_exa_websets_d6_acceptance.py \
+  --database-url postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_d6_acceptance \
+  --storage-root .context/discovery-fixtures/d6-acceptance/artifacts \
+  --allow-live-create \
+  --output .context/discovery-fixtures/d6-acceptance/d6-live-report.json
+```
+
+Run it again in a fresh process with `--replay-only` and without `--allow-live-create`. The replay
+must return the identical sealed account set while every provider-call counter remains zero.
+
+The runner does not manufacture a passing account. If all live rows satisfy the Exa criteria but
+have mandatory field gaps, it leaves the project paused with `held_for_waterfall`. A selected row
+is approved into deep research only when every required criterion is `yes`, every required field is
+resolved, and the human checkpoint approves it.
+
+Production deployments separately enable reconciliation and new paid acquisition:
+
+```dotenv
+CLUE_EXA_WEBSETS_LIFECYCLE_ENABLED=true
+CLUE_EXA_WEBSETS_ACQUISITION_ENABLED=true
+```
+
+Keeping acquisition false while lifecycle is true drains existing work without allowing new
+Webset spend. Acquisition fails closed when the lifecycle worker or API key is absent.
+
+Provision the single team-level webhook separately after the projections service has a public URL:
+
+```bash
+python scripts/12_exa_websets_webhook_provision.py \
+  --url https://api.example.com/v1/webhooks/exa-websets \
+  --secret-output .secrets/exa-websets-webhook.env
+```
+
+On first creation, move the mode-0600 output into the deployment secret manager as
+`CLUE_EXA_WEBSETS_WEBHOOK_SECRET`. The command never prints the secret. Re-running against the
+same active URL/events is a zero-change replay; it refuses drift or multiple managed endpoints.

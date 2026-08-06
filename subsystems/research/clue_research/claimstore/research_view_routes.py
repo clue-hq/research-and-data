@@ -64,11 +64,7 @@ class ResearchViewFieldRoute(BaseModel):
 
     @model_validator(mode="after")
     def _legal_section(self) -> ResearchViewFieldRoute:
-        allowed = (
-            _ACCOUNT_SECTIONS
-            if self.entity_type is EntityType.ACCOUNT
-            else _CONTACT_SECTIONS
-        )
+        allowed = _ACCOUNT_SECTIONS if self.entity_type is EntityType.ACCOUNT else _CONTACT_SECTIONS
         if self.section_kind not in allowed:
             raise ValueError(
                 f"{self.section_kind.value} is not a legal {self.entity_type.value} claim section"
@@ -80,8 +76,7 @@ class ResearchViewFieldRoute(BaseModel):
             )
         if personalization and not self.field_key.startswith("contact.personalization."):
             raise ValueError(
-                "personalization routes require an explicit contact.personalization.* "
-                "derived field"
+                "personalization routes require an explicit contact.personalization.* derived field"
             )
         return self
 

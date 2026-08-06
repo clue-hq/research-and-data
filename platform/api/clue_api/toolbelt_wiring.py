@@ -57,24 +57,40 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from decimal import Decimal
-from typing import ClassVar, cast
+from typing import ClassVar, Protocol, cast
 from uuid import UUID
 
-from pydantic import JsonValue
+from pydantic import Field, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.composition import build_pre_spend_gate
+from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.coverage_tools import (
     build_research_account_gaps_tool,
     build_research_account_gaps_v2_tool,
 )
 from clue_api.deep.composition import build_high_tier_resolver
+from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
+from clue_api.entity_research_launch_tools import (
+    EntityResearchLaunchServices,
+    build_entity_research_launch_tools,
+)
+from clue_api.entity_research_quarantine import quarantine_entity_research_tool
+from clue_api.exa_targeted_enrichment import (
+    DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY,
+    ExaTargetedEligibilityError,
+    ExaTargetedResult,
+    approved_targeted_field_plans,
+)
+from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.fleet_wiring import enqueue_run_drive
+from clue_api.independent_contact_research import IndependentContactResearchRunner
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
+from clue_api.phase_wiring import build_discovery_handler, build_scoring_handler
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
@@ -84,17 +100,28 @@ from clue_api.proposal_tools import (
     ProposeFieldTool,
     ProposeSourceTool,
 )
+from clue_api.research_directive_tools import build_research_directive_tools
 from clue_api.research_view_tools import build_research_view_tools
 from clue_api.stage0_inspection_tools import build_stage0_inspection_tools
 from clue_api.stage0_tools import stage0_tools
 from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
+from clue_api.sumble_account_gaps import (
+    DEFAULT_SUMBLE_ACCOUNT_GAP_POLICY,
+    SumbleAccountGapEligibilityError,
+    SumbleAccountGapResult,
+)
 from clue_api.tool_outputs import (
+    AccountDeepLaunchOutput,
+    AccountGapEnrichmentOutput,
     CommitteeOutput,
     ConfirmIcpOutput,
+    ContactContentHandoffOutput,
     ContactProfileOutput,
+    ContactResearchSelectionApprovalOutput,
     DeepAccountOutput,
     DiscoverAccountsOutput,
+    GovernedContactProfileOutput,
     HandoffOutput,
     ImportAccountsOutput,
     PhaseAccountsOutput,
@@ -105,12 +132,16 @@ from clue_api.tool_outputs import (
     ProjectRunStatusOutput,
     ReverseProfileOutput,
     SynthesizeIcpsOutput,
+    TargetedEnrichmentOutput,
     TierCheckpointOutput,
 )
 from clue_api.verification import build_verification_phase_handler
 from clue_config import DEFAULT_STAGE0_POLICY, Settings, load_settings
 from clue_core import (
     AccountEntity,
+    ContactContentHandoff,
+    ContactResearchSelection,
+    ContactResearchSelectionId,
     CostCents,
     EntityId,
     ICPSpec,
@@ -121,6 +152,7 @@ from clue_core import (
     PreSpendGate,
     ProjectPhase,
     ProjectRunId,
+    ResearchDirectiveId,
     ResearchViewComposer,
     RunId,
 )
@@ -129,27 +161,34 @@ from clue_fleet import TaskQueue
 from clue_obs import get_logger
 from clue_research.claimstore import ALL_WORKSPACES
 from clue_research.discovery_scoring.discovery import ChannelRegistry
-from clue_research.discovery_scoring.phases import (
-    DiscoveryPhaseHandler,
-    ScoringPhaseHandler,
-    discovery_run_id,
-)
+from clue_research.discovery_scoring.phases import discovery_run_id
 from clue_research.discovery_scoring.scoring import admitted_account_ids
 from clue_research.discovery_scoring.tiering import DEFAULT_TIERING_CONFIG
 from clue_research.durable import (
     NARRATIVE_EMIT_SKIPPED_KEY,
+    AccountDeepLaunchConflict,
+    AccountDeepLaunchInvalid,
     BudgetEngine,
+    ContactResearchSelectionApprovalAuthority,
+    ContactResearchSelectionApprovalKind,
+    ContactResearchSelectionNotFound,
     DbBudgetStore,
     DbIdempotencyStore,
     DbProjectRunStore,
+    DiscoverySealConflict,
     LockFactory,
     PhaseCheckpointStatus,
     PhaseHandlerRegistry,
     ProjectRun,
     ProjectRunRow,
     ProjectRunStatus,
+    create_account_deep_launch,
     get_checkpoint,
+    get_contact_research_selection,
     get_project_run,
+    latest_contact_research_selection,
+    preview_account_deep_launch,
+    store_contact_research_selection,
 )
 from clue_research.icp.rubric import TierCutoffs, rubric_from_slot
 from clue_research.icp.spec import get_active_icp, get_icp_version
@@ -188,6 +227,7 @@ from clue_storage import StorageBackend
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
+    PreconditionFailed,
     PreconditionFailure,
     ReplayPolicy,
     ReplaySafety,
@@ -225,6 +265,20 @@ def _parse_run_id(raw: str) -> ProjectRunId | None:
 def _parse_entity_id(raw: str) -> EntityId | None:
     try:
         return EntityId(UUID(raw))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def _parse_contact_selection_id(raw: str) -> ContactResearchSelectionId | None:
+    try:
+        return ContactResearchSelectionId(UUID(raw))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def _parse_account_run_id(raw: str) -> RunId | None:
+    try:
+        return RunId(UUID(raw))
     except (ValueError, AttributeError, TypeError):
         return None
 
@@ -272,9 +326,31 @@ class ScoreAccountsInput(ToolInput):
     project_run_id: str
 
 
+class EnrichSelectedAccountsInput(ToolInput):
+    project_run_id: str
+    account_entity_ids: tuple[str, ...]
+    field_keys: tuple[str, ...]
+
+
+class EnrichAccountGapsInput(ToolInput):
+    project_run_id: str
+    account_entity_id: str
+    field_expected_value_credits: dict[str, Decimal]
+    provider_credit_cap: int
+    allow_unbounded_tech: bool = False
+
+
 class SubmitTierCheckpointInput(ToolInput):
     project_run_id: str
     decision: dict[str, object] = {}
+
+
+class LaunchAccountDeepInput(ToolInput):
+    project_run_id: str
+    research_directive_id: str
+    account_entity_ids: tuple[str, ...] = Field(min_length=1, max_length=500)
+    approved_budget_cap_cents: Decimal = Field(ge=0)
+    expected_estimated_cost_cents: Decimal = Field(ge=0)
 
 
 class RunDeepAccountInput(ToolInput):
@@ -298,12 +374,31 @@ class ProfileContactInput(ToolInput):
     icp_key: str | None = None
 
 
+class GovernedProfileContactInput(ToolInput):
+    project_run_id: str
+    contact_entity_id: str
+    account_entity_id: str
+
+
 class RunVerificationInput(ToolInput):
     project_run_id: str
 
 
 class ComposeHandoffInput(ToolInput):
     project_run_id: str
+
+
+class ComposeContactContentHandoffInput(ToolInput):
+    project_id: str
+    project_run_id: str
+    account_entity_id: str
+    product_id: str | None = None
+
+
+class ApproveContactResearchSelectionInput(ToolInput):
+    selection: ContactResearchSelection
+    account_run_id: str
+    predecessor_selection_id: str
 
 
 class EstimateProjectInput(ToolInput):
@@ -354,6 +449,8 @@ class _CapabilityTool(Tool):
         lock_factory: LockFactory,
         storage: StorageBackend | None,
         project_execution_router: ProjectExecutionRouter | None,
+        account_deep_full_unit_available: bool,
+        independent_contact_research: IndependentContactResearchRunner | None,
     ) -> None:
         self._settings = settings
         self._gateway = gateway
@@ -366,6 +463,8 @@ class _CapabilityTool(Tool):
         self._lock_factory = lock_factory
         self._storage = storage
         self._project_execution_router = project_execution_router
+        self._account_deep_full_unit_available = account_deep_full_unit_available
+        self._independent_contact_research = independent_contact_research
 
     def _require_gateway(self) -> LLMGateway:
         if self._gateway is None:
@@ -759,9 +858,11 @@ class DiscoverAccountsTool(_CapabilityTool):
         # derivation, the admission-gate writes, and the M7.4 replay-idempotency all match the
         # machine's later drive. The bare ``discover()`` call this replaces did none of that.
         handler = self._wrap_snapshots(
-            DiscoveryPhaseHandler(
+            build_discovery_handler(
                 channels=self._channels,
                 gateway=self._gateway,
+                durable_batches=self._storage is not None,
+                storage=self._storage,
                 session_factory=self._conn_factory,
             )
         )
@@ -802,12 +903,49 @@ class ScoreAccountsTool(_CapabilityTool):
         run = await self._load_run(inputs.project_run_id, ctx)
         if run is None:
             return _fail("run_not_found", "no such project run")
-        # S8: scoring over an empty admitted set is a silent no-op — refuse it. The admitted set is
-        # the accounts carrying a ``core.discovery_provenance`` claim for this run's deterministic
-        # discovery run-id (the same id + ALL_WORKSPACES scope ScoringPhaseHandler itself reads).
-        discovery_run = discovery_run_id(self._phase_ctx(run, ProjectPhase.SCORING))
-        async with self._conn_factory() as conn:
-            admitted = await admitted_account_ids(conn, run_id=discovery_run, scope=ALL_WORKSPACES)
+        if run.phase is not ProjectPhase.SCORING:
+            return _fail(
+                "project_phase_not_scoring",
+                "score_accounts is available only while the project run is in scoring",
+            )
+        if run.status is not ProjectRunStatus.ACTIVE:
+            return _fail(
+                "project_run_not_active",
+                "score_accounts requires an active project run",
+            )
+        admitted: Sequence[EntityId]
+        if self._storage is not None:
+            try:
+                sealed = await DbSealedDiscoveryAccountManifestReader(
+                    storage=self._storage,
+                    conn_factory=self._conn_factory,
+                ).read(
+                    workspace_id=run.workspace_id,
+                    project_run_id=run.id,
+                    icp_key=run.icp_key,
+                    icp_version=run.icp_version,
+                )
+            except DiscoverySealConflict:
+                return _fail(
+                    "discovery_not_sealed",
+                    "the exact current discovery generation is not sealed",
+                )
+            if sealed is not None:
+                admitted = sealed.account_ids
+            else:
+                # The durable feature flag may be enabled for a historical run which never
+                # acquired a batch. Preserve the legacy run's existing provenance semantics.
+                discovery_run = discovery_run_id(self._phase_ctx(run, ProjectPhase.SCORING))
+                async with self._conn_factory() as conn:
+                    admitted = await admitted_account_ids(
+                        conn, run_id=discovery_run, scope=ALL_WORKSPACES
+                    )
+        else:
+            discovery_run = discovery_run_id(self._phase_ctx(run, ProjectPhase.SCORING))
+            async with self._conn_factory() as conn:
+                admitted = await admitted_account_ids(
+                    conn, run_id=discovery_run, scope=ALL_WORKSPACES
+                )
         if not admitted:
             return _fail(
                 "discovery_not_run",
@@ -819,7 +957,35 @@ class ScoreAccountsTool(_CapabilityTool):
         assert isinstance(inputs, ScoreAccountsInput)
         run = await self._load_run(inputs.project_run_id, ctx)
         assert run is not None
-        handler = self._wrap_snapshots(ScoringPhaseHandler(session_factory=self._conn_factory))
+        if run.phase is not ProjectPhase.SCORING:
+            raise PreconditionFailed(
+                _fail(
+                    "project_phase_not_scoring",
+                    "score_accounts is available only while the project run is in scoring",
+                )
+            )
+        if run.status is not ProjectRunStatus.ACTIVE:
+            raise PreconditionFailed(
+                _fail(
+                    "project_run_not_active",
+                    "score_accounts requires an active project run",
+                )
+            )
+        sealed_reader = (
+            DbSealedDiscoveryAccountManifestReader(
+                storage=self._storage,
+                conn_factory=self._conn_factory,
+            )
+            if self._storage is not None
+            else None
+        )
+        handler = self._wrap_snapshots(
+            build_scoring_handler(
+                pre_spend_gate=self._pre_spend_gate,
+                sealed_account_reader=sealed_reader,
+                session_factory=self._conn_factory,
+            )
+        )
         result = await handler.run(self._phase_ctx(run, ProjectPhase.SCORING))
         return ToolResult(
             tool=self.name,
@@ -827,6 +993,262 @@ class ScoreAccountsTool(_CapabilityTool):
             references={
                 "status": result.status.value,
                 "accounts_processed": result.accounts_processed,
+            },
+        )
+
+
+class TargetedEnrichmentStarter(Protocol):
+    async def start(
+        self,
+        *,
+        workspace_id: str,
+        project_run_id: ProjectRunId,
+        account_ids: Sequence[EntityId],
+        field_keys: Sequence[str],
+    ) -> ExaTargetedResult: ...
+
+
+class AccountGapEnrichmentStarter(Protocol):
+    async def start(
+        self,
+        *,
+        workspace_id: str,
+        project_run_id: ProjectRunId,
+        account_id: EntityId,
+        field_expected_value_credits: dict[str, Decimal],
+        provider_credit_cap: int,
+        allow_unbounded_tech: bool,
+    ) -> SumbleAccountGapResult: ...
+
+
+class EnrichAccountGapsTool(Tool):
+    """Explicit S1 spend for native Sumble fields on one selected account."""
+
+    name = "enrich_account_gaps"
+    input_model = EnrichAccountGapsInput
+    output_model = AccountGapEnrichmentOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project run + discovery seal + account + field set + policy window",
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "project_run_id",
+            "account_entity_id",
+            "field_expected_value_credits",
+            "provider_credit_cap",
+            "allow_unbounded_tech",
+        )
+    )
+    pin_requirements = (
+        "project_run",
+        "discovery_seal",
+        "tier_checkpoint",
+        "field_policy",
+        "budget_policy",
+    )
+
+    def __init__(
+        self,
+        *,
+        starter: AccountGapEnrichmentStarter | None,
+        conn_factory: ConnFactory,
+        cents_per_credit: Decimal,
+    ) -> None:
+        self._starter = starter
+        self._conn_factory = conn_factory
+        self._cents_per_credit = cents_per_credit
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, EnrichAccountGapsInput)
+        if self._starter is None:
+            return _fail(
+                "sumble_account_gap_not_configured",
+                "Sumble account-gap enrichment is disabled or unavailable",
+            )
+        run_id = _parse_run_id(inputs.project_run_id)
+        account_id = _parse_entity_id(inputs.account_entity_id)
+        if run_id is None:
+            return _fail("run_not_found", "no such project run")
+        if account_id is None:
+            return _fail("account_not_found", "no such account")
+        if (
+            not inputs.field_expected_value_credits
+            or len(inputs.field_expected_value_credits)
+            > DEFAULT_SUMBLE_ACCOUNT_GAP_POLICY.maximum_fields
+            or any(value <= 0 for value in inputs.field_expected_value_credits.values())
+        ):
+            return _fail("invalid_sumble_field_plan", "field expected values must be positive")
+        if inputs.provider_credit_cap <= 0:
+            return _fail("invalid_sumble_budget", "provider credit cap must be positive")
+        async with self._conn_factory() as conn:
+            run = await get_project_run(conn, run_id)
+        if run is None or run.workspace_id != ctx.workspace_id:
+            return _fail("run_not_found", "no such project run")
+        if run.status is not ProjectRunStatus.ACTIVE or run.phase is not ProjectPhase.DEEP:
+            return _fail(
+                "sumble_account_gap_phase_ineligible",
+                "Sumble account-gap enrichment requires an active deep-phase run",
+            )
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        assert isinstance(inputs, EnrichAccountGapsInput)
+        return ToolEstimate(
+            cost_cents=Decimal(inputs.provider_credit_cap) * self._cents_per_credit,
+            detail={
+                "basis": "sumble_explicit_provider_credit_cap",
+                "provider_units": str(inputs.provider_credit_cap),
+                "unbounded_tech_approved": inputs.allow_unbounded_tech,
+            },
+        )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, EnrichAccountGapsInput)
+        assert self._starter is not None
+        run_id = _parse_run_id(inputs.project_run_id)
+        account_id = _parse_entity_id(inputs.account_entity_id)
+        assert run_id is not None and account_id is not None
+        try:
+            result = await self._starter.start(
+                workspace_id=ctx.workspace_id,
+                project_run_id=run_id,
+                account_id=account_id,
+                field_expected_value_credits=inputs.field_expected_value_credits,
+                provider_credit_cap=inputs.provider_credit_cap,
+                allow_unbounded_tech=inputs.allow_unbounded_tech,
+            )
+        except SumbleAccountGapEligibilityError as exc:
+            raise PreconditionFailed(_fail("sumble_account_gap_ineligible", str(exc))) from exc
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "operation_id": str(result.operation.operation_id),
+                "account_entity_id": str(result.operation.request.account_id),
+                "state": result.operation.state.value,
+                "outcome": result.outcome.value,
+                "provider_units_reserved": str(result.operation.provider_units_reserved),
+                "provider_units_charged": str(result.operation.provider_units_charged),
+                "claim_ids": list(result.claim_ids),
+            },
+        )
+
+
+class EnrichSelectedAccountsTool(Tool):
+    """Explicit post-checkpoint E1 spend over an exact selected-account/field set."""
+
+    name = "enrich_selected_accounts"
+    input_model = EnrichSelectedAccountsInput
+    output_model = TargetedEnrichmentOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity=(
+            "project run + exact discovery seal + selected accounts + field policy window"
+        ),
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("project_run_id", "account_entity_ids", "field_keys")
+    )
+    pin_requirements = (
+        "project_run",
+        "discovery_seal",
+        "tier_checkpoint",
+        "field_policy",
+        "budget_policy",
+    )
+
+    def __init__(
+        self,
+        *,
+        starter: TargetedEnrichmentStarter | None,
+        conn_factory: ConnFactory,
+    ) -> None:
+        self._starter = starter
+        self._conn_factory = conn_factory
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, EnrichSelectedAccountsInput)
+        if self._starter is None:
+            return _fail(
+                "targeted_enrichment_not_configured",
+                "targeted Exa enrichment is disabled or unavailable",
+            )
+        run_id = _parse_run_id(inputs.project_run_id)
+        if run_id is None:
+            return _fail("run_not_found", "no such project run")
+        async with self._conn_factory() as conn:
+            run = await get_project_run(conn, run_id)
+        if run is None or run.workspace_id != ctx.workspace_id:
+            return _fail("run_not_found", "no such project run")
+        if run.status is not ProjectRunStatus.ACTIVE or run.phase is not ProjectPhase.DEEP:
+            return _fail(
+                "targeted_enrichment_phase_ineligible",
+                "targeted enrichment requires an active project run in deep phase",
+            )
+        account_ids = tuple(_parse_entity_id(value) for value in inputs.account_entity_ids)
+        if not account_ids or any(value is None for value in account_ids):
+            return _fail("invalid_account_set", "account ids must be non-empty UUIDs")
+        if len(account_ids) != len(set(account_ids)):
+            return _fail("invalid_account_set", "account ids must be unique")
+        if len(account_ids) > DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY.maximum_accounts:
+            return _fail("invalid_account_set", "account count exceeds targeted policy")
+        try:
+            fields = approved_targeted_field_plans(inputs.field_keys)
+        except ExaTargetedEligibilityError as exc:
+            return _fail("invalid_field_set", str(exc))
+        if len(fields) > DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY.maximum_fields:
+            return _fail("invalid_field_set", "field count exceeds targeted policy")
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        assert isinstance(inputs, EnrichSelectedAccountsInput)
+        try:
+            fields = approved_targeted_field_plans(inputs.field_keys)
+        except ExaTargetedEligibilityError:
+            return ToolEstimate(cost_cents=Decimal(0), detail={"basis": "invalid_field_set"})
+        units = DEFAULT_EXA_WEBSETS_PRICING.maximum_targeted_import_units(
+            account_count=len(set(inputs.account_entity_ids)),
+            formats=[field.format for field in fields],
+        )
+        return ToolEstimate(
+            cost_cents=DEFAULT_EXA_WEBSETS_PRICING.monetary_value(units),
+            detail={
+                "basis": "exa_targeted_maximum_credit_allocation",
+                "provider_units": str(units),
+            },
+        )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, EnrichSelectedAccountsInput)
+        assert self._starter is not None
+        run_id = _parse_run_id(inputs.project_run_id)
+        assert run_id is not None
+        account_ids = tuple(_parse_entity_id(value) for value in inputs.account_entity_ids)
+        assert all(value is not None for value in account_ids)
+        result = await self._starter.start(
+            workspace_id=ctx.workspace_id,
+            project_run_id=run_id,
+            account_ids=cast(tuple[EntityId, ...], account_ids),
+            field_keys=inputs.field_keys,
+        )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "operation_id": str(result.operation.operation_id),
+                "state": result.operation.state.value,
+                "outcome": result.outcome.value,
+                "provider_units_reserved": str(result.operation.provider_units_reserved),
+                "cost_cents_reserved": str(result.operation.cost_cents_reserved),
             },
         )
 
@@ -882,17 +1304,21 @@ class SubmitTierCheckpointTool(_CapabilityTool):
         assert run_id is not None
         decision = cast(dict[str, JsonValue], inputs.decision)
         row = await self._run.submit_checkpoint(run_id, decision=decision)
-        routed = (
-            await self._project_execution_router.resume_owned(run_id, actor=ctx.actor)
-            if self._project_execution_router is not None
-            else False
-        )
-        if not routed and self._queue is not None:
-            await enqueue_run_drive(
-                run_id,
-                queue=self._queue,
-                conn_factory=self._conn_factory,
+        # Tier approval exposes the eligible account set but is not authorization to spend on
+        # account-deep research.  Leave an ACTIVE run parked at DEEP; launch_account_deep@1 creates
+        # the separate exact-set receipt and is the only tool that re-enqueues this boundary.
+        if row.phase is not ProjectPhase.DEEP:
+            routed = (
+                await self._project_execution_router.resume_owned(run_id, actor=ctx.actor)
+                if self._project_execution_router is not None
+                else False
             )
+            if not routed and self._queue is not None:
+                await enqueue_run_drive(
+                    run_id,
+                    queue=self._queue,
+                    conn_factory=self._conn_factory,
+                )
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -929,6 +1355,151 @@ class SubmitProjectCheckpointTool(SubmitTierCheckpointTool):
                 "the run is not suspended at an actionable project checkpoint",
             )
         return ()
+
+
+# =============================================================================================
+# full account-deep fleet launch (set-scoped O2 capability)
+# =============================================================================================
+
+
+class LaunchAccountDeepTool(_CapabilityTool):
+    """Authorize and enqueue the existing account-deep fleet for one exact selected set.
+
+    The confirmed directive remains planning state.  This tool creates the distinct immutable
+    launch receipt only after recomputing the directive-derived estimate, proving the selected
+    accounts are members, and verifying that a committee source/preparer is actually composed.
+    """
+
+    name = "launch_account_deep"
+    model_description = (
+        "Create or exactly replay the immutable set-scoped account-deep launch receipt only after "
+        "an explicit human go-ahead over the confirmed directive, exact account set, and reviewed "
+        "estimate. A successful result means launched/enqueued or replayed; it never means the "
+        "account or committee research has completed."
+    )
+    input_model = LaunchAccountDeepInput
+    output_model = AccountDeepLaunchOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project_run + exact directive pin + selected account set + budget",
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "project_run_id",
+            "research_directive_id",
+            "account_entity_ids",
+            "approved_budget_cap_cents",
+            "expected_estimated_cost_cents",
+        )
+    )
+    pin_requirements = ("project_run", "research_directive", "deep_policy")
+
+    @staticmethod
+    def _ids(
+        inputs: LaunchAccountDeepInput,
+    ) -> tuple[ProjectRunId | None, ResearchDirectiveId | None, tuple[EntityId, ...] | None]:
+        run_id = _parse_run_id(inputs.project_run_id)
+        try:
+            directive_id = ResearchDirectiveId(UUID(inputs.research_directive_id))
+        except (ValueError, AttributeError, TypeError):
+            directive_id = None
+        accounts = tuple(_parse_entity_id(value) for value in inputs.account_entity_ids)
+        if any(value is None for value in accounts):
+            return run_id, directive_id, None
+        return run_id, directive_id, cast(tuple[EntityId, ...], accounts)
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, LaunchAccountDeepInput)
+        if not self._account_deep_full_unit_available:
+            return _fail(
+                "committee_capability_not_configured",
+                "full account-deep launch requires at least one governed committee source",
+            )
+        if ctx.action_ref is None:
+            return _fail(
+                "launch_action_ref_missing",
+                "account-deep launch requires the captured user/agent action reference",
+            )
+        run_id, directive_id, account_ids = self._ids(inputs)
+        if run_id is None:
+            return _fail("run_not_found", "no such project run")
+        if directive_id is None:
+            return _fail("research_directive_not_found", "no such research directive")
+        if account_ids is None:
+            return _fail("invalid_account_id", "one or more account ids are malformed")
+        try:
+            async with self._conn_factory() as conn:
+                await preview_account_deep_launch(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    project_run_id=run_id,
+                    directive_id=directive_id,
+                    account_entity_ids=account_ids,
+                    approved_budget_cap_cents=inputs.approved_budget_cap_cents,
+                    expected_estimated_cost_cents=inputs.expected_estimated_cost_cents,
+                )
+        except AccountDeepLaunchConflict as exc:
+            return _fail("account_deep_launch_conflict", str(exc))
+        except AccountDeepLaunchInvalid as exc:
+            return _fail("account_deep_launch_invalid", str(exc))
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        assert isinstance(inputs, LaunchAccountDeepInput)
+        return ToolEstimate(
+            cost_cents=inputs.expected_estimated_cost_cents,
+            detail={"selected_accounts": len(inputs.account_entity_ids)},
+        )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, LaunchAccountDeepInput)
+        run_id, directive_id, account_ids = self._ids(inputs)
+        assert run_id is not None and directive_id is not None and account_ids is not None
+        assert ctx.action_ref is not None
+        async with self._conn_factory() as conn:
+            created = await create_account_deep_launch(
+                conn,
+                workspace_id=ctx.workspace_id,
+                project_run_id=run_id,
+                directive_id=directive_id,
+                account_entity_ids=account_ids,
+                approved_budget_cap_cents=inputs.approved_budget_cap_cents,
+                expected_estimated_cost_cents=inputs.expected_estimated_cost_cents,
+                created_by=ctx.actor_id or ctx.actor,
+                source_operation_id=ctx.operation_id,
+                source_action_ref=ctx.action_ref,
+            )
+        routed = (
+            await self._project_execution_router.resume_owned(run_id, actor=ctx.actor)
+            if self._project_execution_router is not None
+            else False
+        )
+        enqueued = routed
+        if not routed and self._queue is not None:
+            await enqueue_run_drive(
+                run_id,
+                queue=self._queue,
+                conn_factory=self._conn_factory,
+            )
+            enqueued = True
+        launch = created.launch
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "launch_id": str(launch.id),
+                "project_run_id": str(launch.project_run_id),
+                "research_directive_id": str(launch.directive_id),
+                "selected_accounts": len(created.account_entity_ids),
+                "estimated_cost_cents": str(launch.estimated_cost_cents),
+                "approved_budget_cap_cents": str(launch.approved_budget_cap_cents),
+                "replayed": created.replayed,
+                "enqueued": enqueued,
+            },
+        )
 
 
 # =============================================================================================
@@ -1223,6 +1794,354 @@ class ProfileContactTool(_CapabilityTool):
                 "contact_entity_id": str(result.contact_entity_id),
                 "fields_filled": result.fields_filled,
                 "profile_claims": len(result.profile_claims),
+            },
+        )
+
+
+class GovernedProfileContactTool(_CapabilityTool):
+    """C6 independent-contact entry: exact project run, selection, preparation, then claims."""
+
+    name = "profile_contact"
+    version = "2"
+    input_model = GovernedProfileContactInput
+    output_model = GovernedContactProfileOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project run + account + selected contact + immutable provider receipts",
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "project_run_id",
+            "contact_entity_id",
+            "account_entity_id",
+        )
+    )
+    pin_requirements = (
+        "project_run",
+        "account",
+        "contact",
+        "research_directive",
+        "contact_research_selection",
+        "field_registry",
+        "source_registry",
+    )
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        return ToolEstimate(
+            cost_cents=Decimal(0),
+            detail={"basis": "durable selection and provider-specific reservations"},
+        )
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, GovernedProfileContactInput)
+        if self._independent_contact_research is None:
+            return _fail(
+                "contact_research_not_composed",
+                "provider-neutral contact research is unavailable",
+            )
+        run = await self._load_run(inputs.project_run_id, ctx)
+        if run is None:
+            return _fail("run_not_found", "no such project run")
+        contact = _parse_entity_id(inputs.contact_entity_id)
+        if contact is None:
+            return _fail("contact_not_found", "no such contact entity")
+        async with ctx.conn_factory() as conn:
+            account = await self._load_account(
+                self.name,
+                inputs.account_entity_id,
+                ctx,
+                conn,
+            )
+            if account is None:
+                return _fail("account_not_found", "no such account entity")
+            loaded = await get_contact(conn, contact)
+            if loaded is None or loaded.account_entity_id != account.id:
+                return _fail("contact_not_found", "no such contact entity")
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, GovernedProfileContactInput)
+        runner = self._independent_contact_research
+        assert runner is not None
+        project_run_id = _parse_run_id(inputs.project_run_id)
+        account = _parse_entity_id(inputs.account_entity_id)
+        contact = _parse_entity_id(inputs.contact_entity_id)
+        assert project_run_id is not None and account is not None and contact is not None
+        result = await runner.run(
+            workspace_id=ctx.workspace_id,
+            project_run_id=project_run_id,
+            account_entity_id=account,
+            contact_entity_id=contact,
+        )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "contact_entity_id": str(result.contact_entity_id),
+                "project_run_id": str(result.project_run_id),
+                "status": result.preparation.status.value,
+                "selection_ref": result.selection_ref,
+                "claim_refs": [str(claim_id) for claim_id in result.claim_refs],
+                "fields_filled": result.fields_filled,
+            },
+        )
+
+
+class ComposeContactContentHandoffTool(Tool):
+    """C7 read-only account x contact x persona projection for governed content consumers."""
+
+    name = "compose_contact_content_handoff"
+    version = "1"
+    input_model = ComposeContactContentHandoffInput
+    output_model = ContactContentHandoffOutput
+    model_description = (
+        "Read the current reference-only contact research handoff for one exact project run and "
+        "account. This never calls a research provider and never returns raw email or phone values."
+    )
+    replay = ReplaySafety(
+        policy=ReplayPolicy.EFFECT_FREE,
+        durable_identity="repeatable-read governed C7 projection",
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    effect_class = ToolEffectClass.READ
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("project_id", "project_run_id", "account_entity_id", "product_id")
+    )
+    pin_requirements = (
+        "project_run",
+        "account",
+        "contact_research_selection",
+        "research_view",
+        "use_policy",
+    )
+
+    def __init__(self, *, service: ContactContentHandoffService | None) -> None:
+        self._service = service
+
+    async def preconditions(
+        self,
+        inputs: ToolInput,
+        ctx: ToolContext,
+    ) -> Sequence[PreconditionFailure]:
+        del ctx
+        assert isinstance(inputs, ComposeContactContentHandoffInput)
+        if self._service is None:
+            return _fail(
+                "contact_content_handoff_not_composed",
+                "the governed C7 contact handoff reader is unavailable",
+            )
+        if _parse_run_id(inputs.project_run_id) is None:
+            return _fail("run_not_found", "no such project run")
+        if _parse_entity_id(inputs.account_entity_id) is None:
+            return _fail("account_not_found", "no such account entity")
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        del inputs
+        return ToolEstimate.free()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ComposeContactContentHandoffInput)
+        service = self._service
+        assert service is not None
+        project_run_id = _parse_run_id(inputs.project_run_id)
+        account_id = _parse_entity_id(inputs.account_entity_id)
+        assert project_run_id is not None and account_id is not None
+        handoff: ContactContentHandoff = await service.compose(
+            workspace_id=ctx.workspace_id,
+            project_id=inputs.project_id,
+            project_run_id=project_run_id,
+            account_entity_id=account_id,
+            product_id=inputs.product_id,
+        )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={"handoff": handoff.model_dump(mode="json")},
+        )
+
+
+def _successor_scope_matches(
+    successor: ContactResearchSelection,
+    predecessor: ContactResearchSelection,
+) -> bool:
+    current = predecessor.body
+    proposed = successor.body
+    return bool(
+        successor.selection_id != predecessor.selection_id
+        and proposed.workspace_id == current.workspace_id
+        and proposed.project_id == current.project_id
+        and proposed.project_run_id == current.project_run_id
+        and proposed.account_entity_id == current.account_entity_id
+        and proposed.research_directive == current.research_directive
+        and proposed.policy == current.policy
+        and proposed.source_profile_ref == current.source_profile_ref
+        and proposed.jurisdiction_policy_ref == current.jurisdiction_policy_ref
+        and proposed.use_policy_ref == current.use_policy_ref
+        and proposed.retention_policy_ref == current.retention_policy_ref
+    )
+
+
+class ApproveContactResearchSelectionTool(Tool):
+    """Persist a human-approved, exact successor to the current contact selection head."""
+
+    name = "approve_contact_research_selection"
+    version = "1"
+    input_model = ApproveContactResearchSelectionInput
+    output_model = ContactResearchSelectionApprovalOutput
+    model_description = (
+        "Approve one exact content-addressed successor to the current contact-research selection. "
+        "Agents can prepare the reviewed receipt but only an authenticated human can approve it."
+    )
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="database-backed contact selection approval receipt",
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    effect_class = ToolEffectClass.STEERING
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("account_run_id", "predecessor_selection_id")
+    )
+    pin_requirements = (
+        "project_run",
+        "account",
+        "research_directive",
+        "contact_research_selection",
+    )
+
+    def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
+        self._conn_factory = conn_factory
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> dict[str, object]:
+        assert isinstance(inputs, ApproveContactResearchSelectionInput)
+        predecessor_id = _parse_contact_selection_id(inputs.predecessor_selection_id)
+        exists = False
+        current = False
+        if predecessor_id is not None:
+            async with self._conn_factory() as conn:
+                try:
+                    predecessor = await get_contact_research_selection(
+                        conn,
+                        workspace_id=ctx.workspace_id,
+                        selection_id=predecessor_id,
+                    )
+                except ContactResearchSelectionNotFound:
+                    predecessor = None
+                if predecessor is not None:
+                    exists = True
+                    head = await latest_contact_research_selection(
+                        conn,
+                        workspace_id=ctx.workspace_id,
+                        project_run_id=predecessor.body.project_run_id,
+                        account_id=predecessor.body.account_entity_id,
+                        include_cancelled=True,
+                    )
+                    current = head is not None and head.selection_id == predecessor_id
+        return {
+            "predecessor_selection_id": inputs.predecessor_selection_id,
+            "predecessor_exists": exists,
+            "predecessor_is_current": current,
+            "successor_selection_id": str(inputs.selection.selection_id),
+            "successor_selection_sha256": inputs.selection.selection_sha256,
+        }
+
+    async def preconditions(
+        self,
+        inputs: ToolInput,
+        ctx: ToolContext,
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, ApproveContactResearchSelectionInput)
+        if ctx.actor != "human":
+            return _fail(
+                "human_required",
+                "only a human can approve a contact-research selection successor",
+            )
+        if ctx.actor_id is None or ctx.action_ref is None:
+            return _fail(
+                "trusted_human_receipt_required",
+                "selection approval requires authenticated human identity and action reference",
+            )
+        selection = inputs.selection
+        if (
+            selection.body.workspace_id != ctx.workspace_id
+            or selection.body.approved_by != ctx.actor_id
+        ):
+            return _fail(
+                "trusted_human_receipt_mismatch",
+                "selection scope or approval identity differs from the invocation context",
+            )
+        predecessor_id = _parse_contact_selection_id(inputs.predecessor_selection_id)
+        account_run_id = _parse_account_run_id(inputs.account_run_id)
+        if predecessor_id is None or account_run_id is None:
+            return _fail("contact_selection_not_found", "no such contact selection authority")
+        async with self._conn_factory() as conn:
+            try:
+                predecessor = await get_contact_research_selection(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    selection_id=predecessor_id,
+                )
+            except ContactResearchSelectionNotFound:
+                return _fail("contact_selection_not_found", "no such contact selection authority")
+            current = await latest_contact_research_selection(
+                conn,
+                workspace_id=ctx.workspace_id,
+                project_run_id=predecessor.body.project_run_id,
+                account_id=predecessor.body.account_entity_id,
+                include_cancelled=True,
+            )
+        if current is None or current.selection_id != predecessor_id:
+            return _fail(
+                "contact_selection_not_current",
+                "the named predecessor is not the current contact selection head",
+            )
+        if not _successor_scope_matches(selection, predecessor):
+            return _fail(
+                "contact_selection_scope_mismatch",
+                "the successor crosses its predecessor project, account, or policy authority",
+            )
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        del inputs
+        return ToolEstimate.free()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ApproveContactResearchSelectionInput)
+        if ctx.actor != "human" or ctx.actor_id is None or ctx.action_ref is None:
+            raise ValueError("trusted human selection approval receipt is missing")
+        predecessor_id = _parse_contact_selection_id(inputs.predecessor_selection_id)
+        account_run_id = _parse_account_run_id(inputs.account_run_id)
+        if predecessor_id is None or account_run_id is None:
+            raise ValueError("contact selection authority is malformed")
+        async with self._conn_factory() as conn:
+            stored = await store_contact_research_selection(
+                conn,
+                inputs.selection,
+                account_run_id=account_run_id,
+                predecessor_id=predecessor_id,
+                approval=ContactResearchSelectionApprovalAuthority(
+                    kind=ContactResearchSelectionApprovalKind.HUMAN_SUCCESSOR,
+                    operation_id=ctx.operation_id,
+                    approved_by=ctx.actor_id,
+                    action_ref=ctx.action_ref,
+                    approved_at=inputs.selection.body.approved_at,
+                ),
+            )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "selection_id": str(stored.selection_id),
+                "selection_sha256": stored.selection_sha256,
+                "predecessor_selection_id": str(predecessor_id),
+                "approval_ref": f"contact-research-selection-approval:{ctx.operation_id}",
             },
         )
 
@@ -1592,9 +2511,11 @@ _TOOL_TYPES: tuple[type[_CapabilityTool], ...] = (
     ScoreAccountsTool,
     SubmitTierCheckpointTool,
     SubmitProjectCheckpointTool,
+    LaunchAccountDeepTool,
     RunDeepAccountTool,
     ResolveCommitteeTool,
     ProfileContactTool,
+    GovernedProfileContactTool,
     RunVerificationTool,
     ComposeHandoffTool,
     EstimateProjectTool,
@@ -1622,11 +2543,20 @@ def build_toolbelt(
     proposal_personal_source_allowed: Callable[[SourceProposalPayload], bool] | None = None,
     stage0_memory_write: MemoryWriteSeam | None = None,
     stage0_memory_write_factory: Callable[[AsyncConnection], MemoryWriteSeam] | None = None,
+    research_directive_memory_write_factory: (
+        Callable[[AsyncConnection], MemoryWriteSeam] | None
+    ) = None,
     stage0_scrape_binder: Callable[[AccountEntity], None] | None = None,
     project_execution_router: ProjectExecutionRouter | None = None,
     research_view_composer: ResearchViewComposer | None = None,
     research_view_snapshots: ResearchViewSnapshotService | None = None,
     research_view_recheck: ResearchViewRecheckService | None = None,
+    targeted_enrichment_starter: TargetedEnrichmentStarter | None = None,
+    account_gap_enrichment_starter: AccountGapEnrichmentStarter | None = None,
+    account_deep_full_unit_available: bool | None = None,
+    independent_contact_research: IndependentContactResearchRunner | None = None,
+    contact_content_handoff: ContactContentHandoffService | None = None,
+    entity_research_launches: EntityResearchLaunchServices | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -1710,39 +2640,84 @@ def build_toolbelt(
         else None
     )
     locks = lock_factory if lock_factory is not None else lazy_account_lock_factory()
+    full_unit_available = (
+        bool(committee_sources)
+        if account_deep_full_unit_available is None
+        else account_deep_full_unit_available
+    )
     registry = ToolRegistry()
     for tool_type in _TOOL_TYPES:
+        # C6 keeps the v1 address for exact historical pins, but the name-only alias must elect
+        # the governed v2 implementation.  ToolRegistry deliberately refuses two defaults.
+        make_default = tool_type is not ProfileContactTool
         registry.register(
-            tool_type(
-                settings=resolved_settings,
-                gateway=gateway,
-                channels=channels if channels is not None else ChannelRegistry(),
-                committee_sources=committee_sources,
-                run_machine=machine,
-                queue=queue,
-                conn_factory=conn_factory,
-                pre_spend_gate=gate,
-                lock_factory=locks,
-                storage=storage,
-                project_execution_router=project_execution_router,
+            quarantine_entity_research_tool(
+                tool_type(
+                    settings=resolved_settings,
+                    gateway=gateway,
+                    channels=channels if channels is not None else ChannelRegistry(),
+                    committee_sources=committee_sources,
+                    run_machine=machine,
+                    queue=queue,
+                    conn_factory=conn_factory,
+                    pre_spend_gate=gate,
+                    lock_factory=locks,
+                    storage=storage,
+                    project_execution_router=project_execution_router,
+                    account_deep_full_unit_available=full_unit_available,
+                    independent_contact_research=independent_contact_research,
+                )
             ),
-            make_default=True,
+            make_default=make_default,
         )
     registry.register(
-        build_research_account_gaps_tool(
-            gateway=gateway,
-            conn_factory=conn_factory,
-            pre_spend_gate=gate,
-            lock_factory=locks,
+        ComposeContactContentHandoffTool(service=contact_content_handoff),
+        make_default=True,
+    )
+    registry.register(
+        ApproveContactResearchSelectionTool(conn_factory=conn_factory),
+        make_default=False,
+    )
+    for tool in build_entity_research_launch_tools(entity_research_launches):
+        registry.register(tool, make_default=True)
+    registry.register(
+        quarantine_entity_research_tool(
+            EnrichSelectedAccountsTool(
+                starter=targeted_enrichment_starter,
+                conn_factory=conn_factory,
+            )
         ),
         make_default=True,
     )
     registry.register(
-        build_research_account_gaps_v2_tool(
-            gateway=gateway,
-            conn_factory=conn_factory,
-            pre_spend_gate=gate,
-            lock_factory=locks,
+        quarantine_entity_research_tool(
+            EnrichAccountGapsTool(
+                starter=account_gap_enrichment_starter,
+                conn_factory=conn_factory,
+                cents_per_credit=resolved_settings.sumble_cents_per_credit,
+            )
+        ),
+        make_default=True,
+    )
+    registry.register(
+        quarantine_entity_research_tool(
+            build_research_account_gaps_tool(
+                gateway=gateway,
+                conn_factory=conn_factory,
+                pre_spend_gate=gate,
+                lock_factory=locks,
+            )
+        ),
+        make_default=True,
+    )
+    registry.register(
+        quarantine_entity_research_tool(
+            build_research_account_gaps_v2_tool(
+                gateway=gateway,
+                conn_factory=conn_factory,
+                pre_spend_gate=gate,
+                lock_factory=locks,
+            )
         ),
         make_default=False,
     )
@@ -1792,6 +2767,13 @@ def build_toolbelt(
         entailment_judge=entailment_judge,
     ):
         registry.register(tool, make_default=True)
+    for tool in build_research_directive_tools(
+        memory_write_factory=(
+            research_directive_memory_write_factory or stage0_memory_write_factory
+        ),
+        conn_factory=conn_factory,
+    ):
+        registry.register(tool, make_default=tool.version == "2")
     # PC-C8 §7: the two bounded, read-only Stage-0 history tools the card's `omissions` cursors
     # resolve. Both are granted to `AgentRole.HEAD_OF_ABM` in `C6_AGENT_TOOL_AUTHORITY` (the
     # deferred grant landed against profile v10) and are *not* withheld by the trial's

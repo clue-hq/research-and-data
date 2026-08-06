@@ -122,6 +122,196 @@ _ATTR_SCANNED = "compliance.retention.scanned"
 # ``validate_field=False`` (it is intentionally not a valid field value); the tombstone is REJECTED
 # so the merge never serves it regardless.
 _REDACTION_SENTINEL: dict[str, bool] = {"__erased__": True}
+_CHANNEL_FIELDS = frozenset({"core.work_email", "core.direct_phone"})
+
+
+async def _suppress_contact_channels(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    contact_entity_id: EntityId,
+    reason: str,
+    field_keys: frozenset[str] | None = None,
+) -> None:
+    channels = []
+    if field_keys is None or "core.work_email" in field_keys:
+        channels.append("email")
+    if field_keys is None or "core.direct_phone" in field_keys:
+        channels.append("phone")
+    for channel in channels:
+        await conn.execute(
+            text(
+                "INSERT INTO contact_channel_suppression "
+                "(workspace_id, contact_id, channel, reason) VALUES "
+                "(:workspace_id, :contact_id, CAST(:channel AS contact_channel_kind), :reason) "
+                "ON CONFLICT (workspace_id, contact_id, channel) "
+                "DO UPDATE SET reason=EXCLUDED.reason"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "contact_id": contact_entity_id,
+                "channel": channel,
+                "reason": reason,
+            },
+        )
+
+
+async def _mark_contact_channel_artifacts(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    contact_entity_id: EntityId,
+    erased_keys: list[str],
+    field_keys: frozenset[str] | None = None,
+) -> None:
+    """Sever and erase every C5 artifact edge for the in-scope contact channels.
+
+    C5 request/CSV, provider response, validation, and receipt artifacts are all explicitly bound
+    to the contact. Only the observation artifact is also cited by a claim, so claim tombstoning
+    alone is insufficient for DSAR or retention. This helper closes that copy surface while
+    retaining the append-only ledger rows and content hashes for audit.
+    """
+
+    channels = []
+    if field_keys is None or "core.work_email" in field_keys:
+        channels.append("email")
+    if field_keys is None or "core.direct_phone" in field_keys:
+        channels.append("phone")
+    if not channels:
+        return
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT subject.artifact_key
+                    FROM discovery_artifact_subject subject
+                    JOIN contact_channel_operation operation
+                      ON operation.workspace_id=subject.workspace_id
+                     AND operation.id::text=subject.reference_id
+                    WHERE subject.workspace_id=:workspace_id
+                      AND subject.subject_kind='contact'
+                      AND subject.subject_entity_id=:contact_id
+                      AND subject.reference_kind LIKE 'contact_channel_%'
+                      AND subject.tombstoned_at IS NULL
+                      AND operation.channel::text = ANY(:channels)
+                    ORDER BY subject.artifact_key
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "contact_id": contact_entity_id,
+                    "channels": channels,
+                },
+            )
+        )
+        .scalars()
+        .all()
+    )
+    await conn.execute(
+        text(
+            """
+            UPDATE discovery_artifact_subject subject
+               SET tombstoned_at=COALESCE(subject.tombstoned_at, now())
+              FROM contact_channel_operation operation
+             WHERE operation.workspace_id=subject.workspace_id
+               AND operation.id::text=subject.reference_id
+               AND subject.workspace_id=:workspace_id
+               AND subject.subject_kind='contact'
+               AND subject.subject_entity_id=:contact_id
+               AND subject.reference_kind LIKE 'contact_channel_%'
+               AND subject.tombstoned_at IS NULL
+               AND operation.channel::text = ANY(:channels)
+            """
+        ),
+        {
+            "workspace_id": workspace_id,
+            "contact_id": contact_entity_id,
+            "channels": channels,
+        },
+    )
+    already_marked = set(erased_keys)
+    for artifact_key in rows:
+        if (
+            await erase_if_unreferenced(conn, str(artifact_key))
+            and artifact_key not in already_marked
+        ):
+            erased_keys.append(str(artifact_key))
+            already_marked.add(str(artifact_key))
+
+
+async def _mark_contact_external_research_artifacts(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    contact_entity_id: EntityId,
+    erased_keys: list[str],
+) -> None:
+    """Sever provider and lossless-result artifact edges for one erased/objected contact."""
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT subject.artifact_key
+                    FROM discovery_artifact_subject subject
+                    LEFT JOIN external_research_operation operation
+                      ON operation.workspace_id=subject.workspace_id
+                     AND operation.id::text=subject.reference_id
+                    WHERE subject.workspace_id=:workspace_id
+                      AND subject.subject_kind='contact'
+                      AND subject.subject_entity_id=:contact_id
+                      AND (
+                        (subject.reference_kind LIKE 'exa_deep_%'
+                         AND operation.subject_kind='contact')
+                        OR subject.reference_kind IN
+                           ('entity_research_result', 'entity_research_value')
+                      )
+                      AND subject.tombstoned_at IS NULL
+                    ORDER BY subject.artifact_key
+                    """
+                ),
+                {"workspace_id": workspace_id, "contact_id": contact_entity_id},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    await conn.execute(
+        text(
+            """
+            UPDATE discovery_artifact_subject subject
+               SET tombstoned_at=COALESCE(subject.tombstoned_at, now())
+             WHERE subject.workspace_id=:workspace_id
+               AND subject.subject_kind='contact'
+               AND subject.subject_entity_id=:contact_id
+               AND (
+                 subject.reference_kind IN
+                    ('entity_research_result', 'entity_research_value')
+                 OR (
+                   subject.reference_kind LIKE 'exa_deep_%'
+                   AND EXISTS (
+                     SELECT 1 FROM external_research_operation operation
+                     WHERE operation.workspace_id=subject.workspace_id
+                       AND operation.id::text=subject.reference_id
+                       AND operation.subject_kind='contact'
+                   )
+                 )
+               )
+               AND subject.tombstoned_at IS NULL
+            """
+        ),
+        {"workspace_id": workspace_id, "contact_id": contact_entity_id},
+    )
+    already_marked = set(erased_keys)
+    for artifact_key in rows:
+        if (
+            await erase_if_unreferenced(conn, str(artifact_key))
+            and artifact_key not in already_marked
+        ):
+            erased_keys.append(str(artifact_key))
+            already_marked.add(str(artifact_key))
 
 
 class TombstoneReason(StrEnum):
@@ -411,6 +601,114 @@ async def _purge_legacy_handoff_payloads(
     )
 
 
+async def _erase_entity_research_runtime_payloads(
+    conn: AsyncConnection,
+    *,
+    contact_entity_id: EntityId,
+    workspace_id: str,
+) -> None:
+    """Redact agent journals and delete exact LangGraph threads for one erased contact.
+
+    Journal identity, ordering, tool names, and hashes remain as audit. Personal model/tool bodies
+    take the migration-governed one-way redaction transition. LangGraph checkpoints are internal
+    replay state rather than audit records, so their exact globally-namespaced threads are removed.
+    """
+
+    thread_ids = tuple(
+        str(value)
+        for value in (
+            await conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT checkpoint_thread_id
+                    FROM entity_research_agent_turn
+                    WHERE workspace_id=:workspace_id
+                      AND subject_type='contact'
+                      AND target_entity_id=:contact_entity_id
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "contact_entity_id": contact_entity_id,
+                },
+            )
+        ).scalars()
+    )
+    await conn.execute(
+        text(
+            """
+            UPDATE entity_research_agent_event event_row
+            SET payload_json=jsonb_build_object('erased', true),
+                payload_erased_at=COALESCE(payload_erased_at, now())
+            FROM entity_research_agent_turn turn_row
+            WHERE event_row.agent_turn_id=turn_row.agent_turn_id
+              AND turn_row.workspace_id=:workspace_id
+              AND turn_row.subject_type='contact'
+              AND turn_row.target_entity_id=:contact_entity_id
+              AND event_row.payload_erased_at IS NULL
+            """
+        ),
+        {
+            "workspace_id": workspace_id,
+            "contact_entity_id": contact_entity_id,
+        },
+    )
+    await conn.execute(
+        text(
+            """
+            UPDATE entity_research_agent_turn
+            SET context_json=jsonb_build_object('erased', true),
+                erased_at=COALESCE(erased_at, now())
+            WHERE workspace_id=:workspace_id
+              AND subject_type='contact'
+              AND target_entity_id=:contact_entity_id
+              AND erased_at IS NULL
+            """
+        ),
+        {
+            "workspace_id": workspace_id,
+            "contact_entity_id": contact_entity_id,
+        },
+    )
+    r9_subject_index = (
+        await conn.execute(text("SELECT to_regclass('entity_research_tool_batch_result_subject')"))
+    ).scalar_one()
+    if r9_subject_index is not None:
+        await conn.execute(
+            text(
+                """
+                UPDATE entity_research_tool_batch_event event_row
+                SET result_json=jsonb_build_object('erased', true),
+                    result_erased_at=COALESCE(result_erased_at, now())
+                WHERE event_row.event_kind='completed'
+                  AND event_row.result_erased_at IS NULL
+                  AND EXISTS (
+                      SELECT 1 FROM entity_research_tool_batch_result_subject subject
+                      WHERE subject.event_id=event_row.event_id
+                        AND subject.workspace_id=:workspace_id
+                        AND subject.subject_type='contact'
+                        AND subject.target_entity_id=:contact_entity_id
+                  )
+                """
+            ),
+            {
+                "workspace_id": workspace_id,
+                "contact_entity_id": contact_entity_id,
+            },
+        )
+    if not thread_ids:
+        return
+    for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+        exists = (
+            await conn.execute(text("SELECT to_regclass(:table_name)"), {"table_name": table})
+        ).scalar_one()
+        if exists is not None:
+            await conn.execute(
+                text(f"DELETE FROM {table} WHERE thread_id=ANY(:thread_ids)"),  # noqa: S608
+                {"thread_ids": list(thread_ids)},
+            )
+
+
 async def _tombstone_with_dependents(
     conn: AsyncConnection,
     targets: Sequence[Claim],
@@ -473,6 +771,23 @@ class DataSubjectRights(Protocol):
     async def record_objection(self, contact_entity_id: EntityId) -> ObjectionResult: ...
 
 
+@runtime_checkable
+class ContactResearchPrivacyStopper(Protocol):
+    """API-root seam that stops provider work when privacy authority changes."""
+
+    async def stop(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        contact_id: EntityId,
+        reason_code: str,
+        authority_ref: str,
+        channel_field_keys: frozenset[str] | None = None,
+        stop_external: bool = True,
+    ) -> None: ...
+
+
 class DataSubjectRightsImpl:
     """The M10.5 :class:`DataSubjectRights` implementation, scoped to one controller
     (``workspace_id``
@@ -491,6 +806,7 @@ class DataSubjectRightsImpl:
         conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
         storage: StorageBackend | None = None,
+        contact_research_stopper: ContactResearchPrivacyStopper | None = None,
     ) -> None:
         self._workspace_id = workspace_id
         self._conn_factory = conn_factory
@@ -498,6 +814,7 @@ class DataSubjectRightsImpl:
         # PB-B2.5: the durable snapshot backend erasure must reach (refcounted blob deletion).
         # Optional — injected at the api root like Freshness; None = pre-B2 behavior (no blobs).
         self._storage = storage
+        self._contact_research_stopper = contact_research_stopper
 
     @property
     def _metric_sink(self) -> MetricSink:
@@ -590,11 +907,75 @@ class DataSubjectRightsImpl:
                     run_id=run_id,
                     erased_keys=erased_keys,
                 )
+                erased_channel_fields = frozenset(
+                    str(claim.field_key)
+                    for claim in targets
+                    if str(claim.field_key) in _CHANNEL_FIELDS
+                )
+                explicit_fields = scope.field_keys
+                only_channel_fields = (
+                    explicit_fields is not None
+                    and bool(explicit_fields)
+                    and explicit_fields.issubset(_CHANNEL_FIELDS)
+                )
+                if self._contact_research_stopper is not None:
+                    await self._contact_research_stopper.stop(
+                        conn,
+                        workspace_id=self._workspace_id,
+                        contact_id=contact_entity_id,
+                        reason_code=TombstoneReason.ERASURE.value,
+                        authority_ref=f"dsar-erasure:{run_id}",
+                        channel_field_keys=(
+                            erased_channel_fields if explicit_fields is not None else None
+                        ),
+                        stop_external=scope == ERASE_ALL or not only_channel_fields,
+                    )
+                if scope == ERASE_ALL or not only_channel_fields:
+                    await _mark_contact_external_research_artifacts(
+                        conn,
+                        workspace_id=self._workspace_id,
+                        contact_entity_id=contact_entity_id,
+                        erased_keys=erased_keys,
+                    )
+                if scope == ERASE_ALL or erased_channel_fields:
+                    await _suppress_contact_channels(
+                        conn,
+                        workspace_id=self._workspace_id,
+                        contact_entity_id=contact_entity_id,
+                        reason=TombstoneReason.ERASURE.value,
+                        field_keys=None if scope == ERASE_ALL else erased_channel_fields,
+                    )
+                    await _mark_contact_channel_artifacts(
+                        conn,
+                        workspace_id=self._workspace_id,
+                        contact_entity_id=contact_entity_id,
+                        erased_keys=erased_keys,
+                        field_keys=None if scope == ERASE_ALL else erased_channel_fields,
+                    )
+                if scope == ERASE_ALL or "core.work_email" in erased_channel_fields:
+                    await conn.execute(
+                        text(
+                            "UPDATE contact_entity SET verified_email=NULL, "
+                            "canonical_version=canonical_version+1, updated_at=now() "
+                            "WHERE id=:contact_id AND workspace_id=:workspace_id "
+                            "AND verified_email IS NOT NULL"
+                        ),
+                        {
+                            "contact_id": contact_entity_id,
+                            "workspace_id": self._workspace_id,
+                        },
+                    )
                 await _purge_legacy_handoff_payloads(
                     conn,
                     contact_entity_id=contact_entity_id,
                     workspace_id=self._workspace_id,
                 )
+                if scope == ERASE_ALL:
+                    await _erase_entity_research_runtime_payloads(
+                        conn,
+                        contact_entity_id=contact_entity_id,
+                        workspace_id=self._workspace_id,
+                    )
             # Phase 2 — the physical blob deletes, only now that the tombstones committed.
             await _purge_marked(
                 self._conn_factory,
@@ -623,11 +1004,10 @@ class DataSubjectRightsImpl:
 
     async def record_objection(self, contact_entity_id: EntityId) -> ObjectionResult:
         """Register a GDPR Art. 21 objection: durably mark the contact ``outreach_objected`` and
-        tombstone its live ``contact.facet.*`` outreach hooks (so ``current_value``/handoff stop
-        surfacing them — a substrate exclusion, D-OBJ, not a use-gate reason). Objection blocks
-        outreach *use*; it is not a full erasure of the contact's structural/committee data. The
-        marker lets :meth:`RetentionSweep.sweep_objections` re-suppress any hooks collected
-        later."""
+        tombstone live personal-facet and channel outreach hooks (so ``current_value``/handoff
+        stop surfacing them — a substrate exclusion, D-OBJ, not a use-gate reason). Objection
+        blocks outreach *use*; it is not a full erasure of structural/committee data. The marker
+        lets :meth:`RetentionSweep.sweep_objections` re-suppress hooks collected later."""
         run_id = new_run_id()
         erased_keys: list[str] = []
         with traced_step(SPAN_COMPLIANCE_DSAR, **{ATTR_ENTITY_ID: str(contact_entity_id)}) as span:
@@ -643,6 +1023,14 @@ class DataSubjectRightsImpl:
                     {"contact": str(contact_entity_id), "tenant": self._workspace_id},
                 )
                 newly_objected = marker.rowcount > 0
+                if self._contact_research_stopper is not None:
+                    await self._contact_research_stopper.stop(
+                        conn,
+                        workspace_id=self._workspace_id,
+                        contact_id=contact_entity_id,
+                        reason_code=TombstoneReason.OBJECTION.value,
+                        authority_ref=f"outreach-objection:{run_id}",
+                    )
                 hooks = [
                     c
                     for c in await dsar_private_claims(conn, contact_entity_id, self._workspace_id)
@@ -655,6 +1043,24 @@ class DataSubjectRightsImpl:
                     contact_entity_id=contact_entity_id,
                     scope_desc="contact.facet.*",
                     run_id=run_id,
+                    erased_keys=erased_keys,
+                )
+                await _suppress_contact_channels(
+                    conn,
+                    workspace_id=self._workspace_id,
+                    contact_entity_id=contact_entity_id,
+                    reason=TombstoneReason.OBJECTION.value,
+                )
+                await _mark_contact_channel_artifacts(
+                    conn,
+                    workspace_id=self._workspace_id,
+                    contact_entity_id=contact_entity_id,
+                    erased_keys=erased_keys,
+                )
+                await _mark_contact_external_research_artifacts(
+                    conn,
+                    workspace_id=self._workspace_id,
+                    contact_entity_id=contact_entity_id,
                     erased_keys=erased_keys,
                 )
                 await _purge_legacy_handoff_payloads(
@@ -840,6 +1246,34 @@ class RetentionSweep:
             sink=self._metric_sink,
             erased_keys=erased_keys,
         )
+        if str(candidate.field_key) in _CHANNEL_FIELDS:
+            await _suppress_contact_channels(
+                conn,
+                workspace_id=target.workspace_id,
+                contact_entity_id=candidate.entity_id,
+                reason=TombstoneReason.RETENTION_EXPIRY.value,
+                field_keys=frozenset({str(candidate.field_key)}),
+            )
+            await _mark_contact_channel_artifacts(
+                conn,
+                workspace_id=target.workspace_id,
+                contact_entity_id=candidate.entity_id,
+                erased_keys=erased_keys,
+                field_keys=frozenset({str(candidate.field_key)}),
+            )
+            if str(candidate.field_key) == "core.work_email":
+                await conn.execute(
+                    text(
+                        "UPDATE contact_entity SET verified_email=NULL, "
+                        "canonical_version=canonical_version+1, updated_at=now() "
+                        "WHERE id=:contact_id AND workspace_id=:workspace_id "
+                        "AND verified_email IS NOT NULL"
+                    ),
+                    {
+                        "contact_id": candidate.entity_id,
+                        "workspace_id": target.workspace_id,
+                    },
+                )
         await _purge_legacy_handoff_payloads(
             conn,
             contact_entity_id=candidate.entity_id,
@@ -882,6 +1316,18 @@ class RetentionSweep:
                         erased_keys=erased_keys,
                     )
                     tombstoned.extend(contact_tombstones)
+                    await _suppress_contact_channels(
+                        conn,
+                        workspace_id=str(workspace_id),
+                        contact_entity_id=contact_id,
+                        reason=TombstoneReason.OBJECTION.value,
+                    )
+                    await _mark_contact_channel_artifacts(
+                        conn,
+                        workspace_id=str(workspace_id),
+                        contact_entity_id=contact_id,
+                        erased_keys=erased_keys,
+                    )
                     await _purge_legacy_handoff_payloads(
                         conn,
                         contact_entity_id=contact_id,
@@ -906,10 +1352,11 @@ class RetentionSweep:
 
 
 def _is_outreach_hook(claim: Claim) -> bool:
-    """Whether a claim is an outreach personalization hook — a ``contact.facet.*`` personal claim
-    (the field-class the use-gate polices). Objection blocks these; non-hook structural/committee
-    claims are left intact."""
-    return (
+    """Whether a claim is an outreach hook: a personal facet or delivery-channel claim.
+
+    Objection blocks these; non-hook structural and committee claims are left intact.
+    """
+    return str(claim.field_key) in _CHANNEL_FIELDS or (
         claim.entity_type is EntityType.CONTACT
         and classify_field_key(claim.field_key) is FieldClass.CONTACT_FACET
     )

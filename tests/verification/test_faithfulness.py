@@ -132,7 +132,10 @@ def _claim(
         field_key=field_key,
         value_json=value,  # type: ignore[arg-type]
         source_url="https://llm.local/x" if tier == 4 else "https://a.com/x",
-        source_key="exa_deep" if tier == 4 else "exa",
+        # This suite tests the provider-neutral tier-4 judge, not Exa acquisition. Using the Exa
+        # production key would falsely assert durable snapshot lineage that these fixtures do not
+        # create (M8C C2 requires every persisted exa_deep claim to carry exact lineage).
+        source_key="fixture_tier4" if tier == 4 else "exa",
         source_tier=tier,  # type: ignore[arg-type]
         extraction_method=method,
         evidence_span=span,

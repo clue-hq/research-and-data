@@ -18,11 +18,13 @@ The API composition root owns durable snapshot/receipt persistence and supplies 
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from threading import RLock
 from typing import Any, Final, Literal, Protocol
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, TypeAdapter
 
@@ -55,6 +57,8 @@ SUMBLE_SOURCE_KEYS: Final[frozenset[str]] = frozenset(
 
 _EMPLOYEE_COUNT_FIELD = "core.employee_count"
 _PRIMARY_DOMAIN_FIELD = "core.primary_domain"
+_INDUSTRY_FIELD = "core.industry"
+_HQ_LOCATION_FIELD = "core.hq_location"
 _HIRING_VELOCITY_FIELD = "account.hiring_velocity_eng"
 _TECH_STACK_FIELD = "core.primary_tech_stack"
 _ENGINEERING_QUERY = "job_function EQ 'Software Engineer'"
@@ -63,10 +67,33 @@ _ENGINEERING_QUERY = "job_function EQ 'Software Engineer'"
 # identity attributes below are documented as costing nothing, so selecting them keeps the request
 # at its two-credit bound while making the response normalizable.
 _ORGANIZATION_FREE_ATTRIBUTES: Final[tuple[str, ...]] = ("id", "name", "url", "sumble_url")
-_ORGANIZATION_PAID_ATTRIBUTES: Final[tuple[str, ...]] = ("employee_count",)
+_ORGANIZATION_FIELD_ATTRIBUTES: Final[dict[str, str]] = {
+    _EMPLOYEE_COUNT_FIELD: "employee_count",
+    _INDUSTRY_FIELD: "industry",
+    _HQ_LOCATION_FIELD: "headquarters_country",
+}
+_ORGANIZATION_PAID_ATTRIBUTES: Final[tuple[str, ...]] = tuple(
+    _ORGANIZATION_FIELD_ATTRIBUTES.values()
+)
 
 type SumbleSourceKey = Literal["sumble_organizations", "sumble_jobs", "sumble_tech_stack"]
 type HttpFetcher = Callable[..., Any]
+
+
+def _json_member_span(key: str, value: object) -> str:
+    """Return an exact excerpt of the canonical immutable Sumble response artifact."""
+
+    return (
+        json.dumps(key, ensure_ascii=False)
+        + ":"
+        + json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    )
 
 
 class SumbleContractError(ResolverError):
@@ -114,6 +141,8 @@ class SumbleOrganizationAttributes(BaseModel):
     name: str | None = None
     url: str | None = None
     employee_count: int | None = Field(default=None, ge=0)
+    industry: str | None = None
+    headquarters_country: str | None = None
     status: str | None = None
     status_reason: str | None = None
     sumble_url: str | None = None
@@ -322,6 +351,46 @@ def _json_payload(payload: object, *, source_key: str) -> dict[str, JsonValue]:
         raise SumbleContractError(f"{source_key}: response must contain JSON values") from exc
 
 
+def organization_request(domain: str, *, field_keys: tuple[str, ...]) -> tuple[dict[str, Any], int]:
+    """Build the exact coalesced v9 organization wire body and documented maximum."""
+
+    unknown = sorted(set(field_keys) - {*_ORGANIZATION_FIELD_ATTRIBUTES, _PRIMARY_DOMAIN_FIELD})
+    if unknown:
+        raise ValueError(f"unsupported Sumble organization fields: {unknown!r}")
+    paid = sorted(
+        {
+            _ORGANIZATION_FIELD_ATTRIBUTES[field_key]
+            for field_key in field_keys
+            if field_key in _ORGANIZATION_FIELD_ATTRIBUTES
+        }
+    )
+    return (
+        {
+            "organizations": [{"url": domain}],
+            "select": {"attributes": [*_ORGANIZATION_FREE_ATTRIBUTES, *paid]},
+        },
+        1 + len(paid),
+    )
+
+
+def engineering_jobs_request(organization_id: int, *, limit: int = 1) -> tuple[dict[str, Any], int]:
+    """Build the bounded v9 engineering-jobs body; returned rows are the charged unit."""
+
+    if not 1 <= limit <= 200:
+        raise ValueError("Sumble jobs limit must be between 1 and 200")
+    return (
+        {
+            "filter": {
+                "organization_ids": [organization_id],
+                "query": {"query": _ENGINEERING_QUERY},
+            },
+            "select": {"attributes": []},
+            "limit": limit,
+        },
+        limit,
+    )
+
+
 class SumbleClient:
     """Minimal typed v9 client for the three first-wave core-data surfaces."""
 
@@ -343,6 +412,8 @@ class SumbleClient:
     def resolve_organization(
         self,
         domain: str,
+        *,
+        field_keys: tuple[str, ...] = (_EMPLOYEE_COUNT_FIELD,),
     ) -> SumbleSnapshot:
         # ``select`` is exhaustive, not additive: v9 returns *only* the attributes named here.
         # The identity attributes are documented as free ("1 credit per paid attribute requested
@@ -351,17 +422,8 @@ class SumbleClient:
         # the 2026-08-01 live match. Request every attribute the normalization keys on.
         #
         # Cost is therefore unchanged: 1 base credit + 1 paid attribute (``employee_count``) = 2.
-        estimated_max = 1 + len(_ORGANIZATION_PAID_ATTRIBUTES)
-        body: dict[str, Any] = {
-            "organizations": [{"url": domain}],
-            "select": {
-                "attributes": [
-                    *_ORGANIZATION_FREE_ATTRIBUTES,
-                    *_ORGANIZATION_PAID_ATTRIBUTES,
-                ]
-            },
-        }
-        return self._request(
+        body, estimated_max = organization_request(domain, field_keys=field_keys)
+        snapshot = self._request(
             source_key=ORGANIZATIONS_SOURCE_KEY,
             method="POST",
             path="/organizations",
@@ -369,6 +431,8 @@ class SumbleClient:
             response_model=SumbleOrganizationsResponse,
             estimated_max=estimated_max,
         )
+        _validate_requested_organization(snapshot.payload, requested_domain=domain)
+        return snapshot
 
     def engineering_jobs(self, organization_id: int, *, limit: int = 1) -> SumbleSnapshot:
         if not 1 <= limit <= 200:
@@ -379,21 +443,14 @@ class SumbleClient:
         # ``filter.query`` is v9's ``Query`` object (``{"query": "<advanced query>"}``), not the
         # bare string: ``JobsFilter.query`` is ``$ref: Query`` and ``JobsFilter`` forbids additional
         # properties, so a bare string is rejected HTTP 422 before any job is ever matched.
-        body: dict[str, Any] = {
-            "filter": {
-                "organization_ids": [organization_id],
-                "query": {"query": _ENGINEERING_QUERY},
-            },
-            "select": {"attributes": []},
-            "limit": limit,
-        }
+        body, estimated_max = engineering_jobs_request(organization_id, limit=limit)
         return self._request(
             source_key=JOBS_SOURCE_KEY,
             method="POST",
             path="/jobs",
             json_body=body,
             response_model=SumbleJobsResponse,
-            estimated_max=limit,
+            estimated_max=estimated_max,
         )
 
     def tech_stack(self, organization_id: int, *, allow_unbounded: bool = False) -> SumbleSnapshot:
@@ -474,7 +531,7 @@ def _identified_rows(
     )
     matched_count = response.matched_count
     if not identified and matched_count is not None and matched_count >= 1:
-        returned = sorted(
+        returned_attributes = sorted(
             {
                 str(name)
                 for row in response.organizations
@@ -484,11 +541,47 @@ def _identified_rows(
         raise SumbleSchemaDrift(
             f"{ORGANIZATIONS_SOURCE_KEY}: response reports matched_count={matched_count} but no "
             "returned organization carries the required 'id' and 'url' attributes "
-            f"(attributes present: {returned or ['<none>']}); the pinned select list "
+            f"(attributes present: {returned_attributes or ['<none>']}); the pinned select list "
             f"{[*_ORGANIZATION_FREE_ATTRIBUTES, *_ORGANIZATION_PAID_ATTRIBUTES]!r} and the live "
             "v9 contract have drifted"
         )
+    if len(identified) > 1:
+        raise SumbleSchemaDrift(
+            f"{ORGANIZATIONS_SOURCE_KEY}: one requested organization returned "
+            f"{len(identified)} identified matches"
+        )
+    for row in identified:
+        if row.input is not None and row.input.url:
+            requested = _canonical_domain(row.input.url)
+            returned_domain = _canonical_domain(row.attributes.url or "")
+            if not requested or not returned_domain or requested != returned_domain:
+                raise SumbleSchemaDrift(
+                    f"{ORGANIZATIONS_SOURCE_KEY}: returned organization domain does not match "
+                    "the echoed request domain"
+                )
     return identified
+
+
+def _canonical_domain(value: str) -> str:
+    candidate = value.strip()
+    if not candidate:
+        return ""
+    parsed = urlsplit(candidate if "://" in candidate else f"https://{candidate}")
+    host = (parsed.hostname or "").lower().rstrip(".")
+    return host[4:] if host.startswith("www.") else host
+
+
+def _validate_requested_organization(payload: Mapping[str, Any], *, requested_domain: str) -> None:
+    response = SumbleOrganizationsResponse.model_validate(payload)
+    identified = _identified_rows(response)
+    if not identified:
+        return
+    returned = _canonical_domain(identified[0].attributes.url or "")
+    requested = _canonical_domain(requested_domain)
+    if not requested or returned != requested:
+        raise SumbleSchemaDrift(
+            f"{ORGANIZATIONS_SOURCE_KEY}: returned organization domain does not match the request"
+        )
 
 
 def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[ResolvedField]:
@@ -505,6 +598,12 @@ def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[
                 row.attributes.employee_count,
                 source_url=source_url,
                 confidence=0.9,
+            ).model_copy(
+                update={
+                    "evidence_span": _json_member_span(
+                        "employee_count", row.attributes.employee_count
+                    )
+                }
             )
         ]
     if field.field_key == _PRIMARY_DOMAIN_FIELD and row.attributes.url:
@@ -514,6 +613,35 @@ def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[
                 row.attributes.url,
                 source_url=source_url,
                 confidence=0.98,
+            ).model_copy(
+                update={"evidence_span": _json_member_span("url", row.attributes.url)}
+            )
+        ]
+    if field.field_key == _INDUSTRY_FIELD and row.attributes.industry:
+        return [
+            resolved_field(
+                str(field.field_key),
+                row.attributes.industry,
+                source_url=source_url,
+                confidence=0.9,
+            ).model_copy(
+                update={
+                    "evidence_span": _json_member_span("industry", row.attributes.industry)
+                }
+            )
+        ]
+    if field.field_key == _HQ_LOCATION_FIELD and row.attributes.headquarters_country:
+        country = row.attributes.headquarters_country
+        return [
+            resolved_field(
+                str(field.field_key),
+                {"raw": country, "country": country, "country_code": country},
+                source_url=source_url,
+                confidence=0.88,
+            ).model_copy(
+                update={
+                    "evidence_span": _json_member_span("headquarters_country", country)
+                }
             )
         ]
     return []
@@ -540,16 +668,12 @@ def normalize_jobs(payload: Mapping[str, Any], field: FieldDef) -> list[Resolved
         return []
     response = SumbleJobsResponse.model_validate(payload)
     source_url = response.source_data_url or "https://sumble.com"
-    returned_ids = [row.job_id for row in response.jobs]
     return [
         ResolvedField(
             field_key=field.field_key,
             value=response.total,
             source_url=source_url,
-            evidence_span=(
-                f"query={_ENGINEERING_QUERY!r}; total={response.total}; "
-                f"returned_job_ids={returned_ids!r}"
-            ),
+            evidence_span=_json_member_span("total", response.total),
             confidence=0.85,
         )
     ]
@@ -570,21 +694,14 @@ def normalize_tech_stack(payload: Mapping[str, Any], field: FieldDef) -> list[Re
     )
     if not technologies:
         return []
-    evidence = [
-        {
-            "name": tech.name,
-            "job_post_used_count": tech.job_post_used_count,
-        }
-        for business_function in response.business_functions
-        for category in business_function.categories
-        for tech in category.technologies
-    ]
     return [
         ResolvedField(
             field_key=field.field_key,
             value=to_value_json(technologies),
             source_url=(f"{SUMBLE_API_BASE}/organizations/{response.organization_id}/techs"),
-            evidence_span=f"confirmed_used_technologies={evidence!r}",
+            evidence_span=_json_member_span(
+                "business_functions", payload.get("business_functions", [])
+            ),
             confidence=0.92,
         )
     ]
@@ -694,9 +811,11 @@ __all__ = [
     "SumbleUnboundedCreditRisk",
     "TECH_STACK_SOURCE_KEY",
     "build_sumble_resolvers",
+    "engineering_jobs_request",
     "matched_organization_id",
     "normalize_jobs",
     "normalize_organization",
     "normalize_tech_stack",
+    "organization_request",
     "register_sumble_resolvers",
 ]

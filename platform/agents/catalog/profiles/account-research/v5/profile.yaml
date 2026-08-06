@@ -1,0 +1,46 @@
+schema_version: "1"
+kind: profile
+name: account-research
+version: v5
+status: active
+role: account_research
+prompt:
+  name: account-research
+  version: v3
+  sha256: 7a87a5fff8d4e9691ea9318d2c96b4b075e807549f81dca9c86358f12b39c125
+skills:
+  - name: account-gap-research
+    version: v3
+    sha256: 67c15f9c8cd2faaa854f4b5691a99c4f13b8dbf36028f69fb4732c040cb2f46e
+tools:
+  - name: get_research_view
+    version: "1"
+    input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+    output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+  - name: research_account_gaps
+    version: "2"
+    input_schema_sha256: 78a44346c88752e3efcf8809b49ed09aaa7a7182bb80e5072b673ec62e4ac635
+    output_schema_sha256: ef4959afdd7669c57dfa2f4d531e47e85b2315935f1f663de292b652475f661e
+model:
+  model_id: openai/gpt-5.6-terra
+  timeout_s: 30.0
+  max_retries: 2
+  max_output_tokens: 4096
+  temperature: 0.0
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 3145728
+  max_file_bytes: 524288
+  max_file_count: 64
+  allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  readable_prefixes: [".deepagent", "inputs", "context", "work", "outputs"]
+  writable_prefixes: ["work", "outputs"]
+  retention_class: agent-ephemeral-v1
+delegation_roles: []
+delegation_tool_grants: {}
+max_delegation_depth: 0
+max_delegations: 0
+max_plan_nodes: 16
+turn_timeout_s: 150.0
+max_model_rounds: 12

@@ -489,9 +489,7 @@ class DerivationDependencyResolver:
                 (local_state, DerivationDependencyState.REVIEW_REQUIRED),
                 key=_STATE_PRECEDENCE.__getitem__,
             )
-            local_reasons = tuple(
-                dict.fromkeys(("verification_flagged", *local_reasons))
-            )
+            local_reasons = tuple(dict.fromkeys(("verification_flagged", *local_reasons)))
         if claim.claim_flavor is not ClaimFlavor.DERIVED:
             resolution = DerivationDependencyResolution(
                 claim_id=claim_id,
@@ -700,9 +698,7 @@ async def derivation_supports(
     conn: AsyncConnection, derived_claim_id: ClaimId
 ) -> tuple[ResearchSupportRef, ...]:
     """Ordered support references for one derived claim."""
-    return (await derivation_supports_batch(conn, (derived_claim_id,))).get(
-        derived_claim_id, ()
-    )
+    return (await derivation_supports_batch(conn, (derived_claim_id,))).get(derived_claim_id, ())
 
 
 async def affected_derivations(

@@ -31,6 +31,21 @@ def test_candidate_grounded_by_strong_key_or_source_url() -> None:
     assert only_url.has_strong_key is False
 
 
+def test_candidate_preserves_provider_org_map_inputs_without_treating_id_as_strong() -> None:
+    candidate = make_candidate(
+        source_url="https://provider.example/person/1001",
+        source_person_id="1001",
+        job_function="Operations",
+        job_level="VP",
+        team_names=("Patient Access",),
+        relationship_labels=("provider_inferred_team_membership",),
+        evidence_refs=("artifact-key",),
+    )
+    assert candidate.source_person_id == "1001"
+    assert candidate.team_names == ("Patient Access",)
+    assert candidate.has_strong_key is False
+
+
 def test_has_strong_key_ignores_blank() -> None:
     assert make_candidate(linkedin_url="   ", source_url="https://x").has_strong_key is False
 

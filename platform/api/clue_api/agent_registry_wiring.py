@@ -17,12 +17,17 @@ from clue_agents.registry import (
     AgentToolCatalog,
     AgentToolContract,
 )
+from clue_api.entity_research_quarantine import (
+    ENTITY_RESEARCH_AGENT_NOT_COMPOSED,
+    QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES,
+)
 from clue_toolbelt import ToolEffectClass, ToolRegistry, UnknownTool
 
 __all__ = [
     "C6_ACTIVE_PROFILE_VERSIONS",
     "C6_AGENT_TOOL_AUTHORITY",
     "C6_SURFACE_POLICIES",
+    "ACCOUNT_RESEARCH_UNIT_SURFACE",
     "STAGE0_CONVERSATION_TRIAL_SURFACE",
     "c6_roles_for_tool",
     "ToolRegistryAgentCatalog",
@@ -30,18 +35,22 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v12",
-    AgentRole.RESEARCH: "v4",
-    AgentRole.CONTENT_DRAFTER: "v4",
-    AgentRole.REVIEWER: "v4",
-    AgentRole.ACCOUNT_RESEARCH: "v3",
+    AgentRole.HEAD_OF_ABM: "v21",
+    AgentRole.RESEARCH: "v7",
+    AgentRole.CONTENT_DRAFTER: "v5",
+    AgentRole.REVIEWER: "v5",
 }
 
 
 # C6.7 live authority. Empty means structurally absent from every current model surface.
 C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
+    "approve_contact_research_selection": (),
     "adjust_budget": (),
     "compose_handoff": (
+        AgentRole.CONTENT_DRAFTER,
+        AgentRole.REVIEWER,
+    ),
+    "compose_contact_content_handoff": (
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,
     ),
@@ -50,15 +59,18 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "confirm_project_product": (),
     "decide_field_proposal": (),
     "decide_source_proposal": (),
+    "draft_account_research_directive": (AgentRole.HEAD_OF_ABM,),
+    "confirm_account_research_directive": (),
     "discover_accounts": (),
     "estimate_project": (),
+    "enrich_account_gaps": (),
+    "enrich_selected_accounts": (),
     "evaluate_stage0_readiness": (AgentRole.HEAD_OF_ABM,),
     "get_research_view": (
         AgentRole.HEAD_OF_ABM,
         AgentRole.RESEARCH,
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,
-        AgentRole.ACCOUNT_RESEARCH,
     ),
     "import_accounts": (),
     # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10). These are the tools the
@@ -69,19 +81,24 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # `test_c8_omission_resolution_contract.py` now refuses to let ship.
     "inspect_readiness_history": (AgentRole.HEAD_OF_ABM,),
     "inspect_statement_history": (AgentRole.HEAD_OF_ABM,),
+    "launch_account_deep": (),
+    "launch_account_research": (AgentRole.HEAD_OF_ABM,),
+    "launch_contact_research": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
     "pause_run": (),
-    "profile_contact": (AgentRole.RESEARCH,),
+    "profile_contact": (),
     "propose_field": (AgentRole.HEAD_OF_ABM,),
     "propose_source": (AgentRole.HEAD_OF_ABM,),
+    "read_account_research_run": (AgentRole.HEAD_OF_ABM,),
+    "read_contact_research_run": (AgentRole.HEAD_OF_ABM,),
     "record_interview_answer": (AgentRole.HEAD_OF_ABM,),
     "recheck_research_view": (),
-    "research_account_gaps": (AgentRole.ACCOUNT_RESEARCH,),
-    "resolve_committee": (AgentRole.RESEARCH,),
+    "research_account_gaps": (),
+    "resolve_committee": (),
     "resume_run": (),
     "retry_ingestion": (),
     "reverse_profile": (),
-    "run_deep_account": (AgentRole.RESEARCH,),
+    "run_deep_account": (),
     "run_verification": (AgentRole.RESEARCH,),
     "score_accounts": (),
     "start_confirmed_project_run": (AgentRole.HEAD_OF_ABM,),
@@ -98,12 +115,19 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
 #: every turn, and the agent's whole job is to converse and route what was said.
 STAGE0_CONVERSATION_TRIAL_SURFACE = "stage0_conversation_trial"
 
+#: The fleet-owned per-account unit executes the one-tool ``account-research-unit@1`` recipe.
+#: ``get_research_view`` belongs to the broader account-research role for conversational/read
+#: surfaces, but this bounded coverage unit has neither that tool nor its verification-policy pin
+#: in its C5 slot.  Resolve a named surface so the manifest, middleware, and installed tools all
+#: describe that narrower authority before the model wakes.
+ACCOUNT_RESEARCH_UNIT_SURFACE = "account_research_unit"
+
 #: PC-C8 §8: surface restrictions are enforced by tools that are *not installed*, never by prose in
 #: a shared skill or a context card. Each entry narrows one role's effective tool set on one named
 #: surface; the registry refuses a policy that withholds a tool the role's profile does not pin, so
 #: a rename cannot quietly restore a withheld capability.
 #:
-#: The trial withholds three tools, all for one reason — this surface is a manual conversation and
+#: The trial withholds four tools, all for one reason — this surface is a manual conversation and
 #: does no external research, and neither the model nor the platform captures anything on the
 #: agent's behalf:
 #:
@@ -120,6 +144,9 @@ STAGE0_CONVERSATION_TRIAL_SURFACE = "stage0_conversation_trial"
 #:   upload boundary (absent on this surface), so every reachable call would write an
 #:   ``actor='agent'`` capture record for a turn the platform already captured: durable noise with
 #:   misleading provenance. Defence in depth is unchanged — 1.2's lookup scoping stays.
+#: * ``enrich_selected_accounts`` and ``enrich_account_gaps`` are post-checkpoint provider-spend
+#:   boundaries. They have no honest Stage-0 use even though the broader Head-of-ABM role owns
+#:   those decisions.
 #:
 #: ``submit_ingestion`` is deliberately **kept**: it ingests an already-captured workspace artifact
 #: and performs no external research, so it does not cross this surface's boundary. So are the two
@@ -139,6 +166,8 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         role=AgentRole.HEAD_OF_ABM,
         withheld_tools=frozenset(
             {
+                "launch_account_research",
+                "launch_contact_research",
                 "start_recon",
                 "submit_onboarding_input",
                 "synthesize_icps",
@@ -165,6 +194,7 @@ _HUMAN_ONLY_TOOLS = frozenset(
         "adjust_budget",
         "confirm_icp",
         "confirm_project_product",
+        "confirm_account_research_directive",
         "decide_field_proposal",
         "decide_source_proposal",
         "override_stage0_readiness",
@@ -190,8 +220,12 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
 
     if name == "propose_field":
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
+    if name == "draft_account_research_directive":
+        return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@2" else ()
     if name == "research_account_gaps":
-        return (AgentRole.ACCOUNT_RESEARCH,) if address == "research_account_gaps@2" else ()
+        return ()
+    if name == "profile_contact":
+        return ()
     return C6_AGENT_TOOL_AUTHORITY.get(name, ())
 
 
@@ -203,8 +237,12 @@ def c6_roles_for_tool(address: str) -> tuple[AgentRole, ...]:
 
 
 def _unavailable_reason(address: str, name: str) -> str | None:
+    if address in QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES:
+        return ENTITY_RESEARCH_AGENT_NOT_COMPOSED
     if address == "research_account_gaps@1":
         return "replaced_by_replay_safe_v2"
+    if address == "profile_contact@1":
+        return "replaced_by_governed_v2"
     return _RESERVED_REASON.get(name)
 
 
@@ -293,7 +331,6 @@ def build_agent_profile_registry(
         AgentRole.RESEARCH,
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,
-        AgentRole.ACCOUNT_RESEARCH,
     ):
         expected = {
             descriptor.address

@@ -1,0 +1,10 @@
+{
+  "applies_to": ["sumble_v9", "exa_search"],
+  "fixture_kind": "owned_transport_envelope",
+  "status_code": 503,
+  "retry_after_seconds": null,
+  "expected_failure_class": "server",
+  "expected_pre_dispatch": "retryable",
+  "expected_post_dispatch": "spend_unknown",
+  "provider_body_contract": "opaque"
+}

@@ -21,6 +21,12 @@ The concrete durable-backed readers are built once at the ``clue_api`` root and 
 
 from __future__ import annotations
 
+from clue_projections.account_deep_steering import (
+    ACCOUNT_DEEP_STEERING_CARD_MEDIA_TYPE,
+    AccountDeepSteeringAccount,
+    AccountDeepSteeringCard,
+    AccountDeepSteeringLaunch,
+)
 from clue_projections.agents import (
     AgentArtifactView,
     AgentProgressView,
@@ -67,6 +73,11 @@ from clue_projections.research_coverage import (
     research_attempt_history,
     research_coverage,
 )
+from clue_projections.research_directives import (
+    ResearchDirectiveAccountPreview,
+    ResearchDirectivePreview,
+    project_research_directive_preview,
+)
 from clue_projections.research_views import (
     ResearchViewStatus,
     ResearchViewStatusPage,
@@ -111,6 +122,11 @@ __all__ = [
     "agent_telemetry",
     "agent_turn",
     "agent_turns_for_project",
+    # M8B O3 main-agent account-deep steering context
+    "ACCOUNT_DEEP_STEERING_CARD_MEDIA_TYPE",
+    "AccountDeepSteeringAccount",
+    "AccountDeepSteeringCard",
+    "AccountDeepSteeringLaunch",
     # DTOs
     "RunOverview",
     "AccountProgress",
@@ -141,6 +157,9 @@ __all__ = [
     "ResearchViewStatusPage",
     "research_view_statuses",
     "research_attempt_history",
+    "ResearchDirectiveAccountPreview",
+    "ResearchDirectivePreview",
+    "project_research_directive_preview",
     # Phase C2 proposals
     "ProposalScopeCard",
     "FieldProposalCard",

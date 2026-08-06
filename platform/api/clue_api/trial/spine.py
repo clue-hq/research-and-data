@@ -184,7 +184,6 @@ class ClueTrialSpine:
             gateway=gateway,
             storage=self._storage,
             channels=None,
-            committee_sources=(),
             session_factory=conn_factory,
         )
         self._views = ProductionResearchViewComposer()

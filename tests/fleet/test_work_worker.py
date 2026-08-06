@@ -157,6 +157,16 @@ class _Handler:
         )
 
 
+class _AtomicallyFinalizingHandler(_Handler):
+    async def handle(self, context: WorkContext) -> WorkResult:
+        self.contexts.append(context)
+        return WorkResult(
+            outcome="waiting_external",
+            references={"work_id": str(context.work_id)},
+            task_finalized=True,
+        )
+
+
 def _task(kind: FleetTaskKind) -> WorkTaskRow:
     now = _now()
     work_id = WorkId(uuid4())
@@ -212,5 +222,30 @@ def test_one_worker_drains_project_and_graph_handlers_with_generation() -> None:
 
         assert isinstance(queue, WorkQueue)
         assert isinstance(leases, WorkLeaseStore)
+
+    asyncio.run(scenario())
+
+
+def test_domain_atomic_wait_does_not_finish_entity_task_twice() -> None:
+    async def scenario() -> None:
+        entity_task = _task(FleetTaskKind.ENTITY_RESEARCH_JOB)
+        queue = _Queue([entity_task])
+        leases = _Leases()
+        handler = _AtomicallyFinalizingHandler(FleetTaskKind.ENTITY_RESEARCH_JOB)
+        worker = LeasedWorkWorker(
+            handlers=(handler,),
+            queue=queue,
+            leases=leases,
+            worker_id="entity-worker",
+            heartbeat_interval=10,
+            lease_ttl=timedelta(seconds=30),
+        )
+
+        assert await worker.drain_once()
+        assert handler.contexts[0].task_id == entity_task.task_id
+        # The entity store changed job + task in one transaction; the generic shell must not
+        # issue a second, non-atomic finish after the handler returns.
+        assert queue.finished == []
+        assert len(leases.released) == 1
 
     asyncio.run(scenario())

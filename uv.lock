@@ -628,6 +628,7 @@ dependencies = [
     { name = "clue-core" },
     { name = "clue-obs" },
     { name = "deepagents" },
+    { name = "langchain" },
     { name = "langchain-core" },
     { name = "pyyaml" },
 ]
@@ -637,6 +638,7 @@ requires-dist = [
     { name = "clue-core", editable = "libs/clue-core" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "deepagents", specifier = "==0.6.12" },
+    { name = "langchain", specifier = ">=1.3,<2" },
     { name = "langchain-core", specifier = ">=1.5,<2" },
     { name = "pyyaml", specifier = ">=6,<7" },
 ]
@@ -651,6 +653,7 @@ dependencies = [
     { name = "clue-core" },
     { name = "clue-db" },
     { name = "clue-execution" },
+    { name = "clue-fleet" },
     { name = "clue-obs" },
     { name = "clue-research" },
     { name = "clue-storage" },
@@ -666,6 +669,7 @@ requires-dist = [
     { name = "clue-core", editable = "libs/clue-core" },
     { name = "clue-db", editable = "libs/clue-db" },
     { name = "clue-execution", editable = "platform/execution" },
+    { name = "clue-fleet", editable = "platform/fleet" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "clue-research", editable = "subsystems/research" },
     { name = "clue-storage", editable = "libs/clue-storage" },

@@ -47,22 +47,22 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        # head-of-abm@v12 / stage0-interview@v9 — dynamic Client-KB proposal/materialization
+        # head-of-abm@v21 and research-specialist@v7 cut over entity research to the
+        # separately launched M8D create_agent fleets while retaining historical exact replay;
+        # the exact-set O2 launch and truthful A2 draft preview remain the governed primitives,
+        # alongside S1/E1 targeted-enrichment and dynamic Client-KB proposal/materialization
         # guidance and propose_field@2, on top of PC-C8 §6c's quote-by-text bump. The statement
         # authors the verbatim span instead of character offsets, and a typed claim value is
         # admitted by the entailment judge, on top of slice 1's closing bump (the §7
         # inspection-tool grants + delegation withholding) and task 1.4's:
         # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
         # nested authority, and B1 layer 2's engine-defaulted claim entity.
-        AgentRole.HEAD_OF_ABM: "d5df9357891f3894e9182331842469aa7f27c53b3040eac8b47966940d7f05c9",
-        AgentRole.RESEARCH: "4bf40eee2b8e6f6d98a0ee295e3ff900243e162eae53cc6c8852e70521aef391",
+        AgentRole.HEAD_OF_ABM: ("aa10ba488c903d6ff911c6b54ddaad6c1a596a715876f00ca26c0a98ab4a1a28"),
+        AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
-            "f4095d62dfc9bc734aa2acb111270a3f10e2242a252e96c229d464435b7a90bc"
+            "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
         ),
-        AgentRole.REVIEWER: "b4859443637154e4e10a6598f17c2f54b0688f6faea2696e9a7ff4cf3a3f0deb",
-        AgentRole.ACCOUNT_RESEARCH: (
-            "c4aa0f4f8c3d660d0dc5ef2ee85b7e39077c07f918d22118a5800cb63da35b06"
-        ),
+        AgentRole.REVIEWER: "1cd0fc4e5c8276983c5e0b8d9a83904be82a95ed57f27c9c1dfd9f5a3887df46",
     }
     toolbelt = build_toolbelt(storage=None, gateway=None)
     for role, digest in expected_manifests.items():
@@ -82,15 +82,15 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         assert all(body.ref in resolved.resource_map for body in resolved.resource_snapshot.bodies)
 
 
-def test_registry_projection_is_body_free_host_free_and_marks_account_role_active(
+def test_registry_projection_is_body_free_host_free_and_marks_account_role_planned(
     registry: AgentProfileRegistry,
 ) -> None:
     projection = registry.projection()
     payload = json.dumps(projection.model_dump(mode="json"), sort_keys=True)
     entries = {entry.role: entry for entry in projection.roles}
 
-    assert entries[AgentRole.ACCOUNT_RESEARCH].status is RoleRegistryStatus.ACTIVE
-    assert entries[AgentRole.ACCOUNT_RESEARCH].profile is not None
+    assert entries[AgentRole.ACCOUNT_RESEARCH].status is RoleRegistryStatus.PLANNED
+    assert entries[AgentRole.ACCOUNT_RESEARCH].profile is None
     assert entries[AgentRole.HEAD_OF_ABM].status is RoleRegistryStatus.ACTIVE
     assert "You are the platform Head of ABM" not in payload
     assert "Ask from the current readiness gaps" not in payload
@@ -112,16 +112,21 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # The two proposal v1 addresses remain installed only for historical recipe replay. They add
     # inventory entries but cannot enter the current model surface; only propose_field@2 carries
     # the dynamic Client-KB authority.
-    assert len(by_address) == 40
+    assert len(by_address) == 55
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
+        "draft_account_research_directive@2",
         "evaluate_stage0_readiness@1",
         "get_research_view@1",
         "inspect_readiness_history@1",
         "inspect_statement_history@1",
+        "launch_account_research@1",
+        "launch_contact_research@1",
         "propose_field@2",
         "propose_source@1",
+        "read_account_research_run@1",
+        "read_contact_research_run@1",
         "record_interview_answer@1",
         "start_confirmed_project_run@1",
         "start_recon@1",
@@ -130,17 +135,43 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "synthesize_icps@1",
     }
     assert by_address["confirm_project_product@1"].status is AgentCapabilityStatus.HUMAN_ONLY
+    assert (
+        by_address["confirm_account_research_directive@2"].status
+        is AgentCapabilityStatus.HUMAN_ONLY
+    )
+    assert (
+        by_address["approve_contact_research_selection@1"].status
+        is AgentCapabilityStatus.HUMAN_ONLY
+    )
+    assert (
+        by_address["draft_account_research_directive@1"].status
+        is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    )
     assert by_address["confirm_icp@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["override_stage0_readiness@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["propose_field@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["propose_field@2"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["enrich_account_gaps@1"].status is AgentCapabilityStatus.REPLAY_BLOCKED
+    assert by_address["enrich_selected_accounts@1"].status is AgentCapabilityStatus.REPLAY_BLOCKED
+    assert by_address["launch_account_deep@1"].status is AgentCapabilityStatus.REPLAY_BLOCKED
     assert by_address["research_account_gaps@1"].status is AgentCapabilityStatus.REPLAY_BLOCKED
-    assert by_address["research_account_gaps@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["research_account_gaps@2"].status is AgentCapabilityStatus.REPLAY_BLOCKED
+    assert by_address["profile_contact@1"].status is AgentCapabilityStatus.REPLAY_BLOCKED
     assert "framework task/subagent: unavailable" in head.generated_resource_map
     assert "delegate_specialist: available" in head.generated_resource_map
     assert "execute/shell/process: unavailable" in head.generated_resource_map
     assert "/Users/" not in head.generated_resource_map
     assert head.system_prompt.endswith("## End resolved resource and capability map")
+
+
+def test_account_research_role_and_surface_are_not_active(
+    registry: AgentProfileRegistry,
+) -> None:
+    assert AgentRole.ACCOUNT_RESEARCH not in C6_ACTIVE_PROFILE_VERSIONS
+    with pytest.raises(AgentCatalogError, match="no active profile"):
+        registry.resolve(AgentRole.ACCOUNT_RESEARCH)
+    with pytest.raises(AgentCatalogError, match="no surface"):
+        registry.resolve(AgentRole.ACCOUNT_RESEARCH, surface="account_research_unit")
 
 
 def test_progressive_skill_disclosure_exposes_metadata_before_body(
@@ -149,8 +180,9 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
     disclosures = head.skill_disclosures()
 
-    assert len(disclosures) == 1
+    assert len(disclosures) == 2
     assert disclosures[0].resource.address == "skill:stage0-interview@v9"
+    assert disclosures[1].resource.address == "skill:account-deep-steering@v2"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -163,7 +195,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     (
         (
             AgentRole.RESEARCH,
-            "skill:research-task@v1",
+            "skill:research-task@v4",
             "outputs/research-strategy.md",
             180.0,
             16,
@@ -202,24 +234,14 @@ def test_c66_specialists_freeze_skill_output_budget_and_no_child_delegation(
     assert "delegate_specialist: unavailable" in resolved.generated_resource_map
 
 
-def test_c67_account_profile_has_read_plus_one_write_tool_and_no_self_evaluator_or_delegation(
+def test_c67_account_deepagent_profile_is_historical_only(
     registry: AgentProfileRegistry,
 ) -> None:
-    resolved = registry.resolve(AgentRole.ACCOUNT_RESEARCH)
-
-    assert [item.address for item in resolved.profile.tools] == [
-        "get_research_view@1",
-        "research_account_gaps@2",
-    ]
-    assert [item.resource.address for item in resolved.skill_disclosures()] == [
-        "skill:account-gap-research@v1"
-    ]
-    assert resolved.profile.delegation_roles == ()
-    assert resolved.profile.max_delegations == 0
-    assert "The independent C1 evaluator is not you" in resolved.prompt_body
-    skill = resolved.open_skill("skill:account-gap-research@v1")
-    assert "creates no attempt or terminal decision" in skill
-    assert "GoalJudge" not in resolved.generated_resource_map
+    del registry
+    historical = CATALOG_ROOT / "profiles" / "account-research" / "v3" / "profile.yaml"
+    assert historical.is_file()
+    assert "research_account_gaps" in historical.read_text()
+    assert AgentRole.ACCOUNT_RESEARCH not in C6_ACTIVE_PROFILE_VERSIONS
 
 
 @pytest.mark.parametrize(
@@ -288,8 +310,9 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
 
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "evaluate_stage0_readiness@1" not in {pin.address for pin in head.profile.tools}
-    assert head.profile.skills == ()
-    assert head.skill_disclosures() == ()
+    assert [item.resource.address for item in head.skill_disclosures()] == [
+        "skill:account-deep-steering@v2"
+    ]
 
 
 def test_resolved_snapshot_materializes_through_c61_backend(
@@ -317,7 +340,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v3/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v4/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(

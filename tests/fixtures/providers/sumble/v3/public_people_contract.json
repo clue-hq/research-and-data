@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-08-05",
+  "classification": "public_documentation_reference_only",
+  "runtime_authorized": false,
+  "api_version": "v3",
+  "method": "POST",
+  "endpoint": "/v3/people/find",
+  "official_references": [
+    "https://docs.sumble.com/api/api",
+    "https://docs.sumble.com/api/people",
+    "https://docs.sumble.com/our-data/filter-reference",
+    "https://docs.sumble.com/our-data"
+  ],
+  "documented_request_capabilities": [
+    "organization filter",
+    "job function filter",
+    "job level filter",
+    "country filter",
+    "bounded limit and offset"
+  ],
+  "documented_response_fields": [
+    "person id",
+    "provider person URL",
+    "LinkedIn URL",
+    "name",
+    "job title",
+    "job function",
+    "job level",
+    "location",
+    "country",
+    "current-role start date"
+  ],
+  "documented_charge_event": "one credit per returned person",
+  "documented_contact_channels": [],
+  "relationship_to_runtime": "The branch retains its separately pinned and entitled v9 contract. This public v3 reference does not authorize a runtime migration or any email/phone reveal."
+}

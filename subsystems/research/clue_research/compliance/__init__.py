@@ -15,6 +15,7 @@ from __future__ import annotations
 from clue_research.compliance.current_use import latest_use_decisions, standing_objections
 from clue_research.compliance.dsar import (
     ERASE_ALL,
+    ContactResearchPrivacyStopper,
     DataSubjectExport,
     DataSubjectRights,
     DataSubjectRightsImpl,
@@ -107,6 +108,7 @@ __all__ = [
     # M10.5 — DSAR / erasure (tombstone) + retention sweep
     "DataSubjectRights",
     "DataSubjectRightsImpl",
+    "ContactResearchPrivacyStopper",
     "RetentionSweep",
     "DataSubjectExport",
     "ErasureScope",

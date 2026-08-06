@@ -1,0 +1,11 @@
+{
+  "requestId": "exa-contact-c3-empty",
+  "results": [],
+  "output": {
+    "content": {
+      "f_636f6e746163742e66616365742e7075626c69636174696f6e73": null
+    },
+    "grounding": []
+  },
+  "costDollars": {"total": 0.05}
+}

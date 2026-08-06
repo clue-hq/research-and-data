@@ -118,7 +118,18 @@ class InstantHandler:
         self.phase = phase
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
-        return PhaseResult(status=PhaseStatus.COMPLETED, payload={"stub": self.phase.value})
+        del ctx
+        payload: dict[str, Any] = {"stub": self.phase.value}
+        if self.phase is ProjectPhase.TIER_CHECKPOINT:
+            # This fleet-only crash harness has no human surface. Model its fixed, pre-authorized
+            # test decision explicitly so the real post-seal DB trigger remains exercised.
+            payload.update(
+                {
+                    "checkpoint_status": "resumed",
+                    "decision_action": "approve",
+                }
+            )
+        return PhaseResult(status=PhaseStatus.COMPLETED, payload=payload)
 
 
 class StubDeepHandler:

@@ -40,6 +40,7 @@ def _entry(
     requires_adapter: str | None = None,
     geo_coverage: tuple[str, ...] = (),
     freshness_profile: str | None = None,
+    version: int = 1,
 ) -> RegistrySourceManifest:
     return RegistrySourceManifest(
         manifest=SourceManifest(
@@ -57,11 +58,44 @@ def _entry(
         auth_ref=auth_ref,
         rate_limit=rate_limit,
         requires_adapter=requires_adapter,
+        version=version,
     )
 
 
 # Tier-1 deterministic structured providers (substrate §4/§12; "real verifiable data, zero LLM").
 SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
+    # Exa Websets is a structured API transport over Exa's web verification/research system. The
+    # API transport does not make every returned web fact tier 1: field materialization chooses the
+    # claim tier from its references. The manifest tier is the conservative discovery-provenance
+    # default only (discovery claims never win current-value merge).
+    _entry(
+        "exa_websets",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.BOTH,
+        tier=2,
+        yields=(
+            "core.account_name",
+            "core.primary_domain",
+            "core.employee_count",
+            "core.industry",
+            "core.company_about",
+            "core.hq_location",
+            "core.annual_revenue",
+            "core.revenue_band",
+            "core.company_linkedin_url",
+            "core.company_email",
+            "core.company_phone",
+            "core.work_email",
+            "core.direct_phone",
+            "core.primary_tech_stack",
+            "account.total_funding",
+            "account.recent_funding",
+        ),
+        provider="exa",
+        auth_ref="CLUE_EXA_API_KEY",
+        freshness_profile="operation_window",
+        version=3,
+    ),
     _entry(
         "clay",
         modality=Modality.STRUCTURED,
@@ -98,6 +132,19 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         freshness_profile="daily",
     ),
     _entry(
+        "channel_validator",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.CONTACT,
+        tier=1,
+        yields=("core.work_email", "core.direct_phone"),
+        provider="channel-validator",
+        # The concrete independent validator is selected and injected at composition time. This
+        # provider-neutral seam must not invent an unresolvable credential reference.
+        auth_ref=None,
+        freshness_profile="operation_window",
+        version=1,
+    ),
+    _entry(
         "builtwith",
         modality=Modality.STRUCTURED,
         entity_scope=EntityScope.ACCOUNT,
@@ -117,11 +164,17 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         modality=Modality.STRUCTURED,
         entity_scope=EntityScope.ACCOUNT,
         tier=1,
-        yields=("core.employee_count", "core.primary_domain"),
+        yields=(
+            "core.employee_count",
+            "core.primary_domain",
+            "core.industry",
+            "core.hq_location",
+        ),
         provider="sumble",
         auth_ref="CLUE_SUMBLE_API_KEY",
         rate_limit={"requests_per_second": 10},
         freshness_profile="daily",
+        version=2,
     ),
     _entry(
         "sumble_jobs",
@@ -141,6 +194,36 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         tier=1,
         yields=("core.primary_tech_stack",),
         provider="sumble",
+        auth_ref="CLUE_SUMBLE_API_KEY",
+        rate_limit={"requests_per_second": 10},
+        freshness_profile="daily",
+    ),
+    # S2 bounded organization-map / committee enumeration. These are not waterfall field
+    # resolvers, but they still need registry identities so the shared pre-spend gate can validate
+    # the exact source key instead of accepting an arbitrary tier-1 people provider. Provider
+    # credits are settled by the durable committee-acquisition receipt, so manifest cost is zero.
+    _entry(
+        "sumble_teams",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=1,
+        yields=("contact",),
+        provider="sumble",
+        cost_cents=Decimal(0),
+        identity_binding=IdentityBinding.WEAK,
+        auth_ref="CLUE_SUMBLE_API_KEY",
+        rate_limit={"requests_per_second": 10},
+        freshness_profile="daily",
+    ),
+    _entry(
+        "sumble_people",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=1,
+        yields=("contact",),
+        provider="sumble",
+        cost_cents=Decimal(0),
+        identity_binding=IdentityBinding.WEAK,
         auth_ref="CLUE_SUMBLE_API_KEY",
         rate_limit={"requests_per_second": 10},
         freshness_profile="daily",
@@ -252,6 +335,20 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         provider="parallel",
         cost_cents=Decimal(10),
         auth_ref="CLUE_PARALLEL_API_KEY",
+    ),
+    # Internal, governed LLM source used only after person admission to classify an already known
+    # contact's committee role. It is not a people-discovery source or waterfall resolver;
+    # registration gives the exact-source pre-spend gate a real authority row. Gateway receipts
+    # own the model cost, so the manifest stays zero-cost to avoid double counting.
+    _entry(
+        "llm_role_inference",
+        modality=Modality.CONVERSATION,
+        entity_scope=EntityScope.CONTACT,
+        tier=4,
+        yields=("contact",),
+        provider="llm_gateway",
+        cost_cents=Decimal(0),
+        freshness_profile="operation_window",
     ),
 )
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any, cast
@@ -9,6 +11,7 @@ from uuid import UUID
 import pytest
 
 from clue_agents import (
+    AgentExecutionStatus,
     AgentPlan,
     AgentPlanPolicy,
     AgentPlanRejected,
@@ -16,6 +19,7 @@ from clue_agents import (
     AgentResourceRef,
     AgentRole,
     ArtifactRef,
+    GovernedOperationReceipt,
     ModelPolicy,
     ResolvedAgentProfile,
     ResourceKind,
@@ -119,7 +123,36 @@ class _Journal:
 
     async def load_receipts(self, **kwargs: Any) -> tuple[object, ...]:
         del kwargs
-        return ()
+        return tuple(
+            GovernedOperationReceipt(
+                node_key=item["operation"].node_key,
+                operation_id=item["operation"].operation_id,
+                kind="tool",
+                address=item["operation"].address,
+                status=AgentExecutionStatus.COMPLETED,
+                replayed=item["result"].replayed,
+                artifact_refs=(item["result_ref"],),
+            )
+            for item in self.results
+        )
+
+
+class _NoFinalizationResult:
+    def mappings(self) -> _NoFinalizationResult:
+        return self
+
+    def one_or_none(self) -> None:
+        return None
+
+
+class _NoFinalizationConn:
+    async def execute(self, *_args: Any, **_kwargs: Any) -> _NoFinalizationResult:
+        return _NoFinalizationResult()
+
+
+@asynccontextmanager
+async def _no_finalization_conn() -> AsyncIterator[_NoFinalizationConn]:
+    yield _NoFinalizationConn()
 
 
 class _Executor:
@@ -344,6 +377,7 @@ def _adapter(
         checkpointer_factory=cast(Any, lambda _: None),
         pin_provider=cast(Any, pin_provider),
         crash_hook=crash_hook,
+        conn_factory=cast(Any, _no_finalization_conn),
     )
     return adapter, trusted, pin, executor, journal
 
@@ -380,6 +414,21 @@ def test_compiler_validates_whole_c5_graph_then_routes_effect_through_dynamic_no
     assert executor.appended[0]["actor"] == "agent"
     assert executor.appended[0]["inputs"] == {"query": "current project"}
     assert len(journal.results) == 1
+
+
+def test_recovery_restores_reference_only_tool_projection_from_exact_artifact() -> None:
+    adapter, trusted, pin, _, _ = _adapter(allowed=("read_project@1",))
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+    assert progress[-1].status == "completed"
+
+    recovered = run_async(adapter.recover(execution_id=validated.execution_id))
+    receipts = recovered["operation_receipts"]
+    assert isinstance(receipts, tuple)
+    assert len(receipts) == 1
+    receipt = receipts[0]
+    assert isinstance(receipt, GovernedOperationReceipt)
+    assert receipt.reference_values == {"object_ref": "project-1"}
 
 
 def test_agent_path_resolves_and_forwards_the_same_dynamic_resource_pins_as_recipe0() -> None:

@@ -47,6 +47,7 @@ from clue_research.resolvers import (
 )
 from clue_research.resolvers.base import ResolvedField
 from clue_research.sources import StopReason, bind_resolver, resolve_field
+from tests._workspace import seed_workspace
 
 from .conftest import CountingBackend, RaisingBackend, rollback_conn, run_async
 
@@ -65,10 +66,18 @@ def _contact() -> Entity:
 
 
 def _field(
-    tier_plan: tuple[str, ...], *, field_key: str = "core.employee_count", value_type: str = "int"
+    tier_plan: tuple[str, ...],
+    *,
+    field_key: str = "core.employee_count",
+    value_type: str = "int",
+    reuse_scope: ReuseScope | None = None,
 ) -> FieldDef:
     return FieldDef(
-        field_key=field_key, value_type=value_type, tier_plan=tier_plan, pass_kind=PassKind.SCORING
+        field_key=field_key,
+        value_type=value_type,
+        tier_plan=tier_plan,
+        pass_kind=PassKind.SCORING,
+        reuse_scope=reuse_scope,
     )
 
 
@@ -347,6 +356,7 @@ def test_contact_binding_is_stamped_from_the_manifest_not_the_placeholder() -> N
     # used only a WEAK manifest, could not tell them apart).
     async def _run() -> None:
         async with rollback_conn() as conn:
+            workspace_id = await seed_workspace(conn, "ws-test")
             _bind("crm", [_rf("core.work_email", "jordan@acme.com", 0.9)], Decimal(0))
             _bind("apollo", [_rf("core.work_email", "alex@acme.com", 0.9)], Decimal(3))
 
@@ -354,9 +364,15 @@ def test_contact_binding_is_stamped_from_the_manifest_not_the_placeholder() -> N
             await resolve_field(
                 conn,
                 strong_contact,
-                _field(("crm",), field_key="core.work_email", value_type="str"),
+                _field(
+                    ("crm",),
+                    field_key="core.work_email",
+                    value_type="str",
+                    reuse_scope=ReuseScope.TENANT_PRIVATE,
+                ),
                 mode=ResearchMode.CONTACT_PROFILING,
                 run_id=new_run_id(),
+                workspace_id=workspace_id,
             )
             (strong_claim,) = await claims_for(
                 conn, strong_contact.entity_id, "core.work_email", scope=ALL_WORKSPACES
@@ -377,9 +393,15 @@ def test_contact_binding_is_stamped_from_the_manifest_not_the_placeholder() -> N
             await resolve_field(
                 conn,
                 weak_contact,
-                _field(("apollo",), field_key="core.work_email", value_type="str"),
+                _field(
+                    ("apollo",),
+                    field_key="core.work_email",
+                    value_type="str",
+                    reuse_scope=ReuseScope.TENANT_PRIVATE,
+                ),
                 mode=ResearchMode.CONTACT_PROFILING,
                 run_id=new_run_id(),
+                workspace_id=workspace_id,
             )
             (weak_claim,) = await claims_for(
                 conn, weak_contact.entity_id, "core.work_email", scope=ALL_WORKSPACES

@@ -1,0 +1,58 @@
+schema_version: "1"
+kind: profile
+name: research-specialist
+version: v6
+status: active
+role: research
+prompt:
+  name: research-specialist
+  version: v2
+  sha256: 2c65b9ce4b52d1f879cda9f5bd01c6d9be28ff8ec83c185840b5ea7a2489884f
+skills:
+  - name: research-task
+    version: v3
+    sha256: a9db810ca45a0a553fa86fd4449a42c795070f139a24e10996afeeb76965b374
+tools:
+  - name: get_research_view
+    version: "1"
+    input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+    output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+  - name: profile_contact
+    version: "2"
+    input_schema_sha256: 32be4a74c7d2ae723ea54461b5f3382d62c300bf684a288a4e2883c0efcc2aec
+    output_schema_sha256: 037c039841fb2c923487ffc198e1b9ec881a4e548ffb24678f18cd86649340a7
+  - name: resolve_committee
+    version: "1"
+    input_schema_sha256: 8c32e979c0a7a1a49ea093e19ac0e9536d40b841dad386fb6ff31fa8125a8855
+    output_schema_sha256: 8cbc508a6f14a781949ac413226fe346f7e07a4ffe69519f0226f7c1283beb25
+  - name: run_deep_account
+    version: "1"
+    input_schema_sha256: 846e72bf981e77feba6f8e56e401168982f37b789e91edf96fc23017f5ad3d7f
+    output_schema_sha256: 3038c313bfffccbf676f689f4ad856d026f8a135c7d0ce102c7e623aa6ad1f23
+  - name: run_verification
+    version: "1"
+    input_schema_sha256: a331a001f6b269a9daa97f2d861342d7dfae86a0e75a942ca8f1f4f9d302b0b2
+    output_schema_sha256: d93aeddfdd146ca7bc8dba48b2fcac40415934659c495905255dae3ceb32d91b
+model:
+  model_id: openai/gpt-5.6-terra
+  timeout_s: 30.0
+  max_retries: 2
+  max_output_tokens: 6144
+  temperature: 0.0
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 6291456
+  max_file_bytes: 1048576
+  max_file_count: 120
+  allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  readable_prefixes: [".deepagent", "inputs", "context", "work", "outputs"]
+  writable_prefixes: ["work", "outputs"]
+  retention_class: agent-ephemeral-v1
+delegation_roles: []
+delegation_tool_grants: {}
+max_delegation_depth: 0
+max_delegations: 0
+max_plan_nodes: 24
+turn_timeout_s: 180.0
+max_model_rounds: 16

@@ -20,6 +20,7 @@ from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver
 
 from ..conftest import (
+    TEST_FACET_SOURCE,
     FakeFacetResolver,
     insert_test_account,
     insert_test_contact,
@@ -31,7 +32,7 @@ from ..conftest import (
 
 _RUN = UUID("99999999-9999-9999-9999-999999999999")
 _TENANT = "acme"
-_FACET_SOURCE = "exa_deep"
+_FACET_SOURCE = TEST_FACET_SOURCE
 # A rich facet (a list with >= facet_subworker_min_values (3) items).
 _RICH = ["robotics", "running", "chess"]
 

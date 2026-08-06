@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -30,7 +31,10 @@ from clue_api.deep import (
 )
 from clue_core import (
     BudgetVerdict,
+    DeepExternalWait,
     EntityId,
+    ExternalResearchPreparation,
+    ExternalResearchPreparationOutcome,
     Persona,
     PhaseContext,
     PhaseHandler,
@@ -154,6 +158,29 @@ def _not_found_result(
         account=account,
         cost_cents=Decimal("1"),
         sub_phase=None,
+    )
+
+
+def _waiting_result(
+    *,
+    account_run_id: RunId,
+    entity_id: EntityId,
+    retry_after: datetime,
+    sub_phase: AccountRunSubPhase | None = AccountRunSubPhase.ACCOUNT_PROFILED,
+) -> AccountDeepResult:
+    return AccountDeepResult(
+        account_run_id=account_run_id,
+        entity_id=entity_id,
+        tier="top",
+        cost_cents=Decimal("5"),
+        sub_phase=sub_phase,
+        external_preparation=ExternalResearchPreparation(
+            outcome=ExternalResearchPreparationOutcome.WAITING_EXTERNAL,
+            operation_ref="committee-operation:op-1",
+            retry_after=retry_after,
+            audit_refs=("committee-eligibility:decision-1",),
+            reason_code="provider_pending",
+        ),
     )
 
 
@@ -363,6 +390,78 @@ def test_resolves_high_tier_set_and_processes_every_account() -> None:
         assert isinstance(accounts, list)
         assert {a["account_entity_id"] for a in accounts} == {str(e1), str(e2)}
         assert all(a["status"] == "completed" for a in accounts)
+
+    run_async(_run())
+
+
+def test_pending_account_returns_typed_deep_external_wait() -> None:
+    project_run_id = new_project_run_id()
+    entity_id = new_entity_id()
+    retry_after = datetime.now(UTC) + timedelta(seconds=45)
+    orch = FakeOrchestrator()
+    orch.returns(
+        entity_id,
+        _waiting_result(
+            account_run_id=deep_account_run_id(project_run_id, entity_id),
+            entity_id=entity_id,
+            retry_after=retry_after,
+        ),
+    )
+    handler = _handler(
+        scheduler=FakeScheduler(),
+        orchestrator=orch,
+        specs=(_spec(entity_id),),
+    )
+
+    async def _run() -> None:
+        result = await handler.run(_ctx(project_run_id))
+        assert result.status is PhaseStatus.WAITING_EXTERNAL
+        assert result.accounts_processed == 0
+        assert result.cost_cents == Decimal("5")
+        wait = DeepExternalWait.model_validate(result.payload)
+        assert wait.next_poll_at == retry_after
+        assert len(wait.pending_accounts) == 1
+        pending = wait.pending_accounts[0]
+        assert pending.account_entity_id == entity_id
+        assert pending.preparation.operation_ref == "committee-operation:op-1"
+
+    run_async(_run())
+
+
+def test_pre_profile_pending_account_is_waiting_not_failed() -> None:
+    project_run_id = new_project_run_id()
+    entity_id = new_entity_id()
+    retry_after = datetime.now(UTC) + timedelta(seconds=30)
+    orch = FakeOrchestrator()
+    orch.returns(
+        entity_id,
+        _waiting_result(
+            account_run_id=deep_account_run_id(project_run_id, entity_id),
+            entity_id=entity_id,
+            retry_after=retry_after,
+            sub_phase=None,
+        ),
+    )
+    finalized: list[RunId] = []
+
+    async def finalize(run_id: RunId) -> Decimal:
+        finalized.append(run_id)
+        return Decimal(0)
+
+    handler = _handler(
+        scheduler=FakeScheduler(),
+        orchestrator=orch,
+        specs=(_spec(entity_id),),
+        finalize_failed=finalize,
+    )
+
+    async def _run() -> None:
+        result = await handler.run(_ctx(project_run_id))
+        assert result.status is PhaseStatus.WAITING_EXTERNAL
+        assert result.accounts_processed == 0
+        assert finalized == []
+        wait = DeepExternalWait.model_validate(result.payload)
+        assert wait.pending_accounts[0].preparation.retry_after == retry_after
 
     run_async(_run())
 

@@ -17,12 +17,30 @@ existence leak).
 
 from __future__ import annotations
 
-from uuid import uuid4
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import text
 
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_core import ICPCreatedFrom, new_operation_id
+from clue_core import (
+    ContactResearchPolicyPin,
+    ContactResearchSelection,
+    ContactResearchSelectionBody,
+    ContactResearchTarget,
+    EntityType,
+    ExtractionMethod,
+    ICPCreatedFrom,
+    ProjectRunId,
+    ResearchDirectivePin,
+    ResearchMode,
+    discovery_claim,
+    new_contact_research_selection_id,
+    new_operation_id,
+)
+from clue_research.claimstore import insert_claim
+from clue_research.discovery_scoring.phases import project_discovery_run_id
 from clue_research.icp import (
     ScoringRubric,
     TierBand,
@@ -42,6 +60,46 @@ TTL = 86400.0
 _UUID = lambda: str(uuid4())  # noqa: E731
 
 
+def _matrix_contact_selection() -> ContactResearchSelection:
+    account_id = uuid4()
+    directive_id = uuid4()
+    policy = ContactResearchPolicyPin()
+    body = ContactResearchSelectionBody(
+        workspace_id="matrix",
+        project_id="project_missing",
+        project_run_id=uuid4(),
+        account_entity_id=account_id,
+        research_directive=ResearchDirectivePin(
+            directive_id=directive_id,
+            directive_ref=f"research-directive:{directive_id}:v1",
+            version=1,
+            canonical_json_sha256="0" * 64,
+            account_id=account_id,
+        ),
+        targets=(
+            ContactResearchTarget(
+                contact_entity_id=uuid4(),
+                committee_claim_ids=(uuid4(),),
+                strong_identity_claim_ids=(uuid4(),),
+                field_keys=("contact.current_title",),
+            ),
+        ),
+        policy=policy,
+        source_profile_ref="source-profile:matrix",
+        jurisdiction_policy_ref="jurisdiction:matrix",
+        use_policy_ref="use:matrix",
+        retention_policy_ref="retention:matrix",
+        budget_reservation_ref="budget:matrix",
+        approved_by="human:matrix",
+        approved_at=datetime.now(UTC),
+    )
+    return ContactResearchSelection.from_body(
+        body,
+        effective_policy=policy,
+        selection_id=new_contact_research_selection_id(),
+    )
+
+
 # tool -> ("precondition", exact reason tuple) | ("success", a required reference key)
 _MATRIX: dict[str, tuple[str, object]] = {
     "reverse_profile": ("success", "client_entity_id"),
@@ -50,13 +108,51 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "import_accounts": ("precondition", ("no_active_icp",)),
     "discover_accounts": ("precondition", ("run_not_found",)),
     "score_accounts": ("precondition", ("run_not_found",)),
+    "enrich_selected_accounts": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
+    "enrich_account_gaps": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
     "submit_tier_checkpoint": ("precondition", ("run_not_found",)),
     "submit_project_checkpoint": ("precondition", ("run_not_found",)),
-    "run_deep_account": ("precondition", ("no_active_icp",)),
-    "resolve_committee": ("precondition", ("account_not_found",)),
-    "profile_contact": ("precondition", ("account_not_found",)),
+    "launch_account_deep": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
+    # M8D R10: the promoted entity-research launch/read tools refuse fail-closed when the fleet
+    # services are not composed (this matrix builds the toolbelt without them).
+    "launch_account_research": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
+    "launch_contact_research": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
+    "read_account_research_run": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
+    "read_contact_research_run": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
+    "run_deep_account": ("precondition", ("entity_research_agent_not_composed",)),
+    "resolve_committee": ("precondition", ("entity_research_agent_not_composed",)),
+    "profile_contact": ("precondition", ("entity_research_agent_not_composed",)),
     "run_verification": ("precondition", ("run_not_found",)),
     "compose_handoff": ("precondition", ("run_not_found",)),
+    "compose_contact_content_handoff": (
+        "precondition",
+        ("contact_content_handoff_not_composed",),
+    ),
+    "approve_contact_research_selection": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
     "compose_dossier": ("precondition", ("research_view_feature_disabled",)),
     "get_research_view": ("precondition", ("research_view_feature_disabled",)),
     "recheck_research_view": ("precondition", ("research_view_feature_disabled",)),
@@ -70,7 +166,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "pause_run": ("precondition", ("run_not_found",)),
     "resume_run": ("precondition", ("run_not_found",)),
     "adjust_budget": ("precondition", ("run_not_found",)),
-    "research_account_gaps": ("precondition", ("run_not_found",)),
+    "research_account_gaps": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
     "propose_field": ("precondition", ("proposal_scope_not_found",)),
     "decide_field_proposal": ("precondition", ("proposal_not_found",)),
     "propose_source": ("precondition", ("proposal_scope_not_found",)),
@@ -87,6 +186,14 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("confirmed_stage0_context_not_found",),
     ),
+    "draft_account_research_directive": (
+        "precondition",
+        ("memory_write_not_configured",),
+    ),
+    "confirm_account_research_directive": (
+        "precondition",
+        ("research_directive_not_found",),
+    ),
 }
 
 
@@ -101,17 +208,85 @@ def _bodies() -> dict[str, dict[str, object]]:
         "import_accounts": {"client_entity_id": _UUID(), "icp_key": "matrix", "rows": []},
         "discover_accounts": {"project_run_id": _UUID()},
         "score_accounts": {"project_run_id": _UUID()},
+        "enrich_selected_accounts": {
+            "project_run_id": _UUID(),
+            "account_entity_ids": [_UUID()],
+            "field_keys": ["core.company_linkedin_url"],
+        },
+        "enrich_account_gaps": {
+            "project_run_id": _UUID(),
+            "account_entity_id": _UUID(),
+            "field_expected_value_credits": {"core.employee_count": "2"},
+            "provider_credit_cap": 2,
+        },
         "submit_tier_checkpoint": {"project_run_id": _UUID()},
         "submit_project_checkpoint": {"project_run_id": _UUID()},
+        "launch_account_deep": {
+            "project_run_id": _UUID(),
+            "research_directive_id": _UUID(),
+            "account_entity_ids": [_UUID()],
+            "approved_budget_cap_cents": "1",
+            "expected_estimated_cost_cents": "1",
+        },
+        "launch_account_research": {
+            "project_run_id": _UUID(),
+            "research_directive_id": _UUID(),
+            "account_entity_ids": [_UUID()],
+            "approved_budget_cap_cents": "1",
+            "expected_estimated_cost_cents": "1",
+        },
+        "launch_contact_research": {
+            "selection_id": _UUID(),
+            "selection_sha256": "0" * 64,
+            "approved_budget_cap_cents": "1",
+            "expected_estimated_cost_cents": "1",
+            "confirmed_at": "2026-08-06T00:00:00+00:00",
+        },
+        "read_account_research_run": {"research_run_id": _UUID()},
+        "read_contact_research_run": {"research_run_id": _UUID()},
         "run_deep_account": {"account_entity_id": _UUID(), "icp_key": "matrix", "tier": "top"},
         "resolve_committee": {"account_entity_id": _UUID()},
         "profile_contact": {
+            "project_run_id": _UUID(),
             "contact_entity_id": _UUID(),
             "account_entity_id": _UUID(),
-            "tier": "top",
         },
         "run_verification": {"project_run_id": _UUID()},
         "compose_handoff": {"project_run_id": _UUID()},
+        "compose_contact_content_handoff": {
+            "project_id": "project_missing",
+            "project_run_id": _UUID(),
+            "account_entity_id": _UUID(),
+        },
+        # M8D R10: the name default is the R7 entity-research approver (@2); the M8C selection
+        # tool remains version-addressable as @1 for its historical surface.
+        "approve_contact_research_selection": {
+            "request": {
+                "workspace_id": "ws-matrix",
+                "project_run_id": _UUID(),
+                "account_run_id": _UUID(),
+                "account_entity_id": _UUID(),
+                "targets": [
+                    {
+                        "contact_entity_id": _UUID(),
+                        "selection_basis": "committee_member",
+                        "strong_identity_claim_ids": [_UUID()],
+                        "association_evidence_claim_ids": [_UUID()],
+                        "committee_claim_ids": [_UUID()],
+                        "field_keys": ["contact.current_title"],
+                        "field_source_authority": [
+                            {
+                                "field_key": "contact.current_title",
+                                "source_keys": ["exa_deep"],
+                            }
+                        ],
+                        "directional_question_ids": ["q-matrix-1"],
+                        "budget_cap_cents": "10",
+                    }
+                ],
+            },
+            "approved_at": "2026-08-06T00:00:00+00:00",
+        },
         "compose_dossier": {
             "project_id": "project_missing",
             "project_run_id": _UUID(),
@@ -232,6 +407,34 @@ def _bodies() -> dict[str, dict[str, object]]:
             "icp_key": "matrix",
             "icp_version": 1,
         },
+        "draft_account_research_directive": {
+            "project_id": "project_missing",
+            "product_id": "product_missing",
+            "icp_key": "matrix",
+            "icp_version": 1,
+            "body": {
+                "account_scope": {"explicit_account_ids": [_UUID()]},
+                "field_keys": ["account.strategic_moves"],
+                "committee_plan": {},
+                "source_policy": {"allowed_source_keys": ["exa_deep"]},
+                "privacy_policy": {},
+                "effort_policy": {
+                    "tier": "top",
+                    "max_depth": 1,
+                    "max_fanout": 2,
+                    "budget_cap_cents": "100",
+                    "budget_envelope_ref": "budget:matrix",
+                    "recursion_policy_ref": "recursion:matrix",
+                    "freshness_policy_ref": "freshness:matrix",
+                },
+            },
+            "user_instruction": "Research the named account.",
+            "source_turn_ref": "turn:matrix",
+        },
+        "confirm_account_research_directive": {
+            "directive_id": _UUID(),
+            "expected_sha256": "0" * 64,
+        },
     }
 
 
@@ -256,6 +459,8 @@ def test_out_of_order_matrix(require_profiling_db: None) -> None:  # noqa: F811
             ctx = ToolContext(
                 workspace_id=ws,
                 actor="human",
+                actor_id="human:matrix",
+                action_ref="turn:matrix-confirm",
                 conn_factory=cf,
                 operation_id=new_operation_id(),
             )
@@ -366,8 +571,8 @@ def test_cross_workspace_run_access_refuses_run_not_found(  # noqa: F811
                 )
 
             # Control: the OWNING workspace is not refused run_not_found — pause_run succeeds, and
-            # score_accounts refuses on its real next precondition (discovery_not_run), proving the
-            # ws_B refusals above were scope-driven, not absence-driven.
+            # score_accounts refuses on the owning run's actual phase, proving the ws_B refusals
+            # above were scope-driven, not absence-driven.
             paused = await invoke_tool(
                 registry, "pause_run", {"project_run_id": run_id}, ctx_a, idempotency_ttl_s=TTL
             )
@@ -380,19 +585,103 @@ def test_cross_workspace_run_access_refuses_run_not_found(  # noqa: F811
                     ctx_a,
                     idempotency_ttl_s=TTL,
                 )
-            assert ei.value.reason_codes == ("discovery_not_run",)
+            assert ei.value.reason_codes == ("project_phase_not_scoring",)
 
     run_async(scenario())
 
 
-def test_account_tools_fail_closed_on_workspace_scope(  # noqa: F811
+def test_score_accounts_refuses_discovery_even_when_admitted_accounts_exist(
     require_profiling_db: None,
 ) -> None:
-    """[B3×research] slice 4 — the account guard is fail-closed, not a warning. The three
-    account-scoped spend tools (``run_deep_account`` / ``resolve_committee`` / ``profile_contact``)
-    load the account through ``_load_account``, so an account in another workspace refuses
-    ``account_not_found``, indistinguishable from a truly-absent id (no existence leak), while an
-    in-workspace account passes the guard."""
+    """Regression for the D5 crash window: seal/membership alone never authorizes scoring."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=True) as conn:
+            await seed_packs(conn)
+            from clue_api.composition import load_research_packs
+
+            await load_research_packs(conn)
+            cf = conn_session_factory(conn)
+            registry = build_toolbelt(storage=None, gateway=None, conn_factory=cf)
+            workspace_id = await seed_workspace(conn, f"ws_phase_{uuid4().hex[:8]}")
+            project = await seed_project(conn, workspace_id)
+            ctx = ToolContext(
+                workspace_id=workspace_id,
+                actor="human",
+                conn_factory=cf,
+                operation_id=new_operation_id(),
+            )
+            started = await invoke_tool(
+                registry,
+                "start_project_run",
+                {
+                    "project_id": project.project_id,
+                    "icp_key": "matrix",
+                    "icp_version": 1,
+                },
+                ctx,
+                idempotency_ttl_s=TTL,
+            )
+            run_id = ProjectRunId(UUID(started.references["project_run_id"]))
+            await conn.execute(
+                text(
+                    "UPDATE project_run SET phase = 'discovery', status = 'active' WHERE id = :id"
+                ),
+                {"id": run_id},
+            )
+            account_id = await insert_account_entity(
+                conn,
+                canonical_name="Already admitted",
+                primary_domain="admitted.example",
+                workspace_id=workspace_id,
+            )
+            await insert_claim(
+                conn,
+                discovery_claim(
+                    entity_id=account_id,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key="core.discovery_provenance",
+                    value_json={
+                        "matched_channel": "exa_websets",
+                        "matched_signal": "admitted",
+                        "discovery_confidence": 0.9,
+                    },
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.API,
+                    confidence=0.9,
+                    run_id=project_discovery_run_id(
+                        project_run_id=run_id,
+                        icp_key="matrix",
+                        icp_version=1,
+                    ),
+                    research_mode=ResearchMode.ACCOUNT_DISCOVERY,
+                    found_via="exa_websets",
+                    matched_signal="admitted",
+                    discovery_confidence=0.9,
+                    source_url="https://admitted.example",
+                ),
+            )
+
+            tool = registry.get("score_accounts")
+            inputs = tool.input_model(project_run_id=str(run_id))
+            failures = await tool.preconditions(inputs, ctx)
+            assert tuple(value.reason_code for value in failures) == ("project_phase_not_scoring",)
+            with pytest.raises(PreconditionFailed) as exc:
+                await tool.invoke(inputs, ctx)
+            assert exc.value.reason_codes == ("project_phase_not_scoring",)
+
+    run_async(scenario())
+
+
+def test_quarantined_account_tools_never_reach_legacy_workspace_scope(  # noqa: F811
+    require_profiling_db: None,
+) -> None:
+    """R1 quarantine runs before every retired account/contact research precondition.
+
+    New calls must not regain the legacy entity loaders simply because the supplied identity is
+    valid. Exact selection/locality enforcement belongs to the replacement entity-agent launch;
+    until it is composed, both valid and foreign ids fail with the same loud quarantine reason.
+    """
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=True) as conn:
@@ -456,27 +745,25 @@ def test_account_tools_fail_closed_on_workspace_scope(  # noqa: F811
                 }[name]
 
             async def codes(name: str, account_id: str) -> tuple[str, ...]:
-                tool = registry.get(name)
+                tool = registry.get(name, "1") if name == "profile_contact" else registry.get(name)
                 failures = await tool.preconditions(tool.input_model(**body(name, account_id)), ctx)
                 return tuple(f.reason_code for f in failures)
 
             for name in ("run_deep_account", "resolve_committee", "profile_contact"):
-                # In-workspace → the account guard passes (no account_not_found refusal).
-                assert "account_not_found" not in await codes(name, str(acc_a)), name
-                # Cross-workspace → refused exactly as an unknown id (no existence leak).
-                assert await codes(name, str(acc_b)) == ("account_not_found",), name
+                assert await codes(name, str(acc_a)) == ("entity_research_agent_not_composed",), (
+                    name
+                )
+                assert await codes(name, str(acc_b)) == ("entity_research_agent_not_composed",), (
+                    name
+                )
 
     run_async(scenario())
 
 
-def test_profile_contact_refuses_cross_account_contact(  # noqa: F811
+def test_quarantined_profile_contact_never_reaches_legacy_contact_scope(  # noqa: F811
     require_profiling_db: None,
 ) -> None:
-    """[B3×research] slice 4 — ``profile_contact`` profiles a committee member *of* the loaded
-    in-workspace account, so the contact must belong to that account. A contact under a *different*
-    account (and/or a different workspace) is refused ``contact_not_found`` — the same shape a
-    truly-absent id gets (no existence leak), even though the caller holds a valid in-workspace
-    account id. The happy path (contact under the in-workspace account) still passes cleanly."""
+    """R1 prevents valid or cross-account contacts from entering the retired research path."""
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=True) as conn:
@@ -510,7 +797,7 @@ def test_profile_contact_refuses_cross_account_contact(  # noqa: F811
                 conn, account_entity_id=acc_b, full_name="Kai Roe"
             )
 
-            tool = registry.get("profile_contact")
+            tool = registry.get("profile_contact", "1")
 
             async def codes(contact_id: str, account_id: str) -> tuple[str, ...]:
                 failures = await tool.preconditions(
@@ -523,11 +810,12 @@ def test_profile_contact_refuses_cross_account_contact(  # noqa: F811
                 )
                 return tuple(f.reason_code for f in failures)
 
-            # Happy path: contact under the in-workspace account → the contact guard passes.
-            assert "contact_not_found" not in await codes(str(contact_a), str(acc_a))
-            # A contact belonging to a *different* account/workspace, profiled against the
-            # in-workspace account → refused exactly as an unknown contact (no existence leak).
-            assert await codes(str(contact_b), str(acc_a)) == ("contact_not_found",)
+            assert await codes(str(contact_a), str(acc_a)) == (
+                "entity_research_agent_not_composed",
+            )
+            assert await codes(str(contact_b), str(acc_a)) == (
+                "entity_research_agent_not_composed",
+            )
 
     run_async(scenario())
 
@@ -537,17 +825,26 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     so the full set is assertable without a database."""
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
-    # 35 → 37 names with PC-C8's two read-only inspection tools; the two proposal writes and
-    # research_account_gaps retain @1 compatibility contracts alongside @2, yielding three
-    # additional descriptors.
-    assert len(registry.names()) == 37
-    assert len(registry) == 40
+    # 35 → 37 names with PC-C8's two read-only inspection tools, then 38 with E1's explicit
+    # targeted-enrichment boundary, 39 with S1's explicit Sumble gap boundary, and 41 with A2's
+    # draft/human-confirm direction tools; proposal writes, research_account_gaps, and the A2
+    # tools retain @1 replay contracts alongside their current @2 contracts; O2 adds the exact-set
+    # account-deep launch boundary; M8D R10 adds the promoted separately confirmed
+    # launch_account_research / launch_contact_research and their two run-read tools (44 → 48).
+    assert len(registry.names()) == 48
+    # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
+    # project-run-scoped profile_contact@2 as the name-only default.
+    assert len(registry) == 55
+    assert registry.descriptor("profile_contact").version == "2"
+    assert registry.descriptor("profile_contact", "1").version == "1"
     assert {
         item.address for item in registry.all_descriptors() if item.name == "research_account_gaps"
     } == {
         "research_account_gaps@1",
         "research_account_gaps@2",
     }
+    assert registry.descriptor("draft_account_research_directive").version == "2"
+    assert registry.descriptor("confirm_account_research_directive").version == "2"
 
 
 def test_duplicate_tool_registration_is_impossible_by_construction() -> None:

@@ -206,8 +206,7 @@ def test_real_account_view_and_owner_references_compose_from_persisted_authoriti
                 conn, pain_id, status=VerificationStatus.VERIFIED, corroborations=2
             )
             bulk_fields = tuple(
-                f"account.resonance.c7_query_probe_{index:02d}"
-                for index in range(probe_count)
+                f"account.resonance.c7_query_probe_{index:02d}" for index in range(probe_count)
             )
             await load_pack(
                 conn,
@@ -226,15 +225,9 @@ def test_real_account_view_and_owner_references_compose_from_persisted_authoriti
                             section_kind=ResearchSectionKind.INSIGHTS,
                             ordinal=100 + index,
                             context_scope=(
-                                "project_run_pinned"
-                                if index == 0
-                                else "subject_current"
+                                "project_run_pinned" if index == 0 else "subject_current"
                             ),
-                            product_mode=(
-                                "exact_required"
-                                if index == 0
-                                else "neutral_or_exact"
-                            ),
+                            product_mode=("exact_required" if index == 0 else "neutral_or_exact"),
                         ),
                     )
                     for index, field_key in enumerate(bulk_fields)
@@ -254,9 +247,7 @@ def test_real_account_view_and_owner_references_compose_from_persisted_authoriti
                     source_url=f"https://c7-reader.example/research/{index}",
                     evidence_span=f"Evidence for batch-governed fact {index}.",
                 )
-                stamped_bulk_claim = stamp_reuse(
-                    bulk_claim, workspace_id=_WORKSPACE
-                )
+                stamped_bulk_claim = stamp_reuse(bulk_claim, workspace_id=_WORKSPACE)
                 if index == 0:
                     stamped_bulk_claim = stamped_bulk_claim.model_copy(
                         update={"product_id": _PRODUCT}
@@ -345,13 +336,11 @@ def test_real_account_view_and_owner_references_compose_from_persisted_authoriti
                     "handoffs."
                 ),
             )
-            public_quote = stamp_reuse(
-                public_quote, workspace_id=_WORKSPACE
-            ).model_copy(update={"product_id": _PRODUCT})
-            public_quote_id = await insert_claim(conn, public_quote)
-            await record_verification(
-                conn, public_quote_id, status=VerificationStatus.VERIFIED
+            public_quote = stamp_reuse(public_quote, workspace_id=_WORKSPACE).model_copy(
+                update={"product_id": _PRODUCT}
             )
+            public_quote_id = await insert_claim(conn, public_quote)
+            await record_verification(conn, public_quote_id, status=VerificationStatus.VERIFIED)
             await save_references(
                 conn,
                 account_run_id,
@@ -433,9 +422,9 @@ def test_real_account_view_and_owner_references_compose_from_persisted_authoriti
                     if str(statement.field_key) == bulk_fields[0]
                 )
                 assert pinned_statement.value_json == "Batch-governed research fact 0."
-            assert {
-                action.kind.value for action in pain_statement.evidence_actions
-            } == {"open_public_source"}
+            assert {action.kind.value for action in pain_statement.evidence_actions} == {
+                "open_public_source"
+            }
 
             references = tuple(
                 item
@@ -451,9 +440,7 @@ def test_real_account_view_and_owner_references_compose_from_persisted_authoriti
                 ResearchDataSpecies.ACTIVITY,
             } <= species
             assert next(
-                item
-                for item in references
-                if item.data_species is ResearchDataSpecies.SCORE
+                item for item in references if item.data_species is ResearchDataSpecies.SCORE
             ).evidence_claim_ids == (pain_id,)
 
             resolved = await ProductionOwnerReferenceResolver(
@@ -487,9 +474,7 @@ def test_real_account_view_and_owner_references_compose_from_persisted_authoriti
             )
 
             with pytest.raises(ResearchViewCompositionError, match="subject_not_found"):
-                await composer.compose(
-                    request.model_copy(update={"product_id": "another-product"})
-                )
+                await composer.compose(request.model_copy(update={"product_id": "another-product"}))
 
             contact_request = ResearchViewReadRequest(
                 workspace_id=_WORKSPACE,
@@ -508,9 +493,7 @@ def test_real_account_view_and_owner_references_compose_from_persisted_authoriti
             assert [item.claim_id for item in quote_items] == [public_quote_id]
             assert quote_items[0].state.availability.value == "available"
             assert quote_items[0].state.outreach_decision.value == "denied"
-            assert _section(
-                contact_view, ResearchSectionKind.PERSONALIZATION
-            ).items == ()
+            assert _section(contact_view, ResearchSectionKind.PERSONALIZATION).items == ()
 
     run_async(scenario())
 
@@ -521,9 +504,7 @@ def test_personalization_cannot_launder_a_support_denied_for_outreach() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             await seed_workspace(conn, _WORKSPACE)
-            brand = await create_brand(
-                conn, workspace_id=_WORKSPACE, name="C7 governance brand"
-            )
+            brand = await create_brand(conn, workspace_id=_WORKSPACE, name="C7 governance brand")
             await create_product(
                 conn,
                 workspace_id=_WORKSPACE,
@@ -661,9 +642,7 @@ def test_personalization_cannot_launder_a_support_denied_for_outreach() -> None:
                 claim=derived,
                 supports=await derivation_supports(conn, derived.id),
             )
-            evaluator = CurrentStatementGovernanceEvaluator(
-                conn, member_entity_ids=(contact_id,)
-            )
+            evaluator = CurrentStatementGovernanceEvaluator(conn, member_entity_ids=(contact_id,))
             denied = (await evaluator.evaluate(request, subject, (candidate,)))[derived.id]
             assert denied.state.availability.value == "available"
             assert denied.state.outreach_decision.value == "denied"

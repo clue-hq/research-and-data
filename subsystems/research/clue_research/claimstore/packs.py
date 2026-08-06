@@ -125,6 +125,18 @@ def _seed(
 # ~90-day default freshness; signal/personal fields refresh faster (substrate §6).
 CORE_PACK: tuple[SeedField, ...] = (
     _seed(
+        "core.account_name",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("registry", "sumble_organizations", "exa_websets"),
+        freshness_ttl=timedelta(days=180),
+        value_schema={"type": "string"},
+        description="Evidence-bearing canonical account name observation.",
+        research_view_route=_account_route(
+            "core.account_name", ResearchSectionKind.ABOUT, ordinal=1
+        ),
+    ),
+    _seed(
         "core.employee_count",
         "int",
         PassKind.SCORING,
@@ -146,13 +158,175 @@ CORE_PACK: tuple[SeedField, ...] = (
         description="Primary web domain.",
     ),
     _seed(
-        "core.work_email",
+        "core.company_linkedin_url",
         "str",
         PassKind.SCORING,
-        tier_plan=("apollo", "clay"),
+        tier_plan=("sumble_organizations", "apollo", "exa"),
+        freshness_ttl=timedelta(days=90),
+        value_schema={"type": "string"},
+        description="Canonical public LinkedIn company page URL.",
+        research_view_route=_account_route(
+            "core.company_linkedin_url", ResearchSectionKind.ABOUT, ordinal=5
+        ),
+    ),
+    _seed(
+        "core.industry",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("sumble_organizations", "apollo", "exa"),
+        freshness_ttl=timedelta(days=90),
+        value_schema={"type": "string"},
+        description="Primary industry classification returned with account evidence.",
+        research_view_route=_account_route("core.industry", ResearchSectionKind.ABOUT, ordinal=15),
+    ),
+    _seed(
+        "core.company_about",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("sumble_organizations", "exa_websets"),
+        freshness_ttl=timedelta(days=90),
+        value_schema={"type": "string"},
+        description="Provider-sourced public company description/about text.",
+        research_view_route=_account_route(
+            "core.company_about", ResearchSectionKind.ABOUT, ordinal=16
+        ),
+    ),
+    _seed(
+        "core.employee_range",
+        "object",
+        PassKind.SCORING,
+        tier_plan=("sumble_organizations", "apollo", "exa"),
+        freshness_ttl=timedelta(days=90),
+        value_schema={
+            "type": "object",
+            "required": ["label"],
+            "properties": {
+                "label": {"type": "string"},
+                "min": {"type": "integer"},
+                "max": {"type": "integer"},
+            },
+        },
+        description="Evidence-backed employee range used only when exact headcount is unavailable.",
+        research_view_route=_account_route(
+            "core.employee_range", ResearchSectionKind.ABOUT, ordinal=11
+        ),
+    ),
+    _seed(
+        "core.hq_location",
+        "object",
+        PassKind.SCORING,
+        tier_plan=("sumble_organizations", "apollo", "exa"),
+        freshness_ttl=timedelta(days=180),
+        value_schema={
+            "type": "object",
+            "required": ["raw"],
+            "properties": {
+                "raw": {"type": "string"},
+                "city": {"type": "string"},
+                "region": {"type": "string"},
+                "country": {"type": "string"},
+                "country_code": {"type": "string"},
+            },
+        },
+        description="Normalized headquarters or primary location plus the source's raw value.",
+        research_view_route=_account_route(
+            "core.hq_location", ResearchSectionKind.ABOUT, ordinal=12
+        ),
+    ),
+    _seed(
+        "core.annual_revenue",
+        "object",
+        PassKind.SCORING,
+        tier_plan=("apollo", "sumble_organizations", "exa"),
+        freshness_ttl=timedelta(days=365),
+        value_schema={
+            "type": "object",
+            "required": ["amount", "currency", "as_of", "estimate_kind"],
+            "properties": {
+                "amount": {"type": "number"},
+                "currency": {"type": "string"},
+                "as_of": {"type": "string"},
+                "estimate_kind": {
+                    "type": "string",
+                    "enum": ["reported", "provider_estimate", "third_party_estimate"],
+                },
+            },
+        },
+        description=(
+            "Annual revenue with currency, as-of date, and explicit reported/estimate semantics."
+        ),
+        research_view_route=_account_route(
+            "core.annual_revenue", ResearchSectionKind.ABOUT, ordinal=18
+        ),
+    ),
+    _seed(
+        "core.revenue_band",
+        "enum:under_1m|1m_10m|10m_50m|50m_100m|100m_500m|500m_1b|1b_plus",
+        PassKind.SCORING,
+        tier_plan=("apollo", "sumble_organizations", "exa"),
+        freshness_ttl=timedelta(days=365),
+        value_schema={
+            "type": "string",
+            "enum": [
+                "under_1m",
+                "1m_10m",
+                "10m_50m",
+                "50m_100m",
+                "100m_500m",
+                "500m_1b",
+                "1b_plus",
+            ],
+        },
+        description="Bounded revenue band used only when exact sourced annual revenue is absent.",
+        research_view_route=_account_route(
+            "core.revenue_band", ResearchSectionKind.ABOUT, ordinal=19
+        ),
+    ),
+    _seed(
+        "core.company_email",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("exa",),
         freshness_ttl=timedelta(days=30),
         value_schema={"type": "string"},
-        description="Work email address.",
+        description="Public general company contact email; not a person's work email.",
+    ),
+    _seed(
+        "core.company_phone",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("exa",),
+        freshness_ttl=timedelta(days=30),
+        value_schema={"type": "string"},
+        description="Public general company contact phone; not a person's direct number.",
+    ),
+    _seed(
+        "core.work_email",
+        "str",
+        PassKind.DEEP,
+        tier_plan=("exa_websets",),
+        freshness_ttl=timedelta(days=30),
+        gate="selected-contact-channel",
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        value_schema={"type": "string"},
+        description=(
+            "Selected contact's observed work email. It is delivery data until independent "
+            "corroboration, reachability, use permission, and optional identity promotion pass."
+        ),
+    ),
+    _seed(
+        "core.direct_phone",
+        "str",
+        PassKind.DEEP,
+        tier_plan=("exa_websets",),
+        freshness_ttl=timedelta(days=30),
+        gate="selected-contact-channel",
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        value_schema={"type": "string"},
+        description=(
+            "Selected contact's observed direct phone. It remains delivery data and never becomes "
+            "an identity key."
+        ),
     ),
     _seed(
         "core.primary_tech_stack",
@@ -180,6 +354,28 @@ CORE_PACK: tuple[SeedField, ...] = (
         description="Most recent funding round.",
         research_view_route=_account_route(
             "account.recent_funding", ResearchSectionKind.INSIGHTS, ordinal=10
+        ),
+    ),
+    _seed(
+        "account.total_funding",
+        "object",
+        PassKind.SCORING,
+        tier_plan=("apollo", "exa_websets"),
+        freshness_ttl=timedelta(days=90),
+        value_schema={
+            "type": "object",
+            "required": ["amount_usd", "estimate_kind"],
+            "properties": {
+                "amount_usd": {"type": "number"},
+                "estimate_kind": {
+                    "type": "string",
+                    "enum": ["reported", "provider_estimate", "third_party_estimate"],
+                },
+            },
+        },
+        description="Total funding in USD with explicit estimate semantics.",
+        research_view_route=_account_route(
+            "account.total_funding", ResearchSectionKind.INSIGHTS, ordinal=9
         ),
     ),
     # The CRM resolver's "already a customer / already in pipeline" flag (M4.5; substrate §4) — a
@@ -261,7 +457,7 @@ CORE_PACK: tuple[SeedField, ...] = (
         "account.hiring_velocity_eng",
         "number",
         PassKind.DEEP,
-        tier_plan=("sumble_jobs", "linkedin_jobs", "exa"),
+        tier_plan=("sumble_jobs", "linkedin_jobs", "exa_deep"),
         freshness_ttl=timedelta(days=30),
         gate="tier>=3",
         value_schema={"type": "number"},
@@ -318,7 +514,7 @@ CORE_PACK: tuple[SeedField, ...] = (
         "contact.facet.recent_post",
         "str",
         PassKind.DEEP,
-        tier_plan=("exa", "firecrawl"),
+        tier_plan=("exa_deep", "firecrawl"),
         freshness_ttl=timedelta(days=14),
         gate="committee-gated",
         value_schema={"type": "string"},

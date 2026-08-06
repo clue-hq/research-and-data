@@ -53,6 +53,7 @@ __all__ = [
     "PlanDelegationStep",
     "PlanStep",
     "PlanToolStep",
+    "ProjectContextArtifact",
     "ResourceKind",
     "SkillBundle",
     "SpecialistTaskEnvelope",
@@ -428,6 +429,14 @@ class AgentResourceManifest(FrozenContract):
         return self
 
 
+class ProjectContextArtifact(FrozenContract):
+    """One additional immutable L3 project input materialized at a canonical path."""
+
+    name: ResourceName
+    artifact_ref: ArtifactRef
+    domain_ref: DomainObjectRef
+
+
 class AgentConstitution(FrozenContract):
     """Trusted immutable authority injected into a parent and every child mind.
 
@@ -457,6 +466,7 @@ class AgentConstitution(FrozenContract):
     resource_manifest_ref: ArtifactRef
     resource_manifest_sha256: Sha256
     focus_refs: tuple[DomainObjectRef, ...] = ()
+    project_context_artifacts: tuple[ProjectContextArtifact, ...] = ()
 
     @model_validator(mode="after")
     def refs_match_workspace_and_profile_kind(self) -> AgentConstitution:
@@ -469,6 +479,21 @@ class AgentConstitution(FrozenContract):
             raise ValueError("constitution artifact refs must belong to the constitution workspace")
         if any(item.workspace_id != self.workspace_id for item in self.focus_refs):
             raise ValueError("constitution focus refs must belong to the constitution workspace")
+        if any(
+            item.artifact_ref.workspace_id != self.workspace_id
+            or item.domain_ref.workspace_id != self.workspace_id
+            for item in self.project_context_artifacts
+        ):
+            raise ValueError("project context artifacts must belong to the constitution workspace")
+        _unique(
+            (item.name for item in self.project_context_artifacts),
+            label="project context artifact names",
+        )
+        reserved_names = {"project_card", "budget"}
+        if any(item.name in reserved_names for item in self.project_context_artifacts):
+            raise ValueError(
+                "project context artifact names cannot shadow the project card or budget"
+            )
         if self.profile_ref.kind is not ResourceKind.PROFILE:
             raise ValueError("constitution profile_ref must have kind='profile'")
         return self

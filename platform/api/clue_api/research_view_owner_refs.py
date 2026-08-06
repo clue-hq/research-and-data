@@ -108,9 +108,7 @@ class ProductionOwnerReferenceResolver:
             scores = await claims_by_ids(conn, score_ids, scope=scope.workspace_scope)
 
             committee_by_id = {}
-            if any(
-                item.data_species is ResearchDataSpecies.COMMITTEE for item in requested
-            ):
+            if any(item.data_species is ResearchDataSpecies.COMMITTEE for item in requested):
                 committee_rows = await ContactEligibilityResolver(
                     project_run_id=request.project_run_id,
                     product_id=request.product_id,
@@ -119,9 +117,7 @@ class ProductionOwnerReferenceResolver:
                     account_entity_id=scope.account_entity_id,
                     workspace_id=request.workspace_id,
                 )
-                committee_by_id = {
-                    item.contact_entity_id: item for item in committee_rows
-                }
+                committee_by_id = {item.contact_entity_id: item for item in committee_rows}
 
             coverage_by_id = {}
             if any(item.data_species is ResearchDataSpecies.COVERAGE for item in requested):
@@ -131,9 +127,7 @@ class ProductionOwnerReferenceResolver:
                     run_id=scope.account_run.id,
                     entity_id=scope.account_entity_id,
                 )
-                coverage_by_id = {
-                    UUID(str(item.id)): item for item in coverage_rows
-                }
+                coverage_by_id = {UUID(str(item.id)): item for item in coverage_rows}
 
             activity_ids = tuple(
                 _tail_uuid(item.owner_ref)
@@ -227,9 +221,7 @@ class ProductionOwnerReferenceResolver:
                 "claim_id": str(claim.id),
                 "field_key": str(claim.field_key),
                 "score": claim.value_json,
-                "evidence_claim_ids": [
-                    str(claim_id) for claim_id in reference.evidence_claim_ids
-                ],
+                "evidence_claim_ids": [str(claim_id) for claim_id in reference.evidence_claim_ids],
             }
             version = f"claim:{claim.id}"
         elif species is ResearchDataSpecies.COMMITTEE:
@@ -241,9 +233,7 @@ class ProductionOwnerReferenceResolver:
                 "account_entity_id": str(item.account_entity_id),
                 "persona": item.persona.value,
                 "role_on_committee": item.role_on_committee,
-                "display_claim_ids": [
-                    str(claim.claim.id) for claim in item.display_claims
-                ],
+                "display_claim_ids": [str(claim.claim.id) for claim in item.display_claims],
                 "personalization_claim_ids": [
                     str(claim.claim.id) for claim in item.personalization_claims
                 ],

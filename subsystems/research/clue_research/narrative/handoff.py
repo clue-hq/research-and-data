@@ -44,12 +44,12 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    ACCOUNT_AXIS_FIELD_CLASSES,
     AccountHandoff,
     ClaimId,
     CommitteeMember,
     CurrentValue,
     EntityId,
-    FieldClass,
     IdentityBinding,
     NarrativeSupport,
     Persona,
@@ -97,9 +97,7 @@ INTENT_FIELD = "account.scoring.intent"
 # ``profiling.account._ACCOUNT_AXIS_CLASSES`` — ``narrative`` may not import ``profiling``).
 # ``account.scoring.*`` (Output 1) and ``account.value_narrative`` (Output 4) classify as
 # ``FieldClass.ACCOUNT`` but are *other* outputs and are excluded explicitly (the sharpest edge).
-_ACCOUNT_AXIS_CLASSES = frozenset(
-    {FieldClass.CORE, FieldClass.ACCOUNT, FieldClass.ACCOUNT_RESONANCE, FieldClass.PACK}
-)
+_ACCOUNT_AXIS_CLASSES = ACCOUNT_AXIS_FIELD_CLASSES
 # The keys of ``core.handoff.Score`` (frozen, ``extra="forbid"``); the score ``value_json`` also
 # carries reproducibility extras (``rubric_version`` / ``non_fit_flag`` / ``fit_floor`` / ``icp_*``)
 # that must be stripped before ``Score.model_validate`` or it raises on the extras.

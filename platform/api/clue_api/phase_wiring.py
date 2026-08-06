@@ -37,8 +37,20 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from clue_api.composition import build_pre_spend_gate
+from clue_api.discovery_seal import (
+    DiscoveryBatchStarter,
+    DiscoveryRequiredFieldResolver,
+    DurableDiscoveryPhaseHandler,
+)
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
-from clue_core import FaithfulnessJudge, LLMGateway, PhaseHandler, PreSpendGate
+from clue_core import (
+    FaithfulnessJudge,
+    LLMGateway,
+    PhaseHandler,
+    PreSpendGate,
+    SealedDiscoveryAccountReader,
+)
+from clue_db import ConnFactory, transaction
 from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.discovery_scoring.phases import (
     DiscoveryPhaseHandler,
@@ -136,26 +148,59 @@ def register_icp_confirmed_handler(
 
 
 def build_discovery_handler(
-    *, channels: ChannelRegistry, gateway: LLMGateway | None = None
-) -> DiscoveryPhaseHandler:
+    *,
+    channels: ChannelRegistry,
+    gateway: LLMGateway | None = None,
+    durable_batches: bool = False,
+    durable_batch_starter: DiscoveryBatchStarter | None = None,
+    discovery_required_field_resolver: DiscoveryRequiredFieldResolver | None = None,
+    storage: StorageBackend | None = None,
+    session_factory: ConnFactory = transaction,
+) -> PhaseHandler:
     """The DISCOVERY handler (M6). ``channels`` is the bound set of grounded discovery channels (the
     config seam) — an **empty** :class:`ChannelRegistry` is a valid production default (no provider
     wired yet: discovery finds nothing and advances, never fabricates). ``gateway`` plans/expands
     queries (never *is* the source of an entity)."""
-    return DiscoveryPhaseHandler(channels=channels, gateway=gateway)
+    legacy = DiscoveryPhaseHandler(
+        channels=channels, gateway=gateway, session_factory=session_factory
+    )
+    if not durable_batches:
+        return legacy
+    if storage is None:
+        raise ValueError("durable discovery batches require a storage backend")
+    return DurableDiscoveryPhaseHandler(
+        storage=storage,
+        fallback=legacy,
+        starter=durable_batch_starter,
+        required_field_resolver=discovery_required_field_resolver,
+        conn_factory=session_factory,
+    )
 
 
 def register_discovery_handler(
     *,
     channels: ChannelRegistry,
     gateway: LLMGateway | None = None,
+    durable_batches: bool = False,
+    durable_batch_starter: DiscoveryBatchStarter | None = None,
+    discovery_required_field_resolver: DiscoveryRequiredFieldResolver | None = None,
+    session_factory: ConnFactory = transaction,
     storage: StorageBackend | None,
     register: _Register = register_phase_handler,
 ) -> PhaseHandler:
     """Build + register the DISCOVERY handler (snapshot-wrapped when ``storage`` is passed — this
     phase **fetches** via its channels, so the wrapper is load-bearing)."""
     handler = snapshot_bound(
-        build_discovery_handler(channels=channels, gateway=gateway), storage=storage
+        build_discovery_handler(
+            channels=channels,
+            gateway=gateway,
+            durable_batches=durable_batches,
+            durable_batch_starter=durable_batch_starter,
+            discovery_required_field_resolver=discovery_required_field_resolver,
+            storage=storage,
+            session_factory=session_factory,
+        ),
+        storage=storage,
     )
     register(handler)
     return handler
@@ -164,21 +209,39 @@ def register_discovery_handler(
 # --- SCORING (M6.3) — fetches ----------------------------------------------------------------
 
 
-def build_scoring_handler(*, pre_spend_gate: PreSpendGate | None = None) -> ScoringPhaseHandler:
+def build_scoring_handler(
+    *,
+    pre_spend_gate: PreSpendGate | None = None,
+    sealed_account_reader: SealedDiscoveryAccountReader | None = None,
+    session_factory: ConnFactory = transaction,
+) -> ScoringPhaseHandler:
     """The SCORING handler (M6.3): cheap deterministic-first Pass-A fit/intent scoring over every
     admitted account. Config/thresholds default to their production constants."""
-    return ScoringPhaseHandler(pre_spend_gate=pre_spend_gate or build_pre_spend_gate())
+    return ScoringPhaseHandler(
+        pre_spend_gate=pre_spend_gate or build_pre_spend_gate(),
+        sealed_account_reader=sealed_account_reader,
+        session_factory=session_factory,
+    )
 
 
 def register_scoring_handler(
     *,
     storage: StorageBackend | None,
     pre_spend_gate: PreSpendGate | None = None,
+    sealed_account_reader: SealedDiscoveryAccountReader | None = None,
+    session_factory: ConnFactory = transaction,
     register: _Register = register_phase_handler,
 ) -> PhaseHandler:
     """Build + register the SCORING handler (snapshot-wrapped when ``storage`` is passed — the
     Pass-A waterfall **fetches**, so the wrapper is load-bearing)."""
-    handler = snapshot_bound(build_scoring_handler(pre_spend_gate=pre_spend_gate), storage=storage)
+    handler = snapshot_bound(
+        build_scoring_handler(
+            pre_spend_gate=pre_spend_gate,
+            sealed_account_reader=sealed_account_reader,
+            session_factory=session_factory,
+        ),
+        storage=storage,
+    )
     register(handler)
     return handler
 
@@ -186,18 +249,35 @@ def register_scoring_handler(
 # --- TIER_CHECKPOINT (M6.4) — pure reads/tiering ---------------------------------------------
 
 
-def build_tier_checkpoint_handler() -> TierCheckpointPhaseHandler:
+def build_tier_checkpoint_handler(
+    *,
+    sealed_account_reader: SealedDiscoveryAccountReader | None = None,
+    session_factory: ConnFactory = transaction,
+) -> TierCheckpointPhaseHandler:
     """The TIER_CHECKPOINT handler (M6.4): tier the stored Pass-A scores, estimate Pass-B cost, and
     run the durable human gate. Config defaults to its production constants."""
-    return TierCheckpointPhaseHandler()
+    return TierCheckpointPhaseHandler(
+        sealed_account_reader=sealed_account_reader,
+        session_factory=session_factory,
+    )
 
 
 def register_tier_checkpoint_handler(
-    *, storage: StorageBackend | None, register: _Register = register_phase_handler
+    *,
+    storage: StorageBackend | None,
+    sealed_account_reader: SealedDiscoveryAccountReader | None = None,
+    session_factory: ConnFactory = transaction,
+    register: _Register = register_phase_handler,
 ) -> PhaseHandler:
     """Build + register the TIER_CHECKPOINT handler. The phase does **not** fetch (it tiers stored
     scores), so the snapshot wrapper is harmless — applied only for uniformity when ``storage`` is
     passed."""
-    handler = snapshot_bound(build_tier_checkpoint_handler(), storage=storage)
+    handler = snapshot_bound(
+        build_tier_checkpoint_handler(
+            sealed_account_reader=sealed_account_reader,
+            session_factory=session_factory,
+        ),
+        storage=storage,
+    )
     register(handler)
     return handler
