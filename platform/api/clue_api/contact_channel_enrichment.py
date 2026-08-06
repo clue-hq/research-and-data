@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import text
@@ -223,6 +224,7 @@ async def compile_contact_channel_preflight(
     effective_policy: ContactResearchPolicyPin,
     channel: ContactChannel,
     observation_window: str,
+    entity_research_job_id: UUID | None = None,
 ) -> ContactChannelPreflight:
     """Prove the exact receipt/contact/channel/provider authority before any side effect."""
 
@@ -424,6 +426,7 @@ async def compile_contact_channel_preflight(
         acquisition_budget_cap_cents=Decimal(authorization.budget_cap_cents),
         validation_native_unit_cap=Decimal(authorization.validation_native_unit_cap),
         validation_budget_cap_cents=Decimal(authorization.validation_budget_cap_cents),
+        entity_research_job_id=entity_research_job_id,
     )
     return ContactChannelPreflight(request=request, csv_bytes=_csv_bytes(contact.linkedin_url))
 
@@ -465,6 +468,7 @@ class ExaContactChannelCoordinator:
         effective_policy: ContactResearchPolicyPin,
         channel: ContactChannel,
         observation_window: str,
+        entity_research_job_id: UUID | None = None,
         defer_validation: bool = False,
         before_acquisition_dispatch: Callable[[ContactChannelOperation], Awaitable[None]]
         | None = None,
@@ -477,6 +481,7 @@ class ExaContactChannelCoordinator:
                 effective_policy=effective_policy,
                 channel=channel,
                 observation_window=observation_window,
+                entity_research_job_id=entity_research_job_id,
             )
             manifest = await get_source(conn, preflight.request.acquisition_source_key)
             assert manifest is not None

@@ -5,6 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 from decimal import Decimal
+from uuid import UUID
+
+from sqlalchemy import text
 
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.sumble_committee_acquisition import (
@@ -27,6 +30,7 @@ from clue_core import (
     RunId,
     UseClass,
 )
+from clue_core.entity_research import EntityResearchJobAuthorization
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.directives import (
@@ -46,7 +50,7 @@ from clue_research.resolvers.sumble import (
     SUMBLE_API_VERSION,
     matched_organization_id,
 )
-from clue_research.resolvers.sumble.people import SumbleAdvancedQuery, people_search_request
+from clue_research.resolvers.sumble.people import people_search_request
 from clue_research.resolvers.sumble.teams import teams_search_request
 from clue_storage import StorageBackend, read_verified_artifact
 
@@ -55,19 +59,6 @@ def _sha(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     ).hexdigest()
-
-
-def _quoted(values: tuple[str, ...]) -> str:
-    return ", ".join("'" + value.replace("'", "''") + "'" for value in values)
-
-
-def _provider_filter(functions: tuple[str, ...], levels: tuple[str, ...]) -> str | None:
-    clauses: list[str] = []
-    if functions:
-        clauses.append(f"job_function IN ({_quoted(functions)})")
-    if levels:
-        clauses.append(f"job_level IN ({_quoted(levels)})")
-    return " AND ".join(clauses) or None
 
 
 class DurableSumbleCommitteeInputResolver:
@@ -92,6 +83,7 @@ class DurableSumbleCommitteeInputResolver:
         project_run_id: ProjectRunId,
         workspace_id: str,
         tier: str,
+        entity_research_job_id: UUID | None = None,
     ) -> SumbleCommitteePreparationInputs:
         reader = DbSealedDiscoveryAccountManifestReader(
             storage=self._storage,
@@ -124,17 +116,77 @@ class DurableSumbleCommitteeInputResolver:
                     "Sumble committee inputs require the exact directive-pinned account run"
                 )
             pin = account_run.research_directive
-            launch = await get_account_deep_launch(
-                conn,
-                project_run_id,
-                workspace_id=workspace_id,
-            )
-            if launch is None:
-                raise SumbleCommitteePreparationError("account-deep launch authorization is absent")
-            launch_pins = await account_deep_launch_account_pins(conn, launch)
-            if pin not in launch_pins:
-                raise SumbleCommitteePreparationError(
-                    "account is outside the exact launched directive selection"
+            budget_authorization_ref: str
+            if entity_research_job_id is None:
+                # Historical exact replay only. New M8D work is authorized by the separately
+                # confirmed R6 account-fleet job below and never reconstructs this retired launch.
+                launch = await get_account_deep_launch(
+                    conn,
+                    project_run_id,
+                    workspace_id=workspace_id,
+                )
+                if launch is None:
+                    raise SumbleCommitteePreparationError(
+                        "historical account-deep launch authorization is absent"
+                    )
+                launch_pins = await account_deep_launch_account_pins(conn, launch)
+                if pin not in launch_pins:
+                    raise SumbleCommitteePreparationError(
+                        "account is outside the exact historical directive selection"
+                    )
+                budget_authorization_ref = f"account-deep-launch:{launch.id}"
+            else:
+                authority = (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT job.authorization_json, control.account_run_id, "
+                                "control.admission_state::text AS admission_state, "
+                                "fleet.workspace_id, fleet.project_run_id, fleet.state::text "
+                                "AS fleet_state FROM entity_research_job job JOIN "
+                                "entity_research_account_fleet_job_control control "
+                                "USING (job_id, research_run_id) JOIN "
+                                "entity_research_account_fleet fleet USING (research_run_id) "
+                                "WHERE job.job_id=:job_id AND job.subject_type='account' AND "
+                                "job.subject_entity_id=:account_id AND "
+                                "job.project_run_id=:project_run_id AND "
+                                "job.workspace_id=:workspace_id AND "
+                                "control.account_run_id=:account_run_id AND "
+                                "control.admission_state IN ('admitted', 'released') AND "
+                                "job.state IN ('running', 'waiting_external')"
+                            ),
+                            {
+                                "job_id": entity_research_job_id,
+                                "account_id": account_entity_id,
+                                "project_run_id": project_run_id,
+                                "workspace_id": workspace_id,
+                                "account_run_id": account_run_id,
+                            },
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
+                if authority is None:
+                    raise SumbleCommitteePreparationError(
+                        "Sumble committee inputs require the exact live R6 account job"
+                    )
+                job_authorization = EntityResearchJobAuthorization.model_validate(
+                    authority["authorization_json"]
+                )
+                if (
+                    job_authorization.subject_entity_id != account_entity_id
+                    or job_authorization.project_run_id != project_run_id
+                    or job_authorization.workspace_id != workspace_id
+                    or job_authorization.selection.directive_ref != pin.directive_ref
+                    or job_authorization.selection.directive_sha256
+                    != pin.canonical_json_sha256
+                ):
+                    raise SumbleCommitteePreparationError(
+                        "R6 account job authorization differs from its pinned directive"
+                    )
+                budget_authorization_ref = (
+                    f"entity-research-job:{entity_research_job_id}"
                 )
             directive = await get_research_directive(
                 conn,
@@ -214,24 +266,21 @@ class DurableSumbleCommitteeInputResolver:
         related_people = min(100, plan.candidate_cap)
         jobs_per_team = 1
         people_limit = plan.candidate_cap
-        provider_filter = _provider_filter(
-            tuple(str(value) for value in plan.functions),
-            tuple(str(value) for value in plan.levels),
-        )
-        advanced = None
-        if provider_filter is not None:
-            advanced = SumbleAdvancedQuery(expression=provider_filter)
+        # The committee request deliberately carries NO advanced query. Sumble's documented
+        # grammar has no multi-value operator (`IN`/`OR` do not exist; live HTTP 400), and
+        # `/v9/teams` cannot filter on job level at all — see
+        # `docs/specs/M8D-R10-sumble-contract-decision.md`. The plan's function/level/team
+        # selectors remain durable authority for the local post-provider admission gate, never a
+        # wire filter. Credit maxima are limit-derived and therefore unchanged.
         _, teams_maximum = teams_search_request(
             organization_id,
             limit=team_limit,
             max_people_per_team=related_people,
             max_jobs_per_team=jobs_per_team,
-            advanced_query=advanced,
         )
         _, people_maximum = people_search_request(
             organization_id,
             limit=people_limit,
-            advanced_query=advanced,
         )
         provider_credit_cap = teams_maximum + people_maximum
         committee_plan_ref = "committee-plan:" + _sha(plan.model_dump(mode="json"))
@@ -240,6 +289,7 @@ class DurableSumbleCommitteeInputResolver:
             workspace_id=workspace_id,
             project_id=effective.project_id,
             project_run_id=project_run_id,
+            entity_research_job_id=entity_research_job_id,
             icp_key=effective.icp_key,
             icp_version=effective.icp_version,
             discovery_batch_id=sealed.discovery_batch_id,
@@ -261,7 +311,7 @@ class DurableSumbleCommitteeInputResolver:
             observation_window=(
                 f"project-run:{project_run_id}:account:{account_entity_id}:directive:{pin.canonical_json_sha256}"
             ),
-            provider_filter_expression=provider_filter,
+            provider_filter_expression=None,
             team_limit=team_limit,
             related_people_per_team=related_people,
             jobs_per_team=jobs_per_team,
@@ -287,7 +337,7 @@ class DurableSumbleCommitteeInputResolver:
             allowed_use_classes=effective.privacy_policy.allowed_use_classes,
             identity_policy_ref="sumble-professional-public-no-reveal:v1",
             identity_acquisition_allowed=effective.privacy_policy.committee_discovery_allowed,
-            budget_authorization_ref=f"account-deep-launch:{launch.id}",
+            budget_authorization_ref=budget_authorization_ref,
             contact_reveals_allowed=False,
         )
         return SumbleCommitteePreparationInputs(
@@ -296,6 +346,7 @@ class DurableSumbleCommitteeInputResolver:
                 cents_per_credit=Decimal(self._settings.sumble_cents_per_credit),
             ),
             authorization=authorization,
+            committee_plan=plan,
         )
 
 

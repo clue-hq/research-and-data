@@ -28,6 +28,8 @@ from clue_api.sumble_committee_acquisition import (
 from clue_api.sumble_committee_wake import SumbleCommitteeWakeWorker
 from clue_core import (
     CommitteeAcquisitionRequest,
+    CommitteeAcquisitionState,
+    CommitteeSpendOutcome,
     EntityId,
     ExtractionMethod,
     ProjectRunId,
@@ -56,6 +58,7 @@ from clue_research.durable import (
     tombstone_discovery_subject_artifacts,
 )
 from clue_research.identity import stamp_reuse
+from clue_research.resolvers.http import ProviderResponseError
 from clue_research.resolvers.sumble import SUMBLE_API_VERSION
 from clue_research.resolvers.sumble.committee_transport import SumbleRawPayload
 from clue_research.resolvers.sumble.people import SumblePeopleResponse
@@ -388,7 +391,7 @@ async def _setup(
         pricing_policy_version=SUMBLE_COMMITTEE_PRICING_VERSION,
         committee_policy_version=SUMBLE_COMMITTEE_POLICY_VERSION,
         observation_window=f"project-run:{started.project_run_id}:committee:s2b-test",
-        provider_filter_expression="job_function IN ('Operations', 'Administration')",
+        provider_filter_expression="job_function EQ 'Operations'",
         team_limit=1,
         related_people_per_team=2,
         jobs_per_team=2,
@@ -858,5 +861,67 @@ def test_s2b_process_crash_before_dispatch_resumes_without_false_spend_or_duplic
             assert resumed.outcome is SumbleCommitteeOutcome.WAITING_EXTERNAL
             assert resumed.operation.provider_units_charged == Decimal(12)
             assert transport.calls == ["teams", "people_submit"]
+
+    run_async(scenario())
+
+
+def test_s2b_deterministic_http_rejection_is_terminal_uncharged_with_retained_diagnostic(
+    tmp_path: Path,
+) -> None:
+    """A validated provider 400/422 is a zero-credit refusal, never an unknown spend.
+
+    The live R10 Teams HTTP 400 was collapsed into ``spend_outcome_unknown`` and had to be
+    replayed manually just to read the status. The coordinator now persists the status and the
+    provider's own bounded error body as durable rejection evidence.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            request = await _setup(conn, storage, workspace_id="ws-s2b-http-400")
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            rejection = ProviderResponseError(
+                "sumble_teams: HTTP 400 from https://api.sumble.com/v9/teams",
+                status_code=400,
+                body_excerpt='{"detail":[{"loc":["filter","query"],"msg":"invalid filter"}]}',
+            )
+            transport = _CommitteeTransport(crash_on_teams=rejection)
+            coordinator = SumbleCommitteeAcquisitionCoordinator(
+                transport=transport,
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+                poll_after_seconds=30,
+            )
+            preflight = compile_sumble_committee_preflight(request, cents_per_credit=Decimal("0.5"))
+            rejected = await coordinator.start(preflight)
+            assert rejected.outcome is SumbleCommitteeOutcome.FAILED_TERMINAL
+            assert rejected.operation.state is CommitteeAcquisitionState.FAILED_TERMINAL
+            assert rejected.operation.spend_outcome is CommitteeSpendOutcome.NOT_CHARGED
+            assert rejected.operation.provider_units_charged == Decimal(0)
+            assert rejected.operation.failure_code == "sumble_teams_provider_rejected_http_400"
+
+            attempts = await list_committee_acquisition_attempts(
+                conn,
+                workspace_id=request.workspace_id,
+                operation_id=rejected.operation.operation_id,
+            )
+            terminal = [item for item in attempts if item.state.value == "responded"]
+            assert len(terminal) == 1
+            assert terminal[0].failure_code == "sumble_teams_provider_rejected_http_400"
+            assert terminal[0].response_artifact_key is not None
+            stored = await storage.get(terminal[0].response_artifact_key)
+            evidence = json.loads(stored)
+            assert evidence["provider_rejection"]["http_status"] == 400
+            assert "invalid filter" in evidence["provider_rejection"]["body_excerpt"]
+
+            # The deterministic rejection is durable: a replay makes no further provider call.
+            replay = await coordinator.start(preflight)
+            assert replay.outcome is SumbleCommitteeOutcome.FAILED_TERMINAL
+            assert transport.calls == ["teams"]
 
     run_async(scenario())

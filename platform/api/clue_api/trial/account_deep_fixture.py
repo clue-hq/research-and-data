@@ -834,12 +834,16 @@ async def _ensure_deep_icp(
     *,
     discovery: InsightHealthDiscoveryFixtureResult,
     target: AccountDeepFixtureTarget,
+    field_keys: Sequence[str] = DEEP_FIELD_KEYS,
 ) -> ICPSpec:
+    resolved_field_keys = tuple(dict.fromkeys(field_keys))
+    if not resolved_field_keys:
+        raise FixtureStateConflict("account-deep fixture ICP requires at least one field")
     await _ensure_source_override(conn, target=target)
     existing = await get_active_icp(conn, WORKSPACE_ID, target.icp_key)
     expected = {
         "created_from": ICPCreatedFrom.CLIENT_EDIT,
-        "field_keys": DEEP_FIELD_KEYS,
+        "field_keys": resolved_field_keys,
         "enabled_packs": ("healthcare_practice",),
         "discovery_strategy": _deep_discovery_strategy(target),
         "source_profile_ref": _deep_source_profile_ref(target),
@@ -853,7 +857,7 @@ async def _ensure_deep_icp(
             workspace_id=WORKSPACE_ID,
             icp_key=target.icp_key,
             created_from=ICPCreatedFrom.CLIENT_EDIT,
-            field_keys=DEEP_FIELD_KEYS,
+            field_keys=resolved_field_keys,
             enabled_packs=("healthcare_practice",),
             discovery_strategy=_deep_discovery_strategy(target),
             source_profile_ref=_deep_source_profile_ref(target),
@@ -1664,6 +1668,7 @@ async def seed_insight_health_account_deep_fixture(
     pages: Mapping[str, OfficialSitePage] | None = None,
     storage: StorageBackend,
     target: AccountDeepFixtureTarget = DEFAULT_ACCOUNT_DEEP_FIXTURE_TARGET,
+    deep_field_keys: Sequence[str] = DEEP_FIELD_KEYS,
     reuse_existing_stage0: bool = False,
 ) -> InsightHealthAccountDeepFixtureResult:
     """Seed A1 Level A + B without provider I/O or an already-created ``account_run``.
@@ -1690,7 +1695,12 @@ async def seed_insight_health_account_deep_fixture(
         raise FixtureStateConflict("the upstream discovery fixture ICP is absent")
 
     await load_research_packs(conn)
-    deep_icp = await _ensure_deep_icp(conn, discovery=discovery, target=target)
+    deep_icp = await _ensure_deep_icp(
+        conn,
+        discovery=discovery,
+        target=target,
+        field_keys=deep_field_keys,
+    )
     preserved_icp = await get_active_icp(conn, WORKSPACE_ID, discovery.icp_key)
     if preserved_icp != original_icp:
         raise FixtureStateConflict("account-deep fixture mutated the discovery fixture ICP")
@@ -1745,7 +1755,7 @@ async def seed_insight_health_account_deep_fixture(
         discovery_fixture=discovery,
         deep_icp_key=deep_icp.icp_key,
         deep_icp_version=deep_icp.version,
-        deep_field_keys=DEEP_FIELD_KEYS,
+        deep_field_keys=tuple(deep_icp.field_keys),
         source_override_version=SOURCE_OVERRIDE_VERSION,
         selected_account_id=account_id,
         project_run_id=PROJECT_RUN_ID,

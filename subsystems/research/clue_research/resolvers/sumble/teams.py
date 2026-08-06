@@ -206,6 +206,14 @@ class SumbleTeamsNormalization(BaseModel):
     target_unlocked_person_ids: tuple[int, ...] = ()
 
 
+# Documented `/v9/teams` queryable dimensions ("technologies, technology categories, job
+# functions, hiring period"). Job level is deliberately absent: it is not a Teams dimension and
+# querying it produced a live deterministic HTTP 400 (contract-decision note).
+TEAMS_QUERY_DIMENSIONS: Final[frozenset[str]] = frozenset(
+    {"technology", "technology_category", "job_function", "hiring_period"}
+)
+
+
 def teams_search_request(
     organization_id: int,
     *,
@@ -233,6 +241,7 @@ def teams_search_request(
 
     filter_body: dict[str, Any] = {"organization_ids": [organization_id]}
     if advanced_query is not None:
+        advanced_query.require_dimensions(TEAMS_QUERY_DIMENSIONS, endpoint="Teams")
         filter_body["query"] = {"query": advanced_query.expression}
     if since is not None:
         filter_body["since"] = since.isoformat()

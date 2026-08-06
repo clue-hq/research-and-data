@@ -337,6 +337,47 @@ def test_external_wake_deduplicates_runs_and_only_reoffers_owning_project_runs()
     run_async(scenario())
 
 
+def test_external_wake_resolves_exact_entity_members_without_widening_project_runs() -> None:
+    run_id = ProjectRunId(uuid4())
+    project_offers: list[ProjectRunId] = []
+    member_offers: list[str] = []
+
+    @asynccontextmanager
+    async def _conn_factory() -> AsyncIterator[object]:
+        yield object()
+
+    async def _projects(_conn: object, _now: datetime, _limit: int) -> Sequence[ProjectRunId]:
+        return (run_id,)
+
+    async def _members(_conn: object, _now: datetime, _limit: int) -> Sequence[str]:
+        return (
+            "committee-operation:00000000-0000-0000-0000-000000000001",
+            "committee-operation:00000000-0000-0000-0000-000000000001",
+        )
+
+    async def _wake_project(value: ProjectRunId) -> bool:
+        project_offers.append(value)
+        return True
+
+    async def _wake_member(value: str) -> int:
+        member_offers.append(value)
+        return 1
+
+    async def scenario() -> None:
+        dispatcher = ExternalResearchWakeDispatcher(
+            project_run_waker=_wake_project,
+            sources=(_projects,),  # type: ignore[arg-type]
+            entity_member_waker=_wake_member,
+            entity_wait_sources=(_members,),  # type: ignore[arg-type]
+            conn_factory=_conn_factory,  # type: ignore[arg-type]
+        )
+        assert await dispatcher.run_due(now=datetime(2026, 8, 6, tzinfo=UTC)) == 2
+        assert project_offers == [run_id]
+        assert member_offers == ["committee-operation:00000000-0000-0000-0000-000000000001"]
+
+    run_async(scenario())
+
+
 class _PassGate:
     async def check(self, request: object) -> PreSpendDecision:
         del request

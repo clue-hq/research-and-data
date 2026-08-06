@@ -170,6 +170,17 @@ class SumbleCommitteeSource:
 
         teams_payload = _decode(await self._storage.get(response_keys[TEAMS_SOURCE_KEY]))
         people_payload = _decode(await self._storage.get(response_keys[PEOPLE_SOURCE_KEY]))
+        people_evidence = _row_evidence_spans(
+            people_payload,
+            collection_key="people",
+            id_key="person_id",
+        )
+        team_evidence = _row_evidence_spans(
+            teams_payload,
+            collection_key="teams",
+            id_key="team_id",
+        )
+        related_people_evidence = _related_people_evidence_spans(teams_payload)
         organization_id = int(operation.request.provider_organization_id)
         teams = normalize_teams(
             teams_payload,
@@ -218,6 +229,16 @@ class SumbleCommitteeSource:
                         team_rows=team_rows,
                         direct_lineage=lineage_by_source[PEOPLE_SOURCE_KEY],
                         teams_lineage=lineage_by_source[TEAMS_SOURCE_KEY],
+                        direct_evidence_span=_select_row_evidence(
+                            people_evidence[provider_person_id],
+                            source_url=person.source_url,
+                            name=person.name,
+                        ),
+                        teams_evidence_span=_team_membership_evidence_span(
+                            team_rows,
+                            row_spans=team_evidence,
+                            payload=teams_payload,
+                        ),
                         evidence_refs=(
                             response_keys[PEOPLE_SOURCE_KEY],
                             *((response_keys[TEAMS_SOURCE_KEY],) if team_rows else ()),
@@ -243,6 +264,18 @@ class SumbleCommitteeSource:
                     team_rows=team_rows,
                     direct_lineage=lineage_by_source[TEAMS_SOURCE_KEY],
                     teams_lineage=lineage_by_source[TEAMS_SOURCE_KEY],
+                    direct_evidence_span=_select_row_evidence(
+                        related_people_evidence[
+                            (team_rows[0][0].provider_team_id, provider_person_id)
+                        ],
+                        source_url=member.source_url,
+                        name=member.name,
+                    ),
+                    teams_evidence_span=_team_membership_evidence_span(
+                        team_rows,
+                        row_spans=team_evidence,
+                        payload=teams_payload,
+                    ),
                     evidence_refs=(response_keys[TEAMS_SOURCE_KEY],),
                 )
             )
@@ -266,6 +299,8 @@ class SumbleCommitteeSource:
         team_rows: tuple[tuple[SumbleTeamRecord, SumbleTeamMemberRecord], ...],
         direct_lineage: _SnapshotLineage,
         teams_lineage: _SnapshotLineage,
+        direct_evidence_span: str,
+        teams_evidence_span: str,
         evidence_refs: tuple[str, ...],
     ) -> CommitteePersonCandidate:
         team_names = tuple(dict.fromkeys(team.name for team, _member in team_rows))
@@ -302,6 +337,8 @@ class SumbleCommitteeSource:
             team_rows=team_rows,
             direct_lineage=direct_lineage,
             teams_lineage=teams_lineage,
+            direct_evidence_span=direct_evidence_span,
+            teams_evidence_span=teams_evidence_span,
             direct_confidence=self._default_confidence,
         )
         return CommitteePersonCandidate(
@@ -338,11 +375,13 @@ class SumbleCommitteeSource:
         team_rows: tuple[tuple[SumbleTeamRecord, SumbleTeamMemberRecord], ...],
         direct_lineage: _SnapshotLineage,
         teams_lineage: _SnapshotLineage,
+        direct_evidence_span: str,
+        teams_evidence_span: str,
         direct_confidence: float,
     ) -> tuple[CandidateProfessionalFact, ...]:
         facts: list[CandidateProfessionalFact] = []
 
-        def returned(field_key: str, value: JsonValue, label: str) -> None:
+        def returned(field_key: str, value: JsonValue) -> None:
             facts.append(
                 CandidateProfessionalFact(
                     field_key=field_key,
@@ -351,7 +390,10 @@ class SumbleCommitteeSource:
                     source_key=direct_lineage.source_key,
                     source_tier=1,
                     source_url=person_source_url,
-                    evidence_span=f"provider_returned {label}: {value}",
+                    # This is the exact canonical provider row retained by the snapshot.  A
+                    # human-readable synthesis here would not be an evidence span and R4 must
+                    # reject it.
+                    evidence_span=direct_evidence_span,
                     artifact_key=direct_lineage.artifact_key,
                     source_operation_ref=direct_lineage.operation_ref,
                     source_snapshot_ref=direct_lineage.snapshot_ref,
@@ -361,13 +403,13 @@ class SumbleCommitteeSource:
                 )
             )
 
-        for field_key, value, label in (
-            (CURRENT_TITLE, title, "job_title"),
-            (JOB_FUNCTION, job_function, "job_function"),
-            (JOB_LEVEL, job_level, "job_level"),
+        for field_key, value in (
+            (CURRENT_TITLE, title),
+            (JOB_FUNCTION, job_function),
+            (JOB_LEVEL, job_level),
         ):
             if value is not None and value.strip():
-                returned(field_key, value, label)
+                returned(field_key, value)
 
         location_value: dict[str, JsonValue] = {
             key: value
@@ -375,7 +417,7 @@ class SumbleCommitteeSource:
             if value is not None and value.strip()
         }
         if location_value:
-            returned(CURRENT_LOCATION, location_value, "current_location")
+            returned(CURRENT_LOCATION, location_value)
 
         relationship: dict[str, JsonValue] = {
             "relationship": "current_employee",
@@ -386,11 +428,7 @@ class SumbleCommitteeSource:
             relationship["organization_name"] = organization_name
         if role_start_date is not None and role_start_date.strip():
             relationship["role_start_date"] = role_start_date
-        returned(
-            ORGANIZATION_RELATIONSHIP,
-            relationship,
-            "current_employer",
-        )
+        returned(ORGANIZATION_RELATIONSHIP, relationship)
 
         if team_rows:
             memberships: list[JsonValue] = []
@@ -415,10 +453,7 @@ class SumbleCommitteeSource:
                     source_key=teams_lineage.source_key,
                     source_tier=1,
                     source_url=team_rows[0][0].source_url,
-                    evidence_span=(
-                        "provider_modeled team_membership: "
-                        + ", ".join(team.name for team, _member in team_rows)
-                    ),
+                    evidence_span=teams_evidence_span,
                     artifact_key=teams_lineage.artifact_key,
                     source_operation_ref=teams_lineage.operation_ref,
                     source_snapshot_ref=teams_lineage.snapshot_ref,
@@ -525,6 +560,118 @@ def _decode(body: bytes) -> dict[str, object]:
         raise SumbleCommitteeSnapshotUnavailable(
             "Sumble committee response artifact is not a JSON object"
         ) from exc
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+
+
+def _row_evidence_spans(
+    payload: Mapping[str, object],
+    *,
+    collection_key: str,
+    id_key: str,
+) -> dict[int, tuple[str, ...]]:
+    rows = payload.get(collection_key)
+    if not isinstance(rows, list):
+        raise SumbleCommitteeSnapshotUnavailable(
+            f"Sumble {collection_key} response lacks its raw row collection"
+        )
+    grouped: dict[int, list[str]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise SumbleCommitteeSnapshotUnavailable(
+                f"Sumble {collection_key} response contains a non-object row"
+            )
+        raw_id = row.get(id_key)
+        if isinstance(raw_id, bool) or not isinstance(raw_id, int):
+            raise SumbleCommitteeSnapshotUnavailable(
+                f"Sumble {collection_key} evidence row lacks {id_key}"
+            )
+        span = _canonical_json(row)
+        if span not in grouped.setdefault(raw_id, []):
+            grouped[raw_id].append(span)
+    return {key: tuple(value) for key, value in grouped.items()}
+
+
+def _related_people_evidence_spans(
+    payload: Mapping[str, object],
+) -> dict[tuple[int, int], tuple[str, ...]]:
+    teams = payload.get("teams")
+    if not isinstance(teams, list):
+        raise SumbleCommitteeSnapshotUnavailable("Sumble Teams lacks raw team rows")
+    grouped: dict[tuple[int, int], list[str]] = {}
+    for team in teams:
+        if not isinstance(team, Mapping):
+            raise SumbleCommitteeSnapshotUnavailable("Sumble Teams contains a non-object row")
+        team_id = team.get("team_id")
+        related = team.get("related_people") or []
+        if (
+            isinstance(team_id, bool)
+            or not isinstance(team_id, int)
+            or not isinstance(related, list)
+        ):
+            raise SumbleCommitteeSnapshotUnavailable(
+                "Sumble Teams raw membership evidence has an invalid shape"
+            )
+        for person in related:
+            if not isinstance(person, Mapping):
+                raise SumbleCommitteeSnapshotUnavailable(
+                    "Sumble Teams contains a non-object related person"
+                )
+            person_id = person.get("person_id")
+            if isinstance(person_id, bool) or not isinstance(person_id, int):
+                raise SumbleCommitteeSnapshotUnavailable(
+                    "Sumble Teams related-person evidence lacks person_id"
+                )
+            key = (team_id, person_id)
+            span = _canonical_json(person)
+            if span not in grouped.setdefault(key, []):
+                grouped[key].append(span)
+    return {key: tuple(value) for key, value in grouped.items()}
+
+
+def _select_row_evidence(
+    spans: tuple[str, ...],
+    *,
+    source_url: str,
+    name: str | None,
+) -> str:
+    required = [json.dumps(source_url, ensure_ascii=False)]
+    if name is not None:
+        required.append(json.dumps(name, ensure_ascii=False))
+    matching = tuple(span for span in spans if all(value in span for value in required))
+    if len(matching) != 1:
+        raise SumbleCommitteeSnapshotUnavailable(
+            "Sumble normalized person does not map to one exact raw evidence row"
+        )
+    return matching[0]
+
+
+def _team_membership_evidence_span(
+    team_rows: tuple[tuple[SumbleTeamRecord, SumbleTeamMemberRecord], ...],
+    *,
+    row_spans: Mapping[int, tuple[str, ...]],
+    payload: Mapping[str, object],
+) -> str:
+    if not team_rows:
+        return ""
+    if len(team_rows) == 1:
+        team = team_rows[0][0]
+        return _select_row_evidence(
+            row_spans[team.provider_team_id],
+            source_url=team.source_url,
+            name=team.name,
+        )
+    # One aggregate membership claim may span multiple provider team rows. Cite the complete
+    # retained Teams collection so every member of that list remains inside one exact excerpt.
+    return '"teams":' + _canonical_json(payload.get("teams"))
 
 
 __all__ = [

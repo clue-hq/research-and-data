@@ -19,8 +19,8 @@ from enum import StrEnum
 from typing import Annotated, Protocol, Self, cast, runtime_checkable
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
-from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from langchain_core.tools import StructuredTool, ToolException
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -81,6 +81,47 @@ _PROVIDER_CAPABLE_TOOL_NAMES = frozenset(
 
 class EntityResearchToolAuthorityError(RuntimeError):
     """A semantic request, provider operation, claim, or read crosses exact job authority."""
+
+
+class EntityResearchGovernedRejection(RuntimeError):
+    """A governed refusal the agent can act on — never a whole-job suspension.
+
+    Engine policy (R10 partial-provider-failure contract): three failure species exist and only
+    one of them suspends.
+
+    1. **Model-repairable request violations** (an unselected provider, a field outside the exact
+       field/source authority, a scope that widens the plan) and **deterministic provider
+       rejections** (a validated zero-charge HTTP 4xx refusal whose diagnostics are already
+       durable in the provider ledger) raise *this* class. The tool layer converts it into an
+       error tool message, so the bounded agent can correct its arguments, choose another
+       admitted source, or finalize honestly with ``NEEDS_REVIEW``/an explicit gap.
+    2. **Ambiguous spend** (transport loss after dispatch) and **post-persistence integrity
+       violations** remain :class:`EntityResearchResultIntegrityError` and still suspend the job
+       for operator reconciliation — money or truth may be at stake, and the model must not be
+       able to talk past either.
+    """
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(f"{code}: {detail}")
+        self.code = code
+        self.detail = detail
+
+    def render(self) -> str:
+        return json.dumps(
+            {
+                "error": "governed_research_rejection",
+                "code": self.code,
+                "detail": self.detail[:1_000],
+                "recoverable": True,
+                "guidance": (
+                    "This tool call was refused without spending or suspending the job. Correct "
+                    "the request, use another admitted source, or finalize honestly with the "
+                    "remaining gap."
+                ),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
 
 class EntityResearchResultIntegrityError(RuntimeError):
@@ -163,6 +204,11 @@ class ProviderResultLineage(BaseModel):
 
     operation: ProviderOperationReservation
     snapshot_ref: NonEmptyStr
+    # One semantic provider operation may normalize several immutable component snapshots into a
+    # single result snapshot. Claims remain born against the exact component that supplied their
+    # value, so the owning provider reader must enumerate those refs for relational validation.
+    # An empty tuple preserves the ordinary one-operation/one-snapshot contract.
+    claim_source_snapshot_refs: tuple[NonEmptyStr, ...] = ()
     raw_response_artifact_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
     retained_result_artifact_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
     normalized_result_artifact_ref: NonEmptyStr
@@ -325,10 +371,26 @@ def _canonical_bytes(value: object) -> bytes:
 
 
 def _json_contains_text(data: bytes, span: str) -> bool:
+    decoded_text = data.decode("utf-8", errors="replace")
+    # Structured providers cite exact canonical JSON members/subtrees (for example
+    # ``"total":4``), while document providers cite a string value inside the JSON envelope.
+    # Accept either only when the cited bytes are actually retained in the immutable artifact.
+    if span in decoded_text:
+        return True
     try:
         decoded = json.loads(data)
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return span in data.decode("utf-8", errors="replace")
+        return False
+
+    canonical = json.dumps(
+        decoded,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    if span in canonical:
+        return True
 
     def contains(value: object) -> bool:
         if isinstance(value, str):
@@ -340,6 +402,27 @@ def _json_contains_text(data: bytes, span: str) -> bool:
         return False
 
     return contains(decoded)
+
+
+def _semantic_validation_error(error: ValidationError) -> str:
+    """Return bounded actionable feedback without echoing model-authored values."""
+
+    details = [
+        {
+            "location": [str(part) for part in item["loc"]],
+            "message": str(item["msg"]),
+            "type": str(item["type"]),
+        }
+        for item in error.errors(include_url=False, include_input=False)
+    ]
+    return json.dumps(
+        {
+            "error": "semantic_tool_input_validation_failed",
+            "details": details[:20],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 class EntityResearchToolRequestStore:
@@ -1798,9 +1881,16 @@ class EntityResearchResultStore:
                     raise EntityResearchResultIntegrityError(
                         "result claim crosses target, field, or workspace authority"
                     )
+                snapshot_refs = (
+                    draft.snapshot_ref,
+                    *lineage.claim_source_snapshot_refs,
+                )
                 if self._reference_matches(
                     row["source_operation_ref"], draft.operation.operation_ref
-                ) and self._reference_matches(row["source_snapshot_ref"], draft.snapshot_ref):
+                ) and any(
+                    self._reference_matches(row["source_snapshot_ref"], reference)
+                    for reference in snapshot_refs
+                ):
                     allowed_sources = allowed_by_field.get(field.field_key)
                     if subject_type is request.subject_type and (
                         allowed_sources is None or str(row["source_key"]) not in allowed_sources
@@ -1835,14 +1925,14 @@ class EntityResearchResultStore:
                     raise EntityResearchResultIntegrityError(
                         "found result value differs from its candidate claims"
                     )
-                if field.claim_delta is ResearchClaimDelta.ACCEPTED and any(
-                    int(cast(int, row["corroborations"])) > 0 for row in field_claim_rows
-                ):
+                independently_corroborated = self._has_independent_corroboration(field_claim_rows)
+                if field.claim_delta is ResearchClaimDelta.ACCEPTED and independently_corroborated:
                     raise EntityResearchResultIntegrityError(
                         "corroborated claim was projected as merely accepted"
                     )
-                if field.claim_delta is ResearchClaimDelta.CORROBORATING and not any(
-                    int(cast(int, row["corroborations"])) > 0 for row in field_claim_rows
+                if (
+                    field.claim_delta is ResearchClaimDelta.CORROBORATING
+                    and not independently_corroborated
                 ):
                     raise EntityResearchResultIntegrityError(
                         "corroborating result has no corroborated claim state"
@@ -1916,6 +2006,20 @@ class EntityResearchResultStore:
     def _reference_matches(stored: object, reference: str) -> bool:
         value = str(stored)
         return value == reference or value == reference.rsplit(":", 1)[-1]
+
+    @staticmethod
+    def _has_independent_corroboration(
+        claim_rows: Sequence[Mapping[str, object]],
+    ) -> bool:
+        """Return whether a claim group contains more than its own originating source.
+
+        ``claim.corroborations`` is the corroborator's independent-source count and includes the
+        claim's own source. A value of one is therefore an ordinary single-source result, not a
+        corroborating delta. Treating ``> 0`` as corroborated rejected every Sumble-native claim
+        after its mandatory corroboration pass.
+        """
+
+        return any(int(cast(int, row["corroborations"])) > 1 for row in claim_rows)
 
     def _result(
         self,
@@ -2475,6 +2579,10 @@ class GovernedEntityResearchToolFactory:
 
             try:
                 drafts = tuple(await action.execute(request, before_dispatch=before_dispatch))
+            except EntityResearchGovernedRejection as rejection:
+                # The refusal is complete and durable; surface it to the model as an error tool
+                # message (LangGraph keeps the loop alive) instead of suspending the whole job.
+                raise ToolException(rejection.render()) from rejection
             except EntityResearchProviderWait as wait:
                 await self._causation.observe(request=request, operation=wait.operation)
                 current_state = await self._results.refresh_state(request)
@@ -2548,6 +2656,8 @@ class GovernedEntityResearchToolFactory:
                 "lineage only after durable persistence."
             ),
             args_schema=args_schema,
+            handle_validation_error=_semantic_validation_error,
+            handle_tool_error=True,
         )
 
     def _read_result_tool(self) -> StructuredTool:

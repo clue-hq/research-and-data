@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_config import OverlayStore, RecursionPolicy
 from clue_core import (
+    ACCOUNT_AXIS_FIELD_CLASSES,
     AccountEntity,
     AspectContext,
     AspectWorker,
@@ -76,9 +77,7 @@ from clue_research.sources import SourcePlannerConfig, bind_resolver_overrides
 
 # The field-classes the account axis (M8.1/M8.2) profiles. CONTACT / CONTACT_FACET are the contact
 # axis (M8.3/M8.4) and are never clustered here, so a contact field that shares an ICP is ignored.
-_ACCOUNT_AXIS_CLASSES = frozenset(
-    {FieldClass.CORE, FieldClass.ACCOUNT, FieldClass.ACCOUNT_RESONANCE, FieldClass.PACK}
-)
+_ACCOUNT_AXIS_CLASSES = ACCOUNT_AXIS_FIELD_CLASSES
 
 # Builds the aspect worker for a field-class cluster key. The api root / a test injects one; the
 # default constructs the real M8.1/M8.2 workers.

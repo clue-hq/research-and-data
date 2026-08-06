@@ -269,6 +269,9 @@ def test_organization_normalization_produces_direct_fields_and_hard_miss() -> No
     assert [item.value for item in headcount] == [120]
     assert [item.value for item in domain] == ["acme.example"]
     assert headcount[0].source_url == "https://sumble.com/l/org/acme"
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    assert headcount[0].evidence_span in canonical
+    assert domain[0].evidence_span in canonical
     assert (
         normalize_organization(
             _fixture("organizations_unmatched.json"),
@@ -351,26 +354,33 @@ def test_a_true_no_match_stays_a_successful_empty_result() -> None:
 
 
 def test_jobs_normalization_is_an_explicit_engineering_activity_proxy() -> None:
+    payload = _fixture("jobs_engineering.json")
     resolved = normalize_jobs(
-        _fixture("jobs_engineering.json"),
+        payload,
         _field("account.hiring_velocity_eng", "number"),
     )
 
     assert [item.value for item in resolved] == [4]
-    assert "Software Engineer" in resolved[0].evidence_span
-    assert "total=4" in resolved[0].evidence_span
+    assert resolved[0].evidence_span == '"total":4'
+    assert resolved[0].evidence_span in json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    )
 
 
 def test_tech_normalization_uses_only_confirmed_primary_technologies() -> None:
+    payload = _fixture("tech_stack_confirmed.json")
     resolved = normalize_tech_stack(
-        _fixture("tech_stack_confirmed.json"),
+        payload,
         _field("core.primary_tech_stack", "list[str]"),
     )
 
     assert [item.value for item in resolved] == [
         ["Amazon Web Services", "Kubernetes", "Salesforce"]
     ]
-    assert "job_post_used_count" in resolved[0].evidence_span
+    assert '"business_functions":' in resolved[0].evidence_span
+    assert resolved[0].evidence_span in json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    )
     assert (
         normalize_tech_stack(
             _fixture("tech_stack_empty.json"),

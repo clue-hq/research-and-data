@@ -470,6 +470,7 @@ async def reserve_contact_channel_operation(
             project_run_id=request.project_run_id,
             proposed_cents=total,
             allowed_phases=frozenset({ProjectPhase.DEEP}),
+            entity_research_job_id=request.entity_research_job_id,
         )
     except ProviderSpendGuardError as exc:
         raise ContactChannelBudgetExceeded(str(exc)) from exc

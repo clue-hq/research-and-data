@@ -29,6 +29,7 @@ from clue_core import (
     ProjectRunId,
     ResearchDirectivePin,
     ResearchMode,
+    account_axis_field_keys,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import FieldRegistryScope, get_effective_field
@@ -136,7 +137,8 @@ class ExaDeepAccountResolverProvider:
             fields: list[ExaDeepFieldSpec] = []
             freshness_seconds: list[int] = []
             gate_rejections: list[str] = []
-            for field_key in effective.field_keys:
+            account_field_keys = account_axis_field_keys(effective.field_keys)
+            for field_key in account_field_keys:
                 planned = await plan_sources(
                     conn,
                     spec=icp,
@@ -198,12 +200,15 @@ class ExaDeepAccountResolverProvider:
                 audit_refs=tuple(gate_rejections),
             )
 
+        account_field_set = frozenset(account_field_keys)
         questions = tuple(
             item.text
             for item in sorted(
                 effective.questions,
                 key=lambda item: (item.priority, item.question_id),
             )
+            if item.target_field_key is not None
+            and str(item.target_field_key) in account_field_set
         )
         config = ExaDeepConfig(
             search_type=self._settings.exa_account_deep_search_type,

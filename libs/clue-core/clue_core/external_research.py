@@ -87,6 +87,7 @@ class ExternalResearchAcquisitionRequest(BaseModel):
     workspace_id: NonEmptyStr
     project_id: NonEmptyStr
     project_run_id: ProjectRunId
+    entity_research_job_id: UUID | None = None
     subject_kind: ExternalResearchSubjectKind = ExternalResearchSubjectKind.ACCOUNT
     account_id: EntityId
     contact_id: EntityId | None = None

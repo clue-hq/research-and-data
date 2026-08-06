@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Final
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
@@ -77,7 +78,12 @@ from clue_research.durable import (
     update_account_gap_operation,
     update_account_gap_snapshot,
 )
+from clue_research.durable.provider_spend import (
+    ProviderSpendGuardError,
+    require_provider_spend_capacity,
+)
 from clue_research.identity import get_account, surviving_id
+from clue_research.resolvers.http import ProviderResponseError
 from clue_research.resolvers.sumble import (
     JOBS_SOURCE_KEY,
     ORGANIZATIONS_SOURCE_KEY,
@@ -251,6 +257,7 @@ async def compile_sumble_account_gap_preflight(
     cents_per_credit: Decimal = Decimal(0),
     conn_factory: ConnFactory = transaction,
     policy: SumbleAccountGapPolicy = DEFAULT_SUMBLE_ACCOUNT_GAP_POLICY,
+    entity_research_job_id: UUID | None = None,
 ) -> SumbleAccountGapPreflight:
     """Compile only documented native fields with an evidence-backed gap and explicit value."""
 
@@ -279,10 +286,32 @@ async def compile_sumble_account_gap_preflight(
         run = await get_project_run(conn, project_run_id)
         if run is None or run.workspace_id != workspace_id:
             raise SumbleAccountGapEligibilityError("Sumble account-gap project run does not exist")
-        if run.status is not ProjectRunStatus.ACTIVE or run.phase is not ProjectPhase.DEEP:
+        if run.status is not ProjectRunStatus.ACTIVE:
             raise SumbleAccountGapEligibilityError(
-                "Sumble account-gap enrichment requires an active deep-phase run"
+                "Sumble account-gap enrichment requires an active project run"
             )
+        if entity_research_job_id is None and run.phase is not ProjectPhase.DEEP:
+            raise SumbleAccountGapEligibilityError(
+                "historical Sumble account-gap enrichment requires an active deep-phase run"
+            )
+    if entity_research_job_id is not None:
+        # M8D account research is an independently confirmed action, not a projection of the
+        # outer project phase.  Prove the exact running R6 job before compiling any provider
+        # request.  The durable reservation repeats this check in the transaction that inserts
+        # the operation, so a cancellation between preflight and reservation still fails closed.
+        try:
+            async with conn_factory() as conn:
+                await require_provider_spend_capacity(
+                    conn,
+                    project_run_id=project_run_id,
+                    proposed_cents=Decimal(0),
+                    allowed_phases=frozenset({ProjectPhase.DEEP}),
+                    entity_research_job_id=entity_research_job_id,
+                )
+        except ProviderSpendGuardError as exc:
+            raise SumbleAccountGapEligibilityError(
+                "Sumble account-gap enrichment lacks exact live entity-research job authority"
+            ) from exc
     try:
         sealed = await reader.read(
             workspace_id=workspace_id,
@@ -381,6 +410,7 @@ async def compile_sumble_account_gap_preflight(
         workspace_id=workspace_id,
         project_id=run.project_id,
         project_run_id=project_run_id,
+        entity_research_job_id=entity_research_job_id,
         icp_key=run.icp_key,
         icp_version=run.icp_version,
         discovery_batch_id=sealed.discovery_batch_id,
@@ -550,6 +580,16 @@ class SumbleAccountGapCoordinator:
                     )
                     provider_calls += called
                     snapshots[TECH_STACK_SOURCE_KEY] = tech
+        except ProviderResponseError as exc:
+            if exc.is_deterministic_rejection:
+                return await self._mark_provider_rejected(
+                    operation, error=exc, provider_calls=provider_calls + 1
+                )
+            return await self._mark_unknown(
+                operation,
+                "sumble_paid_dispatch_unreconciled",
+                provider_calls=provider_calls + 1,
+            )
         except Exception:
             return await self._mark_unknown(
                 operation,
@@ -1126,6 +1166,107 @@ class SumbleAccountGapCoordinator:
             await self._bind(conn, operation, key, "sumble_gap_receipt")
             return key
 
+    async def _mark_provider_rejected(
+        self,
+        operation: AccountGapOperation,
+        *,
+        error: ProviderResponseError,
+        provider_calls: int = 0,
+    ) -> SumbleAccountGapResult:
+        """Persist a deterministic provider rejection with its exact diagnostic evidence.
+
+        Sumble validates a request and prechecks the balance *before* charging, so a hard 4xx is a
+        zero-credit terminal refusal — categorically different from a transport loss after dispatch,
+        whose spend really is unknown. Collapsing both into ``spend_outcome_unknown`` cost a manual
+        live replay just to learn the status code, so the failing snapshot now retains the HTTP
+        status and the provider's own bounded error body as an ordinary response artifact.
+
+        Only the in-flight (``DISPATCHING``) snapshot is refused. Any snapshot this operation had
+        already settled keeps its real charge, and the operation's spend outcome is recomputed from
+        the durable snapshot ledger rather than being asserted uncharged.
+        """
+
+        async with self._conn_factory() as conn:
+            rows = await list_account_gap_snapshots(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
+        dispatching = tuple(row for row in rows if row.state is AccountGapSnapshotState.DISPATCHING)
+        source_key = dispatching[0].source_key if dispatching else "sumble"
+        failure_code = f"{source_key}_provider_rejected_http_{error.status_code}"
+        async with self._conn_factory() as conn:
+            rejection_key = await capture_discovery_artifact(
+                conn,
+                self._storage,
+                workspace_id=operation.request.workspace_id,
+                content=_json_bytes(
+                    {
+                        "provider_rejection": {
+                            "source_key": source_key,
+                            "http_status": error.status_code,
+                            "body_excerpt": error.body_excerpt,
+                        }
+                    }
+                ),
+                media_type="application/json",
+                source_key=source_key,
+                source_url=SUMBLE_API_BASE,
+            )
+            await self._bind(conn, operation, rejection_key, f"{source_key}_provider_rejection")
+            for row in dispatching:
+                await update_account_gap_snapshot(
+                    conn,
+                    snapshot=row.model_copy(
+                        update={
+                            "state": AccountGapSnapshotState.FAILED_TERMINAL,
+                            "spend_outcome": AccountGapSpendOutcome.NOT_CHARGED,
+                            "response_artifact_key": rejection_key,
+                            "failure_code": failure_code,
+                            "terminal_at": terminal_now(),
+                        }
+                    ),
+                )
+        await self._fail_fields(operation, failure_code)
+        async with self._conn_factory() as conn:
+            settled = await list_account_gap_snapshots(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
+            charged = sum((row.provider_units_charged for row in settled), Decimal(0))
+            cost = sum((row.cost_cents_charged for row in settled), Decimal(0))
+            current = await get_account_gap_operation(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+                for_update=True,
+            )
+            if current is None:
+                raise AccountGapNotFound("Sumble account-gap rejected operation")
+            stored = await update_account_gap_operation(
+                conn,
+                operation=current.model_copy(
+                    update={
+                        "state": AccountGapOperationState.FAILED_TERMINAL,
+                        "spend_outcome": (
+                            AccountGapSpendOutcome.CHARGED
+                            if charged
+                            else AccountGapSpendOutcome.NOT_CHARGED
+                        ),
+                        "provider_units_charged": charged,
+                        "cost_cents_charged": cost,
+                        "failure_code": failure_code,
+                        "terminal_at": terminal_now(),
+                    }
+                ),
+            )
+        return SumbleAccountGapResult(
+            outcome=SumbleAccountGapOutcome.FAILED_TERMINAL,
+            operation=stored,
+            provider_calls=provider_calls,
+        )
+
     async def _mark_unknown(
         self,
         operation: AccountGapOperation,
@@ -1208,6 +1349,7 @@ class SumbleAccountGapStarter:
         provider_credit_cap: int,
         allow_unbounded_tech: bool,
         before_dispatch: Callable[[AccountGapOperation], Awaitable[None]] | None = None,
+        entity_research_job_id: UUID | None = None,
     ) -> SumbleAccountGapResult:
         field_keys = tuple(sorted(field_expected_value_credits))
         window = f"project-run:{project_run_id}:sumble-gaps:{self._policy.version}"
@@ -1269,6 +1411,7 @@ class SumbleAccountGapStarter:
             cents_per_credit=self._cents_per_credit,
             conn_factory=self._conn_factory,
             policy=self._policy,
+            entity_research_job_id=entity_research_job_id,
         )
         return await self._coordinator.start(preflight, before_dispatch=before_dispatch)
 

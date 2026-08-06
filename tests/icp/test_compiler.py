@@ -159,7 +159,7 @@ def test_tier_plan_and_gate_carried_verbatim() -> None:
             (entry,) = plan.fields
             # Sumble Jobs is the current deterministic first source; retain the historical
             # LinkedIn/Exa fallbacks verbatim behind it.
-            assert entry.field.tier_plan == ("sumble_jobs", "linkedin_jobs", "exa")
+            assert entry.field.tier_plan == ("sumble_jobs", "linkedin_jobs", "exa_deep")
             assert entry.field.gate == "tier>=3"
             assert entry.field.pass_kind is PassKind.DEEP
 

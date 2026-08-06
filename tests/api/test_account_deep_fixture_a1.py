@@ -14,13 +14,14 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.deep import build_deep_phase_handler
+from clue_api.entity_research_quarantine import EntityResearchAgentNotComposed
 from clue_api.trial.account_deep_fixture import (
     ACCOUNT_DOMAIN,
     ACCOUNT_NAME,
@@ -42,7 +43,6 @@ from clue_api.trial.account_deep_fixture import (
 from clue_api.trial.discovery_fixture import (
     AMBIENT_URL,
     AURA_ANYWHERE_URL,
-    BRAND_ID,
     HOME_URL,
     NEUROSURGERY_URL,
     PRODUCT_ID,
@@ -65,8 +65,6 @@ from clue_core import (
     ExtractionMethod,
     FieldClass,
     Modality,
-    PhaseContext,
-    PhaseStatus,
     ProjectPhase,
     ResearchMode,
     SourceManifest,
@@ -77,8 +75,6 @@ from clue_core import (
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.discovery_scoring import DISCOVERY_ENVELOPE_POLICY_V1
 from clue_research.durable import (
-    AccountRunStatus,
-    AccountRunSubPhase,
     BudgetEngine,
     DbBudgetStore,
     PhaseCheckpointStatus,
@@ -591,6 +587,41 @@ def test_a1_fixture_is_deep_eligible_additive_and_read_only_on_replay(
     run_async(_run())
 
 
+def test_a1_fixture_can_activate_registered_contact_fields_for_m8c(
+    require_profiling_db: None,
+    tmp_path: Path,
+) -> None:
+    del require_profiling_db
+    contact_fields = (
+        "contact.current_title",
+        "contact.job_function",
+        "contact.facet.stated_interests",
+        "contact.facet.publications",
+    )
+    expected_fields = (*DEEP_FIELD_KEYS, *contact_fields)
+
+    async def _run() -> None:
+        async with rollback_conn(seed=False) as conn:
+            storage = FsStorage(tmp_path / "artifacts")
+            result = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+                deep_field_keys=expected_fields,
+            )
+            deep_icp = await get_icp_version(
+                conn,
+                WORKSPACE_ID,
+                result.deep_icp_key,
+                result.deep_icp_version,
+            )
+            assert deep_icp is not None
+            assert result.deep_field_keys == expected_fields
+            assert tuple(deep_icp.field_keys) == expected_fields
+
+    run_async(_run())
+
+
 def test_a1_can_layer_over_an_existing_stage0_handoff_without_reseeding_it(
     require_profiling_db: None,
     tmp_path: Path,
@@ -786,7 +817,7 @@ def test_a1_direct_profiler_fills_non_empty_deep_gaps_and_replays_without_calls(
     run_async(_run())
 
 
-def test_a1_full_production_entry_creates_and_completes_real_account_run(
+def test_a1_full_production_entry_is_a_quarantined_fail_loud_address(
     require_profiling_db: None,
     tmp_path: Path,
 ) -> None:
@@ -841,147 +872,39 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
             async def _profile_account_in_fixture_transaction(**kwargs: Any) -> Any:
                 return await profile_account(session_factory=session_factory, **kwargs)
 
-            composition = build_deep_phase_handler(
-                spec=spec,
-                gateway=gateway,
-                committee_sources=(committee,),
-                recursion_policy=policies.recursion_policy,
-                role_model="fixture-role-model",
-                budget=BudgetEngine(store=DbBudgetStore(conn_factory=session_factory)),
-                pre_spend_gate=PreSpendGateImpl(conn_factory=session_factory),
-                session_factory=session_factory,
-                storage=storage,
-                lock_factory=None,
-                budget_cap_cents=policies.account_budget_cap_cents,
-                profile_account_fn=_profile_account_in_fixture_transaction,
-                config_store=config_store,
-            )
-            ctx = PhaseContext(
-                project_run_id=fixture.project_run_id,
-                project_id=PROJECT_ID,
-                brand_id=BRAND_ID,
-                phase=ProjectPhase.DEEP,
-                workspace_id=WORKSPACE_ID,
-                icp_key=fixture.deep_icp_key,
-                icp_version=fixture.deep_icp_version,
-                budget_cap_cents=Decimal("1000"),
-                params={},
-            )
-
+            # M8D R10: the outer project DEEP entry is a retired, fail-loud address. Even a
+            # fully valid pre-M8D input — confirmed directive, exact launch receipt, recorded
+            # resolvers, committee source, and budget — must refuse at *construction*, before any
+            # account run, claim, committee row, gateway call, or spend can exist. New account
+            # research is separately launched onto the entity-research fleet; the promoted
+            # end-to-end coverage lives in the R5/R6 battery, and historical exact replay never
+            # rebuilds this composition.
+            del resolvers
+            with pytest.raises(EntityResearchAgentNotComposed):
+                build_deep_phase_handler(
+                    spec=spec,
+                    gateway=gateway,
+                    committee_sources=(committee,),
+                    recursion_policy=policies.recursion_policy,
+                    role_model="fixture-role-model",
+                    budget=BudgetEngine(store=DbBudgetStore(conn_factory=session_factory)),
+                    pre_spend_gate=PreSpendGateImpl(conn_factory=session_factory),
+                    session_factory=session_factory,
+                    storage=storage,
+                    lock_factory=None,
+                    budget_cap_cents=policies.account_budget_cap_cents,
+                    profile_account_fn=_profile_account_in_fixture_transaction,
+                    config_store=config_store,
+                )
             assert await get_account_run(conn, fixture.expected_account_run_id) is None
-            result = await composition.handler.run(ctx)
-            if result.accounts_processed == 0:
-                failed_state = await get_account_run(conn, fixture.expected_account_run_id)
-                raise AssertionError(
-                    "full entry isolated an account error; durable state="
-                    f"{failed_state.model_dump(mode='json') if failed_state else None}"
+            assert tuple(committee.calls) == ()
+            assert gateway.complete_calls == 0
+            claim_count = (
+                await conn.execute(
+                    text("SELECT count(*) FROM claim WHERE run_id=:run_id"),
+                    {"run_id": fixture.expected_account_run_id},
                 )
-            assert result.status is PhaseStatus.COMPLETED
-            assert result.accounts_processed == 1
-            assert result.payload["deep_count"] == 1
-            assert result.payload["accounts_failed"] == 0
-            accounts = result.payload["accounts"]
-            assert isinstance(accounts, list) and len(accounts) == 1
-            manifest = cast(dict[str, Any], accounts[0])
-            assert manifest["status"] == "completed"
-            assert manifest["account_entity_id"] == str(fixture.selected_account_id)
-            assert manifest["account_run_id"] == str(fixture.expected_account_run_id)
-            assert len(manifest["committee_member_ids"]) == 2
-            references_index = cast(dict[str, list[str]], manifest["references_index"])
-            assert set(references_index) >= {"account", "committee"}
-            assert len(references_index["account"]) == 4
-            assert all(
-                isinstance(claim_id, str)
-                for section in references_index.values()
-                for claim_id in section
-            )
-
-            account_run = await get_account_run(conn, fixture.expected_account_run_id)
-            assert account_run is not None
-            assert account_run.project_run_id == fixture.project_run_id
-            assert account_run.entity_id == fixture.selected_account_id
-            assert account_run.tier == "high"
-            assert account_run.status is AccountRunStatus.DONE
-            assert account_run.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
-            assert account_run.budget_cap_cents == Decimal("300")
-            assert set(account_run.references_index) >= {"account", "committee"}
-            assert len(account_run.references_index["account"]) == 4
-            governed_rows = (
-                (
-                    await conn.execute(
-                        text(
-                            "SELECT field_key, source_key, decision, effective_plan_sha256 "
-                            "FROM gate_decision WHERE run_id = :run_id "
-                            "AND effective_plan_sha256 IS NOT NULL ORDER BY field_key"
-                        ),
-                        {"run_id": fixture.expected_account_run_id},
-                    )
-                )
-                .mappings()
-                .all()
-            )
-            assert [(row["field_key"], row["source_key"]) for row in governed_rows] == [
-                ("account.hiring_velocity_eng", "sumble_jobs"),
-                ("account.operational_pain", _RECORDED_DEEP_SOURCE),
-                ("account.resonance.culture", _RECORDED_DEEP_SOURCE),
-                ("account.strategic_moves", _RECORDED_DEEP_SOURCE),
-            ]
-            assert all(row["decision"] == "pass" for row in governed_rows)
-            assert all(row["effective_plan_sha256"] for row in governed_rows)
-            production_claims = (
-                (
-                    await conn.execute(
-                        text(
-                            "SELECT field_key, source_key FROM claim WHERE run_id=:run_id "
-                            "AND field_key = ANY(:field_keys) ORDER BY field_key"
-                        ),
-                        {
-                            "run_id": fixture.expected_account_run_id,
-                            "field_keys": list(DEEP_FIELD_KEYS),
-                        },
-                    )
-                )
-                .mappings()
-                .all()
-            )
-            assert [(row["field_key"], row["source_key"]) for row in production_claims] == [
-                ("account.hiring_velocity_eng", "sumble_jobs"),
-                ("account.operational_pain", _RECORDED_DEEP_SOURCE),
-                ("account.resonance.culture", _RECORDED_DEEP_SOURCE),
-                ("account.strategic_moves", _RECORDED_DEEP_SOURCE),
-            ]
-            assert committee.calls and committee.calls[0][0] == fixture.selected_account_id
-            assert gateway.complete_calls == 2
-
-            claim_count_before = int(
-                (await conn.execute(text("SELECT count(*) FROM claim"))).scalar_one()
-            )
-            contact_count_before = int(
-                (await conn.execute(text("SELECT count(*) FROM contact_entity"))).scalar_one()
-            )
-            resolver_calls_before = {
-                key: tuple(resolver.calls) for key, resolver in resolvers.items()
-            }
-            committee_calls_before = tuple(committee.calls)
-            gateway_calls_before = gateway.complete_calls
-
-            replay = await composition.handler.run(ctx)
-            assert replay.status is PhaseStatus.COMPLETED
-            assert replay.accounts_processed == 1
-            assert int((await conn.execute(text("SELECT count(*) FROM claim"))).scalar_one()) == (
-                claim_count_before
-            )
-            assert (
-                int((await conn.execute(text("SELECT count(*) FROM contact_entity"))).scalar_one())
-                == contact_count_before
-            )
-            assert {
-                key: tuple(resolver.calls) for key, resolver in resolvers.items()
-            } == resolver_calls_before
-            assert tuple(committee.calls) == committee_calls_before
-            assert gateway.complete_calls == gateway_calls_before
-            original_run = await get_project_run(conn, DISCOVERY_PROJECT_RUN_ID)
-            assert original_run is not None
-            assert original_run.phase is ProjectPhase.DISCOVERY
+            ).scalar_one()
+            assert claim_count == 0
 
     run_async(_run())

@@ -7,6 +7,7 @@ durable asynchronous submit/poll lifecycle; S2C adapts ready records to ``Commit
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any, Final
@@ -40,6 +41,17 @@ class SumblePeopleStatus(StrEnum):
     FAILED = "failed"
 
 
+# Sumble documents exactly one advanced-query shape — ``<dimension> EQ '<value>'`` atoms joined
+# by ``AND`` (no ``IN``/``OR``/``NOT``/parentheses anywhere in the OpenAPI or docs examples), and
+# the queryable dimensions differ per endpoint. Guessed grammar reached the live wire once and
+# produced deterministic HTTP 400s; this guard makes that unrepresentable. See
+# ``docs/specs/M8D-R10-sumble-contract-decision.md``.
+_ADVANCED_QUERY_ATOM: Final = re.compile(r"([a-z][a-z0-9_]*) EQ '([^']+)'")
+PEOPLE_QUERY_DIMENSIONS: Final[frozenset[str]] = frozenset(
+    {"job_function", "job_level", "technology", "location", "country"}
+)
+
+
 class SumbleAdvancedQuery(BaseModel):
     """An already-compiled Sumble advanced expression, never arbitrary user prompt text."""
 
@@ -53,7 +65,33 @@ class SumbleAdvancedQuery(BaseModel):
             raise ValueError("Sumble advanced query must be pre-normalized")
         if "\n" in self.expression or "\r" in self.expression:
             raise ValueError("Sumble advanced query must be a single line")
+        self.dimensions()  # the documented-grammar guard; raises on any undocumented shape
         return self
+
+    def dimensions(self) -> tuple[str, ...]:
+        """Return the queried dimensions, refusing any undocumented grammar fail-closed."""
+
+        atoms = self.expression.split(" AND ")
+        dimensions: list[str] = []
+        for atom in atoms:
+            match = _ADVANCED_QUERY_ATOM.fullmatch(atom)
+            if match is None:
+                raise ValueError(
+                    "Sumble advanced query allows only \"<dimension> EQ '<value>'\" atoms "
+                    f"joined by AND; got atom {atom!r}"
+                )
+            dimensions.append(match.group(1))
+        return tuple(dimensions)
+
+    def require_dimensions(self, allowed: frozenset[str], *, endpoint: str) -> None:
+        """Refuse a dimension the target endpoint does not document as queryable."""
+
+        unsupported = sorted(set(self.dimensions()) - allowed)
+        if unsupported:
+            raise ValueError(
+                f"Sumble {endpoint} advanced query does not support dimension(s) "
+                f"{unsupported}; documented: {sorted(allowed)}"
+            )
 
 
 class SumbleCurrentEmployer(BaseModel):
@@ -172,6 +210,7 @@ def people_search_request(
 
     filter_body: dict[str, Any] = {"organization_ids": [organization_id]}
     if advanced_query is not None:
+        advanced_query.require_dimensions(PEOPLE_QUERY_DIMENSIONS, endpoint="People")
         filter_body["query"] = {"query": advanced_query.expression}
     body = {
         "filter": filter_body,

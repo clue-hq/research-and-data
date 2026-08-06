@@ -10,7 +10,6 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from uuid import UUID
 
 import pytest
 from pydantic import SecretStr
@@ -30,7 +29,6 @@ from clue_api.exa_targeted_enrichment import (
     build_exa_import_webset_request,
     compile_exa_targeted_preflight,
 )
-from clue_api.toolbelt_wiring import build_toolbelt
 from clue_core import (
     DiscoveryEnrichmentFormat,
     EntityId,
@@ -42,7 +40,6 @@ from clue_core import (
     TargetedEnrichmentFieldPlan,
     TargetedEnrichmentOperationId,
     account_claim,
-    new_operation_id,
 )
 from clue_research.adapters.exa_websets import (
     ExaCreateImportRequest,
@@ -73,7 +70,6 @@ from clue_research.durable import (
 )
 from clue_research.identity import insert_account_entity, stamp_reuse
 from clue_storage import FsStorage
-from clue_toolbelt import ToolContext, invoke_tool
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
 from tests.durable.test_discovery_batch_d1 import _complete_batch, _start_batch
@@ -511,68 +507,51 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
             async def transport_factory() -> AsyncIterator[_BlockingImportTransport]:
                 yield transport
 
+            # M8D R1/R10 retired the `enrich_selected_accounts@1` tool address (exact-replay-only;
+            # the refusal itself is pinned by the toolbelt matrix). The preserved E1 engine —
+            # starter, coordinator, snapshots, spend — is exercised directly here.
             starter = ExaTargetedEnrichmentStarter(
                 transport_factory=transport_factory,
                 storage=storage,
                 conn_factory=same_connection,
             )
-            registry = build_toolbelt(
-                storage=storage,
-                gateway=None,
-                conn_factory=same_connection,
-                targeted_enrichment_starter=starter,
-            )
-            tool_body = {
-                "project_run_id": str(started.project_run_id),
-                "account_entity_ids": [str(ready.account_id)],
-                "field_keys": [
+            start_kwargs: dict[str, Any] = {
+                "workspace_id": workspace_id,
+                "project_run_id": started.project_run_id,
+                "account_ids": (EntityId(ready.account_id),),
+                "field_keys": (
                     "core.company_linkedin_url",
                     "core.revenue_band",
-                ],
+                ),
             }
-            first_ctx = ToolContext(
-                workspace_id=workspace_id,
-                actor="agent",
-                conn_factory=same_connection,
-                operation_id=new_operation_id(),
-            )
-            concurrent_ctx = ToolContext(
-                workspace_id=workspace_id,
-                actor="agent",
-                conn_factory=same_connection,
-                operation_id=new_operation_id(),
-            )
             coordinator = _CapturingCoordinator(
                 transport=transport,
                 storage=storage,
                 conn_factory=same_connection,
                 poll_after_seconds=1,
             )
-            first_start = asyncio.create_task(
-                invoke_tool(
-                    registry,
-                    "enrich_selected_accounts",
-                    tool_body,
-                    first_ctx,
-                    idempotency_ttl_s=86400,
+            first_start = asyncio.create_task(starter.start(**start_kwargs))
+            # Race the dispatch entry against the start task so an early refusal surfaces as a
+            # test failure instead of parking the suite on an event nobody will ever set (the
+            # exact shape of the R10 full-suite hang this rewrite fixes).
+            entered = asyncio.create_task(transport.import_entered.wait())
+            done, _pending = await asyncio.wait(
+                {first_start, entered},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if first_start in done and not entered.done():
+                entered.cancel()
+                raise AssertionError(
+                    "E1 start settled before dispatching: "
+                    f"{first_start.exception() or first_start.result()!r}"
                 )
-            )
-            await transport.import_entered.wait()
-            concurrent = await invoke_tool(
-                registry,
-                "enrich_selected_accounts",
-                tool_body,
-                concurrent_ctx,
-                idempotency_ttl_s=86400,
-            )
-            assert concurrent.references["outcome"] == ExaTargetedOutcome.JOINED_IN_FLIGHT.value
+            concurrent = await starter.start(**start_kwargs)
+            assert concurrent.outcome is ExaTargetedOutcome.JOINED_IN_FLIGHT
             assert transport.import_calls == 1
             transport.import_release.set()
             started_result = await first_start
-            assert started_result.references["outcome"] == ExaTargetedOutcome.CREATED.value
-            operation_id = TargetedEnrichmentOperationId(
-                UUID(str(started_result.references["operation_id"]))
-            )
+            assert started_result.outcome is ExaTargetedOutcome.CREATED
+            operation_id = started_result.operation.operation_id
             started_operation = await get_targeted_enrichment_operation(
                 conn,
                 workspace_id=workspace_id,
@@ -958,18 +937,7 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
             erased_replay = await restarted.start(preflight)
             assert erased_replay.outcome is ExaTargetedOutcome.REPLAYED
             with pytest.raises(ExaTargetedEligibilityError, match="intact sealed discovery"):
-                await invoke_tool(
-                    registry,
-                    "enrich_selected_accounts",
-                    tool_body,
-                    ToolContext(
-                        workspace_id=workspace_id,
-                        actor="agent",
-                        conn_factory=same_connection,
-                        operation_id=new_operation_id(),
-                    ),
-                    idempotency_ttl_s=86400,
-                )
+                await starter.start(**start_kwargs)
             assert (
                 transport.import_calls,
                 transport.upload_calls,

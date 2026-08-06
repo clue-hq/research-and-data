@@ -47,6 +47,7 @@ from clue_research.durable import (
     update_committee_acquisition_operation,
     update_committee_acquisition_snapshot,
 )
+from clue_research.resolvers.http import ProviderResponseError
 from clue_research.resolvers.sumble import SUMBLE_API_BASE, SUMBLE_API_VERSION
 from clue_research.resolvers.sumble.committee_transport import (
     SumbleCommitteeTransport,
@@ -257,6 +258,19 @@ class SumbleCommitteeAcquisitionCoordinator:
                         operation=await self._get(operation),
                         provider_calls=provider_calls,
                     )
+                except ProviderResponseError as exc:
+                    if exc.is_deterministic_rejection:
+                        return await self._mark_provider_rejected(
+                            operation,
+                            source_key=TEAMS_SOURCE_KEY,
+                            error=exc,
+                            provider_calls=provider_calls + 1,
+                        )
+                    return await self._mark_unknown(
+                        operation,
+                        "sumble_teams_dispatch_or_response_unreconciled",
+                        provider_calls=provider_calls + 1,
+                    )
                 except Exception:
                     return await self._mark_unknown(
                         operation,
@@ -282,6 +296,19 @@ class SumbleCommitteeAcquisitionCoordinator:
                     operation=await self._get(operation),
                     provider_calls=provider_calls,
                 )
+            except ProviderResponseError as exc:
+                if exc.is_deterministic_rejection:
+                    return await self._mark_provider_rejected(
+                        operation,
+                        source_key=PEOPLE_SOURCE_KEY,
+                        error=exc,
+                        provider_calls=provider_calls + 1,
+                    )
+                return await self._mark_unknown(
+                    operation,
+                    "sumble_people_submit_or_response_unreconciled",
+                    provider_calls=provider_calls + 1,
+                )
             except Exception:
                 return await self._mark_unknown(
                     operation,
@@ -303,6 +330,19 @@ class SumbleCommitteeAcquisitionCoordinator:
                     outcome=SumbleCommitteeOutcome.RATE_LIMITED,
                     operation=await self._get(operation),
                     provider_calls=provider_calls,
+                )
+            except ProviderResponseError as exc:
+                if exc.is_deterministic_rejection:
+                    return await self._mark_provider_rejected(
+                        operation,
+                        source_key=PEOPLE_SOURCE_KEY,
+                        error=exc,
+                        provider_calls=provider_calls + 1,
+                    )
+                return await self._mark_unknown(
+                    operation,
+                    "sumble_people_poll_or_response_unreconciled",
+                    provider_calls=provider_calls + 1,
                 )
             except Exception:
                 return await self._mark_unknown(
@@ -782,6 +822,92 @@ class SumbleCommitteeAcquisitionCoordinator:
         return SumbleCommitteeResult(
             outcome=SumbleCommitteeOutcome.READY,
             operation=completed,
+            provider_calls=provider_calls,
+        )
+
+    async def _mark_provider_rejected(
+        self,
+        operation: CommitteeAcquisitionOperation,
+        *,
+        source_key: str,
+        error: ProviderResponseError,
+        provider_calls: int = 0,
+    ) -> SumbleCommitteeResult:
+        """Persist a deterministic provider rejection with its exact diagnostic evidence.
+
+        Sumble validates a request and prechecks the balance *before* charging ("you still get a
+        400/402 up front"), so a hard 4xx is a zero-credit terminal refusal — categorically
+        different from a transport loss after dispatch. Collapsing both into
+        ``spend_outcome_unknown`` forced a manual live replay just to learn the status code; the
+        ledger now retains the HTTP status and the provider's own bounded error body.
+        """
+
+        failure_code = f"{source_key}_provider_rejected_http_{error.status_code}"
+        async with self._conn_factory() as conn:
+            rejection_artifact_key = await capture_discovery_artifact(
+                conn,
+                self._storage,
+                workspace_id=operation.request.workspace_id,
+                content=_json_bytes(
+                    {
+                        "provider_rejection": {
+                            "source_key": source_key,
+                            "http_status": error.status_code,
+                            "body_excerpt": error.body_excerpt,
+                        }
+                    }
+                ),
+                media_type="application/json",
+                source_key=source_key,
+                source_url=_source_url(source_key),
+            )
+            attempts = await list_committee_acquisition_attempts(
+                conn,
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
+            now = datetime.now(UTC)
+            for attempt in attempts:
+                if attempt.state is not CommitteeAttemptState.DISPATCHING:
+                    continue
+                await update_committee_acquisition_attempt(
+                    conn,
+                    attempt=attempt.model_copy(
+                        update={
+                            "state": CommitteeAttemptState.RESPONDED,
+                            "response_artifact_key": rejection_artifact_key,
+                            "failure_code": failure_code,
+                            "completed_at": now,
+                        }
+                    ),
+                )
+                snapshot = await get_committee_acquisition_snapshot(
+                    conn,
+                    workspace_id=operation.request.workspace_id,
+                    operation_id=operation.operation_id,
+                    source_key=attempt.source_key,
+                    for_update=True,
+                )
+                if snapshot is not None and snapshot.state is CommitteeSnapshotState.DISPATCHING:
+                    await update_committee_acquisition_snapshot(
+                        conn,
+                        snapshot=snapshot.model_copy(
+                            update={
+                                "state": CommitteeSnapshotState.FAILED_TERMINAL,
+                                "spend_outcome": CommitteeSpendOutcome.NOT_CHARGED,
+                                "failure_code": failure_code,
+                            }
+                        ),
+                    )
+        stored = await self._refresh_totals(
+            operation,
+            state=CommitteeAcquisitionState.FAILED_TERMINAL,
+            failure_code=failure_code,
+            terminal_at=datetime.now(UTC),
+        )
+        return SumbleCommitteeResult(
+            outcome=SumbleCommitteeOutcome.FAILED_TERMINAL,
+            operation=stored,
             provider_calls=provider_calls,
         )
 

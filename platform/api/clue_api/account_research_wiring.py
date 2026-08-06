@@ -29,6 +29,7 @@ from clue_api.agent_execution_wiring import (
     CheckpointerFactory,
     DbAgentPlanJournal,
 )
+from clue_api.agent_registry_wiring import ACCOUNT_RESEARCH_UNIT_SURFACE
 from clue_api.agent_runtime_wiring import (
     AgentFinalizationAuthority,
     CompletionGuard,
@@ -51,6 +52,7 @@ from clue_core import (
     RunId,
     UtcDatetime,
     WorkerStatus,
+    account_axis_field_keys,
 )
 from clue_db import ConnFactory, transaction
 from clue_execution import (
@@ -127,7 +129,10 @@ class AccountResearchStepPinProvider(StepPinProvider):
             await self._current(kind="account", key=account_entity_id, ctx=ctx),
             await self._current(kind="field_registry", key="__all_active__", ctx=ctx),
             await self._current(kind="source_registry", key="__all_active__", ctx=ctx),
-            await self._current(kind="coverage_policy", key="default", ctx=ctx),
+            # ``coverage_policy:default@1`` is already a static requirement of the
+            # ``account_research_interactions`` recipe node. Adding a digest-pinned dynamic copy
+            # creates a conflicting requirement (version-only versus version+digest) at execution
+            # start. Only request genuinely run-/subject-/catalog-dynamic resources here.
             *step.pin_requests,
         )
 
@@ -149,7 +154,10 @@ def build_account_research_execution(
 ) -> C5AgentExecutionAdapter:
     """Build the one-tool C5 adapter for an already-started account-unit execution."""
 
-    resolved = profiles.resolve(AgentRole.ACCOUNT_RESEARCH)
+    resolved = profiles.resolve(
+        AgentRole.ACCOUNT_RESEARCH,
+        surface=ACCOUNT_RESEARCH_UNIT_SURFACE,
+    )
     if request.constitution.role is not AgentRole.ACCOUNT_RESEARCH:
         raise ValueError("account research execution requires account_research authority")
     if request.constitution.profile_ref != resolved.profile_ref:
@@ -211,7 +219,10 @@ class AccountResearchAgentRuntime:
         execution: C5AgentExecutionAdapter,
         completion_guard: CompletionGuard,
     ) -> AgentTurnOutcome:
-        resolved = self._profiles.resolve(AgentRole.ACCOUNT_RESEARCH)
+        resolved = self._profiles.resolve(
+            AgentRole.ACCOUNT_RESEARCH,
+            surface=ACCOUNT_RESEARCH_UNIT_SURFACE,
+        )
         constitution = request.constitution
         if constitution.role is not AgentRole.ACCOUNT_RESEARCH:
             raise ValueError("account turn requires account_research authority")
@@ -395,13 +406,18 @@ class GovernedAccountProfiler:
             recursion_policy=recursion_policy,
             conn_factory=self._conn_factory,
         )
+        account_fields = (
+            None
+            if spec.field_keys is None
+            else account_axis_field_keys(spec.field_keys)
+        )
         plan = await store.begin(
             account_run_id=run_id,
             project_run_id=project_run_id,
             entity_id=account_entity_id,
             tier=tier,
             workspace_id=workspace_id,
-            field_keys=spec.field_keys or None,
+            field_keys=account_fields,
             research_directive=research_directive,
         )
         planned_fields = tuple(field for aspect in plan.aspects for field in aspect.field_keys)

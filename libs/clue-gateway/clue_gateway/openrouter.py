@@ -73,11 +73,25 @@ class OpenRouterGateway:
             }
             for message in messages
         ]
+        wire_opts = dict(opts)
+        # ``LLMGateway`` is provider-neutral and its pre-Responses callers use the conventional
+        # ``max_tokens`` option.  OpenAI's Responses API names the same limit
+        # ``max_output_tokens``.  Translate at this sole provider boundary instead of leaking the
+        # vendor wire name through every judge/supervisor call site.
+        legacy_max_tokens = wire_opts.pop("max_tokens", None)
+        if legacy_max_tokens is not None:
+            if "max_output_tokens" in wire_opts:
+                raise ValueError("specify only one of max_tokens and max_output_tokens")
+            wire_opts["max_output_tokens"] = legacy_max_tokens
         first_exc: Exception | None = None
         last_exc: Exception | None = None
         for candidate in self._candidates(model):
             try:
-                resp = self._client_().responses.create(model=candidate, input=input_items, **opts)
+                resp = self._client_().responses.create(
+                    model=candidate,
+                    input=input_items,
+                    **wire_opts,
+                )
                 error = getattr(resp, "error", None)
                 if error is not None:
                     detail = getattr(error, "message", None) or str(error)

@@ -162,7 +162,10 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
         temperature=0,
     )
 
-    bound = model.bind_tools([ReadProjectInput])
+    # ``create_agent`` uses the provider-neutral spelling ``any`` for its structured-output
+    # ToolStrategy.  The governed wrapper must restore the OpenAI Responses spelling rather than
+    # forwarding an invalid wire value to OpenRouter.
+    bound = model.bind_tools([ReadProjectInput], tool_choice="any")
     with collect_spans() as exporter:
         response = bound.invoke("Read the project.")
 
@@ -193,6 +196,7 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
     assert requests[0]["input"][0]["type"] == "message"
     assert requests[0]["tools"][0]["type"] == "function"
     assert requests[0]["tools"][0]["name"] == "ReadProjectInput"
+    assert requests[0]["tool_choice"] == "required"
 
     async def invoke_async() -> None:
         async_response = await bound.ainvoke(
@@ -219,6 +223,74 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
         "type": "function_call_output",
         "output": '{"name":"Project One"}',
         "call_id": "call-read-project",
+    }
+    assert requests[1]["tool_choice"] == "required"
+
+
+def test_openrouter_agent_model_normalizes_exact_function_choice() -> None:
+    captured: list[dict[str, Any]] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp-exact-tool",
+                "object": "response",
+                "created_at": 1_775_000_000,
+                "model": "openai/gpt-5.6-terra",
+                "output": [
+                    {
+                        "id": "fc-exact-tool",
+                        "type": "function_call",
+                        "call_id": "call-exact-tool",
+                        "name": "ReadProjectInput",
+                        "arguments": '{"project_id":"project-1"}',
+                        "status": "completed",
+                    }
+                ],
+                "parallel_tool_calls": False,
+                "tool_choice": {
+                    "type": "function",
+                    "name": "ReadProjectInput",
+                },
+                "tools": [],
+                "usage": {
+                    "input_tokens": 2,
+                    "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                    "output_tokens": 1,
+                    "output_tokens_details": {"reasoning_tokens": 0},
+                    "total_tokens": 3,
+                },
+                "status": "completed",
+            },
+            request=request,
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(respond))
+    async_client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    provider = OpenRouterAgentModelProvider(
+        GatewayConfig(base_url="https://openrouter.ai/api/v1", timeout_s=30, max_retries=0),
+        SecretStr("test-openrouter-key"),
+        http_client=client,
+        http_async_client=async_client,
+    )
+    model = provider.build(
+        model_id="openai/gpt-5.6-terra",
+        timeout_s=10,
+        max_retries=0,
+        max_output_tokens=128,
+        temperature=0,
+    )
+
+    response = model.bind_tools(
+        [ReadProjectInput], tool_choice="ReadProjectInput"
+    ).invoke("Read the project.")
+
+    assert response.tool_calls[0]["name"] == "ReadProjectInput"
+    assert captured[0]["tool_choice"] == {
+        "type": "function",
+        "name": "ReadProjectInput",
     }
 
 

@@ -32,33 +32,58 @@ def test_scripted_o3_conversations_cover_the_non_linear_gate() -> None:
     with hermetic_flag_env():
         registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    skill = head.open_skill("skill:account-deep-steering@v1")
+    skill = head.open_skill("skill:account-deep-steering@v2")
 
     for scenario in scenarios:
         assert scenario["user_turns"]
         assert scenario["required_guidance"] in skill
         actions = scenario["scripted_actions"]
-        has_launch = "launch_account_deep" in actions
+        has_launch = "launch_account_research" in actions
         assert has_launch is scenario["explicit_launch_go_ahead"]
         if not scenario["explicit_launch_go_ahead"]:
-            assert "launch_account_deep" not in actions
+            assert "launch_account_research" not in actions
 
     discovery_completion_actions = next(
         item["scripted_actions"] for item in scenarios if item["name"] == "show_accounts_only"
     )
     assert "draft_directive" not in discovery_completion_actions
-    assert "launch_account_deep" not in discovery_completion_actions
+    assert "launch_account_research" not in discovery_completion_actions
+
+    # The v2 steering skill — not the launch tool's registered description — now carries the
+    # human-approval gate and the "a receipt is not completed research" reading rule, so the
+    # contract is pinned where it actually lives.
     assert (
-        "launched/enqueued or replayed"
-        in build_toolbelt(storage=None, gateway=None)
-        .descriptor("launch_account_deep")
-        .model_description
+        "Call `launch_account_research@1` only after the current user action explicitly approves "
+        "the exact\nconfirmed directive, account set, estimate, and cap." in skill
+    )
+    assert "A queue receipt or provider wait is not completed research." in skill
+    assert (
+        "Never translate a successful tool call, launch receipt, replay, or model\n"
+        "stop into successful research." in skill
+    )
+
+    # The registered launch tool is the exact governed spend-class contract that gate steers, and
+    # its durable identity is the approved directive/selection/budget triple — so a replay is the
+    # same launch, never a second one.
+    descriptor = build_toolbelt(storage=None, gateway=None).descriptor("launch_account_research")
+    assert (
+        "only after the current user action explicitly approves" in descriptor.model_description
     )
     assert (
-        "never means"
-        in build_toolbelt(storage=None, gateway=None)
-        .descriptor("launch_account_deep")
-        .model_description
+        "it never means account or committee research has completed"
+        in descriptor.model_description
+    )
+    assert "never authorizes contact research" in descriptor.model_description
+    assert descriptor.effect_class.value == "spend"
+    assert descriptor.replay.policy.value == "domain_idempotent"
+    assert (
+        descriptor.replay.durable_identity
+        == "confirmed directive + exact account selection + approved budget"
+    )
+    assert descriptor.pin_requirements == (
+        "project_run",
+        "research_directive",
+        "account_research_selection",
     )
 
 
@@ -66,10 +91,19 @@ def test_research_specialist_separates_plan_review_from_admitted_execution() -> 
     with hermetic_flag_env():
         registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     specialist = registry.resolve(AgentRole.RESEARCH)
-    body = specialist.open_skill("skill:research-task@v3")
+    body = specialist.open_skill("skill:research-task@v4")
 
-    assert "pre-launch plan review" in body
-    assert "Invoke no spending tool" in body
-    assert "standard registered fields" in body
-    assert "directional questions/hypotheses" in body
-    assert "is never\ncompleted research" in body
+    assert "For a pre-launch review, analyze only." in body
+    assert "Do not imitate, launch, or replace those units." in body
+    assert (
+        "Inventory exact entities, fields, directional\nquestions, evidence gaps, source plans"
+        in body
+    )
+    assert (
+        "A provider receipt, fleet return, or partial claim set is not verified merely because it\n"
+        "exists." in body
+    )
+    assert (
+        "Never claim completion for an account/contact job whose\n"
+        "accepted finalization receipt is absent." in body
+    )

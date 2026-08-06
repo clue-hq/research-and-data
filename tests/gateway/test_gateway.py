@@ -220,6 +220,7 @@ class _FakeOpenRouter:
         self._error_models = error_models or set()
         self.calls: list[str] = []
         self.inputs: list[list[Any]] = []
+        self.options: list[dict[str, Any]] = []
 
     @property
     def responses(self) -> Any:
@@ -230,9 +231,9 @@ class _FakeOpenRouter:
         return SimpleNamespace(create=self._embed)
 
     def _create(self, *, model: str, input: list[Any], **opts: Any) -> Any:
-        del opts
         self.calls.append(model)
         self.inputs.append(input)
+        self.options.append(opts)
         if model in self._fail_models:
             raise RuntimeError(f"boom: {model}")
         if model in self._empty_models:
@@ -304,6 +305,26 @@ def test_live_maps_response_to_completion() -> None:
             }
         ]
     ]
+
+
+def test_live_maps_provider_neutral_max_tokens_to_responses_option() -> None:
+    gw = _live(GatewayConfig())
+
+    gw.complete(model="only/model", messages=_PROMPT, max_tokens=1200, temperature=0)
+
+    assert gw._fake.options == [{"max_output_tokens": 1200, "temperature": 0}]
+
+
+def test_live_refuses_ambiguous_token_limits() -> None:
+    gw = _live(GatewayConfig())
+
+    with pytest.raises(ValueError, match="only one"):
+        gw.complete(
+            model="only/model",
+            messages=_PROMPT,
+            max_tokens=1200,
+            max_output_tokens=700,
+        )
 
 
 def test_live_falls_back_on_primary_error() -> None:

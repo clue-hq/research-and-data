@@ -421,8 +421,9 @@ def test_governed_surface_uses_tool_specific_model_guidance_without_moving_schem
     )
     built = {tool.name: tool for tool in factory.build()}
 
-    assert "explicit human go-ahead" in built["launch_account_deep"].description
-    assert "never means" in built["launch_account_deep"].description
+    # M8D R10: the retired account-deep launch is exact-replay-only — no active role builds it —
+    # while its registry descriptor (and therefore its historical schema pin) must not move.
+    assert "launch_account_deep" not in built
     assert "non-spending immutable" in built["draft_account_research_directive"].description
     assert toolbelt.descriptor("launch_account_deep").input_schema_sha256 == (
         "ccb1246db77aeac6810baab769838993cc132fec9217eaecf07da9cc207d650f"

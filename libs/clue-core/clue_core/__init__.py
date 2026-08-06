@@ -307,6 +307,7 @@ from clue_core.factories import (
     to_value_json,
 )
 from clue_core.field import (
+    ACCOUNT_AXIS_FIELD_CLASSES,
     NS_ACCOUNT,
     NS_ACCOUNT_RESONANCE,
     NS_CONTACT,
@@ -315,6 +316,7 @@ from clue_core.field import (
     FieldClass,
     FieldDef,
     FieldKey,
+    account_axis_field_keys,
     classify_field_key,
     default_reuse_scope,
     field_key,
@@ -871,6 +873,8 @@ __all__ = [
     "FieldClass",
     "FieldKey",
     "FieldDef",
+    "ACCOUNT_AXIS_FIELD_CLASSES",
+    "account_axis_field_keys",
     "is_valid_field_key",
     "is_field_key_or_class",
     "classify_field_key",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -58,6 +59,7 @@ class ExaDeepContactAcquisitionService:
         directional_questions: Sequence[str] | None = None,
         reuse_context_ref: str | None = None,
         prior_research_context: str | None = None,
+        entity_research_job_id: UUID | None = None,
     ) -> ExaDeepContactAcquisitionBatchResult:
         """Acquire only a database-proven selected intent; a rejected compile makes zero calls."""
 
@@ -74,6 +76,7 @@ class ExaDeepContactAcquisitionService:
                 directional_questions=directional_questions,
                 reuse_context_ref=reuse_context_ref,
                 prior_research_context=prior_research_context,
+                entity_research_job_id=entity_research_job_id,
             )
 
         # This loop is deliberately outside the compiler/claim transaction. Each coordinator call

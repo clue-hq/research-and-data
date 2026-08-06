@@ -150,6 +150,9 @@ def test_s2c_reads_only_ready_exact_account_snapshots_and_survives_no_provider_c
                 fact.source_url and fact.evidence_span and fact.artifact_key
                 for fact in candidate.professional_facts
             )
+            for fact in candidate.professional_facts:
+                retained = (await storage.get(fact.artifact_key)).decode("utf-8")
+                assert fact.evidence_span in retained
             assert candidate.discovery_confidence == pytest.approx(0.92)
             assert len(transport.calls) == provider_call_count
 

@@ -13,6 +13,7 @@ cannot both observe the same remaining capacity.
 from __future__ import annotations
 
 from decimal import Decimal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
@@ -127,6 +128,7 @@ async def require_provider_spend_capacity(
     project_run_id: ProjectRunId,
     proposed_cents: CostCents,
     allowed_phases: frozenset[ProjectPhase],
+    entity_research_job_id: UUID | None = None,
 ) -> ProviderSpendCapacity:
     """Lock a run and authorize one new reservation against all provider ledgers.
 
@@ -158,7 +160,53 @@ async def require_provider_spend_capacity(
         raise ProviderSpendRunIneligible(
             f"project run {project_run_id} is {status.value}, not active"
         )
-    if phase not in allowed_phases:
+    if entity_research_job_id is not None:
+        job = (
+            (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT job.state::text AS job_state, run.state::text AS run_state,
+                               job.workspace_id, job.project_run_id,
+                               EXISTS (
+                                   SELECT 1 FROM entity_research_account_fleet_job_control control
+                                   WHERE control.job_id=job.job_id
+                                     AND control.research_run_id=job.research_run_id
+                                     AND control.admission_state IN ('admitted', 'released')
+                               ) AS account_authorized,
+                               EXISTS (
+                                   SELECT 1 FROM entity_research_contact_job_authority authority
+                                   WHERE authority.job_id=job.job_id
+                                     AND authority.research_run_id=job.research_run_id
+                                     AND authority.workspace_id=job.workspace_id
+                               ) AS contact_authorized
+                        FROM entity_research_job job
+                        JOIN entity_research_run run USING (research_run_id)
+                        WHERE job.job_id=:job_id
+                          AND job.project_run_id=:project_run_id
+                          AND run.project_run_id=:project_run_id
+                        FOR SHARE OF job, run
+                        """
+                    ),
+                    {
+                        "job_id": entity_research_job_id,
+                        "project_run_id": project_run_id,
+                    },
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if (
+            job is None
+            or str(job["job_state"]) != "running"
+            or str(job["run_state"]) != "running"
+            or bool(job["account_authorized"]) == bool(job["contact_authorized"])
+        ):
+            raise ProviderSpendRunIneligible(
+                "provider reservation lacks one exact live entity-research job authority"
+            )
+    elif phase not in allowed_phases:
         allowed = ", ".join(sorted(value.value for value in allowed_phases))
         raise ProviderSpendRunIneligible(
             f"project run {project_run_id} is in {phase.value}; allowed phase(s): {allowed}"

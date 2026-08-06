@@ -16,3 +16,8 @@ changed.
 
 These are contract fixtures, not provider responses. They make no network, database, model, or
 provider call and authorize no spend.
+
+`r10_release_matrix.json` is the closure index for every numbered M8D section 16 criterion. It
+does not turn a filename into proof: R10 runs every referenced executable test and separately
+records the credentialed canary evidence for criterion 24. Its purpose is to make an omitted
+criterion fail the release battery instead of disappearing behind an otherwise green suite.

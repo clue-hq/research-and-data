@@ -18,6 +18,7 @@ The API composition root owns durable snapshot/receipt persistence and supplies 
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
@@ -77,6 +78,22 @@ _ORGANIZATION_PAID_ATTRIBUTES: Final[tuple[str, ...]] = tuple(
 
 type SumbleSourceKey = Literal["sumble_organizations", "sumble_jobs", "sumble_tech_stack"]
 type HttpFetcher = Callable[..., Any]
+
+
+def _json_member_span(key: str, value: object) -> str:
+    """Return an exact excerpt of the canonical immutable Sumble response artifact."""
+
+    return (
+        json.dumps(key, ensure_ascii=False)
+        + ":"
+        + json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    )
 
 
 class SumbleContractError(ResolverError):
@@ -581,6 +598,12 @@ def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[
                 row.attributes.employee_count,
                 source_url=source_url,
                 confidence=0.9,
+            ).model_copy(
+                update={
+                    "evidence_span": _json_member_span(
+                        "employee_count", row.attributes.employee_count
+                    )
+                }
             )
         ]
     if field.field_key == _PRIMARY_DOMAIN_FIELD and row.attributes.url:
@@ -590,6 +613,8 @@ def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[
                 row.attributes.url,
                 source_url=source_url,
                 confidence=0.98,
+            ).model_copy(
+                update={"evidence_span": _json_member_span("url", row.attributes.url)}
             )
         ]
     if field.field_key == _INDUSTRY_FIELD and row.attributes.industry:
@@ -599,6 +624,10 @@ def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[
                 row.attributes.industry,
                 source_url=source_url,
                 confidence=0.9,
+            ).model_copy(
+                update={
+                    "evidence_span": _json_member_span("industry", row.attributes.industry)
+                }
             )
         ]
     if field.field_key == _HQ_LOCATION_FIELD and row.attributes.headquarters_country:
@@ -609,6 +638,10 @@ def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[
                 {"raw": country, "country": country, "country_code": country},
                 source_url=source_url,
                 confidence=0.88,
+            ).model_copy(
+                update={
+                    "evidence_span": _json_member_span("headquarters_country", country)
+                }
             )
         ]
     return []
@@ -635,16 +668,12 @@ def normalize_jobs(payload: Mapping[str, Any], field: FieldDef) -> list[Resolved
         return []
     response = SumbleJobsResponse.model_validate(payload)
     source_url = response.source_data_url or "https://sumble.com"
-    returned_ids = [row.job_id for row in response.jobs]
     return [
         ResolvedField(
             field_key=field.field_key,
             value=response.total,
             source_url=source_url,
-            evidence_span=(
-                f"query={_ENGINEERING_QUERY!r}; total={response.total}; "
-                f"returned_job_ids={returned_ids!r}"
-            ),
+            evidence_span=_json_member_span("total", response.total),
             confidence=0.85,
         )
     ]
@@ -665,21 +694,14 @@ def normalize_tech_stack(payload: Mapping[str, Any], field: FieldDef) -> list[Re
     )
     if not technologies:
         return []
-    evidence = [
-        {
-            "name": tech.name,
-            "job_post_used_count": tech.job_post_used_count,
-        }
-        for business_function in response.business_functions
-        for category in business_function.categories
-        for tech in category.technologies
-    ]
     return [
         ResolvedField(
             field_key=field.field_key,
             value=to_value_json(technologies),
             source_url=(f"{SUMBLE_API_BASE}/organizations/{response.organization_id}/techs"),
-            evidence_span=f"confirmed_used_technologies={evidence!r}",
+            evidence_span=_json_member_span(
+                "business_functions", payload.get("business_functions", [])
+            ),
             confidence=0.92,
         )
     ]

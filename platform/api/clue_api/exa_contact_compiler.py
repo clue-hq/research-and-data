@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -165,6 +166,7 @@ def compile_exa_contact_acquisition_plan(
     directional_questions: Sequence[str],
     observation_window: str,
     cost_cents_reserved_per_bundle: Decimal,
+    entity_research_job_id: UUID | None = None,
     config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
     reuse_context_ref: str | None = None,
     prior_research_context: str | None = None,
@@ -249,6 +251,11 @@ def compile_exa_contact_acquisition_plan(
                     "contract": "exa-search-contact-deep-c3-operation-v1",
                     "reuse_fingerprint": reuse_fingerprint,
                     "project_run_id": str(intent.project_run_id),
+                    "entity_research_job_id": (
+                        str(entity_research_job_id)
+                        if entity_research_job_id is not None
+                        else None
+                    ),
                     "observation_window": observation_window,
                     "bundle_index": index,
                 }
@@ -258,6 +265,7 @@ def compile_exa_contact_acquisition_plan(
             workspace_id=intent.workspace_id,
             project_id=intent.project_id,
             project_run_id=intent.project_run_id,
+            entity_research_job_id=entity_research_job_id,
             subject_kind=ExternalResearchSubjectKind.CONTACT,
             account_id=intent.account_entity_id,
             contact_id=intent.contact_entity_id,
@@ -302,6 +310,7 @@ async def compile_registered_exa_contact_plan(
     directional_questions: Sequence[str] | None = None,
     reuse_context_ref: str | None = None,
     prior_research_context: str | None = None,
+    entity_research_job_id: UUID | None = None,
 ) -> ExaDeepContactAcquisitionPlan:
     """Resolve every C3 authority, optionally narrowing to one governed semantic tool call."""
 
@@ -484,6 +493,7 @@ async def compile_registered_exa_contact_plan(
         config=config,
         reuse_context_ref=reuse_context_ref,
         prior_research_context=prior_research_context,
+        entity_research_job_id=entity_research_job_id,
     )
 
 

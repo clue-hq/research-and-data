@@ -38,6 +38,36 @@ def test_classify_status_hard_4xx_is_not_retryable(status: int) -> None:
         classify_status(status, source_key="clay", url="https://x")
 
 
+def test_hard_4xx_retains_the_bounded_provider_diagnostic_body() -> None:
+    """A validated provider rejection must stay diagnosable from the durable ledger alone.
+
+    The live R10 Sumble HTTP 400 was persisted as an opaque ``spend_outcome_unknown`` and had to
+    be replayed manually just to read the status; the error body (which names the exact invalid
+    member on a 422) was discarded entirely.
+    """
+
+    with pytest.raises(ProviderResponseError) as caught:
+        classify_status(
+            422,
+            source_key="sumble_teams",
+            url="https://api.sumble.com/v9/teams",
+            body='{"detail":[{"loc":["filter","query"],"msg":"bad"}]}' + "x" * 5_000,
+        )
+    error = caught.value
+    assert error.status_code == 422
+    assert error.is_deterministic_rejection
+    assert error.body_excerpt is not None
+    assert error.body_excerpt.startswith('{"detail"')
+    assert len(error.body_excerpt) <= 2_000
+
+
+def test_malformed_body_without_status_is_not_a_deterministic_rejection() -> None:
+    """A non-JSON 2xx body may still have charged; it must never classify as a clean refusal."""
+
+    assert not ProviderResponseError("clay: non-JSON response").is_deterministic_rejection
+    assert not ProviderResponseError("x", status_code=500).is_deterministic_rejection
+
+
 def test_resolve_credential_returns_the_referenced_secret() -> None:
     secrets = Secrets(clay_api_key=SecretStr("clay-fixture-key"))
     secret = resolve_credential("CLUE_CLAY_API_KEY", source_key="clay", secrets=secrets)

@@ -27,6 +27,7 @@ __all__ = [
     "C6_ACTIVE_PROFILE_VERSIONS",
     "C6_AGENT_TOOL_AUTHORITY",
     "C6_SURFACE_POLICIES",
+    "ACCOUNT_RESEARCH_UNIT_SURFACE",
     "STAGE0_CONVERSATION_TRIAL_SURFACE",
     "c6_roles_for_tool",
     "ToolRegistryAgentCatalog",
@@ -34,8 +35,8 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v20",
-    AgentRole.RESEARCH: "v6",
+    AgentRole.HEAD_OF_ABM: "v21",
+    AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
 }
@@ -62,8 +63,8 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "confirm_account_research_directive": (),
     "discover_accounts": (),
     "estimate_project": (),
-    "enrich_account_gaps": (AgentRole.HEAD_OF_ABM,),
-    "enrich_selected_accounts": (AgentRole.HEAD_OF_ABM,),
+    "enrich_account_gaps": (),
+    "enrich_selected_accounts": (),
     "evaluate_stage0_readiness": (AgentRole.HEAD_OF_ABM,),
     "get_research_view": (
         AgentRole.HEAD_OF_ABM,
@@ -80,20 +81,24 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # `test_c8_omission_resolution_contract.py` now refuses to let ship.
     "inspect_readiness_history": (AgentRole.HEAD_OF_ABM,),
     "inspect_statement_history": (AgentRole.HEAD_OF_ABM,),
-    "launch_account_deep": (AgentRole.HEAD_OF_ABM,),
+    "launch_account_deep": (),
+    "launch_account_research": (AgentRole.HEAD_OF_ABM,),
+    "launch_contact_research": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
     "pause_run": (),
-    "profile_contact": (AgentRole.RESEARCH,),
+    "profile_contact": (),
     "propose_field": (AgentRole.HEAD_OF_ABM,),
     "propose_source": (AgentRole.HEAD_OF_ABM,),
+    "read_account_research_run": (AgentRole.HEAD_OF_ABM,),
+    "read_contact_research_run": (AgentRole.HEAD_OF_ABM,),
     "record_interview_answer": (AgentRole.HEAD_OF_ABM,),
     "recheck_research_view": (),
     "research_account_gaps": (),
-    "resolve_committee": (AgentRole.RESEARCH,),
+    "resolve_committee": (),
     "resume_run": (),
     "retry_ingestion": (),
     "reverse_profile": (),
-    "run_deep_account": (AgentRole.RESEARCH,),
+    "run_deep_account": (),
     "run_verification": (AgentRole.RESEARCH,),
     "score_accounts": (),
     "start_confirmed_project_run": (AgentRole.HEAD_OF_ABM,),
@@ -109,6 +114,13 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
 #: The Stage-0 conversation trial (`clue_api.stage0_trial`). One human types, the platform captures
 #: every turn, and the agent's whole job is to converse and route what was said.
 STAGE0_CONVERSATION_TRIAL_SURFACE = "stage0_conversation_trial"
+
+#: The fleet-owned per-account unit executes the one-tool ``account-research-unit@1`` recipe.
+#: ``get_research_view`` belongs to the broader account-research role for conversational/read
+#: surfaces, but this bounded coverage unit has neither that tool nor its verification-policy pin
+#: in its C5 slot.  Resolve a named surface so the manifest, middleware, and installed tools all
+#: describe that narrower authority before the model wakes.
+ACCOUNT_RESEARCH_UNIT_SURFACE = "account_research_unit"
 
 #: PC-C8 §8: surface restrictions are enforced by tools that are *not installed*, never by prose in
 #: a shared skill or a context card. Each entry narrows one role's effective tool set on one named
@@ -154,9 +166,8 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         role=AgentRole.HEAD_OF_ABM,
         withheld_tools=frozenset(
             {
-                "enrich_selected_accounts",
-                "enrich_account_gaps",
-                "launch_account_deep",
+                "launch_account_research",
+                "launch_contact_research",
                 "start_recon",
                 "submit_onboarding_input",
                 "synthesize_icps",
@@ -214,7 +225,7 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":
-        return (AgentRole.RESEARCH,) if address == "profile_contact@2" else ()
+        return ()
     return C6_AGENT_TOOL_AUTHORITY.get(name, ())
 
 

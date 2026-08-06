@@ -1910,9 +1910,12 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
     async def recover(self, *, execution_id: ExecutionId) -> Mapping[str, object]:
         if execution_id != self._constitution.execution_id:
             raise ValueError("recovery request crosses the bound execution")
-        receipts = await self._journal.load_receipts(
+        stored_receipts = await self._journal.load_receipts(
             execution_id=execution_id,
             workspace_id=self._constitution.workspace_id,
+        )
+        receipts = tuple(
+            [await self._hydrate_tool_reference_values(receipt) for receipt in stored_receipts]
         )
         async with self._conn_factory() as conn:
             row = (
@@ -1950,6 +1953,35 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 byte_count=int(row["size_bytes"]),
             ),
         }
+
+    async def _hydrate_tool_reference_values(
+        self,
+        receipt: GovernedOperationReceipt,
+    ) -> GovernedOperationReceipt:
+        """Recover the small typed projection a live tool returned, never its domain blobs.
+
+        ``_execute_tool`` returns this projection on the in-process receipt, but crash/recovery
+        rebuilds receipts from ``agent_tool_result``. That table intentionally stores only the
+        immutable result-artifact ref, so the journal-level reconstruction cannot populate
+        ``reference_values`` by itself. The governed model nevertheless needs those IDs, flags,
+        counts, and next-round cursors to continue. Read the exact verified ToolResult artifact and
+        restore only its already-schema-validated ``references`` mapping.
+        """
+
+        if receipt.kind != "tool":
+            return receipt
+        if len(receipt.artifact_refs) != 1:
+            raise ValueError("completed tool receipt requires one exact result artifact")
+        result_ref = receipt.artifact_refs[0]
+        if result_ref.media_type != "application/vnd.clue.agent-tool-result+json":
+            raise ValueError("tool receipt artifact has the wrong media type")
+        result = ToolResult.model_validate_json(await self._artifacts.read(result_ref))
+        if f"{result.tool}@{result.version}" != receipt.address:
+            raise ValueError("tool receipt artifact belongs to a different tool address")
+        references = cast(dict[str, JsonValue], result.references)
+        if receipt.reference_values and receipt.reference_values != references:
+            raise ValueError("tool receipt reference projection differs from its artifact")
+        return receipt.model_copy(update={"reference_values": references})
 
 
 def _agent_issue(issue: GraphIssue) -> AgentPlanIssue:

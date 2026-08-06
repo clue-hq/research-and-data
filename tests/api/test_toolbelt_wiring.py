@@ -122,6 +122,24 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("entity_research_agent_not_composed",),
     ),
+    # M8D R10: the promoted entity-research launch/read tools refuse fail-closed when the fleet
+    # services are not composed (this matrix builds the toolbelt without them).
+    "launch_account_research": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
+    "launch_contact_research": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
+    "read_account_research_run": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
+    "read_contact_research_run": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
     "run_deep_account": ("precondition", ("entity_research_agent_not_composed",)),
     "resolve_committee": ("precondition", ("entity_research_agent_not_composed",)),
     "profile_contact": ("precondition", ("entity_research_agent_not_composed",)),
@@ -133,7 +151,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     ),
     "approve_contact_research_selection": (
         "precondition",
-        ("trusted_human_receipt_mismatch",),
+        ("entity_research_agent_not_composed",),
     ),
     "compose_dossier": ("precondition", ("research_view_feature_disabled",)),
     "get_research_view": ("precondition", ("research_view_feature_disabled",)),
@@ -180,7 +198,6 @@ _MATRIX: dict[str, tuple[str, object]] = {
 
 
 def _bodies() -> dict[str, dict[str, object]]:
-    matrix_selection = _matrix_contact_selection()
     return {
         "reverse_profile": {"name": "Acme Robotics", "website": "https://acme.example"},
         "synthesize_icps": {"client_entity_id": _UUID()},
@@ -211,6 +228,22 @@ def _bodies() -> dict[str, dict[str, object]]:
             "approved_budget_cap_cents": "1",
             "expected_estimated_cost_cents": "1",
         },
+        "launch_account_research": {
+            "project_run_id": _UUID(),
+            "research_directive_id": _UUID(),
+            "account_entity_ids": [_UUID()],
+            "approved_budget_cap_cents": "1",
+            "expected_estimated_cost_cents": "1",
+        },
+        "launch_contact_research": {
+            "selection_id": _UUID(),
+            "selection_sha256": "0" * 64,
+            "approved_budget_cap_cents": "1",
+            "expected_estimated_cost_cents": "1",
+            "confirmed_at": "2026-08-06T00:00:00+00:00",
+        },
+        "read_account_research_run": {"research_run_id": _UUID()},
+        "read_contact_research_run": {"research_run_id": _UUID()},
         "run_deep_account": {"account_entity_id": _UUID(), "icp_key": "matrix", "tier": "top"},
         "resolve_committee": {"account_entity_id": _UUID()},
         "profile_contact": {
@@ -225,10 +258,34 @@ def _bodies() -> dict[str, dict[str, object]]:
             "project_run_id": _UUID(),
             "account_entity_id": _UUID(),
         },
+        # M8D R10: the name default is the R7 entity-research approver (@2); the M8C selection
+        # tool remains version-addressable as @1 for its historical surface.
         "approve_contact_research_selection": {
-            "selection": matrix_selection.model_dump(mode="json"),
-            "account_run_id": _UUID(),
-            "predecessor_selection_id": _UUID(),
+            "request": {
+                "workspace_id": "ws-matrix",
+                "project_run_id": _UUID(),
+                "account_run_id": _UUID(),
+                "account_entity_id": _UUID(),
+                "targets": [
+                    {
+                        "contact_entity_id": _UUID(),
+                        "selection_basis": "committee_member",
+                        "strong_identity_claim_ids": [_UUID()],
+                        "association_evidence_claim_ids": [_UUID()],
+                        "committee_claim_ids": [_UUID()],
+                        "field_keys": ["contact.current_title"],
+                        "field_source_authority": [
+                            {
+                                "field_key": "contact.current_title",
+                                "source_keys": ["exa_deep"],
+                            }
+                        ],
+                        "directional_question_ids": ["q-matrix-1"],
+                        "budget_cap_cents": "10",
+                    }
+                ],
+            },
+            "approved_at": "2026-08-06T00:00:00+00:00",
         },
         "compose_dossier": {
             "project_id": "project_missing",
@@ -772,11 +829,12 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # targeted-enrichment boundary, 39 with S1's explicit Sumble gap boundary, and 41 with A2's
     # draft/human-confirm direction tools; proposal writes, research_account_gaps, and the A2
     # tools retain @1 replay contracts alongside their current @2 contracts; O2 adds the exact-set
-    # account-deep launch boundary.
-    assert len(registry.names()) == 44
+    # account-deep launch boundary; M8D R10 adds the promoted separately confirmed
+    # launch_account_research / launch_contact_research and their two run-read tools (44 → 48).
+    assert len(registry.names()) == 48
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 50
+    assert len(registry) == 55
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

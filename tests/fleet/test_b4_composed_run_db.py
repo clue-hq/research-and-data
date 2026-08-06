@@ -1,11 +1,13 @@
-"""PB-B4 slice 1 exit gate (a) — the composed worker drives a WHOLE run end-to-end (DB-gated).
+"""PB-B4 slice 1 exit gate (a) — the composed worker drives a whole run (DB-gated).
 
-A stub-mode run drives ``reverse_profiling → … → handoff`` **through the real
+A stub-mode run drives ``reverse_profiling → … → tier_checkpoint`` **through the real
 :class:`~clue_fleet.ProjectRunWorker` + the real ``ComposingRunDriver``
-against a live Postgres** — the composer builds a per-run registry (all five M5/M6 phases + DEEP +
-VERIFICATION + REVIEW-from-boot + HANDOFF) with a stub gateway (``api_key`` absent), an empty
-``ChannelRegistry`` / ``committee_sources``, a process-local single-flight lock (no redis), and the
-``[M5×M7]`` client-input provider, so every phase completes on empty data.
+against a live Postgres** — the composer builds a per-run registry with a stub gateway
+(``api_key`` absent), an empty ``ChannelRegistry`` / ``committee_sources``, a process-local
+single-flight lock (no redis), and the ``[M5×M7]`` client-input provider, so every pre-checkpoint
+phase completes on empty data. Post-checkpoint, M8D quarantines the outer DEEP phase: the re-drive
+fails loudly and the run parks — account/contact research is a separately confirmed
+entity-research launch, never an outer-pipeline continuation.
 
 Skips without a reachable, migrated DB. Runs under a bare ``db_lifespan`` (committed rows — the
 worker's ``Db*`` stores each open their own transaction, so a single rolled-back conn cannot span
@@ -82,7 +84,7 @@ async def _ledger_phase_count() -> int:
         return int(row.scalar_one())
 
 
-def test_composed_worker_drives_reverse_profiling_through_handoff() -> None:
+def test_composed_worker_drives_to_human_checkpoint_then_deep_quarantines() -> None:
     async def scenario() -> None:
         workspace_id = f"ws-b4-e2e-{uuid4().hex[:12]}"
         icp_key = "seg-b4"
@@ -161,19 +163,45 @@ def test_composed_worker_drives_reverse_profiling_through_handoff() -> None:
                 assert run.phase is ProjectPhase.TIER_CHECKPOINT, run.phase
                 assert run.status is ProjectRunStatus.PAUSED, run.status
 
-                # Approve the checkpoint (resume), then drive #2: deep → verification → handoff →
-                # DONE.
+                # The composed run bound the M7.4 ledger (D2/D4 parity with the worker driver): the
+                # phase finalizes recorded exactly-once rows (the bare pre-B4 driver wrote none).
+                after_pause = await _ledger_phase_count()
+                assert after_pause > before
+
+                # Approve the checkpoint (resume), then drive #2. M8D quarantined the outer DEEP
+                # phase: a composed run reaching it fails loudly (entity_research_agent_not_
+                # composed) instead of running the retired account→committee→contact pipeline.
+                # Account/contact research is now a separately confirmed entity-research launch,
+                # so the outer run parks at DEEP — it never silently completes, never reaches
+                # HANDOFF, and never auto-launches a fleet.
                 composed = await driver.composed(await driver.status(run_id))
                 await composed.run.submit_checkpoint(run_id, decision={"action": "approve"})
                 await enqueue_drive(queue, run_id)  # reopen_terminal: re-drive the paused run
                 await worker.drain_once()
                 run = await machine.status(run_id)
-                assert run.phase is ProjectPhase.HANDOFF, run.phase
-                assert run.status is ProjectRunStatus.COMPLETED, run.status
-
-                # The composed run bound the M7.4 ledger (D2/D4 parity with the worker driver): the
-                # phase finalizes recorded exactly-once rows (the bare pre-B4 driver wrote none).
-                assert await _ledger_phase_count() > before
+                assert run.phase is ProjectPhase.DEEP, run.phase
+                assert run.status is ProjectRunStatus.ACTIVE, run.status
+                async with transaction() as conn:
+                    failed_drive = (
+                        (
+                            await conn.execute(
+                                text(
+                                    "SELECT status, result_ref_json::text FROM fleet_task "
+                                    "WHERE kind='drive_run' AND work_id=:run_id "
+                                    "ORDER BY enqueued_at DESC LIMIT 1"
+                                ),
+                                {"run_id": str(run_id)},
+                            )
+                        )
+                        .mappings()
+                        .one()
+                    )
+                assert str(failed_drive["status"]) == "failed", dict(failed_drive)
+                assert '"error"' in str(failed_drive["result_ref_json"])
+                # The re-drive finalized exactly one more phase — the human tier checkpoint's
+                # resume — and nothing after it: the quarantined DEEP raise can never record a
+                # succeeded phase finalize for deep/verification/handoff.
+                assert await _ledger_phase_count() == after_pause + 1
             finally:
                 # ``field_definition`` is a GLOBAL-by-key registry; leaving the committed core pack
                 # behind would collide with tests/durable's differing ``account.strategic_moves``

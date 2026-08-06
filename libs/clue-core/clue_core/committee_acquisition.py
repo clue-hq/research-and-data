@@ -73,6 +73,7 @@ class CommitteeAcquisitionRequest(BaseModel):
     workspace_id: NonEmptyStr
     project_id: NonEmptyStr
     project_run_id: ProjectRunId
+    entity_research_job_id: UUID | None = None
     icp_key: NonEmptyStr
     icp_version: int = Field(ge=1)
     discovery_batch_id: DiscoveryBatchId

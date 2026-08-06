@@ -23,6 +23,7 @@ from clue_core import (
     ProjectRunId,
     ResearchDirectivePin,
     Resolver,
+    account_axis_field_keys,
 )
 from clue_research.directives import effective_account_research_directive
 from clue_research.durable import (
@@ -346,7 +347,7 @@ class ExaDeepSnapshotResolverProvider:
         resolver = await _build_exa_deep_snapshot_resolver(
             account=account,
             snapshots=snapshots,
-            allowed_field_keys=effective.field_keys,
+            allowed_field_keys=account_axis_field_keys(effective.field_keys),
             storage=self._storage,
             conn_factory=self._conn_factory,
         )

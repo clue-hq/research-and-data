@@ -224,6 +224,7 @@ async def reserve_account_gap_operation(
             project_run_id=request.project_run_id,
             proposed_cents=operation.cost_cents_reserved,
             allowed_phases=frozenset({ProjectPhase.DEEP}),
+            entity_research_job_id=request.entity_research_job_id,
         )
     except ProviderSpendGuardError as exc:
         raise AccountGapBudgetExceeded(str(exc)) from exc

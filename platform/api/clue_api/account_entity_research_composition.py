@@ -10,7 +10,10 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import text
 
-from clue_agents.account_entity_research import DiscoverBuyingCommitteeInput
+from clue_agents.account_entity_research import (
+    AccountCommitteePlanProjection,
+    DiscoverBuyingCommitteeInput,
+)
 from clue_agents.contracts import ModelPolicy
 from clue_agents.entity_research_contracts import (
     EntityAgentRole,
@@ -23,6 +26,7 @@ from clue_agents.entity_research_contracts import (
 from clue_api.account_entity_research import (
     AccountResearchStateStore,
     account_engine_tool_bindings,
+    read_account_committee_plan,
 )
 from clue_api.entity_research_runtime_wiring import EntityResearchDefinitionResolver
 from clue_api.entity_research_tools import (
@@ -56,6 +60,28 @@ _ACCOUNT_TOOL_NAMES = (
 
 class AccountResearchCompositionError(RuntimeError):
     pass
+
+
+def _committee_plan_block(plan: AccountCommitteePlanProjection | None) -> str:
+    """Render the confirmed committee authority the agent must scope its committee call within."""
+
+    if plan is None:
+        return ""
+    lines = [
+        "",
+        "",
+        f"The confirmed committee plan ({plan.directive_ref}) is the only committee authority; "
+        "`buying_unit_scope.target_functions` must be chosen from its functions, never invented:",
+        f"- functions: {', '.join(plan.functions) or '(unrestricted)'}",
+        f"- levels: {', '.join(plan.levels) or '(unrestricted)'}",
+        f"- teams: {', '.join(plan.teams) or '(unrestricted)'}",
+        f"- personas: {', '.join(plan.personas) or '(unrestricted)'}",
+        f"- candidate_cap: {plan.candidate_cap}",
+    ]
+    if plan.questions:
+        lines.append("- confirmed committee questions:")
+        lines.extend(f"  - {value}" for value in plan.questions)
+    return "\n".join(lines)
 
 
 @runtime_checkable
@@ -172,6 +198,9 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
                     },
                 )
             ).scalar_one_or_none()
+            committee_plan = await read_account_committee_plan(
+                conn, authorization=job.authorization
+            )
         if remaining is None:
             raise AccountResearchCompositionError("account research run is absent")
         context = EntityResearchRuntimeContext(
@@ -213,6 +242,7 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
                 "Research the exact account and form its evidence-backed buying committee. "
                 "The confirmed directional questions are:\n"
                 f"{questions}"
+                f"{_committee_plan_block(committee_plan)}"
             ),
         )
 

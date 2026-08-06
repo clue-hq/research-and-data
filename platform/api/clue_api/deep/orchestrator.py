@@ -98,6 +98,7 @@ from clue_core import (
     Resolver,
     RunId,
     WorkerStatus,
+    account_axis_field_keys,
 )
 from clue_db import ConnFactory
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
@@ -382,7 +383,9 @@ class AccountDeepOrchestrator:
             account_icp = (
                 self._spec
                 if spec.field_keys is None
-                else self._spec.model_copy(update={"field_keys": spec.field_keys})
+                else self._spec.model_copy(
+                    update={"field_keys": account_axis_field_keys(spec.field_keys)}
+                )
             )
             profile_args: dict[str, object] = {
                 "account_entity_id": spec.entity_id,
