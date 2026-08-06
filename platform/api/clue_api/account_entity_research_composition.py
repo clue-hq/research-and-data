@@ -93,6 +93,7 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
         model_policy: ModelPolicy,
         conn_factory: ConnFactory = transaction,
         catalog_root: Path | None = None,
+        require_atomic_admission: bool = False,
     ) -> None:
         self._tools = tools
         self._state = state
@@ -102,6 +103,7 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
         self._catalog_root = catalog_root or (
             Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "account" / "v1"
         )
+        self._require_atomic_admission = require_atomic_admission
 
     async def resolve(
         self,
@@ -136,6 +138,16 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
         }:
             raise AccountResearchCompositionError(
                 "R5 account provider actions must be exactly deep/enrich/committee"
+            )
+        if self._require_atomic_admission and any(
+            action.provider_family is None
+            or action.provider_rate_limit_ref is None
+            or action.provider_concurrency_limit is None
+            or action.budget_reservation_cents <= 0
+            for action in actions.values()
+        ):
+            raise AccountResearchCompositionError(
+                "production account provider actions require complete R9 admission metadata"
             )
         committee = actions["discover_buying_committee"]
         actions["discover_buying_committee"] = committee.model_copy(

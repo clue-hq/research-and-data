@@ -280,6 +280,21 @@ class EntityResearchRuntimeContext(FrozenRuntimeModel):
 class EntityResearchToolBinding(FrozenRuntimeModel):
     tool: BaseTool
     version: int = Field(ge=1)
+    provider_family: NonEmptyStr | None = None
+    budget_reservation_cents: Decimal = Field(default=Decimal(0), ge=0)
+    provider_rate_limit_ref: NonEmptyStr | None = None
+    provider_concurrency_limit: int | None = Field(default=None, ge=1, le=1024)
+
+    @model_validator(mode="after")
+    def _external_admission_metadata_is_complete(self) -> Self:
+        external = self.provider_family is not None
+        if external != (self.provider_rate_limit_ref is not None):
+            raise ValueError("provider family and rate-limit policy must be supplied together")
+        if external != (self.provider_concurrency_limit is not None):
+            raise ValueError("external tool requires its provider concurrency limit")
+        if external != (self.budget_reservation_cents > 0):
+            raise ValueError("external tool requires a positive engine-owned budget reservation")
+        return self
 
     @property
     def name(self) -> str:
@@ -296,6 +311,21 @@ class EntityResearchToolCall(FrozenRuntimeModel):
     tool_version: int = Field(ge=1)
     tool_input_sha256: Sha256
     arguments: dict[str, JsonValue]
+    provider_family: NonEmptyStr | None = None
+    budget_reservation_cents: Decimal = Field(default=Decimal(0), ge=0)
+    provider_rate_limit_ref: NonEmptyStr | None = None
+    provider_concurrency_limit: int | None = Field(default=None, ge=1, le=1024)
+
+    @model_validator(mode="after")
+    def _admission_metadata_is_engine_injected(self) -> Self:
+        external = self.provider_family is not None
+        if external != (self.provider_rate_limit_ref is not None):
+            raise ValueError("tool call provider metadata is incomplete")
+        if external != (self.provider_concurrency_limit is not None):
+            raise ValueError("tool call provider limit metadata is incomplete")
+        if external != (self.budget_reservation_cents > 0):
+            raise ValueError("external tool call requires a positive reservation")
+        return self
 
 
 class EntityResearchJournalEvent(FrozenRuntimeModel):
@@ -394,6 +424,10 @@ class EntityResearchAgentDefinition(FrozenRuntimeModel):
                 "name": binding.name,
                 "version": binding.version,
                 "input_schema_sha256": binding.input_schema_sha256,
+                "provider_family": binding.provider_family,
+                "budget_reservation_cents": str(binding.budget_reservation_cents),
+                "provider_rate_limit_ref": binding.provider_rate_limit_ref,
+                "provider_concurrency_limit": binding.provider_concurrency_limit,
             }
             for binding in self.tools
         ]

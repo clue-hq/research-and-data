@@ -1,7 +1,7 @@
 # M8D — Entity research agents and shared fleet refactor roadmap
 ## `langchain.agents.create_agent` account/contact units over one durable fleet substrate
 
-> **Status:** R0–R5 accepted; R6–R10 have not started.
+> **Status:** R0–R9 accepted; R10 has not started.
 > **Recorded:** 2026-08-06. **Working branch at record time:**
 > `platform/c8-account-profiling-integration`.
 >
@@ -667,6 +667,13 @@ partial completion durability, and async wait/resume.
 
 **Exit gate:** independent Exa/Sumble calls run concurrently; dependent follow-up remains
 sequential; crash/restart produces no duplicate call or spend.
+
+**Accepted 2026-08-06:** dependency-aware exact-wave admission, atomic job/run budget
+reservations, provider permits, settled provider-result joining, non-stale internal reads,
+partial-result durability, composite wait/wake, callback-race reconciliation, cold tool-node
+resume, crash admission reuse, subject-indexed DSAR, production account/contact composition, and
+isolated-Postgres evidence are recorded in
+`M8D-R9-parallel-execution-and-external-wait-acceptance.md`.
 
 ### R10 — Cutover, dead-code deletion, adversarial and live acceptance
 

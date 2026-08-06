@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Literal, Protocol, cast
@@ -92,7 +93,21 @@ class ContactFacetDelegate(Protocol):
     ) -> ContactFacetProjection: ...
 
 
+@dataclass(frozen=True, slots=True)
+class ContactChannelAdmission:
+    provider_family: str
+    budget_reservation_cents: Decimal
+    provider_rate_limit_ref: str
+    provider_concurrency_limit: int
+
+
 class ContactChannelActions(Protocol):
+    def admission(
+        self,
+        *,
+        stage: Literal["acquisition", "validation"],
+    ) -> ContactChannelAdmission | None: ...
+
     async def reveal(
         self,
         *,
@@ -1005,8 +1020,21 @@ class ContactResearchExecutionGuard(EntityResearchExecutionGuard):
         if context.authorization.subject_type is not ResearchSubjectType.CONTACT:
             raise ContactResearchAuthorityError("contact guard received another subject type")
         names = [call.tool_name for call in calls]
-        if len(names) != len(set(names)):
-            raise ContactResearchAuthorityError("one model round cannot duplicate a contact tool")
+        duplicates = {name for name in names if names.count(name) > 1}
+        if duplicates:
+            if duplicates != {"delegate_contact_facet"}:
+                raise ContactResearchAuthorityError(
+                    "one model round cannot duplicate contact provider work"
+                )
+            facets = {
+                str(call.arguments.get("facet_key", ""))
+                for call in calls
+                if call.tool_name == "delegate_contact_facet"
+            }
+            if "" in facets or len(facets) != names.count("delegate_contact_facet"):
+                raise ContactResearchAuthorityError(
+                    "parallel contact facet calls require distinct selected facets"
+                )
         if {"reveal_contact_channel", "validate_contact_channel"}.issubset(names):
             raise ContactResearchAuthorityError("channel acquisition must precede validation")
         if "assess_contact_coverage" in names and len(names) > 1:
@@ -1345,6 +1373,7 @@ def contact_engine_tool_bindings(
 
 
 __all__ = [
+    "ContactChannelAdmission",
     "ContactChannelActions",
     "ContactFacetDelegate",
     "ContactResearchAuthorityError",

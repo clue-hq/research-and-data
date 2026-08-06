@@ -549,7 +549,7 @@ def test_consecutive_zero_yield_limit_spans_interleaved_model_rounds() -> None:
         context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
         definition = _definition(context)
         journal = Journal()
-        middleware = runtime_module._EntityResearchRuntimeMiddleware(  # type: ignore[attr-defined]
+        middleware = runtime_module._EntityResearchRuntimeMiddleware(
             definition=definition,
             journal=journal,
             guard=Guard(),

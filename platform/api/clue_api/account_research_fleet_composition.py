@@ -36,6 +36,10 @@ from clue_api.account_research_fleet import (
     AccountResearchFleetWorkHandler,
 )
 from clue_api.account_research_fleet_launch import AccountResearchFleetLauncher
+from clue_api.entity_research_parallel import (
+    DbEntityResearchToolBatchCoordinator,
+    R9EntityResearchJobStore,
+)
 from clue_api.entity_research_runtime_wiring import (
     CreateAgentEntityResearchDriver,
     DbEntityResearchAgentJournal,
@@ -53,7 +57,7 @@ from clue_api.entity_research_tools import (
 )
 from clue_api.sumble_entity_research_tools import SumbleEntityResearchLineageReader
 from clue_db import ConnFactory, transaction
-from clue_fleet import DbEntityResearchJobStore, EntityResearchJobRow, EntityResearchJobWorkHandler
+from clue_fleet import EntityResearchJobRow, EntityResearchJobWorkHandler
 from clue_storage import StorageBackend
 
 
@@ -129,9 +133,7 @@ class RunScopedAccountResearchProviderActions(AccountResearchProviderActionResol
             "enrich_account": enrichment,
             "discover_buying_committee": committee,
         }
-        self._contexts = contexts or DbAccountResearchJobContextResolver(
-            conn_factory=conn_factory
-        )
+        self._contexts = contexts or DbAccountResearchJobContextResolver(conn_factory=conn_factory)
 
     async def resolve(self, job: EntityResearchJobRow) -> Mapping[str, ProviderActionBinding]:
         account_run_id = await self._contexts.account_run_id(job)
@@ -192,19 +194,22 @@ def build_account_research_fleet_composition(
         provider_actions=provider_actions,
         model_policy=model_policy,
         conn_factory=conn_factory,
+        require_atomic_admission=True,
     )
+    batches = DbEntityResearchToolBatchCoordinator(conn_factory=conn_factory)
     runtime = EntityResearchAgentRuntime(
         factory=EntityResearchAgentFactory(
             models=models,
             journal=journal,
             guard=AccountResearchExecutionGuard(conn_factory=conn_factory),
+            batches=batches,
         ),
         checkpointers=checkpointers or PostgresEntityResearchCheckpointers(),
         journal=journal,
         finalizer=AccountResearchFinalizationEngine(conn_factory=conn_factory),
     )
     inner = EntityResearchJobWorkHandler(
-        store=DbEntityResearchJobStore(conn_factory=conn_factory),
+        store=R9EntityResearchJobStore(conn_factory=conn_factory),
         driver=CreateAgentEntityResearchDriver(
             runtime=runtime,
             definitions=definitions,
