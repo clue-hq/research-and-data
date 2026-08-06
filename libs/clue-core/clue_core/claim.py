@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from clue_core.enums import (
     ClaimFlavor,
+    ClaimProvenanceKind,
     EntityType,
     ExtractionMethod,
     IdentityBinding,
@@ -112,6 +113,17 @@ class Claim(BaseModel):
     # resolves offline even after the live source_url rots. Nullable: pre-B2 rows and
     # non-snapshotting writers (tier-1 APIs) leave it None. Immutable provenance (DB trigger).
     artifact_key: str | None = None
+    # Durable external-acquisition lineage for a claim materialized from an already-settled
+    # provider snapshot.  These are provider-neutral opaque references: the source adapter owns
+    # their concrete format, while the claim preserves the exact operation, immutable snapshot,
+    # and provider request that yielded its evidence.  All three are born together or omitted.
+    source_operation_ref: str | None = None
+    source_snapshot_ref: str | None = None
+    source_request_ref: str | None = None
+    # Typed assertion/derivation provenance. This is orthogonal to extraction_method: an API may
+    # return a literal attribute or a provider-modeled relationship, and both are still API
+    # extraction. Nullable for legacy and claim classes that have not adopted this discriminator.
+    provenance_kind: ClaimProvenanceKind | None = None
     source_tier: SourceTier
     extraction_method: ExtractionMethod
     evidence_span: str | None = None  # mandatory for tier-4 *promotion*, not construction
@@ -145,6 +157,20 @@ class Claim(BaseModel):
 
     @model_validator(mode="after")
     def _check_provenance(self) -> Claim:
+        external_refs = (
+            self.source_operation_ref,
+            self.source_snapshot_ref,
+            self.source_request_ref,
+        )
+        if any(ref is not None for ref in external_refs):
+            if not all(isinstance(ref, str) and ref.strip() for ref in external_refs):
+                raise ValueError(
+                    "external source operation/snapshot/request references must be present "
+                    "together and non-empty"
+                )
+            if self.artifact_key is None:
+                raise ValueError("external snapshot lineage requires an evidence artifact_key")
+
         # A contact *personal* field claim MUST carry its governance provenance. "Personal" is the
         # ``contact.facet.*`` field-class (conventions §3: contact.facet.* = rich personal hooks
         # governed by Doc D / M10); plain ``contact.*`` facts (role_on_committee, persona…) are not

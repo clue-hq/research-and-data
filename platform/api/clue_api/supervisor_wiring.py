@@ -177,6 +177,16 @@ class RunControlledPreSpendGate:
     ) -> TargetLock:
         return await self._inner.assemble_target_lock(entity, field)
 
+    def with_conn_factory(self, conn_factory: ConnFactory) -> RunControlledPreSpendGate:
+        """Rebind both the run-control lookup and a transaction-aware inner gate."""
+        rebind = getattr(self._inner, "with_conn_factory", None)
+        inner = rebind(conn_factory) if callable(rebind) else self._inner
+        return RunControlledPreSpendGate(
+            inner=inner,
+            controls=self._controls,
+            conn_factory=conn_factory,
+        )
+
 
 class RunControlAccountAdmission:
     """Scheduler admission callback: a quarantined account is parked before ``run_one``."""

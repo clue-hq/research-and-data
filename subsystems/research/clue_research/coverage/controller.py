@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -12,6 +13,7 @@ from clue_core import (
     BudgetScope,
     BudgetVerdict,
     ClaimTagger,
+    EffectiveFieldSourcePlan,
     Entity,
     EntityType,
     FieldDef,
@@ -51,9 +53,11 @@ from clue_research.coverage.repository import (
     record_evaluator_advice,
 )
 from clue_research.sources import (
+    NoResolverBoundError,
     StepOutcome,
     StopReason,
     WaterfallResult,
+    get_resolver,
     get_source,
     resolve_field,
 )
@@ -125,6 +129,7 @@ class CoverageController:
         claim_tagger: ClaimTagger | None = None,
         remaining_budget_cents: Decimal | None = None,
         requested_round: int | None = None,
+        effective_source_plans: Mapping[str, EffectiveFieldSourcePlan] | None = None,
     ) -> RoundResult:
         fields = field_defs[: self._policy.max_gap_fields_per_round]
         if not fields:
@@ -214,14 +219,27 @@ class CoverageController:
         provisional: list[tuple[FieldDef, ResearchStrategy, WaterfallResult]] = []
         for field in active:
             strategy = selected[field.field_key]
-            planned, projected = await self._planned_field(conn, field, strategy)
+            authority = (
+                effective_source_plans.get(str(field.field_key))
+                if effective_source_plans is not None
+                else None
+            )
+            planned, projected, has_zero_spend_path = await self._planned_field(
+                conn,
+                field,
+                strategy,
+                effective_source_plan=authority,
+            )
+            budget_allowed = not planned.tier_plan or await self._budget_allows(
+                project_run_id, run_id, entity, projected
+            )
             if not planned.tier_plan:
                 result = WaterfallResult(
                     entity_id=entity.entity_id,
                     field_key=field.field_key,
                     stop_reason=StopReason.NO_RESOLVER,
                 )
-            elif not await self._budget_allows(project_run_id, run_id, entity, projected):
+            elif not budget_allowed and not has_zero_spend_path:
                 result = WaterfallResult(
                     entity_id=entity.entity_id,
                     field_key=field.field_key,
@@ -239,9 +257,14 @@ class CoverageController:
                     ),
                     run_id=run_id,
                     workspace_id=workspace_id,
-                    budget_envelope=remaining_budget_cents,
+                    budget_envelope=(Decimal(0) if not budget_allowed else remaining_budget_cents),
                     claim_tagger=claim_tagger,
-                    source_gate=self._source_gate(entity, field, run_id),
+                    source_gate=self._source_gate(
+                        entity,
+                        field,
+                        run_id,
+                        effective_source_plan=authority,
+                    ),
                 )
                 if result.claim_refs:
                     claims = await claims_by_ids(
@@ -508,21 +531,48 @@ class CoverageController:
         )
 
     async def _planned_field(
-        self, conn: AsyncConnection, field: FieldDef, strategy: ResearchStrategy
-    ) -> tuple[FieldDef, Decimal]:
+        self,
+        conn: AsyncConnection,
+        field: FieldDef,
+        strategy: ResearchStrategy,
+        *,
+        effective_source_plan: EffectiveFieldSourcePlan | None,
+    ) -> tuple[FieldDef, Decimal, bool]:
         keys: list[str] = []
         projected = Decimal(0)
-        for key in field.tier_plan:
+        has_zero_spend_path = False
+        source_keys = (
+            tuple(source.source_key for source in effective_source_plan.sources)
+            if effective_source_plan is not None
+            else field.tier_plan
+        )
+        authorized_tiers = (
+            {source.source_key: int(source.source_tier) for source in effective_source_plan.sources}
+            if effective_source_plan is not None
+            else None
+        )
+        for key in source_keys:
             manifest = await get_source(conn, key)
             if manifest is None:
+                continue
+            if authorized_tiers is not None and authorized_tiers.get(key) != manifest.tier:
                 continue
             if strategy.source_tiers and manifest.tier not in strategy.source_tiers:
                 continue
             if strategy.modalities and manifest.modality.value not in strategy.modalities:
                 continue
             keys.append(key)
-            projected += manifest.cost_cents
-        return field.model_copy(update={"tier_plan": tuple(keys)}), projected
+            try:
+                resolver = get_resolver(key)
+            except NoResolverBoundError:
+                resolver = None
+            if resolver is None:
+                continue
+            if getattr(resolver, "materialization_only", False) or manifest.cost_cents == 0:
+                has_zero_spend_path = True
+            else:
+                projected += manifest.cost_cents
+        return field.model_copy(update={"tier_plan": tuple(keys)}), projected, has_zero_spend_path
 
     async def _budget_allows(
         self,
@@ -545,7 +595,14 @@ class CoverageController:
                 return False
         return True
 
-    def _source_gate(self, entity: Entity, field: FieldDef, run_id: RunId) -> SourceGate | None:
+    def _source_gate(
+        self,
+        entity: Entity,
+        field: FieldDef,
+        run_id: RunId,
+        *,
+        effective_source_plan: EffectiveFieldSourcePlan | None,
+    ) -> SourceGate | None:
         if self._pre_spend_gate is None:
             return None
         gate = self._pre_spend_gate
@@ -558,6 +615,7 @@ class CoverageController:
                     field_key=field.field_key,
                     source_tier=manifest.tier,
                     source_key=manifest.source_key,
+                    effective_source_plan=effective_source_plan,
                     run_id=run_id,
                 )
             )

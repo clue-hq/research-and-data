@@ -7,15 +7,19 @@ and the :class:`~clue_fleet.ProjectRunWorker` from :class:`~clue_config.Settings
 ``CLUE_FLEET_*`` knobs), then hand off to :func:`~clue_fleet.run_worker` (the shell that owns
 SIGTERM/SIGINT → graceful drain). Structured logging via :func:`clue_obs.setup`.
 
-**The B4 composing driver drives whole runs.** The worker never *composes* phase handlers inside a
-run — it drives the injected ``RunDriver``. Since PB-B4 slice 1 that driver is the
+**The B4 composing driver drives runs through the active composition.** The worker never
+*composes* phase handlers inside a run — it drives the injected ``RunDriver``. Since PB-B4 slice 1
+that driver is the
 :class:`~clue_api.run_composition.ComposingRunDriver`: it composes a **per-project-run** phase
 registry (LRU-cached) on each run's first advance — every phase of the
 sequence, including the campaign-scoped DEEP/VERIFICATION (each holds one ``ICPSpec``) that could
 not live in the single process-default registry (two ICPs would collide on the DEEP slot). The
-process-wide-composable boot handlers (REVIEW) are re-folded into every per-run registry. So the
-worker cleanly drives the full ``reverse_profiling → … → handoff`` sequence, single-flight and
-rubric priority on (closing CLAUDE.md ``[B4×fleet]`` + the B1-wiring residuals).
+process-wide-composable boot handlers (REVIEW) are re-folded into every per-run registry.
+
+M8D R10 promotes separately confirmed account/contact ``create_agent()`` runs through the same
+detached work drain. The outer project DEEP phase remains a loud quarantine for the superseded
+pipeline: it never launches entity research and never performs automatic account-to-contact
+progression. Provider lifecycle workers continue to drain already-authorized durable operations.
 
 :func:`~clue_api.fleet_wiring.register_boot_handlers` still runs at boot as a composition-machinery
 health check, and the worker **refuses to start** (a clean error exit) if that set is empty (a
@@ -29,9 +33,9 @@ degenerate no-composer deployment). Two honest limits remain:
   C7.6 closed the HANDOFF gap: the per-run composer now binds the production governed committee
   reader and the real materialise-then-outbox M12 handler. See :mod:`clue_api.run_composition`.
 
-This entrypoint also runs the B2 **orphan-blob sweep** on ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``
-as a background task alongside the worker (started with it, cancelled on drain) — the orphan leg the
-retention sweep does not cover. Sweep errors are logged, never fatal to the worker.
+This entrypoint also runs the B2 **orphan-blob sweep** and provider lifecycle wake paths as
+background tasks alongside the worker (started with it, cancelled on drain). Sweep/wake errors are
+logged and never fatal to the worker; they do not originate new quarantined entity-research work.
 """
 
 from __future__ import annotations
@@ -40,21 +44,26 @@ import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
 
-from sqlalchemy import text
-
-from clue_agents import AgentRole
-from clue_api.account_research_turn_wiring import (
-    DbCompiledContextCardReader,
-    PreparedAccountResearchTurnRunner,
-    build_account_research_context,
-)
-from clue_api.account_research_wiring import AccountResearchAgentRuntime, GovernedAccountProfiler
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
-from clue_api.agent_execution_wiring import DbAgentPlanJournal
-from clue_api.agent_platform_wiring import build_agent_platform_components
+from clue_api.agent_model_wiring import build_agent_model_provider
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.compliance_wiring import register_compliance_wiring
-from clue_api.composition import load_research_packs
+from clue_api.composition import build_pre_spend_gate, load_research_packs
+from clue_api.contact_content_handoff import ContactContentHandoffService
+from clue_api.contact_research_fleet_launch import ContactResearchSelectionApprover
+from clue_api.entity_research_launch_tools import EntityResearchLaunchServices
+from clue_api.entity_research_parallel import EntityResearchBatchWakeService
+from clue_api.entity_research_provider_wiring import build_production_entity_research_fleet
+from clue_api.exa_targeted_enrichment import (
+    ExaTargetedEnrichmentCoordinator,
+    ExaTargetedEnrichmentWorker,
+)
+from clue_api.exa_websets_acquisition import ExaWebsetsDiscoveryStarter
+from clue_api.exa_websets_lifecycle import (
+    DurableExaWebsetLifecycle,
+    ExaDiscoveryWakeWorker,
+)
+from clue_api.exa_websets_materialization import ExaWebsetsD4Materializer
 from clue_api.execution_tools import (
     ExecutionControlServices,
     register_execution_control_tools,
@@ -65,11 +74,13 @@ from clue_api.execution_wiring import (
     StorageParameterArtifactStore,
     build_tool_invoker,
 )
-from clue_api.fleet_wiring import (
-    build_account_lock_factory,
-    build_multi_work_worker,
-    register_boot_handlers,
+from clue_api.external_research_wake import (
+    ExternalResearchWakeDispatcher,
+    registered_entity_research_wait_sources,
+    registered_external_research_wake_sources,
 )
+from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, register_boot_handlers
+from clue_api.memory_wiring import memory_write_factory_builder
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
@@ -84,6 +95,7 @@ from clue_api.research_view_runtime import build_production_research_view_runtim
 from clue_api.run_composition import ComposingRunDriver, build_platform_gateway
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
+from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
@@ -102,6 +114,7 @@ from clue_execution import (
 from clue_fleet import DbTaskQueue, DbWorkQueue, run_worker
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
+from clue_research.adapters.exa_websets import ExaWebsetsClient
 from clue_storage import StorageBackend
 from clue_toolbelt import DbIdempotencyStore
 
@@ -190,37 +203,198 @@ def _start_agent_cleanup(
     return asyncio.create_task(_agent_cleanup_loop(settings, job))
 
 
-async def _account_agent_runtime_required(
+async def _external_research_wake_loop(
+    settings: Settings,
+    worker: ExternalResearchWakeDispatcher,
+    *,
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+) -> None:
+    """Wake due registered external operations without provider logic in the fleet loop."""
+
+    while True:
+        try:
+            completed = await worker.run_due()
+            if completed:
+                log.info("fleet.external_research.woke", run_count=completed)
+        except Exception:  # noqa: BLE001 - one wake scan must not sink the fleet
+            log.warning("fleet.external_research.wake_error", exc_info=True)
+        await sleep(settings.external_research_wake_worker_interval_s)
+
+
+def _start_external_research_wake(settings: Settings) -> asyncio.Task[None] | None:
+    if not any(
+        (
+            settings.sumble_committee_acquisition_enabled,
+            settings.exa_contact_deep_acquisition_enabled,
+            settings.contact_channel_enrichment_enabled,
+        )
+    ):
+        log.info("fleet.external_research.wake_disabled")
+        return None
+    entity_wakes = (
+        EntityResearchBatchWakeService() if settings.entity_research_runtime_enabled else None
+    )
+
+    async def wake_entity_member(wait_ref: str) -> int:
+        assert entity_wakes is not None
+        return await entity_wakes.notify_member_ready(
+            wait_ref,
+            actor="provider-due:entity-research",
+        )
+
+    return asyncio.create_task(
+        _external_research_wake_loop(
+            settings,
+            ExternalResearchWakeDispatcher(
+                project_run_waker=enqueue_run_drive,
+                sources=registered_external_research_wake_sources(
+                    committee_enabled=settings.sumble_committee_acquisition_enabled,
+                    contact_external_enabled=settings.exa_contact_deep_acquisition_enabled,
+                    contact_channel_enabled=settings.contact_channel_enrichment_enabled,
+                ),
+                entity_member_waker=(wake_entity_member if entity_wakes is not None else None),
+                entity_wait_sources=(
+                    registered_entity_research_wait_sources(
+                        committee_enabled=settings.sumble_committee_acquisition_enabled,
+                        contact_external_enabled=settings.exa_contact_deep_acquisition_enabled,
+                        contact_channel_enabled=settings.contact_channel_enrichment_enabled,
+                    )
+                    if entity_wakes is not None
+                    else ()
+                ),
+            ),
+        )
+    )
+
+
+async def _exa_discovery_loop(
     settings: Settings,
     *,
-    conn_factory: ConnFactory = transaction,
-) -> bool:
-    """Keep sticky deepagent-owned runs resumable after rollout switches are reduced."""
+    api_key: object,
+    storage: StorageBackend,
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+) -> None:
+    from pydantic import SecretStr
 
-    configured_cohort = (
-        settings.agent_runtime_routing_enabled
-        and settings.agent_account_routing_enabled
-        and (bool(settings.agent_workspace_allowlist) or settings.agent_canary_percent > 0)
-    )
-    if configured_cohort:
-        return True
-    async with conn_factory() as conn:
-        return bool(
-            (
-                await conn.execute(
-                    text(
-                        "SELECT EXISTS (SELECT 1 FROM agent_runtime_route "
-                        "WHERE surface='account_research' AND owner='deepagent')"
-                    )
-                )
-            ).scalar_one()
+    if not isinstance(api_key, SecretStr):
+        raise TypeError("Exa discovery worker requires a SecretStr API key")
+    async with ExaWebsetsClient(api_key=api_key, lookup_attempts=1) as client:
+        worker = ExaDiscoveryWakeWorker(
+            lifecycle=DurableExaWebsetLifecycle(transport=client, storage=storage),
+            materializer=ExaWebsetsD4Materializer(storage=storage),
+            project_run_waker=enqueue_run_drive,
         )
+        while True:
+            try:
+                completed = await worker.run_due()
+                if completed:
+                    log.info("fleet.exa_discovery.completed", wake_count=completed)
+            except Exception:  # noqa: BLE001 - one provider fault cannot sink run execution
+                log.warning("fleet.exa_discovery.error", exc_info=True)
+            await sleep(settings.exa_websets_poll_worker_interval_s)
+
+
+def _start_exa_discovery(
+    settings: Settings,
+    *,
+    secrets: Secrets,
+    storage: StorageBackend,
+) -> asyncio.Task[None] | None:
+    if not settings.exa_websets_lifecycle_enabled:
+        log.info("fleet.exa_discovery.disabled")
+        return None
+    if secrets.exa_api_key is None:
+        raise RuntimeError(
+            "Exa Websets lifecycle is enabled but CLUE_EXA_API_KEY is not configured"
+        )
+    loop = asyncio.get_running_loop()
+    return loop.create_task(
+        _exa_discovery_loop(settings, api_key=secrets.exa_api_key, storage=storage)
+    )
+
+
+def _build_exa_discovery_starter(
+    settings: Settings,
+    *,
+    secrets: Secrets,
+    storage: StorageBackend,
+) -> ExaWebsetsDiscoveryStarter | None:
+    """Bind paid acquisition only under its explicit spend switch and a live reconciler."""
+
+    if not settings.exa_websets_acquisition_enabled:
+        return None
+    if not settings.exa_websets_lifecycle_enabled:
+        raise RuntimeError(
+            "Exa Websets acquisition is enabled but its lifecycle worker is disabled"
+        )
+    api_key = secrets.exa_api_key
+    if api_key is None:
+        raise RuntimeError(
+            "Exa Websets lifecycle is enabled but CLUE_EXA_API_KEY is not configured"
+        )
+    return ExaWebsetsDiscoveryStarter(
+        transport_factory=lambda: ExaWebsetsClient(api_key=api_key, lookup_attempts=1),
+        storage=storage,
+    )
+
+
+async def _exa_targeted_enrichment_loop(
+    settings: Settings,
+    *,
+    api_key: object,
+    storage: StorageBackend,
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+) -> None:
+    from pydantic import SecretStr
+
+    if not isinstance(api_key, SecretStr):
+        raise TypeError("Exa targeted enrichment worker requires a SecretStr API key")
+    async with ExaWebsetsClient(api_key=api_key, lookup_attempts=1) as client:
+        worker = ExaTargetedEnrichmentWorker(
+            coordinator=ExaTargetedEnrichmentCoordinator(
+                transport=client,
+                storage=storage,
+            )
+        )
+        while True:
+            try:
+                completed = await worker.run_due()
+                if completed:
+                    log.info("fleet.exa_targeted_enrichment.completed", operation_count=completed)
+            except Exception:  # noqa: BLE001 - one provider fault cannot sink run execution
+                log.warning("fleet.exa_targeted_enrichment.error", exc_info=True)
+            await sleep(settings.exa_websets_poll_worker_interval_s)
+
+
+def _start_exa_targeted_enrichment(
+    settings: Settings,
+    *,
+    secrets: Secrets,
+    storage: StorageBackend,
+) -> asyncio.Task[None] | None:
+    # Draining is controlled by the lifecycle switch, not the new-spend switch: turning off new
+    # E1 starts must never strand an operation that was already accepted by Exa.
+    if not settings.exa_websets_lifecycle_enabled:
+        log.info("fleet.exa_targeted_enrichment.disabled")
+        return None
+    if secrets.exa_api_key is None:
+        raise RuntimeError(
+            "Exa Websets lifecycle is enabled but CLUE_EXA_API_KEY is not configured"
+        )
+    return asyncio.get_running_loop().create_task(
+        _exa_targeted_enrichment_loop(
+            settings,
+            api_key=secrets.exa_api_key,
+            storage=storage,
+        )
+    )
 
 
 async def _serve() -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
     settings = load_settings()
+    secrets = Secrets()
     storage = build_storage_backend(settings)
     async with db_lifespan(), redis_lifespan():
         register_compliance_wiring()
@@ -242,6 +416,33 @@ async def _serve() -> None:
         task_queue = DbTaskQueue()
         work_queue = DbWorkQueue(task_queue)
         gateway = build_platform_gateway(settings)
+        gateway_config = default_gateway_config()
+        pre_spend_gate = build_pre_spend_gate(conn_factory=transaction)
+        entity_research = build_production_entity_research_fleet(
+            settings=settings,
+            secrets=secrets,
+            storage=storage,
+            models=(
+                build_agent_model_provider(config=gateway_config, secrets=secrets)
+                if settings.entity_research_runtime_enabled
+                else None
+            ),
+            gateway=gateway,
+            gateway_config=gateway_config,
+            pre_spend_gate=pre_spend_gate,
+            conn_factory=transaction,
+        )
+        entity_research_launches = (
+            EntityResearchLaunchServices(
+                account_launcher=entity_research.accounts.launcher,
+                account_fleets=entity_research.accounts.fleets,
+                contact_approver=ContactResearchSelectionApprover(conn_factory=transaction),
+                contact_launcher=entity_research.contacts.launcher,
+                contact_fleets=entity_research.contacts.fleets,
+            )
+            if entity_research is not None
+            else None
+        )
         c7_enabled = any(
             (
                 settings.c7_research_view_read_enabled,
@@ -254,10 +455,17 @@ async def _serve() -> None:
         research_views = (
             build_production_research_view_runtime(storage=storage) if c7_enabled else None
         )
+        contact_content_handoff = (
+            ContactContentHandoffService(research_views=research_views.composer)
+            if settings.c7_production_handoff_enabled and research_views is not None
+            else None
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
             gateway=gateway,
+            pre_spend_gate=pre_spend_gate,
+            research_directive_memory_write_factory=memory_write_factory_builder(settings, gateway),
             queue=task_queue,
             project_execution_router=project_execution_router,
             research_view_composer=(
@@ -266,9 +474,9 @@ async def _serve() -> None:
             research_view_snapshots=(
                 research_views.snapshots if research_views is not None else None
             ),
-            research_view_recheck=(
-                research_views.recheck if research_views is not None else None
-            ),
+            research_view_recheck=(research_views.recheck if research_views is not None else None),
+            contact_content_handoff=contact_content_handoff,
+            entity_research_launches=entity_research_launches,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -313,63 +521,25 @@ async def _serve() -> None:
             controls=controls,
             max_concurrency=settings.recipe_executor_max_concurrency,
         )
-        account_agent_profiler = None
         agent_workspace_factory = None
-        if await _account_agent_runtime_required(settings):
-            agent_components = build_agent_platform_components(
-                settings=settings,
-                secrets=Secrets(),
-                gateway_config=default_gateway_config(),
-                storage=storage,
-                tools=registry,
-            )
-            agent_workspace_factory = agent_components.workspaces
-            account_runtime = AccountResearchAgentRuntime(
-                profiles=agent_components.profiles,
-                models=agent_components.models,
-                turns=agent_components.turns,
-                artifacts=agent_components.artifacts,
-                tools=registry,
-            )
-            account_context = build_account_research_context(
-                resolved_profile=agent_components.profiles.resolve(AgentRole.ACCOUNT_RESEARCH),
-                artifacts=agent_components.artifacts,
-                cards=DbCompiledContextCardReader(),
-            )
-            account_turns = PreparedAccountResearchTurnRunner(
-                settings=settings,
-                runtime=account_runtime,
-                profiles=agent_components.profiles,
-                workspaces=agent_components.workspaces,
-                artifacts=agent_components.artifacts,
-                turns=agent_components.turns,
-                history=agent_components.history,
-                contexts=account_context,
-                tools=registry,
-                tool_invoker=tool_invoker,
-                executor=executor,
-                compatibility=compatibility,
-                plans=DbAgentPlanJournal(),
-                recipes=recipe_reader,
-                starter=starter,
-                parameters=execution_parameters,
-            )
-            account_agent_profiler = GovernedAccountProfiler(turns=account_turns)
-            log.info("fleet.agent_account_runtime.composed")
-
-        # Bind the selected account owner into the existing DEEP slot. With the switches off—or
-        # for non-selected workspaces—the durable router chooses the mechanical profiler.
+        # The project DEEP phase remains the R1 loud quarantine. M8D entity runs are independently
+        # launched through the promoted tool surfaces and drained by the handler below.
         driver = ComposingRunDriver(
             settings=settings,
             gateway=gateway,
             storage=storage,
-            lock_factory=build_account_lock_factory(),
+            discovery_batch_starter=_build_exa_discovery_starter(
+                settings,
+                secrets=secrets,
+                storage=storage,
+            ),
+            discovery_required_field_resolver=build_production_sumble_discovery_gap_resolver(
+                settings,
+                secrets=secrets,
+                storage=storage,
+            ),
             event_emitter=build_run_event_emitter(),
-            controls=controls,
-            supervisor_actions=deferred_supervisor_actions,
-            execution_journal=journal,
             project_execution_router=project_execution_router,
-            account_agent_profiler=account_agent_profiler,
         )
         register_execution_control_tools(
             ExecutionControlServices(
@@ -407,6 +577,9 @@ async def _serve() -> None:
             settings,
             driver=driver,
             graph_handler=RecipeExecutionHandler(executor),
+            entity_research_handler=(
+                entity_research.handler if entity_research is not None else None
+            ),
             queue=work_queue,
         )
         sweep = _start_orphan_sweep(settings, storage)
@@ -426,10 +599,27 @@ async def _serve() -> None:
                 else None
             ),
         )
+        exa_discovery = _start_exa_discovery(
+            settings,
+            secrets=secrets,
+            storage=storage,
+        )
+        exa_targeted_enrichment = _start_exa_targeted_enrichment(
+            settings,
+            secrets=secrets,
+            storage=storage,
+        )
+        external_research_wake = _start_external_research_wake(settings)
         try:
             await run_worker(worker)
         finally:
-            for background in (sweep, agent_cleanup):
+            for background in (
+                sweep,
+                agent_cleanup,
+                exa_discovery,
+                exa_targeted_enrichment,
+                external_research_wake,
+            ):
                 if background is None:
                     continue
                 background.cancel()

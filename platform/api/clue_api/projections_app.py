@@ -715,6 +715,7 @@ def create_projections_app(
     research_view_evidence_access: EvidenceAccessService | None = None,
     research_view_owner_references: ProductionOwnerReferenceResolver | None = None,
     startup_check: Callable[[], Awaitable[None]] | None = None,
+    discovery_webhook_router: APIRouter | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -768,6 +769,8 @@ def create_projections_app(
                 conn_factory=conn_factory,
             )
         )
+    if discovery_webhook_router is not None:
+        app.include_router(discovery_webhook_router)
     research_components = (
         research_view_composer,
         research_view_snapshots,
@@ -794,9 +797,7 @@ def create_projections_app(
             "snapshot service, and evidence-access service"
         )
     if resolved.c7_research_view_read_enabled and research_view_owner_references is None:
-        raise ValueError(
-            "enabled C7 reads require authenticated owner-reference batch resolution"
-        )
+        raise ValueError("enabled C7 reads require authenticated owner-reference batch resolution")
     if any(component is not None for component in research_components):
         if not all(component is not None for component in research_components):
             raise ValueError(

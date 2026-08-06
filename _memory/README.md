@@ -27,6 +27,60 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-06-m8d-r9-parallel-execution.md` — R9 accepted: exact-wave dependency checks,
+  atomic budget/provider admission, concurrent Exa/Sumble execution, partial-result joining,
+  callback-race-safe composite waits, cold-resume/crash replay, DSAR, and isolated-DB evidence.
+- `2026-08-06-m8d-r0-r4-adversarial-fixes.md` — closes every reviewed R0-R4 P1/P2:
+  exact field/source authority, full legacy quarantine, globally scoped checkpoints, immutable
+  state/finalization history, provider-neutral causation/results, multi-contact projections,
+  bounded follow-up context, lossless UTF-8 reads, checkpoint-aware DSAR, and fresh-DB gates.
+- `2026-08-06-m8d-r4-governed-tools-persisted-results.md` — R4 accepted: exact semantic tool
+  authority, provider-operation causation before dispatch, complete lossless persisted results,
+  Exa contact composition, replay/follow-up lineage, DSAR reach, isolated-DB regression evidence,
+  and the retained R5/R9/R10 boundaries.
+- `2026-08-05-m8c-v0-offline-database-acceptance.md` — M8C V0 complete mechanically: frozen
+  55-gate C0–C7 matrix, prerequisite-populated synthetic database and zero-call fresh replay,
+  provider-id/count isolation repairs, clean 3,412-test full suite, migration/static gates,
+  categorized failure ledger, and the separate V1 live-provider boundary.
+- `2026-08-05-m8c-c5-selected-contact-channel-enrichment.md` — C5 mechanically complete:
+  exact selected-contact/channel authority, Exa one-person acquisition, independent validation,
+  atomic split spend, governed identity promotion, replay, DSAR/retention, clean database
+  verification, and the separately authorized paid-canary/C6 handoff.
+- `2026-08-05-m8c-c4-exa-contact-acquisition-materialization.md` — C4 complete mechanically:
+  transaction-free exact-contact Exa dispatch, immutable snapshots and honest one-time cost
+  settlement, exact-target replay through governed `fill_contact_field`, crash/same-name/malformed
+  defenses, clean database verification, and the separately authorized live-canary/C5-C6 handoff.
+- `2026-08-05-m8c-c3-contact-exa-compiler.md` — C3 complete mechanically: exact-contact/employer
+  Exa Deep compiler, registry/source-plan authority, directional structured output, fail-closed
+  same-name parser, content-addressed fixtures, clean full-suite verification, and the C4 handoff.
+- `2026-08-05-m8c-c2-atomic-lineage-remediation.md` — closes both audited C2 blockers:
+  the public reserve API solely owns semantic reuse serialization/capacity reservation, every
+  Exa claim requires exact operation/snapshot/request/result-artifact lineage, provider doubles
+  use honest fixture source identities, and clean full-suite/migration verification is green.
+- `2026-08-05-m8c-c1-selection-lineage-remediation.md` — closes both audited C1 findings:
+  bounded strong-first People/Teams union selection preserves organization-map representation;
+  typed immutable claim provenance plus exact database-enforced Sumble operation/snapshot/
+  artifact/account/contact lineage; clean full-suite and migration-smoke verification.
+- `2026-08-04-m8b-v0-offline-database-acceptance.md` — V0 complete mechanically: frozen
+  32-case fault manifest, Sumble response-before-normalization durability and charged-drift
+  quarantine, disposable migration/concurrency/fresh-process inspection, clean 3,337-test suite,
+  static/import/one-head gates, and the separately authorized V1 live boundary.
+- `2026-08-04-m8b-o3-main-agent-steering.md` — O3 complete mechanically: non-linear Head-of-ABM
+  account-deep steering, exact current directive/launch/account L3 context, truthful governed tool
+  descriptions, pre-launch research-specialist behavior, scripted conversation gates, and
+  provider-free real-Postgres verification; V0/V1 remain.
+- `2026-08-04-m8b-o2-account-deep-composition.md` — O2 complete mechanically: explicit immutable
+  exact-set launch after the conversational/tier pause, account budget/pin propagation, canonical
+  Exa preparation and snapshot replay, durable S1/A2-backed no-reveal Sumble committee inputs,
+  existing fleet/orchestrator composition, real-Postgres acceptance, and O3/V0/live handoff.
+- `2026-08-04-m8b-e0-a2-integration.md` — merged the complete E0 request/response branch into the
+  A2 account-profiling integration branch; reconciled roadmap state, isolated the negative Exa
+  credential test from local environment configuration, and verified the combined E0/A2/deep/
+  Sumble seams without provider traffic.
+- `2026-08-04-m8b-a2-research-directive.md` — M8B A2 plus critical-review remediation:
+  immutable research direction, exact sealed membership and production launch pins, canonical
+  source authority, trusted human confirmation receipts, complete previews, explicit memory
+  outcomes, bounded context, project-artifact erasure, and provider-free verification.
 - `2026-07-28-phase-c7-8-closeout.md` — C7.8 and C7 complete: 18-case executable
   adversarial matrix, 10-surface DSAR matrix, breadth-batched/capped derivation reads, six
   independent default-off activation controls, operations/runbook/status closeout, clean full

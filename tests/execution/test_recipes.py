@@ -14,9 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.execution_tools import AdvanceProjectPhaseTool, ExecutionControlServices
 from clue_api.recipe_contracts import RECIPE_0_TOOL_ADDRESSES
 from clue_api.recipe_wiring import (
+    HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES,
     build_recipe_pin_registry,
     load_system_recipe_definitions,
     seed_system_recipes,
+    system_recipe_asset_root,
 )
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_db import ConnFactory
@@ -34,6 +36,7 @@ from clue_execution import (
     RecipeScopeType,
     RecipeVersionConflict,
     ToolNode,
+    load_recipe_definition,
 )
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
@@ -125,10 +128,12 @@ def test_system_seed_is_promoted_digest_exact_and_replay_safe() -> None:
                     {"revision_ids": [item.recipe_revision_id for item in first]},
                 )
             ).mappings()
+            definition_count = len(definitions)
+            recipe_count = len({definition.recipe_key for definition in definitions})
             assert {row["event_type"]: row["count"] for row in events} == {
-                "promoted": 8,
-                "proposed": 8,
-                "superseded": 5,
+                "promoted": definition_count,
+                "proposed": definition_count,
+                "superseded": definition_count - recipe_count,
             }
 
             mismatch = definitions[0].model_copy(update={"max_nodes": 129})
@@ -138,9 +143,13 @@ def test_system_seed_is_promoted_digest_exact_and_replay_safe() -> None:
     run_async(scenario())
 
 
-def test_c67_account_unit_is_a_one_tool_bounded_system_recipe() -> None:
+def test_c67_account_unit_is_preserved_as_replay_only_not_system_seeded() -> None:
     definitions = load_system_recipe_definitions()
-    account = next(item for item in definitions if item.recipe_key == "account-research-unit")
+    assert all(item.recipe_key != "account-research-unit" for item in definitions)
+    assert HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES == ("account-research-unit-v1.json",)
+    account = load_recipe_definition(
+        system_recipe_asset_root() / HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES[0]
+    )
     slot = next(
         node for node in account.graph.nodes if node.node_key == "account_research_interactions"
     )

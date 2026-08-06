@@ -24,6 +24,7 @@ from langchain_core.tools import StructuredTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
 from clue_agents.contracts import MODEL_FORBIDDEN_AUTHORITY_KEYS
+from clue_api.agent_registry_wiring import c6_roles_for_tool
 from clue_api.agent_runtime_wiring import _with_trusted_runtime
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings
@@ -77,8 +78,19 @@ def _property_paths(node: Any, prefix: tuple[str, ...] = ()) -> Iterator[tuple[s
 
 def test_no_model_facing_tool_schema_carries_trusted_authority_at_any_depth() -> None:
     registry = build_toolbelt(storage=None, gateway=None, settings=Settings(_env_file=None))
-    descriptors = tuple(registry.all_descriptors())
-    assert descriptors, "the toolbelt registered no tools"
+    registered_descriptors = tuple(registry.all_descriptors())
+    assert registered_descriptors, "the toolbelt registered no tools"
+
+    # The toolbelt is also the backend registry for human-only steering operations. Those
+    # operations deliberately carry authenticated scope in their request bodies and are never
+    # admitted to an agent role. Mirror the live agent-catalog composition here: only an address
+    # with at least one admitted role can cross the model boundary. The separate exhaustive C6
+    # authority audit proves that every registered address has an explicit authority decision, so
+    # an unclassified tool cannot disappear from this gate by omission.
+    descriptors = tuple(
+        descriptor for descriptor in registered_descriptors if c6_roles_for_tool(descriptor.address)
+    )
+    assert descriptors, "the live authority composition admitted no model-facing tools"
 
     offenders = sorted(
         f"{descriptor.address}: {'.'.join(path)}"

@@ -26,7 +26,9 @@ invert. (``sources`` → ``icp`` stays permitted — decision #7, for the M4.6 p
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from sqlalchemy import text
@@ -72,6 +74,9 @@ class NoResolverBoundError(LookupError):
 
 # --- resolver binding (in-process; the source_key -> Resolver dispatch map) --
 _RESOLVER_BINDINGS: dict[str, Resolver] = {}
+_RESOLVER_OVERRIDES: ContextVar[Mapping[str, Resolver] | None] = ContextVar(
+    "clue_source_resolver_overrides", default=None
+)
 
 
 def bind_resolver(source_key: str, resolver: Resolver) -> None:
@@ -93,9 +98,28 @@ def clear_resolver_bindings() -> None:
     _RESOLVER_BINDINGS.clear()
 
 
+@contextmanager
+def bind_resolver_overrides(bindings: Mapping[str, Resolver]) -> Iterator[None]:
+    """Temporarily override resolver bindings for one async/task context.
+
+    Ready external snapshots are run/account-scoped; placing them in the process-global registry
+    would let concurrent accounts see each other's provider material.  This ambient seam mirrors
+    the existing snapshot/telemetry context bindings and keeps provider names out of workers.
+    Nested scopes inherit outer entries, with the inner mapping winning by exact source key.
+    """
+
+    inherited = _RESOLVER_OVERRIDES.get() or {}
+    token = _RESOLVER_OVERRIDES.set({**inherited, **dict(bindings)})
+    try:
+        yield
+    finally:
+        _RESOLVER_OVERRIDES.reset(token)
+
+
 def is_resolver_bound(source_key: str) -> bool:
     """True if a resolver is bound to ``source_key``."""
-    return source_key in _RESOLVER_BINDINGS
+    overrides = _RESOLVER_OVERRIDES.get()
+    return (overrides is not None and source_key in overrides) or source_key in _RESOLVER_BINDINGS
 
 
 def get_resolver(source_key: str) -> Resolver:
@@ -104,7 +128,12 @@ def get_resolver(source_key: str) -> Resolver:
     The waterfall (M4.1) treats the error as ``stop_reason=no_resolver`` (e.g. a tier-4 placeholder
     whose resolver lands in M11), so a named-but-unbound source never fails a run.
     """
-    resolver = _RESOLVER_BINDINGS.get(source_key)
+    overrides = _RESOLVER_OVERRIDES.get()
+    resolver = (
+        overrides[source_key]
+        if overrides is not None and source_key in overrides
+        else _RESOLVER_BINDINGS.get(source_key)
+    )
     if resolver is None:
         raise NoResolverBoundError(
             f"no resolver bound to source_key {source_key!r} "

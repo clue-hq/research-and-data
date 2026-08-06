@@ -26,8 +26,10 @@ from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import JsonValue
 from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    ICPSpec,
     LLMGateway,
     PhaseContext,
     PhaseResult,
@@ -36,6 +38,8 @@ from clue_core import (
     ProjectPhase,
     ProjectRunId,
     RunId,
+    SealedDiscoveryAccountReader,
+    SealedDiscoveryAccounts,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import ALL_WORKSPACES
@@ -72,12 +76,19 @@ from clue_research.discovery_scoring.tiering import (
     CheckpointDecision,
     CheckpointReview,
     CheckpointStatus,
+    DiscoveryCriteriaCheckpointReview,
+    DiscoverySelectionDisposition,
+    DiscoverySelectionPolicy,
+    ScoringMode,
     TieringConfig,
     assign_tiers,
     cutoff_version,
     estimate_cost,
+    load_discovery_criteria_selection,
     load_score_views,
+    persist_discovery_selection_tier,
     persist_tier,
+    selection_decision_version,
     tier_distribution,
 )
 from clue_research.icp.compiler import compile_field_plan
@@ -266,15 +277,27 @@ class ScoringPhaseHandler:
         thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
         session_factory: ConnFactory = transaction,
         pre_spend_gate: PreSpendGate | None = None,
+        sealed_account_reader: SealedDiscoveryAccountReader | None = None,
     ) -> None:
         self._config = config
         self._thresholds = thresholds
         self._session_factory = session_factory
         self._pre_spend_gate = pre_spend_gate
+        self._sealed_account_reader = sealed_account_reader
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         discovery_run = discovery_run_id(ctx)
         scoring_run = _scoring_run_id(ctx)
+        sealed_accounts = (
+            await self._sealed_account_reader.read(
+                workspace_id=ctx.workspace_id,
+                project_run_id=ctx.project_run_id,
+                icp_key=ctx.icp_key,
+                icp_version=ctx.icp_version,
+            )
+            if self._sealed_account_reader is not None
+            else None
+        )
         async with self._session_factory() as conn:
             spec = await get_icp_version(conn, ctx.workspace_id, ctx.icp_key, ctx.icp_version)
             if spec is None:
@@ -285,6 +308,56 @@ class ScoringPhaseHandler:
                             f"no ICP spec for ({ctx.workspace_id!r}, {ctx.icp_key!r}, "
                             f"v{ctx.icp_version})"
                         )
+                    },
+                )
+            try:
+                selection_policy = DiscoverySelectionPolicy.from_slot(spec.discovery_strategy)
+            except ValueError as exc:
+                return PhaseResult(
+                    status=PhaseStatus.FAILED,
+                    payload={"error": f"invalid discovery selection policy: {exc}"},
+                )
+            if selection_policy.scoring_mode is ScoringMode.DISABLED:
+                if sealed_accounts is None:
+                    return PhaseResult(
+                        status=PhaseStatus.FAILED,
+                        payload={
+                            "error": (
+                                "discovery-criteria selection requires the exact current sealed "
+                                "discovery generation"
+                            )
+                        },
+                    )
+                try:
+                    selection = await load_discovery_criteria_selection(
+                        conn,
+                        sealed=sealed_accounts,
+                        workspace_id=ctx.workspace_id,
+                        policy=selection_policy,
+                    )
+                except ValueError as exc:
+                    return PhaseResult(
+                        status=PhaseStatus.FAILED,
+                        payload={"error": f"invalid sealed discovery selection: {exc}"},
+                    )
+                return PhaseResult(
+                    status=PhaseStatus.COMPLETED,
+                    accounts_processed=len(selection.accounts),
+                    cost_cents=Decimal(0),
+                    payload={
+                        "scoring_mode": selection_policy.scoring_mode.value,
+                        "selection_mode": selection_policy.selection_mode.value,
+                        "selection_policy_version": selection.policy_version,
+                        "discovery_batch_id": str(sealed_accounts.discovery_batch_id),
+                        "discovery_seal_sha256": sealed_accounts.seal_sha256,
+                        "account_manifest_ref": sealed_accounts.account_manifest_ref,
+                        "claim_manifest_ref": sealed_accounts.claim_manifest_ref,
+                        "selection_distribution": cast(
+                            "dict[str, JsonValue]", selection.distribution
+                        ),
+                        "accounts": [row.model_dump(mode="json") for row in selection.accounts],
+                        "numeric_scores_written": 0,
+                        "external_calls": 0,
                     },
                 )
             rubric = rubric_from_slot(spec.scoring_rubric)
@@ -308,8 +381,10 @@ class ScoringPhaseHandler:
             fill_fields = await pass_a_fill_fields(
                 conn, field_plan, rubric, max_source_tier=self._config.max_source_tier
             )
-            account_ids = await admitted_account_ids(
-                conn, run_id=discovery_run, scope=ALL_WORKSPACES
+            account_ids = (
+                sealed_accounts.account_ids
+                if sealed_accounts is not None
+                else await admitted_account_ids(conn, run_id=discovery_run, scope=ALL_WORKSPACES)
             )
 
             scored = written = replayed = errors = 0
@@ -378,6 +453,12 @@ class ScoringPhaseHandler:
                 "written": written,
                 "replayed": replayed,
                 "errors": errors,
+                "discovery_batch_id": (
+                    str(sealed_accounts.discovery_batch_id) if sealed_accounts is not None else None
+                ),
+                "discovery_batch_seal_ref": (
+                    sealed_accounts.seal_sha256 if sealed_accounts is not None else None
+                ),
             },
         )
 
@@ -426,13 +507,185 @@ class TierCheckpointPhaseHandler:
         config: TieringConfig = DEFAULT_TIERING_CONFIG,
         coverage_config: CoverageConfig = DEFAULT_COVERAGE_CONFIG,
         session_factory: ConnFactory = transaction,
+        sealed_account_reader: SealedDiscoveryAccountReader | None = None,
     ) -> None:
         self._config = config
         self._coverage_config = coverage_config
         self._session_factory = session_factory
+        self._sealed_account_reader = sealed_account_reader
+
+    async def _run_discovery_criteria_checkpoint(
+        self,
+        conn: AsyncConnection,
+        *,
+        ctx: PhaseContext,
+        spec: ICPSpec,
+        sealed: SealedDiscoveryAccounts,
+        policy: DiscoverySelectionPolicy,
+        decision: CheckpointDecision,
+    ) -> PhaseResult:
+        try:
+            selection = await load_discovery_criteria_selection(
+                conn,
+                sealed=sealed,
+                workspace_id=ctx.workspace_id,
+                policy=policy,
+            )
+        except ValueError as exc:
+            return PhaseResult(
+                status=PhaseStatus.FAILED,
+                payload={"error": f"invalid sealed discovery selection: {exc}"},
+            )
+        selected = {
+            row.account_id: row
+            for row in selection.accounts
+            if row.disposition is DiscoverySelectionDisposition.SELECTED
+        }
+        approval_error = decision.approval_selection_error
+        requested = decision.approved_account_ids
+        if requested is None:
+            effective_ids = tuple(sorted(selected, key=str))
+        else:
+            unknown = sorted(set(requested) - set(selected), key=str)
+            if unknown:
+                approval_error = (
+                    "approved_account_ids contains accounts that are not selected by every "
+                    "required discovery criterion"
+                )
+            effective_ids = tuple(value for value in requested if value in selected)
+
+        if self._config.band_cents(policy.approved_tier) <= 0:
+            return PhaseResult(
+                status=PhaseStatus.FAILED,
+                payload={
+                    "error": (
+                        f"approved discovery tier {policy.approved_tier!r} has no positive "
+                        "Pass-B cost band"
+                    )
+                },
+            )
+        deep_distribution = {policy.approved_tier: len(effective_ids)}
+        estimate = estimate_cost(deep_distribution, self._config).model_copy(
+            update={"discovered_count": len(selection.accounts)}
+        )
+        effective_cap = (
+            decision.budget_cap_cents
+            if decision.budget_cap_cents is not None
+            else ctx.budget_cap_cents
+        )
+        over_cap = effective_cap is not None and estimate.estimated_cost_cents > effective_cap
+        approved = (
+            decision.action is CheckpointAction.APPROVE and approval_error is None and not over_cap
+        )
+        decision_version = selection_decision_version(
+            policy_version=selection.policy_version,
+            seal_sha256=sealed.seal_sha256,
+            approved_account_ids=effective_ids,
+        )
+
+        tier_run: RunId | None = None
+        tiered = replayed = errors = 0
+        if approved:
+            tier_run = _tier_checkpoint_run_id(ctx, decision_version)
+            for account_id in effective_ids:
+                savepoint = await conn.begin_nested()
+                try:
+                    _, written = await persist_discovery_selection_tier(
+                        conn,
+                        view=selected[account_id],
+                        tier=policy.approved_tier,
+                        selection_policy_version=selection.policy_version,
+                        decision_version=decision_version,
+                        discovery_batch_id=str(sealed.discovery_batch_id),
+                        discovery_seal_sha256=sealed.seal_sha256,
+                        project_run_id=ctx.project_run_id,
+                        run_id=tier_run,
+                        workspace_id=ctx.workspace_id,
+                        icp_key=ctx.icp_key,
+                        icp_version=ctx.icp_version,
+                    )
+                except Exception:  # noqa: BLE001 - isolate and make the gate retryable.
+                    await savepoint.rollback()
+                    errors += 1
+                    continue
+                await savepoint.commit()
+                if written:
+                    tiered += 1
+                else:
+                    replayed += 1
+
+        coverage = await coverage_report(
+            conn,
+            run_id=discovery_run_id(ctx),
+            spec=spec,
+            config=self._coverage_config,
+        )
+        coverage_json: JsonValue = coverage.model_dump(mode="json") if coverage else None
+        completed = approved and errors == 0
+        status = CheckpointStatus.RESUMED if completed else CheckpointStatus.AWAITING
+        review = DiscoveryCriteriaCheckpointReview(
+            status=status,
+            selection_policy_version=selection.policy_version,
+            discovery_batch_id=str(sealed.discovery_batch_id),
+            discovery_seal_sha256=sealed.seal_sha256,
+            approved_tier=policy.approved_tier,
+            selection_distribution=selection.distribution,
+            accounts=selection.accounts,
+            approval_candidate_account_ids=tuple(sorted(selected, key=str)),
+            requested_approved_account_ids=requested,
+            approval_selection_error=approval_error,
+            estimate=estimate,
+            cap_cents=effective_cap,
+            projected_over_cap=over_cap,
+            coverage=coverage_json,
+        )
+        payload: dict[str, JsonValue] = {
+            "checkpoint_status": status.value,
+            "decision_action": decision.action.value if decision.action else None,
+            "decision_basis": "discovery_criteria",
+            "scoring_mode": policy.scoring_mode.value,
+            "selection_mode": policy.selection_mode.value,
+            "selection_policy_version": selection.policy_version,
+            "decision_version": decision_version,
+            "discovery_batch_id": str(sealed.discovery_batch_id),
+            "discovery_seal_sha256": sealed.seal_sha256,
+            "selection_distribution": cast("dict[str, JsonValue]", selection.distribution),
+            "approved_account_count": len(effective_ids),
+            "approved_account_ids": [str(value) for value in effective_ids],
+            "approval_selection_error": approval_error,
+            "approved_tier": policy.approved_tier,
+            "estimate": estimate.model_dump(mode="json"),
+            "projected_over_cap": over_cap,
+            "numeric_scores_written": 0,
+            "coverage": coverage_json,
+            "review": review.model_dump(mode="json"),
+        }
+        if approved:
+            assert tier_run is not None
+            payload["tier_checkpoint_run_id"] = str(tier_run)
+            payload["tiered"] = tiered
+            payload["replayed"] = replayed
+            payload["errors"] = errors
+        if completed:
+            return PhaseResult(
+                status=PhaseStatus.COMPLETED,
+                accounts_processed=tiered + replayed,
+                payload=payload,
+            )
+        return PhaseResult(status=PhaseStatus.PAUSED, payload=payload)
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         scoring_run = _scoring_run_id(ctx)
+        sealed_accounts = (
+            await self._sealed_account_reader.read(
+                workspace_id=ctx.workspace_id,
+                project_run_id=ctx.project_run_id,
+                icp_key=ctx.icp_key,
+                icp_version=ctx.icp_version,
+            )
+            if self._sealed_account_reader is not None
+            else None
+        )
         async with self._session_factory() as conn:
             spec = await get_icp_version(conn, ctx.workspace_id, ctx.icp_key, ctx.icp_version)
             if spec is None:
@@ -444,6 +697,33 @@ class TierCheckpointPhaseHandler:
                             f"v{ctx.icp_version})"
                         )
                     },
+                )
+            try:
+                selection_policy = DiscoverySelectionPolicy.from_slot(spec.discovery_strategy)
+            except ValueError as exc:
+                return PhaseResult(
+                    status=PhaseStatus.FAILED,
+                    payload={"error": f"invalid discovery selection policy: {exc}"},
+                )
+            decision = CheckpointDecision.from_params(ctx.params)
+            if selection_policy.scoring_mode is ScoringMode.DISABLED:
+                if sealed_accounts is None:
+                    return PhaseResult(
+                        status=PhaseStatus.FAILED,
+                        payload={
+                            "error": (
+                                "discovery-criteria checkpoint requires the exact current sealed "
+                                "discovery generation"
+                            )
+                        },
+                    )
+                return await self._run_discovery_criteria_checkpoint(
+                    conn,
+                    ctx=ctx,
+                    spec=spec,
+                    sealed=sealed_accounts,
+                    policy=selection_policy,
+                    decision=decision,
                 )
             rubric = rubric_from_slot(spec.scoring_rubric)
             if rubric is None:
@@ -458,7 +738,6 @@ class TierCheckpointPhaseHandler:
                     },
                 )
 
-            decision = CheckpointDecision.from_params(ctx.params)
             # Cutoffs are the client's adjustment if present, else the rubric's proposal (D7:
             # cutoffs are data; adjusting them re-tiers without touching the rubric version).
             cutoffs = decision.cutoffs if decision.cutoffs is not None else rubric.tier_cutoffs

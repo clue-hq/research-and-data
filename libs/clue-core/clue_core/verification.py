@@ -26,11 +26,13 @@ docs/specs/M09-verification-layer.md.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import timedelta
 from decimal import Decimal
-from typing import Protocol, runtime_checkable
+from typing import Annotated, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
 from clue_core.claim import Claim
 from clue_core.entity import AccountEntity, ContactEntity
@@ -57,6 +59,105 @@ from clue_core.primitives import (
 
 # --- M9.1: pre-spend schema/identity gate -----------------------------------
 
+NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class EffectiveSourceAuthorization(BaseModel):
+    """One exact source admitted by a compiled field/source plan.
+
+    A tier alone is not an authorization: multiple providers can occupy the same trust tier.  The
+    pre-spend gate therefore binds the opaque registry ``source_key`` to its registered tier.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_key: NonEmptyStr
+    source_tier: SourceTier
+
+
+def _effective_source_plan_digest(
+    *,
+    workspace_id: str,
+    icp_key: str,
+    icp_version: int,
+    field_key: FieldKey | str,
+    sources: tuple[EffectiveSourceAuthorization, ...],
+) -> str:
+    payload = {
+        "workspace_id": workspace_id,
+        "icp_key": icp_key,
+        "icp_version": icp_version,
+        "field_key": str(field_key),
+        "sources": [source.model_dump(mode="json") for source in sources],
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+class EffectiveFieldSourcePlan(BaseModel):
+    """Content-addressed source authority for one pinned ICP field.
+
+    The M4 planner compiles this only from the versioned source profile intersected with active,
+    field-capable manifests.  It is carried by value into every FIELD pre-spend request so the gate
+    and the waterfall authorize the same exact source set instead of independently re-deriving a
+    tier-only approximation from the global field default.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workspace_id: NonEmptyStr
+    icp_key: NonEmptyStr
+    icp_version: int = Field(ge=1)
+    field_key: FieldKey
+    sources: tuple[EffectiveSourceAuthorization, ...] = ()
+    plan_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @classmethod
+    def compile(
+        cls,
+        *,
+        workspace_id: str,
+        icp_key: str,
+        icp_version: int,
+        field_key: FieldKey | str,
+        sources: tuple[EffectiveSourceAuthorization, ...],
+    ) -> EffectiveFieldSourcePlan:
+        digest = _effective_source_plan_digest(
+            workspace_id=workspace_id,
+            icp_key=icp_key,
+            icp_version=icp_version,
+            field_key=field_key,
+            sources=sources,
+        )
+        return cls(
+            workspace_id=workspace_id,
+            icp_key=icp_key,
+            icp_version=icp_version,
+            field_key=field_key,
+            sources=sources,
+            plan_sha256=digest,
+        )
+
+    @model_validator(mode="after")
+    def _unique_and_content_addressed(self) -> EffectiveFieldSourcePlan:
+        keys = tuple(source.source_key for source in self.sources)
+        if len(keys) != len(set(keys)):
+            raise ValueError("an effective field source plan cannot repeat a source_key")
+        expected = _effective_source_plan_digest(
+            workspace_id=self.workspace_id,
+            icp_key=self.icp_key,
+            icp_version=self.icp_version,
+            field_key=self.field_key,
+            sources=self.sources,
+        )
+        if self.plan_sha256 != expected:
+            raise ValueError("effective field source plan digest does not match its contents")
+        return self
+
+    def authorization_for(self, source_key: str) -> EffectiveSourceAuthorization | None:
+        return next((source for source in self.sources if source.source_key == source_key), None)
+
 
 class PreSpendRequest(BaseModel):
     """A request to spend on producing claims (M9.1). Two kinds (Option C):
@@ -81,6 +182,9 @@ class PreSpendRequest(BaseModel):
     # execution and rejects this exact registered source before provider I/O.  Optional keeps
     # non-source/legacy gate callers compatible; every waterfall/committee source path supplies it.
     source_key: str | None = None
+    # Exact, content-addressed authority compiled from the pinned ICP source profile. Dynamic M4/M8
+    # plans supply it; legacy/static callers may omit it and remain governed by field_definition.
+    effective_source_plan: EffectiveFieldSourcePlan | None = None
     run_id: RunId
     value_json: JsonValue | None = None
 
@@ -92,6 +196,11 @@ class PreSpendRequest(BaseModel):
                 raise ValueError("a FIELD pre-spend requires a field_key")
             if self.scope is not None:
                 raise ValueError("a FIELD pre-spend must not carry an enumeration scope")
+            if self.effective_source_plan is not None:
+                if self.effective_source_plan.field_key != self.field_key:
+                    raise ValueError("effective source plan field_key must match the request")
+                if self.source_key is None:
+                    raise ValueError("an effective source plan requires an exact source_key")
         else:  # ENUMERATION
             if self.scope is None:
                 raise ValueError("an ENUMERATION pre-spend requires a scope")
@@ -99,6 +208,8 @@ class PreSpendRequest(BaseModel):
                 raise ValueError("an ENUMERATION pre-spend must not carry a field_key")
             if self.value_json is not None:
                 raise ValueError("an ENUMERATION pre-spend has no value_json")
+            if self.effective_source_plan is not None:
+                raise ValueError("an ENUMERATION pre-spend has no field source plan")
         return self
 
 

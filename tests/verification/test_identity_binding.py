@@ -727,7 +727,9 @@ def test_critical_untrusted_source_name_match_is_weak() -> None:
             claim = _contact_claim(
                 entity_id=contact,
                 source_url="https://attacker.example.com/post",  # not the handle
-                source_key="exa_deep",  # tier-4 open-web, NULL prior → fail closed
+                # This is deliberately an unregistered hostile fixture, not an Exa acquisition.
+                # A real exa_deep claim must carry exact durable snapshot lineage.
+                source_key="fixture_untrusted_open_web",
                 tier=2,
                 span="Jane Doe, an engineer at Acme Robotics in Denver, loves climbing.",
                 identity_binding=IdentityBinding.WEAK,
@@ -735,7 +737,7 @@ def test_critical_untrusted_source_name_match_is_weak() -> None:
             await insert_claim(conn, claim, validate_field=False)
             binding = await _gate(conn).classify(claim)
             assert binding.strength is IdentityBinding.WEAK  # the identifier match is not trusted
-            assert binding.signals["source_prior"] is None  # exa_deep declares no prior
+            assert binding.signals["source_prior"] is None  # unknown source has no trusted prior
             assert binding.signals["identifier_count"] >= 2  # the identifiers DID match...
 
     run_async(_run())

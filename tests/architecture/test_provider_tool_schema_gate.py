@@ -12,8 +12,7 @@ from typing import Any
 
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
-from clue_agents import AgentRole
-from clue_api.agent_registry_wiring import build_agent_profile_registry
+from clue_api.agent_registry_wiring import C6_ACTIVE_PROFILE_VERSIONS, build_agent_profile_registry
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings
 from clue_gateway.agent_model import (
@@ -33,7 +32,7 @@ def _bound_tool_schemas() -> list[tuple[str, str, dict[str, Any]]]:
                 convert_to_openai_tool(registry.descriptor(pin.name, pin.version).input_model)
             ),
         )
-        for role in AgentRole
+        for role in C6_ACTIVE_PROFILE_VERSIONS
         for pin in profiles.resolve(role).profile.tools
     ]
 

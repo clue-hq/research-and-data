@@ -9,16 +9,27 @@ phase sees the change; ``pre_run_estimate`` delegates to the budget engine.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
 from clue_core import (
     BudgetEngine,
+    DeepAccountExternalWait,
+    DeepExternalWait,
+    DiscoveryExternalWait,
+    DiscoveryWakeReason,
+    ExternalResearchPreparation,
+    ExternalResearchPreparationOutcome,
     PhaseHandler,
     PhaseStatus,
     ProjectPhase,
+    new_discovery_batch_id,
+    new_discovery_operation_id,
+    new_entity_id,
     new_project_run_id,
+    new_run_id,
 )
 from clue_research.durable import (
     PHASE_SEQUENCE,
@@ -165,6 +176,114 @@ def test_suspended_run_survives_restart() -> None:
         run = await restarted.run_to_completion(run_id)
         assert run.status is ProjectRunStatus.COMPLETED
         assert handlers[ProjectPhase.DEEP].calls == 1
+
+    run_async(_run())
+
+
+def test_discovery_waits_externally_and_reenters_after_scheduler_wake() -> None:
+    """Provider-owned wait time is durable and active; it is never a human pause."""
+
+    store = FakeProjectRunStore()
+    events: list[str] = []
+    wait = DiscoveryExternalWait(
+        discovery_batch_id=new_discovery_batch_id(),
+        pending_operation_ids=(new_discovery_operation_id(),),
+        next_poll_at=datetime.now(UTC) + timedelta(minutes=2),
+        wake_reason=DiscoveryWakeReason.SCHEDULED_POLL,
+    )
+    waiting_handler = RecordingPhaseHandler(
+        ProjectPhase.DISCOVERY,
+        result_status=PhaseStatus.WAITING_EXTERNAL,
+        payload=wait.model_dump(mode="json"),
+        events=events,
+    )
+    registry, handlers = _registry(events, overrides={ProjectPhase.DISCOVERY: waiting_handler})
+
+    async def _run() -> None:
+        machine = ProjectRun(store=store, registry=registry)
+        run_id = await machine.start(
+            project_id="prj-test", workspace_id="c1", icp_key="default", icp_version=1
+        )
+        await machine.advance(run_id)  # reverse_profiling -> icp_confirmed
+        await machine.advance(run_id)  # icp_confirmed -> discovery
+        waiting = await machine.advance(run_id)
+
+        assert waiting.phase is ProjectPhase.DISCOVERY
+        assert waiting.status is ProjectRunStatus.ACTIVE
+        checkpoint = await store.get_checkpoint(run_id, ProjectPhase.DISCOVERY)
+        assert checkpoint is not None
+        assert checkpoint.status is PhaseCheckpointStatus.WAITING_EXTERNAL
+        assert checkpoint.payload == wait.model_dump(mode="json")
+        assert handlers[ProjectPhase.SCORING].calls == 0
+
+        # A new process receives the durable scheduler/webhook wake, swaps in the now-terminal
+        # handler result, and re-enters discovery without a user resume action.
+        completed = RecordingPhaseHandler(ProjectPhase.DISCOVERY, events=events)
+        registry.register(completed)
+        restarted = ProjectRun(store=store, registry=registry)
+        advanced = await restarted.advance(run_id)
+        assert advanced.phase is ProjectPhase.SCORING
+        assert advanced.status is ProjectRunStatus.ACTIVE
+        assert completed.calls == 1
+        committed = await store.get_checkpoint(run_id, ProjectPhase.DISCOVERY)
+        assert committed is not None
+        assert committed.status is PhaseCheckpointStatus.COMMITTED
+
+    run_async(_run())
+
+
+def test_deep_waits_externally_and_reenters_same_phase_after_wake() -> None:
+    """DEEP provider waits are active checkpoints, not discovery-only or human pauses."""
+
+    store = FakeProjectRunStore()
+    events: list[str] = []
+    retry_after = datetime.now(UTC) + timedelta(minutes=1)
+    wait = DeepExternalWait(
+        pending_accounts=(
+            DeepAccountExternalWait(
+                account_entity_id=new_entity_id(),
+                account_run_id=new_run_id(),
+                preparation=ExternalResearchPreparation(
+                    outcome=ExternalResearchPreparationOutcome.WAITING_EXTERNAL,
+                    operation_ref="committee-operation:op-1",
+                    retry_after=retry_after,
+                    reason_code="provider_pending",
+                ),
+            ),
+        ),
+        next_poll_at=retry_after,
+    )
+    waiting_handler = RecordingPhaseHandler(
+        ProjectPhase.DEEP,
+        result_status=PhaseStatus.WAITING_EXTERNAL,
+        payload=wait.model_dump(mode="json"),
+        events=events,
+    )
+    registry, handlers = _registry(events, overrides={ProjectPhase.DEEP: waiting_handler})
+
+    async def _run() -> None:
+        machine = ProjectRun(store=store, registry=registry)
+        project_run_id = await machine.start(
+            project_id="prj-test", workspace_id="c1", icp_key="default", icp_version=1
+        )
+        for _ in range(5):
+            await machine.advance(project_run_id)
+        waiting = await machine.advance(project_run_id)
+        assert waiting.phase is ProjectPhase.DEEP
+        assert waiting.status is ProjectRunStatus.ACTIVE
+        checkpoint = await store.get_checkpoint(project_run_id, ProjectPhase.DEEP)
+        assert checkpoint is not None
+        assert checkpoint.status is PhaseCheckpointStatus.WAITING_EXTERNAL
+        assert checkpoint.payload == wait.model_dump(mode="json")
+        assert handlers[ProjectPhase.VERIFICATION].calls == 0
+
+        completed = RecordingPhaseHandler(ProjectPhase.DEEP, events=events)
+        registry.register(completed)
+        restarted = ProjectRun(store=store, registry=registry)
+        advanced = await restarted.advance(project_run_id)
+        assert advanced.phase is ProjectPhase.VERIFICATION
+        assert advanced.status is ProjectRunStatus.ACTIVE
+        assert completed.calls == 1
 
     run_async(_run())
 

@@ -1061,6 +1061,30 @@ async def evaluate_readiness(
     )
     if actual != expected:
         raise ValueError("readiness decision id replayed with different immutable context")
+    expected_payload = (
+        tuple(dict(item) for item in gap_refs),
+        tuple(field_proposal_refs),
+        tuple(source_proposal_refs),
+        tuple(ingestion_refs),
+        metrics_for_record,
+        tuple(reasons),
+        agent_sufficiency_status,
+        agent_sufficiency_ref,
+        created_by_actor,
+    )
+    actual_payload = (
+        stored.gap_refs,
+        stored.field_proposal_refs,
+        stored.source_proposal_refs,
+        stored.ingestion_refs,
+        stored.metrics,
+        stored.reason_codes,
+        stored.agent_sufficiency_status,
+        stored.agent_sufficiency_ref,
+        stored.created_by_actor,
+    )
+    if actual_payload != expected_payload:
+        raise ValueError("readiness decision id replayed with different immutable payload")
     return ReadinessSnapshotRef(
         readiness_decision_id=decision_id,
         gate=gate,

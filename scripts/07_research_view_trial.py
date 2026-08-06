@@ -52,9 +52,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     settings = load_settings()
     register_compliance_wiring()
     register_narrative_wiring()
-    runtime = build_production_research_view_runtime(
-        storage=build_storage_backend(settings)
-    )
+    runtime = build_production_research_view_runtime(storage=build_storage_backend(settings))
     async with db_lifespan():
         async with repeatable_read_transaction() as conn:
             pinned = (
@@ -112,9 +110,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             "trial_mode": "production_persisted_read_only",
             "acquisition_performed": False,
             "view": view.model_dump(mode="json"),
-            "owner_reference_resolutions": [
-                item.model_dump(mode="json") for item in owner_values
-            ],
+            "owner_reference_resolutions": [item.model_dump(mode="json") for item in owner_values],
         }
 
 

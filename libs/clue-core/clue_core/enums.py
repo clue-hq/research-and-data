@@ -29,6 +29,21 @@ class ExtractionMethod(StrEnum):
     CRM_IMPORT = "crm_import"
 
 
+class ClaimProvenanceKind(StrEnum):
+    """Who asserted or derived a field value, independent of transport/extraction method.
+
+    ``ExtractionMethod.API`` alone cannot distinguish a literal provider attribute from a
+    relationship/category modeled by that provider. Likewise, an LLM or deterministic platform
+    rule is not provider evidence. This typed claim-level discriminator preserves that distinction
+    without relying on prose in ``evidence_span`` or structure inside ``value_json``.
+    """
+
+    PROVIDER_RETURNED = "provider_returned"
+    PROVIDER_MODELED = "provider_modeled"
+    PLATFORM_INFERRED = "platform_inferred"
+    HUMAN_ASSERTED = "human_asserted"
+
+
 class ResearchMode(StrEnum):
     """The 2x2 of research modes (staged-flow §1). Discovery modes (M1/M3) attach
     discovery-provenance; profiling modes (M2/M4) produce field claims."""
@@ -376,6 +391,7 @@ class PhaseStatus(StrEnum):
     ``TIER_CHECKPOINT`` gate, or a budget graceful-stop (M7.5) — without failing the run."""
 
     COMPLETED = "completed"
+    WAITING_EXTERNAL = "waiting_external"
     PAUSED = "paused"
     FAILED = "failed"
 

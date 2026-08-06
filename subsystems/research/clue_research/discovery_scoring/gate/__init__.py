@@ -23,6 +23,7 @@ from __future__ import annotations
 from clue_research.discovery_scoring.gate.admission import (
     DISCOVERY_PROVENANCE_FIELD,
     admit,
+    ensure_discovery_provenance,
 )
 from clue_research.discovery_scoring.gate.existence import (
     DEFAULT_EXISTENCE_CHECK,
@@ -34,6 +35,7 @@ from clue_research.discovery_scoring.gate.results import AdmissionResult, Admiss
 
 __all__ = [
     "admit",
+    "ensure_discovery_provenance",
     "AdmissionResult",
     "AdmissionStatus",
     "ExistenceCheck",

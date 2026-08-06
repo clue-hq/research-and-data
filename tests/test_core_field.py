@@ -6,9 +6,11 @@ import pytest
 from pydantic import ValidationError
 
 from clue_core import (
+    ACCOUNT_AXIS_FIELD_CLASSES,
     FieldClass,
     FieldDef,
     PassKind,
+    account_axis_field_keys,
     classify_field_key,
     field_key,
     field_namespace,
@@ -39,6 +41,29 @@ def test_resonance_and_facet_classify_before_their_parents() -> None:
     # longest-prefix wins: account.resonance.* is NOT plain account.*
     assert classify_field_key("account.resonance.sentiment") is FieldClass.ACCOUNT_RESONANCE
     assert classify_field_key("contact.facet.hobby") is FieldClass.CONTACT_FACET
+
+
+def test_account_axis_projection_preserves_order_and_excludes_contact_work() -> None:
+    assert {
+        FieldClass.CORE,
+        FieldClass.ACCOUNT,
+        FieldClass.ACCOUNT_RESONANCE,
+        FieldClass.PACK,
+    } == ACCOUNT_AXIS_FIELD_CLASSES
+    assert account_axis_field_keys(
+        (
+            "contact.current_title",
+            "account.operational_pain",
+            "contact.facet.stated_interests",
+            "healthcare.specialty",
+            "account.operational_pain",
+            "core.employee_count",
+        )
+    ) == (
+        "account.operational_pain",
+        "healthcare.specialty",
+        "core.employee_count",
+    )
 
 
 @pytest.mark.parametrize(

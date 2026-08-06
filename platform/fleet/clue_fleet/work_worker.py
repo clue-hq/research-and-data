@@ -32,6 +32,7 @@ log = get_logger("clue_fleet.work_worker")
 
 @dataclass(frozen=True, slots=True)
 class WorkContext:
+    task_id: UUID
     work_id: WorkId
     worker_id: str
     lease_generation: LeaseGeneration
@@ -45,6 +46,7 @@ class WorkResult:
     outcome: str
     references: dict[str, JsonValue]
     requeue: bool = False
+    task_finalized: bool = False
 
     def result_ref(self) -> dict[str, JsonValue]:
         return {"outcome": self.outcome, **self.references}
@@ -143,6 +145,7 @@ class LeasedWorkWorker:
         generation = LeaseGeneration(lease.generation)
         lease_lost = asyncio.Event()
         context = WorkContext(
+            task_id=task.task_id,
             work_id=task.work_id,
             worker_id=self.worker_id,
             lease_generation=generation,
@@ -222,6 +225,8 @@ class LeasedWorkWorker:
         assert result is not None
         if result.requeue:
             await self._queue.requeue(task_id=task.task_id, worker_id=self.worker_id)
+            return
+        if result.task_finalized:
             return
         await self._queue.finish(
             task_id=task.task_id,

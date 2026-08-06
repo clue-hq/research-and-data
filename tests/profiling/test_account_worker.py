@@ -14,16 +14,22 @@ from decimal import Decimal
 import pytest
 
 from clue_core import (
+    AccountEntity,
     AspectContext,
     Claim,
+    ContactEntity,
     Entity,
     EntityScope,
     ExtractionMethod,
     FieldDef,
     Modality,
     PassKind,
+    PreSpendDecision,
+    PreSpendRequest,
+    PreSpendVerdict,
     ResearchMode,
     SourceManifest,
+    TargetLock,
     WorkerStatus,
     account_claim,
     new_entity_id,
@@ -55,6 +61,27 @@ class _Fake:
     def resolve(self, entity: Entity, field: FieldDef) -> list[Claim]:
         self.calls += 1
         return [c.model_copy(update={"entity_id": entity.entity_id}) for c in self._claims]
+
+
+class _SelectiveGate:
+    def __init__(self, denied_source: str) -> None:
+        self._denied_source = denied_source
+        self.checked: list[str | None] = []
+
+    async def check(self, request: PreSpendRequest) -> PreSpendDecision:
+        self.checked.append(request.source_key)
+        if request.source_key == self._denied_source:
+            return PreSpendDecision(
+                verdict=PreSpendVerdict.REJECT,
+                reasons=("test source denied",),
+            )
+        return PreSpendDecision(verdict=PreSpendVerdict.PASS)
+
+    async def assemble_target_lock(
+        self, entity: AccountEntity | ContactEntity, field: FieldDef
+    ) -> TargetLock:
+        del field
+        return TargetLock(entity_id=entity.id, no_drift_instruction="test lock")
 
 
 def _fake_claim(
@@ -243,6 +270,45 @@ def test_sources_exhausted_left_empty_and_flagged() -> None:
                 result.detail["dispositions"][_FIELD]
                 == ProfilingFieldDisposition.SOURCES_EXHAUSTED.value
             )
+
+    run_async(_run())
+
+
+def test_rejected_source_is_skipped_without_aborting_valid_fallback() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register_test_field(conn, tier_plan=("denied", "fallback"))
+            await _register_source(conn, "denied", tier=2)
+            await _register_source(conn, "fallback", tier=4)
+            denied = _Fake([_fake_claim(tier=2, confidence=0.99)])
+            fallback = _Fake(
+                [
+                    _fake_claim(
+                        tier=4,
+                        confidence=0.95,
+                        span="Acme Robotics at acme-robotics.com reports this evidence.",
+                    )
+                ]
+            )
+            bind_resolver("denied", denied)
+            bind_resolver("fallback", fallback)
+            account_id = await _insert_account(conn)
+            gate = _SelectiveGate("denied")
+
+            worker = AspectProfilingWorker(
+                "account",
+                session_factory=conn_session_factory(conn),
+                pre_spend_gate=gate,
+            )
+            result = await worker.research(_ctx(account_id))
+
+            assert result.status is WorkerStatus.OK
+            assert len(result.claim_refs) == 1
+            assert denied.calls == 0
+            assert fallback.calls == 1
+            assert gate.checked == ["denied", "fallback"]
+            written = await claims_for(conn, account_id, _FIELD, scope=PUBLIC_ONLY)
+            assert len(written) == 1 and written[0].source_key == "fallback"
 
     run_async(_run())
 

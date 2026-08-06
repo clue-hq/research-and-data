@@ -36,11 +36,21 @@ from clue_api.agent_registry_wiring import (
     ToolRegistryAgentCatalog,
     build_agent_profile_registry,
 )
+from clue_api.entity_research_quarantine import QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES
 from clue_api.toolbelt_wiring import build_toolbelt
 from tests.api.conftest import hermetic_flag_env
 from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 
-_WITHHELD = {"start_recon", "submit_onboarding_input", "synthesize_icps"}
+# Mirrors C6_SURFACE_POLICIES for the trial surface. M8D R10 retired the account-deep launch and
+# gap-enrichment tools from every active role (they are no longer *grantable*, so there is nothing
+# to withhold) and put the promoted separately confirmed launches behind the same trial withhold.
+_WITHHELD = {
+    "launch_account_research",
+    "launch_contact_research",
+    "start_recon",
+    "submit_onboarding_input",
+    "synthesize_icps",
+}
 
 
 @pytest.fixture(scope="module")
@@ -62,6 +72,8 @@ def test_the_trial_surface_withholds_exactly_the_prohibited_tools(
     assert base_names - trial_names == _WITHHELD
     assert "start_recon" not in trial_names
     assert "synthesize_icps" not in trial_names
+    assert "enrich_selected_accounts" not in trial_names
+    assert "enrich_account_gaps" not in trial_names
     # The surface narrows authority only — same reviewed profile resource, same prompt.
     assert trial.profile_ref == base.profile_ref
     assert trial.prompt_body == base.prompt_body
@@ -173,7 +185,10 @@ def test_the_map_never_advertises_anything_the_surface_withholds(
     assert {"record_interview_answer", "inspect_statement_history"} <= advertised
     # And the same parser over the *unrestricted* role does see everything the surface removed —
     # otherwise this test would keep passing if the map stopped advertising anything at all.
-    assert withheld <= _advertised_capabilities(
+    replay_only_names = {
+        address.partition("@")[0] for address in QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES
+    }
+    assert withheld - replay_only_names <= _advertised_capabilities(
         registry.resolve(AgentRole.HEAD_OF_ABM).generated_resource_map
     )
 

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from decimal import Decimal
+from enum import StrEnum
 from typing import Protocol
 
 from clue_agents import (
@@ -26,6 +29,7 @@ from clue_api.agent_execution_wiring import (
     CheckpointerFactory,
     DbAgentPlanJournal,
 )
+from clue_api.agent_registry_wiring import ACCOUNT_RESEARCH_UNIT_SURFACE
 from clue_api.agent_runtime_wiring import (
     AgentFinalizationAuthority,
     CompletionGuard,
@@ -42,9 +46,13 @@ from clue_core import (
     ExecutionId,
     ICPSpec,
     ProjectRunId,
+    ResearchDirectivePin,
     ResearchTerminalStatus,
+    Resolver,
     RunId,
+    UtcDatetime,
     WorkerStatus,
+    account_axis_field_keys,
 )
 from clue_db import ConnFactory, transaction
 from clue_execution import (
@@ -58,10 +66,15 @@ from clue_research.coverage import list_attempts, list_decisions
 from clue_research.durable import DbAccountRunStore, ResearchPlan, get_account_run
 from clue_research.profiling import AccountProfileResult
 from clue_research.profiling.aspect_worker import AspectCoverage
+from clue_research.sources import bind_resolver_overrides
 from clue_toolbelt import ToolContext, ToolInvoker, ToolRegistry
 
 __all__ = [
+    "AccountResolverBindingAvailability",
+    "AccountResolverBindings",
+    "AccountResolverBindingsUnavailable",
     "AccountResearchAgentRuntime",
+    "AccountResolverBindingProvider",
     "AccountResearchStepPinProvider",
     "AccountResearchTurnRunner",
     "GovernedAccountProfiler",
@@ -116,7 +129,10 @@ class AccountResearchStepPinProvider(StepPinProvider):
             await self._current(kind="account", key=account_entity_id, ctx=ctx),
             await self._current(kind="field_registry", key="__all_active__", ctx=ctx),
             await self._current(kind="source_registry", key="__all_active__", ctx=ctx),
-            await self._current(kind="coverage_policy", key="default", ctx=ctx),
+            # ``coverage_policy:default@1`` is already a static requirement of the
+            # ``account_research_interactions`` recipe node. Adding a digest-pinned dynamic copy
+            # creates a conflicting requirement (version-only versus version+digest) at execution
+            # start. Only request genuinely run-/subject-/catalog-dynamic resources here.
             *step.pin_requests,
         )
 
@@ -138,7 +154,10 @@ def build_account_research_execution(
 ) -> C5AgentExecutionAdapter:
     """Build the one-tool C5 adapter for an already-started account-unit execution."""
 
-    resolved = profiles.resolve(AgentRole.ACCOUNT_RESEARCH)
+    resolved = profiles.resolve(
+        AgentRole.ACCOUNT_RESEARCH,
+        surface=ACCOUNT_RESEARCH_UNIT_SURFACE,
+    )
     if request.constitution.role is not AgentRole.ACCOUNT_RESEARCH:
         raise ValueError("account research execution requires account_research authority")
     if request.constitution.profile_ref != resolved.profile_ref:
@@ -200,7 +219,10 @@ class AccountResearchAgentRuntime:
         execution: C5AgentExecutionAdapter,
         completion_guard: CompletionGuard,
     ) -> AgentTurnOutcome:
-        resolved = self._profiles.resolve(AgentRole.ACCOUNT_RESEARCH)
+        resolved = self._profiles.resolve(
+            AgentRole.ACCOUNT_RESEARCH,
+            surface=ACCOUNT_RESEARCH_UNIT_SURFACE,
+        )
         constitution = request.constitution
         if constitution.role is not AgentRole.ACCOUNT_RESEARCH:
             raise ValueError("account turn requires account_research authority")
@@ -292,6 +314,65 @@ class AccountResearchTurnRunner(Protocol):
     ) -> AgentTurnOutcome: ...
 
 
+class AccountResolverBindingProvider(Protocol):
+    """Ready, account-scoped resolver bindings made visible only during one agent turn."""
+
+    async def resolver_bindings(
+        self,
+        *,
+        workspace_id: str,
+        project_run_id: ProjectRunId,
+        account_entity_id: EntityId,
+        research_directive: ResearchDirectivePin | None,
+    ) -> AccountResolverBindings: ...
+
+
+class AccountResolverBindingAvailability(StrEnum):
+    READY = "ready"
+    NOT_APPLICABLE = "not_applicable"
+    WAITING_EXTERNAL = "waiting_external"
+    REQUIRED_MISSING = "required_missing"
+    FAILED_EXTERNAL = "failed_external"
+
+
+@dataclass(frozen=True)
+class AccountResolverBindings:
+    """Provider-neutral task-local bindings plus an explicit preparation disposition."""
+
+    availability: AccountResolverBindingAvailability
+    bindings: Mapping[str, Resolver]
+    reason_code: str | None = None
+    operation_ref: str | None = None
+    retry_after: UtcDatetime | None = None
+    snapshot_refs: tuple[str, ...] = ()
+    audit_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.availability is AccountResolverBindingAvailability.READY and not self.bindings:
+            raise ValueError("ready resolver bindings cannot be empty")
+        if (
+            self.availability
+            in {
+                AccountResolverBindingAvailability.WAITING_EXTERNAL,
+                AccountResolverBindingAvailability.REQUIRED_MISSING,
+                AccountResolverBindingAvailability.FAILED_EXTERNAL,
+            }
+            and not self.reason_code
+        ):
+            raise ValueError("unavailable resolver bindings require a reason code")
+        if self.availability is AccountResolverBindingAvailability.WAITING_EXTERNAL:
+            if self.operation_ref is None or self.retry_after is None:
+                raise ValueError("waiting resolver bindings require operation_ref and retry_after")
+        elif self.retry_after is not None:
+            raise ValueError("only waiting resolver bindings may carry retry_after")
+
+
+class AccountResolverBindingsUnavailable(RuntimeError):
+    def __init__(self, resolution: AccountResolverBindings) -> None:
+        self.resolution = resolution
+        super().__init__(resolution.reason_code or resolution.availability.value)
+
+
 class GovernedAccountProfiler:
     """ProfileAccountFn replacement: durable plan -> one account agent -> ledger projection."""
 
@@ -299,9 +380,11 @@ class GovernedAccountProfiler:
         self,
         *,
         turns: AccountResearchTurnRunner,
+        resolver_provider: AccountResolverBindingProvider | None = None,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self._turns = turns
+        self._resolver_provider = resolver_provider
         self._conn_factory = conn_factory
 
     async def __call__(
@@ -315,11 +398,18 @@ class GovernedAccountProfiler:
         workspace_id: str,
         budget_cap_cents: Decimal | None = None,
         recursion_policy: RecursionPolicy | None = None,
+        research_directive: ResearchDirectivePin | None = None,
+        resolver_bindings: Mapping[str, Resolver] | None = None,
         **_mechanical_collaborators: object,
     ) -> AccountProfileResult:
         store = DbAccountRunStore(
             recursion_policy=recursion_policy,
             conn_factory=self._conn_factory,
+        )
+        account_fields = (
+            None
+            if spec.field_keys is None
+            else account_axis_field_keys(spec.field_keys)
         )
         plan = await store.begin(
             account_run_id=run_id,
@@ -327,7 +417,8 @@ class GovernedAccountProfiler:
             entity_id=account_entity_id,
             tier=tier,
             workspace_id=workspace_id,
-            field_keys=spec.field_keys or None,
+            field_keys=account_fields,
+            research_directive=research_directive,
         )
         planned_fields = tuple(field for aspect in plan.aspects for field in aspect.field_keys)
         if not planned_fields:
@@ -357,16 +448,44 @@ class GovernedAccountProfiler:
                     "for every initially planned field"
                 )
 
-        outcome = await self._turns.run(
-            workspace_id=workspace_id,
-            project_run_id=project_run_id,
-            account_entity_id=account_entity_id,
-            account_run_id=run_id,
-            tier=tier,
-            plan=plan,
-            budget_cap_cents=budget_cap_cents,
-            completion_guard=require_terminal,
-        )
+        bindings: Mapping[str, Resolver] = resolver_bindings or {}
+        if not bindings and self._resolver_provider is not None:
+            resolution = await self._resolver_provider.resolver_bindings(
+                workspace_id=workspace_id,
+                project_run_id=project_run_id,
+                account_entity_id=account_entity_id,
+                research_directive=research_directive,
+            )
+            if resolution.availability in {
+                AccountResolverBindingAvailability.WAITING_EXTERNAL,
+                AccountResolverBindingAvailability.REQUIRED_MISSING,
+                AccountResolverBindingAvailability.FAILED_EXTERNAL,
+            }:
+                raise AccountResolverBindingsUnavailable(resolution)
+            bindings = resolution.bindings
+        if bindings:
+            with bind_resolver_overrides(bindings):
+                outcome = await self._turns.run(
+                    workspace_id=workspace_id,
+                    project_run_id=project_run_id,
+                    account_entity_id=account_entity_id,
+                    account_run_id=run_id,
+                    tier=tier,
+                    plan=plan,
+                    budget_cap_cents=budget_cap_cents,
+                    completion_guard=require_terminal,
+                )
+        else:
+            outcome = await self._turns.run(
+                workspace_id=workspace_id,
+                project_run_id=project_run_id,
+                account_entity_id=account_entity_id,
+                account_run_id=run_id,
+                tier=tier,
+                plan=plan,
+                budget_cap_cents=budget_cap_cents,
+                completion_guard=require_terminal,
+            )
         return await self._project_result(
             workspace_id=workspace_id,
             account_entity_id=account_entity_id,

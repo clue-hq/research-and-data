@@ -53,12 +53,25 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import cast
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.account_research_wiring import (
+    AccountResolverBindingAvailability,
+    AccountResolverBindingProvider,
+    AccountResolverBindingsUnavailable,
+)
+from clue_api.contact_research_preparation import ContactStagePreparer
+from clue_api.deep.committee_preparation import (
+    CommitteePreparer,
+    ExternalCommitteePreparationFailed,
+)
 from clue_api.deep.run_io import AccountRunIO
 from clue_api.deep.spend import (
     ExactlyOnceSpend,
@@ -72,14 +85,20 @@ from clue_core import (
     BudgetScope,
     BudgetVerdict,
     ClaimId,
+    ContactPreparationStatus,
+    ContactResearchPreparation,
     CostCents,
     EntityId,
+    ExternalResearchPreparation,
+    ExternalResearchPreparationOutcome,
     ICPSpec,
     LLMGateway,
     PreSpendGate,
     ProjectRunId,
+    Resolver,
     RunId,
     WorkerStatus,
+    account_axis_field_keys,
 )
 from clue_db import ConnFactory
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
@@ -116,6 +135,19 @@ _DEEP_RUN_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "deep-orchestration.clue-re
 # The ``references_index`` key under which the admitted committee member contact-ids are persisted —
 # the contact fan-out's resume work-list (ids only, never claim bodies).
 _COMMITTEE_CONTACTS_KEY = "committee_contacts"
+_COMMITTEE_OPERATION_KEY = "external:committee:operation"
+_COMMITTEE_SNAPSHOTS_KEY = "external:committee:snapshots"
+_COMMITTEE_COST_RECEIPT_KEY = "external:committee:cost_receipt"
+_COMMITTEE_AUDIT_KEY = "external:committee:audit"
+_CONTACT_SELECTION_KEY = "contact_research_selection"
+_CONTACT_OPERATIONS_KEY = "external:contact:operations"
+_CONTACT_SNAPSHOTS_KEY = "external:contact:snapshots"
+_CONTACT_SETTLEMENTS_KEY = "external:contact:settlements"
+_CONTACT_AUDIT_KEY = "external:contact:audit"
+
+
+class ExternalContactPreparationFailed(RuntimeError):
+    """A terminal selected-contact preparation failed after durable settlement."""
 
 
 def deep_account_run_id(project_run_id: ProjectRunId, entity_id: EntityId) -> RunId:
@@ -154,6 +186,7 @@ class AccountDeepResult(BaseModel):
     cost_cents: CostCents = Decimal(0)
     sub_phase: AccountRunSubPhase | None = None
     budget_stop: BudgetVerdict | None = None
+    external_preparation: ExternalResearchPreparation | None = None
 
     @property
     def claim_refs(self) -> tuple[ClaimId, ...]:
@@ -245,6 +278,9 @@ class AccountDeepOrchestrator:
         pre_spend_gate: PreSpendGate | None = None,
         synthesis_guard: SynthesisGuard | None = None,
         budget_cap_cents: CostCents | None = None,
+        committee_preparer: CommitteePreparer | None = None,
+        account_resolver_provider: AccountResolverBindingProvider | None = None,
+        contact_preparer: ContactStagePreparer | None = None,
     ) -> None:
         self._profile_account = profile_account
         self._discover_committee = discover_committee
@@ -267,6 +303,9 @@ class AccountDeepOrchestrator:
         self._pre_spend_gate = pre_spend_gate
         self._synthesis_guard = synthesis_guard
         self._budget_cap_cents = budget_cap_cents
+        self._committee_preparer = committee_preparer
+        self._account_resolver_provider = account_resolver_provider
+        self._contact_preparer = contact_preparer
 
     async def run_one(
         self, spec: AccountSpec, *, project_run_id: ProjectRunId
@@ -278,12 +317,17 @@ class AccountDeepOrchestrator:
         run_id = deep_account_run_id(project_run_id, spec.entity_id)
         workspace_id = spec.workspace_id or self._spec.workspace_id
 
-        await self._io.ensure(
-            account_run_id=run_id,
-            project_run_id=project_run_id,
-            entity_id=spec.entity_id,
-            tier=spec.tier,
-        )
+        ensure_args: dict[str, object] = {
+            "account_run_id": run_id,
+            "project_run_id": project_run_id,
+            "entity_id": spec.entity_id,
+            "tier": spec.tier,
+        }
+        if spec.research_directive is not None:
+            ensure_args["research_directive"] = spec.research_directive
+        if spec.budget_cap_cents is not None:
+            ensure_args["budget_cap_cents"] = spec.budget_cap_cents
+        await self._io.ensure(**ensure_args)  # type: ignore[arg-type]
         state = await self._io.load(run_id)
         refs: dict[str, list[str]] = {k: list(v) for k, v in state.references_index.items()}
         cost = state.cost_cents
@@ -293,26 +337,75 @@ class AccountDeepOrchestrator:
         committee_result: CommitteeResult | None = None
         contact_results: tuple[ContactProfileResult, ...] = ()
         budget_stop: BudgetVerdict | None = None
+        external_preparation: ExternalResearchPreparation | None = None
+        account_resolver_bindings: dict[str, Resolver] = {}
 
         # --- Stage 1: account axis (M8.1) — the direct callable carries the ICP spec +
         # workspace_id as
         # explicit kwargs (no AspectContext / ctx.params), so the planner loads the spec and the
         # tenant-private resonance writes bind their tenant without the "#2" graph param-threading.
         if done is None:
-            account_result = await self._profile_account(
-                account_entity_id=spec.entity_id,
-                spec=self._spec,
-                tier=spec.tier,
-                run_id=run_id,
-                project_run_id=project_run_id,
-                workspace_id=workspace_id,
-                budget_cap_cents=self._budget_cap_cents,
-                recursion_policy=self._recursion_policy,
-                gateway=self._gateway,
-                planner_model=self._planner_model,
-                pre_spend_gate=self._pre_spend_gate,
-                synthesis_guard=self._synthesis_guard,
+            if self._account_resolver_provider is not None:
+                resolution = await self._account_resolver_provider.resolver_bindings(
+                    workspace_id=workspace_id,
+                    project_run_id=project_run_id,
+                    account_entity_id=spec.entity_id,
+                    research_directive=spec.research_directive,
+                )
+                if resolution.availability is AccountResolverBindingAvailability.WAITING_EXTERNAL:
+                    external_preparation = ExternalResearchPreparation(
+                        outcome=ExternalResearchPreparationOutcome.WAITING_EXTERNAL,
+                        operation_ref=resolution.operation_ref,
+                        retry_after=resolution.retry_after,
+                        snapshot_refs=resolution.snapshot_refs,
+                        audit_refs=resolution.audit_refs,
+                        reason_code=resolution.reason_code,
+                    )
+                    return AccountDeepResult(
+                        account_run_id=run_id,
+                        entity_id=spec.entity_id,
+                        tier=spec.tier,
+                        cost_cents=cost,
+                        sub_phase=None,
+                        external_preparation=external_preparation,
+                    )
+                if resolution.availability in {
+                    AccountResolverBindingAvailability.REQUIRED_MISSING,
+                    AccountResolverBindingAvailability.FAILED_EXTERNAL,
+                }:
+                    raise AccountResolverBindingsUnavailable(resolution)
+                account_resolver_bindings = dict(resolution.bindings)
+            effective_budget_cap = (
+                spec.budget_cap_cents
+                if spec.budget_cap_cents is not None
+                else self._budget_cap_cents
             )
+            account_icp = (
+                self._spec
+                if spec.field_keys is None
+                else self._spec.model_copy(
+                    update={"field_keys": account_axis_field_keys(spec.field_keys)}
+                )
+            )
+            profile_args: dict[str, object] = {
+                "account_entity_id": spec.entity_id,
+                "spec": account_icp,
+                "tier": spec.tier,
+                "run_id": run_id,
+                "project_run_id": project_run_id,
+                "workspace_id": workspace_id,
+                "budget_cap_cents": effective_budget_cap,
+                "recursion_policy": self._recursion_policy,
+                "gateway": self._gateway,
+                "planner_model": self._planner_model,
+                "pre_spend_gate": self._pre_spend_gate,
+                "synthesis_guard": self._synthesis_guard,
+            }
+            if spec.research_directive is not None:
+                profile_args["research_directive"] = spec.research_directive
+            if account_resolver_bindings:
+                profile_args["resolver_bindings"] = account_resolver_bindings
+            account_result = await self._profile_account(**profile_args)
             if account_result.status is WorkerStatus.FAILED and not account_result.aspects:
                 # The account did not resolve (``profile_account`` returns FAILED with no aspects
                 # when the entity is absent, cost 0). Committee/contact have no account to target,
@@ -373,13 +466,78 @@ class AccountDeepOrchestrator:
                 cost += info.cost_cents
             done = AccountRunSubPhase.ACCOUNT_PROFILED
 
-        # --- Stage 2: committee axis (M8.3) — direct callable (no AspectContext, so the ctx.params
+        # --- Stage 2A: prepare external committee inputs OUTSIDE the committee claim transaction.
+        # A pending provider operation keeps the last-completed marker at ACCOUNT_PROFILED, folds
+        # only durable references in a short transaction, and returns control to the project
+        # machine. Re-entry therefore skips account profiling and asks the preparer to reconcile the
+        # same idempotent operation. The orchestrator knows no provider names or lifecycle details.
+        committee_sources = self._sources
+        if done is AccountRunSubPhase.ACCOUNT_PROFILED and self._committee_preparer is not None:
+            prepared = await self._committee_preparer.prepare(
+                account_entity_id=spec.entity_id,
+                account_run_id=run_id,
+                project_run_id=project_run_id,
+                workspace_id=workspace_id,
+                tier=spec.tier,
+            )
+            external_preparation = prepared.preparation
+            self._fold_external_preparation_refs(refs, external_preparation)
+            preparation_outcome = external_preparation.outcome
+            if preparation_outcome is ExternalResearchPreparationOutcome.WAITING_EXTERNAL:
+                async with self._session_factory() as conn:
+                    await self._io.fold(
+                        conn,
+                        run_id,
+                        references_index=refs,
+                        status=AccountRunStatus.RUNNING,
+                        sub_phase=AccountRunSubPhase.ACCOUNT_PROFILED,
+                    )
+                return AccountDeepResult(
+                    account_run_id=run_id,
+                    entity_id=spec.entity_id,
+                    tier=spec.tier,
+                    account=account_result,
+                    cost_cents=cost,
+                    sub_phase=done,
+                    external_preparation=external_preparation,
+                )
+            if preparation_outcome is ExternalResearchPreparationOutcome.FAILED:
+                async with self._session_factory() as conn:
+                    await self._io.fold(
+                        conn,
+                        run_id,
+                        references_index=refs,
+                        status=AccountRunStatus.RUNNING,
+                        sub_phase=AccountRunSubPhase.ACCOUNT_PROFILED,
+                    )
+                raise ExternalCommitteePreparationFailed(
+                    external_preparation.reason_code or "external_committee_preparation_failed"
+                )
+            if preparation_outcome is ExternalResearchPreparationOutcome.INELIGIBLE:
+                # Committee ineligibility does not erase the account profile. It is an honest,
+                # governed account-only result: no committee callable, claims, or contact fan-out.
+                refs["committee"] = []
+                refs[_COMMITTEE_CONTACTS_KEY] = []
+                async with self._session_factory() as conn:
+                    await self._io.fold(
+                        conn,
+                        run_id,
+                        references_index=refs,
+                        status=AccountRunStatus.RUNNING,
+                        sub_phase=AccountRunSubPhase.COMMITTEE_DISCOVERED,
+                    )
+                done = AccountRunSubPhase.COMMITTEE_DISCOVERED
+            elif prepared.sources is not None:
+                committee_sources = prepared.sources
+
+        # --- Stage 2B: committee axis (M8.3) — direct callable (no AspectContext, so the ctx.params
         # KeyError hazard never arises). The committee's claim writes, its charge, the ledger
         # ``succeed``, the member-id work-list, and the marker all commit in one transaction (M8A.4)
         # so the contact fan-out resumes WITHOUT re-discovering the committee and the work-list is
         # never lost vs the ledger.
         if done is AccountRunSubPhase.ACCOUNT_PROFILED:
             async with self._session_factory() as conn:
+                committee_gate = self._transaction_bound_gate(conn)
                 committee_result, info = await self._spend.run_step(
                     conn,
                     key=deep_step_key(run_id, "committee"),
@@ -391,12 +549,16 @@ class AccountDeepOrchestrator:
                         account_entity_id=spec.entity_id,
                         run_id=run_id,
                         workspace_id=workspace_id,
-                        sources=self._sources,
+                        sources=committee_sources,
                         gateway=self._gateway,
                         spec=self._spec,
                         role_model=self._role_model,
-                        budget_cap_cents=self._budget_cap_cents,
-                        pre_spend_gate=self._pre_spend_gate,
+                        budget_cap_cents=(
+                            spec.budget_cap_cents
+                            if spec.budget_cap_cents is not None
+                            else self._budget_cap_cents
+                        ),
+                        pre_spend_gate=committee_gate,
                         config=self._committee_config,
                     ),
                 )
@@ -422,20 +584,149 @@ class AccountDeepOrchestrator:
         # contact's claim writes + charge + ledger ``succeed`` commit in ONE transaction (M8A.4);
         # ``budget_stop`` records the verdict (if any) that halted admission.
         if done is AccountRunSubPhase.COMMITTEE_DISCOVERED:
-            contact_ids = self._committee_contact_ids(committee_result, refs)
-            outcomes, budget_stop = await self._profile_contacts(
-                contact_ids[: self._config.committee_size_cap],
-                project_run_id=project_run_id,
-                account_entity_id=spec.entity_id,
-                run_id=run_id,
-                workspace_id=workspace_id,
-                tier=spec.tier,
-                committed_cents=cost,
-            )
+            outcomes: tuple[_ContactOutcome, ...] = ()
+            if spec.contact_profiling_allowed:
+                contact_ids = self._committee_contact_ids(committee_result, refs)
+                field_keys_by_contact: dict[EntityId, tuple[str, ...]] | None = None
+                prepared_claim_refs_by_contact: dict[EntityId, tuple[ClaimId, ...]] | None = None
+                if self._contact_preparer is not None and contact_ids:
+                    prepared_contacts = await self._contact_preparer.prepare(
+                        workspace_id=workspace_id,
+                        project_run_id=project_run_id,
+                        account_run_id=run_id,
+                        account_entity_id=spec.entity_id,
+                        contact_entity_ids=contact_ids[: self._config.committee_size_cap],
+                        committee_claim_ids=tuple(
+                            ClaimId(uuid.UUID(value)) for value in refs.get("committee", ())
+                        ),
+                    )
+                    contact_preparation = prepared_contacts.preparation
+                    selection_ref = (
+                        None
+                        if prepared_contacts.selection is None
+                        else (
+                            f"contact-selection:{prepared_contacts.selection.selection_id}:"
+                            f"{prepared_contacts.selection.selection_sha256}"
+                        )
+                    )
+                    self._fold_contact_preparation_refs(
+                        refs,
+                        contact_preparation,
+                        selection_ref=selection_ref,
+                    )
+                    for target in prepared_contacts.targets:
+                        key = f"contact:{target.contact_entity_id}"
+                        refs[key] = list(
+                            dict.fromkeys(
+                                (*refs.get(key, ()), *(str(value) for value in target.claim_refs))
+                            )
+                        )
+                    if contact_preparation.status is ContactPreparationStatus.WAITING_EXTERNAL:
+                        assert contact_preparation.next_wake_at is not None
+                        operation_ref = (
+                            selection_ref or contact_preparation.operation_reference_ids[0]
+                        )
+                        external_preparation = ExternalResearchPreparation(
+                            outcome=ExternalResearchPreparationOutcome.WAITING_EXTERNAL,
+                            operation_ref=operation_ref,
+                            retry_after=contact_preparation.next_wake_at,
+                            snapshot_refs=contact_preparation.snapshot_reference_ids,
+                            audit_refs=contact_preparation.operation_reference_ids,
+                            reason_code="contact_research_waiting_external",
+                        )
+                        async with self._session_factory() as conn:
+                            await self._io.fold(
+                                conn,
+                                run_id,
+                                references_index=refs,
+                                status=AccountRunStatus.RUNNING,
+                                sub_phase=AccountRunSubPhase.COMMITTEE_DISCOVERED,
+                            )
+                        return AccountDeepResult(
+                            account_run_id=run_id,
+                            entity_id=spec.entity_id,
+                            tier=spec.tier,
+                            account=account_result,
+                            committee=committee_result,
+                            cost_cents=cost,
+                            sub_phase=done,
+                            external_preparation=external_preparation,
+                        )
+                    if contact_preparation.status is ContactPreparationStatus.FAILED:
+                        async with self._session_factory() as conn:
+                            await self._io.fold(
+                                conn,
+                                run_id,
+                                references_index=refs,
+                                status=AccountRunStatus.RUNNING,
+                                sub_phase=AccountRunSubPhase.COMMITTEE_DISCOVERED,
+                            )
+                        raise ExternalContactPreparationFailed(
+                            ";".join(contact_preparation.reason_codes)
+                            or "external_contact_preparation_failed"
+                        )
+                    if contact_preparation.status is ContactPreparationStatus.BUDGET_PAUSED:
+                        external_preparation = self._contact_terminal_preparation(
+                            contact_preparation,
+                            fallback_reason="contact_research_budget_paused",
+                        )
+                        async with self._session_factory() as conn:
+                            await self._io.fold(
+                                conn,
+                                run_id,
+                                references_index=refs,
+                                status=AccountRunStatus.RUNNING,
+                                sub_phase=AccountRunSubPhase.COMMITTEE_DISCOVERED,
+                            )
+                        return AccountDeepResult(
+                            account_run_id=run_id,
+                            entity_id=spec.entity_id,
+                            tier=spec.tier,
+                            account=account_result,
+                            committee=committee_result,
+                            cost_cents=cost,
+                            sub_phase=done,
+                            budget_stop=BudgetVerdict.GRACEFUL_STOP,
+                            external_preparation=external_preparation,
+                        )
+                    if contact_preparation.status is ContactPreparationStatus.NOT_ELIGIBLE:
+                        external_preparation = self._contact_terminal_preparation(
+                            contact_preparation,
+                            fallback_reason="contact_research_not_eligible",
+                        )
+                        contact_ids = ()
+                    else:
+                        contact_ids = tuple(
+                            target.contact_entity_id for target in prepared_contacts.targets
+                        )
+                        field_keys_by_contact = {
+                            target.contact_entity_id: tuple(
+                                str(field_key) for field_key in target.field_keys
+                            )
+                            for target in prepared_contacts.targets
+                        }
+                        prepared_claim_refs_by_contact = {
+                            target.contact_entity_id: target.claim_refs
+                            for target in prepared_contacts.targets
+                        }
+                outcomes, budget_stop = await self._profile_contacts(
+                    contact_ids[: self._config.committee_size_cap],
+                    project_run_id=project_run_id,
+                    account_entity_id=spec.entity_id,
+                    run_id=run_id,
+                    workspace_id=workspace_id,
+                    tier=spec.tier,
+                    committed_cents=cost,
+                    field_keys_by_contact=field_keys_by_contact,
+                    prepared_claim_refs_by_contact=prepared_claim_refs_by_contact,
+                )
             for outcome in outcomes:
                 if not outcome.info.replayed:
                     cost += outcome.info.cost_cents
-                refs[f"contact:{outcome.contact_entity_id}"] = list(outcome.info.claim_ids)
+                key = f"contact:{outcome.contact_entity_id}"
+                refs[key] = list(
+                    dict.fromkeys((*refs.get(key, ()), *(str(v) for v in outcome.info.claim_ids)))
+                )
             contact_results = tuple(o.result for o in outcomes if o.result is not None)
             # The contact axis is complete even when budget halted admission: a ``DENY`` exhausted
             # the account envelope and a ``GRACEFUL_STOP`` "finishes the in-flight unit and stops at
@@ -465,6 +756,75 @@ class AccountDeepOrchestrator:
             cost_cents=cost,
             sub_phase=done,
             budget_stop=budget_stop,
+            external_preparation=external_preparation,
+        )
+
+    def _transaction_bound_gate(self, conn: AsyncConnection) -> PreSpendGate | None:
+        """Use the committee transaction for gates that support connection rebinding.
+
+        Candidate admission and role inference intentionally share one atomic committee step.  A
+        production gate on a separate connection cannot see the just-inserted contact.  Concrete
+        gates expose ``with_conn_factory`` as an additive capability; injected protocol-only test
+        doubles continue to receive the original gate unchanged.
+        """
+        gate = self._pre_spend_gate
+        if gate is None:
+            return None
+        rebind = getattr(gate, "with_conn_factory", None)
+        if not callable(rebind):
+            return gate
+
+        @asynccontextmanager
+        async def same_connection() -> AsyncIterator[AsyncConnection]:
+            yield conn
+
+        return cast(PreSpendGate, rebind(same_connection))
+
+    @staticmethod
+    def _fold_external_preparation_refs(
+        refs: dict[str, list[str]], preparation: ExternalResearchPreparation
+    ) -> None:
+        """Fold reference-only external acquisition lineage into the account-run cursor."""
+        if preparation.operation_ref is not None:
+            refs[_COMMITTEE_OPERATION_KEY] = [preparation.operation_ref]
+        if preparation.snapshot_refs:
+            refs[_COMMITTEE_SNAPSHOTS_KEY] = list(preparation.snapshot_refs)
+        if preparation.cost_receipt_ref is not None:
+            refs[_COMMITTEE_COST_RECEIPT_KEY] = [preparation.cost_receipt_ref]
+        if preparation.audit_refs:
+            refs[_COMMITTEE_AUDIT_KEY] = list(preparation.audit_refs)
+
+    @staticmethod
+    def _fold_contact_preparation_refs(
+        refs: dict[str, list[str]],
+        preparation: ContactResearchPreparation,
+        *,
+        selection_ref: str | None,
+    ) -> None:
+        if selection_ref is not None:
+            refs[_CONTACT_SELECTION_KEY] = [selection_ref]
+        if preparation.operation_reference_ids:
+            refs[_CONTACT_OPERATIONS_KEY] = list(preparation.operation_reference_ids)
+        if preparation.snapshot_reference_ids:
+            refs[_CONTACT_SNAPSHOTS_KEY] = list(preparation.snapshot_reference_ids)
+        if preparation.spend_settlement_reference_ids:
+            refs[_CONTACT_SETTLEMENTS_KEY] = list(preparation.spend_settlement_reference_ids)
+        if preparation.reason_codes:
+            refs[_CONTACT_AUDIT_KEY] = list(preparation.reason_codes)
+
+    @staticmethod
+    def _contact_terminal_preparation(
+        preparation: ContactResearchPreparation,
+        *,
+        fallback_reason: str,
+    ) -> ExternalResearchPreparation:
+        return ExternalResearchPreparation(
+            outcome=ExternalResearchPreparationOutcome.INELIGIBLE,
+            snapshot_refs=preparation.snapshot_reference_ids,
+            audit_refs=preparation.operation_reference_ids,
+            reason_code=(
+                preparation.reason_codes[0] if preparation.reason_codes else fallback_reason
+            ),
         )
 
     def _committee_contact_ids(
@@ -486,6 +846,8 @@ class AccountDeepOrchestrator:
         workspace_id: str,
         tier: str,
         committed_cents: CostCents,
+        field_keys_by_contact: dict[EntityId, tuple[str, ...]] | None = None,
+        prepared_claim_refs_by_contact: dict[EntityId, tuple[ClaimId, ...]] | None = None,
     ) -> tuple[tuple[_ContactOutcome, ...], BudgetVerdict | None]:
         """Admit-then-launch the contact fan-out under the four fan-out bounds (M8A.3, Doc C §3/§5)
         with exactly-once spend + a concurrent-admit reservation (M8A.4).
@@ -575,6 +937,16 @@ class AccountDeepOrchestrator:
                         use_class_tagger=self._use_class_tagger,
                         pre_spend_gate=self._pre_spend_gate,
                         config=self._contact_config,
+                        field_keys=(
+                            field_keys_by_contact.get(contact_id)
+                            if field_keys_by_contact is not None
+                            else None
+                        ),
+                        prepared_claim_refs=(
+                            prepared_claim_refs_by_contact.get(contact_id)
+                            if prepared_claim_refs_by_contact is not None
+                            else None
+                        ),
                     ),
                 )
             # The transaction committed: the reservation becomes the real charge (or zero on a

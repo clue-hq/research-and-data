@@ -37,6 +37,7 @@ from clue_core import (
     EntityType,
     Estimate,
     ExtractionMethod,
+    ProjectRunId,
     ResearchMode,
     RunId,
     account_claim,
@@ -50,6 +51,7 @@ from clue_research.discovery_scoring.claim_writes import write_icp_scoped_claim
 from clue_research.discovery_scoring.scoring import FIT_FIELD, INTENT_FIELD
 from clue_research.discovery_scoring.tiering.config import TieringConfig
 from clue_research.discovery_scoring.tiering.results import AccountScoreView
+from clue_research.discovery_scoring.tiering.selection import DiscoveryCriteriaAccountView
 from clue_research.icp.rubric import TierCutoffs, assign_tier
 from clue_research.identity import stamp_reuse, surviving_id
 
@@ -272,6 +274,60 @@ async def persist_tier(
     )
 
 
+async def persist_discovery_selection_tier(
+    conn: AsyncConnection,
+    *,
+    view: DiscoveryCriteriaAccountView,
+    tier: str,
+    selection_policy_version: str,
+    decision_version: str,
+    discovery_batch_id: str,
+    discovery_seal_sha256: str,
+    project_run_id: ProjectRunId,
+    run_id: RunId,
+    workspace_id: str,
+    icp_key: str,
+    icp_version: int,
+) -> tuple[ClaimId, bool]:
+    """Persist the human approval over a criterion-selected account without synthetic scores."""
+
+    tier_claim = stamp_reuse(
+        account_claim(
+            entity_id=view.account_id,
+            field_key=TIER_FIELD,
+            value_json={
+                "tier": tier,
+                "decision_basis": "discovery_criteria",
+                "selection_policy_version": selection_policy_version,
+                "decision_version": decision_version,
+                # The existing field contract requires this version slot. In criteria mode it is
+                # the content-addressed human selection decision, not a numeric-score cutoff.
+                "cutoff_version": decision_version,
+                "discovery_batch_id": discovery_batch_id,
+                "discovery_seal_sha256": discovery_seal_sha256,
+                "project_run_id": str(project_run_id),
+                "disposition": view.disposition.value,
+                "evidence_claim_ids": [str(value) for value in view.evidence_claim_ids],
+                "icp_key": icp_key,
+                "icp_version": icp_version,
+            },
+            source_tier=1,
+            extraction_method=ExtractionMethod.HUMAN,
+            confidence=1.0,
+            run_id=run_id,
+            research_mode=ResearchMode.ACCOUNT_PROFILING,
+        ),
+        workspace_id=workspace_id,
+    )
+    return await write_icp_scoped_claim(
+        conn,
+        tier_claim,
+        run_id=run_id,
+        icp_key=icp_key,
+        scope=WorkspaceScope.for_workspace(workspace_id),
+    )
+
+
 __all__ = [
     "TIER_FIELD",
     "cutoff_version",
@@ -280,4 +336,5 @@ __all__ = [
     "estimate_cost",
     "load_score_views",
     "persist_tier",
+    "persist_discovery_selection_tier",
 ]

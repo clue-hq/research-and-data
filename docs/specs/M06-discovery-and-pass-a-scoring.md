@@ -2,6 +2,13 @@
 **Layer label:** layer:discovery-scoring  ·  **Depends on:** M2 (Identity Resolution), M3 (ICP & Research-Schema Compiler), M4 (Source Layer & Source Intelligence)  ·  **Priority:** 2 (High)
 **Architecture sources:** staged-flow §3 (mode M1 grounded discovery, expand pattern, stopping rule, existence/identity gate), §4 (the scoring bridge), §8 (mode-specific anti-hallucination), §9 (claim-store provenance flavors); substrate §5a (two passes), §9 (explainable scoring), §3 (scoring-vs-deep field tags), §1 (claim store, current_value), §2 (identity service); Doc C §1 (two-tier signal model), §5 (cost dial), §6 (per-source yield), §7 (coverage confidence); Doc B §4 (import convergence at the Pass A bridge), §3/§4 (D5/D6); overview §1 (Output 1), §2 (end-to-end map), §3 (output contract), §5 (open decisions D1–D8)
 
+> **2026-08-02 provider-integration contract delta:** [M6A](./M06A-exa-websets-sumble-discovery-integration.md)
+> is the binding extension for asynchronous Exa Websets discovery. It preserves M6's separation of
+> discovery, scoring, and deep research, but permits cheap provider-returned identity/firmographic
+> properties and explicitly purchased discovery enrichments to be materialized as typed claims
+> before the discovery batch is sealed. The project remains in `discovery` until M6A's durable
+> completion barrier and immutable batch seal succeed; an unsealed partial list cannot enter Pass A.
+
 ## Goal & scope of this milestone
 
 M6 is the **wide-and-cheap front half** of the research pipeline. It turns a confirmed, versioned ICP spec (from M3/Stage 0) into **Output 1** of the subsystem — a scored, ICP-fit account list where every candidate carries a fit score, an intent score, the cheap deterministic signals behind those scores, and a provenance link behind every signal (overview §1). It sits in the end-to-end map (overview §2; staged-flow §10) at exactly the segment between Stage 0 and Pass B: `ICP spec → [discovery (mode M1) | import] → existence/identity gate → Pass A scoring → tiering → human checkpoint`.

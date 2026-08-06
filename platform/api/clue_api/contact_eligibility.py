@@ -27,6 +27,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from clue_core import (
+    CONTACT_PROFESSIONAL_FIELD_KEYS,
     Claim,
     ClaimId,
     CommitteeMember,
@@ -200,6 +201,7 @@ class ContactEligibilityResolver:
                 and claim.product_id == self._product_id
                 and (
                     str(claim.field_key) in {PERSONA, ROLE_ON_COMMITTEE}
+                    or str(claim.field_key) in CONTACT_PROFESSIONAL_FIELD_KEYS
                     or str(claim.field_key).startswith("contact.facet.")
                     or str(claim.field_key) == "contact.class"
                 )
@@ -246,9 +248,7 @@ class ContactEligibilityResolver:
                 self._resolve_contact_claims(
                     contact_entity_id=contact_id,
                     account_entity_id=account_entity_id,
-                    canonical_entity_version=contacts_by_id[
-                        contact_id
-                    ].canonical_version,
+                    canonical_entity_version=contacts_by_id[contact_id].canonical_version,
                     claims=claims,
                     use_decisions=use_decisions,
                 )
@@ -361,6 +361,7 @@ class ContactEligibilityResolver:
             product_id=self._product_id,
             canonical_entity_version=canonical_entity_version,
         )
+
 
 class ProductionHandoffCommitteeReader:
     """Production adapter satisfying both narrative committee protocols."""

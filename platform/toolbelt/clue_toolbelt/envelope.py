@@ -174,6 +174,7 @@ class ToolDescriptor:
 
     name: str
     version: str
+    model_description: str
     input_model: type[ToolInput]
     output_model: type[ToolOutput]
     input_schema_sha256: str
@@ -189,6 +190,8 @@ class ToolDescriptor:
             raise ValueError("tool name must be non-empty and must not contain '@'")
         if not self.version.strip() or "@" in self.version:
             raise ValueError("tool version must be non-empty and must not contain '@'")
+        if not self.model_description.strip():
+            raise ValueError("tool model description must be non-empty")
         missing = set(self.parameter_policy.safe_display_fields) - set(
             self.input_model.model_fields
         )
@@ -228,12 +231,17 @@ class ToolContext:
     * ``quality_mode`` — the A8 slot (D9): recorded/journaled, not resolved. ``None`` ⇒ unset.
     * ``operation_id`` — the stable logical-operation identity reused by every retry. Tool bodies
       derive durable row/run ids from it instead of minting fresh identities on each attempt.
+    * ``actor_id`` / ``action_ref`` — authenticated invocation identity and captured UI/turn action.
+      Human gates derive receipts from these ambient values; caller-authored tool arguments never
+      get to choose who approved an operation or which action carried the approval.
     """
 
     workspace_id: str
     actor: Actor
     conn_factory: ConnFactory
     operation_id: OperationId
+    actor_id: str | None = None
+    action_ref: str | None = None
     quality_mode: str | None = None
     execution_id: ExecutionId | None = None
     execution_node_id: ExecutionNodeId | None = None
@@ -243,6 +251,10 @@ class ToolContext:
     lease_generation: int | None = None
 
     def __post_init__(self) -> None:
+        if self.actor_id is not None and not self.actor_id.strip():
+            raise ValueError("tool context actor id must be non-empty when supplied")
+        if self.action_ref is not None and not self.action_ref.strip():
+            raise ValueError("tool context action ref must be non-empty when supplied")
         if (self.execution_worker_id is None) != (self.lease_generation is None):
             raise ValueError("execution worker id and lease generation must be supplied together")
         if self.lease_generation is not None and self.lease_generation < 1:
@@ -310,6 +322,9 @@ class Tool(abc.ABC):
     name: ClassVar[str]
     #: The tool's schema/behaviour version — bumped when the input model or semantics change.
     version: ClassVar[str] = "1"
+    #: Stable model-facing capability guidance. This is deliberately outside the input schema:
+    #: improving when a tool should be used must not invalidate frozen recipe/profile schema pins.
+    model_description: ClassVar[str | None] = None
     #: The pydantic input model the runner validates the request body against.
     input_model: ClassVar[type[ToolInput]]
     #: The exact reference-only result schema. The legacy default is not recipe-safe.
@@ -329,6 +344,10 @@ class Tool(abc.ABC):
         return ToolDescriptor(
             name=self.name,
             version=self.version,
+            model_description=(
+                self.model_description
+                or f"Invoke exact governed platform tool {self.name}@{self.version}."
+            ),
             input_model=self.input_model,
             output_model=self.output_model,
             input_schema_sha256=_schema_sha256(self.input_model),

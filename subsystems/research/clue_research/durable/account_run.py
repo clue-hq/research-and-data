@@ -16,6 +16,7 @@ like ``claim.value_json``.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import cast
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
@@ -25,6 +26,9 @@ from clue_core import (
     CostCents,
     EntityId,
     ProjectRunId,
+    ResearchDirectiveId,
+    ResearchDirectiveOverrideId,
+    ResearchDirectivePin,
     RunId,
     UtcDatetime,
     decode_jsonb,
@@ -56,6 +60,8 @@ class AccountRunRow(BaseModel):
     plan_json: dict[str, JsonValue]
     references_index: ReferencesIndex
     cost_cents: CostCents
+    budget_cap_cents: CostCents | None = None
+    research_directive: ResearchDirectivePin | None = None
     started_at: UtcDatetime
     updated_at: UtcDatetime
 
@@ -70,15 +76,18 @@ _INSERT_SQL = text(
 
 _ENSURE_SQL = text(
     """
-    INSERT INTO account_run (id, project_run_id, entity_id, tier, status)
-    VALUES (:id, :project_run_id, :entity_id, :tier, CAST(:status AS account_run_status))
+    INSERT INTO account_run (id, project_run_id, entity_id, tier, status, budget_cap_cents)
+    VALUES (:id, :project_run_id, :entity_id, :tier, CAST(:status AS account_run_status), :budget)
     ON CONFLICT (id) DO NOTHING
     """
 )
 
 _SELECT_COLUMNS = (
     "id, project_run_id, entity_id, tier, status, sub_phase, plan_json, references_index, "
-    "cost_cents, started_at, updated_at"
+    "cost_cents, budget_cap_cents, research_directive_id, research_directive_version, "
+    "research_directive_ref, "
+    "research_directive_sha256, research_directive_override_id, "
+    "research_directive_override_ref, research_directive_override_sha256, started_at, updated_at"
 )
 
 _GET_SQL = text(f"SELECT {_SELECT_COLUMNS} FROM account_run WHERE id = :id")
@@ -119,6 +128,7 @@ async def ensure_account_run(
     entity_id: EntityId,
     tier: str,
     status: AccountRunStatus = AccountRunStatus.PENDING,
+    budget_cap_cents: CostCents | None = None,
 ) -> None:
     """Insert the ``account_run`` row if it does not already exist (``ON CONFLICT DO NOTHING``).
 
@@ -134,8 +144,50 @@ async def ensure_account_run(
             "entity_id": entity_id,
             "tier": tier,
             "status": status.value,
+            "budget": budget_cap_cents,
         },
     )
+
+
+async def pin_account_run_research_directive(
+    conn: AsyncConnection,
+    *,
+    account_run_id: RunId,
+    pin: ResearchDirectivePin,
+) -> None:
+    """Set one confirmed directive pin exactly once; retries must present the same pin."""
+
+    result = await conn.execute(
+        text(
+            "UPDATE account_run SET research_directive_id=:directive_id, "
+            "research_directive_version=:version, research_directive_ref=:directive_ref, "
+            "research_directive_sha256=:sha256, "
+            "research_directive_override_id=:override_id, "
+            "research_directive_override_ref=:override_ref, "
+            "research_directive_override_sha256=:override_sha256 "
+            "WHERE id=:account_run_id AND research_directive_id IS NULL "
+            "AND status='pending' AND plan_json='{}'::jsonb"
+        ),
+        {
+            "account_run_id": account_run_id,
+            "directive_id": pin.directive_id,
+            "version": pin.version,
+            "directive_ref": pin.directive_ref,
+            "sha256": pin.canonical_json_sha256,
+            "override_id": pin.override_id,
+            "override_ref": pin.override_ref,
+            "override_sha256": pin.override_sha256,
+        },
+    )
+    if result.rowcount:
+        return
+    row = await get_account_run(conn, account_run_id)
+    if row is None:
+        raise ValueError(f"account run {account_run_id} does not exist")
+    if row.research_directive is None:
+        raise ValueError("account run already began without a research directive pin")
+    if row.research_directive != pin:
+        raise ValueError("account run already pins a different research directive")
 
 
 async def get_account_run(conn: AsyncConnection, account_run_id: RunId) -> AccountRunRow | None:
@@ -336,6 +388,30 @@ async def set_account_sub_phase(
 
 
 def _row_to_account_run(row: dict[str, object]) -> AccountRunRow:
+    research_directive = None
+    if row["research_directive_id"] is not None:
+        research_directive = ResearchDirectivePin(
+            directive_id=ResearchDirectiveId(row["research_directive_id"]),  # type: ignore[arg-type]
+            version=cast(int, row["research_directive_version"]),
+            directive_ref=str(row["research_directive_ref"]),
+            canonical_json_sha256=str(row["research_directive_sha256"]),
+            account_id=EntityId(row["entity_id"]),  # type: ignore[arg-type]
+            override_id=(
+                ResearchDirectiveOverrideId(row["research_directive_override_id"])  # type: ignore[arg-type]
+                if row["research_directive_override_id"] is not None
+                else None
+            ),
+            override_ref=(
+                str(row["research_directive_override_ref"])
+                if row["research_directive_override_ref"] is not None
+                else None
+            ),
+            override_sha256=(
+                str(row["research_directive_override_sha256"])
+                if row["research_directive_override_sha256"] is not None
+                else None
+            ),
+        )
     return AccountRunRow.model_validate(
         {
             "id": row["id"],
@@ -347,6 +423,8 @@ def _row_to_account_run(row: dict[str, object]) -> AccountRunRow:
             "plan_json": decode_jsonb(row["plan_json"]),
             "references_index": decode_jsonb(row["references_index"]),
             "cost_cents": row["cost_cents"] if row["cost_cents"] is not None else Decimal(0),
+            "budget_cap_cents": row["budget_cap_cents"],
+            "research_directive": research_directive,
             "started_at": row["started_at"],
             "updated_at": row["updated_at"],
         }

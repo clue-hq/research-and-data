@@ -1,0 +1,157 @@
+{
+  "data": [
+    {
+      "id": "evt_fixture_item_enriched",
+      "object": "event",
+      "type": "webset.item.enriched",
+      "data": {
+        "id": "wsi_fixture_northstar",
+        "object": "webset_item",
+        "source": "search",
+        "sourceId": "ws_search_fixture_1",
+        "websetId": "ws_fixture_running",
+        "properties": {
+          "type": "company",
+          "url": "https://northstar-practice.example",
+          "description": "A fictional independent specialty practice.",
+          "content": null,
+          "company": {
+            "name": "Northstar Specialty Practice",
+            "location": "Denver, Colorado, United States",
+            "employees": 42,
+            "industry": "Medical Practice",
+            "about": null,
+            "logoUrl": null,
+            "foundedYear": null,
+            "headquarters": null,
+            "financials": null,
+            "webTraffic": null
+          }
+        },
+        "evaluations": [],
+        "enrichments": [],
+        "createdAt": "2026-08-03T08:01:00Z",
+        "updatedAt": "2026-08-03T08:03:00Z"
+      },
+      "createdAt": "2026-08-03T08:03:00Z"
+    },
+    {
+      "id": "evt_fixture_item_created",
+      "object": "event",
+      "type": "webset.item.created",
+      "data": {
+        "id": "wsi_fixture_northstar",
+        "object": "webset_item",
+        "source": "search",
+        "sourceId": "ws_search_fixture_1",
+        "websetId": "ws_fixture_running",
+        "properties": {
+          "type": "company",
+          "url": "https://northstar-practice.example",
+          "description": "A fictional independent specialty practice.",
+          "content": null,
+          "company": {
+            "name": "Northstar Specialty Practice",
+            "location": null,
+            "employees": null,
+            "industry": null,
+            "about": null,
+            "logoUrl": null,
+            "foundedYear": null,
+            "headquarters": null,
+            "financials": null,
+            "webTraffic": null
+          }
+        },
+        "evaluations": [],
+        "enrichments": null,
+        "createdAt": "2026-08-03T08:01:00Z",
+        "updatedAt": "2026-08-03T08:01:00Z"
+      },
+      "createdAt": "2026-08-03T08:01:00Z"
+    },
+    {
+      "id": "evt_fixture_item_created",
+      "object": "event",
+      "type": "webset.item.created",
+      "data": {
+        "id": "wsi_fixture_northstar",
+        "object": "webset_item",
+        "source": "search",
+        "sourceId": "ws_search_fixture_1",
+        "websetId": "ws_fixture_running",
+        "properties": {
+          "type": "company",
+          "url": "https://northstar-practice.example",
+          "description": "A fictional independent specialty practice.",
+          "content": null,
+          "company": {
+            "name": "Northstar Specialty Practice",
+            "location": null,
+            "employees": null,
+            "industry": null,
+            "about": null,
+            "logoUrl": null,
+            "foundedYear": null,
+            "headquarters": null,
+            "financials": null,
+            "webTraffic": null
+          }
+        },
+        "evaluations": [],
+        "enrichments": null,
+        "createdAt": "2026-08-03T08:01:00Z",
+        "updatedAt": "2026-08-03T08:01:00Z"
+      },
+      "createdAt": "2026-08-03T08:01:00Z"
+    },
+    {
+      "id": "evt_fixture_idle",
+      "object": "event",
+      "type": "webset.idle",
+      "data": {
+        "id": "ws_fixture_running",
+        "object": "webset",
+        "status": "idle",
+        "externalId": "clue-fixture-running",
+        "title": "Fictional specialty-practice discovery",
+        "searches": [
+          {
+            "id": "ws_search_fixture_1",
+            "object": "webset_search",
+            "websetId": "ws_fixture_running",
+            "status": "completed",
+            "query": "Independent specialty practices in the United States",
+            "entity": {"type": "company"},
+            "criteria": [
+              {"description": "Organization is an independent specialty practice", "successRate": 33.3}
+            ],
+            "count": 3,
+            "maxPeoplePerCompany": null,
+            "behavior": "override",
+            "exclude": [],
+            "scope": [],
+            "progress": {"found": 3.0, "analyzed": 12, "completion": 100, "timeLeft": 0},
+            "recall": null,
+            "metadata": {},
+            "canceledAt": null,
+            "canceledReason": null,
+            "createdAt": "2026-08-03T08:00:00Z",
+            "updatedAt": "2026-08-03T08:05:00Z"
+          }
+        ],
+        "imports": [],
+        "enrichments": [],
+        "monitors": [],
+        "excludes": [],
+        "metadata": {"fixture": "current-contract"},
+        "dashboardUrl": "https://websets.exa.ai/websets/ws_fixture_running",
+        "createdAt": "2026-08-03T08:00:00Z",
+        "updatedAt": "2026-08-03T08:05:00Z"
+      },
+      "createdAt": "2026-08-03T08:05:00Z"
+    }
+  ],
+  "hasMore": false,
+  "nextCursor": null
+}

@@ -41,6 +41,8 @@ from clue_core import (
     AccountEntity,
     AccountStatus,
     ContactEntity,
+    EffectiveFieldSourcePlan,
+    EffectiveSourceAuthorization,
     EnumerationScope,
     FieldDef,
     PreSpendDecision,
@@ -73,7 +75,14 @@ from clue_research.claimstore.registry import (
     get_field,
     validate_value,
 )
+from clue_research.icp import get_icp_version
 from clue_research.identity import get_entity
+from clue_research.sources.authority import (
+    EffectiveSourcePlanConflict,
+    freeze_effective_source_plan,
+    load_effective_source_plan,
+)
+from clue_research.sources.source_profile import resolve_allowed_set
 
 # Blocked-pre-spend counter (the "claims blocked pre-spend" verification-health signal, Doc C §6).
 # An M9-local metric name (metric names are plain strings the shared sink accepts) — defined here so
@@ -257,6 +266,80 @@ async def _covered_tiers(conn: AsyncConnection, tier_plan: Sequence[str]) -> set
     return {int(row[0]) for row in rows.all()}
 
 
+async def _registered_source_tier(
+    conn: AsyncConnection, source_key: str
+) -> tuple[int, bool] | None:
+    row = (
+        await conn.execute(
+            text("SELECT tier, active FROM source_manifest WHERE source_key = :source_key"),
+            {"source_key": source_key},
+        )
+    ).first()
+    return None if row is None else (int(row[0]), bool(row[1]))
+
+
+async def _effective_plan_reasons(
+    conn: AsyncConnection,
+    request: PreSpendRequest,
+) -> list[str]:
+    """Validate or first-freeze the caller's plan against database-derived canonical authority."""
+
+    plan = request.effective_source_plan
+    if plan is None:
+        return []
+    spec = await get_icp_version(conn, plan.workspace_id, plan.icp_key, plan.icp_version)
+    if spec is None:
+        return ["effective source plan does not reference an existing pinned ICP version"]
+
+    frozen = await load_effective_source_plan(
+        conn,
+        workspace_id=plan.workspace_id,
+        icp_key=plan.icp_key,
+        icp_version=plan.icp_version,
+        field_key=str(plan.field_key),
+    )
+    if frozen is None:
+        candidates = await resolve_allowed_set(
+            conn,
+            spec,
+            str(plan.field_key),
+            entity_scope=request.entity_type.value,
+        )
+        canonical = EffectiveFieldSourcePlan.compile(
+            workspace_id=spec.workspace_id,
+            icp_key=spec.icp_key,
+            icp_version=spec.version,
+            field_key=str(plan.field_key),
+            sources=tuple(
+                EffectiveSourceAuthorization(
+                    source_key=source.source_key,
+                    source_tier=SourceTier(source.tier),
+                )
+                for source in candidates
+            ),
+        )
+        if canonical != plan:
+            return [
+                "presented effective source plan does not equal the database-derived canonical "
+                f"plan {canonical.plan_sha256} for the pinned ICP field"
+            ]
+        try:
+            frozen = await freeze_effective_source_plan(
+                conn,
+                canonical,
+                source_profile_ref=spec.source_profile_ref,
+            )
+        except EffectiveSourcePlanConflict as exc:
+            return [str(exc)]
+
+    if frozen != plan:
+        return [
+            f"effective source plan {plan.plan_sha256} does not match frozen canonical plan "
+            f"{frozen.plan_sha256} for the pinned ICP field"
+        ]
+    return []
+
+
 async def _record_gate_decision(
     conn: AsyncConnection, request: PreSpendRequest, decision: PreSpendDecision
 ) -> None:
@@ -266,11 +349,13 @@ async def _record_gate_decision(
             """
             INSERT INTO gate_decision
                 (run_id, entity_id, entity_type, request_kind, field_key, enumeration_scope,
-                 source_tier, decision, reasons)
+                 source_tier, source_key, effective_plan_sha256, effective_source_plan,
+                 decision, reasons)
             VALUES
                 (:run_id, :entity_id, CAST(:entity_type AS entity_type),
                  CAST(:request_kind AS pre_spend_kind), :field_key,
                  CAST(:enumeration_scope AS enumeration_scope), :source_tier,
+                 :source_key, :effective_plan_sha256, CAST(:effective_source_plan AS jsonb),
                  CAST(:decision AS pre_spend_verdict), CAST(:reasons AS jsonb))
             """
         ),
@@ -282,6 +367,17 @@ async def _record_gate_decision(
             "field_key": str(request.field_key) if request.field_key is not None else None,
             "enumeration_scope": request.scope.value if request.scope is not None else None,
             "source_tier": int(request.source_tier),
+            "source_key": request.source_key,
+            "effective_plan_sha256": (
+                request.effective_source_plan.plan_sha256
+                if request.effective_source_plan is not None
+                else None
+            ),
+            "effective_source_plan": (
+                serialize_value_json(request.effective_source_plan.model_dump(mode="json"))
+                if request.effective_source_plan is not None
+                else None
+            ),
             "decision": decision.verdict.value,
             "reasons": serialize_value_json(list(decision.reasons)),
         },
@@ -331,6 +427,24 @@ class PreSpendGateImpl:
             self._emit_metric(request, verdict)
             return decision
 
+    def with_conn_factory(self, conn_factory: ConnFactory) -> PreSpendGateImpl:
+        """Clone this gate onto a caller-owned transaction.
+
+        Committee materialisation admits a contact and role-gates it before the short committee
+        transaction commits.  A gate opening its own transaction cannot see that new identity and
+        would reject every legitimate role-inference call.  Rebinding preserves the exact policy,
+        lock reader, audit, metric, and fencing-token behavior while making identity/schema reads
+        and the decision receipt part of the caller's atomic transaction.
+        """
+        return PreSpendGateImpl(
+            policy=self._policy,
+            conn_factory=conn_factory,
+            lock_reader=self._lock_reader,
+            record_decisions=self._record,
+            sink=self._sink,
+            lock_token_for_run=self._lock_token_for_run,
+        )
+
     async def assemble_target_lock(
         self, entity: AccountEntity | ContactEntity, field: FieldDef
     ) -> TargetLock:
@@ -350,6 +464,10 @@ class PreSpendGateImpl:
             gate_spec = parse_gate_spec(field_def.gate) if field_def is not None else None
             reasons.extend(await self._field_reasons(conn, request, field_def))
 
+        # Exact registry identity is common to both field fills and field-less enumerations. A
+        # source tier is a trust classification, not permission for any provider at that tier.
+        reasons.extend(await self._source_reasons(conn, request))
+
         # --- identity gate (keys on a resolved entity_id, never a free-text name) — BOTH kinds ---
         reasons.extend(await self._identity_reasons(conn, request, gate_spec))
 
@@ -368,18 +486,62 @@ class PreSpendGateImpl:
                 f"field_key {request.field_key!r} is not registered in the field registry"
             )
             return reasons
-        if self._policy.enforce_tier_in_plan and field_def.tier_plan:
-            covered = await _covered_tiers(conn, field_def.tier_plan)
-            if covered and int(request.source_tier) not in covered:
+        if request.effective_source_plan is not None:
+            # A supplied dynamic plan is execution authority, not the legacy tier-plan policy
+            # approximation. It is therefore always validated exactly; disabling the legacy
+            # ``enforce_tier_in_plan`` knob cannot turn a caller-created digest into authority.
+            plan = request.effective_source_plan
+            reasons.extend(await _effective_plan_reasons(conn, request))
+            assert request.source_key is not None  # model validator
+            authorization = plan.authorization_for(request.source_key)
+            if authorization is None:
                 reasons.append(
-                    f"source_tier {request.source_tier} is not in field "
-                    f"{request.field_key!r}'s tier_plan (sanctioned tiers: {sorted(covered)})"
+                    f"source_key {request.source_key!r} is not in effective plan "
+                    f"{plan.plan_sha256} for field {request.field_key!r}"
                 )
+            elif int(authorization.source_tier) != int(request.source_tier):
+                reasons.append(
+                    f"source_key {request.source_key!r} is tier "
+                    f"{authorization.source_tier} in effective plan {plan.plan_sha256}, not "
+                    f"requested tier {request.source_tier}"
+                )
+        elif self._policy.enforce_tier_in_plan and field_def.tier_plan:
+            if request.source_key is not None:
+                if request.source_key not in field_def.tier_plan:
+                    reasons.append(
+                        f"source_key {request.source_key!r} is not in field "
+                        f"{request.field_key!r}'s tier_plan {list(field_def.tier_plan)!r}"
+                    )
+            else:
+                covered = await _covered_tiers(conn, field_def.tier_plan)
+                if covered and int(request.source_tier) not in covered:
+                    reasons.append(
+                        f"source_tier {request.source_tier} is not in field "
+                        f"{request.field_key!r}'s tier_plan (sanctioned tiers: "
+                        f"{sorted(covered)})"
+                    )
         if request.value_json is not None:
             try:
                 await validate_value(conn, str(request.field_key), request.value_json)
             except (UnknownFieldError, ValueSchemaError) as exc:
                 reasons.append(f"value_json fails the field's schema: {exc}")
+        return reasons
+
+    async def _source_reasons(self, conn: AsyncConnection, request: PreSpendRequest) -> list[str]:
+        if request.source_key is None:
+            return []
+        registered = await _registered_source_tier(conn, request.source_key)
+        if registered is None:
+            return [f"source_key {request.source_key!r} is not registered"]
+        registered_tier, active = registered
+        reasons: list[str] = []
+        if not active:
+            reasons.append(f"source_key {request.source_key!r} is inactive")
+        if registered_tier != int(request.source_tier):
+            reasons.append(
+                f"source_key {request.source_key!r} is registered at tier "
+                f"{registered_tier}, not requested tier {request.source_tier}"
+            )
         return reasons
 
     def _enumeration_reasons(self, request: PreSpendRequest) -> list[str]:
@@ -425,6 +587,13 @@ class PreSpendGateImpl:
             reasons.append(
                 "entity lacks a strong key (account primary_domain / contact LinkedIn URL or "
                 "verified email) — refusing spend on a weakly-keyed entity (the same-name trap)"
+            )
+        if (
+            request.effective_source_plan is not None
+            and getattr(entity, "workspace_id", None) != request.effective_source_plan.workspace_id
+        ):
+            reasons.append(
+                "effective source plan workspace does not match the resolved entity workspace"
             )
         return reasons
 

@@ -1,0 +1,38 @@
+{
+  "requestId": "exa-contact-c3-supported",
+  "results": [
+    {
+      "title": "Alex Rivera — Reducing Referral Friction",
+      "url": "https://healthcare-ops.example/events/alex-rivera-referral-friction",
+      "text": "Alex Rivera, Director of Patient Access at Cascade Gastroenterology Associates, presented Reducing Referral Friction at the 2026 Healthcare Operations Forum.",
+      "highlights": [
+        "Alex Rivera, Director of Patient Access at Cascade Gastroenterology Associates, presented Reducing Referral Friction."
+      ]
+    }
+  ],
+  "output": {
+    "content": {
+      "f_636f6e746163742e66616365742e7075626c69636174696f6e73": [
+        {
+          "title": "Reducing Referral Friction",
+          "venue": "Healthcare Operations Forum",
+          "url": "https://healthcare-ops.example/events/alex-rivera-referral-friction",
+          "date": "2026-05-12"
+        }
+      ]
+    },
+    "grounding": [
+      {
+        "field": "f_636f6e746163742e66616365742e7075626c69636174696f6e73",
+        "confidence": "high",
+        "citations": [
+          {
+            "title": "Alex Rivera — Reducing Referral Friction",
+            "url": "https://healthcare-ops.example/events/alex-rivera-referral-friction"
+          }
+        ]
+      }
+    ]
+  },
+  "costDollars": {"total": 0.08}
+}

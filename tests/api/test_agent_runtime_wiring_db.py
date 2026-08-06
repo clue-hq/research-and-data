@@ -105,7 +105,7 @@ async def _no_crash(point: str, **kwargs: Any) -> None:
 
 
 def _c64_delegating_registry() -> AgentProfileRegistry:
-    """Resolve the frozen C6.4 Head v1 authority for its delegation regression test."""
+    """Resolve current pinned authority for the C6.4 delegation durability regression."""
 
     toolbelt = build_toolbelt(storage=None, gateway=None)
     root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog"
@@ -117,13 +117,7 @@ def _c64_delegating_registry() -> AgentProfileRegistry:
         engine_tool_ceiling=frozenset(
             toolbelt.descriptor(name).address for name in toolbelt.names()
         ),
-        selected_profile_versions={
-            **C6_ACTIVE_PROFILE_VERSIONS,
-            AgentRole.HEAD_OF_ABM: "v1",
-            AgentRole.RESEARCH: "v1",
-            AgentRole.CONTENT_DRAFTER: "v1",
-            AgentRole.REVIEWER: "v1",
-        },
+        selected_profile_versions=C6_ACTIVE_PROFILE_VERSIONS,
     )
 
 

@@ -1,0 +1,186 @@
+{
+  "data": [
+    {
+      "id": "wsi_fixture_northstar",
+      "object": "webset_item",
+      "source": "search",
+      "sourceId": "ws_search_fixture_1",
+      "websetId": "ws_fixture_running",
+      "properties": {
+        "type": "company",
+        "url": "https://northstar-practice.example",
+        "description": "A fictional independent specialty practice.",
+        "content": "Synthetic public website content for the contract fixture.",
+        "company": {
+          "name": "Northstar Specialty Practice",
+          "location": "Denver, Colorado, United States",
+          "employees": 42,
+          "industry": "Medical Practice",
+          "about": "Fictional multi-provider specialty practice.",
+          "logoUrl": "https://northstar-practice.example/logo.png",
+          "foundedYear": null,
+          "headquarters": {
+            "address": "100 Example Avenue",
+            "city": "Denver",
+            "state": "Colorado",
+            "postalCode": "80202",
+            "country": "United States",
+            "countryCode": "US"
+          },
+          "financials": {
+            "revenueAnnual": 12500000,
+            "fundingTotal": 3500000,
+            "fundingLatestRound": {
+              "name": "Growth round",
+              "date": "2025-11-10",
+              "amount": 3500000
+            }
+          },
+          "webTraffic": null
+        }
+      },
+      "evaluations": [
+        {
+          "criterion": "Organization is an independent specialty practice",
+          "reasoning": "The synthetic about page describes an independently owned practice.",
+          "satisfied": "yes",
+          "references": [
+            {
+              "title": "About Northstar",
+              "snippet": "Independently owned multi-provider specialty practice.",
+              "url": "https://northstar-practice.example/about"
+            }
+          ]
+        }
+      ],
+      "enrichments": [
+        {
+          "object": "enrichment_result",
+          "status": "completed",
+          "enrichmentId": "enr_fixture_linkedin",
+          "format": "url",
+          "result": ["https://www.linkedin.com/company/example-northstar-practice"],
+          "reasoning": "A matching synthetic company page was located.",
+          "references": [
+            {
+              "title": "Northstar company profile",
+              "snippet": "Synthetic fixture result.",
+              "url": "https://www.linkedin.com/company/example-northstar-practice"
+            }
+          ]
+        },
+        {
+          "object": "enrichment_result",
+          "status": "completed",
+          "enrichmentId": "enr_fixture_email",
+          "format": "email",
+          "result": ["contact@northstar-practice.example"],
+          "reasoning": "A general contact mailbox appears on the synthetic contact page.",
+          "references": [
+            {
+              "title": "Contact Northstar",
+              "snippet": "Email our general office.",
+              "url": "https://northstar-practice.example/contact"
+            }
+          ]
+        },
+        {
+          "object": "enrichment_result",
+          "status": "completed",
+          "enrichmentId": "enr_fixture_phone",
+          "format": "phone",
+          "result": ["+1-555-0100"],
+          "reasoning": "A public general office number appears on the contact page.",
+          "references": [
+            {
+              "title": "Contact Northstar",
+              "snippet": "Call our general office.",
+              "url": "https://northstar-practice.example/contact"
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-08-03T08:01:00Z",
+      "updatedAt": "2026-08-03T08:03:00Z"
+    },
+    {
+      "id": "wsi_fixture_lakeside",
+      "object": "webset_item",
+      "source": "search",
+      "sourceId": "ws_search_fixture_1",
+      "websetId": "ws_fixture_running",
+      "properties": {
+        "type": "company",
+        "url": "https://lakeside-specialists.example",
+        "description": "A fictional specialist group with ambiguous ownership.",
+        "content": null,
+        "company": {
+          "name": "Lakeside Specialists",
+          "location": "Madison, Wisconsin, United States",
+          "employees": null,
+          "industry": "Healthcare",
+          "about": null,
+          "logoUrl": null,
+          "foundedYear": null,
+          "headquarters": {
+            "address": null,
+            "city": "Madison",
+            "state": "Wisconsin",
+            "postalCode": null,
+            "country": "United States",
+            "countryCode": "US"
+          },
+          "financials": null,
+          "webTraffic": null
+        }
+      },
+      "evaluations": [
+        {
+          "criterion": "Organization is an independent specialty practice",
+          "reasoning": "The synthetic page does not state whether the group is independently owned.",
+          "satisfied": "unclear",
+          "references": [
+            {
+              "title": "Lakeside homepage",
+              "snippet": "Specialist care in one location.",
+              "url": "https://lakeside-specialists.example"
+            }
+          ]
+        }
+      ],
+      "enrichments": [
+        {
+          "object": "enrichment_result",
+          "status": "completed",
+          "enrichmentId": "enr_fixture_email",
+          "format": "email",
+          "result": null,
+          "reasoning": "No public general mailbox was found.",
+          "references": []
+        },
+        {
+          "object": "enrichment_result",
+          "status": "completed",
+          "enrichmentId": "enr_fixture_linkedin",
+          "format": "url",
+          "result": null,
+          "reasoning": "No canonical company page was confirmed.",
+          "references": []
+        },
+        {
+          "object": "enrichment_result",
+          "status": "completed",
+          "enrichmentId": "enr_fixture_phone",
+          "format": "phone",
+          "result": null,
+          "reasoning": "No public general office phone was found.",
+          "references": []
+        }
+      ],
+      "createdAt": "2026-08-03T08:02:00Z",
+      "updatedAt": "2026-08-03T08:03:00Z"
+    }
+  ],
+  "hasMore": true,
+  "nextCursor": "cursor_fixture_page_2"
+}

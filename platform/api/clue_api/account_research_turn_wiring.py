@@ -23,6 +23,7 @@ from clue_agents import (
     DeterministicAgentContextAssembler,
     DomainObjectRef,
     LayerBudget,
+    ProjectContextArtifact,
     ResolvedAgentProfile,
 )
 from clue_api.account_research_wiring import (
@@ -33,6 +34,7 @@ from clue_api.agent_execution_wiring import (
     DbAgentPlanJournal,
     postgres_agent_checkpointer,
 )
+from clue_api.agent_registry_wiring import ACCOUNT_RESEARCH_UNIT_SURFACE
 from clue_api.agent_runtime_wiring import CompletionGuard
 from clue_api.agent_turn_wiring import (
     DbAgentHistoryStore,
@@ -43,9 +45,11 @@ from clue_config import Settings
 from clue_core import (
     AccountEntity,
     AssemblyRequest,
+    ContextAssembly,
     EntityId,
     ExecutionId,
     MemoryBundle,
+    MemoryType,
     ProjectRunId,
     RunId,
     operation_id_from_key,
@@ -61,6 +65,7 @@ from clue_execution import (
     RecipeScopeType,
 )
 from clue_fleet import LeaseGeneration, WorkId, acquire_work_lease, release_work_lease
+from clue_research.directives import effective_account_research_directive
 from clue_research.durable import (
     AccountRunRow,
     ProjectRunRow,
@@ -153,13 +158,13 @@ def account_research_context_policy() -> ContextAssemblyPolicy:
     """The exact conservative opening-context budget for account-research@v1."""
 
     return ContextAssemblyPolicy(
-        version="account-research-context-v1",
+        version="account-research-context-v2",
         token_counter_version="utf8-bytes-v1",
         budgets=tuple(
             LayerBudget(layer=layer, max_tokens=budget)
             for layer, budget in zip(
                 tuple(ContextLayer),
-                (24_000, 8_000, 24_000, 0, 16_000, 0, 12_000),
+                (24_000, 8_000, 128_000, 16_000, 16_000, 0, 12_000),
                 strict=True,
             )
         ),
@@ -292,7 +297,10 @@ class PreparedAccountResearchTurnRunner:
         budget_cap_cents: Decimal | None,
         completion_guard: CompletionGuard,
     ) -> AgentTurnOutcome:
-        resolved = self._profiles.resolve(AgentRole.ACCOUNT_RESEARCH)
+        resolved = self._profiles.resolve(
+            AgentRole.ACCOUNT_RESEARCH,
+            surface=ACCOUNT_RESEARCH_UNIT_SURFACE,
+        )
         project_run, account_run, account, project = await self._load_scope(
             workspace_id=workspace_id,
             project_run_id=project_run_id,
@@ -300,6 +308,8 @@ class PreparedAccountResearchTurnRunner:
             account_entity_id=account_entity_id,
             tier=tier,
         )
+        if account_run.research_directive != plan.research_directive:
+            raise ValueError("account run and durable research plan directive pins differ")
         execution_id = ExecutionId(
             operation_id_from_key(str(account_run_id), _EXECUTION_NAMESPACE_KEY)
         )
@@ -340,6 +350,35 @@ class PreparedAccountResearchTurnRunner:
             object_id=str(account_entity_id),
             version=None,
         )
+        project_context_artifacts: tuple[ProjectContextArtifact, ...] = ()
+        if plan.research_directive is not None:
+            async with self._conn_factory() as conn:
+                effective_directive = await effective_account_research_directive(
+                    conn,
+                    workspace_id=workspace_id,
+                    directive_id=plan.research_directive.directive_id,
+                    account_id=account_entity_id,
+                    expected_pin=plan.research_directive,
+                )
+            directive_artifact_ref = await self._artifact(
+                workspace_id,
+                "application/vnd.clue.account-research-directive+json",
+                effective_directive.model_dump(mode="json"),
+                account_entity_id,
+                project.project_id,
+            )
+            project_context_artifacts = (
+                ProjectContextArtifact(
+                    name="research-directive",
+                    artifact_ref=directive_artifact_ref,
+                    domain_ref=DomainObjectRef(
+                        workspace_id=workspace_id,
+                        object_type="research_directive",
+                        object_id=str(plan.research_directive.directive_id),
+                        version=plan.research_directive.version,
+                    ),
+                ),
+            )
         card_ref = await self._artifact(
             workspace_id,
             ACCOUNT_RESEARCH_CARD_MEDIA_TYPE,
@@ -354,6 +393,7 @@ class PreparedAccountResearchTurnRunner:
                 plan=plan,
             ),
             account_entity_id,
+            project.project_id,
         )
         budget_limit = _effective_budget_limit(
             self._settings,
@@ -376,12 +416,14 @@ class PreparedAccountResearchTurnRunner:
                 ),
             },
             account_entity_id,
+            project.project_id,
         )
         manifest_ref = await self._artifact(
             workspace_id,
             "application/vnd.clue.agent-resource-manifest+json",
             resolved.resource_manifest.model_dump(mode="json"),
             account_entity_id,
+            project.project_id,
         )
         user_message_ref = await self._artifact(
             workspace_id,
@@ -396,8 +438,27 @@ class PreparedAccountResearchTurnRunner:
                 "planned_field_keys": sorted(
                     field for aspect in plan.aspects for field in aspect.field_keys
                 ),
+                "strategy_contract": {
+                    "authority": "coverage_engine",
+                    "instruction": (
+                        "Omit strategy_hint unless a prior governed result names the exact next "
+                        "permitted engine strategy. Never use source-family names or skip the "
+                        "engine-owned waterfall."
+                    ),
+                },
+                "research_directive_ref": (
+                    plan.research_directive.directive_ref
+                    if plan.research_directive is not None
+                    else None
+                ),
+                "research_directive_sha256": (
+                    plan.research_directive.canonical_json_sha256
+                    if plan.research_directive is not None
+                    else None
+                ),
             },
             account_entity_id,
+            project.project_id,
         )
         turn_id = uuid5(_TURN_NAMESPACE, str(account_run_id))
         request = AgentTurnRequest(
@@ -418,6 +479,7 @@ class PreparedAccountResearchTurnRunner:
                 resource_manifest_ref=manifest_ref,
                 resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
                 focus_refs=(focus_ref,),
+                project_context_artifacts=project_context_artifacts,
             ),
             user_message_artifact_ref=user_message_ref,
             focus_refs=(focus_ref,),
@@ -506,12 +568,14 @@ class PreparedAccountResearchTurnRunner:
         media_type: str,
         payload: object,
         account_entity_id: EntityId,
+        project_id: str,
     ) -> ArtifactRef:
         return await self._artifacts.persist_body(
             workspace_id=workspace_id,
             data=_canonical_json(payload),
             media_type=media_type,
-            subject_bindings=((UUID(str(account_entity_id)), "account_context"),),
+            subject_bindings=((UUID(str(account_entity_id)), "context"),),
+            project_bindings=((project_id, "account_research_context"),),
         )
 
     async def _load_scope(
@@ -552,9 +616,10 @@ def build_account_research_context(
     resolved_profile: ResolvedAgentProfile,
     artifacts: DurableAgentArtifactStore,
     cards: DbCompiledContextCardReader,
+    memory: ContextAssembly | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> DeterministicAgentContextAssembler:
-    """Build the account role's exact L1-L7 context with memory disabled by recipe contract."""
+    """Build L1-L7 context; production includes project/account advisory preferences."""
 
     from clue_api.agent_platform_wiring import build_agent_context_assembler
 
@@ -562,9 +627,9 @@ def build_account_research_context(
         resolved_profile=resolved_profile,
         artifacts=artifacts,
         cards=cards,
-        memory=_NoMemoryContext(),
+        memory=memory if memory is not None else _NoMemoryContext(),
         memory_recipe="account-research-unit@1",
-        requested_memory_types=(),
+        requested_memory_types=((MemoryType.PREFERENCE,) if memory is not None else ()),
         policy=account_research_context_policy(),
         conn_factory=conn_factory,
     )

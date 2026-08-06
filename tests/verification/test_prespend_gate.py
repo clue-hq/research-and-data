@@ -15,28 +15,48 @@ from contextlib import asynccontextmanager
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     AccountEntity,
     AccountStatus,
     ContactEntity,
+    EffectiveFieldSourcePlan,
+    EffectiveSourceAuthorization,
+    Entity,
+    EntityScope,
     EntityType,
+    EnumerationScope,
+    FieldClass,
     FieldDef,
+    ICPCreatedFrom,
     PassKind,
     PreSpendGate,
+    PreSpendKind,
     PreSpendRequest,
     PreSpendVerdict,
+    ResearchMode,
+    SourceTier,
     new_entity_id,
     new_run_id,
 )
 from clue_obs.otel import InMemorySink
 from clue_research.claimstore.registry import register_field
+from clue_research.icp import (
+    Pack,
+    PackSourceSlot,
+    SourceWeight,
+    WeightedSource,
+    create_icp_spec,
+    register_pack_catalog,
+    register_source_profile_override,
+)
 from clue_research.identity import (
     insert_account_entity,
     mark_merged,
 )
+from clue_research.sources import plan_sources
 from clue_research.verification import (
     DEFAULT_PRE_SPEND_POLICY,
     GateSpec,
@@ -196,13 +216,21 @@ async def _active_account(conn: AsyncConnection, *, name: str, domain: str | Non
 
 
 def _request(
-    entity_id: object, *, field_key: str, tier: int, value: object | None = None
+    entity_id: object,
+    *,
+    field_key: str,
+    tier: int,
+    value: object | None = None,
+    source_key: str | None = None,
+    effective_source_plan: EffectiveFieldSourcePlan | None = None,
 ) -> PreSpendRequest:
     return PreSpendRequest(
         entity_id=entity_id,  # type: ignore[arg-type]
         entity_type=EntityType.ACCOUNT,
         field_key=field_key,
         source_tier=tier,  # type: ignore[arg-type]
+        source_key=source_key,
+        effective_source_plan=effective_source_plan,
         run_id=new_run_id(),
         value_json=value,
     )
@@ -283,6 +311,284 @@ def test_valid_request_passes_and_audited() -> None:
             assert decision.reasons == ()
             rows = await _decision_rows(conn, req.run_id)
             assert rows == [("pass", [])]
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_verification_db")
+def test_rebound_gate_sees_an_identity_inserted_in_the_caller_transaction() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity_id = await _active_account(conn, name="Uncommitted Acme", domain="acme.test")
+
+            @asynccontextmanager
+            async def caller_transaction() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            gate = PreSpendGateImpl().with_conn_factory(caller_transaction)
+            req = _request(entity_id, field_key="core.employee_count", tier=1, value=42)
+            decision = await gate.check(req)
+            assert decision.verdict is PreSpendVerdict.PASS
+            assert await _decision_rows(conn, req.run_id) == [("pass", [])]
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_verification_db")
+def test_exact_source_key_cannot_borrow_an_allowed_tier() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity_id = await _active_account(conn, name="Acme", domain="acme.com")
+            # BuiltWith is registered at the same tier as employee_count's Clay/Apollo/Sumble
+            # plan, but exact-provider authorization must reject it.
+            req = _request(
+                entity_id,
+                field_key="core.employee_count",
+                tier=1,
+                source_key="builtwith",
+            )
+            decision = await _gate(conn).check(req)
+            assert decision.verdict is PreSpendVerdict.REJECT
+            assert any(
+                "source_key" in reason and "tier_plan" in reason for reason in decision.reasons
+            )
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_verification_db")
+def test_content_addressed_effective_plan_is_the_exact_gate_authority() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity_id = await _active_account(conn, name="Acme", domain="acme.com")
+            await register_pack_catalog(
+                conn,
+                Pack(
+                    pack_key="prespend_effective_plan",
+                    namespace="prespend_effective_plan",
+                    title="Pre-spend effective plan",
+                    source_profile=(
+                        PackSourceSlot(
+                            field_class=FieldClass.ACCOUNT,
+                            sources=(
+                                WeightedSource(
+                                    source_key="firecrawl_site",
+                                    weight=SourceWeight.HIGH,
+                                    rank=1,
+                                ),
+                                WeightedSource(
+                                    source_key="exa_deep",
+                                    weight=SourceWeight.MEDIUM,
+                                    rank=2,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            spec = await create_icp_spec(
+                conn,
+                workspace_id=DEFAULT_TEST_WORKSPACE,
+                icp_key="prespend-effective-plan",
+                created_from=ICPCreatedFrom.CLIENT_EDIT,
+                field_keys=("account.operational_pain",),
+                enabled_packs=("prespend_effective_plan",),
+            )
+            ordered = await plan_sources(
+                conn,
+                spec=spec,
+                entity=Entity(entity_id=entity_id, entity_type=EntityType.ACCOUNT),
+                field="account.operational_pain",
+                mode=ResearchMode.ACCOUNT_PROFILING,
+                entity_scope=EntityScope.ACCOUNT,
+            )
+            plan = ordered.effective_source_plan
+            assert plan is not None
+            assert {source.source_key for source in plan.sources} == {
+                "firecrawl_site",
+                "exa_deep",
+            }
+            forged = EffectiveFieldSourcePlan.compile(
+                workspace_id=plan.workspace_id,
+                icp_key=plan.icp_key,
+                icp_version=plan.icp_version,
+                field_key=plan.field_key,
+                sources=(
+                    *plan.sources,
+                    EffectiveSourceAuthorization(
+                        source_key="parallel_task", source_tier=SourceTier(4)
+                    ),
+                ),
+            )
+            forged_decision = await _gate(conn).check(
+                _request(
+                    entity_id,
+                    field_key="account.operational_pain",
+                    tier=4,
+                    source_key="parallel_task",
+                    effective_source_plan=forged,
+                )
+            )
+            assert forged_decision.verdict is PreSpendVerdict.REJECT
+            assert any("database-derived canonical" in reason for reason in forged_decision.reasons)
+            assert (
+                await conn.execute(text("SELECT count(*) FROM effective_field_source_plan"))
+            ).scalar_one() == 0
+
+            allowed = _request(
+                entity_id,
+                field_key="account.operational_pain",
+                tier=2,
+                source_key="firecrawl_site",
+                effective_source_plan=plan,
+            )
+            assert (await _gate(conn).check(allowed)).verdict is PreSpendVerdict.PASS
+
+            denied = _request(
+                entity_id,
+                field_key="account.operational_pain",
+                tier=4,
+                source_key="parallel_task",
+                effective_source_plan=plan,
+            )
+            decision = await _gate(conn).check(denied)
+            assert decision.verdict is PreSpendVerdict.REJECT
+            assert any(plan.plan_sha256 in reason for reason in decision.reasons)
+
+            audited = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT source_key, effective_plan_sha256, effective_source_plan "
+                            "FROM gate_decision WHERE run_id=:run_id"
+                        ),
+                        {"run_id": str(allowed.run_id)},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert audited["source_key"] == "firecrawl_site"
+            assert audited["effective_plan_sha256"] == plan.plan_sha256
+            assert audited["effective_source_plan"]["field_key"] == "account.operational_pain"
+            frozen = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT plan_sha256, plan_json FROM effective_field_source_plan "
+                            "WHERE workspace_id=:workspace_id AND icp_key=:icp_key "
+                            "AND icp_version=:icp_version AND field_key=:field_key"
+                        ),
+                        {
+                            "workspace_id": spec.workspace_id,
+                            "icp_key": spec.icp_key,
+                            "icp_version": spec.version,
+                            "field_key": "account.operational_pain",
+                        },
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert frozen["plan_sha256"] == plan.plan_sha256
+            assert frozen["plan_json"] == plan.model_dump(mode="json")
+
+            # The application uses insert-once semantics, and the database enforces the same
+            # authority boundary against out-of-band rewrites or deletion.
+            with pytest.raises(DBAPIError, match="effective field source plan is immutable"):
+                async with conn.begin_nested():
+                    await conn.execute(
+                        text(
+                            "UPDATE effective_field_source_plan SET source_profile_ref='{}'::jsonb "
+                            "WHERE plan_sha256=:plan_sha256"
+                        ),
+                        {"plan_sha256": plan.plan_sha256},
+                    )
+            with pytest.raises(DBAPIError, match="effective field source plan is immutable"):
+                async with conn.begin_nested():
+                    await conn.execute(
+                        text(
+                            "DELETE FROM effective_field_source_plan WHERE plan_sha256=:plan_sha256"
+                        ),
+                        {"plan_sha256": plan.plan_sha256},
+                    )
+
+            # Erasing the owning ICP is different from rewriting authority in place. The FK
+            # cascade must be able to remove the plan so the new row cannot make tenant/ICP
+            # lifecycle deletion impossible.
+            async with conn.begin_nested() as erasure:
+                await conn.execute(
+                    text(
+                        "DELETE FROM icp_spec WHERE workspace_id=:workspace_id "
+                        "AND icp_key=:icp_key AND version=:icp_version"
+                    ),
+                    {
+                        "workspace_id": spec.workspace_id,
+                        "icp_key": spec.icp_key,
+                        "icp_version": spec.version,
+                    },
+                )
+                assert (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM effective_field_source_plan "
+                            "WHERE plan_sha256=:plan_sha256"
+                        ),
+                        {"plan_sha256": plan.plan_sha256},
+                    )
+                ).scalar_one() == 0
+                await erasure.rollback()
+
+            # A later mutable source-profile row cannot widen an already-pinned ICP/field. The
+            # execution plan may reorder/narrow the frozen members, but Parallel remains compiled
+            # out and the authority digest is stable.
+            await register_source_profile_override(
+                conn,
+                "prespend_effective_plan",
+                DEFAULT_TEST_WORKSPACE,
+                (
+                    WeightedSource(source_key="parallel_task", weight=SourceWeight.HIGH, rank=1),
+                    WeightedSource(source_key="firecrawl_site", weight=SourceWeight.HIGH, rank=2),
+                    WeightedSource(source_key="exa_deep", weight=SourceWeight.MEDIUM, rank=3),
+                ),
+                field_class=FieldClass.ACCOUNT,
+                icp_key=spec.icp_key,
+                version=1,
+            )
+            replay_plan = await plan_sources(
+                conn,
+                spec=spec,
+                entity=Entity(entity_id=entity_id, entity_type=EntityType.ACCOUNT),
+                field="account.operational_pain",
+                mode=ResearchMode.ACCOUNT_PROFILING,
+                entity_scope=EntityScope.ACCOUNT,
+            )
+            assert replay_plan.effective_source_plan == plan
+            assert "parallel_task" not in replay_plan.tier_plan()
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_verification_db")
+def test_enumeration_source_key_cannot_borrow_an_allowed_tier() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity_id = await _active_account(conn, name="Acme", domain="acme.com")
+            decision = await _gate(conn).check(
+                PreSpendRequest(
+                    entity_id=entity_id,
+                    entity_type=EntityType.ACCOUNT,
+                    kind=PreSpendKind.ENUMERATION,
+                    scope=EnumerationScope.COMMITTEE,
+                    source_tier=SourceTier(1),
+                    source_key="unregistered_same_tier_people_source",
+                    run_id=new_run_id(),
+                )
+            )
+            assert decision.verdict is PreSpendVerdict.REJECT
+            assert decision.reasons == (
+                "source_key 'unregistered_same_tier_people_source' is not registered",
+            )
 
     run_async(_run())
 

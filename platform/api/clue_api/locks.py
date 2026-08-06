@@ -17,15 +17,83 @@ of the Doc C §4 account-entity single-flight lock:
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any
 
 from clue_core import EntityId
 from clue_locks import get_redis
 from clue_research.durable import LockFactory, account_entity_lock_factory
 
-__all__ = ["build_account_lock_factory", "lazy_account_lock_factory"]
+__all__ = [
+    "build_account_lock_factory",
+    "lazy_account_lock_factory",
+    "scoped_account_lock_factory",
+]
+
+
+@dataclass
+class _AccountLockScope:
+    """One physical account-lock lease inherited by awaited child tasks.
+
+    ``active`` is deliberately mutable.  A child task inherits the context tuple, but if it
+    outlives the owning context manager it observes ``active=False`` and must acquire a new
+    physical lease instead of reusing stale ownership.
+    """
+
+    entity_id: EntityId
+    active: bool = True
+
+
+_ACCOUNT_LOCK_SCOPES: ContextVar[tuple[_AccountLockScope, ...]] = ContextVar(
+    "clue_account_lock_scopes",
+    default=(),
+)
+
+
+class _ScopedAccountLockFactory:
+    """Make one physical account lock reentrant within its logical async account unit.
+
+    The fleet scheduler owns the outer Doc C single-flight lease.  Account-agent spend tools are
+    allowed to enforce the same invariant when invoked independently, but when invoked inside the
+    scheduler they must not deadlock by acquiring that identical Redis lock again.  Context-local
+    ownership preserves both properties: unrelated tasks still acquire the physical lock, while
+    an awaited nested call for the same account reuses the active lease.
+    """
+
+    def __init__(self, inner: LockFactory) -> None:
+        self._inner = inner
+
+    def __call__(self, entity_id: EntityId) -> AbstractAsyncContextManager[Any]:
+        return self._acquire(entity_id)
+
+    @asynccontextmanager
+    async def _acquire(self, entity_id: EntityId) -> AsyncIterator[Any]:
+        inherited = _ACCOUNT_LOCK_SCOPES.get()
+        if any(scope.active and scope.entity_id == entity_id for scope in inherited):
+            yield None
+            return
+
+        async with self._inner(entity_id) as lease:
+            scope = _AccountLockScope(entity_id=entity_id)
+            token = _ACCOUNT_LOCK_SCOPES.set((*inherited, scope))
+            try:
+                yield lease
+            finally:
+                # Mark first so a child task that inherited this scope but outlives the parent
+                # cannot mistake a released physical lease for current ownership.
+                scope.active = False
+                _ACCOUNT_LOCK_SCOPES.reset(token)
+
+
+def scoped_account_lock_factory(lock_factory: LockFactory) -> LockFactory:
+    """Return the task-scoped reentrant form of ``lock_factory`` (idempotently)."""
+
+    if isinstance(lock_factory, _ScopedAccountLockFactory):
+        return lock_factory
+    return _ScopedAccountLockFactory(lock_factory)
 
 
 def build_account_lock_factory(redis: Any | None = None) -> LockFactory:
@@ -34,7 +102,9 @@ def build_account_lock_factory(redis: Any | None = None) -> LockFactory:
     (:func:`~clue_locks.get_redis`, requires an active ``redis_lifespan``); pass ``redis`` in tests.
     Prefer :func:`lazy_account_lock_factory` at composition sites that build before the lifespan is
     open."""
-    return account_entity_lock_factory(redis if redis is not None else get_redis())
+    return scoped_account_lock_factory(
+        account_entity_lock_factory(redis if redis is not None else get_redis())
+    )
 
 
 def lazy_account_lock_factory() -> LockFactory:
@@ -57,4 +127,4 @@ def lazy_account_lock_factory() -> LockFactory:
         )
         return acquire(entity_id)
 
-    return _factory
+    return scoped_account_lock_factory(_factory)

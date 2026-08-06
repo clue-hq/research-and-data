@@ -12,11 +12,17 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from clue_api.contact_research_preparation import (
+    PreparedContactResearchBatch,
+    PreparedContactTarget,
+)
 from clue_api.deep import (
     AccountDeepOrchestrator,
+    PreparedCommitteeSources,
     StepInfo,
     deep_account_run_id,
 )
@@ -27,9 +33,13 @@ from clue_core import (
     BudgetScope,
     BudgetVerdict,
     BurnDown,
+    ContactPreparationStatus,
+    ContactResearchPreparation,
     CostCents,
     EntityId,
     Estimate,
+    ExternalResearchPreparation,
+    ExternalResearchPreparationOutcome,
     Persona,
     ProjectRunId,
     RunId,
@@ -392,13 +402,17 @@ def _orchestrator(
     recursion_policy: RecursionPolicy | None = None,
     budget: Any | None = None,
     spend: Any | None = None,
+    committee_preparer: Any | None = None,
+    contact_preparer: Any | None = None,
+    pre_spend_gate: Any | None = None,
+    session_factory: Any = _fake_session_factory,
 ) -> AccountDeepOrchestrator:
     return AccountDeepOrchestrator(
         profile_account=profile_account,
         discover_committee=discover_committee,
         profile_contact=profile_contact,
         io=io,
-        session_factory=_fake_session_factory,
+        session_factory=session_factory,
         spec=_spec(),
         config=config if config is not None else DeepPhaseConfig(),
         budget=budget if budget is not None else FakeBudgetEngine(),
@@ -406,6 +420,9 @@ def _orchestrator(
         sources=(),
         gateway=object(),  # a sentinel; the fakes ignore it
         recursion_policy=recursion_policy,
+        committee_preparer=committee_preparer,
+        contact_preparer=contact_preparer,
+        pre_spend_gate=pre_spend_gate,
     )
 
 
@@ -447,6 +464,296 @@ def test_fresh_run_sequences_account_then_committee_then_contacts() -> None:
             AccountRunSubPhase.CONTACTS_COMPLETE,
         ]
         assert io.saves[-1][1] is AccountRunStatus.DONE
+
+    run_async(_run())
+
+
+def test_confirmed_contact_profiling_exclusion_skips_fanout() -> None:
+    io = FakeAccountRunIO()
+    rec = Recorder()
+    orch = _orchestrator(
+        io,
+        make_profile_account(rec),
+        make_discover_committee(rec, n_members=3),
+        FakeProfileContact(rec),
+    )
+    campaign = new_project_run_id()
+    entity = new_entity_id()
+    spec = AccountSpec(
+        entity_id=entity,
+        tier="top",
+        workspace_id="client-1",
+        contact_profiling_allowed=False,
+    )
+
+    async def _run() -> None:
+        result = await orch.run_one(spec, project_run_id=campaign)
+        assert rec.order == ["account", "committee"]
+        assert result.committee is not None
+        assert result.contacts == ()
+        assert result.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
+        assert result.cost_cents == Decimal("8")
+        run_id = deep_account_run_id(campaign, entity)
+        assert len(io.runs[run_id]["references_index"]["committee_contacts"]) == 3
+        assert not any(key.startswith("contact:") for key in io.runs[run_id]["references_index"])
+        assert io.saves[-1][1] is AccountRunStatus.DONE
+
+    run_async(_run())
+
+
+def test_contact_preparation_waits_outside_stage_transactions_and_resumes_exact_fields() -> None:
+    io = FakeAccountRunIO()
+    rec = Recorder()
+    prepared_calls: list[dict[str, Any]] = []
+    profile_fields: list[tuple[str, ...] | None] = []
+
+    class _ContactPreparer:
+        async def prepare(self, **kwargs: Any) -> PreparedContactResearchBatch:
+            prepared_calls.append(kwargs)
+            if len(prepared_calls) == 1:
+                return PreparedContactResearchBatch(
+                    preparation=ContactResearchPreparation(
+                        status=ContactPreparationStatus.WAITING_EXTERNAL,
+                        operation_reference_ids=("external-contact-operation:one",),
+                        next_wake_at=datetime.now(UTC) + timedelta(seconds=30),
+                    )
+                )
+            contact_id = kwargs["contact_entity_ids"][0]
+            return PreparedContactResearchBatch(
+                preparation=ContactResearchPreparation(
+                    status=ContactPreparationStatus.READY,
+                    snapshot_reference_ids=("external-contact-snapshot:one",),
+                    operation_reference_ids=("external-contact-operation:one",),
+                    spend_settlement_reference_ids=("external-contact-settlement:one",),
+                ),
+                targets=(
+                    PreparedContactTarget(
+                        contact_entity_id=contact_id,
+                        field_keys=("contact.facet.publications",),
+                        preparation=ContactResearchPreparation(
+                            status=ContactPreparationStatus.READY,
+                            snapshot_reference_ids=("external-contact-snapshot:one",),
+                        ),
+                        claim_refs=(new_claim_id(),),
+                    ),
+                ),
+            )
+
+    async def _profile_contact(
+        conn: Any,
+        *,
+        contact_entity_id: EntityId,
+        account_entity_id: EntityId,
+        **kwargs: Any,
+    ) -> ContactProfileResult:
+        del conn
+        profile_fields.append(kwargs.get("field_keys"))
+        return ContactProfileResult(
+            contact_entity_id=contact_entity_id,
+            account_entity_id=account_entity_id,
+            profile_claims=(),
+        )
+
+    campaign = new_project_run_id()
+    entity = new_entity_id()
+    orch = _orchestrator(
+        io,
+        make_profile_account(rec),
+        make_discover_committee(rec, n_members=1),
+        _profile_contact,
+        contact_preparer=_ContactPreparer(),
+    )
+
+    async def _run() -> None:
+        spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
+        waiting = await orch.run_one(spec, project_run_id=campaign)
+        assert waiting.external_preparation is not None
+        assert (
+            waiting.external_preparation.outcome
+            is ExternalResearchPreparationOutcome.WAITING_EXTERNAL
+        )
+        assert waiting.sub_phase is AccountRunSubPhase.COMMITTEE_DISCOVERED
+        assert rec.order == ["account", "committee"]
+        run_id = deep_account_run_id(campaign, entity)
+        assert io.runs[run_id]["sub_phase"] is AccountRunSubPhase.COMMITTEE_DISCOVERED
+
+        resumed = await orch.run_one(spec, project_run_id=campaign)
+        assert resumed.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
+        assert rec.order == ["account", "committee"]
+        assert profile_fields == [("contact.facet.publications",)]
+        assert len(prepared_calls) == 2
+        references = io.runs[run_id]["references_index"]
+        assert references["external:contact:snapshots"] == ["external-contact-snapshot:one"]
+        assert references["external:contact:settlements"] == ["external-contact-settlement:one"]
+
+    run_async(_run())
+
+
+def test_committee_gate_is_rebound_to_the_atomic_committee_transaction() -> None:
+    io = FakeAccountRunIO()
+    rec = Recorder()
+
+    class _BoundGate:
+        async def check(self, request: object) -> object:
+            raise AssertionError(f"committee fake unexpectedly checked {request!r}")
+
+    class _RebindableGate:
+        def __init__(self) -> None:
+            self.bound = _BoundGate()
+            self.factories: list[object] = []
+
+        def with_conn_factory(self, factory: object) -> _BoundGate:
+            self.factories.append(factory)
+            return self.bound
+
+        async def check(self, request: object) -> object:
+            raise AssertionError(f"unbound gate used for committee work: {request!r}")
+
+    gate = _RebindableGate()
+    base_committee = make_discover_committee(rec, n_members=1)
+
+    async def committee(conn: Any, **kwargs: Any) -> CommitteeResult:
+        assert kwargs["pre_spend_gate"] is gate.bound
+        return await base_committee(conn, **kwargs)
+
+    orch = _orchestrator(
+        io,
+        make_profile_account(rec),
+        committee,
+        FakeProfileContact(rec),
+        pre_spend_gate=gate,
+    )
+    campaign = new_project_run_id()
+    spec = AccountSpec(
+        entity_id=new_entity_id(),
+        tier="top",
+        workspace_id="client-1",
+        contact_profiling_allowed=False,
+    )
+
+    async def _run() -> None:
+        result = await orch.run_one(spec, project_run_id=campaign)
+        assert result.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
+        assert len(gate.factories) == 1
+
+    run_async(_run())
+
+
+def test_external_committee_wait_resumes_same_operation_without_rerunning_account() -> None:
+    io = FakeAccountRunIO()
+    rec = Recorder()
+    transaction_depth = 0
+    operation_ref = "committee-operation:op-1"
+
+    @asynccontextmanager
+    async def tracked_connection() -> Any:
+        nonlocal transaction_depth
+        transaction_depth += 1
+        try:
+            yield None
+        finally:
+            transaction_depth -= 1
+
+    class ScriptedPreparer:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def prepare(self, **_kwargs: Any) -> PreparedCommitteeSources:
+            assert transaction_depth == 0  # provider submit/poll is outside every claim transaction
+            self.calls += 1
+            if self.calls == 1:
+                preparation = ExternalResearchPreparation(
+                    outcome=ExternalResearchPreparationOutcome.WAITING_EXTERNAL,
+                    operation_ref=operation_ref,
+                    retry_after=datetime.now(UTC) + timedelta(seconds=30),
+                    audit_refs=("committee-eligibility:decision-1",),
+                    reason_code="provider_pending",
+                )
+            else:
+                preparation = ExternalResearchPreparation(
+                    outcome=ExternalResearchPreparationOutcome.READY,
+                    operation_ref=operation_ref,
+                    snapshot_refs=("artifact:teams", "artifact:people"),
+                    cost_receipt_ref="artifact:receipt",
+                    audit_refs=("committee-eligibility:decision-2",),
+                )
+            return PreparedCommitteeSources(preparation=preparation)
+
+    preparer = ScriptedPreparer()
+    orch = _orchestrator(
+        io,
+        make_profile_account(rec),
+        make_discover_committee(rec, n_members=2),
+        FakeProfileContact(rec),
+        committee_preparer=preparer,
+        session_factory=tracked_connection,
+    )
+    project_run_id = new_project_run_id()
+    entity_id = new_entity_id()
+    spec = AccountSpec(entity_id=entity_id, tier="top", workspace_id="client-1")
+
+    async def _run() -> None:
+        waiting = await orch.run_one(spec, project_run_id=project_run_id)
+        assert waiting.sub_phase is AccountRunSubPhase.ACCOUNT_PROFILED
+        assert waiting.external_preparation is not None
+        assert (
+            waiting.external_preparation.outcome
+            is ExternalResearchPreparationOutcome.WAITING_EXTERNAL
+        )
+        assert rec.order == ["account"]
+        run_id = deep_account_run_id(project_run_id, entity_id)
+        assert io.runs[run_id]["references_index"]["external:committee:operation"] == [
+            operation_ref
+        ]
+
+        resumed = await orch.run_one(spec, project_run_id=project_run_id)
+        assert resumed.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
+        assert rec.order == ["account", "committee", "contact", "contact"]
+        assert preparer.calls == 2
+        persisted = io.runs[run_id]["references_index"]
+        assert persisted["external:committee:operation"] == [operation_ref]
+        assert persisted["external:committee:snapshots"] == [
+            "artifact:teams",
+            "artifact:people",
+        ]
+        assert persisted["external:committee:cost_receipt"] == ["artifact:receipt"]
+
+    run_async(_run())
+
+
+def test_ineligible_committee_preparation_is_account_only_governed_partial() -> None:
+    io = FakeAccountRunIO()
+    rec = Recorder()
+
+    class IneligiblePreparer:
+        async def prepare(self, **_kwargs: Any) -> PreparedCommitteeSources:
+            return PreparedCommitteeSources(
+                preparation=ExternalResearchPreparation(
+                    outcome=ExternalResearchPreparationOutcome.INELIGIBLE,
+                    audit_refs=("committee-eligibility:decision-1",),
+                    reason_code="confirmed_directive_lineage_mismatch",
+                ),
+                sources=(),
+            )
+
+    orch = _orchestrator(
+        io,
+        make_profile_account(rec),
+        make_discover_committee(rec),
+        FakeProfileContact(rec),
+        committee_preparer=IneligiblePreparer(),
+    )
+
+    async def _run() -> None:
+        result = await orch.run_one(
+            AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1"),
+            project_run_id=new_project_run_id(),
+        )
+        assert result.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
+        assert result.external_preparation is not None
+        assert result.external_preparation.outcome is ExternalResearchPreparationOutcome.INELIGIBLE
+        assert rec.order == ["account"]
+        assert result.committee is None and result.contacts == ()
 
     run_async(_run())
 
@@ -571,7 +878,17 @@ def test_account_axis_carries_spec_and_explicit_kwargs_with_one_run_id() -> None
     )
     campaign = new_project_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
+    spec = AccountSpec(
+        entity_id=entity,
+        tier="top",
+        workspace_id="client-1",
+        field_keys=(
+            "account.operational_pain",
+            "contact.current_title",
+            "contact.facet.stated_interests",
+            "account.resonance.culture",
+        ),
+    )
 
     async def _run() -> None:
         await orch.run_one(spec, project_run_id=campaign)
@@ -580,6 +897,10 @@ def test_account_axis_carries_spec_and_explicit_kwargs_with_one_run_id() -> None
         com = rec.committee_kwargs[0]
         # account axis: the ICP spec + tenant + the deterministic run id, all explicit kwargs
         assert acc["spec"].workspace_id == "client-1"
+        assert acc["spec"].field_keys == (
+            "account.operational_pain",
+            "account.resonance.culture",
+        )
         assert acc["workspace_id"] == "client-1"
         assert acc["run_id"] == run_id
         # committee axis: tenant + run id as explicit kwargs (never via ctx.params)

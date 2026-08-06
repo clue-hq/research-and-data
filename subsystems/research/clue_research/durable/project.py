@@ -37,6 +37,8 @@ from clue_core import (
     BudgetVerdict,
     BurnDown,
     CostCents,
+    DeepExternalWait,
+    DiscoveryExternalWait,
     Estimate,
     IdempotencyScope,
     PhaseContext,
@@ -435,6 +437,9 @@ class ProjectRun:
         if checkpoint is not None and checkpoint.status == PhaseCheckpointStatus.AWAITING_INPUT:
             # Suspended at a durable gate; the handler does not re-run until a decision arrives.
             return run
+        # WAITING_EXTERNAL deliberately falls through: a scheduled/webhook wake re-enters the same
+        # handler with the persisted batch/operation refs.  It is not a human gate and the run is
+        # already ACTIVE, so no resume action is required.
 
         # Budget pre-gate (M7.5): before running a *fresh* spend phase, if a budget engine is wired
         # and the per-run hard cap is already reached, graceful-stop the run at this boundary rather
@@ -484,6 +489,28 @@ class ProjectRun:
             )
             await self._store.mark_status(
                 project_run_id, status=ProjectRunStatus.PAUSED, stamp_paused=True
+            )
+            return await self.status(project_run_id)
+        if result.status == PhaseStatus.WAITING_EXTERNAL:
+            if phase is ProjectPhase.DISCOVERY:
+                # Fail closed on body-bearing or incomplete wait payloads. The checkpoint contains
+                # only durable references, next-poll time, and wake reason.
+                DiscoveryExternalWait.model_validate(result.payload)
+            elif phase is ProjectPhase.DEEP:
+                # Account-deep uses the same active, non-human wait semantics. Its typed payload
+                # pins account-run and provider-operation references so a wake resumes the exact
+                # acquisition before short committee materialization.
+                DeepExternalWait.model_validate(result.payload)
+            else:
+                raise ProjectRunError(
+                    "waiting_external is valid only for discovery and deep phases"
+                )
+            await self._store.put_checkpoint(
+                project_run_id=project_run_id,
+                phase=phase,
+                idempotency_key=key,
+                status=PhaseCheckpointStatus.WAITING_EXTERNAL,
+                payload=result.payload,
             )
             return await self.status(project_run_id)
         # FAILED

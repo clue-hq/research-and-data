@@ -13,7 +13,9 @@ Kept in its OWN module so M10 / M11 / M12 never co-edit ``api/composition.py`` w
 * register the synthesis aspect workers, judge-gated per
   :data:`~clue_api.composition.VERIFICATION_GATE_ORDER` (faithfulness M9.3 → promotion).
 
-**M11.1** binds Exa Deep to the already-seeded ``exa_deep`` manifest. **M11.2 (this commit)** also
+**M11.1** binds Exa Deep to the already-seeded ``exa_deep`` manifest. M8B E0-R2 replaces its old
+resolver-time HTTP default with a hard-disabled backend until E1 supplies durable acquisition and
+a ready-snapshot backend. **M11.2 (this commit)** also
 binds Parallel Task to the seeded ``parallel_task`` manifest — a *second*, independent tier-4
 provider behind the identical seam, so running one, the other, or both (cross-provider convergence)
 is purely a Source-Planner/config choice. Both resolvers are account-scoped — each returns ``[]``
@@ -42,7 +44,9 @@ def register_synthesis_wiring(*, accounts: AccountLookup | None = None) -> None:
     whichever a field's ``tier_plan`` names, with no knowledge of either provider. ``accounts`` is
     the orchestrator's :class:`~clue_research.resolvers.AccountLookup` (entity_id → the resolved
     :class:`~clue_core.AccountEntity`) the resolvers target-lock the query with; the M6/M8
-    deep-run composition supplies it. Idempotent (last write wins per key).
+    deep-run composition supplies it. Exa's default binding deliberately raises before credential
+    lookup or dispatch until E1 replaces it with a durable ready-snapshot backend; Parallel retains
+    its existing backend. Idempotent (last write wins per key).
     """
     register_exa_deep_resolver(accounts=accounts)
     register_parallel_task_resolver(accounts=accounts)

@@ -25,11 +25,60 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from decimal import Decimal
+from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from clue_core import AccountEntity, Confidence, CostCents
+from clue_core import (
+    CONTACT_PROFESSIONAL_FIELD_KEYS,
+    AccountEntity,
+    Confidence,
+    CostCents,
+    FieldKey,
+    SourceTier,
+    UtcDatetime,
+)
+
+
+class CandidateFactProvenance(StrEnum):
+    """Whether a professional fact is literal provider data or provider-modeled."""
+
+    PROVIDER_RETURNED = "provider_returned"
+    PROVIDER_MODELED = "provider_modeled"
+
+
+class CandidateProfessionalFact(BaseModel):
+    """One field-specific, immutable-snapshot-backed professional fact.
+
+    The candidate remains the identity-enumeration unit; these values are materialized only after
+    that candidate passes strong contact/account admission.  Exact artifact and operation refs
+    prevent an unlabeled candidate blob from becoming several ungrounded claims.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    field_key: FieldKey
+    value_json: JsonValue
+    provenance_kind: CandidateFactProvenance
+    source_key: str = Field(min_length=1)
+    source_tier: SourceTier
+    source_url: str = Field(min_length=1)
+    evidence_span: str = Field(min_length=1)
+    artifact_key: str = Field(min_length=1)
+    source_operation_ref: str = Field(min_length=1)
+    source_snapshot_ref: str = Field(min_length=1)
+    source_request_ref: str = Field(min_length=1)
+    observed_at: UtcDatetime | None = None
+    confidence: Confidence = 0.9
+
+    @model_validator(mode="after")
+    def _field_is_professional(self) -> CandidateProfessionalFact:
+        if str(self.field_key) not in CONTACT_PROFESSIONAL_FIELD_KEYS:
+            raise ValueError(
+                f"committee professional fact uses unfrozen field {self.field_key!r}"
+            )
+        return self
 
 
 class CommitteePersonCandidate(BaseModel):
@@ -50,6 +99,13 @@ class CommitteePersonCandidate(BaseModel):
     geo: dict[str, JsonValue] | None = None
     source_url: str | None = None  # where the person was found (the grounding / discovery channel)
     matched_signal: str = ""  # why this person is relevant (e.g. "VP Eng on the leadership page")
+    source_person_id: str | None = None  # provider provenance key; never a strong identity key
+    job_function: str | None = None
+    job_level: str | None = None
+    team_names: tuple[str, ...] = ()
+    relationship_labels: tuple[str, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
+    professional_facts: tuple[CandidateProfessionalFact, ...] = ()
     discovery_confidence: Confidence = 0.5
     cost_cents: CostCents = Decimal(0)
 
@@ -61,6 +117,9 @@ class CommitteePersonCandidate(BaseModel):
                 "verified_email) or a source_url — the LLM plans queries, it never mints a person "
                 "(M3 existence-gate discipline, staged-flow §8)"
             )
+        fact_keys = tuple(fact.field_key for fact in self.professional_facts)
+        if len(set(fact_keys)) != len(fact_keys):
+            raise ValueError("a committee candidate cannot repeat a professional field")
         return self
 
     @property

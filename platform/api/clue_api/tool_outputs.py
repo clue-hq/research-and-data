@@ -38,6 +38,24 @@ class DiscoverAccountsOutput(ToolOutput):
     stopping_reason: str | None
 
 
+class TargetedEnrichmentOutput(ToolOutput):
+    operation_id: str
+    state: str
+    outcome: str
+    provider_units_reserved: str
+    cost_cents_reserved: str
+
+
+class AccountGapEnrichmentOutput(ToolOutput):
+    operation_id: str
+    account_entity_id: str
+    state: str
+    outcome: str
+    provider_units_reserved: str
+    provider_units_charged: str
+    claim_ids: list[str]
+
+
 class PhaseAccountsOutput(ToolOutput):
     status: str
     accounts_processed: int
@@ -46,6 +64,17 @@ class PhaseAccountsOutput(ToolOutput):
 class TierCheckpointOutput(ToolOutput):
     project_run_id: str
     phase: str
+
+
+class AccountDeepLaunchOutput(ToolOutput):
+    launch_id: str
+    project_run_id: str
+    research_directive_id: str
+    selected_accounts: int
+    estimated_cost_cents: str
+    approved_budget_cap_cents: str
+    replayed: bool
+    enqueued: bool
 
 
 class DeepAccountOutput(ToolOutput):
@@ -67,10 +96,30 @@ class ContactProfileOutput(ToolOutput):
     profile_claims: int
 
 
+class GovernedContactProfileOutput(ToolOutput):
+    contact_entity_id: str
+    project_run_id: str
+    status: str
+    selection_ref: str | None
+    claim_refs: list[str]
+    fields_filled: int
+
+
 class HandoffOutput(ToolOutput):
     project_run_id: str
     handoffs: int
     narrative_emit_skipped: bool
+
+
+class ContactContentHandoffOutput(ToolOutput):
+    handoff: dict[str, object]
+
+
+class ContactResearchSelectionApprovalOutput(ToolOutput):
+    selection_id: str
+    selection_sha256: str
+    predecessor_selection_id: str
+    approval_ref: str
 
 
 class ProjectEstimateOutput(ToolOutput):

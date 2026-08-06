@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from clue_config.contact_research import ContactResearchPolicy
 from clue_config.gateway import GatewayConfig, default_gateway_config
 from clue_config.policy import JurisdictionPolicy
 from clue_config.schema import (
@@ -74,6 +75,7 @@ class ConfigOverlay(BaseModel):
     gateway: GatewayConfig | None = None
     verification_health_thresholds: VerificationHealthThresholds | None = None
     supervisor_policy: SupervisorPolicy | None = None
+    contact_research_policy: ContactResearchPolicy | None = None
     # M13.4/D7 — whether the cost & progress ObservabilitySurface is exposed to the client. A
     # top-level scalar (not a sub-tree) so a client can flip *just* this flag without re-supplying a
     # whole sub-object (ConfigOverlay has no partial sub-tree merge).
@@ -106,6 +108,7 @@ class Config(BaseModel):
     gateway: GatewayConfig = Field(default_factory=default_gateway_config)
     verification_health_thresholds: VerificationHealthThresholds = VerificationHealthThresholds()
     supervisor_policy: SupervisorPolicy = SupervisorPolicy()
+    contact_research_policy: ContactResearchPolicy = ContactResearchPolicy()
     # M13.4/D7 — whether the cost & progress ObservabilitySurface read projections are exposed to
     # the
     # client (cost pass-through) vs. kept as an internal control. Defaults to the recommended

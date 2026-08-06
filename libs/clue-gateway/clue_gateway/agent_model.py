@@ -113,7 +113,7 @@ class GovernedAgentChatModel(BaseChatModel):
         self,
         tools: Sequence[dict[str, Any] | type | Any],
         *,
-        tool_choice: str | None = None,
+        tool_choice: dict[str, Any] | str | bool | None = None,
         **kwargs: Any,
     ) -> Runnable[Any, AIMessage]:
         """Bind standard tool schemas while keeping calls inside this governed wrapper."""
@@ -121,8 +121,9 @@ class GovernedAgentChatModel(BaseChatModel):
         formatted = [
             provider_compatible_tool_schema(convert_to_openai_tool(tool)) for tool in tools
         ]
-        if tool_choice is not None:
-            kwargs["tool_choice"] = tool_choice
+        normalized_choice = _normalize_tool_choice(tool_choice, tools=formatted)
+        if normalized_choice is not None:
+            kwargs["tool_choice"] = normalized_choice
         return self.bind(tools=formatted, **kwargs)
 
     def _generate(
@@ -513,6 +514,44 @@ class OpenRouterAgentModelProvider:
 def _served_model_from_result(result: ChatResult, *, fallback: str) -> str:
     output = result.llm_output or {}
     return str(output.get("model_name") or output.get("model") or fallback)
+
+
+def _normalize_tool_choice(
+    tool_choice: dict[str, Any] | str | bool | None,
+    *,
+    tools: Sequence[dict[str, Any]],
+) -> dict[str, Any] | str | None:
+    """Normalize LangChain's provider-neutral choices to the OpenAI Responses contract.
+
+    ``create_agent`` deliberately binds ``ToolStrategy`` schemas with ``"any"``.  OpenAI and
+    OpenRouter spell the same requirement ``"required"``.  ``ChatOpenAI.bind_tools`` normally
+    performs this conversion, along with converting an exact tool name to the function-choice
+    object, but this governed fallback wrapper binds the already-formatted tools to itself so that
+    retries remain under one authority.  The translation therefore belongs here, at that same
+    provider boundary; forwarding ``"any"`` makes a live Responses request invalid before the
+    model or any governed tool can run.
+    """
+
+    if tool_choice is None or tool_choice is False:
+        return None
+    if tool_choice is True:
+        return "required"
+    if isinstance(tool_choice, dict):
+        return tool_choice
+    if tool_choice == "any":
+        return "required"
+    if tool_choice in {"auto", "none", "required"}:
+        return tool_choice
+
+    tool_names = {
+        str(function["name"])
+        for tool in tools
+        if isinstance((function := tool.get("function")), dict)
+        and isinstance(function.get("name"), str)
+    }
+    if tool_choice in tool_names:
+        return {"type": "function", "function": {"name": tool_choice}}
+    raise ValueError(f"tool_choice names no bound function: {tool_choice!r}")
 
 
 def _stamp_answering_model(message: BaseMessage, *, fallback: str) -> None:

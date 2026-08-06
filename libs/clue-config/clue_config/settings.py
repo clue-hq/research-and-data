@@ -12,13 +12,20 @@ The ICP synthesis model id (M5.2) is the first live setting here; it also feeds
 
 from __future__ import annotations
 
-from typing import Any, Final, Literal
+import json
+from decimal import Decimal
+from typing import Annotated, Any, Final, Literal
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Canonical fallback when ``CLUE_SYNTHESIS_MODEL`` is unset — keep in sync with GatewayConfig docs.
 DEFAULT_SYNTHESIS_MODEL: Final = "openai/gpt-5.6-terra"
+
+_ALLOWLIST_FORMAT_ERROR: Final = (
+    'CLUE_AGENT_WORKSPACE_ALLOWLIST must be a JSON array (["ws-a","ws-b"]) or a comma-separated '
+    "list (ws-a,ws-b)"
+)
 
 
 class Settings(BaseSettings):
@@ -62,6 +69,62 @@ class Settings(BaseSettings):
     # The deep-phase concurrency window — account jobs in flight at once (REQ-10 ~16–32; the
     # accounts-per-pass half of the cost dial). Env: ``CLUE_FLEET_DEEP_WINDOW``.
     fleet_deep_window: int = 16
+
+    # --- Exa Websets durable discovery lifecycle (M6A D3) -------------------------------
+    # Default-off until the deployment has Websets API entitlement. The webhook HTTP route is
+    # independently exposed when its secret is configured; this switch starts the poll worker.
+    # It deliberately does NOT authorize new paid Websets: deployments may need to drain/reconcile
+    # existing operations while preventing any new spend.
+    # Env: CLUE_EXA_WEBSETS_LIFECYCLE_ENABLED / CLUE_EXA_WEBSETS_POLL_WORKER_INTERVAL_S.
+    exa_websets_lifecycle_enabled: bool = False
+    exa_websets_poll_worker_interval_s: float = Field(default=1.0, gt=0)
+    # Independent master authorization for confirmed-ICP -> paid Webset acquisition (M6A D6).
+    # Production also requires lifecycle_enabled so originated work cannot be left undrained.
+    # Env: CLUE_EXA_WEBSETS_ACQUISITION_ENABLED.
+    exa_websets_acquisition_enabled: bool = False
+    # Independent authorization for post-seal, explicitly targeted E1 imports. The lifecycle
+    # worker still drains already-created E1 operations whenever Websets lifecycle is enabled.
+    # Env: CLUE_EXA_TARGETED_ENRICHMENT_ENABLED.
+    exa_targeted_enrichment_enabled: bool = False
+    # Independent default-off authorization and bounded wire-policy knobs for target-locked Exa
+    # Search account-deep acquisition (M8B A0/E0). This is not Websets discovery or post-seal
+    # Websets import; neither existing Exa flag implicitly enables it.
+    # Env: CLUE_EXA_ACCOUNT_DEEP_ACQUISITION_ENABLED / CLUE_EXA_ACCOUNT_DEEP_SEARCH_TYPE /
+    # CLUE_EXA_ACCOUNT_DEEP_MAX_RESULTS / CLUE_EXA_ACCOUNT_DEEP_MAX_ADDITIONAL_QUERIES.
+    exa_account_deep_acquisition_enabled: bool = False
+    exa_account_deep_search_type: Literal["deep", "deep-reasoning"] = "deep-reasoning"
+    # Exa's public endpoint currently admits up to 100, but the accepted Clue policy cap is 50.
+    exa_account_deep_max_results: int = Field(default=50, ge=1, le=50)
+    exa_account_deep_max_additional_queries: int = Field(default=10, ge=0, le=10)
+    # Independent default-off authorization for exact selected-contact Exa Search (M8C C6).
+    # Account-profile acquisition never implicitly enables personal/contact research.
+    # Env: CLUE_EXA_CONTACT_DEEP_ACQUISITION_ENABLED.
+    exa_contact_deep_acquisition_enabled: bool = False
+    # Exact selected-contact channel work remains independently default-off and additionally
+    # requires a concrete validator binding at composition. A coarse directive flag cannot enable
+    # this deployment switch. Env: CLUE_CONTACT_CHANNEL_ENRICHMENT_ENABLED.
+    contact_channel_enrichment_enabled: bool = False
+    # One provider-neutral due-operation scan serves committee and contact waits in C6.
+    # Env: CLUE_EXTERNAL_RESEARCH_WAKE_WORKER_INTERVAL_S.
+    external_research_wake_worker_interval_s: float = Field(default=1.0, gt=0)
+    # Independent authorization for the bounded, pre-seal Sumble organization-field waterfall.
+    # This is deliberately separate from post-selection S1: enabling optional jobs/technology work
+    # must not silently authorize discovery-stage spend, or vice versa.
+    # Env: CLUE_SUMBLE_DISCOVERY_GAP_ENRICHMENT_ENABLED.
+    sumble_discovery_gap_enrichment_enabled: bool = False
+    # Independent authorization and plan-specific monetary conversion for post-selection Sumble S1.
+    # Provider credits remain the authoritative charged unit; zero means no honest subscription
+    # allocation has been configured and monetary reporting stays zero rather than being invented.
+    # Env: CLUE_SUMBLE_ACCOUNT_GAP_ENRICHMENT_ENABLED / CLUE_SUMBLE_CENTS_PER_CREDIT.
+    sumble_account_gap_enrichment_enabled: bool = False
+    sumble_cents_per_credit: Decimal = Field(default=Decimal(0), ge=0)
+    # Independent, default-off authorization for S2 no-reveal Teams + People acquisition during
+    # account-deep research. Enabling S1 never enables personal-data acquisition implicitly.
+    # Env: CLUE_SUMBLE_COMMITTEE_ACQUISITION_ENABLED / CLUE_SUMBLE_COMMITTEE_POLL_AFTER_S /
+    # CLUE_SUMBLE_COMMITTEE_WAKE_WORKER_INTERVAL_S.
+    sumble_committee_acquisition_enabled: bool = False
+    sumble_committee_poll_after_s: int = Field(default=30, ge=1)
+    sumble_committee_wake_worker_interval_s: float = Field(default=1.0, gt=0)
 
     # --- C5 Recipe #1 new-run routing -------------------------------------------------------
     # Master switch. False is a hard off regardless of allowlist/percentage; existing runs are
@@ -113,9 +176,33 @@ class Settings(BaseSettings):
     # Env: ``CLUE_AGENT_STAGE0_ROUTING_ENABLED`` / ``CLUE_AGENT_ACCOUNT_ROUTING_ENABLED``.
     agent_stage0_routing_enabled: bool = False
     agent_account_routing_enabled: bool = False
+    # M8D R10 production cutover for the separately launched account/contact ``create_agent()``
+    # runs. This switch owns only the shared entity-research worker and launch/read tools; it does
+    # not authorize a provider. Exa/Sumble/channel switches above remain independent hard gates.
+    # Env: ``CLUE_ENTITY_RESEARCH_RUNTIME_ENABLED``.
+    entity_research_runtime_enabled: bool = False
+    # R9 requires a positive worst-case monetary reservation even when a subscription provider
+    # reports credits while ``sumble_cents_per_credit`` is intentionally zero. This admission
+    # floor is released after settlement and is never recorded as spend. It is policy, not an
+    # invented provider price. Env: ``CLUE_ENTITY_RESEARCH_UNPRICED_RESERVATION_CENTS``.
+    entity_research_unpriced_reservation_cents: Decimal = Field(default=Decimal(1), gt=0)
+    # One process-wide provider permit policy is shared by account/contact jobs. Exact per-run and
+    # per-job concurrency limits are still enforced separately by the R2/R9 substrate.
+    # Env: ``CLUE_ENTITY_RESEARCH_PROVIDER_CONCURRENCY_LIMIT``.
+    entity_research_provider_concurrency_limit: int = Field(default=8, ge=1, le=1024)
+    # R5 structured Sumble actions retain the S1 per-request credit cap in addition to monetary
+    # admission. The compiler still raises when a selected field set has a larger documented
+    # bounded maximum. Env: ``CLUE_ENTITY_RESEARCH_SUMBLE_PROVIDER_CREDIT_CAP``.
+    entity_research_sumble_provider_credit_cap: int = Field(default=25, ge=1, le=10_000)
     # Explicit canary workspace ids and deterministic workspace+surface percentage cohort.
     # Env: ``CLUE_AGENT_WORKSPACE_ALLOWLIST`` / ``CLUE_AGENT_CANARY_PERCENT``.
-    agent_workspace_allowlist: tuple[str, ...] = ()
+    #
+    # ``NoDecode`` hands the raw environment string to the validator below instead of letting
+    # pydantic-settings JSON-decode it first: its decode failure is a ``SettingsError`` raised
+    # while *building* the settings object, so one malformed allowlist takes down every unrelated
+    # setting with an error that names neither the accepted formats nor the fix. (Seen live: a
+    # shell ``source .env`` strips the JSON string quotes, leaving ``[ws-a]``.)
+    agent_workspace_allowlist: Annotated[tuple[str, ...], NoDecode] = ()
     agent_canary_percent: int = Field(default=0, ge=0, le=100)
     # Absolute API-root ceiling for one governed account-agent plan. The prepared runner further
     # clamps this to the account's durable research budget when one exists.
@@ -225,6 +312,32 @@ class Settings(BaseSettings):
     # the live tail drains the remainder, and in replay-then-close mode this bounds one connect's
     # backlog). Env: ``CLUE_SSE_REPLAY_PAGE_LIMIT``.
     sse_replay_page_limit: int = 10_000
+
+    @field_validator("agent_workspace_allowlist", mode="before")
+    @classmethod
+    def _parse_agent_workspace_allowlist(cls, value: Any) -> Any:
+        """Accept a JSON array *or* a plain comma-separated list of workspace ids.
+
+        Both spellings survive the ways this value actually reaches a process (a JSON array in a
+        ``.env`` file; a bare comma-separated list that a shell ``source`` cannot mangle). A value
+        that is neither fails as *this* field, with a message naming the variable and both accepted
+        formats, rather than aborting the construction of every other setting.
+        """
+
+        if not isinstance(value, str):
+            return value
+        raw = value.strip()
+        if not raw:
+            return ()
+        if raw.startswith("["):
+            try:
+                decoded = json.loads(raw)
+            except ValueError as exc:
+                raise ValueError(_ALLOWLIST_FORMAT_ERROR) from exc
+            if not isinstance(decoded, list):
+                raise ValueError(_ALLOWLIST_FORMAT_ERROR)
+            return decoded
+        return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
 def load_settings(**kwargs: Any) -> Settings:

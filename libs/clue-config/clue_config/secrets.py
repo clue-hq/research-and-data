@@ -90,6 +90,9 @@ class Secrets(BaseSettings):
     builtwith_api_key: SecretStr | None = None
     duns_api_key: SecretStr | None = None
     exa_api_key: SecretStr | None = None
+    # HMAC secret configured on the Exa Websets webhook, distinct from the API key.
+    # Env: CLUE_EXA_WEBSETS_WEBHOOK_SECRET.
+    exa_websets_webhook_secret: SecretStr | None = None
     sumble_api_key: SecretStr | None = None
     parallel_api_key: SecretStr | None = None
     firecrawl_api_key: SecretStr | None = None

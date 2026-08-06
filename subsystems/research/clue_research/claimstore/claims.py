@@ -50,14 +50,17 @@ _INSERT_SQL = text(
     """
     INSERT INTO claim (
         id, entity_id, entity_type, field_key, value_json, source_url, source_key, artifact_key,
-        source_tier,
+        source_operation_ref, source_snapshot_ref, source_request_ref,
+        provenance_kind, source_tier,
         extraction_method, evidence_span, confidence, corroborations, observed_at,
         collected_at, cost_cents, run_id, research_mode, superseded_by, verification_status,
         identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, workspace_id,
         product_id
     ) VALUES (
         :id, :entity_id, CAST(:entity_type AS entity_type), :field_key,
-        CAST(:value_json AS jsonb), :source_url, :source_key, :artifact_key, :source_tier,
+        CAST(:value_json AS jsonb), :source_url, :source_key, :artifact_key,
+        :source_operation_ref, :source_snapshot_ref, :source_request_ref,
+        CAST(:provenance_kind AS claim_provenance_kind), :source_tier,
         CAST(:extraction_method AS extraction_method), :evidence_span,
         :confidence, :corroborations, :observed_at, :collected_at, :cost_cents, :run_id,
         CAST(:research_mode AS research_mode), :superseded_by,
@@ -74,6 +77,7 @@ _INSERT_SQL = text(
 # future column add stay in one place.
 _SELECT_COLUMNS = (
     "id, entity_id, entity_type, field_key, value_json, source_url, source_key, artifact_key, "
+    "source_operation_ref, source_snapshot_ref, source_request_ref, provenance_kind, "
     "source_tier, "
     "extraction_method, evidence_span, confidence, corroborations, observed_at, collected_at, "
     "cost_cents, run_id, research_mode, superseded_by, verification_status, "
@@ -115,6 +119,10 @@ def _insert_params(claim: Claim) -> dict[str, object]:
         "source_url": claim.source_url,
         "source_key": claim.source_key,
         "artifact_key": claim.artifact_key,
+        "source_operation_ref": claim.source_operation_ref,
+        "source_snapshot_ref": claim.source_snapshot_ref,
+        "source_request_ref": claim.source_request_ref,
+        "provenance_kind": claim.provenance_kind.value if claim.provenance_kind else None,
         "source_tier": claim.source_tier,
         "extraction_method": claim.extraction_method.value,
         "evidence_span": claim.evidence_span,
@@ -160,6 +168,10 @@ def _row_to_claim(row: dict[str, object]) -> Claim:
             "source_url": row["source_url"],
             "source_key": row.get("source_key"),
             "artifact_key": row.get("artifact_key"),
+            "source_operation_ref": row.get("source_operation_ref"),
+            "source_snapshot_ref": row.get("source_snapshot_ref"),
+            "source_request_ref": row.get("source_request_ref"),
+            "provenance_kind": row.get("provenance_kind"),
             "source_tier": row["source_tier"],
             "extraction_method": row["extraction_method"],
             "evidence_span": row["evidence_span"],

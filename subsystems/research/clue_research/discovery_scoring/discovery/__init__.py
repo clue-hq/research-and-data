@@ -25,6 +25,10 @@ from clue_research.discovery_scoring.discovery.channels import (
     DiscoveryChannel,
     DiscoveryQuery,
 )
+from clue_research.discovery_scoring.discovery.field_policy import (
+    DISCOVERY_ENVELOPE_POLICY_V1,
+    REVENUE_BAND_OPTIONS,
+)
 from clue_research.discovery_scoring.discovery.hypothesis import (
     CandidateHypothesis,
     CandidateRecord,
@@ -58,4 +62,6 @@ __all__ = [
     "DEFAULT_DISCOVERY_CONFIG",
     "StoppingReason",
     "LOOKALIKE_CHANNEL",
+    "DISCOVERY_ENVELOPE_POLICY_V1",
+    "REVENUE_BAND_OPTIONS",
 ]

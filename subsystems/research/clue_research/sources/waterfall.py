@@ -276,6 +276,7 @@ async def resolve_field(
     # Seeded with the caller's prior spend so the envelope bounds (cost_so_far + this call); the
     # result's total_cost_cents is the delta (this call's spend only).
     budget = BudgetTracker(envelope_cents=budget_envelope, spent_cents=cost_so_far)
+    budget_skipped = False
     ran_any = False
     stop_reason: StopReason | None = None
 
@@ -326,22 +327,34 @@ async def resolve_field(
                     break
                 continue
 
-        # Budget pre-check (only for a step that will actually call a resolver): the manifest cost
-        # is the pre-spend estimate (substrate §4 / D7).
-        if budget.would_exceed(manifest.cost_cents):
-            steps.append(
-                TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.BUDGET_SKIPPED)
-            )
-            stop_reason = StopReason.BUDGET_STOP
-            break
-
-        # Dispatch through the registry binding ONLY (the engine never imports a resolver).
+        # Resolve the binding before the budget check so an already-paid immutable snapshot can
+        # declare itself materialization-only.  Such a resolver performs no provider I/O and must
+        # neither consume fresh budget headroom nor copy the operation's settled cost onto every
+        # field.  An ordinary/unbound resolver retains the manifest estimate semantics.
         try:
             resolver = get_resolver(source_key)
         except NoResolverBoundError:
+            resolver = None
+        if resolver is None:
+            # An unbound source cannot spend. Record the miss and continue before consulting the
+            # budget so an unavailable higher-priority source cannot hide a later zero-cost
+            # snapshot materializer behind a fictitious manifest estimate.
             steps.append(
                 TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.NO_RESOLVER)
             )
+            continue
+        materialization_only = bool(getattr(resolver, "materialization_only", False))
+        estimated_cost = Decimal(0) if materialization_only else manifest.cost_cents
+
+        # Budget pre-check (only for a step that would incur new spend): the manifest cost is the
+        # live-call estimate (substrate §4 / D7).
+        if budget.would_exceed(estimated_cost):
+            steps.append(
+                TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.BUDGET_SKIPPED)
+            )
+            budget_skipped = True
+            # A later resolver may be a zero-cost/materialization-only view over already-paid
+            # evidence. Skipping one unaffordable source must not hide that evidence.
             continue
 
         # Per-source gate (injected seam): consulted only for a step that will actually call a
@@ -419,7 +432,12 @@ async def resolve_field(
                 # every written claim (decision #6): a public-footprint fact drops the tenant; a
                 # crm_import / scoring / resonance / personal claim is bound tenant-private. A
                 # private-classifying claim with no workspace_id fails loud here (no silent leak).
-                final = stamp_reuse(final, workspace_id=workspace_id, policy=reuse_policy)
+                final = stamp_reuse(
+                    final,
+                    workspace_id=workspace_id,
+                    policy=reuse_policy,
+                    declared_scope=field_def.reuse_scope,
+                )
                 if product_id is not None:
                     final = revalidate_with(final, product_id=product_id)
                 refs.append(await insert_claim(conn, final))
@@ -431,7 +449,7 @@ async def resolve_field(
             # manifest's per-call cost for an empty (or fully tagger-dropped) result (substrate §4 /
             # D7; M4.4 cost AC). A claim-bearing result carries that cost on its first claim.
             if not kept:
-                step_cost = manifest.cost_cents
+                step_cost = Decimal(0) if materialization_only else manifest.cost_cents
             best = first_confident_claim(kept, threshold)
             apply_attributes(
                 span, {ATTR_COST_CENTS: step_cost, "best_confidence": _max_confidence(kept)}
@@ -473,7 +491,10 @@ async def resolve_field(
         # No confident hit and no budget stop. If at least one resolver ran (or was reused), the
         # tiers are genuinely exhausted; if NOTHING ran (empty plan, all inactive/unregistered, or
         # only unbound tier-4 placeholders), it is no_resolver — a correct flagged-empty output.
-        stop_reason = StopReason.TIER_EXHAUSTED if ran_any else StopReason.NO_RESOLVER
+        if budget_skipped:
+            stop_reason = StopReason.BUDGET_STOP
+        else:
+            stop_reason = StopReason.TIER_EXHAUSTED if ran_any else StopReason.NO_RESOLVER
 
     result = WaterfallResult(
         entity_id=entity.entity_id,

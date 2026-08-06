@@ -27,6 +27,7 @@ from clue_agents import (
     DelegationResult,
     ExactAgentToolSurfaceMiddleware,
     GovernedOperationReceipt,
+    ProjectContextArtifact,
     ScriptedAgentChatModel,
     SpecialistTaskEnvelope,
     ValidatedOperation,
@@ -230,9 +231,18 @@ class _DelegationArtifacts:
 
 
 class _DelegationBackend:
+    _BODIES = {
+        "context/account.md": "Canonical account evidence.",
+        "context/project/account-deep-steering.json": (
+            '{"card_kind":"account_deep_steering","launch_state":"not_launched"}'
+        ),
+        "context/project/research-directive.json": (
+            '{"directive_ref":"research-directive:directive-1:v1"}'
+        ),
+    }
+
     async def stat_entry(self, path: str) -> WorkspaceEntry:
-        assert path == "context/account.md"
-        body = b"Canonical account evidence."
+        body = self._BODIES[path].encode()
         return WorkspaceEntry(
             path=path,
             kind="file",
@@ -242,8 +252,7 @@ class _DelegationBackend:
         )
 
     async def read_text(self, path: str) -> str:
-        assert path == "context/account.md"
-        return "Canonical account evidence."
+        return self._BODIES[path]
 
 
 class _FinalizingExecution:
@@ -397,6 +406,28 @@ def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> No
     assert calls[1]["tool_choice"] == "finalize_turn"
     assert calls[1]["tool_names"] == ("finalize_turn",)
     assert "What problem does the product solve?" in str(calls[1]["messages"])
+
+
+def test_governed_surface_uses_tool_specific_model_guidance_without_moving_schema_pins() -> None:
+    request, resolved = _request()
+    toolbelt = build_toolbelt(storage=None, gateway=None)
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=toolbelt,
+        execution=cast(Any, _Execution()),
+        lease=cast(Any, object()),
+        artifacts=cast(Any, object()),
+    )
+    built = {tool.name: tool for tool in factory.build()}
+
+    # M8D R10: the retired account-deep launch is exact-replay-only — no active role builds it —
+    # while its registry descriptor (and therefore its historical schema pin) must not move.
+    assert "launch_account_deep" not in built
+    assert "non-spending immutable" in built["draft_account_research_directive"].description
+    assert toolbelt.descriptor("launch_account_deep").input_schema_sha256 == (
+        "ccb1246db77aeac6810baab769838993cc132fec9217eaecf07da9cc207d650f"
+    )
 
 
 def test_finalize_turn_derives_missing_next_action_from_exact_awaiting_input_message() -> None:
@@ -710,3 +741,109 @@ def test_c66_delegation_tool_freezes_exact_task_files_and_refs_before_child_wake
     )
     assert task.domain_refs[0].workspace_id == request.constitution.workspace_id
     assert task.required_output_path == "outputs/review-verdict.md"
+
+
+def test_o3_research_delegation_carries_frozen_steering_and_directive_files_and_refs() -> None:
+    request, resolved = _request()
+    steering_ref = request.constitution.focus_refs[0].model_copy(
+        update={
+            "object_type": "project_run",
+            "object_id": "project-run-1",
+            "version": None,
+        }
+    )
+    directive_ref = request.constitution.focus_refs[0].model_copy(
+        update={
+            "object_type": "research_directive",
+            "object_id": "directive-1",
+            "version": 1,
+        }
+    )
+    request = request.model_copy(
+        update={
+            "constitution": request.constitution.model_copy(
+                update={
+                    "project_context_artifacts": (
+                        ProjectContextArtifact(
+                            name="account-deep-steering",
+                            artifact_ref=artifact("account-deep-steering.json"),
+                            domain_ref=steering_ref,
+                        ),
+                        ProjectContextArtifact(
+                            name="research-directive",
+                            artifact_ref=artifact("research-directive.json"),
+                            domain_ref=directive_ref,
+                        ),
+                    )
+                }
+            )
+        }
+    )
+    execution = _DelegationExecution()
+    artifacts = _DelegationArtifacts()
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, SimpleNamespace(backend=_DelegationBackend())),
+        artifacts=cast(Any, artifacts),
+    )
+    runtime = DeepAgentTurnRuntime(
+        models=_Models(
+            (
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "delegate_specialist",
+                            "args": {
+                                "role": "research",
+                                "goal": "Research this account under confirmed direction.",
+                                "instructions": "Use only the governed directive.",
+                                "verbatim_context": [],
+                                "canonical_paths": [],
+                                "domain_refs": [],
+                            },
+                            "id": "delegate-research-a2",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(content="Parent intentionally did not finalize."),
+                AIMessage(content="Parent still did not finalize."),
+            )
+        ),
+        execution=execution,
+        max_runtime_s=5,
+    )
+
+    outcome = run_async(
+        runtime.run(
+            request=request,
+            resolved_profile=resolved,  # type: ignore[arg-type]
+            context=AssembledAgentContext(
+                manifest=context_manifest(),
+                messages=(HumanMessage(content="Delegate the governed research."),),
+            ),
+            backend=None,
+            governed_tools=factory.build(),
+        )
+    )
+
+    assert outcome.failure_code == "missing_finalize"
+    step = execution.validated_plans[0].steps[0]
+    assert isinstance(step, PlanDelegationStep)
+    assert step.granted_paths == (
+        "context/delegated/00-account-deep-steering.json",
+        "context/delegated/01-research-directive.json",
+    )
+    assert step.domain_refs == (steering_ref, directive_ref)
+    task = SpecialistTaskEnvelope.model_validate_json(
+        artifacts.data[step.task_artifact_ref.artifact_key]
+    )
+    assert tuple(item.source_path for item in task.file_grants) == (
+        "context/project/account-deep-steering.json",
+        "context/project/research-directive.json",
+    )
+    assert task.domain_refs == (steering_ref, directive_ref)

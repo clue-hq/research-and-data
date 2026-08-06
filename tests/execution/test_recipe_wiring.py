@@ -18,6 +18,7 @@ from clue_execution import (
 )
 from clue_research.claimstore import load_core_pack
 from clue_research.icp import load_starter_packs
+from clue_research.identity import insert_account_entity
 from clue_research.sources import seed_source_manifests
 from clue_research.stage0 import ensure_readiness_spec
 from clue_storage import record_artifact
@@ -110,6 +111,12 @@ def test_database_adapters_enforce_retirement_erasure_and_live_memory_switch() -
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             workspace_id = await seed_workspace(conn, "ws-c5-pins")
+            account_id = await insert_account_entity(
+                conn,
+                workspace_id=workspace_id,
+                canonical_name="C5 Pinned Account",
+                primary_domain="c5-pinned.example",
+            )
             await load_core_pack(conn)
             await load_starter_packs(conn)
             await seed_source_manifests(conn)
@@ -164,6 +171,7 @@ def test_database_adapters_enforce_retirement_erasure_and_live_memory_switch() -
                         ),
                         PinRequest(kind="readiness_policy", key="default", version="1"),
                         PinRequest(kind="source_profile", key="frontier_ai", version="1"),
+                        PinRequest(kind="account", key=str(account_id), version="1"),
                     )
                 ),
                 context=context,

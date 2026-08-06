@@ -486,9 +486,7 @@ class DeterministicResearchViewComposer:
 
         batch_method = getattr(self._governance, "resolve_statements", None)
         governed = (
-            await batch_method(request, subject, candidates)
-            if batch_method is not None
-            else {}
+            await batch_method(request, subject, candidates) if batch_method is not None else {}
         )
         member_ids = {
             UUID(str(subject.entity_id)),

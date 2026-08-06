@@ -23,8 +23,14 @@ from clue_research.profiling.committee.fields import (
     COMMITTEE_FIELD_KEYS,
     COMMITTEE_PACK,
     CONTACT_CLASS,
+    CURRENT_LOCATION,
+    CURRENT_TITLE,
+    JOB_FUNCTION,
+    JOB_LEVEL,
+    ORGANIZATION_RELATIONSHIP,
     PERSONA,
     ROLE_ON_COMMITTEE,
+    TEAM_MEMBERSHIP,
     load_committee_pack,
 )
 from clue_research.profiling.committee.results import (
@@ -43,6 +49,8 @@ from clue_research.profiling.committee.roles import (
     title_seniority,
 )
 from clue_research.profiling.committee.sources import (
+    CandidateFactProvenance,
+    CandidateProfessionalFact,
     CommitteePersonCandidate,
     CommitteeSource,
     order_committee_sources,
@@ -53,12 +61,17 @@ from clue_research.profiling.committee.stopping import (
     CommitteeStoppingRule,
     CommitteeStopReason,
 )
-from clue_research.profiling.committee.worker import CommitteeAspectWorker, discover_committee
+from clue_research.profiling.committee.worker import (
+    CommitteeAspectWorker,
+    ProfessionalFactReplayConflict,
+    discover_committee,
+)
 
 __all__ = [
     # worker entrypoint + M7 adapter
     "discover_committee",
     "CommitteeAspectWorker",
+    "ProfessionalFactReplayConflict",
     # result / config
     "CommitteeResult",
     "CommitteeMemberRef",
@@ -70,10 +83,18 @@ __all__ = [
     "ROLE_ON_COMMITTEE",
     "PERSONA",
     "CONTACT_CLASS",
+    "CURRENT_TITLE",
+    "JOB_FUNCTION",
+    "JOB_LEVEL",
+    "TEAM_MEMBERSHIP",
+    "CURRENT_LOCATION",
+    "ORGANIZATION_RELATIONSHIP",
     "load_committee_pack",
     # people-source seam
     "CommitteeSource",
     "CommitteePersonCandidate",
+    "CandidateFactProvenance",
+    "CandidateProfessionalFact",
     "order_committee_sources",
     # existence gate
     "admit_candidate",

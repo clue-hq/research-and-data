@@ -30,6 +30,7 @@ from clue_research.identity import (
     insert_account_entity,
     list_open_tasks,
 )
+from clue_storage import artifact_key, content_address, record_artifact
 from tests._workspace import DEFAULT_TEST_WORKSPACE as WS
 from tests._workspace import seed_workspace
 
@@ -160,6 +161,82 @@ def test_admit_is_idempotent_on_reattempt() -> None:
             assert first.discovery_provenance_claim_id == second.discovery_provenance_claim_id
             assert first.account_entity_id is not None
             assert len(await _provenance_claims(conn, first.account_entity_id)) == 1
+
+    run_async(_run())
+
+
+def test_durable_item_artifact_is_the_provenance_replay_identity() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            run_id = new_run_id()
+            item_one_sha = content_address(b"item-1")
+            item_two_sha = content_address(b"item-2")
+            item_one_key = artifact_key(WS, item_one_sha)
+            item_two_key = artifact_key(WS, item_two_sha)
+            for key, digest in ((item_one_key, item_one_sha), (item_two_key, item_two_sha)):
+                await record_artifact(
+                    conn,
+                    storage_key=key,
+                    workspace_id=WS,
+                    content_sha256=digest,
+                    media_type="application/json",
+                    size_bytes=6,
+                    source_key="exa_websets",
+                )
+            first = await admit(
+                conn,
+                candidate(
+                    matched_channel="exa_websets",
+                    record_ref="item-1",
+                    domain="same.example",
+                    name="Same Company",
+                    artifact_key=item_one_key,
+                    evidence_span="criterion=yes",
+                    discovery_evidence={"provider_item_id": "item-1"},
+                ),
+                run_id,
+                workspace_id=WS,
+            )
+            replay = await admit(
+                conn,
+                candidate(
+                    matched_channel="exa_websets",
+                    record_ref="item-1",
+                    domain="same.example",
+                    name="Same Company",
+                    artifact_key=item_one_key,
+                    evidence_span="criterion=yes",
+                    discovery_evidence={"provider_item_id": "item-1"},
+                ),
+                run_id,
+                workspace_id=WS,
+            )
+            second_item = await admit(
+                conn,
+                candidate(
+                    matched_channel="exa_websets",
+                    record_ref="item-2",
+                    domain="same.example",
+                    name="Same Company",
+                    artifact_key=item_two_key,
+                    evidence_span="criterion=unclear",
+                    discovery_evidence={"provider_item_id": "item-2"},
+                ),
+                run_id,
+                workspace_id=WS,
+            )
+
+            assert (
+                first.account_entity_id == replay.account_entity_id == second_item.account_entity_id
+            )
+            assert first.discovery_provenance_claim_id == replay.discovery_provenance_claim_id
+            assert second_item.discovery_provenance_claim_id != first.discovery_provenance_claim_id
+            assert first.account_entity_id is not None
+            claims = await _provenance_claims(conn, first.account_entity_id)
+            assert {claim.artifact_key for claim in claims} == {
+                item_one_key,
+                item_two_key,
+            }
 
     run_async(_run())
 
