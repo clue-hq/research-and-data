@@ -276,7 +276,7 @@ def test_forbidden_flow_fixture_is_complete_and_unique(
 
 def test_public_r0_contract_schemas_match_frozen_fingerprints() -> None:
     fixture = _read_json("r0_schema_fingerprints.json")
-    assert fixture["contract_version"] == "m8d-r0-v4"
+    assert fixture["contract_version"] == "m8d-r0-v5"
     actual = {
         name: hashlib.sha256(
             json.dumps(

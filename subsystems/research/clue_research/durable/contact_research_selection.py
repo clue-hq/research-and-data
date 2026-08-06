@@ -7,6 +7,7 @@ original receipt.  Provider adapters consume only the validated core model recon
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
@@ -40,6 +41,7 @@ class ContactResearchSelectionReplayConflict(ContactResearchSelectionRepositoryE
 
 class ContactResearchSelectionApprovalKind(StrEnum):
     DIRECTIVE_CONFIRMATION = "directive_confirmation"
+    HUMAN_INITIAL = "human_initial"
     HUMAN_SUCCESSOR = "human_successor"
 
 
@@ -66,8 +68,32 @@ class ContactResearchSelectionCancellation(BaseModel):
     created_at: datetime
 
 
+class ContactResearchSelectionAuthorityRecord(BaseModel):
+    """Indexed current authority used by R7 before creating any fleet job."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    selection: ContactResearchSelection
+    account_run_id: RunId
+    predecessor_id: ContactResearchSelectionId | None
+    approval_id: UUID
+    approval_kind: ContactResearchSelectionApprovalKind
+    approval_operation_id: UUID
+    approved_by: str
+    action_ref: str
+    approved_at: datetime
+    cancelled: bool
+    current_head: bool
+
+
+def _row_data(row: object) -> dict[str, object]:
+    if isinstance(row, Mapping):
+        return {str(key): value for key, value in row.items()}
+    return dict(row._mapping)  # type: ignore[attr-defined]
+
+
 def _selection(row: object) -> tuple[ContactResearchSelection, RunId]:
-    data = dict(row._mapping)  # type: ignore[attr-defined]
+    data = _row_data(row)
     selection = ContactResearchSelection.model_validate(
         {
             "selection_id": data["id"],
@@ -75,11 +101,11 @@ def _selection(row: object) -> tuple[ContactResearchSelection, RunId]:
             "selection_sha256": data["selection_sha256"],
         }
     )
-    return selection, RunId(data["account_run_id"])
+    return selection, RunId(UUID(str(data["account_run_id"])))
 
 
 def _cancellation(row: object) -> ContactResearchSelectionCancellation:
-    data = dict(row._mapping)  # type: ignore[attr-defined]
+    data = _row_data(row)
     data["cancellation_id"] = data.pop("id")
     return ContactResearchSelectionCancellation.model_validate(data)
 
@@ -172,12 +198,18 @@ async def store_contact_research_selection(
         raise ContactResearchSelectionRepositoryError(
             "selection body approval differs from trusted approval authority"
         )
-    if (approval.kind is ContactResearchSelectionApprovalKind.DIRECTIVE_CONFIRMATION) != (
-        predecessor_id is None
+    if predecessor_id is None and approval.kind not in {
+        ContactResearchSelectionApprovalKind.DIRECTIVE_CONFIRMATION,
+        ContactResearchSelectionApprovalKind.HUMAN_INITIAL,
+    }:
+        raise ContactResearchSelectionRepositoryError(
+            "an initial contact selection requires directive or explicit human authority"
+        )
+    if predecessor_id is not None and (
+        approval.kind is not ContactResearchSelectionApprovalKind.HUMAN_SUCCESSOR
     ):
         raise ContactResearchSelectionRepositoryError(
-            "only directive confirmation can approve an initial selection; "
-            "a successor requires explicit human authority"
+            "a contact selection successor requires explicit human authority"
         )
 
     approval_id = uuid4()
@@ -291,6 +323,61 @@ async def get_contact_research_selection(
     if row is None:
         raise ContactResearchSelectionNotFound(str(selection_id))
     return _selection(row)[0]
+
+
+async def contact_research_selection_authority(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    selection_id: ContactResearchSelectionId,
+) -> ContactResearchSelectionAuthorityRecord:
+    """Read the exact approval, cancellation, and linear-head state for one selection."""
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT selection.id, selection.account_run_id, "
+                    "selection.selection_sha256, selection.body_json, "
+                    "selection.predecessor_id, selection.created_at, selection.approval_id, "
+                    "approval.authority_kind::text AS approval_kind, "
+                    "approval.approval_operation_id, approval.approved_by, "
+                    "approval.action_ref, approval.approved_at, "
+                    "EXISTS (SELECT 1 FROM contact_research_selection_cancellation cancellation "
+                    "WHERE cancellation.selection_id=selection.id) AS cancelled, "
+                    "NOT EXISTS (SELECT 1 FROM contact_research_selection successor "
+                    "WHERE successor.predecessor_id=selection.id) AS current_head "
+                    "FROM contact_research_selection selection JOIN "
+                    "contact_research_selection_approval approval "
+                    "ON approval.id=selection.approval_id "
+                    "WHERE selection.workspace_id=:workspace_id AND selection.id=:selection_id"
+                ),
+                {"workspace_id": workspace_id, "selection_id": selection_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        raise ContactResearchSelectionNotFound(str(selection_id))
+    selection, account_run_id = _selection(row)
+    return ContactResearchSelectionAuthorityRecord(
+        selection=selection,
+        account_run_id=account_run_id,
+        predecessor_id=(
+            ContactResearchSelectionId(row["predecessor_id"])
+            if row["predecessor_id"] is not None
+            else None
+        ),
+        approval_id=row["approval_id"],
+        approval_kind=ContactResearchSelectionApprovalKind(row["approval_kind"]),
+        approval_operation_id=row["approval_operation_id"],
+        approved_by=str(row["approved_by"]),
+        action_ref=str(row["action_ref"]),
+        approved_at=row["approved_at"],
+        cancelled=bool(row["cancelled"]),
+        current_head=bool(row["current_head"]),
+    )
 
 
 async def latest_contact_research_selection(
@@ -418,12 +505,14 @@ async def contact_research_selection_cancellation(
 __all__ = [
     "ContactResearchSelectionApprovalAuthority",
     "ContactResearchSelectionApprovalKind",
+    "ContactResearchSelectionAuthorityRecord",
     "ContactResearchSelectionCancellation",
     "ContactResearchSelectionNotFound",
     "ContactResearchSelectionReplayConflict",
     "ContactResearchSelectionRepositoryError",
     "cancel_contact_research_selection",
     "contact_research_selection_cancellation",
+    "contact_research_selection_authority",
     "directive_confirmation_selection_approval",
     "get_contact_research_selection",
     "latest_contact_research_selection",

@@ -324,6 +324,7 @@ class SelectedResearchSubject(BaseModel):
     strong_identity_claim_refs: tuple[NonEmptyStr, ...] = ()
     association_evidence_refs: tuple[NonEmptyStr, ...] = ()
     committee_claim_refs: tuple[NonEmptyStr, ...] = ()
+    contact_authority: SelectedContactResearchAuthority | None = None
 
 
 class FieldSourceAuthority(BaseModel):
@@ -344,6 +345,67 @@ class FieldSourceAuthority(BaseModel):
     def _sources_are_unique(self) -> Self:
         if len(self.source_keys) != len(set(self.source_keys)):
             raise ValueError("field source authority cannot repeat a source")
+        return self
+
+
+class SelectedContactResearchAuthority(BaseModel):
+    """The exact per-contact projection of one durable contact-selection target.
+
+    A contact run may legitimately choose different questions, facets, channels, or budgets for
+    two people.  Keeping those values only on the run-wide selection would authorize every job to
+    consume the union.  R7 therefore freezes the target-local authority here; the run-wide fields
+    remain an index whose values must equal the exact union of these subject projections.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    contact_selection_ref: NonEmptyStr
+    contact_selection_sha256: Sha256
+    contact_intent_ref: NonEmptyStr
+    contact_intent_sha256: Sha256
+    field_plan_ref: NonEmptyStr
+    source_plan_ref: NonEmptyStr
+    admitted_field_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    admitted_source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    field_source_authority: tuple[FieldSourceAuthority, ...] = Field(min_length=1)
+    research_questions: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    facet_keys: tuple[NonEmptyStr, ...] = ()
+    channel_permissions: tuple[ContactChannel, ...] = ()
+    channel_source_keys: tuple[NonEmptyStr, ...] = ()
+    policy_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    budget_envelope_ref: NonEmptyStr
+    budget_cap_cents: Decimal = Field(ge=0)
+    approval_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _exact_target_authority(self) -> Self:
+        for values, message in (
+            (self.admitted_field_keys, "contact target fields must be unique"),
+            (self.admitted_source_keys, "contact target sources must be unique"),
+            (self.research_questions, "contact target questions must be unique"),
+            (self.facet_keys, "contact target facets must be unique"),
+            (self.channel_permissions, "contact target channels must be unique"),
+            (self.channel_source_keys, "contact target channel sources must be unique"),
+            (self.policy_refs, "contact target policy references must be unique"),
+            (self.approval_refs, "contact target approval references must be unique"),
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError(message)
+        _assert_field_axis(
+            ResearchSubjectType.CONTACT,
+            self.admitted_field_keys,
+            context="selected contact target",
+        )
+        authority_fields = tuple(item.field_key for item in self.field_source_authority)
+        if len(authority_fields) != len(set(authority_fields)):
+            raise ValueError("contact target field source authority must be unique by field")
+        if set(authority_fields) != set(self.admitted_field_keys):
+            raise ValueError("contact target source authority must cover every admitted field")
+        sources = {
+            source_key for item in self.field_source_authority for source_key in item.source_keys
+        }
+        if sources != set(self.admitted_source_keys):
+            raise ValueError("contact target sources differ from its field source authority")
         return self
 
 
@@ -415,6 +477,8 @@ class EntityResearchSelection(BaseModel):
                 for subject in self.subjects
             ):
                 raise ValueError("account selection cannot carry contact identity evidence")
+            if any(subject.contact_authority is not None for subject in self.subjects):
+                raise ValueError("account selection cannot carry contact target authority")
         else:
             if self.committee_source_keys:
                 raise ValueError("contact selection cannot authorize committee enumeration")
@@ -432,6 +496,8 @@ class EntityResearchSelection(BaseModel):
                     and not subject.committee_claim_refs
                 ):
                     raise ValueError("committee-selected contacts require committee claim evidence")
+                if subject.contact_authority is None:
+                    raise ValueError("selected contacts require exact target research authority")
         _assert_field_axis(
             self.subject_type,
             self.admitted_field_keys,
@@ -449,6 +515,50 @@ class EntityResearchSelection(BaseModel):
             raise ValueError(
                 "selected sources must equal field authority plus committee source authority"
             )
+        if self.subject_type is ResearchSubjectType.CONTACT:
+            target_authorities = tuple(
+                subject.contact_authority
+                for subject in self.subjects
+                if subject.contact_authority is not None
+            )
+
+            def union(attribute: str) -> tuple[object, ...]:
+                return tuple(
+                    dict.fromkeys(
+                        value
+                        for authority in target_authorities
+                        for value in getattr(authority, attribute)
+                    )
+                )
+
+            target_field_sources: dict[str, list[str]] = {}
+            for authority in target_authorities:
+                for item in authority.field_source_authority:
+                    source_values = target_field_sources.setdefault(item.field_key, [])
+                    source_values.extend(
+                        source for source in item.source_keys if source not in source_values
+                    )
+            global_field_sources = {
+                item.field_key: item.source_keys for item in self.field_source_authority
+            }
+            if global_field_sources != {
+                field_key: tuple(source_keys)
+                for field_key, source_keys in target_field_sources.items()
+            }:
+                raise ValueError(
+                    "contact run field source authority differs from the exact target union"
+                )
+            for attribute, global_values in (
+                ("admitted_field_keys", self.admitted_field_keys),
+                ("admitted_source_keys", self.admitted_source_keys),
+                ("research_questions", self.research_questions),
+                ("facet_keys", self.facet_keys),
+                ("channel_permissions", self.channel_permissions),
+                ("policy_refs", self.policy_refs),
+                ("approval_refs", self.approval_refs),
+            ):
+                if set(union(attribute)) != set(global_values):
+                    raise ValueError(f"contact run {attribute} differs from the exact target union")
         return self
 
 
@@ -495,6 +605,90 @@ class EntityResearchJobAuthorization(BaseModel):
         elif self.parent_account_id is not None:
             raise ValueError("account job cannot carry a contact parent account")
         return self
+
+    @property
+    def selected_subject(self) -> SelectedResearchSubject:
+        return next(
+            subject
+            for subject in self.selection.subjects
+            if subject.subject_entity_id == self.subject_entity_id
+        )
+
+    @property
+    def effective_contact_authority(self) -> SelectedContactResearchAuthority | None:
+        return self.selected_subject.contact_authority
+
+    @property
+    def effective_admitted_field_keys(self) -> tuple[str, ...]:
+        authority = self.effective_contact_authority
+        return (
+            self.selection.admitted_field_keys
+            if authority is None
+            else authority.admitted_field_keys
+        )
+
+    @property
+    def effective_admitted_source_keys(self) -> tuple[str, ...]:
+        authority = self.effective_contact_authority
+        return (
+            self.selection.admitted_source_keys
+            if authority is None
+            else authority.admitted_source_keys
+        )
+
+    @property
+    def effective_field_source_authority(self) -> tuple[FieldSourceAuthority, ...]:
+        authority = self.effective_contact_authority
+        return (
+            self.selection.field_source_authority
+            if authority is None
+            else authority.field_source_authority
+        )
+
+    @property
+    def effective_research_questions(self) -> tuple[str, ...]:
+        authority = self.effective_contact_authority
+        return (
+            self.selection.research_questions if authority is None else authority.research_questions
+        )
+
+    @property
+    def effective_facet_keys(self) -> tuple[str, ...]:
+        authority = self.effective_contact_authority
+        return self.selection.facet_keys if authority is None else authority.facet_keys
+
+    @property
+    def effective_channel_permissions(self) -> tuple[ContactChannel, ...]:
+        authority = self.effective_contact_authority
+        return (
+            self.selection.channel_permissions
+            if authority is None
+            else authority.channel_permissions
+        )
+
+    @property
+    def effective_channel_source_keys(self) -> tuple[str, ...]:
+        authority = self.effective_contact_authority
+        return () if authority is None else authority.channel_source_keys
+
+    @property
+    def effective_policy_refs(self) -> tuple[str, ...]:
+        authority = self.effective_contact_authority
+        return self.selection.policy_refs if authority is None else authority.policy_refs
+
+    @property
+    def effective_budget_envelope_ref(self) -> str:
+        authority = self.effective_contact_authority
+        return (
+            self.selection.budget_envelope_ref
+            if authority is None
+            else authority.budget_envelope_ref
+        )
+
+    @property
+    def effective_approval_refs(self) -> tuple[str, ...]:
+        authority = self.effective_contact_authority
+        return self.selection.approval_refs if authority is None else authority.approval_refs
 
 
 class ResearchRunLifecycleContract(BaseModel):
@@ -1167,5 +1361,6 @@ __all__ = [
     "ResearchRunLifecycleContract",
     "ResearchSelectionBasis",
     "ResearchSubjectType",
+    "SelectedContactResearchAuthority",
     "SelectedResearchSubject",
 ]

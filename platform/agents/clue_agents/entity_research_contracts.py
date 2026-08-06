@@ -182,9 +182,9 @@ class EntityResearchRuntimeContext(FrozenRuntimeModel):
                 raise ValueError("facet agent cannot be constructed when delegation is disabled")
             if scope.child_ordinal > self.facet_contract.max_children:
                 raise ValueError("facet child exceeds the admitted child count")
-            if scope.facet_key not in authorization.selection.facet_keys:
+            if scope.facet_key not in authorization.effective_facet_keys:
                 raise ValueError("facet child key is absent from the exact selection")
-            if scope.parent_budget_envelope_ref != authorization.selection.budget_envelope_ref:
+            if scope.parent_budget_envelope_ref != authorization.effective_budget_envelope_ref:
                 raise ValueError("facet child must share the selected parent budget")
         else:
             if self.role is not expected_role:
@@ -220,21 +220,25 @@ class EntityResearchRuntimeContext(FrozenRuntimeModel):
             "selection_id": str(selection.selection_id),
             "field_plan_ref": selection.field_plan_ref,
             "source_plan_ref": selection.source_plan_ref,
-            "admitted_field_keys": list(selection.admitted_field_keys),
-            "admitted_source_keys": list(selection.admitted_source_keys),
+            "admitted_field_keys": list(authorization.effective_admitted_field_keys),
+            "admitted_source_keys": list(authorization.effective_admitted_source_keys),
             "committee_source_keys": list(selection.committee_source_keys),
             "field_source_authority": [
-                item.model_dump(mode="json") for item in selection.field_source_authority
+                item.model_dump(mode="json")
+                for item in authorization.effective_field_source_authority
             ],
-            "research_questions": list(selection.research_questions),
-            "facet_keys": list(selection.facet_keys),
-            "channel_permissions": [item.value for item in selection.channel_permissions],
-            "policy_refs": list(selection.policy_refs),
-            "budget_envelope_ref": selection.budget_envelope_ref,
+            "research_questions": list(authorization.effective_research_questions),
+            "facet_keys": list(authorization.effective_facet_keys),
+            "channel_permissions": [
+                item.value for item in authorization.effective_channel_permissions
+            ],
+            "channel_source_keys": list(authorization.effective_channel_source_keys),
+            "policy_refs": list(authorization.effective_policy_refs),
+            "budget_envelope_ref": authorization.effective_budget_envelope_ref,
             "job_budget_cap_cents": str(self.job_budget_cap_cents),
             "job_spent_cents": str(self.job_spent_cents),
             "run_budget_remaining_cents": str(self.run_budget_remaining_cents),
-            "approval_refs": list(selection.approval_refs),
+            "approval_refs": list(authorization.effective_approval_refs),
             "job_checkpoint_thread_id": authorization.checkpoint_thread_id,
             "checkpoint_thread_id": self.effective_checkpoint_thread_id,
             "current_state_sha256": self.current_state_sha256,
