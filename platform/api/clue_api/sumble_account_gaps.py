@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -436,7 +436,12 @@ class SumbleAccountGapCoordinator:
         )
         self._materializer = SumbleClaimMaterializer(conn_factory=conn_factory)
 
-    async def start(self, preflight: SumbleAccountGapPreflight) -> SumbleAccountGapResult:
+    async def start(
+        self,
+        preflight: SumbleAccountGapPreflight,
+        *,
+        before_dispatch: Callable[[AccountGapOperation], Awaitable[None]] | None = None,
+    ) -> SumbleAccountGapResult:
         operation, _created = await self._reserve(preflight)
         terminal = self._terminal_result(operation, replay=True)
         if terminal is not None:
@@ -462,6 +467,10 @@ class SumbleAccountGapCoordinator:
             AccountGapOperationState.PLANNED,
             AccountGapOperationState.FAILED_RETRYABLE,
         }:
+            # M8D R5 binds the exact agent/tool cause after durable reservation and before any
+            # snapshot dispatch can be claimed. Callback failure leaves the operation planned.
+            if before_dispatch is not None:
+                await before_dispatch(operation)
             async with self._conn_factory() as conn:
                 claimed = await claim_account_gap_operation(
                     conn,
@@ -965,6 +974,14 @@ class SumbleAccountGapCoordinator:
                     operation_id=operation.operation_id,
                 )
             }
+            snapshot_rows = {
+                item.source_key: item
+                for item in await list_account_gap_snapshots(
+                    conn,
+                    workspace_id=operation.request.workspace_id,
+                    operation_id=operation.operation_id,
+                )
+            }
         for plan in operation.request.fields:
             prior_result = existing_results[str(plan.field_key)]
             if prior_result.state is not AccountGapFieldState.PENDING:
@@ -988,6 +1005,12 @@ class SumbleAccountGapCoordinator:
                 field_key=str(plan.field_key),
                 source_key=source_key,
                 snapshot=snapshot,
+                source_operation_ref=str(operation.operation_id),
+                source_snapshot_ref=(
+                    f"account-gap-snapshot:{operation.operation_id}:{source_key}:"
+                    f"{snapshot_rows[source_key].request_fingerprint}"
+                ),
+                source_request_ref=snapshot.request_id,
             )
             if outcome.provider_claim_id is not None:
                 claim_ids.append(str(outcome.provider_claim_id))
@@ -1184,6 +1207,7 @@ class SumbleAccountGapStarter:
         field_expected_value_credits: Mapping[str, Decimal],
         provider_credit_cap: int,
         allow_unbounded_tech: bool,
+        before_dispatch: Callable[[AccountGapOperation], Awaitable[None]] | None = None,
     ) -> SumbleAccountGapResult:
         field_keys = tuple(sorted(field_expected_value_credits))
         window = f"project-run:{project_run_id}:sumble-gaps:{self._policy.version}"
@@ -1230,7 +1254,8 @@ class SumbleAccountGapStarter:
                     organization_body=organization_body,
                     bounded_provider_units=Decimal(organization_max),
                     maximum_cost_cents=existing.cost_cents_reserved,
-                )
+                ),
+                before_dispatch=before_dispatch,
             )
         preflight = await compile_sumble_account_gap_preflight(
             workspace_id=workspace_id,
@@ -1245,7 +1270,7 @@ class SumbleAccountGapStarter:
             conn_factory=self._conn_factory,
             policy=self._policy,
         )
-        return await self._coordinator.start(preflight)
+        return await self._coordinator.start(preflight, before_dispatch=before_dispatch)
 
 
 def build_production_sumble_account_gap_starter(

@@ -369,6 +369,7 @@ class EntityResearchSelection(BaseModel):
     admitted_field_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
     admitted_source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
     field_source_authority: tuple[FieldSourceAuthority, ...] = Field(min_length=1)
+    committee_source_keys: tuple[NonEmptyStr, ...] = ()
     research_questions: tuple[NonEmptyStr, ...] = Field(min_length=1)
     facet_keys: tuple[NonEmptyStr, ...] = ()
     channel_permissions: tuple[ContactChannel, ...] = ()
@@ -386,6 +387,7 @@ class EntityResearchSelection(BaseModel):
         for values, message in (
             (self.admitted_field_keys, "selected research fields must be unique"),
             (self.admitted_source_keys, "selected research sources must be unique"),
+            (self.committee_source_keys, "selected committee sources must be unique"),
             (self.research_questions, "selected research questions must be unique"),
             (self.facet_keys, "selected contact facets must be unique"),
             (self.channel_permissions, "selected channel permissions must be unique"),
@@ -414,6 +416,8 @@ class EntityResearchSelection(BaseModel):
             ):
                 raise ValueError("account selection cannot carry contact identity evidence")
         else:
+            if self.committee_source_keys:
+                raise ValueError("contact selection cannot authorize committee enumeration")
             if self.account_entity_id is None:
                 raise ValueError("contact selection requires the exact parent account")
             for subject in self.subjects:
@@ -441,8 +445,10 @@ class EntityResearchSelection(BaseModel):
         authority_sources = {
             source_key for item in self.field_source_authority for source_key in item.source_keys
         }
-        if authority_sources != set(self.admitted_source_keys):
-            raise ValueError("selected sources must equal the union of per-field source authority")
+        if authority_sources | set(self.committee_source_keys) != set(self.admitted_source_keys):
+            raise ValueError(
+                "selected sources must equal field authority plus committee source authority"
+            )
         return self
 
 
@@ -782,6 +788,7 @@ class PersistedResearchToolResult(BaseModel):
     requested_field_keys: tuple[NonEmptyStr, ...] = ()
     fields: tuple[ResearchFieldResultProjection, ...] = ()
     discovered_subjects: tuple[ResearchDiscoveredSubjectProjection, ...] = ()
+    confirmed_empty_discovery: bool = False
     delivery: ResearchResultDelivery
     read_tool_address: NonEmptyStr | None = None
     provider_reported_cost_cents: Decimal = Field(ge=0)
@@ -801,8 +808,15 @@ class PersistedResearchToolResult(BaseModel):
                 self.requested_field_keys,
                 context="persisted research result",
             )
-        if not self.fields and not self.discovered_subjects:
+        if not self.fields and not self.discovered_subjects and not self.confirmed_empty_discovery:
             raise ValueError("persisted result requires fields or discovered subjects")
+        if self.confirmed_empty_discovery:
+            if self.subject_type is not ResearchSubjectType.ACCOUNT:
+                raise ValueError("only account research may confirm an empty discovery")
+            if self.requested_field_keys or self.fields or self.discovered_subjects:
+                raise ValueError(
+                    "confirmed empty discovery cannot carry fields or discovered subjects"
+                )
         discovered_ids = tuple(item.target_entity_id for item in self.discovered_subjects)
         if len(discovered_ids) != len(set(discovered_ids)):
             raise ValueError("persisted result cannot repeat a discovered subject")

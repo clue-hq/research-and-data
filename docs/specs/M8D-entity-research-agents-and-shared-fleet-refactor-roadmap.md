@@ -1,7 +1,7 @@
 # M8D — Entity research agents and shared fleet refactor roadmap
 ## `langchain.agents.create_agent` account/contact units over one durable fleet substrate
 
-> **Status:** R0–R4 accepted; R5–R10 have not started.
+> **Status:** R0–R5 accepted; R6–R10 have not started.
 > **Recorded:** 2026-08-06. **Working branch at record time:**
 > `platform/c8-account-profiling-integration`.
 >
@@ -607,6 +607,13 @@ finalization.
 
 **Exit gate:** one account agent demonstrably observes a first result, makes a justified runtime
 decision, and finalizes account+committee without contact deep research.
+
+**Accepted 2026-08-06:** the exact account `create_agent()` composition, result-informed dynamic
+tool choice, bundled Exa qualitative research, independent Sumble structured enrichment,
+provider-neutral additive follow-up, office-coherent Sumble Teams/People committee formation,
+coverage/review/finalization state, operation-idempotent spend folding, isolated-Postgres proof,
+and retained R1 production boundary are recorded in
+`M8D-R5-account-research-agent-acceptance.md`.
 
 ### R6 — Account research fleet and user return
 

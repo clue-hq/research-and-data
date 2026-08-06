@@ -120,7 +120,7 @@
       "account.operational_pain",
       "account.hiring_velocity_eng"
     ],
-    "admitted_source_keys": ["exa_deep", "sumble_jobs", "official_page"],
+    "admitted_source_keys": ["exa_deep", "sumble_jobs", "official_page", "sumble_people"],
     "field_source_authority": [
       {
         "field_key": "account.operational_pain",
@@ -131,6 +131,7 @@
         "source_keys": ["sumble_jobs", "official_page"]
       }
     ],
+    "committee_source_keys": ["sumble_people"],
     "research_questions": ["Where is administrative work creating avoidable burden?"],
     "facet_keys": ["account.workflow"],
     "channel_permissions": [],
@@ -180,6 +181,7 @@
         "source_keys": ["exa_deep"]
       }
     ],
+    "committee_source_keys": [],
     "research_questions": ["What public professional interests are safely attributable?"],
     "facet_keys": ["public_appearances", "published_work"],
     "channel_permissions": ["email", "phone"],

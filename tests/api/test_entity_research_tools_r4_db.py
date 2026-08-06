@@ -724,6 +724,28 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                 "operations": 2,
                 "receipts": 2,
             }
+            folded_spend = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT job.spent_cents AS job_spent, "
+                            "run_row.spent_cents AS run_spent, "
+                            "(SELECT count(*) FROM "
+                            "entity_research_provider_settlement_fold) AS folds "
+                            "FROM entity_research_job job "
+                            "JOIN entity_research_run run_row "
+                            "ON run_row.research_run_id=job.research_run_id "
+                            "WHERE job.job_id=:job_id"
+                        ),
+                        {"job_id": authorization.job_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert Decimal(folded_spend["job_spent"]) == Decimal("16")
+            assert Decimal(folded_spend["run_spent"]) == Decimal("16")
+            assert folded_spend["folds"] == 2
 
             with pytest.raises(DBAPIError, match="append-only"):
                 async with conn.begin_nested():

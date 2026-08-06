@@ -121,6 +121,13 @@
       "expected_error": "entity research selection contains a field outside the contact axis"
     },
     {
+      "case_id": "contact-selection-authorizes-committee-source",
+      "model": "EntityResearchSelection",
+      "base": "contact_selection",
+      "mutations": [{"op": "append", "path": ["committee_source_keys"], "value": "sumble_people"}],
+      "expected_error": "contact selection cannot authorize committee enumeration"
+    },
+    {
       "case_id": "contact-selection-without-strong-identity",
       "model": "EntityResearchSelection",
       "base": "contact_selection",

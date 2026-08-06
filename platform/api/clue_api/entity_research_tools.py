@@ -183,14 +183,17 @@ class ProviderResearchProjectionDraft(BaseModel):
     requested_field_keys: tuple[NonEmptyStr, ...] = ()
     fields: tuple[ResearchFieldResultProjection, ...] = ()
     discovered_subjects: tuple[ResearchDiscoveredSubjectProjection, ...] = ()
+    confirmed_empty_discovery: bool = False
 
     @model_validator(mode="after")
     def _complete_index(self) -> Self:
         returned = tuple(field.field_key for field in self.fields)
         if len(returned) != len(set(returned)) or set(returned) != set(self.requested_field_keys):
             raise ValueError("projection draft must cover each requested field exactly once")
-        if not self.fields and not self.discovered_subjects:
+        if not self.fields and not self.discovered_subjects and not self.confirmed_empty_discovery:
             raise ValueError("projection draft requires fields or discovered subjects")
+        if self.confirmed_empty_discovery and (self.requested_field_keys or self.fields):
+            raise ValueError("confirmed empty discovery cannot carry field-producing output")
         return self
 
 
@@ -253,6 +256,7 @@ class ProviderActionBinding(BaseModel):
 
     action: EntityResearchProviderAction
     version: int = Field(ge=1)
+    args_schema: type[BaseModel] = EntityResearchSemanticToolInput
 
 
 def _event_id(reference: str) -> UUID:
@@ -357,6 +361,12 @@ class EntityResearchToolRequestStore:
             raise EntityResearchToolAuthorityError("semantic tool widened confirmed questions")
         if active.call.tool_name not in context.tool_surface.tool_names:
             raise EntityResearchToolAuthorityError("semantic tool is outside the exact surface")
+        if active.call.tool_name == "discover_buying_committee" and not set(
+            semantic.source_keys
+        ).issubset(selection.committee_source_keys):
+            raise EntityResearchToolAuthorityError(
+                "committee tool widened selected enumeration sources"
+            )
 
         requested_authority: list[FieldSourceAuthority] = []
         for authority in selection.field_source_authority:
@@ -1300,6 +1310,7 @@ class EntityResearchResultStore:
                 lineage=lineage,
                 fields=fields,
                 discovered_subjects=discovered_subjects,
+                confirmed_empty_discovery=draft.confirmed_empty_discovery,
                 delivery=ResearchResultDelivery.INLINE_COMPLETE,
             )
             value_artifacts: dict[tuple[UUID, str], str] = {}
@@ -1335,6 +1346,7 @@ class EntityResearchResultStore:
                     lineage=lineage,
                     fields=fields,
                     discovered_subjects=discovered_subjects,
+                    confirmed_empty_discovery=draft.confirmed_empty_discovery,
                     delivery=ResearchResultDelivery.INDEXED_COMPLETE,
                 )
             else:
@@ -1383,13 +1395,17 @@ class EntityResearchResultStore:
                         (result_id, tool_request_id, provider_observation_id,
                          provider_operation_ref, provider_snapshot_ref, workspace_id,
                          subject_type, target_entity_id,
-                         result_artifact_key, result_sha256, delivery, requested_field_keys)
+                         result_artifact_key, result_sha256, delivery, requested_field_keys,
+                         confirmed_empty_discovery, provider_reported_cost_cents,
+                         settled_cost_cents)
                     VALUES
                         (:result_id, :tool_request_id, :provider_observation_id,
                          :provider_operation_ref, :provider_snapshot_ref, :workspace_id,
                          :subject_type, :target_entity_id,
                          :result_artifact_key, :result_sha256, :delivery,
-                         :requested_field_keys)
+                         :requested_field_keys, :confirmed_empty_discovery,
+                         :provider_reported_cost_cents,
+                         :settled_cost_cents)
                     """
                 ),
                 {
@@ -1405,6 +1421,9 @@ class EntityResearchResultStore:
                     "result_sha256": result_sha,
                     "delivery": result.delivery.value,
                     "requested_field_keys": list(result.requested_field_keys),
+                    "confirmed_empty_discovery": result.confirmed_empty_discovery,
+                    "provider_reported_cost_cents": lineage.provider_reported_cost_cents,
+                    "settled_cost_cents": lineage.settled_cost_cents,
                 },
             )
             flattened = self._flatten_result_fields(
@@ -1478,7 +1497,101 @@ class EntityResearchResultStore:
                             ).hexdigest(),
                         },
                     )
+            await self._fold_settled_spend(
+                conn,
+                request=request,
+                provider_operation_ref=draft.operation.operation_ref,
+                settled_cost_cents=lineage.settled_cost_cents,
+            )
         return result
+
+    @staticmethod
+    async def _fold_settled_spend(
+        conn: AsyncConnection,
+        *,
+        request: GovernedResearchToolRequest,
+        provider_operation_ref: str,
+        settled_cost_cents: Decimal,
+    ) -> None:
+        """Project one provider settlement into R2 counters exactly once per operation."""
+
+        folded = (
+            await conn.execute(
+                text(
+                    "INSERT INTO entity_research_provider_settlement_fold "
+                    "(provider_operation_ref, research_run_id, job_id, settled_cost_cents) "
+                    "VALUES (:operation_ref, :run_id, :job_id, :cost) "
+                    "ON CONFLICT (provider_operation_ref) DO NOTHING "
+                    "RETURNING provider_operation_ref"
+                ),
+                {
+                    "operation_ref": provider_operation_ref,
+                    "run_id": request.research_run_id,
+                    "job_id": request.job_id,
+                    "cost": settled_cost_cents,
+                },
+            )
+        ).scalar_one_or_none()
+        if folded is None:
+            existing = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT research_run_id, job_id, settled_cost_cents "
+                            "FROM entity_research_provider_settlement_fold "
+                            "WHERE provider_operation_ref=:operation_ref"
+                        ),
+                        {"operation_ref": provider_operation_ref},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            if (
+                existing["research_run_id"] != request.research_run_id
+                or existing["job_id"] != request.job_id
+                or Decimal(existing["settled_cost_cents"]) != settled_cost_cents
+            ):
+                raise EntityResearchResultIntegrityError(
+                    "provider settlement replay differs from its immutable first fold"
+                )
+            return
+
+        updated = (
+            await conn.execute(
+                text(
+                    "UPDATE entity_research_job "
+                    "SET spent_cents=spent_cents+:cost, updated_at=now() "
+                    "WHERE job_id=:job_id AND research_run_id=:run_id "
+                    "AND spent_cents+:cost <= budget_cap_cents RETURNING job_id"
+                ),
+                {
+                    "cost": settled_cost_cents,
+                    "job_id": request.job_id,
+                    "run_id": request.research_run_id,
+                },
+            )
+        ).scalar_one_or_none()
+        if updated is None:
+            raise EntityResearchResultIntegrityError(
+                "settled provider cost exceeds the exact entity-research job budget"
+            )
+        updated_run = (
+            await conn.execute(
+                text(
+                    "UPDATE entity_research_run "
+                    "SET spent_cents=spent_cents+:cost, updated_at=now() "
+                    "WHERE research_run_id=:run_id "
+                    "AND spent_cents+:cost <= budget_cap_cents "
+                    "RETURNING research_run_id"
+                ),
+                {"cost": settled_cost_cents, "run_id": request.research_run_id},
+            )
+        ).scalar_one_or_none()
+        if updated_run is None:
+            raise EntityResearchResultIntegrityError(
+                "settled provider cost exceeds the exact entity-research run budget"
+            )
 
     def _agent_message_bytes(self, result: PersistedResearchToolResult) -> bytes:
         """Measure the final inline/indexed projection, never the smaller provisional shape."""
@@ -1794,6 +1907,7 @@ class EntityResearchResultStore:
         lineage: ProviderResultLineage,
         fields: tuple[ResearchFieldResultProjection, ...],
         discovered_subjects: tuple[ResearchDiscoveredSubjectProjection, ...],
+        confirmed_empty_discovery: bool,
         delivery: ResearchResultDelivery,
     ) -> PersistedResearchToolResult:
         return PersistedResearchToolResult(
@@ -1810,6 +1924,7 @@ class EntityResearchResultStore:
             requested_field_keys=tuple(field.field_key for field in fields),
             fields=fields,
             discovered_subjects=discovered_subjects,
+            confirmed_empty_discovery=confirmed_empty_discovery,
             delivery=delivery,
             read_tool_address=(
                 None
@@ -2249,7 +2364,11 @@ class GovernedEntityResearchToolFactory:
         bindings: dict[str, EntityResearchToolBinding] = dict(engine_tools)
         for name, binding in provider_actions.items():
             bindings[name] = EntityResearchToolBinding(
-                tool=self._provider_tool(name=name, action=binding.action),
+                tool=self._provider_tool(
+                    name=name,
+                    action=binding.action,
+                    args_schema=binding.args_schema,
+                ),
                 version=binding.version,
             )
         bindings["read_research_result"] = EntityResearchToolBinding(
@@ -2260,9 +2379,30 @@ class GovernedEntityResearchToolFactory:
         )
         return tuple(bindings[name] for name in surface.tool_names)
 
-    def _provider_tool(self, *, name: str, action: EntityResearchProviderAction) -> StructuredTool:
+    def _provider_tool(
+        self,
+        *,
+        name: str,
+        action: EntityResearchProviderAction,
+        args_schema: type[BaseModel],
+    ) -> StructuredTool:
         async def invoke(**values: object) -> dict[str, JsonValue]:
-            semantic = EntityResearchSemanticToolInput.model_validate(values)
+            parsed = args_schema.model_validate(values)
+            # Tool-specific schemas may add bounded research intent (R5's buying-unit scope), but
+            # the immutable provider request remains the frozen R0/R4 contract.  Engine authority
+            # still comes only from the active R3 execution context.
+            semantic = EntityResearchSemanticToolInput.model_validate(
+                parsed.model_dump(
+                    include={
+                        "field_keys",
+                        "source_keys",
+                        "questions",
+                        "parent_operation_ref",
+                        "parent_observation_ref",
+                        "follow_up_reason",
+                    }
+                )
+            )
             active = current_entity_research_tool_execution()
             request = await self._requests.record(active=active, semantic=semantic)
 
@@ -2290,7 +2430,15 @@ class GovernedEntityResearchToolFactory:
             covered = tuple(
                 field_key for draft in drafts for field_key in draft.requested_field_keys
             )
-            has_discovered = any(draft.discovered_subjects for draft in drafts)
+            has_discovered = any(
+                draft.discovered_subjects or draft.confirmed_empty_discovery for draft in drafts
+            )
+            if any(draft.confirmed_empty_discovery for draft in drafts) and (
+                request.tool_name != "discover_buying_committee" or len(drafts) != 1
+            ):
+                raise EntityResearchResultIntegrityError(
+                    "only one committee result may confirm an empty enumeration"
+                )
             if (
                 len(covered) != len(set(covered))
                 or set(covered) != set(request.field_keys)
@@ -2340,7 +2488,7 @@ class GovernedEntityResearchToolFactory:
                 "Returns complete normalized field outcomes, claim deltas, evidence, cost, and "
                 "lineage only after durable persistence."
             ),
-            args_schema=EntityResearchSemanticToolInput,
+            args_schema=args_schema,
         )
 
     def _read_result_tool(self) -> StructuredTool:

@@ -82,6 +82,9 @@ class SumbleClaimMaterializer:
         field_key: str,
         source_key: str,
         snapshot: SumbleSnapshot,
+        source_operation_ref: str | None = None,
+        source_snapshot_ref: str | None = None,
+        source_request_ref: str | None = None,
     ) -> SumbleMaterializedField:
         if snapshot.artifact_key is None:
             raise SumbleClaimMaterializationError("Sumble claim input is not a durable snapshot")
@@ -119,6 +122,9 @@ class SumbleClaimMaterializer:
             run_id=RunId(project_run_id),
             research_mode=ResearchMode.ACCOUNT_PROFILING,
             cost_cents=Decimal(0),
+            source_operation_ref=source_operation_ref,
+            source_snapshot_ref=source_snapshot_ref,
+            source_request_ref=source_request_ref,
         )
         claim_id = await self._ensure_claim(
             workspace_id=workspace_id,
@@ -190,6 +196,9 @@ class SumbleClaimMaterializer:
                     if claim.source_key == candidate.source_key
                     and claim.artifact_key == candidate.artifact_key
                     and canonical_json(claim.value_json) == canonical_json(candidate.value_json)
+                    and claim.source_operation_ref == candidate.source_operation_ref
+                    and claim.source_snapshot_ref == candidate.source_snapshot_ref
+                    and claim.source_request_ref == candidate.source_request_ref
                 )
             if len(matches) > 1:
                 raise SumbleClaimMaterializationError(
