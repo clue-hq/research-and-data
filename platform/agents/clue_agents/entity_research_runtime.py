@@ -18,7 +18,11 @@ from typing import Any, Protocol, cast, runtime_checkable
 from uuid import uuid4
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitMiddleware
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    ToolCallLimitMiddleware,
+    hook_config,
+)
 from langchain.agents.middleware.types import AgentMiddleware, ModelResponse
 from langchain_core.messages import (
     AIMessage,
@@ -375,6 +379,38 @@ def _resolved_system_prompt(definition: EntityResearchAgentDefinition) -> str:
     return "\n\n".join(sections)
 
 
+_FINALIZE_TOOL_NAMES = ("finalize_account_research", "finalize_contact_research")
+
+
+def _tool_message_text(result: Any) -> str:
+    content = getattr(result, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, Sequence):
+        return "".join(
+            str(block.get("text", ""))
+            for block in content
+            if isinstance(block, Mapping) and block.get("type") == "text"
+        )
+    return ""
+
+
+def _engine_finalization_proposal(result: Any) -> ResearchFinalizationProposal | None:
+    """Recover the engine's typed proposal from the finalize tool's rendered result.
+
+    The finalize tools render the durably stored proposal verbatim, so a successful parse is
+    the engine's own contract object — not model output. Returns None on any mismatch so the
+    caller can fall back to the model-echo path instead of failing a run at its success moment.
+    """
+
+    if not isinstance(result, ToolMessage) or result.status == "error":
+        return None
+    try:
+        return ResearchFinalizationProposal.model_validate(json.loads(_tool_message_text(result)))
+    except Exception:  # noqa: BLE001 - defensive fallback to the model-echo path
+        return None
+
+
 class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
     """Exact tool-surface, history, causation-order, parallel, and guard enforcement."""
 
@@ -403,6 +439,10 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         # live finalization looping). Process-local by design: a cold resume re-runs the finalize
         # tool idempotently, and the zero-yield stop policy remains the outer backstop.
         self._finalization_proposed = False
+        # The engine proposal captured from the finalize tool result. When present, abefore_model
+        # ends the graph deterministically with it instead of waiting for the model to echo it —
+        # a live contact run looped on post-finalization refusals until the recursion limit.
+        self._engine_proposal: ResearchFinalizationProposal | None = None
 
     def _call(self, raw: Mapping[str, Any]) -> EntityResearchToolCall:
         name = str(raw.get("name", ""))
@@ -575,6 +615,39 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
             count += 1
         return count
 
+    def _note_finalization_result(self, call: EntityResearchToolCall, result: Any) -> None:
+        """Arm deterministic termination once the engine has returned its finalize proposal.
+
+        Covers both the fresh dispatch path and the cold-resume settled-result replay path,
+        so a resumed post-finalization checkpoint terminates instead of re-looping.
+        """
+
+        if call.tool_name not in _FINALIZE_TOOL_NAMES:
+            return
+        if isinstance(result, ToolMessage) and result.status == "error":
+            return
+        self._finalization_proposed = True
+        proposal = _engine_finalization_proposal(result)
+        if proposal is not None:
+            self._engine_proposal = proposal
+
+    @hook_config(can_jump_to=["end"])
+    async def abefore_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        """End the graph deterministically once the engine's finalize proposal exists.
+
+        After finalize succeeds, the model's only remaining job is to echo the engine proposal
+        through the typed response format — a formality a live contact run failed to perform,
+        looping on post-finalization refusals until GraphRecursionError. The runtime performs
+        the echo itself from the engine's own stored proposal; the outer run() still verifies
+        subject/entity bounds and the independent finalization-engine receipt, so no authority
+        moves to this shortcut. When proposal capture failed, fall through to the model-echo
+        path (the post-finalization refusals below remain the guard).
+        """
+
+        if not self._finalization_proposed or self._engine_proposal is None:
+            return None
+        return {"jump_to": "end", "structured_response": self._engine_proposal}
+
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         call = self._call(cast(dict[str, Any], request.tool_call))
         if self._finalization_proposed:
@@ -641,6 +714,7 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
                     call=call,
                     result=result,
                 )
+                self._note_finalization_result(call, result)
                 await self._journal.append(
                     self._event(
                         EntityAgentJournalEventKind.TOOL_COMPLETED,
@@ -687,8 +761,7 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
                 call=call,
                 result=result,
             )
-            if call.tool_name in ("finalize_account_research", "finalize_contact_research"):
-                self._finalization_proposed = True
+            self._note_finalization_result(call, result)
         except EntityResearchExternalWait as wait:
             batch_wait = await self._batches.waiting(
                 context=self._context,

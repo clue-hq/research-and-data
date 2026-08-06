@@ -888,3 +888,166 @@ def test_after_accepted_finalize_tool_every_further_tool_call_is_refused() -> No
         assert journal.events[-1].payload["disposition"] == "post_finalization_rejected"
 
     run_async(run())
+
+
+def test_engine_finalize_result_terminates_the_graph_without_a_model_echo() -> None:
+    """A live contact run looped on post-finalization refusals until GraphRecursionError.
+
+    Once the finalize tool returns the engine's rendered proposal, ``abefore_model`` must end
+    the graph deterministically with that proposal as the structured response instead of
+    waiting for the model to volunteer the echo.
+    """
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
+        definition = _definition(context)
+        middleware = runtime_module._EntityResearchRuntimeMiddleware(
+            definition=definition,
+            journal=Journal(),
+            guard=Guard(),
+            batches=BatchRecorder(),
+        )
+        assert "finalize_contact_research" in {b.name for b in definition.tools}
+        # Before finalization the hook must never interfere with the model loop.
+        assert await middleware.abefore_model({}, None) is None
+
+        proposal = _proposal(context)
+        finalize_call = {"name": "finalize_contact_research", "args": {}, "id": "finalize-live"}
+        rendered = ToolMessage(
+            content=proposal.model_dump_json(),
+            tool_call_id="finalize-live",
+            name="finalize_contact_research",
+        )
+
+        async def finalize_handler(_request: object) -> ToolMessage:
+            return rendered
+
+        returned = await middleware.awrap_tool_call(
+            SimpleNamespace(
+                tool_call=finalize_call,
+                state={"messages": (AIMessage(content="", tool_calls=[finalize_call]),)},
+            ),
+            finalize_handler,
+        )
+        assert returned is rendered
+
+        update = await middleware.abefore_model({}, None)
+        assert update == {"jump_to": "end", "structured_response": proposal}
+
+    run_async(run())
+
+
+def test_full_graph_terminates_when_the_model_never_stops_calling_tools_after_finalize() -> None:
+    """End-to-end regression for the live GraphRecursionError loop (R10 live defect #10).
+
+    The scripted model finalizes and then requests ``read_contact_research_state`` forever —
+    the exact live misbehavior. The runtime must end the graph itself with the engine's
+    proposal: exactly one model round, zero post-finalization refusals, accepted receipt.
+    """
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
+        proposal = _proposal(context)
+
+        async def finalize(value: str = "ok") -> str:
+            del value
+            return proposal.model_dump_json()
+
+        base = _definition(context)
+        definition = EntityResearchAgentDefinition(
+            context=context,
+            model_policy=base.model_policy,
+            tools=tuple(
+                binding
+                if binding.name != "finalize_contact_research"
+                else EntityResearchToolBinding(
+                    tool=StructuredTool.from_function(
+                        coroutine=finalize,
+                        name="finalize_contact_research",
+                        description="Governed test double rendering the engine proposal",
+                        args_schema=ToolInput,
+                    ),
+                    version=1,
+                )
+                for binding in base.tools
+            ),
+            task_instruction=base.task_instruction,
+        )
+        model = ScriptedAgentChatModel(
+            responses=(
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "finalize_contact_research", "args": {}, "id": "final-live"}
+                    ],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "read_contact_research_state", "args": {}, "id": "loop-live"}
+                    ],
+                ),
+            ),
+            repeat_last=True,
+        )
+        journal = Journal()
+        finalizer = Finalizer()
+        factory = EntityResearchAgentFactory(
+            models=Models(model), journal=journal, guard=Guard()
+        )
+        runtime = EntityResearchAgentRuntime(
+            factory=factory,
+            checkpointers=Checkpointers(),
+            journal=journal,
+            finalizer=finalizer,
+        )
+        outcome = await runtime.run(definition=definition)
+
+        assert isinstance(outcome, EntityResearchAgentResult)
+        assert outcome.proposal == proposal
+        assert finalizer.proposals == [proposal]
+        model_rounds = sum(
+            1
+            for event in journal.events
+            if event.kind is EntityAgentJournalEventKind.MODEL_STARTED
+        )
+        assert model_rounds == 1
+        assert not any(
+            event.payload.get("disposition") == "post_finalization_rejected"
+            for event in journal.events
+        )
+
+    run_async(run())
+
+
+def test_unparseable_finalize_render_falls_back_to_the_model_echo_path() -> None:
+    """Proposal capture must fail open: refusals continue, the hook stays out of the way."""
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        middleware = runtime_module._EntityResearchRuntimeMiddleware(
+            definition=_definition(context),
+            journal=Journal(),
+            guard=Guard(),
+            batches=BatchRecorder(),
+        )
+        finalize_call = {"name": "finalize_account_research", "args": {}, "id": "finalize-odd"}
+
+        async def finalize_handler(_request: object) -> ToolMessage:
+            return ToolMessage(
+                content="not the rendered proposal",
+                tool_call_id="finalize-odd",
+                name="finalize_account_research",
+            )
+
+        await middleware.awrap_tool_call(
+            SimpleNamespace(
+                tool_call=finalize_call,
+                state={"messages": (AIMessage(content="", tool_calls=[finalize_call]),)},
+            ),
+            finalize_handler,
+        )
+        assert middleware._finalization_proposed is True
+        assert await middleware.abefore_model({}, None) is None
+
+    run_async(run())
