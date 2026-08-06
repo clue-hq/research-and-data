@@ -76,6 +76,7 @@ from clue_core.entity_research import (
     ResearchRunLifecycleContract,
     ResearchSelectionBasis,
     ResearchSubjectType,
+    SelectedContactResearchAuthority,
     SelectedResearchSubject,
 )
 from clue_db import db_lifespan
@@ -134,6 +135,30 @@ def _fleet_envelope(seed: Any, *, profile_sha256: str) -> EntityResearchRunEnvel
     legacy_target = intent.selection.body.targets[0]
     strong_refs = tuple(f"claim:{value}" for value in legacy_target.strong_identity_claim_ids)
     committee_refs = tuple(f"claim:{value}" for value in legacy_target.committee_claim_ids)
+    policy_refs = (
+        intent.selection.body.jurisdiction_policy_ref,
+        intent.selection.body.use_policy_ref,
+        intent.selection.body.retention_policy_ref,
+    )
+    approval_refs = (f"contact-selection:{intent.selection_id}",)
+    field_authority = (FieldSourceAuthority(field_key=_FIELD, source_keys=("exa_deep",)),)
+    target_authority = SelectedContactResearchAuthority(
+        contact_selection_ref=f"contact-selection:{intent.selection_id}",
+        contact_selection_sha256=intent.selection_sha256,
+        contact_intent_ref=f"contact-intent:{intent.sha256()}",
+        contact_intent_sha256=intent.sha256(),
+        field_plan_ref=f"contact-field-plan:{intent.selection_id}",
+        source_plan_ref=intent.source_profile_ref,
+        admitted_field_keys=(_FIELD,),
+        admitted_source_keys=("exa_deep",),
+        field_source_authority=field_authority,
+        research_questions=(_QUESTION,),
+        facet_keys=("publications",),
+        policy_refs=policy_refs,
+        budget_envelope_ref=intent.budget_reservation_ref,
+        budget_cap_cents=intent.budget_cap_cents,
+        approval_refs=approval_refs,
+    )
     selection = EntityResearchSelection(
         selection_id=uuid4(),
         workspace_id=intent.workspace_id,
@@ -149,6 +174,7 @@ def _fleet_envelope(seed: Any, *, profile_sha256: str) -> EntityResearchRunEnvel
                 strong_identity_claim_refs=strong_refs,
                 association_evidence_refs=strong_refs,
                 committee_claim_refs=committee_refs,
+                contact_authority=target_authority,
             ),
         ),
         directive_ref=f"account-research-directive:{intent.research_directive.directive_id}",
@@ -157,16 +183,12 @@ def _fleet_envelope(seed: Any, *, profile_sha256: str) -> EntityResearchRunEnvel
         source_plan_ref=intent.source_profile_ref,
         admitted_field_keys=(_FIELD,),
         admitted_source_keys=("exa_deep",),
-        field_source_authority=(FieldSourceAuthority(field_key=_FIELD, source_keys=("exa_deep",)),),
+        field_source_authority=field_authority,
         research_questions=(_QUESTION,),
         facet_keys=("publications",),
-        policy_refs=(
-            intent.selection.body.jurisdiction_policy_ref,
-            intent.selection.body.use_policy_ref,
-            intent.selection.body.retention_policy_ref,
-        ),
+        policy_refs=policy_refs,
         budget_envelope_ref=intent.budget_reservation_ref,
-        approval_refs=(f"contact-selection:{intent.selection_id}",),
+        approval_refs=approval_refs,
         confirmed_by=intent.selection.body.approved_by,
         confirmed_at=intent.selection.body.approved_at,
     )
@@ -960,20 +982,33 @@ def test_provider_neutral_join_records_wait_and_advances_durable_state(tmp_path:
             profile_sha = hashlib.sha256(profile_body.encode()).hexdigest()
             envelope = _fleet_envelope(seed, profile_sha256=profile_sha)
             original_selection = envelope.lifecycle.selection
-            selection = original_selection.model_copy(
+            field_authority = (
+                FieldSourceAuthority(
+                    field_key=_FIELD,
+                    source_keys=("sumble_people",),
+                ),
+                FieldSourceAuthority(
+                    field_key=_SECOND_FIELD,
+                    source_keys=("exa_deep",),
+                ),
+            )
+            original_subject = original_selection.subjects[0]
+            assert original_subject.contact_authority is not None
+            target_authority = original_subject.contact_authority.model_copy(
                 update={
                     "admitted_field_keys": (_FIELD, _SECOND_FIELD),
                     "admitted_source_keys": ("sumble_people", "exa_deep"),
-                    "field_source_authority": (
-                        FieldSourceAuthority(
-                            field_key=_FIELD,
-                            source_keys=("sumble_people",),
-                        ),
-                        FieldSourceAuthority(
-                            field_key=_SECOND_FIELD,
-                            source_keys=("exa_deep",),
-                        ),
+                    "field_source_authority": field_authority,
+                }
+            )
+            selection = original_selection.model_copy(
+                update={
+                    "subjects": (
+                        original_subject.model_copy(update={"contact_authority": target_authority}),
                     ),
+                    "admitted_field_keys": (_FIELD, _SECOND_FIELD),
+                    "admitted_source_keys": ("sumble_people", "exa_deep"),
+                    "field_source_authority": field_authority,
                 }
             )
             original_job = envelope.jobs[0]

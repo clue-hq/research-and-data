@@ -258,10 +258,10 @@ def _context(
         facet_scope = EntityFacetScope(
             parent_agent_execution_id=uuid4(),
             parent_agent_turn_id=uuid4(),
-            facet_key=authorization.selection.facet_keys[0],
+            facet_key=authorization.effective_facet_keys[0],
             depth=1,
             child_ordinal=1,
-            parent_budget_envelope_ref=authorization.selection.budget_envelope_ref,
+            parent_budget_envelope_ref=authorization.effective_budget_envelope_ref,
         )
     return EntityResearchRuntimeContext(
         agent_execution_id=authorization.attempt_id,

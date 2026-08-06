@@ -38,6 +38,7 @@ from clue_core import (
     contact_claim,
     new_operation_id,
 )
+from clue_core.entity_research import FieldSourceAuthority
 from clue_research.claimstore import insert_claim, load_core_pack
 from clue_research.durable import (
     AccountRunStatus,
@@ -164,6 +165,17 @@ def test_production_projection_is_reference_only_governed_and_names_skipped_cont
                 update={
                     "committee_claim_ids": (role.id, persona.id),
                     "field_keys": (CURRENT_TITLE, FACET_PUBLICATIONS),
+                    "field_source_authority": (
+                        FieldSourceAuthority(
+                            field_key=CURRENT_TITLE,
+                            source_keys=initial.body.policy.professional_source_plan,
+                        ),
+                        FieldSourceAuthority(
+                            field_key=FACET_PUBLICATIONS,
+                            source_keys=initial.body.policy.personal_facet_source_plan,
+                        ),
+                    ),
+                    "facet_keys": (FACET_PUBLICATIONS,),
                 }
             )
             successor_body = initial.body.model_copy(

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from decimal import Decimal
 from enum import StrEnum
 from typing import NewType, Protocol, runtime_checkable
 from uuid import UUID, uuid4
@@ -22,6 +23,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from clue_core.discovery import Sha256Hex
+from clue_core.entity_research import FieldSourceAuthority, ResearchSelectionBasis
 from clue_core.enums import IdentityBinding
 from clue_core.field import FieldClass, FieldKey, classify_field_key
 from clue_core.primitives import ClaimId, EntityId, ProjectRunId, UtcDatetime
@@ -441,11 +443,17 @@ class ContactResearchTarget(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     contact_entity_id: EntityId
-    committee_claim_ids: tuple[ClaimId, ...] = Field(min_length=1)
+    selection_basis: ResearchSelectionBasis = ResearchSelectionBasis.COMMITTEE_MEMBER
+    committee_claim_ids: tuple[ClaimId, ...] = ()
     strong_identity_claim_ids: tuple[ClaimId, ...] = Field(min_length=1)
+    association_evidence_claim_ids: tuple[ClaimId, ...] = ()
     field_keys: tuple[FieldKey, ...] = Field(min_length=1, max_length=32)
+    field_source_authority: tuple[FieldSourceAuthority, ...] = ()
     directional_question_ids: tuple[str, ...] = Field(default=(), max_length=32)
+    facet_keys: tuple[FieldKey, ...] = ()
     exa_max_results: int = Field(default=50, ge=1, le=50)
+    research_budget_envelope_ref: str | None = Field(default=None, min_length=1)
+    research_budget_cap_cents: Decimal = Field(default=Decimal(0), ge=0)
     email: ContactChannelAuthorization = ContactChannelAuthorization(channel=ContactChannel.EMAIL)
     phone: ContactChannelAuthorization = ContactChannelAuthorization(channel=ContactChannel.PHONE)
 
@@ -454,16 +462,82 @@ class ContactResearchTarget(BaseModel):
         for label, values in (
             ("committee claim ids", self.committee_claim_ids),
             ("strong identity claim ids", self.strong_identity_claim_ids),
+            ("association evidence claim ids", self.association_evidence_claim_ids),
             ("field keys", self.field_keys),
+            (
+                "field source authority",
+                tuple(item.field_key for item in self.field_source_authority),
+            ),
             ("directional question ids", self.directional_question_ids),
+            ("facet keys", self.facet_keys),
         ):
             if len(set(values)) != len(values):
                 raise ValueError(f"contact research {label} must be unique")
+        if self.selection_basis is ResearchSelectionBasis.ACCOUNT_SELECTION:
+            raise ValueError("contact research target requires a contact selection basis")
+        if (
+            self.selection_basis is ResearchSelectionBasis.COMMITTEE_MEMBER
+            and not self.committee_claim_ids
+        ):
+            raise ValueError("committee-selected contact requires committee claim evidence")
+        if (
+            self.selection_basis is ResearchSelectionBasis.USER_SELECTED_ASSOCIATED_CONTACT
+            and not self.association_evidence_claim_ids
+        ):
+            raise ValueError("user-selected contact requires exact-account association evidence")
+        if (
+            self.selection_basis is ResearchSelectionBasis.USER_SELECTED_ASSOCIATED_CONTACT
+            and self.committee_claim_ids
+        ):
+            raise ValueError("non-committee contact cannot carry committee-selection evidence")
         if self.email.channel is not ContactChannel.EMAIL:
             raise ValueError("email authorization must describe the email channel")
         if self.phone.channel is not ContactChannel.PHONE:
             raise ValueError("phone authorization must describe the phone channel")
+        research_fields = tuple(
+            str(value) for value in self.field_keys if str(value).startswith("contact.")
+        )
+        authority_fields = tuple(item.field_key for item in self.field_source_authority)
+        if authority_fields and set(authority_fields) != set(research_fields):
+            raise ValueError(
+                "contact target field source authority must cover every research field"
+            )
+        expected_facets = tuple(
+            value
+            for value in self.field_keys
+            if classify_field_key(value) is FieldClass.CONTACT_FACET
+        )
+        if self.facet_keys and set(self.facet_keys) != set(expected_facets):
+            raise ValueError("contact target facet authority differs from selected facet fields")
+        if (self.research_budget_envelope_ref is None) != (self.research_budget_cap_cents == 0):
+            raise ValueError(
+                "contact target research budget requires both an exact envelope and positive cap"
+            )
         return self
+
+    @property
+    def effective_association_evidence_claim_ids(self) -> tuple[ClaimId, ...]:
+        """Association authority, including exact-replay compatibility for pre-R7 receipts.
+
+        M8C committee selections used the strong discovery-provenance claim for both identity and
+        account association but did not persist a second array.  New R7 selections write the
+        association array explicitly; historical committee receipts remain reconstructable and
+        exact-replay-only through this projection.
+        """
+
+        if self.association_evidence_claim_ids:
+            return self.association_evidence_claim_ids
+        return self.strong_identity_claim_ids
+
+    @property
+    def effective_facet_keys(self) -> tuple[FieldKey, ...]:
+        if self.facet_keys:
+            return self.facet_keys
+        return tuple(
+            value
+            for value in self.field_keys
+            if classify_field_key(value) is FieldClass.CONTACT_FACET
+        )
 
 
 def _validate_target_field_scope(target: ContactResearchTarget) -> None:
@@ -487,14 +561,21 @@ def _source_plan_for(
 ) -> tuple[str, ...]:
     """Compile the complete, ordered, non-widenable source plan for one selected contact."""
 
-    field_tokens = {str(field_key) for field_key in target.field_keys}
     sources: list[str] = []
-    if field_tokens.intersection(CONTACT_PROFESSIONAL_FIELD_KEYS):
-        sources.extend(policy.professional_source_plan)
-    if any(
-        classify_field_key(field_key) is FieldClass.CONTACT_FACET for field_key in target.field_keys
-    ):
-        sources.extend(policy.personal_facet_source_plan)
+    field_tokens = {str(field_key) for field_key in target.field_keys}
+    if target.field_source_authority:
+        for authority in target.field_source_authority:
+            sources.extend(authority.source_keys)
+    else:
+        # Exact-replay compatibility for pre-R7 M8C receipts. New user approvals always persist
+        # field-local source authority and never reach this branch.
+        if field_tokens.intersection(CONTACT_PROFESSIONAL_FIELD_KEYS):
+            sources.extend(policy.professional_source_plan)
+        if any(
+            classify_field_key(field_key) is FieldClass.CONTACT_FACET
+            for field_key in target.field_keys
+        ):
+            sources.extend(policy.personal_facet_source_plan)
     if CONTACT_CHANNEL_FIELD_KEYS[ContactChannel.EMAIL] in field_tokens:
         sources.extend(target.email.provider_source_keys)
         sources.extend(target.email.validation_source_keys)
@@ -521,6 +602,7 @@ class ContactResearchSelectionBody(BaseModel):
     use_policy_ref: str = Field(min_length=1)
     retention_policy_ref: str = Field(min_length=1)
     budget_reservation_ref: str = Field(min_length=1)
+    budget_cap_cents: Decimal = Field(default=Decimal(0), ge=0)
     approved_by: str = Field(min_length=1)
     approved_at: UtcDatetime
 
@@ -560,6 +642,18 @@ class ContactResearchSelectionBody(BaseModel):
                     "contact selection target exceeds the effective additional-query cap"
                 )
             _validate_target_field_scope(target)
+            for authority in target.field_source_authority:
+                field = FieldKey(authority.field_key)
+                if str(field) in CONTACT_PROFESSIONAL_FIELD_KEYS:
+                    applicable = set(self.policy.professional_source_plan)
+                elif classify_field_key(field) is FieldClass.CONTACT_FACET:
+                    applicable = set(self.policy.personal_facet_source_plan)
+                else:
+                    applicable = set()
+                if not set(authority.source_keys).issubset(applicable):
+                    raise ValueError(
+                        "contact target field source authority exceeds the effective policy"
+                    )
             for channel, authorization in (
                 (ContactChannel.EMAIL, target.email),
                 (ContactChannel.PHONE, target.phone),
@@ -628,6 +722,14 @@ class ContactResearchSelectionBody(BaseModel):
                 raise ValueError(
                     f"contact selection exceeds the effective {channel.value} validation money cap"
                 )
+        selected_budget = sum(
+            (target.research_budget_cap_cents for target in self.targets),
+            Decimal(0),
+        )
+        if selected_budget != self.budget_cap_cents:
+            raise ValueError(
+                "contact selection budget must equal the exact sum of target research budgets"
+            )
         return self
 
     def canonical_bytes(self) -> bytes:
@@ -705,6 +807,7 @@ class ContactResearchIntent(BaseModel):
     source_profile_ref: str = Field(min_length=1)
     freshness_policy_ref: str = Field(min_length=1)
     budget_reservation_ref: str = Field(min_length=1)
+    budget_cap_cents: Decimal = Field(default=Decimal(0), ge=0)
 
     @model_validator(mode="after")
     def _intent_is_an_exact_selection_projection(self) -> ContactResearchIntent:
@@ -728,7 +831,6 @@ class ContactResearchIntent(BaseModel):
             or self.account_entity_id != body.account_entity_id
             or self.research_directive != body.research_directive
             or self.source_profile_ref != body.source_profile_ref
-            or self.budget_reservation_ref != body.budget_reservation_ref
         ):
             raise ValueError("contact research intent widens or changes its parent selection")
         target = next(
@@ -754,6 +856,12 @@ class ContactResearchIntent(BaseModel):
             raise ValueError(
                 "contact research intent freshness policy differs from effective policy"
             )
+        expected_budget_ref = target.research_budget_envelope_ref or body.budget_reservation_ref
+        if (
+            self.budget_reservation_ref != expected_budget_ref
+            or self.budget_cap_cents != target.research_budget_cap_cents
+        ):
+            raise ValueError("contact research intent budget differs from the selected target")
         return self
 
     @classmethod
@@ -791,7 +899,10 @@ class ContactResearchIntent(BaseModel):
             source_plan=_source_plan_for(target, body.policy),
             source_profile_ref=body.source_profile_ref,
             freshness_policy_ref=body.policy.freshness_policy_ref,
-            budget_reservation_ref=body.budget_reservation_ref,
+            budget_reservation_ref=(
+                target.research_budget_envelope_ref or body.budget_reservation_ref
+            ),
+            budget_cap_cents=target.research_budget_cap_cents,
         )
 
     def canonical_bytes(self) -> bytes:

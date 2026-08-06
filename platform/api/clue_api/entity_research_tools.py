@@ -352,12 +352,14 @@ class EntityResearchToolRequestStore:
         context = active.context
         authorization = context.authorization
         selection = authorization.selection
-        if not set(semantic.field_keys).issubset(selection.admitted_field_keys):
+        if not set(semantic.field_keys).issubset(authorization.effective_admitted_field_keys):
             raise EntityResearchToolAuthorityError("semantic tool widened selected fields")
-        if not set(semantic.source_keys).issubset(selection.admitted_source_keys):
+        if not set(semantic.source_keys).issubset(authorization.effective_admitted_source_keys):
             raise EntityResearchToolAuthorityError("semantic tool widened selected sources")
         is_follow_up = semantic.parent_operation_ref is not None
-        if not is_follow_up and not set(semantic.questions).issubset(selection.research_questions):
+        if not is_follow_up and not set(semantic.questions).issubset(
+            authorization.effective_research_questions
+        ):
             raise EntityResearchToolAuthorityError("semantic tool widened confirmed questions")
         if active.call.tool_name not in context.tool_surface.tool_names:
             raise EntityResearchToolAuthorityError("semantic tool is outside the exact surface")
@@ -369,7 +371,7 @@ class EntityResearchToolRequestStore:
             )
 
         requested_authority: list[FieldSourceAuthority] = []
-        for authority in selection.field_source_authority:
+        for authority in authorization.effective_field_source_authority:
             if authority.field_key not in semantic.field_keys:
                 continue
             sources = tuple(
@@ -478,7 +480,8 @@ class EntityResearchToolRequestStore:
             field_source_authority=tuple(requested_authority),
             questions=semantic.questions,
             budget_reservation_key=(
-                f"{selection.budget_envelope_ref}:job:{authorization.job_id}:tool:{tool_request_id}"
+                f"{authorization.effective_budget_envelope_ref}:job:"
+                f"{authorization.job_id}:tool:{tool_request_id}"
             ),
             idempotency_key=canonical_sha256(
                 {

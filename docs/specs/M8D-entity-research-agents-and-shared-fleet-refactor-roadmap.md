@@ -638,6 +638,13 @@ budgets, and approvals.
 **Exit gate:** no contact job exists without a valid selection; a governed non-committee contact
 can be selected and launched.
 
+**Accepted 2026-08-06:** durable human initial/successor selection, exact committee and associated
+non-committee admission, per-contact field/source/question/facet/channel/policy/budget authority,
+separate idempotent launch confirmation, database-enforced selection/launch/job completeness, R2
+shared-fleet projection, isolated-Postgres migration and regression evidence, and the retained
+R8/R10 execution/live-call boundary are recorded in
+`M8D-R7-contact-selection-and-independent-launch-acceptance.md`.
+
 ### R8 — Contact research agents on the shared fleet
 
 Compose contact `create_agent()` units, contact tools, optional depth-one facets, exact identity

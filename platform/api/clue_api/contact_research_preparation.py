@@ -173,6 +173,7 @@ class ExistingCommitteeContactAdapter:
         claim_refs: list[ClaimId] = [
             *target.committee_claim_ids,
             *target.strong_identity_claim_ids,
+            *target.effective_association_evidence_claim_ids,
         ]
         immutable_refs: list[str] = [f"claim:{claim_id}" for claim_id in claim_refs]
         async with self._conn_factory() as conn:

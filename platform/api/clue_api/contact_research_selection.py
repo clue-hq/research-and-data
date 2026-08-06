@@ -28,6 +28,7 @@ from clue_core import (
     RunId,
     classify_field_key,
 )
+from clue_core.entity_research import FieldSourceAuthority, ResearchSelectionBasis
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import WorkspaceScope, claims_by_ids
 from clue_research.directives import (
@@ -278,13 +279,32 @@ class ContactResearchSelectionMaterializer:
                 )[: policy.max_fields_per_contact]
                 if not target_fields:
                     continue
+                target_source_authority = tuple(
+                    FieldSourceAuthority(
+                        field_key=str(field_key),
+                        source_keys=(
+                            policy.personal_facet_source_plan
+                            if classify_field_key(field_key) is FieldClass.CONTACT_FACET
+                            else policy.professional_source_plan
+                        ),
+                    )
+                    for field_key in target_fields
+                )
                 targets.append(
                     ContactResearchTarget(
                         contact_entity_id=contact_id,
+                        selection_basis=ResearchSelectionBasis.COMMITTEE_MEMBER,
                         committee_claim_ids=(role.id, persona.id),
                         strong_identity_claim_ids=(identity.id,),
+                        association_evidence_claim_ids=(identity.id,),
                         field_keys=target_fields,
+                        field_source_authority=target_source_authority,
                         directional_question_ids=question_ids,
+                        facet_keys=tuple(
+                            field_key
+                            for field_key in target_fields
+                            if classify_field_key(field_key) is FieldClass.CONTACT_FACET
+                        ),
                         exa_max_results=policy.exa_max_results,
                         email=ContactChannelAuthorization(channel=ContactChannel.EMAIL),
                         phone=ContactChannelAuthorization(channel=ContactChannel.PHONE),
@@ -349,10 +369,9 @@ class ContactResearchSelectionMaterializer:
         allowed_contacts = set(contact_entity_ids)
         allowed_claims = set(committee_claim_ids)
         for target in body.targets:
-            target_claims = {
-                *target.committee_claim_ids,
-                *target.strong_identity_claim_ids,
-            }
+            if target.selection_basis is not ResearchSelectionBasis.COMMITTEE_MEMBER:
+                continue
+            target_claims = {*target.committee_claim_ids, *target.strong_identity_claim_ids}
             if target.contact_entity_id not in allowed_contacts or not target_claims.issubset(
                 allowed_claims
             ):
@@ -365,15 +384,31 @@ class ContactResearchSelectionMaterializer:
                 *(
                     claim_id
                     for target in body.targets
-                    for claim_id in (*target.committee_claim_ids, *target.strong_identity_claim_ids)
+                    for claim_id in (
+                        *target.committee_claim_ids,
+                        *target.strong_identity_claim_ids,
+                        *target.effective_association_evidence_claim_ids,
+                    )
                 ),
             ),
             scope=WorkspaceScope.for_workspace(body.workspace_id),
         )
-        if len(claims) != sum(
-            len(target.committee_claim_ids) + len(target.strong_identity_claim_ids)
+        expected_claim_ids = {
+            claim_id
             for target in body.targets
-        ) or any(claim.run_id != account_run_id for claim in claims.values()):
+            for claim_id in (
+                *target.committee_claim_ids,
+                *target.strong_identity_claim_ids,
+                *target.effective_association_evidence_claim_ids,
+            )
+        }
+        committee_claim_set = {
+            claim_id for target in body.targets for claim_id in target.committee_claim_ids
+        }
+        if len(claims) != len(expected_claim_ids) or any(
+            claim.id in committee_claim_set and claim.run_id != account_run_id
+            for claim in claims.values()
+        ):
             raise ContactResearchSelectionError(
                 "persisted contact selection claim lineage is no longer valid"
             )

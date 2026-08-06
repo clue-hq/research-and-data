@@ -607,11 +607,13 @@ async def launch_entity_research_run(
                 """
                 INSERT INTO entity_research_run
                     (research_run_id, run_kind, subject_type, workspace_id, project_id, product_id,
-                     project_run_id, selection_id, lifecycle_json, lifecycle_sha256,
+                     project_run_id, selection_id, contact_selection_id, lifecycle_json,
+                     lifecycle_sha256,
                      budget_envelope_ref, budget_cap_cents, concurrency_limit)
                 VALUES
                     (:run_id, :run_kind, :subject_type, :workspace_id, :project_id, :product_id,
-                     :project_run_id, :selection_id, CAST(:lifecycle AS jsonb), :lifecycle_sha,
+                     :project_run_id, :selection_id, :contact_selection_id,
+                     CAST(:lifecycle AS jsonb), :lifecycle_sha,
                      :budget_ref, :budget_cap, :concurrency_limit)
                 ON CONFLICT DO NOTHING
                 RETURNING research_run_id
@@ -626,6 +628,11 @@ async def launch_entity_research_run(
                 "product_id": selection.product_id,
                 "project_run_id": selection.project_run_id,
                 "selection_id": selection.selection_id,
+                "contact_selection_id": (
+                    selection.selection_id
+                    if lifecycle.run_kind is ResearchRunKind.CONTACT_RESEARCH
+                    else None
+                ),
                 "lifecycle": serialize_value_json(_canonical_payload(lifecycle)),
                 "lifecycle_sha": lifecycle_sha,
                 "budget_ref": selection.budget_envelope_ref,

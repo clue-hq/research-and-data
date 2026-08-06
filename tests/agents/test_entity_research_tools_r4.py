@@ -107,9 +107,11 @@ def test_semantic_request_cannot_apply_one_fields_source_to_another_field() -> N
     async def scenario() -> None:
         context = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
         selection = context.authorization.selection
-        original_field = selection.admitted_field_keys[0]
+        subject = context.authorization.selected_subject
+        assert subject.contact_authority is not None
+        original_field = subject.contact_authority.admitted_field_keys[0]
         second_field = "contact.facet.professional_interests"
-        widened_selection = selection.model_copy(
+        widened_authority = subject.contact_authority.model_copy(
             update={
                 "admitted_field_keys": (original_field, second_field),
                 "admitted_source_keys": ("exa_deep", "sumble_people"),
@@ -125,6 +127,21 @@ def test_semantic_request_cannot_apply_one_fields_source_to_another_field() -> N
                 ),
             }
         )
+        widened_subject = subject.model_copy(update={"contact_authority": widened_authority})
+        widened_selection = selection.model_copy(
+            update={
+                "subjects": tuple(
+                    widened_subject if item.subject_entity_id == subject.subject_entity_id else item
+                    for item in selection.subjects
+                ),
+                "admitted_field_keys": (original_field, second_field),
+                "admitted_source_keys": ("exa_deep", "sumble_people"),
+                "field_source_authority": (
+                    FieldSourceAuthority(field_key=original_field, source_keys=("exa_deep",)),
+                    FieldSourceAuthority(field_key=second_field, source_keys=("sumble_people",)),
+                ),
+            }
+        )
         context = context.model_copy(
             update={
                 "authorization": context.authorization.model_copy(
@@ -135,7 +152,7 @@ def test_semantic_request_cannot_apply_one_fields_source_to_another_field() -> N
         arguments = {
             "field_keys": [original_field],
             "source_keys": ["sumble_people"],
-            "questions": [selection.research_questions[0]],
+            "questions": [context.authorization.effective_research_questions[0]],
         }
         active = ActiveEntityResearchToolExecution(
             context=context,

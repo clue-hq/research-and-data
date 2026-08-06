@@ -155,14 +155,58 @@
         "basis": "committee_member",
         "strong_identity_claim_refs": ["claim:contact-identity:1"],
         "association_evidence_refs": ["evidence:current-employment:1"],
-        "committee_claim_refs": ["claim:committee-role:1"]
+        "committee_claim_refs": ["claim:committee-role:1"],
+        "contact_authority": {
+          "contact_selection_ref": "contact-selection:44444444-4444-4444-8444-444444444442",
+          "contact_selection_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "contact_intent_ref": "contact-intent:22222222-2222-4222-8222-222222222222",
+          "contact_intent_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "field_plan_ref": "field-plan:contact:2222:v1",
+          "source_plan_ref": "source-plan:contact:2222:v1",
+          "admitted_field_keys": ["contact.professional_priorities", "contact.facet.public_hobbies"],
+          "admitted_source_keys": ["exa_deep", "sumble_people"],
+          "field_source_authority": [
+            {"field_key": "contact.professional_priorities", "source_keys": ["sumble_people"]},
+            {"field_key": "contact.facet.public_hobbies", "source_keys": ["exa_deep"]}
+          ],
+          "research_questions": ["What public professional interests are safely attributable?"],
+          "facet_keys": ["public_appearances", "published_work"],
+          "channel_permissions": ["email", "phone"],
+          "channel_source_keys": ["sumble_contact_reveal", "independent_validator"],
+          "policy_refs": ["policy:research:v1", "policy:contact-use:v1"],
+          "budget_envelope_ref": "budget:contact:2222:v1",
+          "budget_cap_cents": "5.00",
+          "approval_refs": ["approval:contact-launch:v1", "approval:email:v1", "approval:phone:v1"]
+        }
       },
       {
         "subject_entity_id": "33333333-3333-4333-8333-333333333333",
         "basis": "user_selected_associated_contact",
         "strong_identity_claim_refs": ["claim:contact-identity:2"],
         "association_evidence_refs": ["evidence:current-employment:2"],
-        "committee_claim_refs": []
+        "committee_claim_refs": [],
+        "contact_authority": {
+          "contact_selection_ref": "contact-selection:44444444-4444-4444-8444-444444444442",
+          "contact_selection_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "contact_intent_ref": "contact-intent:33333333-3333-4333-8333-333333333333",
+          "contact_intent_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "field_plan_ref": "field-plan:contact:3333:v1",
+          "source_plan_ref": "source-plan:contact:3333:v1",
+          "admitted_field_keys": ["contact.professional_priorities", "contact.facet.public_hobbies"],
+          "admitted_source_keys": ["exa_deep", "sumble_people"],
+          "field_source_authority": [
+            {"field_key": "contact.professional_priorities", "source_keys": ["sumble_people"]},
+            {"field_key": "contact.facet.public_hobbies", "source_keys": ["exa_deep"]}
+          ],
+          "research_questions": ["What public professional interests are safely attributable?"],
+          "facet_keys": ["public_appearances", "published_work"],
+          "channel_permissions": ["email", "phone"],
+          "channel_source_keys": ["sumble_contact_reveal", "independent_validator"],
+          "policy_refs": ["policy:research:v1", "policy:contact-use:v1"],
+          "budget_envelope_ref": "budget:contact:3333:v1",
+          "budget_cap_cents": "5.00",
+          "approval_refs": ["approval:contact-launch:v1", "approval:email:v1", "approval:phone:v1"]
+        }
       }
     ],
     "directive_ref": "artifact:directive:contact:v1",
