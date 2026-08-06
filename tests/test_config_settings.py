@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from clue_config import (
     DEFAULT_SYNTHESIS_MODEL,
@@ -92,3 +93,52 @@ def test_c7_activation_controls_load_from_independent_environment_flags(
             settings.c7_governance_shadow_compare_enabled,
         )
     )
+
+
+def test_agent_workspace_allowlist_accepts_a_json_array(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CLUE_AGENT_WORKSPACE_ALLOWLIST", '["ws-a", "ws-b"]')
+    settings = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.agent_workspace_allowlist == ("ws-a", "ws-b")
+
+
+def test_agent_workspace_allowlist_accepts_a_comma_separated_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shell-safe spelling: `set -a; source .env` strips the JSON string quotes."""
+
+    monkeypatch.setenv("CLUE_AGENT_WORKSPACE_ALLOWLIST", " ws-a , ws-b ,")
+    settings = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.agent_workspace_allowlist == ("ws-a", "ws-b")
+
+
+def test_agent_workspace_allowlist_empty_value_is_an_empty_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLUE_AGENT_WORKSPACE_ALLOWLIST", "  ")
+    settings = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.agent_workspace_allowlist == ()
+
+
+def test_agent_workspace_allowlist_names_itself_and_both_formats_when_unparseable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A malformed allowlist fails as this one field, not as the whole settings object."""
+
+    monkeypatch.setenv("CLUE_AGENT_WORKSPACE_ALLOWLIST", "[ws-a]")
+    monkeypatch.setenv("CLUE_SYNTHESIS_MODEL", "openai/gpt-4o")
+    with pytest.raises(ValidationError) as error:
+        load_settings(_env_file=None)  # type: ignore[call-arg]
+    message = str(error.value)
+    assert "agent_workspace_allowlist" in message
+    assert "CLUE_AGENT_WORKSPACE_ALLOWLIST" in message
+    assert '["ws-a","ws-b"]' in message
+    assert "ws-a,ws-b" in message
+    assert error.value.error_count() == 1
+
+
+def test_agent_workspace_allowlist_accepts_one_bare_workspace_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLUE_AGENT_WORKSPACE_ALLOWLIST", "ws-a")
+    settings = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.agent_workspace_allowlist == ("ws-a",)

@@ -21,7 +21,6 @@ from clue_api.agent_platform_wiring import (
     evaluate_agent_canary,
     run_owned_agent_surface,
 )
-from clue_api.fleet_main import _account_agent_runtime_required
 from clue_config import Settings
 from clue_core import (
     EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES,
@@ -99,7 +98,7 @@ def test_account_agent_plan_budget_uses_the_strictest_durable_ceiling() -> None:
     )
 
 
-def test_durable_owner_remains_historical_but_r1_never_wakes_account_deepagent(
+def test_durable_owner_remains_historical_without_reactivating_account_deepagent(
     require_c68_db: None,
 ) -> None:
     del require_c68_db
@@ -109,10 +108,6 @@ def test_durable_owner_remains_historical_but_r1_never_wakes_account_deepagent(
             workspace_id = "ws-c68-routing"
             await seed_workspace(conn, workspace_id)
             factory = conn_session_factory(conn)
-            assert not await _account_agent_runtime_required(
-                _settings(),
-                conn_factory=factory,
-            )
             enabled = DbAgentOwnershipRouter(
                 settings=_settings(
                     agent_runtime_routing_enabled=True,
@@ -128,11 +123,6 @@ def test_durable_owner_remains_historical_but_r1_never_wakes_account_deepagent(
             )
             assert first.owner is AgentOwner.DEEPAGENT
             assert first.selection_source == "allowlist"
-            assert not await _account_agent_runtime_required(
-                _settings(),
-                conn_factory=factory,
-            )
-
             disabled = DbAgentOwnershipRouter(settings=_settings(), conn_factory=factory)
             replay = await disabled.claim(
                 workspace_id=workspace_id,

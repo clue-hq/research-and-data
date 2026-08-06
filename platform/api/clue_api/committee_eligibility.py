@@ -184,8 +184,13 @@ class CommitteeEligibilityService:
                 or run.icp_version != request.icp_version
             ):
                 pass_a_reasons.append("project_run_lineage_mismatch")
-            elif run.status is not ProjectRunStatus.ACTIVE or run.phase is not ProjectPhase.DEEP:
-                pass_a_reasons.append("project_run_not_active_deep")
+            elif run.status is not ProjectRunStatus.ACTIVE:
+                pass_a_reasons.append("project_run_not_active")
+            elif (
+                request.entity_research_job_id is None
+                and run.phase is not ProjectPhase.DEEP
+            ):
+                pass_a_reasons.append("historical_project_run_not_active_deep")
             scoring = await get_checkpoint(conn, request.project_run_id, ProjectPhase.SCORING)
             if scoring is None or scoring.status is not PhaseCheckpointStatus.COMMITTED:
                 pass_a_reasons.append("pass_a_scoring_checkpoint_not_committed")
@@ -382,6 +387,7 @@ class CommitteeEligibilityService:
                         Decimal(0) if reusable_operation is not None else proposed_cost_cents
                     ),
                     allowed_phases=frozenset({ProjectPhase.DEEP}),
+                    entity_research_job_id=request.entity_research_job_id,
                 )
             governance_evidence.extend(
                 (

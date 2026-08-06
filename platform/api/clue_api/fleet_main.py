@@ -16,11 +16,10 @@ sequence, including the campaign-scoped DEEP/VERIFICATION (each holds one ``ICPS
 not live in the single process-default registry (two ICPs would collide on the DEEP slot). The
 process-wide-composable boot handlers (REVIEW) are re-folded into every per-run registry.
 
-M8D R1 deliberately leaves the DEEP entity-research slot fail-closed. A new run reaching it raises
-``entity_research_agent_not_composed``; this entrypoint does not build the superseded account
-deepagent, pre-agent account/contact acquisition, committee preparer, or automatic contact
-progression. Provider lifecycle workers remain active only to drain and persist already-authorized
-durable operations and to support discovery paths that are outside this quarantine.
+M8D R10 promotes separately confirmed account/contact ``create_agent()`` runs through the same
+detached work drain. The outer project DEEP phase remains a loud quarantine for the superseded
+pipeline: it never launches entity research and never performs automatic account-to-contact
+progression. Provider lifecycle workers continue to drain already-authorized durable operations.
 
 :func:`~clue_api.fleet_wiring.register_boot_handlers` still runs at boot as a composition-machinery
 health check, and the worker **refuses to start** (a clean error exit) if that set is empty (a
@@ -46,10 +45,15 @@ import contextlib
 from collections.abc import Awaitable, Callable
 
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
+from clue_api.agent_model_wiring import build_agent_model_provider
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
 from clue_api.contact_content_handoff import ContactContentHandoffService
+from clue_api.contact_research_fleet_launch import ContactResearchSelectionApprover
+from clue_api.entity_research_launch_tools import EntityResearchLaunchServices
+from clue_api.entity_research_parallel import EntityResearchBatchWakeService
+from clue_api.entity_research_provider_wiring import build_production_entity_research_fleet
 from clue_api.exa_targeted_enrichment import (
     ExaTargetedEnrichmentCoordinator,
     ExaTargetedEnrichmentWorker,
@@ -72,6 +76,7 @@ from clue_api.execution_wiring import (
 )
 from clue_api.external_research_wake import (
     ExternalResearchWakeDispatcher,
+    registered_entity_research_wait_sources,
     registered_external_research_wake_sources,
 )
 from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, register_boot_handlers
@@ -93,7 +98,7 @@ from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_config import Secrets, Settings, get_config, load_settings
+from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
 from clue_core import ProjectPhase
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import (
@@ -226,6 +231,17 @@ def _start_external_research_wake(settings: Settings) -> asyncio.Task[None] | No
     ):
         log.info("fleet.external_research.wake_disabled")
         return None
+    entity_wakes = (
+        EntityResearchBatchWakeService() if settings.entity_research_runtime_enabled else None
+    )
+
+    async def wake_entity_member(wait_ref: str) -> int:
+        assert entity_wakes is not None
+        return await entity_wakes.notify_member_ready(
+            wait_ref,
+            actor="provider-due:entity-research",
+        )
+
     return asyncio.create_task(
         _external_research_wake_loop(
             settings,
@@ -235,6 +251,16 @@ def _start_external_research_wake(settings: Settings) -> asyncio.Task[None] | No
                     committee_enabled=settings.sumble_committee_acquisition_enabled,
                     contact_external_enabled=settings.exa_contact_deep_acquisition_enabled,
                     contact_channel_enabled=settings.contact_channel_enrichment_enabled,
+                ),
+                entity_member_waker=(wake_entity_member if entity_wakes is not None else None),
+                entity_wait_sources=(
+                    registered_entity_research_wait_sources(
+                        committee_enabled=settings.sumble_committee_acquisition_enabled,
+                        contact_external_enabled=settings.exa_contact_deep_acquisition_enabled,
+                        contact_channel_enabled=settings.contact_channel_enrichment_enabled,
+                    )
+                    if entity_wakes is not None
+                    else ()
                 ),
             ),
         )
@@ -364,22 +390,6 @@ def _start_exa_targeted_enrichment(
     )
 
 
-async def _account_agent_runtime_required(
-    settings: Settings,
-    *,
-    conn_factory: ConnFactory = transaction,
-) -> bool:
-    """Compatibility probe: R1 never wakes the retired account deepagent runtime.
-
-    Sticky ownership rows remain durable historical evidence, but they no longer authorize new
-    execution.  Keeping this internal probe returning ``False`` lets older operational callers
-    observe the quarantine without reconstructing the retired runtime.
-    """
-
-    del settings, conn_factory
-    return False
-
-
 async def _serve() -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
@@ -406,7 +416,33 @@ async def _serve() -> None:
         task_queue = DbTaskQueue()
         work_queue = DbWorkQueue(task_queue)
         gateway = build_platform_gateway(settings)
+        gateway_config = default_gateway_config()
         pre_spend_gate = build_pre_spend_gate(conn_factory=transaction)
+        entity_research = build_production_entity_research_fleet(
+            settings=settings,
+            secrets=secrets,
+            storage=storage,
+            models=(
+                build_agent_model_provider(config=gateway_config, secrets=secrets)
+                if settings.entity_research_runtime_enabled
+                else None
+            ),
+            gateway=gateway,
+            gateway_config=gateway_config,
+            pre_spend_gate=pre_spend_gate,
+            conn_factory=transaction,
+        )
+        entity_research_launches = (
+            EntityResearchLaunchServices(
+                account_launcher=entity_research.accounts.launcher,
+                account_fleets=entity_research.accounts.fleets,
+                contact_approver=ContactResearchSelectionApprover(conn_factory=transaction),
+                contact_launcher=entity_research.contacts.launcher,
+                contact_fleets=entity_research.contacts.fleets,
+            )
+            if entity_research is not None
+            else None
+        )
         c7_enabled = any(
             (
                 settings.c7_research_view_read_enabled,
@@ -440,6 +476,7 @@ async def _serve() -> None:
             ),
             research_view_recheck=(research_views.recheck if research_views is not None else None),
             contact_content_handoff=contact_content_handoff,
+            entity_research_launches=entity_research_launches,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -485,9 +522,8 @@ async def _serve() -> None:
             max_concurrency=settings.recipe_executor_max_concurrency,
         )
         agent_workspace_factory = None
-        # M8D R1 deliberately composes no account/contact entity agent or pre-agent provider
-        # preparer.  The driver's DEEP slot is the loud quarantine until R3 installs the shared
-        # ``create_agent()`` runtime.
+        # The project DEEP phase remains the R1 loud quarantine. M8D entity runs are independently
+        # launched through the promoted tool surfaces and drained by the handler below.
         driver = ComposingRunDriver(
             settings=settings,
             gateway=gateway,
@@ -541,6 +577,9 @@ async def _serve() -> None:
             settings,
             driver=driver,
             graph_handler=RecipeExecutionHandler(executor),
+            entity_research_handler=(
+                entity_research.handler if entity_research is not None else None
+            ),
             queue=work_queue,
         )
         sweep = _start_orphan_sweep(settings, storage)

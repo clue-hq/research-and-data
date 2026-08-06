@@ -38,6 +38,7 @@ from clue_core import (
     ExternalResearchPreparationOutcome,
     PreSpendGate,
     ProjectRunId,
+    ResearchCommitteePlan,
     RunId,
     SourceTier,
 )
@@ -60,6 +61,11 @@ class SumbleCommitteePreparationInputs(BaseModel):
 
     preflight: SumbleCommitteePreflight
     authorization: CommitteeExecutionAuthorization
+    committee_plan: ResearchCommitteePlan
+    """The confirmed plan the request's ``committee_plan_ref`` addresses.
+
+    Carried typed so the engine can validate an agent-authored buying-unit scope against the
+    durable committee authority instead of re-deriving it from a provider-shaped request."""
 
 
 class SumbleCommitteeInputResolver(Protocol):

@@ -16,6 +16,7 @@ Two things live here, both from substrate §1/§3 and conventions §3:
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import timedelta
 from enum import StrEnum
 from typing import Annotated
@@ -42,6 +43,15 @@ class FieldClass(StrEnum):
     CONTACT = "contact"
     CONTACT_FACET = "contact.facet"
     PACK = "pack"  # a vertical pack namespace, e.g. healthcare.* / frontier_ai.*
+
+
+# The account research axis owns organization-level facts only.  Keep this boundary next to the
+# canonical field classifier so provider acquisition, agent planning, and handoff assembly cannot
+# drift into treating contact/contact-facet fields as account work merely because one ICP/directive
+# activates both axes.
+ACCOUNT_AXIS_FIELD_CLASSES = frozenset(
+    {FieldClass.CORE, FieldClass.ACCOUNT, FieldClass.ACCOUNT_RESONANCE, FieldClass.PACK}
+)
 
 
 # Longest-prefix first so "account.resonance" wins over "account".
@@ -92,6 +102,21 @@ def classify_field_key(key: str) -> FieldClass:
         if key == prefix or key.startswith(prefix + "."):
             return field_class
     return FieldClass.PACK
+
+
+def account_axis_field_keys(keys: Sequence[str]) -> tuple[str, ...]:
+    """Return the stable, de-duplicated account-axis subset of ``keys``.
+
+    A confirmed deep-research directive intentionally carries both account and contact fields.
+    Account-only provider calls and account-agent plans must project that shared authority onto the
+    account axis; contact fields remain available to the later committee/contact fleet.
+    """
+
+    return tuple(
+        dict.fromkeys(
+            key for key in keys if classify_field_key(key) in ACCOUNT_AXIS_FIELD_CLASSES
+        )
+    )
 
 
 def field_namespace(key: str) -> str:

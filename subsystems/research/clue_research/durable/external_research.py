@@ -403,6 +403,7 @@ async def reserve_external_research_operation(
         project_run_id=request.project_run_id,
         proposed_cents=request.cost_cents_reserved,
         allowed_phases=frozenset({ProjectPhase.DEEP}),
+        entity_research_job_id=request.entity_research_job_id,
     )
     existing = await find_external_research_operation(
         conn,

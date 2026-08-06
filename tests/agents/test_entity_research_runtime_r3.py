@@ -150,6 +150,61 @@ class Guard(EntityResearchExecutionGuard):
         self.results.append(call)
 
 
+class BatchRecorder:
+    def __init__(self) -> None:
+        self.admitted: list[tuple[EntityResearchToolCall, ...]] = []
+        self.completed_calls: list[EntityResearchToolCall] = []
+        self.failed_calls: list[tuple[EntityResearchToolCall, BaseException]] = []
+
+    async def admit(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        calls: Sequence[EntityResearchToolCall],
+    ) -> None:
+        del context
+        self.admitted.append(tuple(calls))
+
+    async def replay(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+    ) -> runtime_module.EntityResearchToolReplay:
+        del context, call
+        return runtime_module.EntityResearchToolReplay(found=False)
+
+    async def completed(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+        result: object,
+    ) -> None:
+        del context, result
+        self.completed_calls.append(call)
+
+    async def waiting(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+        wait: EntityResearchExternalWait,
+    ) -> EntityResearchExternalWait:
+        del context, call
+        return wait
+
+    async def failed(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+        error: BaseException,
+    ) -> None:
+        del context
+        self.failed_calls.append((call, error))
+
+
 class Finalizer(EntityResearchFinalizationEngine):
     def __init__(self) -> None:
         self.proposals: list[ResearchFinalizationProposal] = []
@@ -595,6 +650,56 @@ def test_consecutive_zero_yield_limit_spans_interleaved_model_rounds() -> None:
     run_async(run())
 
 
+def test_structured_tool_rejection_is_returned_for_agent_repair_not_joined_as_result() -> None:
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        definition = _definition(context)
+        journal = Journal()
+        guard = Guard()
+        batches = BatchRecorder()
+        middleware = runtime_module._EntityResearchRuntimeMiddleware(
+            definition=definition,
+            journal=journal,
+            guard=guard,
+            batches=batches,
+        )
+        raw_call = {
+            "name": "discover_buying_committee",
+            "args": {"value": "malformed"},
+            "id": "repairable-committee-call",
+        }
+        rejected = ToolMessage(
+            content="committee discovery enumerates people and must not request fields",
+            tool_call_id="repairable-committee-call",
+            name="discover_buying_committee",
+            status="error",
+        )
+
+        async def handler(_request: object) -> ToolMessage:
+            return rejected
+
+        returned = await middleware.awrap_tool_call(
+            SimpleNamespace(
+                tool_call=raw_call,
+                state={"messages": (AIMessage(content="", tool_calls=[raw_call]),)},
+            ),
+            handler,
+        )
+
+        assert returned is rejected
+        assert len(batches.admitted) == 1
+        assert not batches.completed_calls
+        assert len(batches.failed_calls) == 1
+        assert not guard.results
+        assert [event.kind for event in journal.events] == [
+            EntityAgentJournalEventKind.TOOL_STARTED,
+            EntityAgentJournalEventKind.TOOL_FAILED,
+        ]
+        assert journal.events[-1].payload["disposition"] == "model_request_rejected"
+
+    run_async(run())
+
+
 def test_external_wait_returns_exact_durable_checkpoint_for_r2_driver() -> None:
     async def run() -> None:
         context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
@@ -714,3 +819,72 @@ def test_facet_cannot_receive_delegation_finalization_or_separate_budget() -> No
                 },
             }
         )
+
+
+def test_after_accepted_finalize_tool_every_further_tool_call_is_refused() -> None:
+    """Prompt guidance alone did not stop live finalization looping (R10 defect #10).
+
+    Once ``finalize_account_research`` returns the only admissible proposal, the middleware
+    refuses every subsequent governed tool call deterministically, so the model's sole remaining
+    move is emitting the typed structured response.
+    """
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        definition = _definition(context)
+        journal = Journal()
+        guard = Guard()
+        batches = BatchRecorder()
+        middleware = runtime_module._EntityResearchRuntimeMiddleware(
+            definition=definition,
+            journal=journal,
+            guard=guard,
+            batches=batches,
+        )
+        assert "finalize_account_research" in {b.name for b in definition.tools}
+
+        finalize_call = {
+            "name": "finalize_account_research",
+            "args": {},
+            "id": "finalize-once",
+        }
+        proposal = ToolMessage(
+            content='{"proposal":"the-only-admissible-one"}',
+            tool_call_id="finalize-once",
+            name="finalize_account_research",
+        )
+
+        async def finalize_handler(_request: object) -> ToolMessage:
+            return proposal
+
+        returned = await middleware.awrap_tool_call(
+            SimpleNamespace(
+                tool_call=finalize_call,
+                state={"messages": (AIMessage(content="", tool_calls=[finalize_call]),)},
+            ),
+            finalize_handler,
+        )
+        assert returned is proposal
+
+        late_call = {
+            "name": "read_account_research_state",
+            "args": {},
+            "id": "post-finalize-read",
+        }
+
+        async def must_not_run(_request: object) -> ToolMessage:
+            raise AssertionError("post-finalization tool call must never execute")
+
+        refused = await middleware.awrap_tool_call(
+            SimpleNamespace(
+                tool_call=late_call,
+                state={"messages": (AIMessage(content="", tool_calls=[late_call]),)},
+            ),
+            must_not_run,
+        )
+        assert isinstance(refused, ToolMessage)
+        assert refused.status == "error"
+        assert "finalization_already_proposed" in str(refused.content)
+        assert journal.events[-1].payload["disposition"] == "post_finalization_rejected"
+
+    run_async(run())

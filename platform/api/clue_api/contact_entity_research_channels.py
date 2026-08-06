@@ -46,6 +46,7 @@ class GovernedContactChannelActions:
         coordinator: ExaContactChannelCoordinator,
         state: ContactResearchStateStore,
         observation_window: str,
+        entity_research_job_id: UUID | None = None,
         conn_factory: ConnFactory = transaction,
         provider_concurrency_limit: int = 8,
     ) -> None:
@@ -54,6 +55,7 @@ class GovernedContactChannelActions:
         self._coordinator = coordinator
         self._state = state
         self._window = observation_window
+        self._entity_research_job_id = entity_research_job_id
         self._conn_factory = conn_factory
         if provider_concurrency_limit < 1:
             raise ValueError("contact channel provider concurrency limit must be positive")
@@ -119,6 +121,7 @@ class GovernedContactChannelActions:
             effective_policy=self._policy,
             channel=channel,
             observation_window=self._window,
+            entity_research_job_id=self._entity_research_job_id,
             defer_validation=True,
             before_acquisition_dispatch=before_dispatch,
         )

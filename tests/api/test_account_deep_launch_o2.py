@@ -25,12 +25,13 @@ from clue_api.toolbelt_wiring import (
     build_toolbelt,
 )
 from clue_api.trial.account_deep_fixture import (
+    ACCOUNT_NAME,
     DEEP_FIELD_KEYS,
     seed_insight_health_account_deep_fixture,
 )
 from clue_api.trial.discovery_fixture import BRAND_ID, PRODUCT_ID, PROJECT_ID, WORKSPACE_ID
 from clue_config import Settings
-from clue_core import PhaseContext, ProjectPhase, new_operation_id
+from clue_core import PhaseContext, ProjectPhase, ResearchQuestion, new_operation_id
 from clue_research.durable import (
     AccountDeepLaunchConflict,
     account_deep_launch_account_pins,
@@ -41,11 +42,12 @@ from clue_research.durable import (
     preview_account_deep_launch,
 )
 from clue_research.icp import get_icp_version
-from clue_research.resolvers.exa import exa_field_alias
+from clue_research.resolvers.exa import ExaDeepSearchRequest, exa_field_alias
 from clue_research.resolvers.sumble import SumbleClient, SumbleCreditBudget
 from clue_research.verification import PreSpendGateImpl
 from clue_storage import FsStorage
 from clue_toolbelt import ToolContext, invoke_tool
+from clue_toolbelt.errors import PreconditionFailed
 from tests.api.account_deep_test_support import confirmed_account_research_direction
 from tests.api.test_account_deep_fixture_a1 import _pages, _TaskReentrantConnectionFactory
 from tests.api.test_fleet_wiring import _RecordingQueue
@@ -135,37 +137,56 @@ def test_launch_is_immutable_exactly_replayable_and_drives_the_effective_budget(
             assert approved.references["phase"] == "deep"
             assert queue.calls == []
 
-            tool_result = await invoke_tool(
-                registry,
-                "launch_account_deep",
-                {
-                    "project_run_id": str(fixture.project_run_id),
-                    "research_directive_id": str(pin.directive_id),
-                    "account_entity_ids": [str(fixture.selected_account_id)],
-                    "approved_budget_cap_cents": "300",
-                    "expected_estimated_cost_cents": "300",
-                },
-                ToolContext(
+            # M8D R10: a *new* account-deep launch through the tool surface is quarantined —
+            # exact-replay-only. The refusal is loud, enqueues nothing, and writes no launch row.
+            with pytest.raises(PreconditionFailed) as quarantined:
+                await invoke_tool(
+                    registry,
+                    "launch_account_deep",
+                    {
+                        "project_run_id": str(fixture.project_run_id),
+                        "research_directive_id": str(pin.directive_id),
+                        "account_entity_ids": [str(fixture.selected_account_id)],
+                        "approved_budget_cap_cents": "300",
+                        "expected_estimated_cost_cents": "300",
+                    },
+                    ToolContext(
+                        workspace_id=WORKSPACE_ID,
+                        actor="human",
+                        actor_id="human:o2-acceptance",
+                        action_ref="turn:o2-launch-confirmed",
+                        conn_factory=same_connection,
+                        operation_id=operation_id,
+                    ),
+                    idempotency_ttl_s=60,
+                )
+            assert quarantined.value.reason_codes == ("entity_research_agent_not_composed",)
+            assert queue.calls == []
+            assert (
+                await get_account_deep_launch(
+                    conn,
+                    fixture.project_run_id,
                     workspace_id=WORKSPACE_ID,
-                    actor="human",
-                    actor_id="human:o2-acceptance",
-                    action_ref="turn:o2-launch-confirmed",
-                    conn_factory=same_connection,
-                    operation_id=operation_id,
-                ),
-                idempotency_ttl_s=60,
+                )
+                is None
             )
-            assert tool_result.references["selected_accounts"] == 1
-            assert tool_result.references["replayed"] is False
-            assert tool_result.references["enqueued"] is True
-            assert len(queue.calls) == 1
-            stored = await get_account_deep_launch(
+
+            # The durable launch substrate itself is preserved for historical exact replay; the
+            # immutability/replay/budget contract below is unchanged and is exercised directly.
+            created = await create_account_deep_launch(
                 conn,
-                fixture.project_run_id,
                 workspace_id=WORKSPACE_ID,
+                project_run_id=fixture.project_run_id,
+                directive_id=pin.directive_id,
+                account_entity_ids=(fixture.selected_account_id,),
+                approved_budget_cap_cents=Decimal("300"),
+                expected_estimated_cost_cents=Decimal("300"),
+                created_by="human:o2-acceptance",
+                source_operation_id=operation_id,
+                source_action_ref="turn:o2-launch-confirmed",
             )
-            assert stored is not None
-            assert tool_result.references["launch_id"] == str(stored.id)
+            assert created.replayed is False
+            stored = created.launch
             assert await account_deep_launch_account_pins(conn, stored) == (pin,)
 
             account_run_id = deep_account_run_id(
@@ -367,9 +388,10 @@ def test_durable_sumble_inputs_are_derived_from_the_launch_and_s1_identity(
             assert request.research_directive == pin
             assert request.research_direction_ref == pin.directive_ref
             assert request.provider_organization_id == "1726684"
-            assert request.provider_filter_expression == (
-                "job_function IN ('Operations') AND job_level IN ('Director')"
-            )
+            # No advanced query is compiled: Sumble documents no multi-value operator and
+            # `/v9/teams` has no job-level dimension; plan selectors gate admission locally
+            # (docs/specs/M8D-R10-sumble-contract-decision.md).
+            assert request.provider_filter_expression is None
             assert request.people_limit == 4
             assert request.team_limit == 1
             assert request.money_budget_cap_cents == Decimal("300")
@@ -389,6 +411,11 @@ def test_durable_sumble_inputs_are_derived_from_the_launch_and_s1_identity(
 def test_production_exa_preparation_acquires_once_then_replays_from_the_snapshot(
     tmp_path: Path,
 ) -> None:
+    contact_fields = (
+        "contact.current_title",
+        "contact.facet.stated_interests",
+    )
+
     async def scenario() -> None:
         async with rollback_conn(seed=False) as conn:
             storage = FsStorage(tmp_path / "artifacts")
@@ -396,6 +423,7 @@ def test_production_exa_preparation_acquires_once_then_replays_from_the_snapshot
                 conn,
                 pages=_pages(),
                 storage=storage,
+                deep_field_keys=(*DEEP_FIELD_KEYS, *contact_fields),
             )
             _, account_spec = await confirmed_account_research_direction(
                 conn,
@@ -405,7 +433,20 @@ def test_production_exa_preparation_acquires_once_then_replays_from_the_snapshot
                 account_id=fixture.selected_account_id,
                 icp_key=fixture.deep_icp_key,
                 icp_version=fixture.deep_icp_version,
-                field_keys=(DEEP_FIELD_KEYS[0], *DEEP_FIELD_KEYS[2:]),
+                field_keys=(DEEP_FIELD_KEYS[0], *DEEP_FIELD_KEYS[2:], *contact_fields),
+                questions=(
+                    ResearchQuestion(
+                        question_id="account-workflow",
+                        text="Find exact-account workflow friction.",
+                        target_field_key=DEEP_FIELD_KEYS[0],
+                    ),
+                    ResearchQuestion(
+                        question_id="contact-interests",
+                        text="Find selected-contact public interests only.",
+                        target_field_key=contact_fields[1],
+                    ),
+                ),
+                contact_profiling_allowed=True,
             )
             pin = account_spec.research_directive
             assert pin is not None
@@ -457,6 +498,17 @@ def test_production_exa_preparation_acquires_once_then_replays_from_the_snapshot
             assert len(acquired.snapshot_refs) == 1
             assert len(acquired.audit_refs) == 1
             assert len(transport.calls) == 1
+            request = transport.calls[0]
+            assert isinstance(request, ExaDeepSearchRequest)
+            properties = request.output_schema["properties"]
+            assert set(properties) == {
+                exa_field_alias(DEEP_FIELD_KEYS[0]),
+                *(exa_field_alias(field_key) for field_key in DEEP_FIELD_KEYS[2:]),
+            }
+            assert all(exa_field_alias(field_key) not in properties for field_key in contact_fields)
+            assert request.additional_queries == (
+                f"{ACCOUNT_NAME} Find exact-account workflow friction.",
+            )
 
             replayed = await provider.resolver_bindings(
                 workspace_id=WORKSPACE_ID,

@@ -47,8 +47,8 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        # head-of-abm@v20 and research-specialist@v6 elect C6's exact-run profile_contact@2;
-        # v18 otherwise adds O3's progressively disclosed account-deep conversational skill;
+        # head-of-abm@v21 and research-specialist@v7 cut over entity research to the
+        # separately launched M8D create_agent fleets while retaining historical exact replay;
         # the exact-set O2 launch and truthful A2 draft preview remain the governed primitives,
         # alongside S1/E1 targeted-enrichment and dynamic Client-KB proposal/materialization
         # guidance and propose_field@2, on top of PC-C8 §6c's quote-by-text bump. The statement
@@ -57,8 +57,8 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # inspection-tool grants + delegation withholding) and task 1.4's:
         # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
         # nested authority, and B1 layer 2's engine-defaulted claim entity.
-        AgentRole.HEAD_OF_ABM: ("963276a7db5540cae0899e083093aa8f0d126226a39806d252d5cf8f54cb2f84"),
-        AgentRole.RESEARCH: "ad3e27fdb788088689f68f7cd7c395d2eaa6d0b08b6bac8dafb0497fc905d263",
+        AgentRole.HEAD_OF_ABM: ("aa10ba488c903d6ff911c6b54ddaad6c1a596a715876f00ca26c0a98ab4a1a28"),
+        AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
         ),
@@ -112,7 +112,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # The two proposal v1 addresses remain installed only for historical recipe replay. They add
     # inventory entries but cannot enter the current model surface; only propose_field@2 carries
     # the dynamic Client-KB authority.
-    assert len(by_address) == 50
+    assert len(by_address) == 55
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
@@ -121,8 +121,12 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "get_research_view@1",
         "inspect_readiness_history@1",
         "inspect_statement_history@1",
+        "launch_account_research@1",
+        "launch_contact_research@1",
         "propose_field@2",
         "propose_source@1",
+        "read_account_research_run@1",
+        "read_contact_research_run@1",
         "record_interview_answer@1",
         "start_confirmed_project_run@1",
         "start_recon@1",
@@ -178,7 +182,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
 
     assert len(disclosures) == 2
     assert disclosures[0].resource.address == "skill:stage0-interview@v9"
-    assert disclosures[1].resource.address == "skill:account-deep-steering@v1"
+    assert disclosures[1].resource.address == "skill:account-deep-steering@v2"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -191,7 +195,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     (
         (
             AgentRole.RESEARCH,
-            "skill:research-task@v3",
+            "skill:research-task@v4",
             "outputs/research-strategy.md",
             180.0,
             16,
@@ -307,7 +311,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "evaluate_stage0_readiness@1" not in {pin.address for pin in head.profile.tools}
     assert [item.resource.address for item in head.skill_disclosures()] == [
-        "skill:account-deep-steering@v1"
+        "skill:account-deep-steering@v2"
     ]
 
 

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -25,10 +28,24 @@ from clue_api.account_research_fleet_launch import (
     AccountResearchFleetLaunchError,
     AccountResearchFleetLaunchRequest,
 )
+from clue_api.entity_research_provider_wiring import ProductionAccountResearchProviderActions
+from clue_api.sumble_account_gaps import compile_sumble_account_gap_preflight
 from clue_api.trial.account_deep_fixture import seed_insight_health_account_deep_fixture
-from clue_core import ResearchQuestion
-from clue_fleet import DbEntityResearchJobStore
+from clue_config import GatewayConfig, Secrets, Settings
+from clue_core import LLMGateway, PreSpendGate, ProjectPhase, ProjectRunId, ResearchQuestion
+from clue_fleet import (
+    DbEntityResearchJobStore,
+    EntityResearchExecutionFence,
+    FleetTaskKind,
+    WorkId,
+    acquire_work_lease,
+    claim_next_task,
+)
 from clue_research.durable import find_account_runs_for_entity
+from clue_research.durable.provider_spend import (
+    ProviderSpendRunIneligible,
+    require_provider_spend_capacity,
+)
 from clue_storage import FsStorage
 from tests.api.account_deep_test_support import confirmed_account_research_direction
 from tests.api.test_account_deep_fixture_a1 import _pages
@@ -247,5 +264,91 @@ def test_confirmed_direction_compiles_exact_account_fleet_without_provider_or_co
                 .one()
             )
             assert row_counts == {"runs": 1, "jobs": 1, "tasks": 1, "account_runs": 1}
+
+            # M8D launches are action-scoped. Only the exact running entity job authority may
+            # replace the reused provider ledgers' historical DEEP-phase requirement.
+            task = await claim_next_task(
+                conn,
+                kind=FleetTaskKind.ENTITY_RESEARCH_JOB,
+                worker_id="r10-spend-authority",
+                project_run_id=ProjectRunId(job.job_id),
+            )
+            assert task is not None
+            lease = await acquire_work_lease(
+                conn,
+                work_id=WorkId(job.job_id),
+                worker_id="r10-spend-authority",
+                ttl=timedelta(seconds=60),
+            )
+            assert lease is not None
+            fence = EntityResearchExecutionFence(
+                task_id=task.task_id,
+                worker_id="r10-spend-authority",
+                lease_generation=lease.generation,
+            )
+            begun = await DbEntityResearchJobStore(conn_factory=connection).begin(
+                job.job_id,
+                fence=fence,
+            )
+            assert begun.admitted
+            providers = ProductionAccountResearchProviderActions(
+                settings=Settings(
+                    _env_file=None,
+                    exa_account_deep_acquisition_enabled=True,
+                    sumble_account_gap_enrichment_enabled=True,
+                    sumble_committee_acquisition_enabled=True,
+                ),
+                secrets=Secrets(
+                    _env_file=None,
+                    exa_api_key=SecretStr("r10-test-exa"),
+                    sumble_api_key=SecretStr("r10-test-sumble"),
+                ),
+                storage=storage,
+                pre_spend_gate=cast(PreSpendGate, object()),
+                gateway=cast(LLMGateway, object()),
+                gateway_config=GatewayConfig(),
+                conn_factory=connection,
+            )
+            bindings = await providers.resolve(begun.job)
+            assert set(bindings) == {
+                "research_account_deep",
+                "enrich_account",
+                "discover_buying_committee",
+            }
+            assert all(binding.provider_family for binding in bindings.values())
+            assert all(binding.budget_reservation_cents > 0 for binding in bindings.values())
+            capacity = await require_provider_spend_capacity(
+                conn,
+                project_run_id=fixture.project_run_id,
+                proposed_cents=Decimal("1"),
+                allowed_phases=frozenset({ProjectPhase.DEEP}),
+                entity_research_job_id=job.job_id,
+            )
+            assert capacity.phase is ProjectPhase.SCORING
+            preflight = await compile_sumble_account_gap_preflight(
+                workspace_id=fixture.discovery_fixture.workspace_id,
+                project_run_id=fixture.project_run_id,
+                account_id=fixture.selected_account_id,
+                field_expected_value_credits={_HIRING: Decimal("25")},
+                provider_credit_cap=25,
+                allow_unbounded_tech=False,
+                observation_window=f"r10-job:{job.job_id}",
+                storage=storage,
+                conn_factory=connection,
+                entity_research_job_id=job.job_id,
+            )
+            assert preflight.request.entity_research_job_id == job.job_id
+            assert preflight.request.fields[0].field_key == _HIRING
+            with pytest.raises(
+                ProviderSpendRunIneligible,
+                match="exact live entity-research job authority",
+            ):
+                await require_provider_spend_capacity(
+                    conn,
+                    project_run_id=fixture.project_run_id,
+                    proposed_cents=Decimal("1"),
+                    allowed_phases=frozenset({ProjectPhase.DEEP}),
+                    entity_research_job_id=uuid4(),
+                )
 
     run_async(scenario())

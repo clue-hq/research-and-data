@@ -34,6 +34,7 @@ from clue_api.agent_execution_wiring import (
     DbAgentPlanJournal,
     postgres_agent_checkpointer,
 )
+from clue_api.agent_registry_wiring import ACCOUNT_RESEARCH_UNIT_SURFACE
 from clue_api.agent_runtime_wiring import CompletionGuard
 from clue_api.agent_turn_wiring import (
     DbAgentHistoryStore,
@@ -296,7 +297,10 @@ class PreparedAccountResearchTurnRunner:
         budget_cap_cents: Decimal | None,
         completion_guard: CompletionGuard,
     ) -> AgentTurnOutcome:
-        resolved = self._profiles.resolve(AgentRole.ACCOUNT_RESEARCH)
+        resolved = self._profiles.resolve(
+            AgentRole.ACCOUNT_RESEARCH,
+            surface=ACCOUNT_RESEARCH_UNIT_SURFACE,
+        )
         project_run, account_run, account, project = await self._load_scope(
             workspace_id=workspace_id,
             project_run_id=project_run_id,
@@ -434,6 +438,14 @@ class PreparedAccountResearchTurnRunner:
                 "planned_field_keys": sorted(
                     field for aspect in plan.aspects for field in aspect.field_keys
                 ),
+                "strategy_contract": {
+                    "authority": "coverage_engine",
+                    "instruction": (
+                        "Omit strategy_hint unless a prior governed result names the exact next "
+                        "permitted engine strategy. Never use source-family names or skip the "
+                        "engine-owned waterfall."
+                    ),
+                },
                 "research_directive_ref": (
                     plan.research_directive.directive_ref
                     if plan.research_directive is not None

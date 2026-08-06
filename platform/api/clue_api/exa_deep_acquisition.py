@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Protocol
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
@@ -887,6 +888,7 @@ def compile_exa_deep_acquisition_plan(
     freshness_policy_ref: str,
     freshness_seconds: int,
     cost_cents_reserved_per_bundle: Decimal,
+    entity_research_job_id: UUID | None = None,
     config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
 ) -> ExaDeepAcquisitionBundlePlan:
     """Pack admitted fields deterministically under Exa's schema limits.
@@ -954,6 +956,9 @@ def compile_exa_deep_acquisition_plan(
             "contract": "exa-search-deep-acquisition-e1-v2",
             "reuse_fingerprint": reuse_fingerprint,
             "project_run_id": str(project_run_id),
+            "entity_research_job_id": (
+                str(entity_research_job_id) if entity_research_job_id is not None else None
+            ),
             "observation_window": observation_window,
             "bundle_index": index,
         }
@@ -962,6 +967,7 @@ def compile_exa_deep_acquisition_plan(
             workspace_id=workspace_id,
             project_id=project_id,
             project_run_id=project_run_id,
+            entity_research_job_id=entity_research_job_id,
             account_id=account.id,
             icp_key=icp_key,
             icp_version=icp_version,

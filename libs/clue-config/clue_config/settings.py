@@ -12,14 +12,20 @@ The ICP synthesis model id (M5.2) is the first live setting here; it also feeds
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
-from typing import Any, Final, Literal
+from typing import Annotated, Any, Final, Literal
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Canonical fallback when ``CLUE_SYNTHESIS_MODEL`` is unset — keep in sync with GatewayConfig docs.
 DEFAULT_SYNTHESIS_MODEL: Final = "openai/gpt-5.6-terra"
+
+_ALLOWLIST_FORMAT_ERROR: Final = (
+    'CLUE_AGENT_WORKSPACE_ALLOWLIST must be a JSON array (["ws-a","ws-b"]) or a comma-separated '
+    "list (ws-a,ws-b)"
+)
 
 
 class Settings(BaseSettings):
@@ -170,9 +176,33 @@ class Settings(BaseSettings):
     # Env: ``CLUE_AGENT_STAGE0_ROUTING_ENABLED`` / ``CLUE_AGENT_ACCOUNT_ROUTING_ENABLED``.
     agent_stage0_routing_enabled: bool = False
     agent_account_routing_enabled: bool = False
+    # M8D R10 production cutover for the separately launched account/contact ``create_agent()``
+    # runs. This switch owns only the shared entity-research worker and launch/read tools; it does
+    # not authorize a provider. Exa/Sumble/channel switches above remain independent hard gates.
+    # Env: ``CLUE_ENTITY_RESEARCH_RUNTIME_ENABLED``.
+    entity_research_runtime_enabled: bool = False
+    # R9 requires a positive worst-case monetary reservation even when a subscription provider
+    # reports credits while ``sumble_cents_per_credit`` is intentionally zero. This admission
+    # floor is released after settlement and is never recorded as spend. It is policy, not an
+    # invented provider price. Env: ``CLUE_ENTITY_RESEARCH_UNPRICED_RESERVATION_CENTS``.
+    entity_research_unpriced_reservation_cents: Decimal = Field(default=Decimal(1), gt=0)
+    # One process-wide provider permit policy is shared by account/contact jobs. Exact per-run and
+    # per-job concurrency limits are still enforced separately by the R2/R9 substrate.
+    # Env: ``CLUE_ENTITY_RESEARCH_PROVIDER_CONCURRENCY_LIMIT``.
+    entity_research_provider_concurrency_limit: int = Field(default=8, ge=1, le=1024)
+    # R5 structured Sumble actions retain the S1 per-request credit cap in addition to monetary
+    # admission. The compiler still raises when a selected field set has a larger documented
+    # bounded maximum. Env: ``CLUE_ENTITY_RESEARCH_SUMBLE_PROVIDER_CREDIT_CAP``.
+    entity_research_sumble_provider_credit_cap: int = Field(default=25, ge=1, le=10_000)
     # Explicit canary workspace ids and deterministic workspace+surface percentage cohort.
     # Env: ``CLUE_AGENT_WORKSPACE_ALLOWLIST`` / ``CLUE_AGENT_CANARY_PERCENT``.
-    agent_workspace_allowlist: tuple[str, ...] = ()
+    #
+    # ``NoDecode`` hands the raw environment string to the validator below instead of letting
+    # pydantic-settings JSON-decode it first: its decode failure is a ``SettingsError`` raised
+    # while *building* the settings object, so one malformed allowlist takes down every unrelated
+    # setting with an error that names neither the accepted formats nor the fix. (Seen live: a
+    # shell ``source .env`` strips the JSON string quotes, leaving ``[ws-a]``.)
+    agent_workspace_allowlist: Annotated[tuple[str, ...], NoDecode] = ()
     agent_canary_percent: int = Field(default=0, ge=0, le=100)
     # Absolute API-root ceiling for one governed account-agent plan. The prepared runner further
     # clamps this to the account's durable research budget when one exists.
@@ -282,6 +312,32 @@ class Settings(BaseSettings):
     # the live tail drains the remainder, and in replay-then-close mode this bounds one connect's
     # backlog). Env: ``CLUE_SSE_REPLAY_PAGE_LIMIT``.
     sse_replay_page_limit: int = 10_000
+
+    @field_validator("agent_workspace_allowlist", mode="before")
+    @classmethod
+    def _parse_agent_workspace_allowlist(cls, value: Any) -> Any:
+        """Accept a JSON array *or* a plain comma-separated list of workspace ids.
+
+        Both spellings survive the ways this value actually reaches a process (a JSON array in a
+        ``.env`` file; a bare comma-separated list that a shell ``source`` cannot mangle). A value
+        that is neither fails as *this* field, with a message naming the variable and both accepted
+        formats, rather than aborting the construction of every other setting.
+        """
+
+        if not isinstance(value, str):
+            return value
+        raw = value.strip()
+        if not raw:
+            return ()
+        if raw.startswith("["):
+            try:
+                decoded = json.loads(raw)
+            except ValueError as exc:
+                raise ValueError(_ALLOWLIST_FORMAT_ERROR) from exc
+            if not isinstance(decoded, list):
+                raise ValueError(_ALLOWLIST_FORMAT_ERROR)
+            return decoded
+        return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
 def load_settings(**kwargs: Any) -> Settings:

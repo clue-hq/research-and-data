@@ -26,6 +26,7 @@ from clue_api.sumble_committee_preparation import (
 )
 from clue_core import (
     ExternalResearchPreparationOutcome,
+    ResearchCommitteePlan,
     ResearchDirectiveId,
     RunId,
 )
@@ -87,6 +88,7 @@ def test_sumble_preparer_waits_then_returns_exact_snapshot_source_without_resubm
             original_inputs = SumbleCommitteePreparationInputs(
                 preflight=preflight,
                 authorization=_authorization(request),
+                committee_plan=ResearchCommitteePlan(),
             )
             input_resolver = _Inputs(original_inputs)
             preparer = SumbleCommitteePreparer(
@@ -128,6 +130,7 @@ def test_sumble_preparer_waits_then_returns_exact_snapshot_source_without_resubm
                         "research_directive": mismatched_pin,
                     }
                 ),
+                committee_plan=original_inputs.committee_plan,
             )
             with pytest.raises(
                 SumbleCommitteePreparationError,

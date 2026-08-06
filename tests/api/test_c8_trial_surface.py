@@ -41,10 +41,12 @@ from clue_api.toolbelt_wiring import build_toolbelt
 from tests.api.conftest import hermetic_flag_env
 from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 
+# Mirrors C6_SURFACE_POLICIES for the trial surface. M8D R10 retired the account-deep launch and
+# gap-enrichment tools from every active role (they are no longer *grantable*, so there is nothing
+# to withhold) and put the promoted separately confirmed launches behind the same trial withhold.
 _WITHHELD = {
-    "enrich_account_gaps",
-    "enrich_selected_accounts",
-    "launch_account_deep",
+    "launch_account_research",
+    "launch_contact_research",
     "start_recon",
     "submit_onboarding_input",
     "synthesize_icps",

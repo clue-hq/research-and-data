@@ -319,7 +319,9 @@ def test_get_hiring_velocity_matches_substrate_example() -> None:
         async with rollback_conn() as conn:
             fd = await get_field(conn, "account.hiring_velocity_eng")
         assert fd is not None
-        assert fd.tier_plan == ("sumble_jobs", "linkedin_jobs", "exa")
+        # M8D R10 promoted the qualitative LLM-synthesis fallback to the exact
+        # ``exa_deep`` source; no legacy ``exa`` step is manufactured for new runs.
+        assert fd.tier_plan == ("sumble_jobs", "linkedin_jobs", "exa_deep")
         assert fd.freshness_ttl == timedelta(days=30)
         assert fd.pass_kind is PassKind.DEEP
         assert fd.gate == "tier>=3"

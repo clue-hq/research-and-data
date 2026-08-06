@@ -46,7 +46,7 @@ def _fixture(name: str) -> dict[str, Any]:
 
 def test_people_search_is_exact_account_bounded_and_no_reveal() -> None:
     query = SumbleAdvancedQuery(
-        expression="job_function EQ 'Operations' AND job_level_min EQ 'Manager'"
+        expression="job_function EQ 'Operations' AND job_level EQ 'Manager'"
     )
     body, maximum = people_search_request(
         _ORGANIZATION_ID,
@@ -88,6 +88,47 @@ def test_advanced_query_must_be_prevalidated_and_single_line() -> None:
         SumbleAdvancedQuery(expression=" job_function EQ 'Operations' ")
     with pytest.raises(ValueError, match="single line"):
         SumbleAdvancedQuery(expression="job_function EQ 'Operations'\nOR true")
+
+
+def test_advanced_query_refuses_undocumented_grammar() -> None:
+    """Sumble documents only ``<dimension> EQ '<value>'`` atoms joined by AND.
+
+    ``IN``/``OR`` are not in any published example and produced live deterministic HTTP 400s;
+    guessed grammar must fail at compile time, never at the provider
+    (docs/specs/M8D-R10-sumble-contract-decision.md).
+    """
+
+    with pytest.raises(ValueError, match="EQ"):
+        SumbleAdvancedQuery(expression="job_function IN ('Executive', 'Operations')")
+    with pytest.raises(ValueError, match="EQ"):
+        SumbleAdvancedQuery(expression="job_function EQ 'Sales' OR job_function EQ 'Marketing'")
+    with pytest.raises(ValueError, match="EQ"):
+        SumbleAdvancedQuery(expression="job_function EQ 'O''Brien Ops'")
+    assert SumbleAdvancedQuery(
+        expression="job_function EQ 'Operations' AND technology EQ 'kubernetes'"
+    ).dimensions() == ("job_function", "technology")
+
+
+def test_teams_request_refuses_job_level_dimension() -> None:
+    """``/v9/teams`` documents no job-level query dimension; live probes returned HTTP 400."""
+
+    with pytest.raises(ValueError, match="Teams advanced query does not support"):
+        teams_search_request(
+            _ORGANIZATION_ID,
+            limit=2,
+            max_people_per_team=3,
+            max_jobs_per_team=2,
+            advanced_query=SumbleAdvancedQuery(expression="job_level EQ 'Director'"),
+        )
+
+
+def test_people_request_refuses_undocumented_dimension() -> None:
+    with pytest.raises(ValueError, match="People advanced query does not support"):
+        people_search_request(
+            _ORGANIZATION_ID,
+            limit=5,
+            advanced_query=SumbleAdvancedQuery(expression="job_level_min EQ 'Manager'"),
+        )
 
 
 def test_people_poll_body_contains_request_id_alone() -> None:

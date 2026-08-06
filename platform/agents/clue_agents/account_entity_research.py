@@ -51,7 +51,49 @@ class AccountBuyingUnitScope(_FrozenModel):
 class DiscoverBuyingCommitteeInput(EntityResearchSemanticToolInput):
     """Committee research intent plus an account-evidence-backed office boundary."""
 
-    buying_unit_scope: AccountBuyingUnitScope
+    field_keys: tuple[NonEmptyStr, ...] = Field(
+        default=(),
+        max_length=0,
+        description="Always empty: committee discovery enumerates people, not account fields.",
+    )
+    source_keys: tuple[NonEmptyStr, ...] = Field(
+        min_length=1,
+        description="Exact admitted committee-enumeration source keys only.",
+    )
+    questions: tuple[NonEmptyStr, ...] = Field(
+        min_length=1,
+        description="Verbatim confirmed committee question; never synthesize or paraphrase it.",
+    )
+    parent_operation_ref: None = Field(
+        default=None,
+        description="Always null: committee enumeration is not a field follow-up.",
+    )
+    parent_observation_ref: None = Field(
+        default=None,
+        description="Always null: cite account evidence in buying_unit_scope.evidence_refs.",
+    )
+    follow_up_reason: None = Field(
+        default=None,
+        description="Always null: committee enumeration is not a field follow-up.",
+    )
+    buying_unit_scope: AccountBuyingUnitScope = Field(
+        description="Exact account/office boundary grounded by retained account evidence refs."
+    )
+
+    @model_validator(mode="after")
+    def _enumeration_is_not_field_research_or_follow_up(self) -> Self:
+        if self.field_keys:
+            raise ValueError("committee discovery enumerates people and must not request fields")
+        if any(
+            value is not None
+            for value in (
+                self.parent_operation_ref,
+                self.parent_observation_ref,
+                self.follow_up_reason,
+            )
+        ):
+            raise ValueError("committee discovery is not an additive field follow-up")
+        return self
 
 
 class ReadAccountResearchStateInput(_FrozenModel):
@@ -86,6 +128,22 @@ class FinalizeAccountResearchInput(_FrozenModel):
     requested_outcome: ResearchFinalizationOutcome
 
 
+class AccountCommitteePlanProjection(_FrozenModel):
+    """The confirmed committee authority of the job's pinned directive, projected read-only.
+
+    The agent may narrow this plan for one office, but it may never widen or invent a target
+    function: the engine validates every committee call's ``target_functions`` against it.
+    """
+
+    directive_ref: NonEmptyStr
+    functions: tuple[NonEmptyStr, ...] = ()
+    levels: tuple[NonEmptyStr, ...] = ()
+    teams: tuple[NonEmptyStr, ...] = ()
+    personas: tuple[NonEmptyStr, ...] = ()
+    candidate_cap: int = Field(ge=1)
+    questions: tuple[NonEmptyStr, ...] = ()
+
+
 class AccountResearchStateProjection(_FrozenModel):
     job_id: UUID
     account_entity_id: UUID
@@ -101,6 +159,7 @@ class AccountResearchStateProjection(_FrozenModel):
     pending_operation_refs: tuple[NonEmptyStr, ...]
     spent_cents: str
     contact_research_request_count: int = Field(ge=0)
+    committee_plan: AccountCommitteePlanProjection | None = None
 
 
 class AccountCoverageProjection(_FrozenModel):
@@ -125,6 +184,7 @@ class AccountCoverageProjection(_FrozenModel):
 
 __all__ = [
     "AccountBuyingUnitScope",
+    "AccountCommitteePlanProjection",
     "AccountCoverageProjection",
     "AccountResearchStateProjection",
     "AssessAccountCoverageInput",

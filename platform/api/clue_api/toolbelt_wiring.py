@@ -74,6 +74,10 @@ from clue_api.coverage_tools import (
 from clue_api.deep.composition import build_high_tier_resolver
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
+from clue_api.entity_research_launch_tools import (
+    EntityResearchLaunchServices,
+    build_entity_research_launch_tools,
+)
 from clue_api.entity_research_quarantine import quarantine_entity_research_tool
 from clue_api.exa_targeted_enrichment import (
     DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY,
@@ -2552,6 +2556,7 @@ def build_toolbelt(
     account_deep_full_unit_available: bool | None = None,
     independent_contact_research: IndependentContactResearchRunner | None = None,
     contact_content_handoff: ContactContentHandoffService | None = None,
+    entity_research_launches: EntityResearchLaunchServices | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -2671,8 +2676,10 @@ def build_toolbelt(
     )
     registry.register(
         ApproveContactResearchSelectionTool(conn_factory=conn_factory),
-        make_default=True,
+        make_default=False,
     )
+    for tool in build_entity_research_launch_tools(entity_research_launches):
+        registry.register(tool, make_default=True)
     registry.register(
         quarantine_entity_research_tool(
             EnrichSelectedAccountsTool(

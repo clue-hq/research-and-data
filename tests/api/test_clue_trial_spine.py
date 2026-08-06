@@ -269,7 +269,9 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
             ),
         )
         assert [claim.value_json for claim in jobs_claims] == [4]
-        assert "Software Engineer" in (jobs_claims[0].evidence_span or "")
+        # The query contract is retained in the request artifact; claim evidence cites the exact
+        # returned aggregate member from the immutable provider-response artifact.
+        assert jobs_claims[0].evidence_span == '"total":4'
 
         # The S1 fixture proves discovery/scoring through the human tier checkpoint. R1 then
         # quarantines its retired pre-agent DEEP path: approval may not silently fall back to the

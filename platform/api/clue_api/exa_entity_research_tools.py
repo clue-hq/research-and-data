@@ -613,6 +613,7 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
         projector: ExaEntityResearchProjectionBuilder,
         run_id: RunId,
         observation_window: str,
+        entity_research_job_id: UUID | None = None,
     ) -> None:
         self._intent = intent
         self._policy = effective_policy
@@ -621,6 +622,7 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
         self._projector = projector
         self._run_id = run_id
         self._observation_window = observation_window
+        self._entity_research_job_id = entity_research_job_id
 
     async def execute(
         self,
@@ -690,6 +692,7 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
             directional_questions=request.questions,
             reuse_context_ref=reuse_context_ref,
             prior_research_context=request.prior_research_context,
+            entity_research_job_id=self._entity_research_job_id,
         )
         waiting = [
             result
@@ -782,6 +785,7 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
         freshness_policy_ref: str,
         freshness_seconds: int,
         cost_cents_reserved_per_bundle: Decimal,
+        entity_research_job_id: UUID | None = None,
         config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
     ) -> None:
         self._workspace_id = workspace_id
@@ -800,6 +804,7 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
         self._freshness_policy_ref = freshness_policy_ref
         self._freshness_seconds = freshness_seconds
         self._reserved_per_bundle = cost_cents_reserved_per_bundle
+        self._entity_research_job_id = entity_research_job_id
         self._config = config
 
     async def execute(
@@ -875,6 +880,7 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
             freshness_policy_ref=self._freshness_policy_ref,
             freshness_seconds=self._freshness_seconds,
             cost_cents_reserved_per_bundle=self._reserved_per_bundle,
+            entity_research_job_id=self._entity_research_job_id,
             config=self._config,
         )
         caused_refs: set[str] = set()

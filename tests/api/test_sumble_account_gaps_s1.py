@@ -24,6 +24,9 @@ from clue_api.sumble_account_gaps import (
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_core import (
     AccountGapOperationId,
+    AccountGapOperationState,
+    AccountGapSnapshotState,
+    AccountGapSpendOutcome,
     EntityId,
     ExtractionMethod,
     ProjectRunId,
@@ -43,6 +46,7 @@ from clue_research.durable import (
     tombstone_discovery_subject_artifacts,
 )
 from clue_research.identity import stamp_reuse
+from clue_research.resolvers.http import ProviderResponseError
 from clue_research.resolvers.sumble import (
     JOBS_SOURCE_KEY,
     ORGANIZATIONS_SOURCE_KEY,
@@ -96,6 +100,53 @@ class _SumbleHttp:
         raise AssertionError(f"unexpected Sumble URL: {url}")
 
 
+async def _seed_selected_high_tier_account(
+    conn: AsyncConnection,
+    storage: FsStorage,
+    *,
+    workspace_id: str,
+) -> tuple[Any, Any]:
+    """Seal one discovered account, advance its run to deep, and record the human tier decision."""
+
+    started = await _start_batch(conn, storage, workspace_id=workspace_id)
+    ready = await _complete_batch(conn, storage, started=started)
+    seal = await seal_discovery_batch(
+        conn,
+        workspace_id=workspace_id,
+        batch_id=started.batch_id,
+        draft=ready.draft,
+    )
+    await _advance_sealed_run_to_deep(conn, ProjectRunId(started.project_run_id))
+    tier = stamp_reuse(
+        account_claim(
+            entity_id=EntityId(ready.account_id),
+            field_key=TIER_FIELD,
+            value_json={
+                "tier": "high",
+                "decision_basis": "discovery_criteria",
+                "selection_policy_version": "discovery-selection-v1",
+                "decision_version": "s1-test-decision",
+                "cutoff_version": "s1-test-decision",
+                "discovery_batch_id": str(started.batch_id),
+                "discovery_seal_sha256": seal.seal_sha256,
+                "project_run_id": str(started.project_run_id),
+                "disposition": "selected",
+                "evidence_claim_ids": [],
+                "icp_key": "independent-specialty-practices",
+                "icp_version": 1,
+            },
+            source_tier=1,
+            extraction_method=ExtractionMethod.HUMAN,
+            confidence=1,
+            run_id=RunId(started.project_run_id),
+            research_mode=ResearchMode.ACCOUNT_PROFILING,
+        ),
+        workspace_id=workspace_id,
+    )
+    await insert_claim(conn, tier)
+    return started, ready
+
+
 def test_s1_real_db_three_snapshots_conflict_preservation_and_zero_call_replay(
     tmp_path: Path,
 ) -> None:
@@ -103,42 +154,9 @@ def test_s1_real_db_three_snapshots_conflict_preservation_and_zero_call_replay(
         workspace_id = "ws-s1-sumble"
         storage = FsStorage(tmp_path / "artifacts")
         async with rollback_conn(seed_pack=True) as conn:
-            started = await _start_batch(conn, storage, workspace_id=workspace_id)
-            ready = await _complete_batch(conn, storage, started=started)
-            seal = await seal_discovery_batch(
-                conn,
-                workspace_id=workspace_id,
-                batch_id=started.batch_id,
-                draft=ready.draft,
+            started, ready = await _seed_selected_high_tier_account(
+                conn, storage, workspace_id=workspace_id
             )
-            await _advance_sealed_run_to_deep(conn, ProjectRunId(started.project_run_id))
-            tier = stamp_reuse(
-                account_claim(
-                    entity_id=EntityId(ready.account_id),
-                    field_key=TIER_FIELD,
-                    value_json={
-                        "tier": "high",
-                        "decision_basis": "discovery_criteria",
-                        "selection_policy_version": "discovery-selection-v1",
-                        "decision_version": "s1-test-decision",
-                        "cutoff_version": "s1-test-decision",
-                        "discovery_batch_id": str(started.batch_id),
-                        "discovery_seal_sha256": seal.seal_sha256,
-                        "project_run_id": str(started.project_run_id),
-                        "disposition": "selected",
-                        "evidence_claim_ids": [],
-                        "icp_key": "independent-specialty-practices",
-                        "icp_version": 1,
-                    },
-                    source_tier=1,
-                    extraction_method=ExtractionMethod.HUMAN,
-                    confidence=1,
-                    run_id=RunId(started.project_run_id),
-                    research_mode=ResearchMode.ACCOUNT_PROFILING,
-                ),
-                workspace_id=workspace_id,
-            )
-            await insert_claim(conn, tier)
             exa_tech = account_claim(
                 entity_id=EntityId(ready.account_id),
                 field_key="core.primary_tech_stack",
@@ -421,5 +439,198 @@ def test_s1_real_db_three_snapshots_conflict_preservation_and_zero_call_replay(
             )
             assert erased_replay.outcome is SumbleAccountGapOutcome.REPLAYED
             assert len(http.calls) == 3
+
+    run_async(scenario())
+
+
+class _RejectingSumbleHttp:
+    """Refuse every Sumble call the way the live wrapper reports a provider response fault."""
+
+    def __init__(self, *, status_code: int | None, body_excerpt: str | None) -> None:
+        self.calls: list[str] = []
+        self._status_code = status_code
+        self._body_excerpt = body_excerpt
+
+    def __call__(self, url: str, **kwargs: Any) -> object:
+        self.calls.append(url)
+        raise ProviderResponseError(
+            f"{ORGANIZATIONS_SOURCE_KEY}: HTTP {self._status_code} from {url}",
+            status_code=self._status_code,
+            body_excerpt=self._body_excerpt,
+        )
+
+
+def _rejecting_starter(
+    *,
+    storage: FsStorage,
+    conn_factory: Any,
+    http: _RejectingSumbleHttp,
+) -> SumbleAccountGapStarter:
+    def client_factory(maximum: int, cents: Decimal) -> SumbleClient:
+        return SumbleClient(
+            api_key=SecretStr("fixture"),
+            budget=SumbleCreditBudget(maximum=maximum),
+            http=http,
+            cents_per_credit=cents,
+        )
+
+    coordinator = SumbleAccountGapCoordinator(
+        api_key=SecretStr("fixture"),
+        storage=storage,
+        cents_per_credit=Decimal("0.5"),
+        conn_factory=conn_factory,
+        client_factory=client_factory,
+    )
+    return SumbleAccountGapStarter(
+        coordinator=coordinator,
+        storage=storage,
+        cents_per_credit=Decimal("0.5"),
+        conn_factory=conn_factory,
+    )
+
+
+def test_s1_deterministic_provider_rejection_is_terminal_uncharged_and_retains_the_body(
+    tmp_path: Path,
+) -> None:
+    """A hard 4xx is a zero-credit refusal, not an unknown spend, and keeps its diagnostic."""
+
+    async def scenario() -> None:
+        workspace_id = "ws-s1-sumble-rejected"
+        storage = FsStorage(tmp_path / "artifacts")
+        body_excerpt = (
+            '{"detail":[{"loc":["body","filter","query"],'
+            '"msg":"Input should be a valid dictionary"}]}'
+        )
+        async with rollback_conn(seed_pack=True) as conn:
+            started, ready = await _seed_selected_high_tier_account(
+                conn, storage, workspace_id=workspace_id
+            )
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            http = _RejectingSumbleHttp(status_code=422, body_excerpt=body_excerpt)
+            starter = _rejecting_starter(storage=storage, conn_factory=same_connection, http=http)
+            result = await starter.start(
+                workspace_id=workspace_id,
+                project_run_id=ProjectRunId(started.project_run_id),
+                account_id=EntityId(ready.account_id),
+                field_expected_value_credits={"account.hiring_velocity_eng": Decimal(5)},
+                provider_credit_cap=2,
+                allow_unbounded_tech=False,
+            )
+            assert result.outcome is SumbleAccountGapOutcome.FAILED_TERMINAL
+            assert len(http.calls) == 1
+
+            failure_code = f"{ORGANIZATIONS_SOURCE_KEY}_provider_rejected_http_422"
+            operation = await get_account_gap_operation(
+                conn,
+                workspace_id=workspace_id,
+                operation_id=AccountGapOperationId(result.operation.operation_id),
+            )
+            assert operation is not None
+            assert operation.state is AccountGapOperationState.FAILED_TERMINAL
+            assert operation.spend_outcome is AccountGapSpendOutcome.NOT_CHARGED
+            assert operation.provider_units_charged == Decimal(0)
+            assert operation.cost_cents_charged == Decimal(0)
+            assert operation.failure_code == failure_code
+
+            snapshots = await list_account_gap_snapshots(
+                conn, workspace_id=workspace_id, operation_id=operation.operation_id
+            )
+            org = next(row for row in snapshots if row.source_key == ORGANIZATIONS_SOURCE_KEY)
+            assert org.state is AccountGapSnapshotState.FAILED_TERMINAL
+            assert org.spend_outcome is AccountGapSpendOutcome.NOT_CHARGED
+            assert org.failure_code == failure_code
+            assert org.response_artifact_key is not None
+            assert json.loads(await storage.get(org.response_artifact_key)) == {
+                "provider_rejection": {
+                    "source_key": ORGANIZATIONS_SOURCE_KEY,
+                    "http_status": 422,
+                    "body_excerpt": body_excerpt,
+                }
+            }
+
+            fields = await list_account_gap_field_results(
+                conn, workspace_id=workspace_id, operation_id=operation.operation_id
+            )
+            assert {row.state.value for row in fields} == {"failed_terminal"}
+            assert Decimal(
+                (
+                    await conn.execute(
+                        text("SELECT spent_cents FROM project_run WHERE id=:id"),
+                        {"id": started.project_run_id},
+                    )
+                ).scalar_one()
+            ) == Decimal(0)
+            rejection_edges = {
+                item.reference_kind
+                for item in await enumerate_discovery_subject_artifacts(
+                    conn,
+                    workspace_id=workspace_id,
+                    subject_kind="account",
+                    subject_entity_id=EntityId(ready.account_id),
+                )
+                if item.reference_kind.endswith("_provider_rejection")
+            }
+            assert rejection_edges == {f"{ORGANIZATIONS_SOURCE_KEY}_provider_rejection"}
+
+            replay = await starter.start(
+                workspace_id=workspace_id,
+                project_run_id=ProjectRunId(started.project_run_id),
+                account_id=EntityId(ready.account_id),
+                field_expected_value_credits={"account.hiring_velocity_eng": Decimal(5)},
+                provider_credit_cap=2,
+                allow_unbounded_tech=False,
+            )
+            assert replay.outcome is SumbleAccountGapOutcome.FAILED_TERMINAL
+            assert len(http.calls) == 1
+
+    run_async(scenario())
+
+
+def test_s1_provider_response_fault_without_a_status_stays_spend_outcome_unknown(
+    tmp_path: Path,
+) -> None:
+    """A malformed 2xx body may already have been charged; only a hard 4xx is a clean refusal."""
+
+    async def scenario() -> None:
+        workspace_id = "ws-s1-sumble-ambiguous"
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            started, ready = await _seed_selected_high_tier_account(
+                conn, storage, workspace_id=workspace_id
+            )
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            http = _RejectingSumbleHttp(status_code=None, body_excerpt=None)
+            starter = _rejecting_starter(storage=storage, conn_factory=same_connection, http=http)
+            result = await starter.start(
+                workspace_id=workspace_id,
+                project_run_id=ProjectRunId(started.project_run_id),
+                account_id=EntityId(ready.account_id),
+                field_expected_value_credits={"account.hiring_velocity_eng": Decimal(5)},
+                provider_credit_cap=2,
+                allow_unbounded_tech=False,
+            )
+            assert result.outcome is SumbleAccountGapOutcome.SPEND_OUTCOME_UNKNOWN
+            operation = await get_account_gap_operation(
+                conn,
+                workspace_id=workspace_id,
+                operation_id=AccountGapOperationId(result.operation.operation_id),
+            )
+            assert operation is not None
+            assert operation.spend_outcome is AccountGapSpendOutcome.UNKNOWN
+            assert operation.failure_code == "sumble_paid_dispatch_unreconciled"
+            snapshots = await list_account_gap_snapshots(
+                conn, workspace_id=workspace_id, operation_id=operation.operation_id
+            )
+            org = next(row for row in snapshots if row.source_key == ORGANIZATIONS_SOURCE_KEY)
+            assert org.state is AccountGapSnapshotState.SPEND_OUTCOME_UNKNOWN
+            assert org.response_artifact_key is None
 
     run_async(scenario())

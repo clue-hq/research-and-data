@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import cast
+from typing import Protocol, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import text
@@ -19,7 +19,9 @@ from clue_agents.account_entity_research import (
     DiscoverBuyingCommitteeInput,
 )
 from clue_agents.entity_research_runtime import current_entity_research_tool_execution
+from clue_api.committee_eligibility import CommitteeEligibilityService
 from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
     EntityResearchProviderAction,
     EntityResearchProviderWait,
     EntityResearchResultIntegrityError,
@@ -39,6 +41,7 @@ from clue_api.sumble_committee_acquisition import (
     SumbleCommitteeOutcome,
     SumbleCommitteePreflight,
 )
+from clue_api.sumble_committee_preparation import SumbleCommitteePreparationInputs
 from clue_api.sumble_committee_source import SumbleCommitteeSource
 from clue_core import (
     AccountGapFieldResult,
@@ -47,9 +50,11 @@ from clue_core import (
     AccountGapOperationState,
     AccountGapSnapshotState,
     CommitteeAcquisitionOperation,
+    CommitteeEligibilityOutcome,
     EntityId,
     LLMGateway,
     ProjectRunId,
+    ResearchCommitteePlan,
     RunId,
     decode_jsonb_scalar,
     serialize_value_json,
@@ -74,6 +79,7 @@ from clue_research.identity import get_account
 from clue_research.profiling.committee import (
     CURRENT_LOCATION,
     JOB_FUNCTION,
+    ORGANIZATION_RELATIONSHIP,
     TEAM_MEMBERSHIP,
     CommitteePersonCandidate,
     CommitteeResult,
@@ -85,6 +91,44 @@ from clue_storage import StorageBackend
 
 ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 _EVIDENCE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r5:sumble-account-evidence")
+
+
+def _match_haystack(*values: object) -> str:
+    """Fold provider-returned string values (never JSON keys) into one search haystack.
+
+    Values are newline-delimited so a scope term can never match a phrase stitched together
+    across two unrelated values.
+    """
+
+    parts: list[str] = []
+
+    def collect(value: object) -> None:
+        if isinstance(value, str):
+            if value:
+                parts.append(value)
+        elif isinstance(value, Mapping):
+            for item in value.values():
+                collect(item)
+        elif isinstance(value, Sequence):
+            for item in value:
+                collect(item)
+
+    for value in values:
+        collect(value)
+    return "\n".join(parts).casefold()
+
+
+def _organization_names(facts: object) -> tuple[str, ...]:
+    """Extract only the provider-returned current-employer organization names."""
+
+    names: list[str] = []
+    if isinstance(facts, Sequence):
+        for fact in facts:
+            if isinstance(fact, Mapping):
+                name = fact.get("organization_name")
+                if isinstance(name, str) and name:
+                    names.append(name)
+    return tuple(names)
 
 
 def _operation_ref(operation: AccountGapOperation) -> str:
@@ -129,6 +173,10 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
                 .mappings()
                 .first()
             )
+            component_snapshot_refs = await self._component_snapshot_refs(
+                conn,
+                operation=operation,
+            )
         if (
             row is None
             or str(row["workspace_id"]) != operation.workspace_id
@@ -139,6 +187,7 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
         return ProviderResultLineage(
             operation=operation,
             snapshot_ref=snapshot_ref,
+            claim_source_snapshot_refs=component_snapshot_refs,
             raw_response_artifact_refs=tuple(
                 str(value) for value in row["raw_response_artifact_refs"]
             ),
@@ -152,6 +201,80 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
             provider_reported_cost_cents=Decimal(row["provider_reported_cost_cents"]),
             settled_cost_cents=Decimal(row["settled_cost_cents"]),
         )
+
+    async def _component_snapshot_refs(
+        self,
+        conn: AsyncConnection,
+        *,
+        operation: ProviderOperationReservation,
+    ) -> tuple[str, ...]:
+        """Resolve claim-level snapshots from the immutable owning Sumble ledger.
+
+        Account enrichment normalizes the organization lookup and the selected structured source
+        into one aggregate entity-research snapshot, while every claim correctly retains the
+        specific `account_gap_snapshot` that supplied it. Committee acquisition has the same
+        shape for Teams and People. The generic result store must validate those claim refs against
+        provider-owned rows rather than incorrectly requiring the aggregate ref on every claim.
+        """
+
+        try:
+            operation_id = UUID(operation.operation_ref.rsplit(":", 1)[-1])
+        except ValueError as error:
+            raise EntityResearchResultIntegrityError(
+                "Sumble operation reference is malformed"
+            ) from error
+        if self.provider_kind == "sumble_account":
+            rows = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT source_key, request_fingerprint FROM account_gap_snapshot "
+                            "WHERE operation_id=:operation_id AND workspace_id=:workspace_id "
+                            "AND state='succeeded'"
+                        ),
+                        {
+                            "operation_id": operation_id,
+                            "workspace_id": operation.workspace_id,
+                        },
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            return tuple(
+                sorted(
+                    f"account-gap-snapshot:{operation_id}:{row['source_key']}:"
+                    f"{row['request_fingerprint']}"
+                    for row in rows
+                )
+            )
+        if self.provider_kind == "sumble_committee":
+            rows = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT source_key, request_fingerprint "
+                            "FROM committee_acquisition_snapshot "
+                            "WHERE operation_id=:operation_id AND workspace_id=:workspace_id "
+                            "AND state='succeeded'"
+                        ),
+                        {
+                            "operation_id": operation_id,
+                            "workspace_id": operation.workspace_id,
+                        },
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            return tuple(
+                sorted(
+                    f"committee-snapshot:{operation_id}:{row['source_key']}:"
+                    f"{row['request_fingerprint']}"
+                    for row in rows
+                )
+            )
+        raise EntityResearchResultIntegrityError("unknown Sumble provider lineage kind")
 
 
 class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
@@ -172,6 +295,7 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
         field_expected_value_credits: Mapping[str, Decimal],
         provider_credit_cap: int,
         allow_unbounded_tech: bool = False,
+        entity_research_job_id: UUID | None = None,
     ) -> None:
         self._starter = starter
         self._storage = storage
@@ -183,6 +307,7 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
         self._values = dict(field_expected_value_credits)
         self._provider_credit_cap = provider_credit_cap
         self._allow_unbounded_tech = allow_unbounded_tech
+        self._entity_research_job_id = entity_research_job_id
 
     async def execute(
         self,
@@ -203,8 +328,9 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 for item in request.field_source_authority
             )
         ):
-            raise EntityResearchResultIntegrityError(
-                "Sumble account enrichment differs from exact structured field/source authority"
+            raise EntityResearchGovernedRejection(
+                "field_source_authority_mismatch",
+                "Sumble account enrichment differs from exact structured field/source authority",
             )
         caused = False
 
@@ -231,6 +357,7 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
             provider_credit_cap=self._provider_credit_cap,
             allow_unbounded_tech=self._allow_unbounded_tech,
             before_dispatch=bind_sumble_before_dispatch,
+            entity_research_job_id=self._entity_research_job_id,
         )
         if result.outcome is SumbleAccountGapOutcome.JOINED_IN_FLIGHT:
             raise EntityResearchProviderWait(
@@ -241,6 +368,15 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                     disposition=ProviderObservationDisposition.JOINED,
                     include_dispatch=True,
                 )
+            )
+        if result.outcome is SumbleAccountGapOutcome.FAILED_TERMINAL:
+            # Deterministic provider refusal: zero-charge, diagnostics durable on the gap ledger.
+            # The agent may pick another admitted source or finalize with an explicit gap.
+            raise EntityResearchGovernedRejection(
+                "provider_rejected",
+                "Sumble account enrichment was terminally rejected by the provider "
+                f"(failure_code={result.operation.failure_code or 'unrecorded'}); the durable "
+                "operation ledger retains the exact provider diagnostic",
             )
         if (
             result.outcome
@@ -548,6 +684,10 @@ class _PreparedCommitteeSource(CommitteeSource):
         return self._candidates[:limit]
 
 
+class SumbleCommitteeAgentInputResolver(Protocol):
+    async def resolve(self) -> SumbleCommitteePreparationInputs: ...
+
+
 class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
     """Acquire Teams/People, enforce the declared office, then project admitted members."""
 
@@ -556,14 +696,22 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
     def __init__(
         self,
         *,
-        preflight: SumbleCommitteePreflight,
+        preflight: SumbleCommitteePreflight | None = None,
+        inputs: SumbleCommitteeAgentInputResolver | None = None,
+        eligibility: CommitteeEligibilityService | None = None,
         coordinator: SumbleCommitteeAcquisitionCoordinator,
         storage: StorageBackend,
         conn_factory: ConnFactory,
         gateway: LLMGateway,
         role_model: str,
     ) -> None:
+        if (preflight is None) == (inputs is None):
+            raise ValueError("committee action requires exactly one static or run-scoped input")
+        if inputs is not None and eligibility is None:
+            raise ValueError("run-scoped committee input requires the complete S2 eligibility gate")
         self._preflight = preflight
+        self._inputs = inputs
+        self._eligibility = eligibility
         self._coordinator = coordinator
         self._storage = storage
         self._conn_factory = conn_factory
@@ -581,7 +729,9 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
         active = current_entity_research_tool_execution()
         semantic = DiscoverBuyingCommitteeInput.model_validate(active.call.arguments)
         scope = semantic.buying_unit_scope
-        durable = self._preflight.request
+        preflight, committee_plan = await self._resolve_inputs()
+        durable = preflight.request
+        self._validate_scope_against_plan(scope, plan=committee_plan)
         if (
             request.subject_type is not ResearchSubjectType.ACCOUNT
             or request.target_entity_id != durable.account_id
@@ -590,10 +740,15 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             or request.field_keys
             or request.parent_operation_ref is not None
         ):
-            raise EntityResearchResultIntegrityError(
-                "Sumble committee request differs from exact account/people/scope authority"
+            raise EntityResearchGovernedRejection(
+                "committee_request_authority_mismatch",
+                "Sumble committee request differs from exact account/people/scope authority",
             )
-        await self._persist_scope(request=request, scope=scope)
+        await self._persist_scope(
+            request=request,
+            scope=scope,
+            workspace_id=durable.workspace_id,
+        )
         caused = False
 
         async def bind_sumble_before_dispatch(operation: object) -> None:
@@ -611,7 +766,7 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             )
 
         acquired = await self._coordinator.start(
-            self._preflight, before_dispatch=bind_sumble_before_dispatch
+            preflight, before_dispatch=bind_sumble_before_dispatch
         )
         if acquired.outcome in {
             SumbleCommitteeOutcome.WAITING_EXTERNAL,
@@ -621,9 +776,23 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             raise EntityResearchProviderWait(
                 self._committee_descriptor(
                     acquired.operation,
-                    disposition=ProviderObservationDisposition.JOINED,
+                    # A newly dispatched asynchronous operation remains caused by this exact
+                    # tool while it waits.  Only a later tool that joined an existing operation
+                    # is a joined observation.  Re-labelling the causal row as joined made the
+                    # immutable causation ledger reject honest Sumble polling waits.
+                    disposition=self._wait_disposition(caused=caused),
                     include_dispatch=True,
                 )
+            )
+        if acquired.outcome is SumbleCommitteeOutcome.FAILED_TERMINAL:
+            # Deterministic provider refusal (for example a validated zero-charge HTTP 4xx): the
+            # committee ledger retains the status and the provider's own bounded error body. The
+            # agent decides — repair, another admitted source, or an explicit partial committee.
+            raise EntityResearchGovernedRejection(
+                "provider_rejected",
+                "Sumble committee acquisition was terminally rejected "
+                f"(failure_code={acquired.operation.failure_code or 'unrecorded'}); the durable "
+                "committee ledger retains the exact provider diagnostic",
             )
         if acquired.outcome not in {
             SumbleCommitteeOutcome.READY,
@@ -682,8 +851,78 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             ),
         )
 
+    async def _resolve_inputs(
+        self,
+    ) -> tuple[SumbleCommitteePreflight, ResearchCommitteePlan | None]:
+        if self._inputs is None:
+            assert self._preflight is not None
+            # Static construction remains a deterministic R5 test/historical seam. Production
+            # uses the resolver path below so no eligibility decision or provider preparation can
+            # occur before the responsible agent's committee tool call.  It carries no durable
+            # committee plan, so it cannot bound the agent's declared target functions.
+            return self._preflight, None
+        prepared = await self._inputs.resolve()
+        assert self._eligibility is not None
+        decision = await self._eligibility.evaluate(
+            prepared.preflight.request,
+            authorization=prepared.authorization,
+            proposed_cost_cents=prepared.preflight.maximum_cost_cents,
+        )
+        if decision.outcome not in {
+            CommitteeEligibilityOutcome.ELIGIBLE,
+            CommitteeEligibilityOutcome.REUSABLE,
+        }:
+            reasons = ",".join(
+                reason for condition in decision.conditions for reason in condition.reason_codes
+            )
+            raise EntityResearchGovernedRejection(
+                "committee_eligibility_rejected",
+                "Sumble committee eligibility rejected before provider dispatch: " + reasons,
+            )
+        # REUSABLE is still valid execution authority: the durable coordinator performs an
+        # exact-fingerprint replay and returns before claiming a provider dispatch. Rejecting it
+        # here would turn the required zero-spend replay path into an agent-visible failure.
+        return prepared.preflight, prepared.committee_plan
+
+    @staticmethod
+    def _validate_scope_against_plan(
+        scope: AccountBuyingUnitScope, *, plan: ResearchCommitteePlan | None
+    ) -> None:
+        """The agent may narrow the confirmed committee functions; it may never invent one.
+
+        Matching is exact and case-insensitive: a plan function is a confirmed selector, not a
+        substring to be widened into a neighbouring function.
+        """
+
+        if plan is None or not plan.functions:
+            return
+        allowed = {str(value).casefold(): str(value) for value in plan.functions}
+        offending = tuple(
+            value for value in scope.target_functions if value.casefold() not in allowed
+        )
+        if offending:
+            # An invented function is a repairable model mistake: refuse it back to the agent
+            # (R10 partial-failure policy) rather than suspending the whole account job.
+            raise EntityResearchGovernedRejection(
+                "committee_scope_outside_plan",
+                "buying-unit scope targets functions outside the confirmed committee plan: "
+                f"{', '.join(offending)}; the plan allows: {', '.join(allowed.values())}",
+            )
+
+    @staticmethod
+    def _wait_disposition(*, caused: bool) -> ProviderObservationDisposition:
+        return (
+            ProviderObservationDisposition.CAUSED
+            if caused
+            else ProviderObservationDisposition.JOINED
+        )
+
     async def _persist_scope(
-        self, *, request: GovernedResearchToolRequest, scope: AccountBuyingUnitScope
+        self,
+        *,
+        request: GovernedResearchToolRequest,
+        scope: AccountBuyingUnitScope,
+        workspace_id: str,
     ) -> None:
         if not all(
             ref.startswith(("research-evidence:", "claim:", "research-result:"))
@@ -740,7 +979,7 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 "tool_request_id": request.tool_call_id,
                 "run_id": request.research_run_id,
                 "job_id": request.job_id,
-                "workspace_id": self._preflight.request.workspace_id,
+                "workspace_id": workspace_id,
                 "account_id": request.target_entity_id,
                 "scope_json": serialize_value_json(scope.model_dump(mode="json")),
                 "scope_sha": hashlib.sha256(
@@ -759,28 +998,38 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                          account_entity_id, scope_json, scope_sha256)
                     VALUES (:scope_id, :tool_request_id, :run_id, :job_id, :workspace_id,
                             :account_id, CAST(:scope_json AS jsonb), :scope_sha)
-                    ON CONFLICT (tool_request_id) DO NOTHING
+                    ON CONFLICT DO NOTHING
                     """
                 ),
                 values,
             )
-            stored = (
+            stored = tuple(
                 (
                     await conn.execute(
                         text(
-                            "SELECT scope_id, scope_sha256 FROM "
+                            "SELECT scope_id, tool_request_id, research_run_id, job_id, "
+                            "workspace_id, account_entity_id, scope_sha256 FROM "
                             "entity_research_account_committee_scope "
-                            "WHERE tool_request_id=:tool_request_id"
+                            "WHERE scope_id=:scope_id OR tool_request_id=:tool_request_id "
+                            "ORDER BY created_at, scope_id"
                         ),
-                        {"tool_request_id": request.tool_call_id},
+                        {
+                            "scope_id": scope.scope_id,
+                            "tool_request_id": request.tool_call_id,
+                        },
                     )
                 )
                 .mappings()
-                .one()
+                .all()
             )
             if (
-                stored["scope_id"] != scope.scope_id
-                or str(stored["scope_sha256"]) != values["scope_sha"]
+                len(stored) != 1
+                or stored[0]["scope_id"] != scope.scope_id
+                or stored[0]["research_run_id"] != request.research_run_id
+                or stored[0]["job_id"] != request.job_id
+                or str(stored[0]["workspace_id"]) != workspace_id
+                or stored[0]["account_entity_id"] != request.target_entity_id
+                or str(stored[0]["scope_sha256"]) != values["scope_sha"]
             ):
                 raise EntityResearchResultIntegrityError("buying-unit scope replay changed")
 
@@ -799,30 +1048,31 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             facts_by_field: dict[str, list[object]] = {}
             for fact in candidate.professional_facts:
                 facts_by_field.setdefault(str(fact.field_key), []).append(fact.value_json)
-            location_haystack = json.dumps(
-                {
-                    "geo": candidate.geo,
-                    "location_facts": facts_by_field.get(str(CURRENT_LOCATION), ()),
-                },
-                sort_keys=True,
-            ).casefold()
-            team_haystack = json.dumps(
-                {
-                    "teams": candidate.team_names,
-                    "team_facts": facts_by_field.get(str(TEAM_MEMBERSHIP), ()),
-                },
-                sort_keys=True,
-            ).casefold()
-            function_haystack = json.dumps(
-                {
-                    "job_function": candidate.job_function,
-                    "function_facts": facts_by_field.get(str(JOB_FUNCTION), ()),
-                    # A title is an allowed fallback only inside the function dimension; it can
-                    # never satisfy an office, facility, or business-unit discriminator.
-                    "title": candidate.title,
-                },
-                sort_keys=True,
-            ).casefold()
+            # Every discriminator matches provider-returned *values* only. Serializing whole fact
+            # objects let a scope term collide with structural JSON keys ("relationship",
+            # "current_employee", "teams"), which is a match against our own schema, not against
+            # evidence.
+            location_haystack = _match_haystack(
+                candidate.geo,
+                facts_by_field.get(str(CURRENT_LOCATION), ()),
+            )
+            business_unit_haystack = _match_haystack(
+                candidate.team_names,
+                facts_by_field.get(str(TEAM_MEMBERSHIP), ()),
+                # A buying unit may be the exact organization itself (common for a small
+                # practice) rather than a provider-modeled sub-team.  Sumble's returned
+                # current-employer organization *name* is a strong, inspectable organization
+                # binding and may satisfy that organization-wide unit.  A title, free-text
+                # location, or inferred employer never participates in this discriminator.
+                _organization_names(facts_by_field.get(str(ORGANIZATION_RELATIONSHIP), ())),
+            )
+            function_haystack = _match_haystack(
+                candidate.job_function,
+                facts_by_field.get(str(JOB_FUNCTION), ()),
+                # A title is an allowed fallback only inside the function dimension; it can
+                # never satisfy an office, facility, or business-unit discriminator.
+                candidate.title,
+            )
             location_terms = tuple(
                 value.casefold()
                 for value in (scope.locality, scope.region, scope.country)
@@ -837,7 +1087,8 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 term in location_haystack for term in location_terms
             )
             business_unit_match = (
-                scope.business_unit is None or scope.business_unit.casefold() in team_haystack
+                scope.business_unit is None
+                or scope.business_unit.casefold() in business_unit_haystack
             )
             function_match = any(
                 value.casefold() in function_haystack for value in scope.target_functions

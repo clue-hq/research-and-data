@@ -340,7 +340,8 @@ def build_recipe_pin_registry(
                     await conn.execute(
                         text(
                             """
-                            SELECT id, workspace_id, canonical_name, canonical_domain, merged_into
+                            SELECT id, workspace_id, canonical_name,
+                                   primary_domain AS canonical_domain, merged_into
                             FROM account_entity
                             WHERE id = CAST(:key AS uuid) AND workspace_id = :workspace_id
                             """

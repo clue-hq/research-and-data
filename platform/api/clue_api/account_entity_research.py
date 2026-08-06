@@ -16,6 +16,7 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.account_entity_research import (
+    AccountCommitteePlanProjection,
     AccountCoverageProjection,
     AccountResearchStateProjection,
     AssessAccountCoverageInput,
@@ -36,14 +37,17 @@ from clue_agents.entity_research_runtime import (
     EntityResearchFinalizationRejected,
     current_entity_research_tool_execution,
 )
-from clue_core import serialize_value_json
+from clue_core import EntityId, ProjectRunId, serialize_value_json
 from clue_core.entity_research import (
+    EntityResearchJobAuthorization,
     FinalizationVerification,
     ResearchFinalizationOutcome,
     ResearchFinalizationProposal,
     ResearchFinalizationReceipt,
     ResearchSubjectType,
 )
+from clue_research.directives import effective_account_research_directive
+from clue_research.durable import find_account_runs_for_entity
 
 ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 NonEmptyStr = Annotated[str, Field(min_length=1)]
@@ -60,6 +64,51 @@ _CONTACT_TOOL_PREFIXES = (
 
 class AccountResearchAuthorityError(RuntimeError):
     pass
+
+
+async def read_account_committee_plan(
+    conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
+) -> AccountCommitteePlanProjection | None:
+    """Project the confirmed committee plan of the account run's pinned directive.
+
+    This is a read-only projection of durable authority: the account run pins the directive, the
+    directive (plus any account override) composes the effective committee plan, and the plan is
+    what the engine later validates a committee tool call against.  A job whose account run carries
+    no directive pin (the historical/static R5 seam) has no plan to show, so the block is absent
+    rather than invented.
+    """
+
+    runs = await find_account_runs_for_entity(
+        conn,
+        project_run_id=ProjectRunId(authorization.project_run_id),
+        entity_id=EntityId(authorization.subject_entity_id),
+    )
+    pinned = tuple(run for run in runs if run.research_directive is not None)
+    if len(pinned) != 1:
+        return None
+    pin = pinned[0].research_directive
+    assert pin is not None
+    if pin.directive_ref != authorization.selection.directive_ref:
+        raise AccountResearchAuthorityError(
+            "account run pins a directive the job selection did not authorize"
+        )
+    effective = await effective_account_research_directive(
+        conn,
+        workspace_id=authorization.workspace_id,
+        directive_id=pin.directive_id,
+        account_id=EntityId(authorization.subject_entity_id),
+        expected_pin=pin,
+    )
+    plan = effective.committee_plan
+    return AccountCommitteePlanProjection(
+        directive_ref=pin.directive_ref,
+        functions=tuple(str(value) for value in plan.functions),
+        levels=tuple(str(value) for value in plan.levels),
+        teams=tuple(str(value) for value in plan.teams),
+        personas=tuple(str(value) for value in plan.personas),
+        candidate_cap=plan.candidate_cap,
+        questions=tuple(item.text for item in effective.questions),
+    )
 
 
 class _EmptyInput(BaseModel):
@@ -123,6 +172,7 @@ class AccountResearchStateStore:
                     )
                 ).scalar_one()
             )
+            committee_plan = await read_account_committee_plan(conn, authorization=authorization)
         latest: dict[str, Mapping[str, object]] = {}
         committee_refs: list[str] = []
         member_ids: list[UUID] = []
@@ -156,6 +206,7 @@ class AccountResearchStateStore:
             pending_operation_refs=tuple(pending),
             spent_cents=str(Decimal(job["spent_cents"])),
             contact_research_request_count=contact_count,
+            committee_plan=committee_plan,
         )
 
     async def evidence(self, inputs: InspectAccountEvidenceInput) -> dict[str, JsonValue]:
@@ -720,10 +771,14 @@ class AccountResearchStateStore:
                             FROM entity_research_provider_observation observation
                             JOIN entity_research_tool_request request_row
                               ON request_row.tool_request_id=observation.tool_request_id
-                            LEFT JOIN entity_research_result result
-                              ON result.provider_operation_ref=observation.provider_operation_ref
-                             AND result.tool_request_id=observation.tool_request_id
-                            WHERE request_row.job_id=:job_id AND result.result_id IS NULL
+                            WHERE request_row.job_id=:job_id AND NOT EXISTS (
+                                SELECT 1 FROM entity_research_result result
+                                JOIN entity_research_tool_request result_request
+                                  ON result_request.tool_request_id=result.tool_request_id
+                                WHERE result.provider_operation_ref=
+                                      observation.provider_operation_ref
+                                  AND result_request.job_id=request_row.job_id
+                            )
                             ORDER BY observation.provider_operation_ref
                             """
                         ),
@@ -928,12 +983,16 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                                     FROM entity_research_provider_observation observation
                                     JOIN entity_research_tool_request request_row
                                       ON request_row.tool_request_id=observation.tool_request_id
-                                    LEFT JOIN entity_research_result result
-                                      ON result.provider_operation_ref=
-                                         observation.provider_operation_ref
-                                     AND result.tool_request_id=observation.tool_request_id
                                     WHERE request_row.job_id=intent.job_id
-                                      AND result.result_id IS NULL) AS pending_operations
+                                      AND NOT EXISTS (
+                                          SELECT 1 FROM entity_research_result result
+                                          JOIN entity_research_tool_request result_request
+                                            ON result_request.tool_request_id=
+                                               result.tool_request_id
+                                          WHERE result.provider_operation_ref=
+                                                observation.provider_operation_ref
+                                            AND result_request.job_id=request_row.job_id
+                                      )) AS pending_operations
                                    ,(SELECT count(*)
                                      FROM unnest(coverage.completed_field_keys) completed(field_key)
                                      WHERE NOT EXISTS (
@@ -1077,7 +1136,9 @@ def account_engine_tool_bindings(
             coroutine=finalize,
             name="finalize_account_research",
             description=(
-                "Ask the engine to produce the only admissible typed finalization proposal."
+                "Ask the engine once for the only admissible typed finalization proposal. "
+                "Immediately emit the returned JSON unchanged through the "
+                "ResearchFinalizationProposal response-format tool and stop."
             ),
             args_schema=FinalizeAccountResearchInput,
         ),
@@ -1091,4 +1152,5 @@ __all__ = [
     "AccountResearchFinalizationEngine",
     "AccountResearchStateStore",
     "account_engine_tool_bindings",
+    "read_account_committee_plan",
 ]

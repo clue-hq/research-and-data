@@ -1,0 +1,30 @@
+{
+  "spec": "M8D section 16",
+  "version": "m8d-r10-release-matrix-v1",
+  "criteria": [
+    {"criterion": 1, "evidence": ["tests/api/test_agent_registry_wiring.py", "tests/agents/test_entity_research_runtime_r3.py"]},
+    {"criterion": 2, "evidence": ["tests/agents/test_entity_research_runtime_r3.py", "tests/api/test_contact_entity_research_r8_db.py"]},
+    {"criterion": 3, "evidence": ["tests/api/test_account_research_fleet_launch_r6_db.py", "tests/api/test_contact_research_fleet_launch_r7_db.py"]},
+    {"criterion": 4, "evidence": ["tests/api/test_entity_research_cutover_r10.py", "tests/api/test_contact_entity_research_r8_db.py"]},
+    {"criterion": 5, "evidence": ["tests/agents/test_entity_research_tools_r4.py", "tests/api/test_entity_research_tools_r4_db.py"]},
+    {"criterion": 6, "evidence": ["tests/api/test_entity_research_tools_r4_db.py", "tests/api/test_entity_research_parallel_r9_db.py"]},
+    {"criterion": 7, "evidence": ["tests/api/test_account_entity_research_r5_db.py", "tests/fixtures/entity_research/r0_forbidden_flows.json"]},
+    {"criterion": 8, "evidence": ["tests/api/test_entity_research_tools_r4_db.py", "tests/api/test_account_entity_research_r5_db.py"]},
+    {"criterion": 9, "evidence": ["tests/api/test_entity_research_tools_r4_db.py"]},
+    {"criterion": 10, "evidence": ["tests/api/test_entity_research_tools_r4_db.py", "tests/api/test_account_entity_research_r5_db.py"]},
+    {"criterion": 11, "evidence": ["tests/api/test_entity_research_tools_r4_db.py", "tests/api/test_entity_research_parallel_r9_db.py"]},
+    {"criterion": 12, "evidence": ["tests/api/test_entity_research_parallel_r9_db.py"]},
+    {"criterion": 13, "evidence": ["tests/api/test_account_entity_research_r5_db.py"]},
+    {"criterion": 14, "evidence": ["tests/api/test_account_research_fleet_launch_r6_db.py", "tests/api/test_account_research_fleet_r6_db.py"]},
+    {"criterion": 15, "evidence": ["tests/api/test_contact_research_fleet_launch_r7_db.py"]},
+    {"criterion": 16, "evidence": ["tests/api/test_contact_entity_research_r8_db.py"]},
+    {"criterion": 17, "evidence": ["tests/api/test_contact_entity_research_r8_db.py", "tests/api/test_entity_research_parallel_r9_db.py"]},
+    {"criterion": 18, "evidence": ["tests/api/test_contact_entity_research_r8_db.py"]},
+    {"criterion": 19, "evidence": ["tests/api/test_account_entity_research_r5_db.py", "tests/api/test_contact_entity_research_r8_db.py"]},
+    {"criterion": 20, "evidence": ["tests/api/test_account_research_fleet_r6_db.py", "tests/api/test_contact_entity_research_r8_db.py"]},
+    {"criterion": 21, "evidence": ["tests/api/test_contact_entity_research_r8_db.py", "tests/api/test_entity_research_parallel_r9_db.py", "tests/contact_research/test_c6_contact_preparation.py"]},
+    {"criterion": 22, "evidence": ["tests/api/test_entity_research_parallel_r9_db.py", "tests/api/test_account_research_fleet_r6_db.py"]},
+    {"criterion": 23, "evidence": ["tests/api/test_entity_research_cutover_r10.py", "tests/api/test_account_research_fleet_composition_r6.py"]},
+    {"criterion": 24, "evidence": ["scripts/13_m8d_r10_live_acceptance.py", "docs/specs/M8D-R10-cutover-and-live-acceptance.md"], "live_required": true}
+  ]
+}

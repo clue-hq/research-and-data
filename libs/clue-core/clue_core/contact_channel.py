@@ -73,6 +73,7 @@ class ContactChannelAcquisitionRequest(BaseModel):
     workspace_id: NonEmptyStr
     project_id: NonEmptyStr
     project_run_id: ProjectRunId
+    entity_research_job_id: UUID | None = None
     account_id: EntityId
     contact_id: EntityId
     selection_id: UUID

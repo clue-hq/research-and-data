@@ -17,7 +17,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
-from pydantic import ConfigDict, PrivateAttr
+from pydantic import ConfigDict, PrivateAttr, ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -50,6 +50,7 @@ from clue_api.account_entity_research_composition import (
 )
 from clue_api.entity_research_runtime_wiring import DbEntityResearchAgentJournal
 from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
     EntityResearchProviderAction,
     EntityResearchProviderCausationStore,
     EntityResearchResultStore,
@@ -79,6 +80,7 @@ from clue_core import (
     ExtractionMethod,
     IdentityBinding,
     ProjectRunId,
+    ResearchCommitteePlan,
     ResearchMode,
     ReuseScope,
     RunId,
@@ -171,6 +173,7 @@ class _DecisionModel(BaseChatModel):
     account_id: UUID
     scope_id: UUID
     _result_refs: list[str] = PrivateAttr(default_factory=list)
+    _observed_committee_plan: dict[str, Any] | None = PrivateAttr(default=None)
     _observed_first_result: bool = PrivateAttr(default=False)
     _justification: str | None = PrivateAttr(default=None)
     _bound_tools: tuple[str, ...] = PrivateAttr(default=())
@@ -178,6 +181,10 @@ class _DecisionModel(BaseChatModel):
     @property
     def _llm_type(self) -> str:
         return "m8d-r5-observing-account-agent"
+
+    @property
+    def observed_committee_plan(self) -> dict[str, Any] | None:
+        return self._observed_committee_plan
 
     @property
     def observed_first_result(self) -> bool:
@@ -235,6 +242,7 @@ class _DecisionModel(BaseChatModel):
             payload = self._payload(last)
             if last.name == "read_account_research_state":
                 assert payload["result_refs"] == []
+                self._observed_committee_plan = payload["committee_plan"]
                 response = AIMessage(
                     content="",
                     tool_calls=[
@@ -296,7 +304,7 @@ class _DecisionModel(BaseChatModel):
                                     "office_label": "Boston gastroenterology practice",
                                     "locality": "Boston",
                                     "region": "Massachusetts",
-                                    "target_functions": ["Operations", "Finance"],
+                                    "target_functions": ["Operations"],
                                     "evidence_refs": [evidence_ref],
                                     "match_policy": "same_office_strict",
                                 },
@@ -985,6 +993,12 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
                 conn_factory=connection,
             )
             definition = await resolver.resolve(job=live_job, fence=fence)
+            # The confirmed committee plan reaches the agent before its first tool choice.
+            assert directive.directive_ref in definition.task_instruction
+            assert "- functions: Operations" in definition.task_instruction
+            assert "- levels: Director" in definition.task_instruction
+            assert "- personas: champion" in definition.task_instruction
+            assert "- candidate_cap: 4" in definition.task_instruction
             guard = AccountResearchExecutionGuard(conn_factory=connection)
             with pytest.raises(
                 AccountResearchAuthorityError,
@@ -1053,6 +1067,15 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
             )
             assert outcome.finalization_receipt.verification.all_passed()
             assert create_agent_calls == ["clue-entity-account"]
+            assert model.observed_committee_plan == {
+                "directive_ref": directive.directive_ref,
+                "functions": ["Operations"],
+                "levels": ["Director"],
+                "teams": [],
+                "personas": ["champion"],
+                "candidate_cap": 4,
+                "questions": [],
+            }
             assert model.observed_first_result
             assert model.justification is not None and "hiring field" in model.justification
             assert exa_transport.calls == 1
@@ -1101,6 +1124,109 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
             assert Decimal(counts["run_spent"]) == Decimal("8.75")
 
     run_async(scenario())
+
+
+def test_r5_committee_input_forbids_field_and_follow_up_authority() -> None:
+    account_id = uuid4()
+    base: dict[str, object] = {
+        "field_keys": [],
+        "source_keys": ["sumble_people"],
+        "questions": ["Which exact people form this buying committee?"],
+        "buying_unit_scope": {
+            "scope_id": str(uuid4()),
+            "account_entity_id": str(account_id),
+            "office_label": "Boston office",
+            "locality": "Boston",
+            "region": "Massachusetts",
+            "target_functions": ["Operations", "Finance"],
+            "evidence_refs": [f"research-evidence:{uuid4()}"],
+        },
+    }
+    assert DiscoverBuyingCommitteeInput.model_validate(base).field_keys == ()
+
+    with pytest.raises(ValidationError) as field_error:
+        DiscoverBuyingCommitteeInput.model_validate(
+            {**base, "field_keys": ["account.operational_pain"]}
+        )
+    assert field_error.value.errors()[0]["loc"] == ("field_keys",)
+    with pytest.raises(ValidationError) as lineage_error:
+        DiscoverBuyingCommitteeInput.model_validate(
+            {
+                **base,
+                "parent_operation_ref": f"provider-operation:{uuid4()}",
+                "parent_observation_ref": f"research-result:{uuid4()}",
+                "follow_up_reason": "contradiction_resolution",
+            }
+        )
+    assert {item["loc"] for item in lineage_error.value.errors()} == {
+        ("parent_operation_ref",),
+        ("parent_observation_ref",),
+        ("follow_up_reason",),
+    }
+
+
+def _committee_call(*, account_id: UUID, target_functions: Sequence[str]) -> AccountBuyingUnitScope:
+    """One agent-authored committee tool call, validated exactly as the engine receives it."""
+
+    return DiscoverBuyingCommitteeInput.model_validate(
+        {
+            "field_keys": [],
+            "source_keys": ["sumble_people"],
+            "questions": ["Which exact people form this buying committee?"],
+            "buying_unit_scope": {
+                "scope_id": str(uuid4()),
+                "account_entity_id": str(account_id),
+                "office_label": "Boston office",
+                "locality": "Boston",
+                "region": "Massachusetts",
+                "target_functions": list(target_functions),
+                "evidence_refs": [f"research-evidence:{uuid4()}"],
+            },
+        }
+    ).buying_unit_scope
+
+
+_R5_TEST_COMMITTEE_PLAN = ResearchCommitteePlan(
+    functions=("Operations", "Finance"),
+    levels=("Director",),
+    personas=("champion",),
+    candidate_cap=4,
+)
+
+
+def test_r5_committee_scope_cannot_invent_a_function_outside_the_confirmed_plan() -> None:
+    account_id = uuid4()
+    with pytest.raises(EntityResearchGovernedRejection) as invented:
+        SumbleCommitteeSemanticResearchAction._validate_scope_against_plan(
+            _committee_call(account_id=account_id, target_functions=["Operations", "Marketing"]),
+            plan=_R5_TEST_COMMITTEE_PLAN,
+        )
+    assert "Marketing" in str(invented.value)
+    assert "Operations, Finance" in str(invented.value)
+
+    # A plan function is a confirmed selector, never a substring to widen from.
+    for widened in (["Operation"], ["Operations and Finance"], ["Financial Planning"]):
+        with pytest.raises(EntityResearchGovernedRejection):
+            SumbleCommitteeSemanticResearchAction._validate_scope_against_plan(
+                _committee_call(account_id=account_id, target_functions=widened),
+                plan=_R5_TEST_COMMITTEE_PLAN,
+            )
+
+
+def test_r5_committee_scope_within_the_confirmed_plan_passes_the_engine_check() -> None:
+    account_id = uuid4()
+    # Narrowing the confirmed plan for one office is the agent's job; casing is not authority.
+    for admitted in (["Operations"], ["operations", "FINANCE"], ["Operations", "Finance"]):
+        SumbleCommitteeSemanticResearchAction._validate_scope_against_plan(
+            _committee_call(account_id=account_id, target_functions=admitted),
+            plan=_R5_TEST_COMMITTEE_PLAN,
+        )
+    # A plan that confirmed no functions bounds nothing, and the static R5 seam carries no plan.
+    for unbounded in (ResearchCommitteePlan(), None):
+        SumbleCommitteeSemanticResearchAction._validate_scope_against_plan(
+            _committee_call(account_id=account_id, target_functions=["Marketing"]),
+            plan=unbounded,
+        )
 
 
 def test_r5_contract_separates_committee_sources_and_allows_grounded_empty_committee() -> None:
@@ -1160,6 +1286,17 @@ def test_r5_contract_separates_committee_sources_and_allows_grounded_empty_commi
         ambiguous_count=0,
         confirmed_empty_count=0,
     ) == ("partial", ("committee_no_identity_admitted_member",))
+
+
+def test_sumble_committee_wait_preserves_causal_owner_and_labels_only_joiners() -> None:
+    assert (
+        SumbleCommitteeSemanticResearchAction._wait_disposition(caused=True)
+        is ProviderObservationDisposition.CAUSED
+    )
+    assert (
+        SumbleCommitteeSemanticResearchAction._wait_disposition(caused=False)
+        is ProviderObservationDisposition.JOINED
+    )
 
 
 def test_r5_committee_office_filter_admits_only_people_facts_in_the_exact_buying_unit() -> None:
@@ -1232,3 +1369,114 @@ def test_r5_committee_office_filter_admits_only_people_facts_in_the_exact_buying
     assert selected == (selected_candidate,)
     assert excluded == 1
     assert ambiguous == 2
+
+
+def test_r5_committee_filter_accepts_exact_provider_employer_as_organization_wide_unit() -> None:
+    account_id = uuid4()
+    scope = AccountBuyingUnitScope(
+        scope_id=uuid4(),
+        account_entity_id=account_id,
+        office_label="Exact organization-wide buying unit",
+        business_unit="New Jersey Brain and Spine",
+        target_functions=("Executive", "Operations"),
+        evidence_refs=("research-evidence:exact-account",),
+    )
+
+    def candidate(*, name: str, employer: str) -> CommitteePersonCandidate:
+        facts = (
+            CandidateProfessionalFact(
+                field_key="contact.organization_relationship",
+                value_json={
+                    "relationship": "current_employee",
+                    "basis": "provider_returned_current_employer",
+                    "organization_id": 42,
+                    "organization_name": employer,
+                },
+                provenance_kind=CandidateFactProvenance.PROVIDER_RETURNED,
+                source_key=PEOPLE_SOURCE_KEY,
+                source_tier=1,
+                source_url="https://sumble.example/people/fixture",
+                evidence_span="Provider-returned person row.",
+                artifact_key="sumble/people/fixture",
+                source_operation_ref="committee-operation:fixture",
+                source_snapshot_ref="committee-snapshot:fixture",
+                source_request_ref="sumble-request:fixture",
+            ),
+        )
+        return CommitteePersonCandidate(
+            source_key=PEOPLE_SOURCE_KEY,
+            linkedin_url=f"https://linkedin.com/in/{name.casefold().replace(' ', '-')}",
+            full_name=name,
+            title="Chief Executive Officer",
+            job_function="Executive",
+            geo={"city": "Bloomingdale", "region": "New Jersey"},
+            source_url="https://sumble.example/people/fixture",
+            professional_facts=facts,
+        )
+
+    exact = candidate(name="Exact Executive", employer="New Jersey Brain and Spine")
+    foreign = candidate(name="Foreign Executive", employer="Other Practice")
+    selected, excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(
+        (exact, foreign),
+        scope=scope,
+    )
+
+    assert selected == (exact,)
+    assert excluded == 0
+    assert ambiguous == 1
+
+
+def test_r5_committee_filter_matches_provider_values_never_schema_keys() -> None:
+    """A scope term must match provider-returned evidence, not our own JSON structure.
+
+    Serializing whole fact objects let a business unit named like a schema key (for example
+    "Relationship" or "Current Employee") match every candidate through the serialized keys
+    ``relationship``/``current_employee`` rather than through any provider value.
+    """
+
+    account_id = uuid4()
+    scope = AccountBuyingUnitScope(
+        scope_id=uuid4(),
+        account_entity_id=account_id,
+        office_label="Organization-wide unit named like a schema key",
+        business_unit="Current Employee",
+        target_functions=("Executive",),
+        evidence_refs=("research-evidence:exact-account",),
+    )
+    candidate = CommitteePersonCandidate(
+        source_key=PEOPLE_SOURCE_KEY,
+        linkedin_url="https://linkedin.com/in/schema-key-candidate",
+        full_name="Schema Key Candidate",
+        title="Chief Executive Officer",
+        job_function="Executive",
+        geo={"city": "Bloomingdale", "region": "New Jersey"},
+        source_url="https://sumble.example/people/fixture",
+        professional_facts=(
+            CandidateProfessionalFact(
+                field_key="contact.organization_relationship",
+                value_json={
+                    "relationship": "current_employee",
+                    "organization_id": 42,
+                    "organization_name": "New Jersey Brain and Spine",
+                },
+                provenance_kind=CandidateFactProvenance.PROVIDER_RETURNED,
+                source_key=PEOPLE_SOURCE_KEY,
+                source_tier=1,
+                source_url="https://sumble.example/people/fixture",
+                evidence_span="Provider-returned person row.",
+                artifact_key="sumble/people/fixture",
+                source_operation_ref="committee-operation:fixture",
+                source_snapshot_ref="committee-snapshot:fixture",
+                source_request_ref="sumble-request:fixture",
+            ),
+        ),
+    )
+    selected, excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(
+        (candidate,),
+        scope=scope,
+    )
+    # No provider value contains "Current Employee": the candidate routes to review instead of
+    # being admitted through the serialized ``current_employee`` schema token.
+    assert selected == ()
+    assert ambiguous == 1
+    assert excluded == 0

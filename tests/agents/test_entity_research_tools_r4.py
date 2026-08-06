@@ -12,7 +12,9 @@ from uuid import uuid4
 
 import pytest
 from langchain_core.messages import AIMessage
+from pydantic import ValidationError
 
+from clue_agents.account_entity_research import DiscoverBuyingCommitteeInput
 from clue_agents.entity_research_contracts import (
     EntityAgentRole,
     EntityResearchToolBinding,
@@ -101,6 +103,80 @@ def test_model_facing_research_schema_contains_intent_and_no_engine_authority() 
         "idempotency_key",
     }
     assert forbidden.isdisjoint(properties)
+
+
+def test_governed_provider_tool_returns_actionable_bounded_schema_feedback(
+    tmp_path: Path,
+) -> None:
+    context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+    provider_names = {
+        "research_account_deep",
+        "enrich_account",
+        "discover_buying_committee",
+    }
+    engine_names = (
+        set(context.tool_surface.tool_names)
+        - provider_names
+        - {"read_research_result", "read_evidence"}
+    )
+    factory = GovernedEntityResearchToolFactory(
+        requests=EntityResearchToolRequestStore(conn_factory=_unused_conn),
+        causation=EntityResearchProviderCausationStore(conn_factory=_unused_conn),
+        results=EntityResearchResultStore(
+            storage=FsStorage(tmp_path / "schema-feedback"),
+            conn_factory=_unused_conn,
+        ),
+    )
+    bindings = factory.compose(
+        surface=context.tool_surface,
+        provider_actions={
+            name: ProviderActionBinding(
+                action=_Action(),
+                version=1,
+                args_schema=(
+                    DiscoverBuyingCommitteeInput
+                    if name == "discover_buying_committee"
+                    else EntityResearchSemanticToolInput
+                ),
+            )
+            for name in provider_names
+        },
+        engine_tools={
+            name: EntityResearchToolBinding(tool=_tool(name), version=1)
+            for name in engine_names
+        },
+    )
+    committee = next(
+        binding.tool for binding in bindings if binding.name == "discover_buying_committee"
+    )
+    assert callable(committee.handle_validation_error)
+    with pytest.raises(ValidationError) as error:
+        DiscoverBuyingCommitteeInput.model_validate(
+            {
+                "field_keys": ["account.operational_pain"],
+                "source_keys": ["sumble_people"],
+                "questions": ["Which exact people form the committee?"],
+                "buying_unit_scope": {
+                    "scope_id": str(uuid4()),
+                    "account_entity_id": str(uuid4()),
+                    "office_label": "Boston office",
+                    "locality": "Boston",
+                    "target_functions": ["Operations"],
+                    "evidence_refs": [f"research-evidence:{uuid4()}"],
+                },
+            }
+        )
+    rendered = committee.handle_validation_error(error.value)
+    payload = json.loads(rendered)
+    assert payload["error"] == "semantic_tool_input_validation_failed"
+    assert payload["details"] == [
+        {
+            "location": ["field_keys"],
+            "message": "Tuple should have at most 0 items after validation, not 1",
+            "type": "too_long",
+        }
+    ]
+    assert "account.operational_pain" not in rendered
 
 
 def test_semantic_request_cannot_apply_one_fields_source_to_another_field() -> None:
@@ -413,3 +489,21 @@ def test_parallel_handlers_receive_isolated_active_tool_authority() -> None:
     from tests.db.conftest import run_async
 
     run_async(scenario())
+
+
+def test_governed_rejection_renders_bounded_recoverable_feedback() -> None:
+    """R10 partial-failure policy: a governed refusal is agent-repairable, never a suspension.
+
+    The rendered payload is the exact error tool-message content the model sees; it must be
+    bounded, typed, and must tell the model the job is still alive.
+    """
+
+    from clue_api.entity_research_tools import EntityResearchGovernedRejection
+
+    rejection = EntityResearchGovernedRejection("provider_rejected", "detail " * 1_000)
+    payload = json.loads(rejection.render())
+    assert payload["error"] == "governed_research_rejection"
+    assert payload["code"] == "provider_rejected"
+    assert payload["recoverable"] is True
+    assert len(payload["detail"]) <= 1_000
+    assert "finalize honestly" in payload["guidance"]

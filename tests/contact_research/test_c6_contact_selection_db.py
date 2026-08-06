@@ -308,6 +308,9 @@ def test_selection_requires_db_approval_and_successors_form_one_current_linear_h
                         conn_factory=conn_session_factory(conn),
                         operation_id=new_operation_id(),
                     ),
+                    # M8D R10 promotes the R7 entity-research approver as the name default;
+                    # this M8C acceptance pins its exact historical tool version.
+                    version="1",
                     idempotency_ttl_s=86_400,
                 )
             assert agent_denial.value.reason_codes == ("human_required",)
@@ -325,6 +328,7 @@ def test_selection_requires_db_approval_and_successors_form_one_current_linear_h
                     conn_factory=conn_session_factory(conn),
                     operation_id=approval_operation_id,
                 ),
+                version="1",
                 idempotency_ttl_s=86_400,
             )
             successor = await get_contact_research_selection(

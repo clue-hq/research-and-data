@@ -54,6 +54,15 @@ class EntityResearchAgentAborted(EntityResearchRuntimeError):
     pass
 
 
+class _EntityResearchToolRejected(EntityResearchRuntimeError):
+    """A model-authored tool request was rejected before producing governed work.
+
+    LangGraph deliberately returns schema/structured-tool failures to the model as an error
+    ``ToolMessage`` so the agent can correct its own arguments.  That message is not a successful
+    research result and must never enter the R9 result join ledger.
+    """
+
+
 class EntityResearchExternalWait(EntityResearchRuntimeError):
     """Governed tool signal that external work is durable but not ready yet."""
 
@@ -355,6 +364,12 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         self._structured_tool_name = ResearchFinalizationProposal.__name__
         self._admission_lock = asyncio.Lock()
         self._admitted_batches: set[str] = set()
+        # Set once the engine's finalize tool has returned its admissible proposal. From that
+        # point the only legitimate model output is the typed structured response; every further
+        # governed tool call is refused deterministically (prompt guidance alone did not stop
+        # live finalization looping). Process-local by design: a cold resume re-runs the finalize
+        # tool idempotently, and the zero-yield stop policy remains the outer backstop.
+        self._finalization_proposed = False
 
     def _call(self, raw: Mapping[str, Any]) -> EntityResearchToolCall:
         name = str(raw.get("name", ""))
@@ -529,6 +544,29 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         call = self._call(cast(dict[str, Any], request.tool_call))
+        if self._finalization_proposed:
+            refusal = ToolMessage(
+                content=(
+                    '{"error":"finalization_already_proposed","detail":"the engine already '
+                    "returned the only admissible finalization proposal; emit it unchanged "
+                    'through the typed response format and stop"}'
+                ),
+                status="error",
+                tool_call_id=call.tool_call_id,
+                name=call.tool_name,
+            )
+            await self._journal.append(
+                self._event(
+                    EntityAgentJournalEventKind.TOOL_FAILED,
+                    call=call,
+                    payload={
+                        "error_type": "EntityResearchToolRejected",
+                        "error": "tool call refused after accepted finalization proposal",
+                        "disposition": "post_finalization_rejected",
+                    },
+                )
+            )
+            return refusal
         event_ref = await self._journal.append(
             self._event(
                 EntityAgentJournalEventKind.TOOL_STARTED,
@@ -573,12 +611,32 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
                 result = await handler(request)
             finally:
                 _ACTIVE_TOOL_EXECUTION.reset(token)
+            if isinstance(result, ToolMessage) and result.status == "error":
+                rejection = _EntityResearchToolRejected(str(result.content)[:2000])
+                await self._batches.failed(
+                    context=self._context,
+                    call=call,
+                    error=rejection,
+                )
+                await self._journal.append(
+                    self._event(
+                        EntityAgentJournalEventKind.TOOL_FAILED,
+                        call=call,
+                        payload={
+                            **_error_payload(rejection),
+                            "disposition": "model_request_rejected",
+                        },
+                    )
+                )
+                return result
             await self._batches.completed(context=self._context, call=call, result=result)
             await self._guard.observe_tool_result(
                 context=self._context,
                 call=call,
                 result=result,
             )
+            if call.tool_name in ("finalize_account_research", "finalize_contact_research"):
+                self._finalization_proposed = True
         except EntityResearchExternalWait as wait:
             batch_wait = await self._batches.waiting(
                 context=self._context,

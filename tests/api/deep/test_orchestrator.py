@@ -878,7 +878,17 @@ def test_account_axis_carries_spec_and_explicit_kwargs_with_one_run_id() -> None
     )
     campaign = new_project_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
+    spec = AccountSpec(
+        entity_id=entity,
+        tier="top",
+        workspace_id="client-1",
+        field_keys=(
+            "account.operational_pain",
+            "contact.current_title",
+            "contact.facet.stated_interests",
+            "account.resonance.culture",
+        ),
+    )
 
     async def _run() -> None:
         await orch.run_one(spec, project_run_id=campaign)
@@ -887,6 +897,10 @@ def test_account_axis_carries_spec_and_explicit_kwargs_with_one_run_id() -> None
         com = rec.committee_kwargs[0]
         # account axis: the ICP spec + tenant + the deterministic run id, all explicit kwargs
         assert acc["spec"].workspace_id == "client-1"
+        assert acc["spec"].field_keys == (
+            "account.operational_pain",
+            "account.resonance.culture",
+        )
         assert acc["workspace_id"] == "client-1"
         assert acc["run_id"] == run_id
         # committee axis: tenant + run id as explicit kwargs (never via ctx.params)
