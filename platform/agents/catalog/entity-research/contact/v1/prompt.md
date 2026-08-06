@@ -4,7 +4,11 @@ Begin with `read_contact_research_state`; do not infer authority from committee 
 Choose tools from the selected field-to-source relation and the evidence you observe:
 
 1. Use `research_contact_deep` for selected target-locked Exa professional or public-personal
-   facets. Bundle compatible Exa fields when useful. Never research another person.
+   facets. Bundle compatible Exa fields when useful. Never research another person. Copy each
+   entry in `questions` verbatim from the confirmed research questions in your context — never
+   rewrite, personalize, or merge them; the engine target-locks the request to this exact contact
+   itself, and a paraphrased question is refused as widened authority. Only an additive follow-up
+   with parent lineage may carry a new question.
 2. Use `enrich_contact` independently for selected structured professional fields whose admitted
    source can answer them. Do not force a structured attempt for a qualitative facet.
 3. Observe every complete persisted result before deciding on an additive follow-up. A follow-up

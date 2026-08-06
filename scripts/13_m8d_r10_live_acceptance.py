@@ -60,6 +60,7 @@ from clue_core import (
     EntityId,
     MemoryDisabled,
     MemorySubmission,
+    ProjectRunId,
     ResearchAccountScope,
     ResearchCommitteePlan,
     ResearchDirectiveBody,
@@ -72,7 +73,7 @@ from clue_core import (
 )
 from clue_core.entity_research import FieldSourceAuthority, ResearchSelectionBasis
 from clue_db import DATABASE_URL_ENV, db_lifespan, transaction
-from clue_fleet import DbWorkQueue, LeasedWorkWorker
+from clue_fleet import DbWorkQueue, FleetTaskKind, LeasedWorkWorker, enqueue_task
 from clue_research.directives import (
     confirmed_directive_account_specs,
     get_latest_research_directive,
@@ -633,12 +634,15 @@ async def _committee_selection(
             for value in (
                 await conn.execute(
                     text(
-                        "SELECT id FROM claim WHERE run_id=:account_run_id "
+                        # Committee claims ride the exact *project run* (the M8C lineage the C1
+                        # trigger enforces: claim.run_id = operation.project_run_id), never the
+                        # per-account deep-run id.
+                        "SELECT id FROM claim WHERE run_id=:project_run_id "
                         "AND research_mode='committee_discovery' AND entity_id=ANY(:contacts) "
                         "ORDER BY observed_at, id"
                     ),
                     {
-                        "account_run_id": job.account_run_id,
+                        "project_run_id": fixture.project_run_id,
                         "contacts": [UUID(str(value)) for value in contact_ids],
                     },
                 )
@@ -1067,11 +1071,29 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                 account_launch_operation,
                 account_job_id,
             ) = await _account_resume_context(args.resume_account_run)
-            await composition.accounts.fleets.resume_job(
-                account_job_id,
-                workspace_id=fixture.discovery_fixture.workspace_id,
-                actor=_LIVE_ACTOR,
-            )
+            async with transaction() as conn:
+                account_admission = (
+                    await conn.execute(
+                        text(
+                            "SELECT admission_state::text FROM "
+                            "entity_research_account_fleet_job_control WHERE job_id=:job_id"
+                        ),
+                        {"job_id": account_job_id},
+                    )
+                ).scalar_one()
+            if str(account_admission) == "paused":
+                await composition.accounts.fleets.resume_job(
+                    account_job_id,
+                    workspace_id=fixture.discovery_fixture.workspace_id,
+                    actor=_LIVE_ACTOR,
+                )
+            elif str(account_admission) != "terminal":
+                raise RuntimeError(
+                    "resume requires a paused or already-terminal account job; got "
+                    f"{account_admission}"
+                )
+            # An already-terminal account job resumes zero-spend straight through the drive
+            # (which observes the terminal fleet) into contact selection and replay.
             account_launch = SimpleNamespace(research_run_id=args.resume_account_run)
             account_restarts = 1
         else:
@@ -1166,6 +1188,31 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         and contact_launch.research_run_id != args.resume_contact_run
     ):
         raise RuntimeError("contact resume replayed its launch into a different run")
+    if args.resume_contact_run is not None:
+        # The idempotent launch replay restores authority but never resurrects a dead worker
+        # task. Re-offer each nonterminal job's exact task (terminal done/failed rows reopen);
+        # the LangGraph checkpoint resumes at the same tool node with zero re-spend.
+        async with transaction() as conn:
+            nonterminal_jobs = tuple(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT job_id FROM entity_research_job "
+                            "WHERE research_run_id=:run_id AND state <> 'terminal'"
+                        ),
+                        {"run_id": contact_launch.research_run_id},
+                    )
+                ).scalars()
+            )
+            for job_id in nonterminal_jobs:
+                await enqueue_task(
+                    conn,
+                    kind=FleetTaskKind.ENTITY_RESEARCH_JOB,
+                    project_run_id=ProjectRunId(UUID(str(job_id))),
+                    dedup_key=str(job_id),
+                    payload={"job_id": str(job_id)},
+                    reopen_terminal=True,
+                )
     contact_projection, contact_restarts = await _drive(
         settings=settings,
         secrets=secrets,

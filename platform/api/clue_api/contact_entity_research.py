@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -41,8 +41,10 @@ from clue_agents.entity_research_runtime import (
     EntityResearchExecutionGuard,
     EntityResearchFinalizationEngine,
     EntityResearchFinalizationRejected,
+    EntityResearchGovernedToolRefusal,
     current_entity_research_tool_execution,
 )
+from clue_api.entity_research_tools import convert_engine_authority_rejections
 from clue_core import EntityId, serialize_value_json
 from clue_core.entity_research import (
     ContactChannel,
@@ -76,8 +78,8 @@ _PENDING_CHANNEL_STATES = {
 }
 
 
-class ContactResearchAuthorityError(RuntimeError):
-    pass
+class ContactResearchAuthorityError(EntityResearchGovernedToolRefusal):
+    """Model-repairable contact guard/engine refusal (returned to the agent, never fatal)."""
 
 
 class _EmptyInput(BaseModel):
@@ -879,7 +881,15 @@ class ContactResearchStateStore:
                         "entity_research_result result JOIN entity_research_tool_request "
                         "result_request ON result_request.tool_request_id=result.tool_request_id "
                         "WHERE result.provider_operation_ref=observation.provider_operation_ref "
-                        "AND result_request.job_id=request_row.job_id) ORDER BY 1"
+                        "AND result_request.job_id=request_row.job_id) "
+                        # A zero-cost fold without any result is a deterministic terminal
+                        # rejection: never pending (live Sumble 402 livelock).
+                        "AND NOT EXISTS (SELECT 1 FROM "
+                        "entity_research_provider_settlement_fold fold WHERE "
+                        "fold.provider_operation_ref=observation.provider_operation_ref AND "
+                        "fold.job_id=request_row.job_id AND NOT EXISTS (SELECT 1 FROM "
+                        "entity_research_result settled WHERE settled.provider_operation_ref="
+                        "fold.provider_operation_ref)) ORDER BY 1"
                     ),
                     {"job_id": job_id},
                 )
@@ -1156,7 +1166,13 @@ class ContactResearchFinalizationEngine(EntityResearchFinalizationEngine):
                             "entity_research_tool_request result_request ON "
                             "result_request.tool_request_id=result.tool_request_id WHERE "
                             "result.provider_operation_ref=obs.provider_operation_ref AND "
-                            "result_request.job_id=req.job_id)) AS pending, "
+                            "result_request.job_id=req.job_id) AND NOT EXISTS "
+                            "(SELECT 1 FROM entity_research_provider_settlement_fold fold "
+                            "WHERE fold.provider_operation_ref=obs.provider_operation_ref "
+                            "AND fold.job_id=req.job_id AND NOT EXISTS (SELECT 1 FROM "
+                            "entity_research_result settled WHERE "
+                            "settled.provider_operation_ref=fold.provider_operation_ref))) "
+                            "AS pending, "
                             "ARRAY(SELECT DISTINCT field.field_key FROM "
                             "entity_research_result_field field JOIN entity_research_result "
                             "result ON result.result_id=field.result_id JOIN "
@@ -1287,6 +1303,14 @@ def contact_engine_tool_bindings(
     facets: ContactFacetDelegate,
     channels: ContactChannelActions,
 ) -> Mapping[str, EntityResearchToolBinding]:
+    def repairable(
+        coroutine: Callable[..., Awaitable[dict[str, JsonValue]]],
+    ) -> Callable[..., Awaitable[dict[str, JsonValue]]]:
+        return convert_engine_authority_rejections(
+            coroutine,
+            error_types=(ContactResearchAuthorityError,),
+        )
+
     async def read_state(include_result_index: bool = True) -> dict[str, JsonValue]:
         value = await store.state()
         payload = value.model_dump(mode="json")
@@ -1328,28 +1352,32 @@ def contact_engine_tool_bindings(
 
     tools = {
         "read_contact_research_state": StructuredTool.from_function(
-            coroutine=read_state,
+            coroutine=repairable(read_state),
             name="read_contact_research_state",
             description="Read exact contact identity, results, facets, channels, gaps, and spend.",
             args_schema=ReadContactResearchStateInput,
+            handle_tool_error=True,
         ),
         "inspect_contact_evidence": StructuredTool.from_function(
-            coroutine=inspect,
+            coroutine=repairable(inspect),
             name="inspect_contact_evidence",
             description="Inspect evidence for exact persisted contact results.",
             args_schema=InspectContactEvidenceInput,
+            handle_tool_error=True,
         ),
         "assess_contact_coverage": StructuredTool.from_function(
-            coroutine=assess,
+            coroutine=repairable(assess),
             name="assess_contact_coverage",
             description="Derive durable field, facet, channel, identity, and review coverage.",
             args_schema=AssessContactCoverageInput,
+            handle_tool_error=True,
         ),
         "delegate_contact_facet": StructuredTool.from_function(
-            coroutine=delegate,
+            coroutine=repairable(delegate),
             name="delegate_contact_facet",
             description="Run one admitted depth-one contact facet child on the shared budget.",
             args_schema=DelegateContactFacetInput,
+            handle_tool_error=True,
         ),
         "reveal_contact_channel": StructuredTool.from_function(
             coroutine=reveal,
@@ -1366,10 +1394,11 @@ def contact_engine_tool_bindings(
             args_schema=ContactChannelToolInput,
         ),
         "finalize_contact_research": StructuredTool.from_function(
-            coroutine=finalize,
+            coroutine=repairable(finalize),
             name="finalize_contact_research",
             description="Ask the engine for the only admissible contact finalization proposal.",
             args_schema=FinalizeContactResearchInput,
+            handle_tool_error=True,
         ),
     }
     return {name: EntityResearchToolBinding(tool=tool, version=1) for name, tool in tools.items()}

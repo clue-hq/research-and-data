@@ -54,6 +54,39 @@ class EntityResearchAgentAborted(EntityResearchRuntimeError):
     pass
 
 
+class EntityResearchGovernedToolRefusal(EntityResearchRuntimeError):
+    """A guard/engine refusal of one tool call the model can repair — never a dead job.
+
+    The R3 execution guard enforces model-facing rules (call sequencing against pending work,
+    first-call bundling, scope shape). Violating one is model timing or arguments, not job
+    integrity: the middleware returns this refusal to the model as an error tool message so the
+    next turn can wait, re-read state, or fix the call. Role-specific authority errors subclass
+    this marker; anything that must genuinely suspend keeps raising an ordinary exception.
+    """
+
+    def __init__(self, detail: str, *, code: str = "tool_authorization_refused") -> None:
+        super().__init__(f"{code}: {detail}")
+        self.code = code
+        self.detail = detail
+
+    def render(self) -> str:
+        return json.dumps(
+            {
+                "error": "governed_research_rejection",
+                "code": self.code,
+                "detail": self.detail[:1_000],
+                "recoverable": True,
+                "guidance": (
+                    "This tool call was refused without spending or suspending the job. Wait "
+                    "for pending work to settle, re-read state, correct the request, or "
+                    "finalize honestly with the remaining gap."
+                ),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+
 class _EntityResearchToolRejected(EntityResearchRuntimeError):
     """A model-authored tool request was rejected before producing governed work.
 
@@ -576,11 +609,30 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         )
         try:
             await self._admit_batch(self._persisted_tool_wave(request, call))
-            await self._guard.authorize_tool(
-                context=self._context,
-                call=call,
-                journal_event_ref=event_ref,
-            )
+            try:
+                await self._guard.authorize_tool(
+                    context=self._context,
+                    call=call,
+                    journal_event_ref=event_ref,
+                )
+            except EntityResearchGovernedToolRefusal as refusal:
+                await self._batches.failed(context=self._context, call=call, error=refusal)
+                await self._journal.append(
+                    self._event(
+                        EntityAgentJournalEventKind.TOOL_FAILED,
+                        call=call,
+                        payload={
+                            **_error_payload(refusal),
+                            "disposition": "authorization_refused",
+                        },
+                    )
+                )
+                return ToolMessage(
+                    content=refusal.render(),
+                    status="error",
+                    tool_call_id=call.tool_call_id,
+                    name=call.tool_name,
+                )
             replay = await self._batches.replay(context=self._context, call=call)
             if replay.found:
                 result = replay.result

@@ -9,6 +9,7 @@ neither their SDKs nor scope identifiers appear in model-facing schemas.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -122,6 +123,65 @@ class EntityResearchGovernedRejection(RuntimeError):
             sort_keys=True,
             separators=(",", ":"),
         )
+
+
+async def fold_rejected_operation_settlement(
+    conn_factory: ConnFactory,
+    *,
+    request: GovernedResearchToolRequest,
+    operation_ref: str,
+) -> None:
+    """Record a deterministic provider rejection as a settled zero-cost operation.
+
+    A terminally rejected operation (validated zero-charge 4xx) will never produce a result row.
+    Without this fold it stays "pending" forever, which blocks coverage and finalization — live,
+    a Sumble 402 left an account agent unable to finalize NEEDS_REVIEW and the graph died on the
+    recursion limit. The fold is the operation's exact settlement: zero spend, idempotent.
+    """
+
+    async with conn_factory() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO entity_research_provider_settlement_fold "
+                "(provider_operation_ref, research_run_id, job_id, settled_cost_cents) "
+                "VALUES (:operation_ref, :run_id, :job_id, 0) "
+                "ON CONFLICT (provider_operation_ref) DO NOTHING"
+            ),
+            {
+                "operation_ref": operation_ref,
+                "run_id": request.research_run_id,
+                "job_id": request.job_id,
+            },
+        )
+
+
+def convert_engine_authority_rejections[**P, R](
+    coroutine: Callable[P, Awaitable[R]],
+    *,
+    error_types: tuple[type[Exception], ...],
+) -> Callable[P, Awaitable[R]]:
+    """Convert an engine tool's authority refusal into a repairable governed rejection.
+
+    An engine read/assess/finalize call at the wrong moment (pending provider work, a stale state
+    digest, a premature proposal) is model timing, not job integrity: live, an account agent that
+    assessed coverage one turn early killed its whole job here. The engine's own decision remains
+    authoritative — the refusal simply returns to the agent as an error tool message so it can
+    wait for settlement, re-read state, or repair its proposal. Integrity and unknown-spend
+    errors are deliberately NOT converted and still suspend.
+    """
+
+    @functools.wraps(coroutine)
+    async def converted(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return await coroutine(*args, **kwargs)
+        except error_types as error:
+            raise ToolException(
+                EntityResearchGovernedRejection(
+                    "engine_authority_rejection", str(error)
+                ).render()
+            ) from error
+
+    return converted
 
 
 class EntityResearchResultIntegrityError(RuntimeError):
@@ -2567,7 +2627,18 @@ class GovernedEntityResearchToolFactory:
                 )
             )
             active = current_entity_research_tool_execution()
-            request = await self._requests.record(active=active, semantic=semantic)
+            try:
+                request = await self._requests.record(active=active, semantic=semantic)
+            except EntityResearchToolAuthorityError as authority:
+                # A model-authored request outside the exact authority (widened fields, sources,
+                # or paraphrased confirmed questions) is repairable: refuse it back to the agent
+                # as a governed rejection instead of failing the whole execution — live, a
+                # contact agent that reworded the confirmed question killed its job here.
+                raise ToolException(
+                    EntityResearchGovernedRejection(
+                        "request_authority_violation", str(authority)
+                    ).render()
+                ) from authority
 
             async def before_dispatch(
                 operation: ProviderOperationReservation,

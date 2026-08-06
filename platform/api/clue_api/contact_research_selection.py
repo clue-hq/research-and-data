@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -49,6 +50,20 @@ from clue_research.profiling.committee.admission import DISCOVERY_PROVENANCE_FIE
 
 class ContactResearchSelectionError(RuntimeError):
     pass
+
+
+def committee_claim_runs(account_run_id: RunId, project_run_id: ProjectRunId) -> frozenset[RunId]:
+    """The two exact run identities a committee-discovery claim may legitimately carry.
+
+    M8D stamps the whole committee claim set with the *project run* — the M8C C1 lineage trigger
+    requires a Sumble professional claim's ``run_id`` to equal its ready operation's
+    ``project_run_id``, and ``discover_committee`` stamps role/persona/discovery claims uniformly
+    with the same run. Historical M8C rows rode the per-account deep run instead. Both are exact,
+    non-widening identities for this account's committee; cross-account protection remains the
+    contact-ownership and entity-binding checks, never this run comparison alone.
+    """
+
+    return frozenset({account_run_id, RunId(UUID(str(project_run_id)))})
 
 
 def _content_ref(prefix: str, value: object) -> str:
@@ -162,8 +177,9 @@ class ContactResearchSelectionMaterializer:
                 raise ContactResearchSelectionError(
                     "committee selection contains missing or foreign claim refs"
                 )
+            allowed_committee_runs = committee_claim_runs(account_run_id, project_run_id)
             if any(
-                claim.run_id != account_run_id
+                claim.run_id not in allowed_committee_runs
                 or claim.research_mode is not ResearchMode.COMMITTEE_DISCOVERY
                 for claim in recorded_claims.values()
             ):
@@ -405,8 +421,9 @@ class ContactResearchSelectionMaterializer:
         committee_claim_set = {
             claim_id for target in body.targets for claim_id in target.committee_claim_ids
         }
+        allowed_committee_runs = committee_claim_runs(account_run_id, body.project_run_id)
         if len(claims) != len(expected_claim_ids) or any(
-            claim.id in committee_claim_set and claim.run_id != account_run_id
+            claim.id in committee_claim_set and claim.run_id not in allowed_committee_runs
             for claim in claims.values()
         ):
             raise ContactResearchSelectionError(
