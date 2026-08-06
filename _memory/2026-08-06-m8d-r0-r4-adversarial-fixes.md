@@ -37,10 +37,12 @@ there remains exactly one Alembic head.
 - Ruff and format: green on the remediation set.
 - Mypy: 549 source files clean.
 - Import-linter: 24 contracts kept.
-- Repository-wide no-DB run reached 100%; one unrelated current-worktree authority audit remains in
-  `approve_contact_research_selection@1` (nested `workspace_id`/`project_id`), and setting an empty
-  rather than absent DB URL caused one harness-only DSAR failure. Neither is part of R0-R4 or this
-  remediation set.
+- Repository-wide no-DB run reached 100%. Its model-facing-authority audit incorrectly included
+  human-only backend steering operations; the audit now mirrors live composition by inspecting only
+  addresses admitted to at least one agent role, while the exhaustive authority-inventory test
+  continues to guard every registered address. One cross-subject DSAR test was also missing its
+  standard `require_compliance_db` fixture; the gate is restored, so offline runs skip it and live
+  database runs still execute the full assertion body.
 
 ## Environment note
 
