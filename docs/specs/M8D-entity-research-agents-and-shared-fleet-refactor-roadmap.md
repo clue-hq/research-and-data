@@ -653,6 +653,13 @@ locking, channel operations, finalization, and run aggregation over the same fle
 **Exit gate:** the separately approved contact run profiles only its exact selected contacts and
 does not widen to the rest of the account or committee.
 
+**Accepted 2026-08-06:** exact R7 target/identity locking, contact `create_agent()` composition,
+governed contact tools, bounded depth-one facets, separate reveal/validation decisions, durable
+wait/resume and provider causation, all-in execution budgets and exactly-once spend, engine-owned
+finalization/review, exact-set run aggregation, isolated-Postgres evidence, and the retained R10
+credentialed live-call boundary are recorded in
+`M8D-R8-contact-research-agents-acceptance.md`.
+
 ### R9 — Parallel execution and external-wait hardening
 
 Implement dependency-aware multi-tool execution, atomic budget admission, settled-result joining,
