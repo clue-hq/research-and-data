@@ -127,7 +127,29 @@ against its own freshly migrated disposable database, with `tests/db` on a dedic
 
 ## Live evidence
 
-Pending. R10 is not accepted until the bounded real Exa/Sumble/model/Postgres run succeeds or this
-section records the exact failure ledger. The live sequence must follow the contract note:
-no-filter Sumble probe → account fleet → committee → separate human contact selection → contact
-fleet → zero-spend replay, with a spend checkpoint after every gate.
+**ACCEPTED — 2026-08-07.** The full bounded live pass succeeded end to end in one fresh,
+uninterrupted process (`scripts/13_m8d_r10_live_acceptance.py`, DB `clue_m8d_live9`, report
+`.artifacts/m8d-r10-live/acceptance-live9.json`, `fresh_isolated: true`, target
+`njbrainspine.com`):
+
+- **Account fleet:** one live account job — Exa deep research + Sumble organization/committee
+  acquisition (async People wait → durable suspend → wake → exact checkpoint resume; the drive
+  survived **2 cold recompositions**) — terminal with an engine finalization receipt (honest
+  `needs_review`: unresolved fields routed to review, never fabricated).
+- **Committee → separate human contact selection:** one strongly-bound committee member selected
+  under the C1 lineage trigger; `validator_bypass_used: false`.
+- **Contact fleet:** the selected contact's job ran live Exa, completed
+  `contact.facet.recent_post`, terminal `completed` with an engine finalization receipt. Zero
+  unselected-contact requests; zero account-tool requests from the contact lane.
+- **Ledger:** 4 live provider operations (2 Exa, 1 Sumble account, 1 Sumble committee @58
+  credits), 9 result fields with 9 evidence rows, 6.1¢ Exa-reported spend against the 800¢
+  authorized envelope (1000¢ hard cap). Journal: 2 proposals / 2 acceptances, **zero
+  `tool_failed` events** — the runtime's deterministic post-finalization termination
+  (`5f23b2fb`) held live.
+- **Zero-spend replay:** both launch actions re-ran against a fully rebuilt composition, joined
+  the same research runs, and the complete provider/spend ledger was byte-identical.
+
+Prior live rounds (runs 1–8, DBs `clue_m8d_live1..8`) form the failure ledger above — eleven
+live-only defects found and fixed across them; run 8 (`acceptance-live8-resume.json`) is the
+corroborating pass on a second key with two contact jobs completed. Spend across the entire
+campaign stayed within the authorized $10/provider budgets.

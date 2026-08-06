@@ -197,6 +197,55 @@ Later live rounds (runs 4–6) found three more:
    acceptance pass requires a Sumble top-up (~63+ credits) and is otherwise one command:**
    fresh DB + `scripts/13_m8d_r10_live_acceptance.py --allow-live-provider-calls`.
 
+## Live defects 10–11 (2026-08-07, runs 7–8 on the topped-up Sumble key)
+
+10. **Post-finalization recursion livelock (run 7, contact job)** — the agent ran a *perfect*
+    pass (state → live Exa deep → read result → inspect evidence → assess coverage →
+    `finalize_contact_research` accepted by the engine) and then hit GraphRecursionError(84):
+    graph termination depended on the model volunteering the typed structured-response echo,
+    and this instance instead re-called `read_contact_research_state` through 10 correct
+    `post_finalization_rejected` refusals. Every earlier account-side success had been model
+    good behavior, not a guarantee. **Fix (`5f23b2fb`):** the middleware captures the engine's
+    rendered proposal at finalize success (fresh dispatch *and* the cold-resume settled-result
+    replay path, which previously never armed the flag at all), and a `hook_config`-decorated
+    `abefore_model` ends the graph with `{"jump_to": "end", "structured_response": proposal}`
+    the moment finalization is proposed. `run()` still enforces subject/entity bounds and the
+    independent finalizer receipt, so no authority moved; an unparseable render falls back to
+    the refusal+echo path. End-to-end regression (scripted model finalizes then calls tools
+    forever → one model round, zero refusals, accepted receipt) red-proofed against the unfixed
+    runtime.
+11. **Harness evidence-ledger SQL (run 8)** — the first fully successful live pipeline pass
+    died at *report* time: `evidence_rows` joined `entity_research_result` via `USING
+    (result_id)` after the evidence↔field join already had two `result_id` columns on the left
+    → AmbiguousColumnError. No prior run had ever reached `_ledger`. **Fix (`08b57ab0`):**
+    explicit ON join.
+
+Also learned this session: `alembic/env.py` reads **`CLUE_DATABASE_URL`** (the shared seam),
+not `DATABASE_URL` — migrating a canary DB requires overriding the former, or the migration
+silently targets the `.env` default database.
+
+**Run 8 live evidence (DB `clue_m8d_live8`, uninterrupted pipeline; report completed by the
+zero-spend `--resume-contact-run` pass → `acceptance-live8-resume.json`):** account job terminal
+with receipt (honest `needs_review`), **two** contact jobs terminal `completed` with receipts
+(`contact.facet.recent_post` each), 5 live provider operations (3 Exa + Sumble account + Sumble
+committee @58 credits), 15 result fields / 15 evidence rows, 9.9¢ Exa-reported, fresh-composition
+launch replay joined the same runs with the ledger byte-identical, zero `tool_failed` events,
+one durable suspend/resume across the async Sumble People wait.
+
+## R10 LIVE ACCEPTANCE — DONE (run 9, 2026-08-07)
+
+Run 9 (fresh DB `clue_m8d_live9`, single uninterrupted process, `fresh_isolated: true`) passed
+the entire battery with exit 0 → `.artifacts/m8d-r10-live/acceptance-live9.json`: account job
+terminal + receipt (`needs_review`, 3.5¢, survived 2 cold recompositions across the async
+Sumble suspend/resume), 1 committee member selected (no validator bypass), contact job terminal
+`completed` + receipt (`contact.facet.recent_post`, 2.6¢), 4 live provider ops (2 Exa / 1
+Sumble account / 1 Sumble committee @58 credits), 9 result fields / 9 evidence rows, 6.1¢
+Exa-reported vs 800¢ authorized, zero `tool_failed` journal events (the `5f23b2fb`
+deterministic-termination fix held live), fresh-composition zero-spend replay byte-identical.
+Spec `M8D-R10-cutover-and-live-acceptance.md` §Live evidence updated to ACCEPTED. The M8D R10
+release gate is closed; the live-canary freeze is lifted for this milestone (any *future* live
+spend still needs explicit authorization).
+
 ## Still open / next
 
 - R5a agent results to verify (its in-flight settings validator briefly broke JSON-array parsing
