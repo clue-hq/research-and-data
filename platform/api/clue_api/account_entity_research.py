@@ -789,10 +789,15 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
         if call.tool_name == "research_account_deep":
             if sources != {_QUALITATIVE_SOURCE}:
                 raise AccountResearchAuthorityError("qualitative account research uses Exa Deep")
-            admitted = {
-                item.field_key
+            exa_authority = {
+                item.field_key: item.source_keys
                 for item in context.authorization.selection.field_source_authority
                 if _QUALITATIVE_SOURCE in item.source_keys
+            }
+            primary = {
+                field_key
+                for field_key, source_keys in exa_authority.items()
+                if source_keys[0] == _QUALITATIVE_SOURCE
             }
             async with self._conn_factory() as conn:
                 prior = int(
@@ -806,9 +811,29 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
                         )
                     ).scalar_one()
                 )
-            if prior == 0 and fields != admitted:
+                prior_structured_fields = set(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT DISTINCT unnest(field_keys) FROM "
+                                "entity_research_tool_request WHERE job_id=:job_id "
+                                "AND NOT (:exa = ANY(source_keys))"
+                            ),
+                            {
+                                "job_id": context.authorization.job_id,
+                                "exa": _QUALITATIVE_SOURCE,
+                            },
+                        )
+                    ).scalars()
+                )
+            fallback = fields - primary
+            if fallback - prior_structured_fields:
                 raise AccountResearchAuthorityError(
-                    "first Exa account call must bundle every selected Exa-applicable field"
+                    "Exa fallback fields require a preceding structured-source attempt"
+                )
+            if prior == 0 and primary - fields:
+                raise AccountResearchAuthorityError(
+                    "first Exa account call must include every primary Exa field"
                 )
         elif call.tool_name == "enrich_account" and _QUALITATIVE_SOURCE in sources:
             raise AccountResearchAuthorityError("structured enrichment is independent of Exa Deep")

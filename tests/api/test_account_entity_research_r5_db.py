@@ -763,7 +763,10 @@ def _account_envelope(
                 "field_source_authority": (
                     FieldSourceAuthority(field_key=_PAIN, source_keys=("exa_deep",)),
                     FieldSourceAuthority(field_key=_MOVES, source_keys=("exa_deep",)),
-                    FieldSourceAuthority(field_key=_HIRING, source_keys=("sumble_jobs",)),
+                    FieldSourceAuthority(
+                        field_key=_HIRING,
+                        source_keys=("sumble_jobs", "exa_deep"),
+                    ),
                 ),
                 "committee_source_keys": ("sumble_people",),
                 "research_questions": (
@@ -985,7 +988,7 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
             guard = AccountResearchExecutionGuard(conn_factory=connection)
             with pytest.raises(
                 AccountResearchAuthorityError,
-                match="first Exa account call must bundle every selected Exa-applicable field",
+                match="first Exa account call must include every primary Exa field",
             ):
                 await guard.authorize_tool(
                     context=definition.context,
@@ -1001,6 +1004,25 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
                         },
                     ),
                     journal_event_ref="entity-agent-journal:r5-forbidden",
+                )
+            with pytest.raises(
+                AccountResearchAuthorityError,
+                match="Exa fallback fields require a preceding structured-source attempt",
+            ):
+                await guard.authorize_tool(
+                    context=definition.context,
+                    call=EntityResearchToolCall(
+                        tool_call_id="r5-forbidden-premature-exa-fallback",
+                        tool_name="research_account_deep",
+                        tool_version=1,
+                        tool_input_sha256="e" * 64,
+                        arguments={
+                            "field_keys": [_HIRING],
+                            "source_keys": ["exa_deep"],
+                            "questions": [_STRUCTURED_QUESTION],
+                        },
+                    ),
+                    journal_event_ref="entity-agent-journal:r5-forbidden-fallback",
                 )
             model = _DecisionModel(account_id=account_id, scope_id=uuid4())
             journal = DbEntityResearchAgentJournal(conn_factory=connection)
