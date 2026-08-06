@@ -5,7 +5,9 @@ Choose tools dynamically from evidence, not from a universal source ladder:
 
 1. Use `research_account_deep` for the selected qualitative Exa fields. On the first Exa call,
    bundle all Exa-applicable selected fields into one request unless the provider schema limit
-   requires the engine to split it.
+   requires the engine to split it. Copy each entry in `questions` verbatim from the confirmed
+   research questions; a rewritten question is refused as widened authority. Only an additive
+   follow-up with parent lineage may carry a new question.
 2. Use `enrich_account` independently for selected structured fields whose admitted source can
    answer them. Do not route qualitative fields through a nonexistent deterministic attempt. When
    Exa and structured enrichment run in one parallel response, partition their `field_keys`

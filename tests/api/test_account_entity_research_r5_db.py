@@ -1480,3 +1480,95 @@ def test_r5_committee_filter_matches_provider_values_never_schema_keys() -> None
     assert selected == ()
     assert ambiguous == 1
     assert excluded == 0
+
+
+def test_r5_office_gate_admits_the_live_paramus_candidate_vetoed_by_region_spelling() -> None:
+    """Live canary regression (2026-08-06, njbrainspine.com, real Sumble rows).
+
+    The agent declared a strict Paramus office with region "NJ"; Sumble spells "New Jersey".
+    Requiring every declared location tier as a raw substring vetoed a provider-perfect
+    candidate (locality matched, exact current employer, admitted function). The most specific
+    declared tier now governs; coarser containers corroborate but cannot veto — and a candidate
+    evidencing no declared tier still routes to review, never to admission.
+    """
+
+    account_id = uuid4()
+    scope = AccountBuyingUnitScope(
+        scope_id=uuid4(),
+        account_entity_id=account_id,
+        office_label="New Jersey Brain and Spine — Paramus office",
+        facility_name="650 From Road, Suite 220",
+        locality="Paramus",
+        region="NJ",
+        country="United States",
+        target_functions=("Executive", "Operations", "Marketing"),
+        evidence_refs=("research-evidence:live-account-profile",),
+    )
+
+    def live_candidate(*, name: str, title: str, function: str, location: str):
+        return CommitteePersonCandidate(
+            source_key=PEOPLE_SOURCE_KEY,
+            linkedin_url=f"https://linkedin.com/in/{name.casefold().replace(' ', '-')}",
+            full_name=name,
+            title=title,
+            job_function=function,
+            geo={},
+            source_url="https://sumble.example/people/live",
+            professional_facts=(
+                CandidateProfessionalFact(
+                    field_key="contact.current_location",
+                    value_json={"location": location, "country": "United States"},
+                    provenance_kind=CandidateFactProvenance.PROVIDER_RETURNED,
+                    source_key=PEOPLE_SOURCE_KEY,
+                    source_tier=1,
+                    source_url="https://sumble.example/people/live",
+                    evidence_span="Provider-returned person row.",
+                    artifact_key="sumble/people/live",
+                    source_operation_ref="committee-operation:live",
+                    source_snapshot_ref="committee-snapshot:live",
+                    source_request_ref="sumble-request:live",
+                ),
+            ),
+        )
+
+    paramus_cmo = live_candidate(
+        name="Amanda Haro",
+        title="Chief Marketing Officer",
+        function="Marketing",
+        location="Paramus, New Jersey, United States",
+    )
+    bloomingdale_ceo = live_candidate(
+        name="Jeanmarie Falco",
+        title="Chief Executive Officer",
+        function="Executive",
+        location="Bloomingdale, New Jersey, United States",
+    )
+    nyc_manager = live_candidate(
+        name="Angelica Ienczmionka",
+        title="Manager, Business Operations & Strategy",
+        function="Operations",
+        location="New York, New York, United States",
+    )
+    selected, excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(
+        (paramus_cmo, bloomingdale_ceo, nyc_manager),
+        scope=scope,
+    )
+    assert selected == (paramus_cmo,)
+    assert excluded == 0
+    assert ambiguous == 2  # other-office candidates stay review-routed, never admitted
+
+    # A region-only scope matches either spelling of the same US state — and nothing else.
+    region_only = AccountBuyingUnitScope(
+        scope_id=uuid4(),
+        account_entity_id=account_id,
+        office_label="New Jersey organization-wide unit",
+        region="NJ",
+        target_functions=("Executive", "Operations", "Marketing"),
+        evidence_refs=("research-evidence:live-account-profile",),
+    )
+    selected, _excluded, ambiguous = SumbleCommitteeSemanticResearchAction._office_candidates(
+        (paramus_cmo, bloomingdale_ceo, nyc_manager),
+        scope=region_only,
+    )
+    assert selected == (paramus_cmo, bloomingdale_ceo)
+    assert ambiguous == 1

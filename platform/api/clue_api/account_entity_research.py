@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -35,8 +35,10 @@ from clue_agents.entity_research_runtime import (
     EntityResearchExecutionGuard,
     EntityResearchFinalizationEngine,
     EntityResearchFinalizationRejected,
+    EntityResearchGovernedToolRefusal,
     current_entity_research_tool_execution,
 )
+from clue_api.entity_research_tools import convert_engine_authority_rejections
 from clue_core import EntityId, ProjectRunId, serialize_value_json
 from clue_core.entity_research import (
     EntityResearchJobAuthorization,
@@ -62,8 +64,8 @@ _CONTACT_TOOL_PREFIXES = (
 )
 
 
-class AccountResearchAuthorityError(RuntimeError):
-    pass
+class AccountResearchAuthorityError(EntityResearchGovernedToolRefusal):
+    """Model-repairable account guard/engine refusal (returned to the agent, never fatal)."""
 
 
 async def read_account_committee_plan(
@@ -778,6 +780,20 @@ class AccountResearchStateStore:
                                 WHERE result.provider_operation_ref=
                                       observation.provider_operation_ref
                                   AND result_request.job_id=request_row.job_id
+                            ) AND NOT EXISTS (
+                                -- A settled operation without a result is a deterministic
+                                -- terminal rejection (zero-cost fold): it can never produce a
+                                -- result and must not block coverage or an honest NEEDS_REVIEW
+                                -- finalization (live Sumble 402 livelock).
+                                SELECT 1 FROM entity_research_provider_settlement_fold fold
+                                WHERE fold.provider_operation_ref=
+                                      observation.provider_operation_ref
+                                  AND fold.job_id=request_row.job_id
+                                  AND NOT EXISTS (
+                                      SELECT 1 FROM entity_research_result settled
+                                      WHERE settled.provider_operation_ref=
+                                            fold.provider_operation_ref
+                                  )
                             )
                             ORDER BY observation.provider_operation_ref
                             """
@@ -992,6 +1008,18 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                                           WHERE result.provider_operation_ref=
                                                 observation.provider_operation_ref
                                             AND result_request.job_id=request_row.job_id
+                                      )
+                                      AND NOT EXISTS (
+                                          SELECT 1 FROM
+                                          entity_research_provider_settlement_fold fold
+                                          WHERE fold.provider_operation_ref=
+                                                observation.provider_operation_ref
+                                            AND fold.job_id=request_row.job_id
+                                            AND NOT EXISTS (
+                                                SELECT 1 FROM entity_research_result settled
+                                                WHERE settled.provider_operation_ref=
+                                                      fold.provider_operation_ref
+                                            )
                                       )) AS pending_operations
                                    ,(SELECT count(*)
                                      FROM unnest(coverage.completed_field_keys) completed(field_key)
@@ -1093,6 +1121,14 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
 def account_engine_tool_bindings(
     store: AccountResearchStateStore,
 ) -> Mapping[str, EntityResearchToolBinding]:
+    def repairable(
+        coroutine: Callable[..., Awaitable[dict[str, JsonValue]]],
+    ) -> Callable[..., Awaitable[dict[str, JsonValue]]]:
+        return convert_engine_authority_rejections(
+            coroutine,
+            error_types=(AccountResearchAuthorityError,),
+        )
+
     async def read_state(include_result_index: bool = True) -> dict[str, JsonValue]:
         value = await store.state()
         payload = value.model_dump(mode="json")
@@ -1113,27 +1149,30 @@ def account_engine_tool_bindings(
 
     tools = {
         "read_account_research_state": StructuredTool.from_function(
-            coroutine=read_state,
+            coroutine=repairable(read_state),
             name="read_account_research_state",
             description=(
                 "Read exact persisted account results, gaps, committee, pending work, and spend."
             ),
             args_schema=ReadAccountResearchStateInput,
+            handle_tool_error=True,
         ),
         "inspect_account_evidence": StructuredTool.from_function(
-            coroutine=inspect,
+            coroutine=repairable(inspect),
             name="inspect_account_evidence",
             description="Inspect the complete evidence index for exact persisted account results.",
             args_schema=InspectAccountEvidenceInput,
+            handle_tool_error=True,
         ),
         "assess_account_coverage": StructuredTool.from_function(
-            coroutine=assess,
+            coroutine=repairable(assess),
             name="assess_account_coverage",
             description="Derive durable account-field and office-coherent committee coverage.",
             args_schema=AssessAccountCoverageInput,
+            handle_tool_error=True,
         ),
         "finalize_account_research": StructuredTool.from_function(
-            coroutine=finalize,
+            coroutine=repairable(finalize),
             name="finalize_account_research",
             description=(
                 "Ask the engine once for the only admissible typed finalization proposal. "
@@ -1141,6 +1180,7 @@ def account_engine_tool_bindings(
                 "ResearchFinalizationProposal response-format tool and stop."
             ),
             args_schema=FinalizeAccountResearchInput,
+            handle_tool_error=True,
         ),
     }
     return {name: EntityResearchToolBinding(tool=tool, version=1) for name, tool in tools.items()}

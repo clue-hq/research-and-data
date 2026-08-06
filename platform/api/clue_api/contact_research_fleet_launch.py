@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.contact_research_selection import committee_claim_runs
 from clue_config import OverlayStore, get_config
 from clue_core import (
     ClaimId,
@@ -552,10 +553,14 @@ class ContactResearchSelectionApprover:
             committee_fields = {
                 str(claim.field_key) for claim in claims.values() if claim.id in committee
             }
+            allowed_committee_runs = committee_claim_runs(
+                RunId(request.account_run_id),
+                ProjectRunId(request.project_run_id),
+            )
             if requested.selection_basis is ResearchSelectionBasis.COMMITTEE_MEMBER and (
                 not {ROLE_ON_COMMITTEE, PERSONA}.issubset(committee_fields)
                 or any(
-                    claim.id in committee and claim.run_id != request.account_run_id
+                    claim.id in committee and claim.run_id not in allowed_committee_runs
                     for claim in claims.values()
                 )
             ):

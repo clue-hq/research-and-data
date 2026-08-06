@@ -144,6 +144,59 @@ curated 13-module subset; the R5a full run had no DB, skipping ~1,450 tests). Ru
    runs against its own freshly migrated disposable DB (`/tmp/m8d_per_dir_run.sh` pattern);
    `tests/db` keeps its own throwaway DB.
 
+## Live canary bug ledger (2026-08-07, user-authorized ≤$10/provider, target njbrainspine.com)
+
+Every layer of the pipeline worked mechanically on the first live attempt (real Exa settled 3.4¢;
+real Sumble org/jobs/Teams/People, 58-62 credits; async People wait → durable suspend → wake →
+exact checkpoint resume; committee claims under the C1 trigger; engine finalization receipts;
+selection persistence; contact fleet launch). Six live-only defects were found and fixed:
+
+1. **Office-gate region spelling** — `all(term in haystack)` vetoed a provider-perfect Paramus
+   CMO over `"NJ"` vs "New Jersey". Fixed: most-specific-tier-governs matching +
+   US-state abbreviation↔name normalization (`_location_scope_match`); regression test uses the
+   exact three live Sumble rows.
+2. **Committee claim run identity** — the R5 action stamped `discover_committee` claims with a
+   synthetic per-tool-call uuid5; the C1 lineage trigger (correctly) requires
+   `operation.project_run_id`. Fixed: claims ride the project run.
+3. **Harness claim query** — selected committee claims by `run_id=account_run_id`; fixed to the
+   project run.
+4. **Three-layer account-run/project-run disagreement** — Python materializer, DB selection
+   guard, and approver all required committee claims on the per-account deep run (M8C
+   convention). Fixed with shared `committee_claim_runs` (exactly the two legitimate
+   identities) + reversible migration `c6d84aa84b79` (up→down→up smoked).
+5. **Authority refusals killed executions** — a contact agent that reworded the confirmed
+   question died with `EntityResearchToolAuthorityError` instead of being able to repair.
+   Fixed: `record()` authority violations convert to governed rejections (error ToolMessage);
+   both agent prompts now state the copy-questions-verbatim rule explicitly.
+6. **Contact resume didn't re-offer a failed worker task** — launch replay restores authority
+   but not the dead `fleet_task`; the harness resume now re-offers nonterminal jobs' tasks with
+   `reopen_terminal=True`.
+
+Note: an in-flight checkpoint cannot resume across a prompt-catalog edit — the journal refuses
+`agent turn id replayed with different exact construction authority` (correct, exact-replay
+contract). Final acceptance therefore runs as one fresh uninterrupted pass.
+
+Later live rounds (runs 4–6) found three more:
+
+7. **Engine-tool authority refusals killed executions** — `assess_account_coverage` called one
+   turn early ("dependent account decision has pending work") failed the job. Fixed in two
+   layers: `EntityResearchGovernedToolRefusal` marker in the agents layer (guard refusals return
+   as error tool messages from `awrap_tool_call`; both role authority errors subclass it) and
+   `convert_engine_authority_rejections` around the engine tool coroutines
+   (`handle_tool_error=True`).
+8. **Terminal-rejection livelock** — a deterministically rejected provider operation
+   (zero-charge 402) never produces a result, so pending-work checks blocked coverage AND the
+   honest `NEEDS_REVIEW` finalization forever; the graph died on the recursion limit. Fixed:
+   `fold_rejected_operation_settlement` writes the operation's exact zero-cost settlement fold at
+   rejection time, and all four pending queries (account/contact state stores + finalization
+   engines) treat fold-without-any-result as settled, never pending.
+9. **Sumble balance exhausted (external)** — run 6's committee failed
+   `sumble_teams_provider_rejected_http_402`; the retained provider body reads: "This request
+   can cost up to 36 credits. You have 2 credits available." Cumulative live spend across runs
+   1–6: ~246 Sumble credits, ~16¢ Exa settled, plus OpenRouter tokens. **The final uninterrupted
+   acceptance pass requires a Sumble top-up (~63+ credits) and is otherwise one command:**
+   fresh DB + `scripts/13_m8d_r10_live_acceptance.py --allow-live-provider-calls`.
+
 ## Still open / next
 
 - R5a agent results to verify (its in-flight settings validator briefly broke JSON-array parsing

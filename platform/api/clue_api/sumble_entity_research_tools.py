@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Protocol, cast
+from typing import Final, Protocol, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import text
@@ -31,6 +31,7 @@ from clue_api.entity_research_tools import (
     ProviderOperationReservation,
     ProviderResultLineage,
     ProviderResultLineageReader,
+    fold_rejected_operation_settlement,
 )
 from clue_api.sumble_account_gaps import (
     SumbleAccountGapOutcome,
@@ -116,6 +117,100 @@ def _match_haystack(*values: object) -> str:
     for value in values:
         collect(value)
     return "\n".join(parts).casefold()
+
+
+# US state name <-> USPS abbreviation, both directions, for the region tier of the office gate.
+# Providers spell regions out ("New Jersey") while an agent scope may abbreviate ("NJ"); in the
+# first live canary that single spelling difference vetoed a provider-perfect Paramus candidate
+# whose row satisfied locality, function, and exact current employer. Normalization is bounded to
+# this one closed vocabulary; free-text geo is never guessed.
+_US_STATE_BY_ABBREVIATION: Final[dict[str, str]] = {
+    "al": "alabama",
+    "ak": "alaska",
+    "az": "arizona",
+    "ar": "arkansas",
+    "ca": "california",
+    "co": "colorado",
+    "ct": "connecticut",
+    "de": "delaware",
+    "fl": "florida",
+    "ga": "georgia",
+    "hi": "hawaii",
+    "id": "idaho",
+    "il": "illinois",
+    "in": "indiana",
+    "ia": "iowa",
+    "ks": "kansas",
+    "ky": "kentucky",
+    "la": "louisiana",
+    "me": "maine",
+    "md": "maryland",
+    "ma": "massachusetts",
+    "mi": "michigan",
+    "mn": "minnesota",
+    "ms": "mississippi",
+    "mo": "missouri",
+    "mt": "montana",
+    "ne": "nebraska",
+    "nv": "nevada",
+    "nh": "new hampshire",
+    "nj": "new jersey",
+    "nm": "new mexico",
+    "ny": "new york",
+    "nc": "north carolina",
+    "nd": "north dakota",
+    "oh": "ohio",
+    "ok": "oklahoma",
+    "or": "oregon",
+    "pa": "pennsylvania",
+    "ri": "rhode island",
+    "sc": "south carolina",
+    "sd": "south dakota",
+    "tn": "tennessee",
+    "tx": "texas",
+    "ut": "utah",
+    "vt": "vermont",
+    "va": "virginia",
+    "wa": "washington",
+    "wv": "west virginia",
+    "wi": "wisconsin",
+    "wy": "wyoming",
+    "dc": "district of columbia",
+}
+_US_STATE_ABBREVIATION_BY_NAME: Final[dict[str, str]] = {
+    name: abbreviation for abbreviation, name in _US_STATE_BY_ABBREVIATION.items()
+}
+
+
+def _region_alternatives(region: str) -> tuple[str, ...]:
+    """Return the declared region plus its US-state spelling twin, casefolded."""
+
+    folded = region.casefold().strip()
+    twin = _US_STATE_BY_ABBREVIATION.get(folded) or _US_STATE_ABBREVIATION_BY_NAME.get(folded)
+    return (folded, twin) if twin else (folded,)
+
+
+def _location_scope_match(scope: AccountBuyingUnitScope, *, haystack: str) -> bool:
+    """Match the office scope against provider-returned location values, most specific first.
+
+    The declared terms form a containment hierarchy (facility ⊂ locality ⊂ region ⊂ country).
+    Only the most specific declared tier must be evidenced: once "Paramus" is present in the
+    provider values, "New Jersey"/"United States" are containers of the same fact and requiring
+    them independently can only manufacture false vetoes (the first live canary lost a perfect
+    candidate to "NJ" vs "New Jersey"). A candidate whose values evidence no declared tier still
+    fails closed to review — profile metros are never inferred to be office assignments.
+    """
+
+    if scope.facility_name is not None or scope.locality is not None:
+        alternatives = tuple(
+            value.casefold() for value in (scope.facility_name, scope.locality) if value is not None
+        )
+        return any(value in haystack for value in alternatives)
+    if scope.region is not None:
+        return any(value in haystack for value in _region_alternatives(scope.region))
+    if scope.country is not None:
+        return scope.country.casefold() in haystack
+    return True
 
 
 def _organization_names(facts: object) -> tuple[str, ...]:
@@ -372,6 +467,11 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
         if result.outcome is SumbleAccountGapOutcome.FAILED_TERMINAL:
             # Deterministic provider refusal: zero-charge, diagnostics durable on the gap ledger.
             # The agent may pick another admitted source or finalize with an explicit gap.
+            await fold_rejected_operation_settlement(
+                self._conn_factory,
+                request=request,
+                operation_ref=_operation_ref(result.operation),
+            )
             raise EntityResearchGovernedRejection(
                 "provider_rejected",
                 "Sumble account enrichment was terminally rejected by the provider "
@@ -788,6 +888,11 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             # Deterministic provider refusal (for example a validated zero-charge HTTP 4xx): the
             # committee ledger retains the status and the provider's own bounded error body. The
             # agent decides — repair, another admitted source, or an explicit partial committee.
+            await fold_rejected_operation_settlement(
+                self._conn_factory,
+                request=request,
+                operation_ref=f"committee-operation:{acquired.operation.operation_id}",
+            )
             raise EntityResearchGovernedRejection(
                 "provider_rejected",
                 "Sumble committee acquisition was terminally rejected "
@@ -812,7 +917,12 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
         )
         candidates = tuple(await source.find_candidates(account, limit=durable.people_limit))
         selected, excluded, ambiguous = self._office_candidates(candidates, scope=scope)
-        run_id = RunId(uuid5(NAMESPACE_URL, f"m8d-r5-committee:{request.tool_call_id}"))
+        # Committee claims are stamped with the exact project run: the M8C C1 lineage trigger
+        # refuses a Sumble professional claim whose run differs from its ready operation's
+        # project_run_id (a synthetic per-tool-call run id was rejected live), and the project
+        # run is also the correct idempotency domain — a repeat committee call replays the
+        # existing member/role claims instead of superseding them per tool call.
+        run_id = RunId(UUID(str(durable.project_run_id)))
         async with self._conn_factory() as conn:
             committee = await discover_committee(
                 conn,
@@ -1073,19 +1183,7 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 # never satisfy an office, facility, or business-unit discriminator.
                 candidate.title,
             )
-            location_terms = tuple(
-                value.casefold()
-                for value in (scope.locality, scope.region, scope.country)
-                if value is not None
-            )
-            facility_match = (
-                scope.facility_name is None
-                or scope.facility_name.casefold() in location_haystack
-                or (scope.locality is not None and scope.locality.casefold() in location_haystack)
-            )
-            location_match = facility_match and all(
-                term in location_haystack for term in location_terms
-            )
+            location_match = _location_scope_match(scope, haystack=location_haystack)
             business_unit_match = (
                 scope.business_unit is None
                 or scope.business_unit.casefold() in business_unit_haystack
