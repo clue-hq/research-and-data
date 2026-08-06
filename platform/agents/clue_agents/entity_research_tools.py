@@ -21,7 +21,7 @@ class EntityResearchSemanticToolInput(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    field_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    field_keys: tuple[NonEmptyStr, ...] = ()
     source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
     questions: tuple[NonEmptyStr, ...] = Field(min_length=1)
     parent_operation_ref: NonEmptyStr | None = None

@@ -222,6 +222,9 @@ class EntityResearchRuntimeContext(FrozenRuntimeModel):
             "source_plan_ref": selection.source_plan_ref,
             "admitted_field_keys": list(selection.admitted_field_keys),
             "admitted_source_keys": list(selection.admitted_source_keys),
+            "field_source_authority": [
+                item.model_dump(mode="json") for item in selection.field_source_authority
+            ],
             "research_questions": list(selection.research_questions),
             "facet_keys": list(selection.facet_keys),
             "channel_permissions": [item.value for item in selection.channel_permissions],
@@ -246,11 +249,26 @@ class EntityResearchRuntimeContext(FrozenRuntimeModel):
 
     @property
     def effective_checkpoint_thread_id(self) -> str:
+        # LangGraph's Postgres saver keys checkpoints globally by ``thread_id``.  The human-readable
+        # authorization value is unique only inside one research run, so it must never be used as
+        # the physical key by itself.  Content-address the structured tenant/run/job authority so
+        # opaque ids containing delimiters cannot alias another physical saver thread.
+        root = "entity-research:" + canonical_sha256(
+            {
+                "workspace_id": str(self.authorization.workspace_id),
+                "research_run_id": str(self.authorization.research_run_id),
+                "job_id": str(self.authorization.job_id),
+                "authorized_thread_id": self.authorization.checkpoint_thread_id,
+            }
+        )
         if self.facet_scope is None:
-            return self.authorization.checkpoint_thread_id
-        return (
-            f"{self.authorization.checkpoint_thread_id}:facet:"
-            f"{self.facet_scope.facet_key}:{self.facet_scope.child_ordinal}"
+            return root
+        return "entity-research-facet:" + canonical_sha256(
+            {
+                "parent_thread_id": root,
+                "facet_key": self.facet_scope.facet_key,
+                "child_ordinal": self.facet_scope.child_ordinal,
+            }
         )
 
 

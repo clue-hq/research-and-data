@@ -15,12 +15,14 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Annotated, Protocol, Self, cast, runtime_checkable
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from sqlalchemy import text
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.entity_research_contracts import (
@@ -29,6 +31,7 @@ from clue_agents.entity_research_contracts import (
 )
 from clue_agents.entity_research_runtime import (
     ActiveEntityResearchToolExecution,
+    EntityResearchExternalWait,
     current_entity_research_tool_execution,
 )
 from clue_agents.entity_research_tools import (
@@ -36,13 +39,15 @@ from clue_agents.entity_research_tools import (
     ReadResearchEvidenceInput,
     ReadResearchResultInput,
 )
-from clue_core import EntityId, ExternalResearchOperationId, serialize_value_json
+from clue_core import EntityId, serialize_value_json
 from clue_core.entity_research import (
     EntityAgentToolSurface,
+    FieldSourceAuthority,
     GovernedResearchToolRequest,
     PersistedResearchToolResult,
     ProviderOperationCausation,
     ResearchClaimDelta,
+    ResearchDiscoveredSubjectProjection,
     ResearchFieldOutcome,
     ResearchFieldResultProjection,
     ResearchFollowUpReason,
@@ -53,7 +58,6 @@ from clue_research.durable.discovery import (
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
 )
-from clue_research.durable.external_research import ExternalResearchOperationRow
 from clue_storage import StorageBackend, content_address, read_verified_artifact
 
 NonEmptyStr = Annotated[str, Field(min_length=1)]
@@ -83,35 +87,115 @@ class EntityResearchResultIntegrityError(RuntimeError):
     """Persisted research data does not reconstruct one complete grounded result."""
 
 
+class EntityResearchProviderWait(RuntimeError):
+    """A provider-neutral joined operation that must suspend the durable entity job."""
+
+    def __init__(self, operation: ProviderOperationReservation) -> None:
+        super().__init__(f"provider operation is still pending: {operation.operation_ref}")
+        self.operation = operation
+
+
 class ProviderOperationObservation(BaseModel):
-    """One tool's relation to an operation; only ``caused`` is provider-spend causation."""
+    """One tool's relation to an operation; only caused is provider-spend causation."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     observation_id: UUID
     tool_request_id: UUID
-    operation_id: UUID
+    operation_ref: NonEmptyStr
     workspace_id: NonEmptyStr
     disposition: str
     created_at: datetime
 
 
-class ExternalResearchProjectionDraft(BaseModel):
+class ProviderObservationDisposition(StrEnum):
+    CAUSED = "caused"
+    REPLAY = "replay_observation"
+    JOINED = "joined_observation"
+
+
+class ProviderOperationReservation(BaseModel):
+    """Provider-neutral immutable operation identity projected before any dispatch."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider_kind: NonEmptyStr
+    operation_ref: NonEmptyStr
+    workspace_id: NonEmptyStr
+    project_id: NonEmptyStr
+    project_run_id: UUID
+    subject_type: ResearchSubjectType
+    target_entity_id: UUID
+    parent_account_id: UUID | None = None
+    source_key: NonEmptyStr
+    field_keys: tuple[NonEmptyStr, ...] = ()
+    request_artifact_ref: NonEmptyStr
+    reserved_at: datetime
+    dispatched_at: datetime | None = None
+    observation_disposition: ProviderObservationDisposition
+
+    @model_validator(mode="after")
+    def _scope_is_exact(self) -> Self:
+        if self.reserved_at.utcoffset() is None:
+            raise ValueError("provider operation reservation time must be timezone-aware")
+        if self.dispatched_at is not None and (
+            self.dispatched_at.utcoffset() is None or self.dispatched_at < self.reserved_at
+        ):
+            raise ValueError("provider dispatch time must follow its durable reservation")
+        if self.subject_type is ResearchSubjectType.CONTACT:
+            if self.parent_account_id is None:
+                raise ValueError("contact provider operation requires a parent account")
+        elif self.parent_account_id is not None:
+            raise ValueError("account provider operation cannot carry a parent account")
+        if len(self.field_keys) != len(set(self.field_keys)):
+            raise ValueError("provider operation field keys must be unique")
+        if any(
+            not field_key.startswith(f"{self.subject_type.value}.") for field_key in self.field_keys
+        ):
+            raise ValueError("provider operation contains a cross-axis field")
+        return self
+
+
+class ProviderResultLineage(BaseModel):
+    """Complete durable provider artifacts and settlement loaded from its owning ledger."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    operation: ProviderOperationReservation
+    snapshot_ref: NonEmptyStr
+    raw_response_artifact_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    retained_result_artifact_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    normalized_result_artifact_ref: NonEmptyStr
+    provider_receipt_ref: NonEmptyStr
+    cost_settlement_ref: NonEmptyStr
+    provider_request_id: NonEmptyStr
+    provider_reported_cost_cents: Decimal = Field(ge=0)
+    settled_cost_cents: Decimal = Field(ge=0)
+
+
+class ProviderResearchProjectionDraft(BaseModel):
     """Claim-engine output awaiting R4 relational/artifact integrity validation."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    operation_id: UUID
-    snapshot_id: UUID
-    requested_field_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
-    fields: tuple[ResearchFieldResultProjection, ...] = Field(min_length=1)
+    operation: ProviderOperationReservation
+    snapshot_ref: NonEmptyStr
+    requested_field_keys: tuple[NonEmptyStr, ...] = ()
+    fields: tuple[ResearchFieldResultProjection, ...] = ()
+    discovered_subjects: tuple[ResearchDiscoveredSubjectProjection, ...] = ()
 
     @model_validator(mode="after")
     def _complete_index(self) -> Self:
         returned = tuple(field.field_key for field in self.fields)
         if len(returned) != len(set(returned)) or set(returned) != set(self.requested_field_keys):
             raise ValueError("projection draft must cover each requested field exactly once")
+        if not self.fields and not self.discovered_subjects:
+            raise ValueError("projection draft requires fields or discovered subjects")
         return self
+
+
+# Compatibility name for the first concrete Exa adapter; the shape itself is provider-neutral.
+ExternalResearchProjectionDraft = ProviderResearchProjectionDraft
 
 
 class EntityResearchToolResultBatch(BaseModel):
@@ -121,6 +205,8 @@ class EntityResearchToolResultBatch(BaseModel):
 
     tool_request_ref: NonEmptyStr
     results: tuple[PersistedResearchToolResult, ...] = Field(min_length=1)
+    current_state_sha256: Sha256
+    yield_count: int = Field(ge=0)
 
 
 class ResearchEvidenceReadPage(BaseModel):
@@ -143,8 +229,23 @@ class EntityResearchProviderAction(Protocol):
         self,
         request: GovernedResearchToolRequest,
         *,
-        before_dispatch: Callable[[ExternalResearchOperationRow], Awaitable[None]],
-    ) -> Sequence[ExternalResearchProjectionDraft]: ...
+        before_dispatch: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
+    ) -> Sequence[ProviderResearchProjectionDraft]: ...
+
+
+@runtime_checkable
+class ProviderResultLineageReader(Protocol):
+    """Load one ready result from the provider ledger that owns provider_kind."""
+
+    async def load(
+        self,
+        *,
+        request: GovernedResearchToolRequest,
+        operation: ProviderOperationReservation,
+        snapshot_ref: str,
+    ) -> ProviderResultLineage: ...
 
 
 class ProviderActionBinding(BaseModel):
@@ -225,8 +326,18 @@ def _json_contains_text(data: bytes, span: str) -> bool:
 class EntityResearchToolRequestStore:
     """Project an admitted R3 call into the immutable R0 governed request contract."""
 
-    def __init__(self, *, conn_factory: ConnFactory) -> None:
+    def __init__(
+        self,
+        *,
+        conn_factory: ConnFactory,
+        storage: StorageBackend | None = None,
+        prior_context_max_bytes: int = 16_000,
+    ) -> None:
+        if prior_context_max_bytes < 1_024:
+            raise ValueError("prior research context cap must be at least 1024 bytes")
         self._conn_factory = conn_factory
+        self._storage = storage
+        self._prior_context_max_bytes = prior_context_max_bytes
 
     async def record(
         self,
@@ -241,15 +352,103 @@ class EntityResearchToolRequestStore:
             raise EntityResearchToolAuthorityError("semantic tool widened selected fields")
         if not set(semantic.source_keys).issubset(selection.admitted_source_keys):
             raise EntityResearchToolAuthorityError("semantic tool widened selected sources")
-        if not set(semantic.questions).issubset(selection.research_questions):
+        is_follow_up = semantic.parent_operation_ref is not None
+        if not is_follow_up and not set(semantic.questions).issubset(selection.research_questions):
             raise EntityResearchToolAuthorityError("semantic tool widened confirmed questions")
         if active.call.tool_name not in context.tool_surface.tool_names:
             raise EntityResearchToolAuthorityError("semantic tool is outside the exact surface")
+
+        requested_authority: list[FieldSourceAuthority] = []
+        for authority in selection.field_source_authority:
+            if authority.field_key not in semantic.field_keys:
+                continue
+            sources = tuple(
+                source for source in authority.source_keys if source in semantic.source_keys
+            )
+            if not sources:
+                raise EntityResearchToolAuthorityError(
+                    f"field {authority.field_key!r} has no authorized requested source"
+                )
+            requested_authority.append(
+                FieldSourceAuthority(field_key=authority.field_key, source_keys=sources)
+            )
+        if semantic.field_keys and (
+            {item.field_key for item in requested_authority} != set(semantic.field_keys)
+            or {source for item in requested_authority for source in item.source_keys}
+            != set(semantic.source_keys)
+        ):
+            raise EntityResearchToolAuthorityError(
+                "semantic tool requested an unauthorized field/source pairing"
+            )
 
         tool_request_id = uuid5(
             _TOOL_REQUEST_NAMESPACE,
             f"{context.agent_turn_id}:{active.call.tool_call_id}",
         )
+        prior_result_sha256: str | None = None
+        prior_research_context: str | None = None
+        async with self._conn_factory() as conn:
+            if is_follow_up:
+                parent_result_id = _prefixed_uuid(
+                    cast(str, semantic.parent_observation_ref),
+                    "research-result:",
+                )
+                parent = (
+                    (
+                        await conn.execute(
+                            text(
+                                """
+                                SELECT parent_result.provider_operation_ref,
+                                       parent_result.result_sha256,
+                                       parent_result.result_artifact_key,
+                                       parent_result.workspace_id
+                                FROM entity_research_result parent_result
+                                JOIN entity_research_tool_request parent_request
+                                  ON parent_request.tool_request_id=parent_result.tool_request_id
+                                WHERE parent_result.result_id=:parent_result_id
+                                  AND parent_result.provider_operation_ref=:parent_operation_ref
+                                  AND parent_request.research_run_id=:research_run_id
+                                  AND parent_request.job_id=:job_id
+                                  AND parent_request.subject_type=:subject_type
+                                  AND parent_request.target_entity_id=:target_entity_id
+                                  AND parent_request.workspace_id=:workspace_id
+                                """
+                            ),
+                            {
+                                "parent_result_id": parent_result_id,
+                                "parent_operation_ref": semantic.parent_operation_ref,
+                                "research_run_id": authorization.research_run_id,
+                                "job_id": authorization.job_id,
+                                "subject_type": authorization.subject_type.value,
+                                "target_entity_id": authorization.subject_entity_id,
+                                "workspace_id": authorization.workspace_id,
+                            },
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                if parent is None:
+                    raise EntityResearchToolAuthorityError(
+                        "follow-up parent observation is outside the exact job"
+                    )
+                if self._storage is None:
+                    raise EntityResearchToolAuthorityError(
+                        "follow-up requires the persisted-result storage reader"
+                    )
+                prior_result_sha256 = str(parent["result_sha256"])
+                _, prior_bytes = await read_verified_artifact(
+                    conn,
+                    self._storage,
+                    storage_key=str(parent["result_artifact_key"]),
+                    workspace_id=str(parent["workspace_id"]),
+                )
+                if content_address(prior_bytes) != prior_result_sha256:
+                    raise EntityResearchResultIntegrityError(
+                        "follow-up parent artifact differs from its durable digest"
+                    )
+                prior_research_context = self._bounded_prior_context(prior_bytes)
+
         request = GovernedResearchToolRequest(
             research_run_id=authorization.research_run_id,
             job_id=authorization.job_id,
@@ -266,6 +465,7 @@ class EntityResearchToolRequestStore:
             source_plan_ref=selection.source_plan_ref,
             field_keys=semantic.field_keys,
             source_keys=semantic.source_keys,
+            field_source_authority=tuple(requested_authority),
             questions=semantic.questions,
             budget_reservation_key=(
                 f"{selection.budget_envelope_ref}:job:{authorization.job_id}:tool:{tool_request_id}"
@@ -284,6 +484,8 @@ class EntityResearchToolRequestStore:
             parent_operation_ref=semantic.parent_operation_ref,
             parent_observation_ref=semantic.parent_observation_ref,
             follow_up_reason=semantic.follow_up_reason,
+            prior_result_sha256=prior_result_sha256,
+            prior_research_context=prior_research_context,
         )
         event_id = _event_id(active.journal_event_ref)
         values = {
@@ -308,6 +510,9 @@ class EntityResearchToolRequestStore:
             "source_plan_ref": request.source_plan_ref,
             "field_keys": list(request.field_keys),
             "source_keys": list(request.source_keys),
+            "field_source_authority": serialize_value_json(
+                [item.model_dump(mode="json") for item in request.field_source_authority]
+            ),
             "questions": list(request.questions),
             "budget_reservation_key": request.budget_reservation_key,
             "idempotency_key": request.idempotency_key,
@@ -316,49 +521,10 @@ class EntityResearchToolRequestStore:
             "follow_up_reason": (
                 request.follow_up_reason.value if request.follow_up_reason is not None else None
             ),
+            "prior_result_sha256": request.prior_result_sha256,
+            "prior_research_context": request.prior_research_context,
         }
         async with self._conn_factory() as conn:
-            if request.parent_operation_ref is not None:
-                parent_operation_id = _prefixed_uuid(
-                    request.parent_operation_ref,
-                    "external-research-operation:",
-                )
-                parent_result_id = _prefixed_uuid(
-                    cast(str, request.parent_observation_ref),
-                    "research-result:",
-                )
-                parent_exists = (
-                    await conn.execute(
-                        text(
-                            """
-                            SELECT 1
-                            FROM entity_research_result parent_result
-                            JOIN entity_research_tool_request parent_request
-                              ON parent_request.tool_request_id=parent_result.tool_request_id
-                            WHERE parent_result.result_id=:parent_result_id
-                              AND parent_result.operation_id=:parent_operation_id
-                              AND parent_request.research_run_id=:research_run_id
-                              AND parent_request.job_id=:job_id
-                              AND parent_request.subject_type=:subject_type
-                              AND parent_request.target_entity_id=:target_entity_id
-                              AND parent_request.workspace_id=:workspace_id
-                            """
-                        ),
-                        {
-                            "parent_result_id": parent_result_id,
-                            "parent_operation_id": parent_operation_id,
-                            "research_run_id": request.research_run_id,
-                            "job_id": request.job_id,
-                            "subject_type": request.subject_type.value,
-                            "target_entity_id": request.target_entity_id,
-                            "workspace_id": authorization.workspace_id,
-                        },
-                    )
-                ).scalar_one_or_none()
-                if parent_exists is None:
-                    raise EntityResearchToolAuthorityError(
-                        "follow-up parent observation is outside the exact job"
-                    )
             await conn.execute(
                 text(
                     """
@@ -368,16 +534,20 @@ class EntityResearchToolRequestStore:
                          target_entity_id, parent_account_id, workspace_id, project_id,
                          product_id, project_run_id, tool_name, tool_version,
                          tool_input_sha256, field_plan_ref, source_plan_ref, field_keys,
-                         source_keys, questions, budget_reservation_key, idempotency_key,
-                         parent_operation_ref, parent_observation_ref, follow_up_reason)
+                         source_keys, field_source_authority, questions,
+                         budget_reservation_key, idempotency_key, parent_operation_ref,
+                         parent_observation_ref, follow_up_reason, prior_result_sha256,
+                         prior_research_context)
                     VALUES
                         (:tool_request_id, :agent_turn_id, :agent_execution_id, :tool_event_id,
                          :raw_tool_call_id, :research_run_id, :job_id, :subject_type,
                          :target_entity_id, :parent_account_id, :workspace_id, :project_id,
                          :product_id, :project_run_id, :tool_name, :tool_version,
                          :tool_input_sha256, :field_plan_ref, :source_plan_ref, :field_keys,
-                         :source_keys, :questions, :budget_reservation_key, :idempotency_key,
-                         :parent_operation_ref, :parent_observation_ref, :follow_up_reason)
+                         :source_keys, CAST(:field_source_authority AS jsonb), :questions,
+                         :budget_reservation_key, :idempotency_key, :parent_operation_ref,
+                         :parent_observation_ref, :follow_up_reason, :prior_result_sha256,
+                         :prior_research_context)
                     ON CONFLICT (tool_request_id) DO NOTHING
                     """
                 ),
@@ -393,8 +563,10 @@ class EntityResearchToolRequestStore:
                                    target_entity_id, parent_account_id, workspace_id, project_id,
                                    product_id, project_run_id, tool_name, tool_version,
                                    tool_input_sha256, field_plan_ref, source_plan_ref, field_keys,
-                                   source_keys, questions, budget_reservation_key, idempotency_key,
-                                   parent_operation_ref, parent_observation_ref, follow_up_reason
+                                   source_keys, field_source_authority, questions,
+                                   budget_reservation_key, idempotency_key, parent_operation_ref,
+                                   parent_observation_ref, follow_up_reason, prior_result_sha256,
+                                   prior_research_context
                             FROM entity_research_tool_request
                             WHERE tool_request_id=:tool_request_id
                             """
@@ -428,104 +600,275 @@ class EntityResearchToolRequestStore:
                 "source_plan_ref",
                 "field_keys",
                 "source_keys",
+                "field_source_authority",
                 "questions",
                 "budget_reservation_key",
                 "idempotency_key",
                 "parent_operation_ref",
                 "parent_observation_ref",
                 "follow_up_reason",
+                "prior_result_sha256",
+                "prior_research_context",
             )
         }
         normalized = dict(observed)
         for key in ("field_keys", "source_keys", "questions"):
             normalized[key] = list(normalized[key])
+        normalized["field_source_authority"] = serialize_value_json(
+            normalized["field_source_authority"]
+        )
         if normalized != comparable:
             raise EntityResearchToolAuthorityError(
                 "tool request id replayed with different immutable authority"
             )
         return request
 
+    def _bounded_prior_context(self, data: bytes) -> str:
+        """Return attributable prior facts, not just lineage, under a hard prompt-size cap."""
+
+        try:
+            payload = json.loads(data)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise EntityResearchResultIntegrityError(
+                "follow-up parent result artifact is malformed"
+            ) from exc
+        complete = _canonical_bytes(payload)
+        if len(complete) <= self._prior_context_max_bytes:
+            return complete.decode("utf-8")
+        if not isinstance(payload, Mapping):
+            raise EntityResearchResultIntegrityError("follow-up parent result is not an object")
+
+        def compact_field(field: Mapping[str, object]) -> dict[str, object | None]:
+            return {
+                "field_key": field.get("field_key"),
+                "outcome": field.get("outcome"),
+                "value": field.get("value"),
+                "value_ref": field.get("value_ref"),
+                "claim_refs": field.get("claim_refs"),
+                "verification_status": field.get("verification_status"),
+            }
+
+        compact = {
+            "result_ref": payload.get("result_ref"),
+            "operation_ref": payload.get("operation_ref"),
+            "subject_type": payload.get("subject_type"),
+            "target_entity_id": payload.get("target_entity_id"),
+            "fields": [
+                compact_field(field)
+                for field in payload.get("fields", [])
+                if isinstance(field, Mapping)
+            ],
+            "discovered_subjects": [
+                {
+                    "subject_type": subject.get("subject_type"),
+                    "target_entity_id": subject.get("target_entity_id"),
+                    "parent_account_id": subject.get("parent_account_id"),
+                    "identity_claim_refs": subject.get("identity_claim_refs"),
+                    "association_evidence_refs": subject.get("association_evidence_refs"),
+                    "fields": [
+                        compact_field(field)
+                        for field in subject.get("fields", [])
+                        if isinstance(field, Mapping)
+                    ],
+                }
+                for subject in payload.get("discovered_subjects", [])
+                if isinstance(subject, Mapping)
+            ],
+        }
+        compact_bytes = _canonical_bytes(compact)
+        if len(compact_bytes) > self._prior_context_max_bytes:
+            raise EntityResearchResultIntegrityError(
+                "prior result index exceeds the bounded follow-up context contract"
+            )
+        return compact_bytes.decode("utf-8")
+
 
 class EntityResearchProviderCausationStore:
-    """Bind causes before dispatch and distinguish later replay/join observations."""
+    """Bind provider-neutral causes before dispatch and retain replay/join observations."""
 
     def __init__(self, *, conn_factory: ConnFactory) -> None:
         self._conn_factory = conn_factory
 
-    async def get_operation(self, operation_id: UUID) -> ExternalResearchOperationRow:
-        from clue_research.durable.external_research import get_external_research_operation
+    @staticmethod
+    def _assert_scope(
+        request: GovernedResearchToolRequest,
+        operation: ProviderOperationReservation,
+    ) -> None:
+        expected_parent = (
+            request.parent_account_id
+            if request.subject_type is ResearchSubjectType.CONTACT
+            else None
+        )
+        authority = {
+            item.field_key: frozenset(item.source_keys) for item in request.field_source_authority
+        }
+        if (
+            operation.workspace_id == ""
+            or operation.subject_type is not request.subject_type
+            or operation.target_entity_id != request.target_entity_id
+            or operation.parent_account_id != expected_parent
+            or operation.source_key not in request.source_keys
+            or not set(operation.field_keys).issubset(request.field_keys)
+            or (bool(request.field_keys) != bool(operation.field_keys))
+            or any(
+                operation.source_key not in authority.get(field_key, frozenset())
+                for field_key in operation.field_keys
+            )
+        ):
+            raise EntityResearchToolAuthorityError(
+                "provider operation crosses governed tool request authority"
+            )
 
-        async with self._conn_factory() as conn:
-            workspace_id = (
+    async def _project_operation(
+        self,
+        conn: AsyncConnection,
+        *,
+        request: GovernedResearchToolRequest,
+        operation: ProviderOperationReservation,
+    ) -> None:
+        self._assert_scope(request, operation)
+        await conn.execute(
+            text(
+                """
+                INSERT INTO entity_research_provider_operation
+                    (operation_ref, provider_kind, workspace_id, project_id, project_run_id,
+                     subject_type, target_entity_id, parent_account_id, source_key,
+                     field_keys, request_artifact_ref, reserved_at, dispatched_at)
+                VALUES
+                    (:operation_ref, :provider_kind, :workspace_id, :project_id, :project_run_id,
+                     :subject_type, :target_entity_id, :parent_account_id, :source_key,
+                     :field_keys, :request_artifact_ref, :reserved_at, :dispatched_at)
+                ON CONFLICT (operation_ref) DO UPDATE
+                SET dispatched_at=COALESCE(
+                    entity_research_provider_operation.dispatched_at,
+                    EXCLUDED.dispatched_at
+                )
+                """
+            ),
+            {
+                "operation_ref": operation.operation_ref,
+                "provider_kind": operation.provider_kind,
+                "workspace_id": operation.workspace_id,
+                "project_id": operation.project_id,
+                "project_run_id": operation.project_run_id,
+                "subject_type": operation.subject_type.value,
+                "target_entity_id": operation.target_entity_id,
+                "parent_account_id": operation.parent_account_id,
+                "source_key": operation.source_key,
+                "field_keys": list(operation.field_keys),
+                "request_artifact_ref": operation.request_artifact_ref,
+                "reserved_at": operation.reserved_at,
+                "dispatched_at": operation.dispatched_at,
+            },
+        )
+        row = (
+            (
                 await conn.execute(
-                    text("SELECT workspace_id FROM external_research_operation WHERE id=:id"),
-                    {"id": operation_id},
+                    text(
+                        """
+                        SELECT provider_kind, workspace_id, project_id, project_run_id,
+                               subject_type, target_entity_id, parent_account_id, source_key,
+                               field_keys, request_artifact_ref, reserved_at, dispatched_at
+                        FROM entity_research_provider_operation
+                        WHERE operation_ref=:operation_ref
+                        """
+                    ),
+                    {"operation_ref": operation.operation_ref},
                 )
-            ).scalar_one_or_none()
-            if workspace_id is None:
-                raise EntityResearchResultIntegrityError(
-                    "provider action named an absent operation"
-                )
-            return await get_external_research_operation(
-                conn,
-                workspace_id=str(workspace_id),
-                operation_id=ExternalResearchOperationId(operation_id),
+            )
+            .mappings()
+            .one()
+        )
+        observed = (
+            str(row["provider_kind"]),
+            str(row["workspace_id"]),
+            str(row["project_id"]),
+            row["project_run_id"],
+            str(row["subject_type"]),
+            row["target_entity_id"],
+            row["parent_account_id"],
+            str(row["source_key"]),
+            tuple(row["field_keys"]),
+            str(row["request_artifact_ref"]),
+            row["reserved_at"],
+        )
+        expected = (
+            operation.provider_kind,
+            operation.workspace_id,
+            operation.project_id,
+            operation.project_run_id,
+            operation.subject_type.value,
+            operation.target_entity_id,
+            operation.parent_account_id,
+            operation.source_key,
+            operation.field_keys,
+            operation.request_artifact_ref,
+            operation.reserved_at,
+        )
+        if observed != expected:
+            raise EntityResearchToolAuthorityError(
+                "provider operation reference replayed with different immutable authority"
+            )
+        if operation.dispatched_at is not None and row["dispatched_at"] != operation.dispatched_at:
+            raise EntityResearchToolAuthorityError(
+                "provider operation dispatch time changed across observations"
             )
 
     async def bind_before_dispatch(
         self,
         *,
         request: GovernedResearchToolRequest,
-        operation: ExternalResearchOperationRow,
+        operation: ProviderOperationReservation,
     ) -> ProviderOperationObservation:
-        # More than one admitted tool call can reserve the same stable operation before the
-        # first dispatcher settles it. Exactly one call caused that operation; later callers are
-        # resumptions/joins and must not trip the partial unique cause index or steal causation.
-        # An unqualified conflict handler covers both the per-request observation key and the
-        # partial one-cause-per-operation index. If a prior callback crashed before inserting,
-        # this caller becomes the cause; otherwise it receives the already-persisted cause and
-        # the action records its own join/replay observation after acquisition resolves.
-        observation_id = uuid4()
+        if (
+            operation.observation_disposition is not ProviderObservationDisposition.CAUSED
+            or operation.dispatched_at is not None
+        ):
+            raise EntityResearchToolAuthorityError(
+                "before-dispatch causation requires a newly reserved undispatched operation"
+            )
         async with self._conn_factory() as conn:
-            row = (
+            await self._project_operation(conn, request=request, operation=operation)
+            existing = (
                 (
                     await conn.execute(
                         text(
                             """
-                            SELECT observation_id, tool_request_id, operation_id,
+                            SELECT observation_id, tool_request_id, provider_operation_ref,
                                    external_workspace_id, disposition, created_at
                             FROM entity_research_provider_observation
-                            WHERE operation_id=:operation_id AND disposition='caused'
+                            WHERE provider_operation_ref=:operation_ref
+                              AND disposition='caused'
                             """
                         ),
-                        {"operation_id": operation.operation_id},
+                        {"operation_ref": operation.operation_ref},
                     )
                 )
                 .mappings()
                 .first()
             )
-            if row is not None:
-                return self._row(cast(Mapping[str, object], row))
+            if existing is not None:
+                return self._row(cast(Mapping[str, object], existing))
             row = (
                 (
                     await conn.execute(
                         text(
                             """
                             INSERT INTO entity_research_provider_observation
-                                (observation_id, tool_request_id, operation_id,
+                                (observation_id, tool_request_id, provider_operation_ref,
                                  external_workspace_id, disposition)
                             VALUES
-                                (:observation_id, :tool_request_id, :operation_id,
+                                (:observation_id, :tool_request_id, :operation_ref,
                                  :workspace_id, 'caused')
                             ON CONFLICT DO NOTHING
-                            RETURNING observation_id, tool_request_id, operation_id,
+                            RETURNING observation_id, tool_request_id, provider_operation_ref,
                                       external_workspace_id, disposition, created_at
                             """
                         ),
                         {
-                            "observation_id": observation_id,
+                            "observation_id": uuid4(),
                             "tool_request_id": request.tool_call_id,
-                            "operation_id": operation.operation_id,
+                            "operation_ref": operation.operation_ref,
                             "workspace_id": operation.workspace_id,
                         },
                     )
@@ -539,13 +882,14 @@ class EntityResearchProviderCausationStore:
                         await conn.execute(
                             text(
                                 """
-                                SELECT observation_id, tool_request_id, operation_id,
+                                SELECT observation_id, tool_request_id, provider_operation_ref,
                                        external_workspace_id, disposition, created_at
                                 FROM entity_research_provider_observation
-                                WHERE operation_id=:operation_id AND disposition='caused'
+                                WHERE provider_operation_ref=:operation_ref
+                                  AND disposition='caused'
                                 """
                             ),
-                            {"operation_id": operation.operation_id},
+                            {"operation_ref": operation.operation_ref},
                         )
                     )
                     .mappings()
@@ -557,24 +901,25 @@ class EntityResearchProviderCausationStore:
         self,
         *,
         request: GovernedResearchToolRequest,
-        operation: ExternalResearchOperationRow,
-        joined: bool = False,
+        operation: ProviderOperationReservation,
     ) -> ProviderOperationObservation:
         async with self._conn_factory() as conn:
+            await self._project_operation(conn, request=request, operation=operation)
             own = (
                 (
                     await conn.execute(
                         text(
                             """
-                            SELECT observation_id, tool_request_id, operation_id,
+                            SELECT observation_id, tool_request_id, provider_operation_ref,
                                    external_workspace_id, disposition, created_at
                             FROM entity_research_provider_observation
-                            WHERE tool_request_id=:tool_request_id AND operation_id=:operation_id
+                            WHERE tool_request_id=:tool_request_id
+                              AND provider_operation_ref=:operation_ref
                             """
                         ),
                         {
                             "tool_request_id": request.tool_call_id,
-                            "operation_id": operation.operation_id,
+                            "operation_ref": operation.operation_ref,
                         },
                     )
                 )
@@ -582,21 +927,32 @@ class EntityResearchProviderCausationStore:
                 .first()
             )
         if own is not None:
-            return self._row(cast(Mapping[str, object], own))
+            observed = self._row(cast(Mapping[str, object], own))
+            if (
+                operation.observation_disposition is not ProviderObservationDisposition.CAUSED
+                and observed.disposition != operation.observation_disposition.value
+            ):
+                raise EntityResearchToolAuthorityError(
+                    "provider operation observation replay changed its disposition"
+                )
+            return observed
+        if operation.observation_disposition is ProviderObservationDisposition.CAUSED:
+            raise EntityResearchToolAuthorityError(
+                "causative provider observation was not recorded before dispatch"
+            )
         return await self._record(
             request=request,
             operation=operation,
-            disposition="joined_observation" if joined else "replay_observation",
+            disposition=operation.observation_disposition.value,
         )
 
     async def _record(
         self,
         *,
         request: GovernedResearchToolRequest,
-        operation: ExternalResearchOperationRow,
+        operation: ProviderOperationReservation,
         disposition: str,
     ) -> ProviderOperationObservation:
-        observation_id = uuid4()
         async with self._conn_factory() as conn:
             row = (
                 (
@@ -604,20 +960,20 @@ class EntityResearchProviderCausationStore:
                         text(
                             """
                             INSERT INTO entity_research_provider_observation
-                                (observation_id, tool_request_id, operation_id,
+                                (observation_id, tool_request_id, provider_operation_ref,
                                  external_workspace_id, disposition)
                             VALUES
-                                (:observation_id, :tool_request_id, :operation_id,
+                                (:observation_id, :tool_request_id, :operation_ref,
                                  :workspace_id, :disposition)
-                            ON CONFLICT (tool_request_id, operation_id) DO NOTHING
-                            RETURNING observation_id, tool_request_id, operation_id,
+                            ON CONFLICT (tool_request_id, provider_operation_ref) DO NOTHING
+                            RETURNING observation_id, tool_request_id, provider_operation_ref,
                                       external_workspace_id, disposition, created_at
                             """
                         ),
                         {
-                            "observation_id": observation_id,
+                            "observation_id": uuid4(),
                             "tool_request_id": request.tool_call_id,
-                            "operation_id": operation.operation_id,
+                            "operation_ref": operation.operation_ref,
                             "workspace_id": operation.workspace_id,
                             "disposition": disposition,
                         },
@@ -632,16 +988,16 @@ class EntityResearchProviderCausationStore:
                         await conn.execute(
                             text(
                                 """
-                                SELECT observation_id, tool_request_id, operation_id,
+                                SELECT observation_id, tool_request_id, provider_operation_ref,
                                        external_workspace_id, disposition, created_at
                                 FROM entity_research_provider_observation
                                 WHERE tool_request_id=:tool_request_id
-                                  AND operation_id=:operation_id
+                                  AND provider_operation_ref=:operation_ref
                                 """
                             ),
                             {
                                 "tool_request_id": request.tool_call_id,
-                                "operation_id": operation.operation_id,
+                                "operation_ref": operation.operation_ref,
                             },
                         )
                     )
@@ -660,13 +1016,18 @@ class EntityResearchProviderCausationStore:
         return ProviderOperationObservation(
             observation_id=cast(UUID, row["observation_id"]),
             tool_request_id=cast(UUID, row["tool_request_id"]),
-            operation_id=cast(UUID, row["operation_id"]),
+            operation_ref=str(row["provider_operation_ref"]),
             workspace_id=str(row["external_workspace_id"]),
             disposition=str(row["disposition"]),
             created_at=cast(datetime, row["created_at"]),
         )
 
-    async def causation_for(self, operation_id: UUID) -> ProviderOperationCausation | None:
+    async def causation_for(
+        self,
+        operation_ref: str | UUID,
+    ) -> ProviderOperationCausation | None:
+        if isinstance(operation_ref, UUID):
+            operation_ref = f"external-research-operation:{operation_ref}"
         async with self._conn_factory() as conn:
             row = (
                 (
@@ -682,8 +1043,9 @@ class EntityResearchProviderCausationStore:
                                    request_row.follow_up_reason,
                                    turn_row.started_at AS agent_turn_started_at,
                                    event_row.occurred_at AS tool_call_recorded_at,
-                                   operation_row.created_at AS provider_operation_reserved_at,
-                                   attempt.dispatched_at AS provider_dispatched_at
+                                   operation_row.operation_ref,
+                                   operation_row.reserved_at AS provider_operation_reserved_at,
+                                   operation_row.dispatched_at AS provider_dispatched_at
                             FROM entity_research_provider_observation observation
                             JOIN entity_research_tool_request request_row
                               ON request_row.tool_request_id=observation.tool_request_id
@@ -691,18 +1053,13 @@ class EntityResearchProviderCausationStore:
                               ON turn_row.agent_turn_id=request_row.agent_turn_id
                             JOIN entity_research_agent_event event_row
                               ON event_row.event_id=request_row.tool_event_id
-                            JOIN external_research_operation operation_row
-                              ON operation_row.id=observation.operation_id
-                            JOIN LATERAL (
-                                SELECT dispatched_at FROM external_research_attempt
-                                WHERE operation_id=operation_row.id AND dispatched_at IS NOT NULL
-                                ORDER BY ordinal LIMIT 1
-                            ) attempt ON TRUE
-                            WHERE observation.operation_id=:operation_id
+                            JOIN entity_research_provider_operation operation_row
+                              ON operation_row.operation_ref=observation.provider_operation_ref
+                            WHERE observation.provider_operation_ref=:operation_ref
                               AND observation.disposition='caused'
                             """
                         ),
-                        {"operation_id": operation_id},
+                        {"operation_ref": operation_ref},
                     )
                 )
                 .mappings()
@@ -710,10 +1067,14 @@ class EntityResearchProviderCausationStore:
             )
         if row is None:
             return None
+        if row["provider_dispatched_at"] is None:
+            raise EntityResearchResultIntegrityError(
+                "causative provider operation has no durable dispatch timestamp"
+            )
         return ProviderOperationCausation(
             subject_type=ResearchSubjectType(str(row["subject_type"])),
             target_entity_id=cast(UUID, row["target_entity_id"]),
-            provider_operation_ref=f"external-research-operation:{operation_id}",
+            provider_operation_ref=str(row["operation_ref"]),
             agent_turn_id=cast(UUID, row["agent_turn_id"]),
             agent_execution_id=cast(UUID, row["agent_execution_id"]),
             tool_call_id=cast(UUID, row["tool_request_id"]),
@@ -734,6 +1095,131 @@ class EntityResearchProviderCausationStore:
         )
 
 
+class ExternalResearchResultLineageReader:
+    """Adapt the existing durable Exa/external-research ledger to the R4 provider seam."""
+
+    provider_kind = "external_research"
+
+    def __init__(self, *, conn_factory: ConnFactory) -> None:
+        self._conn_factory = conn_factory
+
+    async def load(
+        self,
+        *,
+        request: GovernedResearchToolRequest,
+        operation: ProviderOperationReservation,
+        snapshot_ref: str,
+    ) -> ProviderResultLineage:
+        operation_id = _prefixed_uuid(operation.operation_ref, "external-research-operation:")
+        snapshot_id = _prefixed_uuid(snapshot_ref, "external-research-snapshot:")
+        async with self._conn_factory() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT operation.workspace_id, operation.project_id,
+                                   operation.project_run_id,
+                                   operation.subject_kind::text AS subject_kind,
+                                   operation.account_id, operation.contact_id,
+                                   operation.source_key, operation.request_artifact_key,
+                                   operation.created_at,
+                                   snapshot.response_artifact_key,
+                                   snapshot.normalization_artifact_key,
+                                   snapshot.provider_request_id,
+                                   snapshot.provider_reported_cost_cents,
+                                   receipt.id AS receipt_id, receipt.receipt_artifact_key,
+                                   receipt.provider_reported_cost_cents AS receipt_reported_cost,
+                                   receipt.settled_cost_cents
+                            FROM external_research_operation operation
+                            JOIN external_research_snapshot snapshot
+                              ON snapshot.operation_id=operation.id
+                             AND snapshot.workspace_id=operation.workspace_id
+                            JOIN external_research_receipt receipt
+                              ON receipt.operation_id=operation.id
+                             AND receipt.workspace_id=operation.workspace_id
+                            WHERE operation.id=:operation_id AND snapshot.id=:snapshot_id
+                            """
+                        ),
+                        {"operation_id": operation_id, "snapshot_id": snapshot_id},
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if row is None:
+                raise EntityResearchResultIntegrityError(
+                    "external result requires a ready snapshot and settled receipt"
+                )
+            result_artifacts = tuple(
+                f"artifact:{value}"
+                for value in (
+                    await conn.execute(
+                        text(
+                            "SELECT artifact_key FROM external_research_result_artifact "
+                            "WHERE snapshot_id=:snapshot_id ORDER BY ordinal"
+                        ),
+                        {"snapshot_id": snapshot_id},
+                    )
+                ).scalars()
+            )
+
+        target = (
+            row["account_id"]
+            if request.subject_type is ResearchSubjectType.ACCOUNT
+            else row["contact_id"]
+        )
+        parent = row["account_id"] if request.subject_type is ResearchSubjectType.CONTACT else None
+        expected = (
+            operation.workspace_id,
+            operation.project_id,
+            operation.project_run_id,
+            operation.subject_type.value,
+            operation.target_entity_id,
+            operation.parent_account_id,
+            operation.source_key,
+            operation.request_artifact_ref,
+        )
+        observed = (
+            str(row["workspace_id"]),
+            str(row["project_id"]),
+            row["project_run_id"],
+            str(row["subject_kind"]),
+            target,
+            parent,
+            str(row["source_key"]),
+            f"artifact:{row['request_artifact_key']}",
+        )
+        if (
+            observed != expected
+            or row["provider_reported_cost_cents"] != row["receipt_reported_cost"]
+        ):
+            raise EntityResearchResultIntegrityError(
+                "external result lineage crosses provider-operation authority"
+            )
+        if operation.provider_kind != self.provider_kind:
+            raise EntityResearchResultIntegrityError(
+                "external lineage reader received another provider kind"
+            )
+        if str(row["source_key"]) not in request.source_keys:
+            raise EntityResearchResultIntegrityError(
+                "external result source was not authorized by the tool request"
+            )
+        response_ref = f"artifact:{row['response_artifact_key']}"
+        return ProviderResultLineage(
+            operation=operation,
+            snapshot_ref=snapshot_ref,
+            raw_response_artifact_refs=(response_ref,),
+            retained_result_artifact_refs=result_artifacts or (response_ref,),
+            normalized_result_artifact_ref=f"artifact:{row['normalization_artifact_key']}",
+            provider_receipt_ref=f"external-research-receipt:{row['receipt_id']}",
+            cost_settlement_ref=f"external-research-cost-settlement:{row['receipt_id']}",
+            provider_request_id=str(row["provider_request_id"]),
+            provider_reported_cost_cents=Decimal(str(row["receipt_reported_cost"])),
+            settled_cost_cents=Decimal(str(row["settled_cost_cents"])),
+        )
+
+
 class EntityResearchResultStore:
     """Validate and retain a complete provider/claim projection before exposing it."""
 
@@ -743,41 +1229,61 @@ class EntityResearchResultStore:
         storage: StorageBackend,
         conn_factory: ConnFactory,
         inline_max_bytes: int = 24_000,
+        message_max_bytes: int = 256_000,
+        lineage_readers: Mapping[str, ProviderResultLineageReader] | None = None,
     ) -> None:
         if inline_max_bytes < 1:
             raise ValueError("inline result byte cap must be positive")
+        if message_max_bytes < inline_max_bytes:
+            raise ValueError("result message cap cannot be below the inline threshold")
         self._storage = storage
         self._conn_factory = conn_factory
         self._inline_max_bytes = inline_max_bytes
+        self._message_max_bytes = message_max_bytes
+        if lineage_readers is None:
+            lineage_readers = {
+                ExternalResearchResultLineageReader.provider_kind: (
+                    ExternalResearchResultLineageReader(conn_factory=conn_factory)
+                )
+            }
+        self._lineage_readers = dict(lineage_readers)
 
     async def persist(
         self,
         *,
         request: GovernedResearchToolRequest,
         observation: ProviderOperationObservation,
-        draft: ExternalResearchProjectionDraft,
+        draft: ProviderResearchProjectionDraft,
     ) -> PersistedResearchToolResult:
         if observation.tool_request_id != request.tool_call_id:
             raise EntityResearchResultIntegrityError("result observation belongs to another tool")
-        if observation.operation_id != draft.operation_id:
+        if observation.operation_ref != draft.operation.operation_ref:
             raise EntityResearchResultIntegrityError("result draft belongs to another operation")
         if not set(draft.requested_field_keys).issubset(request.field_keys):
             raise EntityResearchResultIntegrityError("result draft widens governed fields")
+        if not set(draft.requested_field_keys).issubset(draft.operation.field_keys):
+            raise EntityResearchResultIntegrityError(
+                "result draft widens the causative provider operation fields"
+            )
         result_id = uuid5(
             _RESULT_NAMESPACE,
-            f"{request.tool_call_id}:{draft.operation_id}",
+            f"{request.tool_call_id}:{draft.operation.operation_ref}",
         )
         existing = await self._load_existing(result_id=result_id, request=request)
         if existing is not None:
             return existing
 
-        async with self._conn_factory() as conn:
-            lineage = await self._lineage(
-                conn,
-                request=request,
-                operation_id=draft.operation_id,
-                snapshot_id=draft.snapshot_id,
+        reader = self._lineage_readers.get(draft.operation.provider_kind)
+        if reader is None:
+            raise EntityResearchResultIntegrityError(
+                f"no lineage reader is composed for provider {draft.operation.provider_kind!r}"
             )
+        lineage = await reader.load(
+            request=request,
+            operation=draft.operation,
+            snapshot_ref=draft.snapshot_ref,
+        )
+        async with self._conn_factory() as conn:
             await self._validate_artifacts(conn, request=request, lineage=lineage)
             await self._validate_fields(
                 conn,
@@ -787,59 +1293,61 @@ class EntityResearchResultStore:
             )
 
             fields = draft.fields
+            discovered_subjects = draft.discovered_subjects
             provisional = self._result(
                 request=request,
                 result_id=result_id,
                 lineage=lineage,
                 fields=fields,
+                discovered_subjects=discovered_subjects,
                 delivery=ResearchResultDelivery.INLINE_COMPLETE,
             )
-            value_artifacts: dict[str, str] = {}
+            value_artifacts: dict[tuple[UUID, str], str] = {}
             if len(_canonical_bytes(provisional)) > self._inline_max_bytes:
-                indexed: list[ResearchFieldResultProjection] = []
-                for field in fields:
-                    if field.outcome is not ResearchFieldOutcome.FOUND:
-                        indexed.append(field)
-                        continue
-                    value_bytes = _canonical_bytes(
-                        {"field_key": field.field_key, "value": field.value}
-                    )
-                    value_key = await capture_discovery_artifact(
-                        conn,
-                        self._storage,
-                        workspace_id=str(lineage["workspace_id"]),
-                        content=value_bytes,
-                        media_type="application/json",
-                        source_key=str(lineage["source_key"]),
-                    )
-                    value_artifacts[field.field_key] = value_key
-                    indexed.append(
-                        field.model_copy(
+                fields = await self._index_fields(
+                    conn,
+                    result_id=result_id,
+                    subject_entity_id=request.target_entity_id,
+                    fields=fields,
+                    lineage=lineage,
+                    value_artifacts=value_artifacts,
+                )
+                indexed_subjects: list[ResearchDiscoveredSubjectProjection] = []
+                for subject in discovered_subjects:
+                    indexed_subjects.append(
+                        subject.model_copy(
                             update={
-                                "value": None,
-                                "value_ref": f"research-value:{result_id}:{field.field_key}",
+                                "fields": await self._index_fields(
+                                    conn,
+                                    result_id=result_id,
+                                    subject_entity_id=subject.target_entity_id,
+                                    fields=subject.fields,
+                                    lineage=lineage,
+                                    value_artifacts=value_artifacts,
+                                )
                             }
                         )
                     )
-                fields = tuple(indexed)
+                discovered_subjects = tuple(indexed_subjects)
                 result = self._result(
                     request=request,
                     result_id=result_id,
                     lineage=lineage,
                     fields=fields,
+                    discovered_subjects=discovered_subjects,
                     delivery=ResearchResultDelivery.INDEXED_COMPLETE,
                 )
             else:
                 result = provisional
 
-            result_bytes = _canonical_bytes(result)
+            result_bytes = self._agent_message_bytes(result)
             result_key = await capture_discovery_artifact(
                 conn,
                 self._storage,
-                workspace_id=str(lineage["workspace_id"]),
+                workspace_id=lineage.operation.workspace_id,
                 content=result_bytes,
                 media_type="application/json",
-                source_key=str(lineage["source_key"]),
+                source_key=lineage.operation.source_key,
             )
             result_sha = content_address(result_bytes)
             if not result_key.endswith(result_sha):
@@ -847,33 +1355,39 @@ class EntityResearchResultStore:
             subject_kind = request.subject_type.value
             await bind_discovery_artifact_subject(
                 conn,
-                workspace_id=str(lineage["workspace_id"]),
+                workspace_id=lineage.operation.workspace_id,
                 artifact_key_value=result_key,
                 subject_kind=subject_kind,
                 subject_entity_id=EntityId(request.target_entity_id),
                 reference_kind="entity_research_result",
                 reference_id=str(result_id),
             )
-            for field_key, value_key in value_artifacts.items():
+            for (entity_id, field_key), value_key in value_artifacts.items():
                 await bind_discovery_artifact_subject(
                     conn,
-                    workspace_id=str(lineage["workspace_id"]),
+                    workspace_id=lineage.operation.workspace_id,
                     artifact_key_value=value_key,
-                    subject_kind=subject_kind,
-                    subject_entity_id=EntityId(request.target_entity_id),
+                    subject_kind=(
+                        request.subject_type.value
+                        if entity_id == request.target_entity_id
+                        else ResearchSubjectType.CONTACT.value
+                    ),
+                    subject_entity_id=EntityId(entity_id),
                     reference_kind="entity_research_value",
-                    reference_id=f"{result_id}:{field_key}",
+                    reference_id=f"{result_id}:{entity_id}:{field_key}",
                 )
             await conn.execute(
                 text(
                     """
                     INSERT INTO entity_research_result
-                        (result_id, tool_request_id, provider_observation_id, operation_id,
-                         snapshot_id, workspace_id, subject_type, target_entity_id,
+                        (result_id, tool_request_id, provider_observation_id,
+                         provider_operation_ref, provider_snapshot_ref, workspace_id,
+                         subject_type, target_entity_id,
                          result_artifact_key, result_sha256, delivery, requested_field_keys)
                     VALUES
-                        (:result_id, :tool_request_id, :provider_observation_id, :operation_id,
-                         :snapshot_id, :workspace_id, :subject_type, :target_entity_id,
+                        (:result_id, :tool_request_id, :provider_observation_id,
+                         :provider_operation_ref, :provider_snapshot_ref, :workspace_id,
+                         :subject_type, :target_entity_id,
                          :result_artifact_key, :result_sha256, :delivery,
                          :requested_field_keys)
                     """
@@ -882,9 +1396,9 @@ class EntityResearchResultStore:
                     "result_id": result_id,
                     "tool_request_id": request.tool_call_id,
                     "provider_observation_id": observation.observation_id,
-                    "operation_id": draft.operation_id,
-                    "snapshot_id": draft.snapshot_id,
-                    "workspace_id": lineage["workspace_id"],
+                    "provider_operation_ref": draft.operation.operation_ref,
+                    "provider_snapshot_ref": draft.snapshot_ref,
+                    "workspace_id": lineage.operation.workspace_id,
                     "subject_type": request.subject_type.value,
                     "target_entity_id": request.target_entity_id,
                     "result_artifact_key": result_key,
@@ -893,17 +1407,25 @@ class EntityResearchResultStore:
                     "requested_field_keys": list(result.requested_field_keys),
                 },
             )
-            for field_ordinal, field in enumerate(result.fields):
+            flattened = self._flatten_result_fields(
+                result,
+                parent_account_id=request.parent_account_id,
+            )
+            for field_ordinal, (field_subject_type, field_target_id, parent_id, field) in enumerate(
+                flattened
+            ):
                 claim_ids = [_claim_id(ref) for ref in field.claim_refs]
                 await conn.execute(
                     text(
                         """
                         INSERT INTO entity_research_result_field
-                            (result_id, ordinal, field_key, outcome, claim_delta, claim_refs,
-                             decision_refs, value_artifact_key, workspace_id,
+                            (result_id, ordinal, subject_type, target_entity_id,
+                             parent_account_id, field_key, outcome, claim_delta,
+                             claim_refs, decision_refs, value_artifact_key, workspace_id,
                              verification_status)
                         VALUES
-                            (:result_id, :ordinal, :field_key, :outcome, :claim_delta,
+                            (:result_id, :ordinal, :subject_type, :target_entity_id,
+                             :parent_account_id, :field_key, :outcome, :claim_delta,
                              :claim_refs, :decision_refs, :value_artifact_key, :workspace_id,
                              :verification_status)
                         """
@@ -911,13 +1433,18 @@ class EntityResearchResultStore:
                     {
                         "result_id": result_id,
                         "ordinal": field_ordinal,
+                        "subject_type": field_subject_type.value,
+                        "target_entity_id": field_target_id,
+                        "parent_account_id": parent_id,
                         "field_key": field.field_key,
                         "outcome": field.outcome.value,
                         "claim_delta": field.claim_delta.value,
                         "claim_refs": claim_ids,
                         "decision_refs": list(field.decision_refs),
-                        "value_artifact_key": value_artifacts.get(field.field_key),
-                        "workspace_id": lineage["workspace_id"],
+                        "value_artifact_key": value_artifacts.get(
+                            (field_target_id, field.field_key)
+                        ),
+                        "workspace_id": lineage.operation.workspace_id,
                         "verification_status": field.verification_status,
                     },
                 )
@@ -942,7 +1469,7 @@ class EntityResearchResultStore:
                             "field_ordinal": field_ordinal,
                             "evidence_ordinal": evidence_ordinal,
                             "artifact_key": _artifact_key(evidence.artifact_ref),
-                            "workspace_id": lineage["workspace_id"],
+                            "workspace_id": lineage.operation.workspace_id,
                             "source_key": evidence.source_key,
                             "source_url": evidence.source_url,
                             "provider_source_id": evidence.provider_source_id,
@@ -953,134 +1480,99 @@ class EntityResearchResultStore:
                     )
         return result
 
-    async def _lineage(
+    def _agent_message_bytes(self, result: PersistedResearchToolResult) -> bytes:
+        """Measure the final inline/indexed projection, never the smaller provisional shape."""
+
+        value = _canonical_bytes(result)
+        if len(value) > self._message_max_bytes:
+            raise EntityResearchResultIntegrityError(
+                "complete result index exceeds the configured agent-message bound"
+            )
+        return value
+
+    async def _index_fields(
         self,
         conn: AsyncConnection,
         *,
-        request: GovernedResearchToolRequest,
-        operation_id: UUID,
-        snapshot_id: UUID,
-    ) -> dict[str, object]:
-        row = (
-            (
-                await conn.execute(
-                    text(
-                        """
-                        SELECT operation.workspace_id, operation.project_run_id,
-                               operation.subject_kind::text AS subject_kind,
-                               operation.account_id, operation.contact_id, operation.source_key,
-                               operation.request_artifact_key,
-                               snapshot.response_artifact_key,
-                               snapshot.normalization_artifact_key,
-                               snapshot.provider_request_id,
-                               snapshot.provider_reported_cost_cents,
-                               receipt.id AS receipt_id, receipt.receipt_artifact_key,
-                               receipt.provider_reported_cost_cents AS receipt_reported_cost,
-                               receipt.settled_cost_cents
-                        FROM external_research_operation operation
-                        JOIN external_research_snapshot snapshot
-                          ON snapshot.operation_id=operation.id
-                         AND snapshot.workspace_id=operation.workspace_id
-                        JOIN external_research_receipt receipt
-                          ON receipt.operation_id=operation.id
-                         AND receipt.workspace_id=operation.workspace_id
-                        WHERE operation.id=:operation_id AND snapshot.id=:snapshot_id
-                        """
-                    ),
-                    {"operation_id": operation_id, "snapshot_id": snapshot_id},
+        result_id: UUID,
+        subject_entity_id: UUID,
+        fields: tuple[ResearchFieldResultProjection, ...],
+        lineage: ProviderResultLineage,
+        value_artifacts: dict[tuple[UUID, str], str],
+    ) -> tuple[ResearchFieldResultProjection, ...]:
+        indexed: list[ResearchFieldResultProjection] = []
+        for field in fields:
+            if field.outcome is not ResearchFieldOutcome.FOUND:
+                indexed.append(field)
+                continue
+            value_bytes = _canonical_bytes(
+                {
+                    "subject_entity_id": str(subject_entity_id),
+                    "field_key": field.field_key,
+                    "value": field.value,
+                }
+            )
+            value_key = await capture_discovery_artifact(
+                conn,
+                self._storage,
+                workspace_id=lineage.operation.workspace_id,
+                content=value_bytes,
+                media_type="application/json",
+                source_key=lineage.operation.source_key,
+            )
+            value_artifacts[(subject_entity_id, field.field_key)] = value_key
+            indexed.append(
+                field.model_copy(
+                    update={
+                        "value": None,
+                        "value_ref": (
+                            f"research-value:{result_id}:{subject_entity_id}:{field.field_key}"
+                        ),
+                    }
                 )
             )
-            .mappings()
-            .first()
-        )
-        if row is None:
-            raise EntityResearchResultIntegrityError(
-                "result requires a ready snapshot and settled receipt"
-            )
-        target_id = (
-            row["account_id"]
-            if request.subject_type is ResearchSubjectType.ACCOUNT
-            else row["contact_id"]
-        )
-        if (
-            str(row["workspace_id"]) == ""
-            or str(row["workspace_id"]) != str(await self._request_workspace(conn, request))
-            or row["project_run_id"] != await self._request_project_run(conn, request)
-            or str(row["subject_kind"]) != request.subject_type.value
-            or target_id != request.target_entity_id
-            or str(row["source_key"]) not in request.source_keys
-            or row["provider_reported_cost_cents"] != row["receipt_reported_cost"]
-        ):
-            raise EntityResearchResultIntegrityError(
-                "external result lineage crosses governed request authority"
-            )
-        result_rows = (
+        return tuple(indexed)
+
+    @staticmethod
+    def _flatten_result_fields(
+        result: PersistedResearchToolResult,
+        *,
+        parent_account_id: UUID | None,
+    ) -> tuple[tuple[ResearchSubjectType, UUID, UUID | None, ResearchFieldResultProjection], ...]:
+        values = [
             (
-                await conn.execute(
-                    text(
-                        """
-                        SELECT artifact_key, source_url, source_title
-                        FROM external_research_result_artifact
-                        WHERE snapshot_id=:snapshot_id ORDER BY ordinal
-                        """
-                    ),
-                    {"snapshot_id": snapshot_id},
-                )
+                result.subject_type,
+                result.target_entity_id,
+                parent_account_id if result.subject_type is ResearchSubjectType.CONTACT else None,
+                field,
             )
-            .mappings()
-            .all()
+            for field in result.fields
+        ]
+        values.extend(
+            (
+                subject.subject_type,
+                subject.target_entity_id,
+                subject.parent_account_id,
+                field,
+            )
+            for subject in result.discovered_subjects
+            for field in subject.fields
         )
-        return {
-            **dict(row),
-            "operation_id": operation_id,
-            "result_artifacts": result_rows,
-        }
-
-    async def _request_workspace(
-        self, conn: AsyncConnection, request: GovernedResearchToolRequest
-    ) -> str:
-        value = (
-            await conn.execute(
-                text(
-                    "SELECT workspace_id FROM entity_research_tool_request "
-                    "WHERE tool_request_id=:tool_request_id"
-                ),
-                {"tool_request_id": request.tool_call_id},
-            )
-        ).scalar_one()
-        return cast(str, value)
-
-    async def _request_project_run(
-        self, conn: AsyncConnection, request: GovernedResearchToolRequest
-    ) -> UUID:
-        value = (
-            await conn.execute(
-                text(
-                    "SELECT project_run_id FROM entity_research_tool_request "
-                    "WHERE tool_request_id=:tool_request_id"
-                ),
-                {"tool_request_id": request.tool_call_id},
-            )
-        ).scalar_one()
-        return cast(UUID, value)
+        return tuple(values)
 
     async def _validate_artifacts(
         self,
         conn: AsyncConnection,
         *,
         request: GovernedResearchToolRequest,
-        lineage: Mapping[str, object],
+        lineage: ProviderResultLineage,
     ) -> None:
-        workspace_id = str(lineage["workspace_id"])
+        workspace_id = lineage.operation.workspace_id
         keys = {
-            str(lineage["request_artifact_key"]),
-            str(lineage["response_artifact_key"]),
-            str(lineage["normalization_artifact_key"]),
-            str(lineage["receipt_artifact_key"]),
-            *(
-                str(row["artifact_key"])
-                for row in cast(Sequence[Mapping[str, object]], lineage["result_artifacts"])
-            ),
+            _artifact_key(lineage.operation.request_artifact_ref),
+            *(_artifact_key(ref) for ref in lineage.raw_response_artifact_refs),
+            *(_artifact_key(ref) for ref in lineage.retained_result_artifact_refs),
+            _artifact_key(lineage.normalized_result_artifact_ref),
         }
         for key in keys:
             await read_verified_artifact(
@@ -1089,17 +1581,48 @@ class EntityResearchResultStore:
                 storage_key=key,
                 workspace_id=workspace_id,
             )
-        del request
+        if lineage.operation.target_entity_id != request.target_entity_id:
+            raise EntityResearchResultIntegrityError("lineage artifact belongs to another target")
 
     async def _validate_fields(
         self,
         conn: AsyncConnection,
         *,
         request: GovernedResearchToolRequest,
-        draft: ExternalResearchProjectionDraft,
-        lineage: Mapping[str, object],
+        draft: ProviderResearchProjectionDraft,
+        lineage: ProviderResultLineage,
     ) -> None:
-        all_claim_refs = tuple(ref for field in draft.fields for ref in field.claim_refs)
+        field_units: list[tuple[ResearchSubjectType, UUID, ResearchFieldResultProjection]] = [
+            (request.subject_type, request.target_entity_id, field) for field in draft.fields
+        ]
+        for subject in draft.discovered_subjects:
+            if request.subject_type is not ResearchSubjectType.ACCOUNT:
+                raise EntityResearchResultIntegrityError(
+                    "only account research may project discovered contacts"
+                )
+            admitted = (
+                await conn.execute(
+                    text(
+                        "SELECT 1 FROM contact_entity WHERE id=:contact_id "
+                        "AND account_entity_id=:account_id AND status <> 'merged'"
+                    ),
+                    {
+                        "contact_id": subject.target_entity_id,
+                        "account_id": request.target_entity_id,
+                    },
+                )
+            ).scalar_one_or_none()
+            if admitted is None:
+                raise EntityResearchResultIntegrityError(
+                    "discovered contact is not identity-resolved under the exact account"
+                )
+            await self._validate_subject_refs(conn, subject=subject)
+            field_units.extend(
+                (ResearchSubjectType.CONTACT, subject.target_entity_id, field)
+                for field in subject.fields
+            )
+
+        all_claim_refs = tuple(ref for _, _, field in field_units for ref in field.claim_refs)
         claim_ids = [_claim_id(ref) for ref in all_claim_refs]
         claim_rows: dict[UUID, Mapping[str, object]] = {}
         if claim_ids:
@@ -1124,15 +1647,18 @@ class EntityResearchResultStore:
             claim_rows = {cast(UUID, row["id"]): cast(Mapping[str, object], row) for row in rows}
             if set(claim_rows) != set(claim_ids):
                 raise EntityResearchResultIntegrityError("result cites an absent claim")
-        workspace_id = str(lineage["workspace_id"])
-        for field in draft.fields:
+        workspace_id = lineage.operation.workspace_id
+        allowed_by_field = {
+            item.field_key: frozenset(item.source_keys) for item in request.field_source_authority
+        }
+        for subject_type, target_entity_id, field in field_units:
             field_claim_rows: list[Mapping[str, object]] = [
                 claim_rows[_claim_id(ref)] for ref in field.claim_refs
             ]
             current_lineage = 0
             for row in field_claim_rows:
                 if (
-                    row["entity_id"] != request.target_entity_id
+                    row["entity_id"] != target_entity_id
                     or str(row["field_key"]) != field.field_key
                     or (
                         row["workspace_id"] is not None and str(row["workspace_id"]) != workspace_id
@@ -1141,12 +1667,21 @@ class EntityResearchResultStore:
                     raise EntityResearchResultIntegrityError(
                         "result claim crosses target, field, or workspace authority"
                     )
-                if str(row["source_operation_ref"]) == str(draft.operation_id) and str(
-                    row["source_snapshot_ref"]
-                ) == str(draft.snapshot_id):
-                    if str(row["source_key"]) not in request.source_keys:
+                if self._reference_matches(
+                    row["source_operation_ref"], draft.operation.operation_ref
+                ) and self._reference_matches(row["source_snapshot_ref"], draft.snapshot_ref):
+                    allowed_sources = allowed_by_field.get(field.field_key)
+                    if subject_type is request.subject_type and (
+                        allowed_sources is None or str(row["source_key"]) not in allowed_sources
+                    ):
                         raise EntityResearchResultIntegrityError(
-                            "result claim's causative source was not governed"
+                            "result claim violates exact field/source authority"
+                        )
+                    if subject_type is ResearchSubjectType.CONTACT and (
+                        str(row["source_key"]) != draft.operation.source_key
+                    ):
+                        raise EntityResearchResultIntegrityError(
+                            "discovered contact claim uses another causative source"
                         )
                     current_lineage += 1
             if (
@@ -1207,43 +1742,82 @@ class EntityResearchResultStore:
                     raise EntityResearchResultIntegrityError(
                         "projected evidence differs from claim provenance"
                     )
+                if subject_type is request.subject_type:
+                    allowed_sources = allowed_by_field.get(field.field_key, frozenset())
+                    if evidence.source_key not in allowed_sources:
+                        raise EntityResearchResultIntegrityError(
+                            "projected evidence violates exact field/source authority"
+                        )
+
+    async def _validate_subject_refs(
+        self,
+        conn: AsyncConnection,
+        *,
+        subject: ResearchDiscoveredSubjectProjection,
+    ) -> None:
+        refs = subject.strong_identity_claim_refs + subject.association_evidence_refs
+        if not all(ref.startswith("claim:") for ref in refs):
+            raise EntityResearchResultIntegrityError(
+                "discovered contact admission currently requires durable claim references"
+            )
+        ids = [_claim_id(ref) for ref in refs]
+        rows = (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT id, entity_id FROM claim WHERE id=ANY(:claim_ids) "
+                        "AND superseded_by IS NULL"
+                    ),
+                    {"claim_ids": ids},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        if {cast(UUID, row["id"]) for row in rows} != set(ids) or any(
+            row["entity_id"] != subject.target_entity_id for row in rows
+        ):
+            raise EntityResearchResultIntegrityError(
+                "discovered contact admission references absent or foreign identity evidence"
+            )
+
+    @staticmethod
+    def _reference_matches(stored: object, reference: str) -> bool:
+        value = str(stored)
+        return value == reference or value == reference.rsplit(":", 1)[-1]
 
     def _result(
         self,
         *,
         request: GovernedResearchToolRequest,
         result_id: UUID,
-        lineage: Mapping[str, object],
+        lineage: ProviderResultLineage,
         fields: tuple[ResearchFieldResultProjection, ...],
+        discovered_subjects: tuple[ResearchDiscoveredSubjectProjection, ...],
         delivery: ResearchResultDelivery,
     ) -> PersistedResearchToolResult:
-        result_artifacts = tuple(
-            f"artifact:{row['artifact_key']}"
-            for row in cast(Sequence[Mapping[str, object]], lineage["result_artifacts"])
-        )
-        if not result_artifacts:
-            result_artifacts = (f"artifact:{lineage['response_artifact_key']}",)
         return PersistedResearchToolResult(
             subject_type=request.subject_type,
             target_entity_id=request.target_entity_id,
-            operation_ref=f"external-research-operation:{lineage['operation_id']}",
+            operation_ref=lineage.operation.operation_ref,
             result_ref=f"research-result:{result_id}",
-            request_artifact_ref=f"artifact:{lineage['request_artifact_key']}",
-            raw_response_artifact_refs=(f"artifact:{lineage['response_artifact_key']}",),
-            retained_result_artifact_refs=result_artifacts,
-            normalized_result_artifact_ref=f"artifact:{lineage['normalization_artifact_key']}",
-            provider_receipt_ref=f"external-research-receipt:{lineage['receipt_id']}",
-            cost_settlement_ref=f"external-research-cost-settlement:{lineage['receipt_id']}",
+            request_artifact_ref=lineage.operation.request_artifact_ref,
+            raw_response_artifact_refs=lineage.raw_response_artifact_refs,
+            retained_result_artifact_refs=lineage.retained_result_artifact_refs,
+            normalized_result_artifact_ref=lineage.normalized_result_artifact_ref,
+            provider_receipt_ref=lineage.provider_receipt_ref,
+            cost_settlement_ref=lineage.cost_settlement_ref,
             requested_field_keys=tuple(field.field_key for field in fields),
             fields=fields,
+            discovered_subjects=discovered_subjects,
             delivery=delivery,
             read_tool_address=(
                 None
                 if delivery is ResearchResultDelivery.INLINE_COMPLETE
                 else f"read_research_result(result_ref=research-result:{result_id})"
             ),
-            provider_reported_cost_cents=Decimal(str(lineage["receipt_reported_cost"])),
-            cost_cents=Decimal(str(lineage["settled_cost_cents"])),
+            provider_reported_cost_cents=lineage.provider_reported_cost_cents,
+            cost_cents=lineage.settled_cost_cents,
         )
 
     async def _load_existing(
@@ -1260,7 +1834,10 @@ class EntityResearchResultStore:
                             """
                             SELECT result.result_artifact_key, result.workspace_id,
                                    result.result_sha256, request_row.research_run_id,
-                                   request_row.job_id, request_row.target_entity_id
+                                   request_row.job_id, request_row.subject_type,
+                                   request_row.target_entity_id,
+                                   request_row.parent_account_id,
+                                   request_row.workspace_id AS request_workspace_id
                             FROM entity_research_result result
                             JOIN entity_research_tool_request request_row
                               ON request_row.tool_request_id=result.tool_request_id
@@ -1278,7 +1855,10 @@ class EntityResearchResultStore:
             if (
                 row["research_run_id"] != request.research_run_id
                 or row["job_id"] != request.job_id
+                or str(row["subject_type"]) != request.subject_type.value
                 or row["target_entity_id"] != request.target_entity_id
+                or row["parent_account_id"] != request.parent_account_id
+                or str(row["workspace_id"]) != str(row["request_workspace_id"])
             ):
                 raise EntityResearchResultIntegrityError("result replay crosses exact job scope")
             _, data = await read_verified_artifact(
@@ -1290,6 +1870,113 @@ class EntityResearchResultStore:
         if content_address(data) != str(row["result_sha256"]):
             raise EntityResearchResultIntegrityError("result artifact digest differs from index")
         return PersistedResearchToolResult.model_validate_json(data)
+
+    async def refresh_state(self, request: GovernedResearchToolRequest) -> str:
+        """Fold immutable request/observation/result history into the job's current-state digest."""
+
+        async with self._conn_factory() as conn:
+            initial_state = (
+                await conn.execute(
+                    text(
+                        "SELECT initial_state_sha256 FROM entity_research_job "
+                        "WHERE job_id=:job_id AND research_run_id=:research_run_id FOR UPDATE"
+                    ),
+                    {"job_id": request.job_id, "research_run_id": request.research_run_id},
+                )
+            ).scalar_one_or_none()
+            if initial_state is None:
+                raise EntityResearchResultIntegrityError(
+                    "cannot advance state for an absent entity-research job"
+                )
+            requests = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT tool_request_id, tool_input_sha256, idempotency_key,
+                                   parent_operation_ref, parent_observation_ref,
+                                   prior_result_sha256
+                            FROM entity_research_tool_request
+                            WHERE job_id=:job_id ORDER BY created_at, tool_request_id
+                            """
+                        ),
+                        {"job_id": request.job_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            observations = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT observation.tool_request_id,
+                                   observation.provider_operation_ref,
+                                   observation.disposition,
+                                   operation.provider_kind, operation.source_key,
+                                   operation.field_keys, operation.request_artifact_ref,
+                                   operation.reserved_at, operation.dispatched_at
+                            FROM entity_research_provider_observation observation
+                            JOIN entity_research_tool_request request_row
+                              ON request_row.tool_request_id=observation.tool_request_id
+                            JOIN entity_research_provider_operation operation
+                              ON operation.operation_ref=observation.provider_operation_ref
+                            WHERE request_row.job_id=:job_id
+                            ORDER BY observation.created_at, observation.observation_id
+                            """
+                        ),
+                        {"job_id": request.job_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            results = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT result.tool_request_id, result.provider_operation_ref,
+                                   result.provider_snapshot_ref, result.result_sha256,
+                                   result.delivery
+                            FROM entity_research_result result
+                            JOIN entity_research_tool_request request_row
+                              ON request_row.tool_request_id=result.tool_request_id
+                            WHERE request_row.job_id=:job_id
+                            ORDER BY result.created_at, result.result_id
+                            """
+                        ),
+                        {"job_id": request.job_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            digest = canonical_sha256(
+                {
+                    "contract": "m8d-entity-research-state-v2",
+                    "initial_state_sha256": str(initial_state),
+                    "requests": [self._json_row(row) for row in requests],
+                    "observations": [self._json_row(row) for row in observations],
+                    "results": [self._json_row(row) for row in results],
+                }
+            )
+            await conn.execute(
+                text(
+                    "UPDATE entity_research_job SET current_state_sha256=:digest, "
+                    "updated_at=now() WHERE job_id=:job_id"
+                ),
+                {"digest": digest, "job_id": request.job_id},
+            )
+        return digest
+
+    @staticmethod
+    def _json_row(row: Mapping[str, object] | RowMapping) -> dict[str, object]:
+        return {
+            key: str(value) if isinstance(value, (UUID, Decimal, datetime)) else value
+            for key, value in row.items()
+        }
 
     async def read_result(
         self,
@@ -1307,7 +1994,8 @@ class EntityResearchResultStore:
                             """
                             SELECT result.result_artifact_key, result.workspace_id,
                                    result.result_sha256, request_row.research_run_id,
-                                   request_row.job_id, request_row.target_entity_id
+                                   request_row.job_id, request_row.target_entity_id,
+                                   request_row.parent_account_id
                             FROM entity_research_result result
                             JOIN entity_research_tool_request request_row
                               ON request_row.tool_request_id=result.tool_request_id
@@ -1324,6 +2012,7 @@ class EntityResearchResultStore:
                 row["research_run_id"] != authorization.research_run_id
                 or row["job_id"] != authorization.job_id
                 or row["target_entity_id"] != authorization.subject_entity_id
+                or row["parent_account_id"] != authorization.parent_account_id
                 or str(row["workspace_id"]) != str(authorization.workspace_id)
             ):
                 raise EntityResearchToolAuthorityError("research result is outside the exact job")
@@ -1336,22 +2025,40 @@ class EntityResearchResultStore:
             result = PersistedResearchToolResult.model_validate_json(data)
             if result.delivery is ResearchResultDelivery.INLINE_COMPLETE:
                 return result
-            fields: list[ResearchFieldResultProjection] = []
-            for ordinal, field in enumerate(result.fields):
+            rebuilt: dict[tuple[UUID, str], ResearchFieldResultProjection] = {}
+            for ordinal, (_, target_id, _, field) in enumerate(
+                self._flatten_result_fields(
+                    result,
+                    parent_account_id=authorization.parent_account_id,
+                )
+            ):
                 if field.outcome is not ResearchFieldOutcome.FOUND:
-                    fields.append(field)
+                    rebuilt[(target_id, field.field_key)] = field
                     continue
-                value_key = (
-                    await conn.execute(
-                        text(
-                            """
-                            SELECT value_artifact_key FROM entity_research_result_field
+                value_row = (
+                    (
+                        await conn.execute(
+                            text(
+                                """
+                            SELECT value_artifact_key, target_entity_id, field_key
+                            FROM entity_research_result_field
                             WHERE result_id=:result_id AND ordinal=:ordinal
                             """
-                        ),
-                        {"result_id": result_id, "ordinal": ordinal},
+                            ),
+                            {"result_id": result_id, "ordinal": ordinal},
+                        )
                     )
-                ).scalar_one()
+                    .mappings()
+                    .one()
+                )
+                if (
+                    value_row["target_entity_id"] != target_id
+                    or str(value_row["field_key"]) != field.field_key
+                ):
+                    raise EntityResearchResultIntegrityError(
+                        "indexed value row belongs to another subject or field"
+                    )
+                value_key = value_row["value_artifact_key"]
                 if value_key is None:
                     raise EntityResearchResultIntegrityError("indexed value artifact is absent")
                 _, value_data = await read_verified_artifact(
@@ -1366,14 +2073,33 @@ class EntityResearchResultStore:
                     raise EntityResearchResultIntegrityError(
                         "indexed value artifact is malformed"
                     ) from exc
-                if value_payload.get("field_key") != field.field_key:
+                if value_payload.get("field_key") != field.field_key or value_payload.get(
+                    "subject_entity_id"
+                ) != str(target_id):
                     raise EntityResearchResultIntegrityError(
-                        "indexed value belongs to another field"
+                        "indexed value belongs to another subject or field"
                     )
-                fields.append(field.model_copy(update={"value": value_payload.get("value")}))
+                rebuilt[(target_id, field.field_key)] = field.model_copy(
+                    update={"value": value_payload.get("value")}
+                )
+            fields = tuple(
+                rebuilt[(result.target_entity_id, field.field_key)] for field in result.fields
+            )
+            discovered = tuple(
+                subject.model_copy(
+                    update={
+                        "fields": tuple(
+                            rebuilt[(subject.target_entity_id, field.field_key)]
+                            for field in subject.fields
+                        )
+                    }
+                )
+                for subject in result.discovered_subjects
+            )
         return result.model_copy(
             update={
-                "fields": tuple(fields),
+                "fields": fields,
+                "discovered_subjects": discovered,
                 "delivery": ResearchResultDelivery.INLINE_COMPLETE,
                 "read_tool_address": None,
             }
@@ -1435,16 +2161,39 @@ class EntityResearchResultStore:
                 storage_key=str(row["artifact_key"]),
                 workspace_id=str(row["workspace_id"]),
             )
-        end = min(len(data), request.offset + request.max_bytes)
         if request.offset > len(data):
             raise EntityResearchResultIntegrityError("evidence offset exceeds retained content")
+        try:
+            data[: request.offset].decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise EntityResearchResultIntegrityError(
+                "evidence offset must be a UTF-8 code-point boundary"
+            ) from exc
+        end = min(len(data), request.offset + request.max_bytes)
+        while end > request.offset:
+            try:
+                content = data[request.offset : end].decode("utf-8", errors="strict")
+                break
+            except UnicodeDecodeError as exc:
+                if exc.reason not in {"unexpected end of data", "invalid continuation byte"}:
+                    raise EntityResearchResultIntegrityError(
+                        "retained evidence is not valid UTF-8"
+                    ) from exc
+                end -= 1
+        else:
+            if request.offset == len(data):
+                content = ""
+            else:
+                raise EntityResearchResultIntegrityError(
+                    "evidence page size is too small for the next UTF-8 code point"
+                )
         return ResearchEvidenceReadPage(
             evidence_ref=request.evidence_ref,
             artifact_ref=f"artifact:{row['artifact_key']}",
             offset=request.offset,
             next_offset=end,
             complete=end == len(data),
-            content=data[request.offset : end].decode("utf-8", errors="replace"),
+            content=content,
             content_sha256=content_address(data),
         )
 
@@ -1517,13 +2266,23 @@ class GovernedEntityResearchToolFactory:
             active = current_entity_research_tool_execution()
             request = await self._requests.record(active=active, semantic=semantic)
 
-            async def before_dispatch(operation: ExternalResearchOperationRow) -> None:
-                await self._causation.bind_before_dispatch(
+            async def before_dispatch(
+                operation: ProviderOperationReservation,
+            ) -> ProviderOperationObservation:
+                return await self._causation.bind_before_dispatch(
                     request=request,
                     operation=operation,
                 )
 
-            drafts = tuple(await action.execute(request, before_dispatch=before_dispatch))
+            try:
+                drafts = tuple(await action.execute(request, before_dispatch=before_dispatch))
+            except EntityResearchProviderWait as wait:
+                await self._causation.observe(request=request, operation=wait.operation)
+                current_state = await self._results.refresh_state(request)
+                raise EntityResearchExternalWait(
+                    wait_ref=wait.operation.operation_ref,
+                    current_state_sha256=current_state,
+                ) from wait
             if not drafts:
                 raise EntityResearchResultIntegrityError(
                     "provider action returned no complete result or external wait"
@@ -1531,16 +2290,20 @@ class GovernedEntityResearchToolFactory:
             covered = tuple(
                 field_key for draft in drafts for field_key in draft.requested_field_keys
             )
-            if len(covered) != len(set(covered)) or set(covered) != set(request.field_keys):
+            has_discovered = any(draft.discovered_subjects for draft in drafts)
+            if (
+                len(covered) != len(set(covered))
+                or set(covered) != set(request.field_keys)
+                or (not covered and not has_discovered)
+            ):
                 raise EntityResearchResultIntegrityError(
-                    "provider action bundles do not partition every governed field exactly once"
+                    "provider bundles must partition fields or return grounded discovered subjects"
                 )
             persisted: list[PersistedResearchToolResult] = []
             for draft in drafts:
-                operation_row = await self._causation.get_operation(draft.operation_id)
                 observation = await self._causation.observe(
                     request=request,
-                    operation=operation_row,
+                    operation=draft.operation,
                 )
                 persisted.append(
                     await self._results.persist(
@@ -1549,9 +2312,23 @@ class GovernedEntityResearchToolFactory:
                         draft=draft,
                     )
                 )
+            current_state = await self._results.refresh_state(request)
+            yield_count = sum(
+                1
+                for result in persisted
+                for field in (
+                    result.fields
+                    + tuple(
+                        field for subject in result.discovered_subjects for field in subject.fields
+                    )
+                )
+                if field.outcome is ResearchFieldOutcome.FOUND
+            ) + sum(len(result.discovered_subjects) for result in persisted)
             batch = EntityResearchToolResultBatch(
                 tool_request_ref=f"entity-research-tool-request:{request.tool_call_id}",
                 results=tuple(persisted),
+                current_state_sha256=current_state,
+                yield_count=yield_count,
             )
             return cast(dict[str, JsonValue], batch.model_dump(mode="json"))
 
@@ -1600,6 +2377,7 @@ class GovernedEntityResearchToolFactory:
 __all__ = [
     "EntityResearchProviderAction",
     "EntityResearchProviderCausationStore",
+    "EntityResearchProviderWait",
     "EntityResearchResultIntegrityError",
     "EntityResearchResultStore",
     "EntityResearchToolAuthorityError",
@@ -1608,6 +2386,11 @@ __all__ = [
     "ExternalResearchProjectionDraft",
     "GovernedEntityResearchToolFactory",
     "ProviderActionBinding",
+    "ProviderObservationDisposition",
     "ProviderOperationObservation",
+    "ProviderOperationReservation",
+    "ProviderResearchProjectionDraft",
+    "ProviderResultLineage",
+    "ProviderResultLineageReader",
     "ResearchEvidenceReadPage",
 ]

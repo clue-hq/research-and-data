@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from uuid import UUID
 
 import pytest
 from pydantic import SecretStr
@@ -52,7 +51,7 @@ from clue_research.resolvers.sumble import (
     SumbleCreditBudget,
 )
 from clue_storage import FsStorage
-from clue_toolbelt import ToolContext, invoke_tool
+from clue_toolbelt import PreconditionFailed, ToolContext, invoke_tool
 from tests.api.test_exa_targeted_enrichment_e1 import _advance_sealed_run_to_deep
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
@@ -237,21 +236,38 @@ def test_s1_real_db_three_snapshots_conflict_preservation_and_zero_call_replay(
                 "provider_credit_cap": 5,
                 "allow_unbounded_tech": True,
             }
-            result = await invoke_tool(
-                registry,
-                "enrich_account_gaps",
-                body,
-                ToolContext(
-                    workspace_id=workspace_id,
-                    actor="agent",
-                    conn_factory=same_connection,
-                    operation_id=new_operation_id(),
-                ),
-                idempotency_ttl_s=86400,
+            with pytest.raises(PreconditionFailed) as quarantine:
+                await invoke_tool(
+                    registry,
+                    "enrich_account_gaps",
+                    body,
+                    ToolContext(
+                        workspace_id=workspace_id,
+                        actor="agent",
+                        conn_factory=same_connection,
+                        operation_id=new_operation_id(),
+                    ),
+                    idempotency_ttl_s=86400,
+                )
+            assert quarantine.value.reason_codes == ("entity_research_agent_not_composed",)
+            assert http.calls == []
+
+            # R1 quarantines only new-run composition. The provider/durability/claim service stays
+            # directly testable and is the infrastructure the governed R4 action reuses.
+            result = await starter.start(
+                workspace_id=workspace_id,
+                project_run_id=ProjectRunId(started.project_run_id),
+                account_id=EntityId(ready.account_id),
+                field_expected_value_credits={
+                    "account.hiring_velocity_eng": Decimal(5),
+                    "core.primary_tech_stack": Decimal(5),
+                },
+                provider_credit_cap=5,
+                allow_unbounded_tech=True,
             )
-            assert result.references["outcome"] == SumbleAccountGapOutcome.COMPLETED.value
+            assert result.outcome is SumbleAccountGapOutcome.COMPLETED
             assert len(http.calls) == 3
-            operation_id = AccountGapOperationId(UUID(str(result.references["operation_id"])))
+            operation_id = AccountGapOperationId(result.operation.operation_id)
             operation = await get_account_gap_operation(
                 conn,
                 workspace_id=workspace_id,

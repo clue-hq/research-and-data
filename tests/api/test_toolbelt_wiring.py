@@ -616,14 +616,15 @@ def test_score_accounts_refuses_discovery_even_when_admitted_accounts_exist(
     run_async(scenario())
 
 
-def test_account_tools_fail_closed_on_workspace_scope(  # noqa: F811
+def test_quarantined_account_tools_never_reach_legacy_workspace_scope(  # noqa: F811
     require_profiling_db: None,
 ) -> None:
-    """[B3×research] slice 4 — the account guard is fail-closed, not a warning. The three
-    account-scoped spend tools (``run_deep_account`` / ``resolve_committee`` / ``profile_contact``)
-    load the account through ``_load_account``, so an account in another workspace refuses
-    ``account_not_found``, indistinguishable from a truly-absent id (no existence leak), while an
-    in-workspace account passes the guard."""
+    """R1 quarantine runs before every retired account/contact research precondition.
+
+    New calls must not regain the legacy entity loaders simply because the supplied identity is
+    valid. Exact selection/locality enforcement belongs to the replacement entity-agent launch;
+    until it is composed, both valid and foreign ids fail with the same loud quarantine reason.
+    """
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=True) as conn:
@@ -692,22 +693,20 @@ def test_account_tools_fail_closed_on_workspace_scope(  # noqa: F811
                 return tuple(f.reason_code for f in failures)
 
             for name in ("run_deep_account", "resolve_committee", "profile_contact"):
-                # In-workspace → the account guard passes (no account_not_found refusal).
-                assert "account_not_found" not in await codes(name, str(acc_a)), name
-                # Cross-workspace → refused exactly as an unknown id (no existence leak).
-                assert await codes(name, str(acc_b)) == ("account_not_found",), name
+                assert await codes(name, str(acc_a)) == ("entity_research_agent_not_composed",), (
+                    name
+                )
+                assert await codes(name, str(acc_b)) == ("entity_research_agent_not_composed",), (
+                    name
+                )
 
     run_async(scenario())
 
 
-def test_profile_contact_refuses_cross_account_contact(  # noqa: F811
+def test_quarantined_profile_contact_never_reaches_legacy_contact_scope(  # noqa: F811
     require_profiling_db: None,
 ) -> None:
-    """[B3×research] slice 4 — ``profile_contact`` profiles a committee member *of* the loaded
-    in-workspace account, so the contact must belong to that account. A contact under a *different*
-    account (and/or a different workspace) is refused ``contact_not_found`` — the same shape a
-    truly-absent id gets (no existence leak), even though the caller holds a valid in-workspace
-    account id. The happy path (contact under the in-workspace account) still passes cleanly."""
+    """R1 prevents valid or cross-account contacts from entering the retired research path."""
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=True) as conn:
@@ -754,11 +753,12 @@ def test_profile_contact_refuses_cross_account_contact(  # noqa: F811
                 )
                 return tuple(f.reason_code for f in failures)
 
-            # Happy path: contact under the in-workspace account → the contact guard passes.
-            assert "contact_not_found" not in await codes(str(contact_a), str(acc_a))
-            # A contact belonging to a *different* account/workspace, profiled against the
-            # in-workspace account → refused exactly as an unknown contact (no existence leak).
-            assert await codes(str(contact_b), str(acc_a)) == ("contact_not_found",)
+            assert await codes(str(contact_a), str(acc_a)) == (
+                "entity_research_agent_not_composed",
+            )
+            assert await codes(str(contact_b), str(acc_a)) == (
+                "entity_research_agent_not_composed",
+            )
 
     run_async(scenario())
 

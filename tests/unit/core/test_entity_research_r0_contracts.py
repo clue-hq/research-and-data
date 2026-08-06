@@ -204,6 +204,65 @@ def test_canonical_r0_contract_fixture_is_fully_valid(
     }
 
 
+def test_account_result_can_losslessly_project_multiple_grounded_committee_contacts(
+    canonical_fixture: dict[str, Any],
+) -> None:
+    payload = copy.deepcopy(canonical_fixture["tool_result"])
+    account_id = payload["target_entity_id"]
+
+    def discovered(contact_id: str, title: str) -> dict[str, Any]:
+        return {
+            "subject_type": "contact",
+            "target_entity_id": contact_id,
+            "parent_account_id": account_id,
+            "strong_identity_claim_refs": [f"claim:identity:{contact_id}"],
+            "association_evidence_refs": [f"claim:employment:{contact_id}"],
+            "fields": [
+                {
+                    "field_key": "contact.profile.title",
+                    "outcome": "found",
+                    "value": title,
+                    "value_ref": f"artifact:value:{contact_id}",
+                    "claim_delta": "accepted",
+                    "claim_refs": [f"claim:title:{contact_id}"],
+                    "decision_refs": [],
+                    "evidence": [
+                        {
+                            "evidence_ref": f"evidence:title:{contact_id}",
+                            "source_key": "sumble_people",
+                            "provider_source_id": f"sumble:{contact_id}",
+                            "source_url": "https://example.org/organization",
+                            "artifact_ref": "artifact:sumble-people:1",
+                            "evidence_span": f"Current title: {title}",
+                        }
+                    ],
+                    "confidence": 0.95,
+                    "verification_status": "supported",
+                }
+            ],
+        }
+
+    payload.update(
+        {
+            "requested_field_keys": [],
+            "fields": [],
+            "discovered_subjects": [
+                discovered("22222222-2222-4222-8222-222222222221", "VP Operations"),
+                discovered("22222222-2222-4222-8222-222222222222", "Chief Financial Officer"),
+            ],
+        }
+    )
+    result = PersistedResearchToolResult.model_validate(payload)
+    assert len(result.discovered_subjects) == 2
+    assert {subject.parent_account_id for subject in result.discovered_subjects} == {
+        result.target_entity_id
+    }
+
+    payload["discovered_subjects"][1]["parent_account_id"] = "33333333-3333-4333-8333-333333333333"
+    with pytest.raises(ValidationError, match="different parent account"):
+        PersistedResearchToolResult.model_validate(payload)
+
+
 def test_forbidden_flow_fixture_is_complete_and_unique(
     forbidden_fixture: dict[str, Any],
 ) -> None:
@@ -216,7 +275,7 @@ def test_forbidden_flow_fixture_is_complete_and_unique(
 
 def test_public_r0_contract_schemas_match_frozen_fingerprints() -> None:
     fixture = _read_json("r0_schema_fingerprints.json")
-    assert fixture["contract_version"] == "m8d-r0-v1"
+    assert fixture["contract_version"] == "m8d-r0-v2"
     actual = {
         name: hashlib.sha256(
             json.dumps(

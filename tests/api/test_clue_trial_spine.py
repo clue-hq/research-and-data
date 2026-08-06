@@ -11,6 +11,7 @@ from uuid import uuid4
 import pytest
 from pydantic import SecretStr
 
+from clue_api.entity_research_quarantine import EntityResearchAgentNotComposed
 from clue_api.run_composition import ComposingRunDriver
 from clue_api.stage0_trial import create_stage0_trial_session
 from clue_api.storage_wiring import build_storage_backend
@@ -270,18 +271,15 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
         assert [claim.value_json for claim in jobs_claims] == [4]
         assert "Software Engineer" in (jobs_claims[0].evidence_span or "")
 
-        completed = await spine.approve_direct_research(
-            state=state,
-            project_run_id=run.project_run_id,
-            account_entity_id=account_id,
-        )
-        assert completed.project_run.status is not ProjectRunStatus.FAILED
-        assert completed.project_run.phase in (ProjectPhase.REVIEW, ProjectPhase.HANDOFF)
-        # This S1-only trial deliberately binds neither an account profiler nor a committee
-        # source. DEEP therefore creates no account-run subject, and C7 must fail closed instead
-        # of manufacturing an empty dossier that looks complete.
-        assert completed.research_view is None
-        assert completed.research_view_error == "subject_not_found"
+        # The S1 fixture proves discovery/scoring through the human tier checkpoint. R1 then
+        # quarantines its retired pre-agent DEEP path: approval may not silently fall back to the
+        # old account profiler while the replacement R5 agent composition is absent.
+        with pytest.raises(EntityResearchAgentNotComposed):
+            await spine.approve_direct_research(
+                state=state,
+                project_run_id=run.project_run_id,
+                account_entity_id=account_id,
+            )
 
     async def wrapped() -> None:
         async with db_lifespan():

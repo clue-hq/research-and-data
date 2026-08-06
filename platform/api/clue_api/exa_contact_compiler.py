@@ -167,6 +167,7 @@ def compile_exa_contact_acquisition_plan(
     cost_cents_reserved_per_bundle: Decimal,
     config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
     reuse_context_ref: str | None = None,
+    prior_research_context: str | None = None,
 ) -> ExaDeepContactAcquisitionPlan:
     """Compile deterministic contact preflights without credential lookup or provider traffic."""
 
@@ -188,6 +189,7 @@ def compile_exa_contact_acquisition_plan(
                 target_lock,
                 [item.spec for item in candidate],
                 directional_questions=directional_questions,
+                prior_research_context=prior_research_context,
                 config=config,
             )
         except ValueError:
@@ -199,6 +201,7 @@ def compile_exa_contact_acquisition_plan(
                 target_lock,
                 [field.spec],
                 directional_questions=directional_questions,
+                prior_research_context=prior_research_context,
                 config=config,
             )
         else:
@@ -212,6 +215,7 @@ def compile_exa_contact_acquisition_plan(
             target_lock,
             [item.spec for item in bundle],
             directional_questions=directional_questions,
+            prior_research_context=prior_research_context,
             config=config,
         )
         payload = wire.model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -297,6 +301,7 @@ async def compile_registered_exa_contact_plan(
     field_keys: Sequence[str] | None = None,
     directional_questions: Sequence[str] | None = None,
     reuse_context_ref: str | None = None,
+    prior_research_context: str | None = None,
 ) -> ExaDeepContactAcquisitionPlan:
     """Resolve every C3 authority, optionally narrowing to one governed semantic tool call."""
 
@@ -394,11 +399,14 @@ async def compile_registered_exa_contact_plan(
     )
     if (
         len(questions) != len(set(questions))
-        or not set(questions).issubset(selected_intent_questions)
+        or (
+            prior_research_context is None
+            and not set(questions).issubset(selected_intent_questions)
+        )
         or (directional_questions is not None and not questions)
     ):
         raise ValueError(
-            "contact Exa questions must be a non-empty unique subset of the confirmed intent"
+            "contact Exa questions must be unique, non-empty, and selected or follow-up scoped"
         )
 
     selected_field_keys = (
@@ -475,6 +483,7 @@ async def compile_registered_exa_contact_plan(
         cost_cents_reserved_per_bundle=Decimal(source.cost_cents),
         config=config,
         reuse_context_ref=reuse_context_ref,
+        prior_research_context=prior_research_context,
     )
 
 

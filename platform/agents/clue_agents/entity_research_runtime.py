@@ -20,7 +20,13 @@ from uuid import uuid4
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitMiddleware
 from langchain.agents.middleware.types import AgentMiddleware, ModelResponse
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, message_to_dict
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    ToolMessage,
+    message_to_dict,
+)
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, JsonValue
@@ -293,6 +299,11 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
                 "constructed model tool surface differs from exact allowlist: "
                 f"missing={sorted(missing)} unexpected={sorted(unexpected)}"
             )
+        zero_yield = self._consecutive_zero_yield(request.messages)
+        if zero_yield >= self._context.stop_policy.max_consecutive_zero_yield:
+            raise EntityResearchRuntimeError(
+                "entity research stopped after the configured consecutive zero-yield limit"
+            )
         await self._journal.append(
             self._event(
                 EntityAgentJournalEventKind.MODEL_STARTED,
@@ -324,6 +335,43 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         if len(calls) > 1:
             await self._guard.authorize_parallel(context=self._context, calls=tuple(calls))
         return response
+
+    @staticmethod
+    def _consecutive_zero_yield(messages: Sequence[BaseMessage]) -> int:
+        """Count persisted governed results, so the limit survives checkpoint/resume."""
+
+        count = 0
+        for message in reversed(messages):
+            # Every tool-result round is preceded by the model's AI tool-call message.  Skip that
+            # transport envelope so the counter spans durable rounds and process resumes instead
+            # of resetting after every single call.
+            if isinstance(message, AIMessage) and message.tool_calls:
+                continue
+            if not isinstance(message, ToolMessage):
+                if count:
+                    break
+                continue
+            content = message.content
+            try:
+                payload = json.loads(content) if isinstance(content, str) else content
+            except json.JSONDecodeError:
+                if count:
+                    break
+                continue
+            if not isinstance(payload, Mapping) or not {
+                "tool_request_ref",
+                "results",
+                "current_state_sha256",
+                "yield_count",
+            }.issubset(payload):
+                if count:
+                    break
+                continue
+            yield_count = payload.get("yield_count")
+            if not isinstance(yield_count, int) or yield_count > 0:
+                break
+            count += 1
+        return count
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         call = self._call(cast(dict[str, Any], request.tool_call))
@@ -627,10 +675,9 @@ class EntityResearchAgentRuntime:
             if (
                 proposal.subject_type is not context.authorization.subject_type
                 or proposal.target_entity_id != context.authorization.subject_entity_id
-                or proposal.current_state_sha256 != context.current_state_sha256
             ):
                 raise EntityResearchFinalizationRejected(
-                    "typed finalization widens the target or proposes a stale state"
+                    "typed finalization widens the authorized target"
                 )
             await self._journal.append(
                 self._event(

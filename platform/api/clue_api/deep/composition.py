@@ -44,7 +44,6 @@ definitions a deep run reads are registered.
 
 from __future__ import annotations
 
-import functools
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
@@ -54,29 +53,18 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import JsonValue
 
-from clue_api.account_research_wiring import AccountResolverBindingProvider
 from clue_api.composition import (
-    build_pre_spend_gate,
     load_research_packs,
-    production_binding_classifier,
 )
-from clue_api.contact_research_preparation import ContactStagePreparer
-from clue_api.deep.committee_preparation import CommitteePreparer
 from clue_api.deep.handler import (
     CheckpointerFactory,
     DeepAccountScheduler,
-    DeepCanaryController,
-    DeepPhaseHandler,
     HighTierResolver,
 )
-from clue_api.deep.orchestrator import AccountDeepOrchestrator, ProfileAccountFn
-from clue_api.deep.run_io import DbAccountRunIO
-from clue_api.deep.spend import DbExactlyOnceSpend
-from clue_api.locks import lazy_account_lock_factory
-from clue_api.storage_wiring import bind_snapshots_around_deep
-from clue_config import DeepPhaseConfig, OverlayStore, RecursionPolicy
+from clue_api.deep.orchestrator import AccountDeepOrchestrator
+from clue_api.entity_research_quarantine import EntityResearchAgentNotComposed
+from clue_config import OverlayStore
 from clue_core import (
-    CostCents,
     ICPSpec,
     LLMGateway,
     PhaseContext,
@@ -96,11 +84,8 @@ from clue_research.discovery_scoring.tiering import (
     cutoff_version,
 )
 from clue_research.durable import (
-    AccountResearchGraph,
-    AccountScheduler,
     AccountSpec,
     BudgetEngine,
-    LockFactory,
     WorkerRegistry,
     account_deep_launch_account_pins,
     get_account_deep_launch,
@@ -111,9 +96,6 @@ from clue_research.profiling import (
     CommitteeSource,
     SynthesisGuard,
     account_axis_workers,
-    discover_committee,
-    profile_account,
-    profile_contact,
 )
 from clue_research.profiling.contact.binding import BindingClassifier
 from clue_research.synthesis import guard_synthesis_resolution
@@ -366,156 +348,16 @@ def _memory_checkpointer_factory() -> CheckpointerFactory:
     return _factory
 
 
-def build_deep_phase_handler(
-    *,
-    spec: ICPSpec,
-    gateway: LLMGateway,
-    committee_sources: Sequence[CommitteeSource],
-    config: DeepPhaseConfig | None = None,
-    recursion_policy: RecursionPolicy | None = None,
-    role_model: str | None = None,
-    planner_model: str | None = None,
-    budget: BudgetEngine | None = None,
-    pre_spend_gate: PreSpendGate | None = None,
-    binding_classifier: BindingClassifier | None = None,
-    synthesis_guard: SynthesisGuard = guard_synthesis_resolution,
-    session_factory: ConnFactory = transaction,
-    high_tier_resolver: HighTierResolver | None = None,
-    checkpointer_factory: CheckpointerFactory | None = None,
-    budget_cap_cents: CostCents | None = None,
-    config_store: OverlayStore | None = None,
-    storage: StorageBackend | None = None,
-    lock_factory: LockFactory | None | _LazyLockDefault = _LAZY_LOCK_DEFAULT,
-    scheduler: DeepAccountScheduler | None = None,
-    canary_controller: DeepCanaryController | None = None,
-    profile_account_fn: ProfileAccountFn | None = None,
-    committee_preparer: CommitteePreparer | None = None,
-    account_resolver_provider: AccountResolverBindingProvider | None = None,
-    contact_preparer: ContactStagePreparer | None = None,
-) -> DeepPhaseComposition:
-    """Construct the fully-wired DEEP phase for one campaign's ICP and return the bundle (M8A.6).
+def build_deep_phase_handler(*args: Any, **kwargs: Any) -> DeepPhaseComposition:
+    """Retired M8A constructor retained only as a fail-loud compatibility address.
 
-    Every concrete defaults to its production binding, so the minimal call supplies only the
-    campaign ``spec``, an ``LLMGateway``, and the committee ``sources`` (no concrete
-    :class:`CommitteeSource` lives in any milestone package — they are bound here). The
-    ``pre_spend_gate`` and ``binding_classifier`` default to real M9 concretes and are **never
-    None** on the orchestrator (the required-collaborator enforcement of AC-6/AC-4). Call
-    :func:`register_deep_phase_handler` instead to also register the handler.
-
-    **B2 snapshot binding:** pass a ``storage`` backend (``build_storage_backend()``) and the
-    registered ``handler`` is the :class:`DeepPhaseHandler` wrapped so every deep run executes
-    inside ``bind_snapshots(SnapshotSink(workspace_id=ctx.workspace_id), storage)`` — the ambient
-    per-run sink the sink-less scrape resolver captures into and the waterfall flushes from (audit
-    finding 5). Without ``storage`` the handler is registered unwrapped (the pre-B2 no-snapshot
-    path).
-
-    **B1 single-flight + fleet swap:** ``lock_factory`` (the Doc C §4 per-entity single-flight seam)
-    is threaded into the default in-process :class:`AccountScheduler`. It **defaults to the lazy
-    production factory** (:func:`~clue_api.locks.lazy_account_lock_factory`), which resolves
-    ``get_redis()`` only when a run actually acquires an entity lock — so single-flight ships **on**
-    by default without this construction needing an active ``redis_lifespan``, and a run that never
-    acquires (an empty high-tier set) does zero Redis I/O. Passing ``lock_factory=None``
-    **explicitly** is the written opt-out (single-flight off — for tests); omitting it is *not* the
-    same as ``None`` (the required-collaborator posture: forgetting the factory no longer silently
-    disables single-flight, which was the pre-B1 prod bug). Pass ``scheduler`` to drive the deep
-    phase over an alternative :data:`DeepAccountScheduler` — the PB-B1
-    :class:`~clue_fleet.QueueBackedScheduler` (durable tier-priority queue) for the worker
-    deployment; the in-process ``AccountScheduler`` stays the default (fleet mode is opt-in). When a
-    ``scheduler`` is supplied it already carries its own ``lock_factory``, so ``lock_factory`` is
-    ignored.
+    R1 forbids constructing the pre-agent account -> committee -> contact pipeline for any new
+    research launch.  Historical exact replay is served by the tool invocation ledger and never
+    requires rebuilding this composition.
     """
-    resolved_lock_factory: LockFactory | None = (
-        lazy_account_lock_factory() if isinstance(lock_factory, _LazyLockDefault) else lock_factory
-    )
-    config = config or DeepPhaseConfig()
-    recursion_policy = recursion_policy or RecursionPolicy()
-    budget = budget or BudgetEngine()
-    gate = pre_spend_gate or build_pre_spend_gate()
-    binder = binding_classifier or production_binding_classifier()
-    resolver = high_tier_resolver or build_high_tier_resolver(
-        spec=spec, session_factory=session_factory
-    )
-    checkpointers = checkpointer_factory or _memory_checkpointer_factory()
-    # Bind the layered-config seam onto the live account + contact callables so an injected
-    # (test/Stage-0) overlay store reaches the deep workers; ``None`` leaves them on the process
-    # default store (the production config source — staged-flow §2 "policy is data").
-    account_fn = profile_account_fn or (
-        functools.partial(profile_account, config_store=config_store)
-        if config_store is not None
-        else profile_account
-    )
-    contact_fn = (
-        functools.partial(profile_contact, config_store=config_store)
-        if config_store is not None
-        else profile_contact
-    )
 
-    orchestrator = AccountDeepOrchestrator(
-        profile_account=account_fn,
-        discover_committee=discover_committee,
-        profile_contact=contact_fn,
-        io=DbAccountRunIO(session_factory=session_factory),
-        session_factory=session_factory,
-        spec=spec,
-        config=config,
-        budget=budget,
-        spend=DbExactlyOnceSpend(budget),
-        sources=committee_sources,
-        gateway=gateway,
-        role_model=role_model,
-        binding_classifier=binder,
-        recursion_policy=recursion_policy,
-        planner_model=planner_model,
-        pre_spend_gate=gate,
-        synthesis_guard=synthesis_guard,
-        budget_cap_cents=budget_cap_cents,
-        committee_preparer=committee_preparer,
-        account_resolver_provider=account_resolver_provider,
-        contact_preparer=contact_preparer,
-    )
-
-    if scheduler is None:
-        registry = build_account_axis_registry(
-            gateway=gateway,
-            pre_spend_gate=gate,
-            session_factory=session_factory,
-            planner_model=planner_model,
-            synthesis_guard=synthesis_guard,
-            config_store=config_store,
-        )
-        graph = AccountResearchGraph(workers=registry, recursion_policy=recursion_policy)
-        # The Doc C §4 per-entity single-flight seam (integrator checklist fix): the baseline
-        # omitted ``lock_factory`` here, so prod single-flight was silently OFF. Now it defaults to
-        # the lazy production factory (single-flight ON) — an explicit ``lock_factory=None`` is the
-        # written test opt-out; production may also pass an eager ``account_entity_lock_factory``.
-        scheduler = AccountScheduler(
-            graph,
-            max_parallel=config.max_parallel_accounts,
-            lock_factory=resolved_lock_factory,
-        )
-
-    handler = DeepPhaseHandler(
-        scheduler=scheduler,
-        orchestrator=orchestrator,
-        high_tier_resolver=resolver,
-        checkpointer_factory=checkpointers,
-        canary_controller=canary_controller,
-    )
-    # B2: when a storage backend is supplied, register the run-scoped snapshot-binding wrapper so
-    # each deep run captures/flushes under one ambient per-run sink (audit finding 5). The wrapper
-    # is a transparent ``core.PhaseHandler`` for ``DEEP``, so the state machine sees no difference.
-    registered: PhaseHandler = (
-        bind_snapshots_around_deep(handler, storage=storage) if storage is not None else handler
-    )
-    return DeepPhaseComposition(
-        handler=registered,
-        orchestrator=orchestrator,
-        scheduler=scheduler,
-        budget=budget,
-        pre_spend_gate=gate,
-        binding_classifier=binder,
-        spec=spec,
-    )
+    del args, kwargs
+    raise EntityResearchAgentNotComposed()
 
 
 def register_deep_phase_handler(
