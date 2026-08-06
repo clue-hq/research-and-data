@@ -31,6 +31,10 @@ from clue_api.contact_research_fleet import (
     ContactResearchFleetWorkHandler,
 )
 from clue_api.contact_research_fleet_launch import ContactResearchFleetLauncher
+from clue_api.entity_research_parallel import (
+    DbEntityResearchToolBatchCoordinator,
+    R9EntityResearchJobStore,
+)
 from clue_api.entity_research_runtime_wiring import (
     CreateAgentEntityResearchDriver,
     DbEntityResearchAgentJournal,
@@ -47,7 +51,7 @@ from clue_api.entity_research_tools import (
 from clue_api.sumble_entity_research_tools import SumbleEntityResearchLineageReader
 from clue_core.contact_research import ContactResearchIntent, ContactResearchPolicyPin
 from clue_db import ConnFactory, transaction
-from clue_fleet import DbEntityResearchJobStore, EntityResearchJobRow, EntityResearchJobWorkHandler
+from clue_fleet import EntityResearchJobRow, EntityResearchJobWorkHandler
 from clue_storage import StorageBackend
 
 
@@ -192,6 +196,7 @@ def build_contact_research_fleet_composition(
             models=models,
             journal=journal,
             guard=ContactResearchExecutionGuard(conn_factory=conn_factory),
+            batches=DbEntityResearchToolBatchCoordinator(conn_factory=conn_factory),
         ),
         checkpointers=checkpointer_factory,
         journal=journal,
@@ -205,9 +210,10 @@ def build_contact_research_fleet_composition(
         facet_runtime=runtime,
         model_policy=model_policy,
         conn_factory=conn_factory,
+        require_atomic_admission=True,
     )
     inner = EntityResearchJobWorkHandler(
-        store=DbEntityResearchJobStore(conn_factory=conn_factory),
+        store=R9EntityResearchJobStore(conn_factory=conn_factory),
         driver=CreateAgentEntityResearchDriver(runtime=runtime, definitions=definitions),
     )
     fleets = ContactResearchFleetService(conn_factory=conn_factory)

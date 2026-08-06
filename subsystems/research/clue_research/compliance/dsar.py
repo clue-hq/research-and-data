@@ -670,6 +670,32 @@ async def _erase_entity_research_runtime_payloads(
             "contact_entity_id": contact_entity_id,
         },
     )
+    r9_subject_index = (
+        await conn.execute(text("SELECT to_regclass('entity_research_tool_batch_result_subject')"))
+    ).scalar_one()
+    if r9_subject_index is not None:
+        await conn.execute(
+            text(
+                """
+                UPDATE entity_research_tool_batch_event event_row
+                SET result_json=jsonb_build_object('erased', true),
+                    result_erased_at=COALESCE(result_erased_at, now())
+                WHERE event_row.event_kind='completed'
+                  AND event_row.result_erased_at IS NULL
+                  AND EXISTS (
+                      SELECT 1 FROM entity_research_tool_batch_result_subject subject
+                      WHERE subject.event_id=event_row.event_id
+                        AND subject.workspace_id=:workspace_id
+                        AND subject.subject_type='contact'
+                        AND subject.target_entity_id=:contact_entity_id
+                  )
+                """
+            ),
+            {
+                "workspace_id": workspace_id,
+                "contact_entity_id": contact_entity_id,
+            },
+        )
     if not thread_ids:
         return
     for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):

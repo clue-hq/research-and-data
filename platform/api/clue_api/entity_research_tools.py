@@ -257,6 +257,21 @@ class ProviderActionBinding(BaseModel):
     action: EntityResearchProviderAction
     version: int = Field(ge=1)
     args_schema: type[BaseModel] = EntityResearchSemanticToolInput
+    provider_family: NonEmptyStr | None = None
+    budget_reservation_cents: Decimal = Field(default=Decimal(0), ge=0)
+    provider_rate_limit_ref: NonEmptyStr | None = None
+    provider_concurrency_limit: int | None = Field(default=None, ge=1, le=1024)
+
+    @model_validator(mode="after")
+    def _admission_metadata_is_all_or_none(self) -> Self:
+        external = self.provider_family is not None
+        if external != (self.provider_rate_limit_ref is not None):
+            raise ValueError("provider binding family and rate-limit ref must be supplied together")
+        if external != (self.provider_concurrency_limit is not None):
+            raise ValueError("provider binding requires its concurrency limit")
+        if external != (self.budget_reservation_cents > 0):
+            raise ValueError("provider binding requires a positive budget reservation")
+        return self
 
 
 def _event_id(reference: str) -> UUID:
@@ -2373,6 +2388,10 @@ class GovernedEntityResearchToolFactory:
                     args_schema=binding.args_schema,
                 ),
                 version=binding.version,
+                provider_family=binding.provider_family,
+                budget_reservation_cents=binding.budget_reservation_cents,
+                provider_rate_limit_ref=binding.provider_rate_limit_ref,
+                provider_concurrency_limit=binding.provider_concurrency_limit,
             )
         bindings["read_research_result"] = EntityResearchToolBinding(
             tool=self._read_result_tool(), version=1
@@ -2408,6 +2427,10 @@ class GovernedEntityResearchToolFactory:
                 args_schema=provider_action.args_schema,
             ),
             version=provider_action.version,
+            provider_family=provider_action.provider_family,
+            budget_reservation_cents=provider_action.budget_reservation_cents,
+            provider_rate_limit_ref=provider_action.provider_rate_limit_ref,
+            provider_concurrency_limit=provider_action.provider_concurrency_limit,
         )
         return (
             provider,

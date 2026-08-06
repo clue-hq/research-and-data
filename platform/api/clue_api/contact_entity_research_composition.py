@@ -126,6 +126,7 @@ class ContactResearchDefinitionResolver(EntityResearchDefinitionResolver):
         model_policy: ModelPolicy,
         conn_factory: ConnFactory = transaction,
         catalog_root: Path | None = None,
+        require_atomic_admission: bool = False,
     ) -> None:
         self._tools = tools
         self._state = state
@@ -137,6 +138,7 @@ class ContactResearchDefinitionResolver(EntityResearchDefinitionResolver):
         self._catalog_root = catalog_root or (
             Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "contact" / "v1"
         )
+        self._require_atomic_admission = require_atomic_admission
 
     async def resolve(
         self,
@@ -192,6 +194,16 @@ class ContactResearchDefinitionResolver(EntityResearchDefinitionResolver):
             raise ContactResearchCompositionError(
                 "R8 provider actions must be exactly contact deep and structured enrichment"
             )
+        if self._require_atomic_admission and any(
+            action.provider_family is None
+            or action.provider_rate_limit_ref is None
+            or action.provider_concurrency_limit is None
+            or action.budget_reservation_cents <= 0
+            for action in actions.values()
+        ):
+            raise ContactResearchCompositionError(
+                "production contact provider actions require complete R9 admission metadata"
+            )
         channel_actions = await self._channel_actions.resolve(
             job,
             intent=intent,
@@ -217,6 +229,21 @@ class ContactResearchDefinitionResolver(EntityResearchDefinitionResolver):
             name: engine.pop(name)
             for name in ("reveal_contact_channel", "validate_contact_channel")
         }
+        channel_admission = {
+            "reveal_contact_channel": channel_actions.admission(stage="acquisition"),
+            "validate_contact_channel": channel_actions.admission(stage="validation"),
+        }
+        for name, admission in channel_admission.items():
+            if admission is None:
+                continue
+            channel_bindings[name] = channel_bindings[name].model_copy(
+                update={
+                    "provider_family": admission.provider_family,
+                    "budget_reservation_cents": admission.budget_reservation_cents,
+                    "provider_rate_limit_ref": admission.provider_rate_limit_ref,
+                    "provider_concurrency_limit": admission.provider_concurrency_limit,
+                }
+            )
         base_names = tuple(
             name
             for name in _CONTACT_TOOL_NAMES

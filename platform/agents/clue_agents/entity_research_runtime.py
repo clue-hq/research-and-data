@@ -65,6 +65,12 @@ class EntityResearchExternalWait(EntityResearchRuntimeError):
         super().__init__(f"entity research waits on {wait_ref}")
 
 
+@dataclass(frozen=True)
+class EntityResearchToolReplay:
+    found: bool
+    result: object | None = None
+
+
 class EntityResearchFinalizationRejected(EntityResearchRuntimeError):
     pass
 
@@ -149,6 +155,98 @@ class EntityResearchExecutionGuard(Protocol):
         call: EntityResearchToolCall,
         result: object,
     ) -> None: ...
+
+
+@runtime_checkable
+class EntityResearchToolBatchCoordinator(Protocol):
+    """Durable R9 admission and partial-result joining around one model tool batch."""
+
+    async def admit(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        calls: Sequence[EntityResearchToolCall],
+    ) -> None: ...
+
+    async def replay(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+    ) -> EntityResearchToolReplay: ...
+
+    async def completed(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+        result: object,
+    ) -> None: ...
+
+    async def waiting(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+        wait: EntityResearchExternalWait,
+    ) -> EntityResearchExternalWait: ...
+
+    async def failed(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+        error: BaseException,
+    ) -> None: ...
+
+
+class PassthroughEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
+    """R3 fixture compatibility; production R6/R8 composition installs the durable R9 ledger."""
+
+    async def admit(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        calls: Sequence[EntityResearchToolCall],
+    ) -> None:
+        del context, calls
+
+    async def replay(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+    ) -> EntityResearchToolReplay:
+        del context, call
+        return EntityResearchToolReplay(found=False)
+
+    async def completed(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+        result: object,
+    ) -> None:
+        del context, call, result
+
+    async def waiting(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+        wait: EntityResearchExternalWait,
+    ) -> EntityResearchExternalWait:
+        del context, call
+        return wait
+
+    async def failed(
+        self,
+        *,
+        context: EntityResearchRuntimeContext,
+        call: EntityResearchToolCall,
+        error: BaseException,
+    ) -> None:
+        del context, call, error
 
 
 @runtime_checkable
@@ -244,14 +342,19 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         definition: EntityResearchAgentDefinition,
         journal: EntityResearchAgentJournal,
         guard: EntityResearchExecutionGuard,
+        batches: EntityResearchToolBatchCoordinator | None = None,
     ) -> None:
         self._definition = definition
         self._context = definition.context
         self._journal = journal
         self._guard = guard
-        self._versions = {binding.name: binding.version for binding in definition.tools}
+        self._batches = batches or PassthroughEntityResearchToolBatchCoordinator()
+        self._bindings = {binding.name: binding for binding in definition.tools}
+        self._versions = {name: binding.version for name, binding in self._bindings.items()}
         self._allowed = frozenset(self._versions)
         self._structured_tool_name = ResearchFinalizationProposal.__name__
+        self._admission_lock = asyncio.Lock()
+        self._admitted_batches: set[str] = set()
 
     def _call(self, raw: Mapping[str, Any]) -> EntityResearchToolCall:
         name = str(raw.get("name", ""))
@@ -269,6 +372,10 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
             tool_version=self._versions[name],
             tool_input_sha256=canonical_sha256(arguments),
             arguments=arguments,
+            provider_family=self._bindings[name].provider_family,
+            budget_reservation_cents=self._bindings[name].budget_reservation_cents,
+            provider_rate_limit_ref=self._bindings[name].provider_rate_limit_ref,
+            provider_concurrency_limit=self._bindings[name].provider_concurrency_limit,
         )
 
     def _event(
@@ -289,6 +396,53 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
             tool_version=call.tool_version if call is not None else None,
             tool_input_sha256=call.tool_input_sha256 if call is not None else None,
         )
+
+    async def _admit_batch(self, calls: Sequence[EntityResearchToolCall]) -> None:
+        """Admit one exact model wave once per runtime, including tool-node cold resumes.
+
+        A LangGraph checkpoint taken while a tool waits resumes directly at the tool node. The
+        replacement middleware therefore does not observe the original model callback. Rebuild
+        that persisted model wave from tool-node state and run the same guard/admission path before
+        any handler dispatch. The lock prevents concurrently resumed siblings from independently
+        widening or partially admitting the wave.
+        """
+
+        batch_sha = canonical_sha256(
+            [call.model_dump(mode="json", exclude_none=False) for call in calls]
+        )
+        async with self._admission_lock:
+            if batch_sha in self._admitted_batches:
+                return
+            if len(calls) > 1:
+                await self._guard.authorize_parallel(
+                    context=self._context,
+                    calls=tuple(calls),
+                )
+            await self._batches.admit(context=self._context, calls=tuple(calls))
+            self._admitted_batches.add(batch_sha)
+
+    def _persisted_tool_wave(
+        self,
+        request: Any,
+        current: EntityResearchToolCall,
+    ) -> tuple[EntityResearchToolCall, ...]:
+        state = request.state
+        messages = (
+            state.get("messages", ())
+            if isinstance(state, Mapping)
+            else getattr(state, "messages", ())
+        )
+        for message in reversed(tuple(messages)):
+            if not isinstance(message, AIMessage):
+                continue
+            calls = tuple(
+                self._call(raw)
+                for raw in message.tool_calls
+                if str(raw.get("name", "")) in self._allowed
+            )
+            if any(call.tool_call_id == current.tool_call_id for call in calls):
+                return calls
+        return (current,)
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         names = {str(getattr(tool, "name", "")) for tool in request.tools}
@@ -332,8 +486,8 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
                     calls.append(self._call(raw_call))
         if len(calls) > self._context.stop_policy.max_parallel_tools:
             raise EntityResearchRuntimeError("model proposed more parallel tools than admitted")
-        if len(calls) > 1:
-            await self._guard.authorize_parallel(context=self._context, calls=tuple(calls))
+        if calls:
+            await self._admit_batch(calls)
         return response
 
     @staticmethod
@@ -383,11 +537,31 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
             )
         )
         try:
+            await self._admit_batch(self._persisted_tool_wave(request, call))
             await self._guard.authorize_tool(
                 context=self._context,
                 call=call,
                 journal_event_ref=event_ref,
             )
+            replay = await self._batches.replay(context=self._context, call=call)
+            if replay.found:
+                result = replay.result
+                await self._guard.observe_tool_result(
+                    context=self._context,
+                    call=call,
+                    result=result,
+                )
+                await self._journal.append(
+                    self._event(
+                        EntityAgentJournalEventKind.TOOL_COMPLETED,
+                        call=call,
+                        payload={
+                            "disposition": "joined_settled_result",
+                            "result": _json_value(result),
+                        },
+                    )
+                )
+                return result
             token = _ACTIVE_TOOL_EXECUTION.set(
                 ActiveEntityResearchToolExecution(
                     context=self._context,
@@ -399,25 +573,33 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
                 result = await handler(request)
             finally:
                 _ACTIVE_TOOL_EXECUTION.reset(token)
+            await self._batches.completed(context=self._context, call=call, result=result)
             await self._guard.observe_tool_result(
                 context=self._context,
                 call=call,
                 result=result,
             )
         except EntityResearchExternalWait as wait:
+            batch_wait = await self._batches.waiting(
+                context=self._context,
+                call=call,
+                wait=wait,
+            )
             await self._journal.append(
                 self._event(
                     EntityAgentJournalEventKind.TOOL_COMPLETED,
                     call=call,
                     payload={
                         "disposition": "waiting_external",
-                        "wait_ref": wait.wait_ref,
-                        "current_state_sha256": wait.current_state_sha256,
+                        "wait_ref": batch_wait.wait_ref,
+                        "member_wait_ref": wait.wait_ref,
+                        "current_state_sha256": batch_wait.current_state_sha256,
                     },
                 )
             )
-            raise
+            raise batch_wait from wait
         except BaseException as error:
+            await self._batches.failed(context=self._context, call=call, error=error)
             await self._journal.append(
                 self._event(
                     EntityAgentJournalEventKind.TOOL_FAILED,
@@ -445,10 +627,12 @@ class EntityResearchAgentFactory:
         models: AgentModelProvider,
         journal: EntityResearchAgentJournal,
         guard: EntityResearchExecutionGuard,
+        batches: EntityResearchToolBatchCoordinator | None = None,
     ) -> None:
         self._models = models
         self._journal = journal
         self._guard = guard
+        self._batches = batches or PassthroughEntityResearchToolBatchCoordinator()
 
     def create(
         self,
@@ -470,6 +654,7 @@ class EntityResearchAgentFactory:
                 definition=definition,
                 journal=self._journal,
                 guard=self._guard,
+                batches=self._batches,
             ),
             ModelCallLimitMiddleware(run_limit=stop.max_model_rounds, exit_behavior="error"),
             ToolCallLimitMiddleware(run_limit=stop.max_tool_calls, exit_behavior="error"),
@@ -739,4 +924,7 @@ __all__ = [
     "EntityResearchFinalizationEngine",
     "EntityResearchFinalizationRejected",
     "EntityResearchRuntimeError",
+    "EntityResearchToolBatchCoordinator",
+    "EntityResearchToolReplay",
+    "PassthroughEntityResearchToolBatchCoordinator",
 ]

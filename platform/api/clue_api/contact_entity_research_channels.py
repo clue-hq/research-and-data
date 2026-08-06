@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import cast
+from typing import Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import text
@@ -19,6 +19,7 @@ from clue_api.contact_channel_enrichment import (
     ExaContactChannelCoordinator,
 )
 from clue_api.contact_entity_research import (
+    ContactChannelAdmission,
     ContactResearchAuthorityError,
     ContactResearchStateStore,
 )
@@ -46,6 +47,7 @@ class GovernedContactChannelActions:
         state: ContactResearchStateStore,
         observation_window: str,
         conn_factory: ConnFactory = transaction,
+        provider_concurrency_limit: int = 8,
     ) -> None:
         self._intent = intent
         self._policy = effective_policy
@@ -53,6 +55,44 @@ class GovernedContactChannelActions:
         self._state = state
         self._window = observation_window
         self._conn_factory = conn_factory
+        if provider_concurrency_limit < 1:
+            raise ValueError("contact channel provider concurrency limit must be positive")
+        self._provider_concurrency_limit = provider_concurrency_limit
+
+    def admission(
+        self,
+        *,
+        stage: Literal["acquisition", "validation"],
+    ) -> ContactChannelAdmission | None:
+        target = next(
+            item
+            for item in self._intent.selection.body.targets
+            if item.contact_entity_id == self._intent.contact_entity_id
+        )
+        authorizations = tuple(item for item in (target.email, target.phone) if item.allowed)
+        if not authorizations:
+            return None
+        if stage == "acquisition":
+            budget = max(Decimal(item.budget_cap_cents) for item in authorizations)
+            sources = sorted(
+                {source for item in authorizations for source in item.provider_source_keys}
+            )
+        else:
+            budget = max(Decimal(item.validation_budget_cap_cents) for item in authorizations)
+            sources = sorted(
+                {source for item in authorizations for source in item.validation_source_keys}
+            )
+        if budget <= 0 or not sources:
+            raise ContactResearchAuthorityError(
+                f"authorized channel {stage} lacks a positive R9 reservation"
+            )
+        family = "+".join(sources)
+        return ContactChannelAdmission(
+            provider_family=f"contact_channel_{stage}:{family}",
+            budget_reservation_cents=budget,
+            provider_rate_limit_ref=f"provider-rate:contact-channel:{stage}:{family}",
+            provider_concurrency_limit=self._provider_concurrency_limit,
+        )
 
     async def reveal(
         self,
