@@ -27,6 +27,11 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-07-part2-d21-dal-foundation.md` — **Part II D2.1 done:** `lumen-api` packaged +
+  explicit uv-workspace member (agent-runtime deps deliberately excluded; dead `pypdf` pin
+  dropped over a real lockfile conflict; py_lumen_* stay PYTHONPATH until Step-2);
+  `clue_design` gains errors + parent-row-lock sequence allocators (O5 one-transaction rule
+  binding); 10/10 design DB tests incl. an observed lock-blocking concurrency proof.
 - `2026-08-07-part2-d1-design-schema.md` — **Part II D1 done:** six `design_*` migrations off
   `c6d84aa84b79` (head `e79f192828b1`), 11 package-local enums + parity, immutability triggers,
   structural tenancy; db-smoke + 6/6 design tests green. Env gotcha: localhost:5432 = Homebrew

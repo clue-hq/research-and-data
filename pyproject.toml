@@ -16,7 +16,15 @@ dev = [
 
 # --- uv workspace (Doc R): libs/ now; subsystems/ + platform/ join in later phases ---
 [tool.uv.workspace]
-members = ["libs/*", "subsystems/*", "platform/*"]
+members = [
+    "libs/*",
+    "subsystems/*",
+    "platform/*",
+    # D2.1 (PD contract R3): the design API app re-enters the workspace as an explicit member
+    # by exact path — the clue-design exclude below keeps the rest of the merged three-language
+    # tree out until Part-I Step-2 hygiene runs.
+    "subsystems/clue-design/apps/api",
+]
 exclude = ["subsystems/clue-design"]
 
 # --- ruff: format + lint ----------------------------------------------------
