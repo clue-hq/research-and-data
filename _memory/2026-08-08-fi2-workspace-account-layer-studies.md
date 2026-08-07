@@ -87,3 +87,8 @@ import gains project param. Resolves FI-1 D-2/D-3.
 - **Still gating implementation: FI-2 §5.2 species table sign-off** (esp. the two ⚠ rows:
   `operational_pain`/`strategic_moves` and `account.resonance.*` — recommended neutral, founder may flip).
 - No code changed this session; docs + memory only, committed locally.
+- **MVP ruling (later same day, founder + co-founder):** ONE account detail view — the workspace-global one.
+  Project → account click opens the global view with the list filtered to that project's memberships
+  (`projectId` filter over `project_account`); dedicated project-scoped detail endpoints DEFERRED post-MVP;
+  every global list row must carry `projects[]`. Substrate pillars (lineage/species/economics/supersedes)
+  unchanged — they power the in-detail per-project attribution grouping. FI-2 §7 amended + slice 1/2 reshaped.

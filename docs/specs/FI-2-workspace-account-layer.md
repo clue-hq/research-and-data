@@ -191,6 +191,8 @@ No new pre-spend-gate knob (the gate stays an authority gate); no un-quarantinin
 
 ## 7. Pillar P5 — the two-lens read layer (RATIFIED; the FI-1 D-1 BFF, scope rule now defined)
 
+> **MVP ruling (founder + co-founder, 2026-08-08 — amends this section):** for the MVP there is exactly **one account detail view — the workspace-global one**. Clicking an account inside a project's target-account list opens (in a new frontend tab) the global account view with the account **list filtered to that project's memberships**; it does not open a separate project-scoped detail page. The "project lens" therefore ships, for MVP, as a **membership filter on the global list** (`projectId` query param over `project_account`), while the detail view always serves the attributed union (R2's global lens). The dedicated project-scoped detail endpoints below are **deferred post-MVP** — kept in this spec because the substrate that powers them (lineage, species, project-scoped supersedes) is required regardless: it drives the per-project attribution *grouping inside* the one detail view, the economics, and cross-project write safety. Additional MVP requirement made explicit: **every global list row carries `projects[]`** — the projects using that account as a target — served from `project_account`.
+
 Flag-gated, workspace-scoped, Band-2 semantic (enums/numbers/ISO timestamps/opaque ids — FI-1 D-4/D-5 vocabulary applies), one endpoint per screen need, composed at the api root over untouched mechanism surfaces:
 
 **Global lens**
@@ -198,9 +200,9 @@ Flag-gated, workspace-scoped, Band-2 semantic (enums/numbers/ISO timestamps/opaq
 - `GET …/accounts/:id` — the union detail: neutral facts from the canonical merge; relative sections **grouped by project** via `run_lineage` (each project's insights/score/narrative/committee block, labeled); membership-less accounts render with neutral facts only.
 - `GET …/accounts/:id/contacts` — union of committees across projects, lineage-attributed, served through the governed reader (never `identity.contact_ids_for_account` — FI-1 §4.5 ruling stands).
 
-**Project lens**
-- `GET …/projects/:id/accounts` — membership join + that project's scores/status.
-- `GET …/projects/:id/accounts/:aid` — neutral facts (merge) + **only this project's** relative claims (lineage filter); committee via `ContactEligibilityResolver.resolve_account` with the project context the URL now carries (the FI-1 contacts-context problem resolves structurally: project_run/product derive from the project's latest run — a *recorded* rule, per project, not a global guess).
+**Project lens (MVP: a list filter; dedicated endpoints deferred)**
+- MVP: `GET …/accounts?projectId=…` — the global list endpoint filtered by `project_account` membership; detail clicks resolve to the global detail view.
+- Deferred post-MVP: `GET …/projects/:id/accounts/:aid` — neutral facts (merge) + **only this project's** relative claims (lineage filter); committee via `ContactEligibilityResolver.resolve_account` with the project context the URL carries (the FI-1 contacts-context problem resolves structurally: project_run/product derive from the project's latest run — a *recorded* rule, per project, not a global guess). The same rule serves the MVP detail view's per-project committee grouping.
 - C7 research-view surfaces keep their contracts; in slice 2 their `allowed_run_ids` suppliers source from `run_lineage` so the two read families cannot drift.
 
 Frontend contract consequences (recorded into `apps/frontend/docs/api-contracts/accounts.md` at implementation per the branch charter): the account detail schema gains the per-project grouping for relative sections; `projects[]`/`primaryProjectId` bind to membership; everything else rides FI-1 D-4/D-5/D-6 as already registered.
@@ -227,14 +229,14 @@ Migrations follow the adopted conventions (hash revision ids off current head; h
 - Field-species declarations for all shipped packs per §5.2 (blocked on the §5.2 sign-off).
 - AC: (a) db-smoke green, single head; (b) every new claim written by any production path has a resolvable `run_lineage` row (integration test per path); (c) discovery/import convergence test extended to assert membership rows for both projects; (d) the H1 regression test; (e) an H2 test asserting alias/registry union on strong-key match; (f) enum-parity + no-domain-tables-at-M0 guards stay green.
 
-**Slice 1 — global lens (unblocks the frontend `/accounts` flow).**
-- The §7 global endpoints, flag-gated, + the L2 `subject_entity_id` index (FI-1 backend-fixes list).
-- Frontend: repository HTTP adapters for the accounts list/detail flipped per FI-1 sequencing once D-4 (absence vocabulary) lands in the Zod schemas — that dependency is FI-1's, not new.
-- AC: list returns every workspace account incl. membership-less seeds; detail groups relative sections by project with correct attribution on a two-project fixture; no display strings on the wire.
+**Slice 1 — global lens (unblocks the frontend `/accounts` flow; per the §7 MVP ruling this is the whole MVP read surface).**
+- The §7 global endpoints, flag-gated, **including the `projectId` membership filter and `projects[]` on every list row**, + the L2 `subject_entity_id` index (FI-1 backend-fixes list).
+- Frontend: repository HTTP adapters for the accounts list/detail flipped per FI-1 sequencing once D-4 (absence vocabulary) lands in the Zod schemas — that dependency is FI-1's, not new. The project→account click navigates to the global view with the filter applied (frontend routing decision, recorded in the contract doc).
+- AC: list returns every workspace account incl. membership-less seeds; `projectId` filter returns exactly the membership set; every row's `projects[]` matches `project_account`; detail groups relative sections by project with correct attribution on a two-project fixture; no display strings on the wire.
 
-**Slice 2 — project lens + C7 convergence.**
-- The §7 project endpoints; C7 `allowed_run_ids` suppliers migrate to `run_lineage`.
-- AC: two-project fixture — P2's lens shows zero of P1's relative claims and all fresh neutral facts; C7 views byte-identical before/after the supplier migration.
+**Slice 2 — C7 lineage convergence (project-lens detail endpoints deferred post-MVP per §7).**
+- C7 `allowed_run_ids` suppliers migrate to `run_lineage`. The deferred `GET …/projects/:id/accounts/:aid` endpoints land only when a post-MVP frontend surface asks for them — the substrate is ready either way.
+- AC: C7 views byte-identical before/after the supplier migration; a query-layer test proves the lineage predicate isolates P1's relative claims from P2's (the lens-isolation guarantee, asserted at the substrate even though no MVP endpoint exposes it).
 
 **Slice 3 — economics (P4).**
 - §6.1 fresh-skip, §6.2 bundle shrink (+ honest estimate), §6.3 Sumble fixes, §6.4 supersede predicates.
@@ -265,4 +267,4 @@ Non-goals of all slices: launch authority (FI-1 D-9), chat (FI-1 phase-2), the D
 
 ---
 
-*Ratification log: 2026-08-08 — founder approved the five pillars, the run-lineage fork, and the project-scoped supersede change (session transcript). §5.2 pending. On §5.2 sign-off, slice 0 may begin; resolutions get recorded into `apps/frontend/docs/api-contracts/accounts.md` as each slice lands, per the branch charter.*
+*Ratification log: 2026-08-08 — founder approved the five pillars, the run-lineage fork, and the project-scoped supersede change (session transcript). Same day, founder + co-founder amended §7 with the MVP ruling: one global account detail view; project lens ships as a membership filter on the global list; dedicated project-scoped detail endpoints deferred post-MVP; `projects[]` required on every list row. §5.2 pending. On §5.2 sign-off, slice 0 may begin; resolutions get recorded into `apps/frontend/docs/api-contracts/accounts.md` as each slice lands, per the branch charter.*
