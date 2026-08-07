@@ -361,8 +361,13 @@ def test_pipeline_ingested_assets_get_db_records(
     monkeypatch.setattr(
         main_module,
         "run_website_ingestion",
-        lambda db, store, job_id: run_website_ingestion(
-            db, store, job_id, capture=fake_capture, build_evidence=fake_build_evidence
+        lambda db, store, job_id, *, workspace_id=None: run_website_ingestion(
+            db,
+            store,
+            job_id,
+            capture=fake_capture,
+            build_evidence=fake_build_evidence,
+            workspace_id=workspace_id,
         ),
     )
 

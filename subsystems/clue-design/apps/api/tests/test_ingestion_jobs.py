@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from lumen_api.database import Repository, connect, run_migrations
+from lumen_api.database import connect, run_migrations
 from lumen_api.design_store import HybridRepository
 from lumen_ingestion.jobs import (
     IngestionJobStore,
@@ -32,8 +32,26 @@ def _store(tmp_path: Path) -> IngestionJobStore:
     return IngestionJobStore(connection, now_iso=_frozen_clock())
 
 
+def _seed_kit(tmp_path: Path, brand_kit_id: str, version: int = 1) -> None:
+    """D2.3: the job's result pointer is a REAL composite FK to design_brand_kit now (SQLite
+    only back-linked it by convention), so a completing job needs its kit to exist."""
+    repo = HybridRepository(connect(tmp_path / "api.sqlite3"))
+    repo.create_brand_kit(
+        {
+            "id": brand_kit_id,
+            "version": version,
+            "name": brand_kit_id,
+            "approval_status": "draft",
+        },
+        {"product_ready": False},
+        [],
+        "website",
+    )
+
+
 def test_create_running_stage_complete_happy_path(tmp_path: Path) -> None:
     store = _store(tmp_path)
+    _seed_kit(tmp_path, "kit_1", 3)
     job = store.create("website", {"url": "https://insighthealth.example"})
     assert job["status"] == "queued"
     assert job["stage"] is None
@@ -47,7 +65,10 @@ def test_create_running_stage_complete_happy_path(tmp_path: Path) -> None:
 
     staged = store.set_stage(job_id, "Visiting your website…", 0.4)
     assert staged["stage"] == "Visiting your website…"
-    assert staged["progress"] == 0.4
+    # D2.3: design_ingestion_job.progress is a PG `real` (float4), so a non-dyadic fraction
+    # round-trips at single precision (0.4 -> 0.40000000596…). SQLite's REAL was a double.
+    # Harmless for a 0..1 progress bar; asserted approximately rather than papered over.
+    assert staged["progress"] == pytest.approx(0.4)
 
     done = store.complete(job_id, "kit_1", 3, '{"schema_version": 1}')
     assert done["status"] == "succeeded"
@@ -60,6 +81,7 @@ def test_create_running_stage_complete_happy_path(tmp_path: Path) -> None:
 
 def test_run_ingestion_job_happy_path(tmp_path: Path) -> None:
     store = _store(tmp_path)
+    _seed_kit(tmp_path, "kit_pdf")
     job_id = store.create("pdf", {"filename": "brand.pdf"})["job_id"]
     seen: list[tuple[str, float]] = []
 

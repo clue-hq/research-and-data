@@ -19,10 +19,12 @@ import asyncio
 import json
 import logging
 import os
+from functools import partial
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional, Protocol
 
 from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from py_lumen_config import settings
 
 from .jobs import IngestionJobStore, StageReporter, run_ingestion_job
@@ -178,11 +180,16 @@ def _default_apply_descriptions(
     reporter: Callable[[str, float], None],
     rasterize_svg: Callable[[str], "bytes | None"] | None = None,
     diagnostics: list | None = None,
+    workspace_id: str | None = None,
 ) -> Any:
     """Lazily resolve Agent A's ``apply_descriptions`` and call it.
 
     Raises ``ImportError`` when describe.py is absent — callers wrap this in
     ``_maybe_describe`` which swallows that into a debug-level pass-through.
+
+    ``workspace_id`` (D2.3) rides only this default path, never the injected seam: the
+    ``_ApplyDescriptionsCallable`` protocol is unchanged, so stubbed describers keep their
+    existing signature.
     """
     from .describe import apply_descriptions
 
@@ -194,6 +201,7 @@ def _default_apply_descriptions(
         reporter=reporter,
         rasterize_svg=rasterize_svg,
         diagnostics=diagnostics,
+        workspace_id=workspace_id,
     )
 
 
@@ -244,7 +252,12 @@ def _maybe_describe(
     ``diagnostics`` as a LUMI0803 warning (imagery slice 1 — the silent
     describe failure cost the kit its entire image metadata once already).
     """
-    apply = apply_descriptions or _default_apply_descriptions
+    # D2.3: descriptions are workspace-scoped rows now (and FK'd to the registry), so the
+    # default path carries the repository's workspace. Taken off ``repo`` rather than threaded
+    # through the three ``_ingest*`` signatures, and passed ONLY to the default (an injected
+    # test stub still sees the unchanged protocol).
+    workspace_id = getattr(repo, "workspace_id", None)
+    apply = apply_descriptions or partial(_default_apply_descriptions, workspace_id=workspace_id)
     describer = describer if describer is not None else resolve_describer()
     resolve_bytes = _make_resolve_bytes(repo, asset_store_root)
     try:
@@ -446,17 +459,23 @@ def run_website_ingestion(
     build_evidence: _BuildEvidenceCallable = _default_build_evidence,
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
+    workspace_id: str | None = None,
 ) -> None:
     """Run a website ingestion job to a terminal state. Never raises.
 
     Safe for ``BackgroundTasks``: opens its own sqlite connection, builds an
     ``IngestionJobStore``, and hands the work to ``run_ingestion_job`` (which
     captures any exception onto the job row).
+
+    ``workspace_id`` (D2.3) is threaded from the dispatching request so the job row, the brand
+    kit it publishes, and the assets it registers all land in the SAME workspace — the job's
+    composite result FK is enforced now, so a mismatch fails loudly instead of orphaning.
+    ``None`` falls back to the configured dev workspace.
     """
     connection = connect(Path(database_path))
     try:
-        store = IngestionJobStore(connection)
-        repo = Repository(connection)
+        store = IngestionJobStore(connection, workspace_id=workspace_id)
+        repo = HybridRepository(connection, workspace_id=workspace_id)
         core = _RecordingCore(_core_client())
 
         def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
@@ -505,6 +524,15 @@ def _ingest(
         outcome, core=core, store_root=asset_store_root, reporter=reporter
     )
 
+    # Persist DB asset records for everything the capture layer ingested so
+    # /assets/{id}/bytes|thumbnail and the library can serve them.
+    #
+    # ORDER (fixed at D2.3): registry FIRST, descriptions second. The description pass reads
+    # bytes through ``repo.require_asset_record`` and now writes rows that are FK'd 1:1 to the
+    # registry row, so describing before persisting could resolve nothing (every asset a
+    # LUMI0805) and could not persist a caption at all.
+    getattr(core, "persist_records", lambda _repo: None)(repo)
+
     describe_diagnostics: list = []
     evidence = _maybe_describe(
         evidence,
@@ -516,10 +544,6 @@ def _ingest(
         apply_descriptions=apply_descriptions,
         diagnostics=describe_diagnostics,
     )
-
-    # Persist DB asset records for everything the capture layer ingested so
-    # /assets/{id}/bytes|thumbnail and the library can serve them.
-    getattr(core, "persist_records", lambda _repo: None)(repo)
 
     reporter("Preparing your brand kit…", 0.85)
 
@@ -640,6 +664,7 @@ def run_pdf_ingestion(
     extract: _ExtractPdfCallable = _default_extract_pdf,
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
+    workspace_id: str | None = None,
 ) -> None:
     """Run a PDF ingestion job to a terminal state. Never raises.
 
@@ -647,12 +672,13 @@ def run_pdf_ingestion(
     ``IngestionJobStore``, and hands the work to ``run_ingestion_job`` (which
     captures any exception onto the job row). The uploaded PDF bytes are read
     from ``request["tmp_path"]`` and that tmp file is always deleted before the
-    job reaches a terminal state.
+    job reaches a terminal state. ``workspace_id`` (D2.3) is threaded from the dispatching
+    request; ``None`` falls back to the configured dev workspace.
     """
     connection = connect(Path(database_path))
     try:
-        store = IngestionJobStore(connection)
-        repo = Repository(connection)
+        store = IngestionJobStore(connection, workspace_id=workspace_id)
+        repo = HybridRepository(connection, workspace_id=workspace_id)
         core = _RecordingCore(_core_client())
 
         def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
@@ -717,6 +743,15 @@ def _ingest_pdf(
 
     evidence = getattr(extraction, "evidence", extraction)
 
+    # Persist DB asset records for everything the capture layer ingested so
+    # /assets/{id}/bytes|thumbnail and the library can serve them.
+    #
+    # ORDER (fixed at D2.3): registry FIRST, descriptions second. The description pass reads
+    # bytes through ``repo.require_asset_record`` and now writes rows that are FK'd 1:1 to the
+    # registry row, so describing before persisting could resolve nothing (every asset a
+    # LUMI0805) and could not persist a caption at all.
+    getattr(core, "persist_records", lambda _repo: None)(repo)
+
     describe_diagnostics: list = []
     evidence = _maybe_describe(
         evidence,
@@ -728,10 +763,6 @@ def _ingest_pdf(
         apply_descriptions=apply_descriptions,
         diagnostics=describe_diagnostics,
     )
-
-    # Persist DB asset records for everything the capture layer ingested so
-    # /assets/{id}/bytes|thumbnail and the library can serve them.
-    getattr(core, "persist_records", lambda _repo: None)(repo)
 
     reporter("Preparing your brand kit…", 0.85)
 
@@ -864,6 +895,7 @@ def run_asset_ingestion(
     analyze: _AnalyzeUploadsCallable = _default_analyze_uploads,
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
+    workspace_id: str | None = None,
 ) -> None:
     """Run an asset-upload ingestion job to a terminal state. Never raises.
 
@@ -871,12 +903,13 @@ def run_asset_ingestion(
     ``IngestionJobStore``, and hands the work to ``run_ingestion_job`` (which
     captures any exception onto the job row). The uploaded files live in tmp
     files listed in ``request["files"][*]["tmp_path"]`` and are always deleted
-    before the job reaches a terminal state.
+    before the job reaches a terminal state. ``workspace_id`` (D2.3) is threaded from the
+    dispatching request; ``None`` falls back to the configured dev workspace.
     """
     connection = connect(Path(database_path))
     try:
-        store = IngestionJobStore(connection)
-        repo = Repository(connection)
+        store = IngestionJobStore(connection, workspace_id=workspace_id)
+        repo = HybridRepository(connection, workspace_id=workspace_id)
         core = _RecordingCore(_core_client())
 
         def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
@@ -956,6 +989,15 @@ def _ingest_assets(
     else:
         evidence, analyze_diagnostics = analysis, []
 
+    # Persist DB asset records for everything the capture layer ingested so
+    # /assets/{id}/bytes|thumbnail and the library can serve them.
+    #
+    # ORDER (fixed at D2.3): registry FIRST, descriptions second. The description pass reads
+    # bytes through ``repo.require_asset_record`` and now writes rows that are FK'd 1:1 to the
+    # registry row, so describing before persisting could resolve nothing (every asset a
+    # LUMI0805) and could not persist a caption at all.
+    getattr(core, "persist_records", lambda _repo: None)(repo)
+
     describe_diagnostics: list = []
     evidence = _maybe_describe(
         evidence,
@@ -967,10 +1009,6 @@ def _ingest_assets(
         apply_descriptions=apply_descriptions,
         diagnostics=describe_diagnostics,
     )
-
-    # Persist DB asset records for everything the capture layer ingested so
-    # /assets/{id}/bytes|thumbnail and the library can serve them.
-    getattr(core, "persist_records", lambda _repo: None)(repo)
 
     reporter("Preparing your brand kit…", 0.85)
 

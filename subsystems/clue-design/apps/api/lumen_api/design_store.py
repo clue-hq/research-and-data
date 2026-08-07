@@ -1,23 +1,25 @@
-"""The D2.2 document-store switch: Postgres via ``clue_design``, behind the Repository seam.
+"""The D2.2/D2.3 store switch: Postgres via ``clue_design``, behind the Repository seam.
 
-Two pieces, both scoped to the DOCUMENT domain (documents / envelopes / op log / snapshots /
-template revisions / diagnostics — the D1a tables). Everything else stays on the SQLite
-``Repository`` until its own slice (brand/assets D2.3, personalization/web D2.4, runs D2.5).
+Three domains now: DOCUMENTS (documents / envelopes / op log / snapshots / template revisions /
+diagnostics — the D1a tables, D2.2) and, since D2.3, BRAND (kits + compatibility reports) and
+ASSETS (the registry). Everything else stays on the SQLite ``Repository`` until its own slice
+(personalization/web D2.4, runs D2.5).
 
 **The O5 bridge** (:class:`DesignStoreBridge`) — DISPOSABLE scaffOLDING, deleted at D5 with the
 daemon threads. Each call is ``asyncio.run`` of exactly ONE ``clue_design`` DAL coroutine
 inside ONE engine/connection/transaction created for that call's private event loop (never a
-pool from another loop). Anything atomic (allocate-seq + insert; CAS + stack update) is one
-coroutine — the founder's binding O5 rule. Costs (per-call engine, awkward cancellation) are
-accepted; a restart still kills in-flight work until D5.
+pool from another loop). Anything atomic (allocate-seq + insert; CAS + stack update; scene write
++ asset promotion) is one coroutine — the founder's binding O5 rule. Costs (per-call engine,
+awkward cancellation) are accepted; a restart still kills in-flight work until D5.
 
 **The hybrid store** (:class:`HybridRepository`) — a ``Repository`` subclass overriding ONLY
-the document-domain methods to call the bridge, so main.py's call sites switch at one seam.
-Python dispatch makes inherited SQLite methods that call ``self.require_document`` etc. hit
-Postgres automatically. Two cross-domain seams are sequenced here, documented at each site:
-custom-component reference VALIDATION (SQLite until D2.4) runs before the Postgres write;
-scene-asset registry PROMOTION (SQLite until D2.3) runs after it — best-effort + idempotent,
-the interim atomicity split of a staged port.
+the ported methods to call the bridge, so main.py's call sites switch at one seam. Python
+dispatch makes inherited SQLite methods that call ``self.require_document`` etc. hit Postgres
+automatically. ONE cross-domain seam is still sequenced here, documented at each site:
+custom-component reference VALIDATION (SQLite until D2.4) runs before the Postgres write. The
+scene-asset PROMOTION seam is CLOSED at D2.3 — ``register_scene_assets`` now runs inside the
+document write's own transaction (``clue_design.documents``), so promotion can no longer commit
+apart from the scene that carries it.
 
 Workspace scoping (O4, staged): ``resolve_workspace_id`` takes ``X-Workspace-Id`` when the
 caller sends it, else the configured dev workspace (``LUMEN_DEV_WORKSPACE_ID``, default
@@ -30,11 +32,15 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sqlite3
 import threading
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from clue_db import db_lifespan
+from clue_design import assets as design_assets
+from clue_design import brand as design_brand
 from clue_design import diagnostics as design_diagnostics
 from clue_design import documents as design_documents
 from clue_design import history as design_history
@@ -42,6 +48,7 @@ from clue_design import snapshots as design_snapshots
 from clue_design.errors import DesignNotFoundError, DesignVersionConflictError
 from fastapi import Request
 from sqlalchemy import text
+from sqlalchemy.exc import DataError, DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from .database import (
@@ -70,6 +77,25 @@ def resolve_workspace_id(request: Request) -> str:
     return request.headers.get(_WORKSPACE_HEADER) or default_workspace_id()
 
 
+def _run_isolated[T](coro: "Awaitable[T]") -> T:
+    """``asyncio.run`` the coroutine on a thread that owns no event loop.
+
+    Normally that is the caller's own thread (a sync FastAPI endpoint runs in the threadpool).
+    But some ported call sites run INSIDE a loop: the ingestion pipeline drives capture with its
+    own ``asyncio.run(capture(...))`` and the stage reporter writes to the store from the
+    callback (D2.3), and the one async endpoint would do the same. ``asyncio.run`` refuses that
+    ("cannot be called from a running event loop"), so the call is handed to a one-shot worker
+    thread instead — still exactly ONE loop / connection / transaction per call (the O5 rule),
+    just not this thread's. Dies with the rest of the bridge at D5.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)  # type: ignore[arg-type]
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()  # type: ignore[arg-type]
+
+
 class DesignStoreBridge:
     """Sync facade over the async ``clue_design`` DAL — one call, one loop, one transaction."""
 
@@ -83,13 +109,30 @@ class DesignStoreBridge:
                 return await fn(conn)
 
         try:
-            return asyncio.run(_one_transaction())
+            return _run_isolated(_one_transaction())
         except DesignNotFoundError as exc:
             raise NotFoundError(exc.kind, exc.key) from exc
         except DesignVersionConflictError as exc:
             raise WebDocumentVersionConflict(
                 exc.key, exc.expected_version, exc.current_version
             ) from exc
+        except (IntegrityError, DataError) as exc:
+            # Constraint parity for the still-SQLite call sites: a duplicate brand-kit
+            # version raised ``sqlite3.IntegrityError`` (→ the 409 duplicate DTO), and so did
+            # a rejected ``source`` under the SQLite CHECK the ``design_brand_kit_source``
+            # enum now replaces. Both stay one exception type to the API, exactly as before.
+            raise sqlite3.IntegrityError(str(exc.orig)) from exc
+        except DBAPIError as exc:
+            # asyncpg does NOT map an unknown enum label to DataError — it surfaces
+            # ``InvalidTextRepresentationError`` as a bare DBAPIError (found at D2.3 by the
+            # ingestion suite's "bogus source is still rejected" case). Translate only SQLSTATE
+            # class 22 (data exception, e.g. 22P02 invalid_text_representation), which is
+            # precisely the family of CHECKs the design enums replaced; anything else is a real
+            # database fault and must keep its own type.
+            sqlstate = getattr(exc.orig, "sqlstate", None) or ""
+            if str(sqlstate).startswith("22"):
+                raise sqlite3.IntegrityError(str(exc.orig)) from exc
+            raise
 
 
 async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
@@ -165,7 +208,7 @@ class HybridRepository(Repository):
     def replace_scene(
         self, document_id: str, scene: JsonObject, diagnostics: List[JsonObject]
     ) -> JsonObject:
-        document = self._bridge._run(
+        return self._bridge._run(
             lambda conn: design_documents.replace_scene(
                 conn,
                 workspace_id=self.workspace_id,
@@ -174,10 +217,6 @@ class HybridRepository(Repository):
                 diagnostics=diagnostics,
             )
         )
-        # Cross-domain seam (SQLite until D2.3): registry promotion runs AFTER the committed
-        # document write — idempotent; a crash between the two re-promotes on the next save.
-        self.register_scene_assets(scene)
-        return document
 
     def update_document_state(
         self,
@@ -193,7 +232,7 @@ class HybridRepository(Repository):
         envelope: Optional[JsonObject] = None,
     ) -> JsonObject:
         ops = list(operations)
-        document = self._bridge._run(
+        return self._bridge._run(
             lambda conn: design_documents.update_document_state(
                 conn,
                 workspace_id=self.workspace_id,
@@ -209,8 +248,6 @@ class HybridRepository(Repository):
                 envelope=envelope,
             )
         )
-        self.register_scene_assets(scene)
-        return document
 
     def update_web_document(
         self,
@@ -313,6 +350,156 @@ class HybridRepository(Repository):
         return self._bridge._run(
             lambda conn: design_documents.count_documents_referencing(
                 conn, workspace_id=self.workspace_id, needle=needle
+            )
+        )
+
+    # --- brand kits + compatibility reports (D2.3) --------------------------------------------
+
+    def create_brand_kit(
+        self,
+        brand_kit: JsonObject,
+        brand_summary: JsonObject,
+        diagnostics: List[JsonObject],
+        source: str,
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_brand.create_brand_kit(
+                conn,
+                workspace_id=self.workspace_id,
+                brand_kit=brand_kit,
+                brand_summary=brand_summary,
+                diagnostics=diagnostics,
+                source=source,
+            )
+        )
+
+    def list_brand_kits(self, all_versions: bool = False) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_brand.list_brand_kits(
+                conn, workspace_id=self.workspace_id, all_versions=all_versions
+            )
+        )
+
+    def require_brand_kit(
+        self, brand_kit_id: str, version: Optional[int] = None
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_brand.get_brand_kit(
+                conn,
+                workspace_id=self.workspace_id,
+                brand_kit_id=brand_kit_id,
+                version=version,
+            )
+        )
+
+    def update_brand_kit_approval(
+        self, brand_kit_id: str, approval_status: str
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_brand.update_brand_kit_approval(
+                conn,
+                workspace_id=self.workspace_id,
+                brand_kit_id=brand_kit_id,
+                approval_status=approval_status,
+            )
+        )
+
+    def create_brand_compatibility_report(
+        self,
+        report_id: str,
+        from_brand_kit: JsonObject,
+        to_brand_kit: JsonObject,
+        report: JsonObject,
+        diagnostics: List[JsonObject],
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_brand.create_brand_compat_report(
+                conn,
+                workspace_id=self.workspace_id,
+                report_id=report_id,
+                from_brand_kit=from_brand_kit,
+                to_brand_kit=to_brand_kit,
+                report=report,
+                diagnostics=diagnostics,
+            )
+        )
+
+    def require_brand_compatibility_report(self, report_id: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_brand.get_brand_compat_report(
+                conn, workspace_id=self.workspace_id, report_id=report_id
+            )
+        )
+
+    # --- asset registry (D2.3) ----------------------------------------------------------------
+
+    def create_asset_record(self, record: JsonObject) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_assets.create_asset_record(
+                conn, workspace_id=self.workspace_id, record=record
+            )
+        )
+
+    def require_asset_record(self, asset_id: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_assets.get_asset_record(
+                conn, workspace_id=self.workspace_id, asset_id=asset_id
+            )
+        )
+
+    def list_asset_records(
+        self,
+        kind: Optional[str] = None,
+        q: Optional[str] = None,
+        include_archived: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_assets.list_asset_records(
+                conn,
+                workspace_id=self.workspace_id,
+                kind=kind,
+                q=q,
+                include_archived=include_archived,
+                limit=limit,
+                offset=offset,
+            )
+        )
+
+    def update_asset_status(self, asset_id: str, status: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_assets.update_asset_status(
+                conn, workspace_id=self.workspace_id, asset_id=asset_id, status=status
+            )
+        )
+
+    def delete_asset_record(self, asset_id: str) -> None:
+        self._bridge._run(
+            lambda conn: design_assets.delete_asset_record(
+                conn, workspace_id=self.workspace_id, asset_id=asset_id
+            )
+        )
+
+    def count_assets_with_digest(
+        self, digest_value: str, exclude_asset_id: Optional[str] = None
+    ) -> int:
+        return self._bridge._run(
+            lambda conn: design_assets.count_assets_with_digest(
+                conn,
+                workspace_id=self.workspace_id,
+                digest_value=digest_value,
+                exclude_asset_id=exclude_asset_id,
+            )
+        )
+
+    def register_scene_assets(self, scene: JsonObject, commit: bool = True) -> int:
+        """The scene-persist paths call the DAL version in-transaction (D2.3); this override
+        exists for the flows that promote a scene's assets on their own."""
+        del commit  # SQLite-era knob; the bridge is one transaction per call.
+        return self._bridge._run(
+            lambda conn: design_assets.register_scene_assets(
+                conn, workspace_id=self.workspace_id, scene=scene
             )
         )
 

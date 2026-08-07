@@ -5,8 +5,9 @@ Turns brand-kit logos/images into human-readable library metadata
 ``NullDescriber`` (the default everywhere, incl. tests) returns ``[None]*n``;
 ``OpenRouterDescriber`` (env-gated) captions via a multimodal OpenRouter call.
 
-``DescriptionStore`` persists results in the ``asset_descriptions`` table
-(migration 008), protecting human-authored rows from AI overwrites.
+``DescriptionStore`` persists results in the ``design_asset_description`` table
+(Postgres, via ``clue_design.descriptions`` since Part II D2.3), protecting
+human-authored rows from AI overwrites.
 ``apply_descriptions`` orchestrates: cache hits stamp directly, misses with
 resolvable bytes get a downscaled preview and one batched ``describe`` call,
 then results are persisted and stamped onto the evidence.
@@ -19,11 +20,12 @@ from __future__ import annotations
 
 import base64
 import json
-import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Callable, Protocol, runtime_checkable
+from typing import Any, Callable, Protocol, runtime_checkable
 
+from clue_design import descriptions as design_descriptions
+from lumen_api.design_store import DesignStoreBridge, default_workspace_id
 from py_lumen_config import settings
 
 from .evidence import BrandEvidence, ImageEvidence, LogoEvidence
@@ -82,62 +84,51 @@ class NullDescriber:
 
 
 class DescriptionStore:
-    """Durable store for asset descriptions (migration 008).
+    """Durable store for asset descriptions (Part II slice D2.3: Postgres, same surface).
 
-    Takes a ``sqlite3.Connection`` like the other ingestion stores. Timestamps
-    are minted by an injectable ``now_iso`` (default ISO-8601 UTC) so tests can
-    freeze them. ``put_ai`` never overwrites a human-authored row.
+    The SQL moved to ``clue_design.descriptions``; every method routes through one
+    :class:`~lumen_api.design_store.DesignStoreBridge` call (one coroutine, one loop, one
+    transaction — the O5 rule) and returns the same shapes as before. ``put_ai`` still never
+    overwrites a human-authored row — the guard is the DAL's conditional ``ON CONFLICT``.
+
+    ``connection`` (the SQLite handle) and ``now_iso`` are VESTIGIAL: accepted so the call
+    sites and suites need no churn, unused since timestamps are the database's ``now()``.
+    Both die at D2.5. ``workspace_id`` defaults to the configured dev workspace, like
+    ``HybridRepository``.
     """
 
     def __init__(
         self,
-        connection: sqlite3.Connection,
+        connection: Any = None,
         now_iso: Callable[[], str] = _default_now_iso,
+        *,
+        workspace_id: str | None = None,
     ) -> None:
         self.connection = connection
         self.now_iso = now_iso
+        self.workspace_id = workspace_id or default_workspace_id()
+        self._bridge = DesignStoreBridge(self.workspace_id)
 
     def get_many(self, asset_ids: list[str]) -> dict[str, dict]:
-        if not asset_ids:
-            return {}
-        placeholders = ",".join("?" for _ in asset_ids)
-        rows = self.connection.execute(
-            f"SELECT * FROM asset_descriptions WHERE asset_id IN ({placeholders})",
-            list(asset_ids),
-        ).fetchall()
-        return {row["asset_id"]: _row_to_dict(row) for row in rows}
+        return self._bridge._run(
+            lambda conn: design_descriptions.get_many(
+                conn, workspace_id=self.workspace_id, asset_ids=list(asset_ids)
+            )
+        )
 
     def put_ai(self, result: DescribeResult, model: str) -> None:
-        now = self.now_iso()
-        self.connection.execute(
-            """
-            INSERT INTO asset_descriptions (
-              asset_id, title, description, usage, tags_json,
-              origin, model, created_at, updated_at
+        self._bridge._run(
+            lambda conn: design_descriptions.put_ai(
+                conn,
+                workspace_id=self.workspace_id,
+                asset_id=result.asset_id,
+                title=result.title,
+                description=result.description,
+                usage=result.usage,
+                tags=list(result.tags),
+                model=model,
             )
-            VALUES (?, ?, ?, ?, ?, 'ai', ?, ?, ?)
-            ON CONFLICT(asset_id) DO UPDATE SET
-              title = excluded.title,
-              description = excluded.description,
-              usage = excluded.usage,
-              tags_json = excluded.tags_json,
-              origin = 'ai',
-              model = excluded.model,
-              updated_at = excluded.updated_at
-            WHERE asset_descriptions.origin != 'human'
-            """,
-            (
-                result.asset_id,
-                result.title,
-                result.description,
-                result.usage,
-                json.dumps(list(result.tags)),
-                model,
-                now,
-                now,
-            ),
         )
-        self.connection.commit()
 
     def put_human(
         self,
@@ -147,48 +138,17 @@ class DescriptionStore:
         usage: str | None,
         tags: list[str],
     ) -> None:
-        now = self.now_iso()
-        self.connection.execute(
-            """
-            INSERT INTO asset_descriptions (
-              asset_id, title, description, usage, tags_json,
-              origin, model, created_at, updated_at
+        self._bridge._run(
+            lambda conn: design_descriptions.put_human(
+                conn,
+                workspace_id=self.workspace_id,
+                asset_id=asset_id,
+                title=title,
+                description=description,
+                usage=usage,
+                tags=list(tags),
             )
-            VALUES (?, ?, ?, ?, ?, 'human', NULL, ?, ?)
-            ON CONFLICT(asset_id) DO UPDATE SET
-              title = excluded.title,
-              description = excluded.description,
-              usage = excluded.usage,
-              tags_json = excluded.tags_json,
-              origin = 'human',
-              model = NULL,
-              updated_at = excluded.updated_at
-            """,
-            (
-                asset_id,
-                title,
-                description,
-                usage,
-                json.dumps(list(tags)),
-                now,
-                now,
-            ),
         )
-        self.connection.commit()
-
-
-def _row_to_dict(row: sqlite3.Row) -> dict:
-    return {
-        "asset_id": row["asset_id"],
-        "title": row["title"],
-        "description": row["description"],
-        "usage": row["usage"],
-        "tags": json.loads(row["tags_json"]) if row["tags_json"] else [],
-        "origin": row["origin"],
-        "model": row["model"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-    }
 
 
 # --- orchestration --------------------------------------------------------------
@@ -197,12 +157,13 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 def apply_descriptions(
     evidence: BrandEvidence,
     *,
-    connection: sqlite3.Connection,
+    connection: Any = None,
     describer: AssetDescriber,
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     reporter: Callable[[str, float], None],
     rasterize_svg: Callable[[str], bytes | None] | None = None,
     diagnostics: list[dict] | None = None,
+    workspace_id: str | None = None,
 ) -> BrandEvidence:
     """Stamp title/description/usage_note/tags onto ``evidence`` logos+images.
 
@@ -221,7 +182,7 @@ def apply_descriptions(
     """
     reporter("Describing your assets…", 0.80)
     sink = diagnostics if diagnostics is not None else []
-    store = DescriptionStore(connection)
+    store = DescriptionStore(connection, workspace_id=workspace_id)
     model = settings.lumen_ingestion_describe_model
 
     # asset_id -> evidence entry (logos + images). Both stamp identically.
@@ -363,12 +324,13 @@ def _describe_failure_suffix(describer: "AssetDescriber") -> str:
 def describe_kit_assets(
     brand_kit: dict,
     *,
-    connection: sqlite3.Connection,
+    connection: Any = None,
     describer: AssetDescriber,
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     rasterize_svg: Callable[[str], bytes | None] | None = None,
     diagnostics: list[dict] | None = None,
     brand_name: str | None = None,
+    workspace_id: str | None = None,
 ) -> dict:
     """Backfill (imagery slice 1): stamp title/description/usage_note onto the
     KIT's own logo/image entries — cache-first over ``asset_descriptions``,
@@ -378,7 +340,7 @@ def describe_kit_assets(
     frozen into the kit JSON at publish — healing the library alone never
     reaches the agent's brand card."""
     sink = diagnostics if diagnostics is not None else []
-    store = DescriptionStore(connection)
+    store = DescriptionStore(connection, workspace_id=workspace_id)
     model = settings.lumen_ingestion_describe_model
     assets = brand_kit.get("assets") or {}
 

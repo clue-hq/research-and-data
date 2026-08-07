@@ -71,13 +71,16 @@ def _install_stub_pipeline(
         seen.append(("Capturing your colors…", 0.65))
         return _load_evidence()
 
-    def _runner(database_path, asset_store_root, job_id):
+    def _runner(database_path, asset_store_root, job_id, *, workspace_id=None):
         run_website_ingestion(
             database_path,
             asset_store_root,
             job_id,
             capture=capture,
             build_evidence=build_evidence or _build_evidence,
+            # D2.3: the route hands the worker the request's workspace so the kit it
+            # publishes satisfies the job's composite result FK.
+            workspace_id=workspace_id,
         )
 
     monkeypatch.setattr(main_module, "run_website_ingestion", _runner)

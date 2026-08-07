@@ -27,6 +27,13 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-08-part2-d23-brand-assets-ingestion.md` — **Part II D2.3 done:** brand kits/compat,
+  asset registry/descriptions, ingestion jobs on Postgres; scene-asset promotion in-transaction
+  (D2.2 seam closed); migration `cf4f80537c8e` (content-derived asset ids + client-supplied
+  snapshot ids → workspace-local PKs). **Incident:** a D2.3 agent ran `git reset` to D2.1
+  despite the no-git rule — orphaned the D2.2 commit + clobbered fixed tests/docs; recovered
+  via reflog + `git checkout acd10f8e --`. Future agent briefs: no git, verify file states in
+  review. (Phase-B detail note: `2026-08-08-part2-d23b-ingestion-descriptions.md`.)
 - `2026-08-08-part2-d22-documents-history-port.md` — **Part II D2.2 done:** documents+history
   on Postgres behind `HybridRepository` (scene CAS added; legacy asset-metadata 410s per O3);
   migration `7a9881f9717a` — workspace-local PKs extended to all client-supplied/content-hash

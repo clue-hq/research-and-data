@@ -38,6 +38,7 @@ from fastapi.responses import (
     Response,
     StreamingResponse,
 )
+from starlette.concurrency import run_in_threadpool
 
 from . import image_cache, image_provider, web_export
 from .core import CoreClient, CoreError, has_error_diagnostics
@@ -712,14 +713,23 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         except Exception as error:  # CaptureError / ValueError from the guard
             raise ingest_url_rejected(payload.url, error) from error
 
-        job = IngestionJobStore(repo.connection).create(
-            "website", payload.model_dump()
+        # This is the one ASYNC ingestion endpoint (it awaits the SSRF guard), and the D2.3
+        # store is a sync facade over ``asyncio.run`` — calling it inline would blow up on
+        # "asyncio.run() cannot be called from a running event loop". A worker thread gives
+        # the bridge its own loop, exactly as the sync endpoints get from FastAPI's threadpool.
+        job = await run_in_threadpool(
+            IngestionJobStore(repo.connection, workspace_id=repo.workspace_id).create,
+            "website",
+            payload.model_dump(),
         )
         background_tasks.add_task(
             run_website_ingestion,
             str(app.state.database_path),
             asset_store_root(),
             job["job_id"],
+            # D2.3: the worker must publish its kit/assets into the SAME workspace the job row
+            # lives in — the job's result FK is composite on (kit, version, workspace).
+            workspace_id=repo.workspace_id,
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
@@ -761,7 +771,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         # bytes to <asset_store_root>/ingest_tmp/<job_id>.pdf and record that
         # path in the job request — run_pdf_ingestion reads + deletes it. The
         # PDF bytes themselves are never stored in the job row.
-        job = IngestionJobStore(repo.connection).create(
+        job = IngestionJobStore(repo.connection, workspace_id=repo.workspace_id).create(
             "pdf",
             {
                 "filename": file.filename,
@@ -777,13 +787,16 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
         request = dict(job["request"])
         request["tmp_path"] = str(tmp_path)
-        job = IngestionJobStore(repo.connection).update_request(job["job_id"], request)
+        job = IngestionJobStore(repo.connection, workspace_id=repo.workspace_id).update_request(job["job_id"], request)
 
         background_tasks.add_task(
             run_pdf_ingestion,
             str(app.state.database_path),
             asset_store_root(),
             job["job_id"],
+            # D2.3: the worker must publish its kit/assets into the SAME workspace the job row
+            # lives in — the job's result FK is composite on (kit, version, workspace).
+            workspace_id=repo.workspace_id,
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
@@ -849,7 +862,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         # and record those paths in the job request — run_asset_ingestion reads
         # + deletes them. The file bytes themselves are never stored in the job
         # row.
-        job = IngestionJobStore(repo.connection).create(
+        job = IngestionJobStore(repo.connection, workspace_id=repo.workspace_id).create(
             "asset_upload",
             {
                 "name": name,
@@ -875,13 +888,16 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
         request = dict(job["request"])
         request["files"] = file_specs
-        job = IngestionJobStore(repo.connection).update_request(job["job_id"], request)
+        job = IngestionJobStore(repo.connection, workspace_id=repo.workspace_id).update_request(job["job_id"], request)
 
         background_tasks.add_task(
             run_asset_ingestion,
             str(app.state.database_path),
             asset_store_root(),
             job["job_id"],
+            # D2.3: the worker must publish its kit/assets into the SAME workspace the job row
+            # lives in — the job's result FK is composite on (kit, version, workspace).
+            workspace_id=repo.workspace_id,
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
@@ -892,7 +908,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         """Most-recent 50 ingestion jobs (public dto — no request/evidence
         bodies). Registered adjacent to the param route; the literal segment
         only matches when the path has no trailing job id."""
-        jobs = IngestionJobStore(repo.connection).list_recent(50)
+        jobs = IngestionJobStore(repo.connection, workspace_id=repo.workspace_id).list_recent(50)
         return {
             "schema_version": 1,
             "jobs": [ingestion_job_dto(job) for job in jobs],
@@ -902,7 +918,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def get_ingestion_job(
         job_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
-        job = IngestionJobStore(repo.connection).get(job_id)
+        job = IngestionJobStore(repo.connection, workspace_id=repo.workspace_id).get(job_id)
         if job is None:
             raise HTTPException(
                 status_code=404,
@@ -1098,6 +1114,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             rasterize_svg=make_rasterize_svg(repo, store_root),
             diagnostics=describe_diagnostics,
             brand_name=record.get("name"),
+            workspace_id=repo.workspace_id,
         )
         if json.dumps(brand_kit, sort_keys=True) == before:
             # Nothing stamped (all failed, describe disabled, or already
@@ -5125,7 +5142,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     ) -> JsonObject:
         ids = [ident for ident in (asset_ids or "").split(",") if ident.strip()]
         ids = [ident.strip() for ident in ids][:200]
-        store = DescriptionStore(repo.connection)
+        store = DescriptionStore(repo.connection, workspace_id=repo.workspace_id)
         return {
             "schema_version": 1,
             "descriptions": store.get_many(ids),
@@ -5140,7 +5157,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         """Human-author an asset's library metadata (partial merge with the
         existing row). 404 only when the asset RECORD doesn't exist."""
         repo.require_asset_record(asset_id)
-        store = DescriptionStore(repo.connection)
+        store = DescriptionStore(repo.connection, workspace_id=repo.workspace_id)
         existing = store.get_many([asset_id]).get(asset_id) or {}
 
         def _merge(key: str, incoming: Optional[Any]) -> Any:
@@ -6747,7 +6764,9 @@ def resolve_agent_turn_brand_kit(
     except Exception:
         return None, None, None, None
     try:
-        repo = Repository(connection)
+        # D2.3: brand kits and asset records live on Postgres; the SQLite connection is still
+        # needed for the (D2.4-era) description store this manifest reads.
+        repo = HybridRepository(connection)
         record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
         brand_kit = record["brand_kit"]
         manifest = brand_kit_asset_manifest(repo, connection, brand_kit)
@@ -6915,7 +6934,10 @@ def resolve_web_turn_brand_kit(
     except Exception:
         return None, None, None, None
     try:
-        repo = Repository(connection)
+        # D2.3: same flip as the scene resolver — kits/assets are Postgres, the SQLite
+        # connection remains for the description store. `database_path` no longer selects the
+        # kit store (Postgres is process-global); it still selects the SQLite side.
+        repo = HybridRepository(connection)
         record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
         brand_kit = record["brand_kit"]
         manifest = brand_kit_asset_manifest(repo, connection, brand_kit)
@@ -6990,7 +7012,8 @@ def resolve_account_assets(
     except Exception:
         return None
     try:
-        repo = Repository(connection)
+        # D2.3: the asset registry lives on Postgres.
+        repo = HybridRepository(connection)
         record = repo.require_asset_record(str(logo_asset_id))
         return {str(logo_asset_id): {"record": record.get("asset") or record}}
     except Exception:
@@ -7157,7 +7180,8 @@ def resolve_agent_turn_references(
     store_root = str(api_asset_store_root())
     connection = connect(settings.lumen_api_database_path)
     try:
-        repo = Repository(connection)
+        # D2.3: the asset registry lives on Postgres (the connection stays for descriptions).
+        repo = HybridRepository(connection)
         return reference_asset_manifest(repo, connection, asset_ids, store_root)
     finally:
         connection.close()

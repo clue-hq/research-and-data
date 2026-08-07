@@ -6,7 +6,13 @@ chained off `c6d84aa84b79`, single head throughout; `clue_design.enums` + the `t
 acceptance suite; `make db-smoke` up→down→up green on a clean throwaway DB). **D2.1 EXECUTED
 2026-08-07** (R3 workspace entry + DAL foundation). **D2.2 EXECUTED 2026-08-08** (document +
 history domain on Postgres behind `HybridRepository`; migration `7a9881f9717a`; design-API
-suite 487 passed / 10 skipped / 0 failed). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
+suite 487 passed / 10 skipped / 0 failed). **D2.3 EXECUTED 2026-08-08** (brand kits + compat
+reports, asset registry + descriptions, ingestion jobs on Postgres; scene-asset promotion now
+runs IN the document write's transaction — the D2.2 atomicity seam closed; migration
+`cf4f80537c8e` extends workspace-local PKs to content-derived asset ids and client-supplied
+snapshot ids; design-API suite green — the phase-B run's 2 failures were D2.2 test fixes
+clobbered by an agent-side branch reset, restored from `acd10f8e` and re-verified on a fresh
+DB). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
 by the founder 2026-08-07** (with refinements — see §6); **O6b RATIFIED 2026-08-08: option
 (a)**. **PENDING FOUNDER RATIFICATION (D2.2 field decision):** migration `7a9881f9717a`
 extended O6's workspace-locality to every design id namespace that is client-supplied

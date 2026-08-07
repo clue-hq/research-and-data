@@ -1,145 +1,111 @@
+"""Ingestion-job store (Part II slice D2.3: now Postgres, behind the same public surface).
+
+The SQL moved to ``clue_design.ingestion``; this class is the sync facade the API and the
+BackgroundTasks workers keep calling. Every method routes through one
+:class:`~lumen_api.design_store.DesignStoreBridge` call — one coroutine, one loop, one
+transaction (the O5 rule) — and returns the same JSON shape as before.
+
+Two constructor arguments are now VESTIGIAL and kept only so the ~12 call sites (and the
+suites) need no churn: ``connection`` (the SQLite handle: accepted, never used) and ``now_iso``
+(timestamps are the database's ``now()`` since the port). Both die at D2.5 with the SQLite
+Repository.
+"""
+
 from __future__ import annotations
 
-import json
-import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, Protocol
-from uuid import uuid4
+
+from clue_design import ingestion as design_ingestion
+from clue_design.ingestion import new_id as new_id  # re-exported: the ported public name
+from lumen_api.design_store import DesignStoreBridge, default_workspace_id
 
 JsonObject = Dict[str, Any]
-
-
-def new_id(prefix: str) -> str:
-    return f"{prefix}_{uuid4().hex}"
 
 
 def _default_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _encode(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"))
-
-
-def _encode_optional(value: Any) -> Optional[str]:
-    return None if value is None else _encode(value)
-
-
-def _decode_optional(value: Optional[str]) -> Any:
-    return None if value is None else json.loads(value)
-
-
-def _job_from_row(row: sqlite3.Row) -> JsonObject:
-    return {
-        "job_id": row["job_id"],
-        "kind": row["kind"],
-        "status": row["status"],
-        "stage": row["stage"],
-        "progress": row["progress"],
-        "request": json.loads(row["request_json"]),
-        "evidence": _decode_optional(row["evidence_json"]),
-        "brand_kit_id": row["brand_kit_id"],
-        "brand_kit_version": row["brand_kit_version"],
-        "error": _decode_optional(row["error_json"]),
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-    }
-
-
 class IngestionJobStore:
-    """Durable store for brand-kit ingestion jobs.
+    """Durable store for brand-kit ingestion jobs (Postgres, workspace-scoped).
 
-    Takes a sqlite3.Connection like Repository. Timestamps are minted by an
-    injectable ``now_iso`` (default ISO-8601 UTC) so tests can freeze them.
+    ``workspace_id`` defaults to the configured dev workspace, exactly like
+    ``HybridRepository`` — request paths pass the resolved workspace explicitly.
     """
 
     def __init__(
         self,
-        connection: sqlite3.Connection,
+        connection: Any = None,
         now_iso: Callable[[], str] = _default_now_iso,
+        *,
+        workspace_id: Optional[str] = None,
     ) -> None:
+        # Vestigial (D2.5 deletes both): the SQLite handle and the caller-minted clock.
         self.connection = connection
         self.now_iso = now_iso
+        self.workspace_id = workspace_id or default_workspace_id()
+        self._bridge = DesignStoreBridge(self.workspace_id)
 
     def create(self, kind: str, request: JsonObject) -> JsonObject:
-        job_id = new_id("ingest")
-        now = self.now_iso()
-        self.connection.execute(
-            """
-            INSERT INTO ingestion_jobs (
-              job_id, kind, status, stage, progress, request_json,
-              evidence_json, brand_kit_id, brand_kit_version, error_json,
-              created_at, updated_at
+        return self._bridge._run(
+            lambda conn: design_ingestion.create_job(
+                conn, workspace_id=self.workspace_id, kind=kind, request=request
             )
-            VALUES (?, ?, 'queued', NULL, 0, ?, NULL, NULL, NULL, NULL, ?, ?)
-            """,
-            (job_id, kind, _encode(request), now, now),
         )
-        self.connection.commit()
-        return self.require(job_id)
 
     def update_request(self, job_id: str, request: JsonObject) -> JsonObject:
         """Replace the stored request_json for a job (e.g. to record the
         tmp-file path once it is known post-create). Job-terminal columns are
         untouched."""
-        self.connection.execute(
-            """
-            UPDATE ingestion_jobs
-            SET request_json = ?, updated_at = ?
-            WHERE job_id = ?
-            """,
-            (_encode(request), self.now_iso(), job_id),
+        return self._bridge._run(
+            lambda conn: design_ingestion.update_request(
+                conn, workspace_id=self.workspace_id, job_id=job_id, request=request
+            )
         )
-        self.connection.commit()
-        return self.require(job_id)
 
     def get(self, job_id: str) -> Optional[JsonObject]:
-        row = self.connection.execute(
-            "SELECT * FROM ingestion_jobs WHERE job_id = ?", (job_id,)
-        ).fetchone()
-        return _job_from_row(row) if row is not None else None
+        return self._bridge._run(
+            lambda conn: design_ingestion.get_job(
+                conn, workspace_id=self.workspace_id, job_id=job_id
+            )
+        )
 
     def require(self, job_id: str) -> JsonObject:
-        job = self.get(job_id)
-        if job is None:
-            raise KeyError(f"ingestion_job {job_id} was not found")
-        return job
+        """Fetch or raise. The bridge translates the DAL's fail-closed refusal into
+        ``lumen_api.database.NotFoundError`` — a ``KeyError`` subclass, so the ported
+        ``raise KeyError`` contract still holds for every caller."""
+        return self._bridge._run(
+            lambda conn: design_ingestion.require_job(
+                conn, workspace_id=self.workspace_id, job_id=job_id
+            )
+        )
 
     def list_recent(self, limit: int = 50) -> list[JsonObject]:
         """Most-recent jobs first (by created_at, then job_id as a tiebreak)."""
-        rows = self.connection.execute(
-            """
-            SELECT * FROM ingestion_jobs
-            ORDER BY created_at DESC, job_id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-        return [_job_from_row(row) for row in rows]
+        return self._bridge._run(
+            lambda conn: design_ingestion.list_recent(
+                conn, workspace_id=self.workspace_id, limit=limit
+            )
+        )
 
     def set_running(self, job_id: str) -> JsonObject:
-        self.connection.execute(
-            """
-            UPDATE ingestion_jobs
-            SET status = 'running', updated_at = ?
-            WHERE job_id = ?
-            """,
-            (self.now_iso(), job_id),
+        return self._bridge._run(
+            lambda conn: design_ingestion.set_running(
+                conn, workspace_id=self.workspace_id, job_id=job_id
+            )
         )
-        self.connection.commit()
-        return self.require(job_id)
 
     def set_stage(self, job_id: str, stage: str, progress: float) -> JsonObject:
-        self.connection.execute(
-            """
-            UPDATE ingestion_jobs
-            SET stage = ?, progress = ?, updated_at = ?
-            WHERE job_id = ?
-            """,
-            (stage, progress, self.now_iso(), job_id),
+        return self._bridge._run(
+            lambda conn: design_ingestion.set_stage(
+                conn,
+                workspace_id=self.workspace_id,
+                job_id=job_id,
+                stage=stage,
+                progress=progress,
+            )
         )
-        self.connection.commit()
-        return self.require(job_id)
 
     def complete(
         self,
@@ -148,29 +114,23 @@ class IngestionJobStore:
         version: int,
         evidence_json: Optional[str],
     ) -> JsonObject:
-        self.connection.execute(
-            """
-            UPDATE ingestion_jobs
-            SET status = 'succeeded', progress = 1, brand_kit_id = ?,
-                brand_kit_version = ?, evidence_json = ?, updated_at = ?
-            WHERE job_id = ?
-            """,
-            (brand_kit_id, version, evidence_json, self.now_iso(), job_id),
+        return self._bridge._run(
+            lambda conn: design_ingestion.complete(
+                conn,
+                workspace_id=self.workspace_id,
+                job_id=job_id,
+                brand_kit_id=brand_kit_id,
+                version=version,
+                evidence_json=evidence_json,
+            )
         )
-        self.connection.commit()
-        return self.require(job_id)
 
     def fail(self, job_id: str, error: JsonObject) -> JsonObject:
-        self.connection.execute(
-            """
-            UPDATE ingestion_jobs
-            SET status = 'failed', error_json = ?, updated_at = ?
-            WHERE job_id = ?
-            """,
-            (_encode_optional(error), self.now_iso(), job_id),
+        return self._bridge._run(
+            lambda conn: design_ingestion.fail(
+                conn, workspace_id=self.workspace_id, job_id=job_id, error=error
+            )
         )
-        self.connection.commit()
-        return self.require(job_id)
 
 
 class StageReporter(Protocol):

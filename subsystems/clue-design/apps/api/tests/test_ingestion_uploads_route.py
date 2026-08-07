@@ -156,13 +156,14 @@ def _install_stub_pipeline(
     mirroring how ``pipeline.py`` lazily resolves ``capture.uploads`` /
     ``describe`` so no Agent A file is imported."""
 
-    def _runner(database_path, asset_store_root, job_id):
+    def _runner(database_path, asset_store_root, job_id, *, workspace_id=None):
         run_asset_ingestion(
             database_path,
             asset_store_root,
             job_id,
             analyze=analyze,
             apply_descriptions=apply_descriptions,
+            workspace_id=workspace_id,
         )
 
     monkeypatch.setattr(main_module, "run_asset_ingestion", _runner)

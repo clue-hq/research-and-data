@@ -124,12 +124,13 @@ def _install_stub_pipeline(
     injectable ``extract`` param mirrors how ``pipeline.py`` lazily resolves
     ``capture.pdf`` — so no Agent A file is imported."""
 
-    def _runner(database_path, asset_store_root, job_id):
+    def _runner(database_path, asset_store_root, job_id, *, workspace_id=None):
         run_pdf_ingestion(
             database_path,
             asset_store_root,
             job_id,
             extract=extract,
+            workspace_id=workspace_id,
         )
 
     monkeypatch.setattr(main_module, "run_pdf_ingestion", _runner)

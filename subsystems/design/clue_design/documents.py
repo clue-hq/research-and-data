@@ -12,9 +12,11 @@ Faithful port of ``lumen_api.database.Repository``'s document methods onto ``des
   absent id does.
 
 Callers own the transaction (one logical operation = one transaction — the O5 rule); nothing
-here commits. Scene-asset registry promotion (``register_scene_assets``) and custom-component
-reference validation are NOT here — they live in the still-SQLite domains until D2.3/D2.4 and
-are sequenced by the ``lumen_api`` bridge around these calls.
+here commits. Since D2.3 the scene write paths call :func:`clue_design.assets.register_scene_assets`
+IN-TRANSACTION, so registry promotion and the scene that carries it land or roll back together
+(the SQLite-era post-commit seam is closed). Custom-component reference validation is still NOT
+here — it lives in the SQLite domain until D2.4 and is sequenced by the ``lumen_api`` bridge
+before these calls.
 
 Undo/redo model (ported verbatim): ``undo_stack``/``redo_stack`` on the document row are the
 authoritative active path; envelopes are append-only history. A normal write pushes its batch
@@ -31,6 +33,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_design import assets as _assets
 from clue_design import diagnostics as _diagnostics
 from clue_design import history as _history
 from clue_design._codec import (
@@ -291,6 +294,7 @@ async def replace_scene(
         kind="structural",
         diagnostics=diagnostics,
     )
+    await _assets.register_scene_assets(conn, workspace_id=workspace_id, scene=scene)
     return await get_document(conn, workspace_id=workspace_id, document_id=document_id)
 
 
@@ -424,6 +428,7 @@ async def update_document_state(
         kind=diagnostic_kind,
         diagnostics=diagnostics,
     )
+    await _assets.register_scene_assets(conn, workspace_id=workspace_id, scene=scene)
     return await get_document(conn, workspace_id=workspace_id, document_id=document_id)
 
 
