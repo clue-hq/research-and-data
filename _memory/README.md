@@ -27,6 +27,11 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-07-part2-d0-preflight.md` — **Part II slice D0 done:** contract doc
+  `docs/specs/PD-part2-design-substrate.md` (slice map, 22-table `design_*` map, rules, open
+  decisions O1–O6 — **unratified, gate D1**); `subsystems/design/clue_design` scaffold under all
+  gates incl. new Rule-S4 contract; clue-design logging-guard carve-out. Pre-existing red found:
+  23-file ruff-format drift at `origin/main` fails `make lint` — ruling pending.
 - `2026-08-07-alembic-single-head-c6d84aa84b79.md` — **Alembic has ONE head: `c6d84aa84b79`**;
   all new (incl. Part-II `design_*`) migrations chain off it. A 4-head report was false (it
   counted Phase-C branch tips already joined by `fc1f3d22a167`). Verify with
