@@ -13,7 +13,7 @@ from __future__ import annotations
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import PhaseContext
+from clue_core import PhaseContext, ProjectRunId
 from clue_research.durable import ensure_project_run
 from clue_spine import Project, create_brand, create_project, get_project
 
@@ -54,29 +54,49 @@ async def seed_project(
     )
 
 
-async def seed_phase_run(conn: AsyncConnection, ctx: PhaseContext) -> None:
-    """Materialise the ``project`` + ``project_run`` rows a phase handler always runs under.
+async def seed_run(
+    conn: AsyncConnection,
+    *,
+    project_run_id: ProjectRunId,
+    workspace_id: str = DEFAULT_TEST_WORKSPACE,
+    project_id: str = "prj-test",
+    icp_key: str = "default",
+    icp_version: int = 1,
+) -> str:
+    """Materialise the ``project`` + ``project_run`` rows a run always has, and return the project.
 
-    A production phase is only ever dispatched by the M7 state machine *after* it created the
-    ``project_run`` row, so a handler may assume it exists — FI-2's ``run_lineage.project_run_id``
-    FK now makes that assumption load-bearing. This helper gives a hand-built ``PhaseContext`` the
-    same durable footing (idempotent, so a suite may call it once per ``run``).
+    Production never mints a run id without a durable ``project_run`` behind it — FI-2's
+    ``run_lineage.project_run_id`` FK makes that assumption load-bearing. Idempotent, so a suite may
+    call it once per run.
     """
-    await seed_workspace(conn, ctx.workspace_id)
-    if await get_project(conn, ctx.project_id) is None:
-        brand = await create_brand(conn, workspace_id=ctx.workspace_id, name="Phase brand")
+    await seed_workspace(conn, workspace_id)
+    if await get_project(conn, project_id) is None:
+        brand = await create_brand(conn, workspace_id=workspace_id, name="Seeded brand")
         await create_project(
             conn,
-            workspace_id=ctx.workspace_id,
+            workspace_id=workspace_id,
             brand_id=brand.brand_id,
-            name="Phase project",
-            project_id=ctx.project_id,
+            name="Seeded project",
+            project_id=project_id,
         )
     await ensure_project_run(
         conn,
+        project_run_id=project_run_id,
+        project_id=project_id,
+        workspace_id=workspace_id,
+        icp_key=icp_key,
+        icp_version=icp_version,
+    )
+    return project_id
+
+
+async def seed_phase_run(conn: AsyncConnection, ctx: PhaseContext) -> None:
+    """:func:`seed_run` for a hand-built ``PhaseContext`` (the phase suites' entry point)."""
+    await seed_run(
+        conn,
         project_run_id=ctx.project_run_id,
-        project_id=ctx.project_id,
         workspace_id=ctx.workspace_id,
+        project_id=ctx.project_id,
         icp_key=ctx.icp_key,
         icp_version=ctx.icp_version,
     )

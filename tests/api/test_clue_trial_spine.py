@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import pytest
 from pydantic import SecretStr
+from sqlalchemy import text
 
 from clue_api.entity_research_quarantine import EntityResearchAgentNotComposed
 from clue_api.run_composition import ComposingRunDriver
@@ -236,6 +237,24 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
                 scope=WorkspaceScope.for_workspace(state.workspace_id),
             )
         by_field = {claim.field_key: claim for claim in account_claims}
+        # FI-2 P2: the trial admits under the shared discovery run id without ever driving the
+        # DISCOVERY phase, so the trial itself must register it — every claim it wrote back-joins.
+        async with transaction() as conn:
+            unattributed = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM claim WHERE entity_id = :account_id "
+                        "AND run_id NOT IN (SELECT run_id FROM run_lineage "
+                        "WHERE workspace_id = :workspace_id AND project_id = :project_id)"
+                    ),
+                    {
+                        "account_id": account_id,
+                        "workspace_id": state.workspace_id,
+                        "project_id": state.project_id,
+                    },
+                )
+            ).scalar_one()
+        assert unattributed == 0
         # The paid organization attribute is written as a real, evidence-backed value — not an
         # empty account produced by a silently discarded match.
         headcount = by_field["core.employee_count"]

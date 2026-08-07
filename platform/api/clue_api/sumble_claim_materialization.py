@@ -107,8 +107,12 @@ class SumbleClaimMaterializer:
             )
         # FI-2 P2 (spec §3): every Sumble claim is stamped with the project run itself as its
         # ``run_id`` (the M8C C1 lineage trigger requires it), so that is the id the project lens
-        # must resolve. Registered once per materialized field, before the claim write below;
-        # idempotent, so the run's later fields (and any replay) re-register harmlessly.
+        # must resolve. This materializer takes a *fresh connection per step* (the claim write in
+        # ``_ensure_claim`` opens its own), so the registration is deliberately NOT in the same
+        # transaction as the write — it is its own committed transaction, ordered before it.
+        # Registering first is the safe direction: a run that wrote nothing is inert, whereas an
+        # unattributable claim is not. Idempotent, so the run's later fields (and any replay)
+        # re-register harmlessly.
         async with self._conn_factory() as conn:
             await record_run_lineage(
                 conn,

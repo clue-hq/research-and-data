@@ -40,6 +40,7 @@ from clue_research.claimstore import (
     WorkspaceScope,
     claims_by_ids,
     insert_claim,
+    record_run_lineage,
     supersede_claim,
 )
 from clue_research.identity import get_account, get_contact
@@ -456,6 +457,11 @@ async def route_interview_answer(
         raise ValueError("project-state interview statements require project_id")
     await register_client_interview_source(conn)
     run = run_id or new_run_id()
+    # FI-2 P2 (spec §3): the interview writes Client-KB-shaped stage-0 claims, which spec §3 places
+    # outside every project's lens — so ``project_id`` stays NULL even though a project-state
+    # statement puts one in scope. Registered in the caller's transaction, ahead of every claim the
+    # routing pass writes; idempotent, so a resumed turn (same ``run_id``) re-registers harmlessly.
+    await record_run_lineage(conn, run_id=run, workspace_id=workspace_id, kind="stage0")
     prepared = await judge_interview_values(
         await prepare_interview_statements(
             conn,

@@ -38,6 +38,7 @@ from clue_core import (
     RunId,
 )
 from clue_db import ConnFactory, transaction
+from clue_research.claimstore import record_run_lineage
 from clue_research.discovery_scoring import (
     AdmissionStatus,
     CandidateHypothesis,
@@ -333,6 +334,18 @@ class ClueTrialSpine:
             icp_version=icp_version,
         )
         async with self._conn_factory() as conn:
+            # FI-2 P2 (spec §3): the trial admits accounts under the shared discovery run id
+            # without ever driving the DISCOVERY phase, so nothing else registers it. Registered
+            # here, in the same transaction as the admission's provenance claim; idempotent, so
+            # each further direct account re-registers the same run harmlessly.
+            await record_run_lineage(
+                conn,
+                run_id=UUID(str(run_id)),
+                workspace_id=state.workspace_id,
+                kind="discovery",
+                project_id=state.project_id,
+                project_run_id=UUID(str(project_run.project_run_id)),
+            )
             result = await admit(
                 conn,
                 candidate,

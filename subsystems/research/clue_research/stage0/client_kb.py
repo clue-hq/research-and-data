@@ -652,6 +652,8 @@ async def client_kb_write_target_for_materialization(
         product_id=product_id,
     )
     filled = set(prior_claims).intersection(CLIENT_BASELINE_FIELDS)
+    # FI-2 P2 (spec §3), the derived-version branch: same workspace-level stage-0 registration as
+    # the new-KB branch above, again only where a new version is actually minted.
     await record_run_lineage(conn, run_id=run_id, workspace_id=workspace_id, kind="stage0")
     new_version = await _write_version_marker(
         conn,
