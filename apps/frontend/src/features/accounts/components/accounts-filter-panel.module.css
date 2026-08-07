@@ -1,0 +1,200 @@
+.panel {
+  background: white;
+  border: 0.5px solid var(--clue-border-input);
+  border-radius: 9px;
+  box-shadow: 0 12px 32px rgb(0 24 62 / 10%);
+  max-width: calc(100vw - 32px);
+  overflow: visible;
+  position: absolute;
+  right: 0;
+  top: 36px;
+  width: 620px;
+  z-index: 40;
+}
+
+.header {
+  align-items: center;
+  border-bottom: 0.5px solid var(--clue-border-neutral);
+  display: flex;
+  height: 48px;
+  justify-content: space-between;
+  padding: 0 16px;
+}
+
+.title {
+  color: var(--clue-content-neutral);
+  font-family: var(--clue-ds-product-typography-ui-medium-font-family);
+  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
+  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  line-height: var(--clue-ds-product-typography-ui-medium-line-height);
+}
+
+.clearButton {
+  border-radius: 5px;
+  color: var(--clue-content-subtle);
+  cursor: pointer;
+  font-family: var(--clue-ds-product-typography-action-medium-font-family);
+  font-size: var(--clue-ds-product-typography-action-medium-font-size);
+  font-weight: var(--clue-ds-product-typography-action-medium-font-weight);
+  height: 28px;
+  line-height: var(--clue-ds-product-typography-action-medium-line-height);
+  padding: 0 8px;
+}
+
+.clearButton:hover:not(:disabled) {
+  background: var(--clue-background-hover);
+  color: var(--clue-content-neutral);
+}
+
+.clearButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.rule {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 64px minmax(0, 1fr) 28px;
+}
+
+.whereLabel {
+  color: var(--clue-content-subtle);
+  font-family: var(--clue-ds-product-typography-ui-regular-font-family);
+  font-size: var(--clue-ds-product-typography-ui-regular-font-size);
+  font-weight: var(--clue-ds-product-typography-ui-regular-font-weight);
+  line-height: var(--clue-ds-product-typography-ui-regular-line-height);
+  padding-left: 2px;
+}
+
+.controls {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 148px 140px minmax(150px, 1fr);
+  min-width: 0;
+}
+
+.valueInput {
+  background: var(--clue-background-page);
+  border: 0.5px solid var(--clue-border-input);
+  border-radius: 6px;
+  color: var(--clue-content-neutral);
+  font-family: var(--clue-ds-product-typography-ui-regular-font-family);
+  font-size: var(--clue-ds-product-typography-ui-regular-font-size);
+  font-weight: var(--clue-ds-product-typography-ui-regular-font-weight);
+  height: 34px;
+  line-height: var(--clue-ds-product-typography-ui-regular-line-height);
+  min-width: 0;
+  outline: none;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.valueInput::placeholder {
+  color: var(--clue-content-subtle);
+}
+
+.valueInput:hover {
+  background: var(--clue-background-hover);
+}
+
+.valueInput:focus-visible {
+  border-color: #9aa593;
+  outline: 2px solid #dfe6d8;
+  outline-offset: 1px;
+}
+
+.deleteButton {
+  align-items: center;
+  border-radius: 5px;
+  color: var(--clue-content-subtle);
+  cursor: pointer;
+  display: flex;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.deleteButton:hover {
+  background: var(--clue-background-hover);
+  color: var(--clue-content-neutral);
+}
+
+.deletePlaceholder {
+  height: 28px;
+  width: 28px;
+}
+
+.footer {
+  align-items: center;
+  border-top: 0.5px solid var(--clue-border-neutral);
+  display: flex;
+  min-height: 52px;
+  padding: 9px 16px;
+}
+
+.addButton {
+  align-items: center;
+  background: white;
+  border: 0.5px solid var(--clue-border-input);
+  border-radius: 6px;
+  box-shadow: var(--clue-shadow-low);
+  color: var(--clue-content-neutral);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--clue-ds-product-typography-action-medium-font-family);
+  font-size: var(--clue-ds-product-typography-action-medium-font-size);
+  font-weight: var(--clue-ds-product-typography-action-medium-font-weight);
+  gap: 6px;
+  height: 32px;
+  line-height: var(--clue-ds-product-typography-action-medium-line-height);
+  padding: 0 10px;
+}
+
+.addButton:hover {
+  background: var(--clue-background-hover);
+}
+
+.addButton:focus-visible,
+.clearButton:focus-visible,
+.deleteButton:focus-visible {
+  outline: 2px solid #dfe6d8;
+  outline-offset: 1px;
+}
+
+.plusIcon {
+  display: inline-flex;
+  height: 12px;
+  position: relative;
+  width: 12px;
+}
+
+.plusIcon img {
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+@media (max-width: 760px) {
+  .panel {
+    right: -96px;
+    width: min(430px, calc(100vw - 24px));
+  }
+
+  .rule {
+    align-items: start;
+    grid-template-columns: 64px minmax(0, 1fr) 28px;
+  }
+
+  .controls {
+    grid-template-columns: 1fr;
+  }
+}

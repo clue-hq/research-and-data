@@ -1,0 +1,160 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/fonts/satoshi-regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/fonts/satoshi-medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+:root {
+  /*
+   * Compatibility aliases for existing screens. New components should consume
+   * @clue/design-system directly.
+   */
+  --clue-background-neutral: var(--clue-ds-color-bg-neutral);
+  --clue-background-page: var(--clue-ds-color-bg-page);
+  --clue-background-hover: var(--clue-ds-color-bg-neutral-hover);
+  --clue-background-pressed: var(--clue-ds-color-bg-neutral-pressed);
+  --clue-border-neutral: var(--clue-ds-color-border-neutral);
+  --clue-border-input: var(--clue-ds-color-components-input-border);
+  --clue-border-table: var(--clue-ds-color-primitives-gray-alpha-300);
+  --clue-content-neutral: var(--clue-ds-color-content-neutral);
+  --clue-content-subtle: var(--clue-ds-color-content-subtle);
+  --clue-content-disabled: var(--clue-ds-color-content-disabled);
+  --clue-fit-high-background: var(--clue-ds-color-primitives-positive-100);
+  --clue-fit-high-content: var(--clue-ds-color-content-utility-positive);
+  --clue-shadow-low: var(--clue-ds-shadow-card-subtle);
+  /* AI Elements/shadcn aliases resolve back to the Clue design system. */
+  --background: var(--clue-ds-color-bg-page);
+  --foreground: var(--clue-ds-color-content-neutral);
+  --popover: var(--clue-ds-color-bg-page);
+  --popover-foreground: var(--clue-ds-color-content-neutral);
+  --primary: var(--clue-ds-color-primitives-brand-950);
+  --primary-foreground: white;
+  --muted: var(--clue-ds-color-bg-neutral);
+  --muted-foreground: var(--clue-ds-color-content-subtle);
+  --accent: var(--clue-ds-color-bg-neutral-hover);
+  --accent-foreground: var(--clue-ds-color-content-neutral);
+  --destructive: #c13b32;
+  --border: var(--clue-ds-color-border-subtle);
+  --input: var(--clue-ds-color-components-input-border);
+  --ring: var(--clue-ds-color-border-neutral);
+  --radius: 8px;
+}
+
+@theme inline {
+  --color-background: var(--clue-background-neutral);
+  --color-foreground: var(--clue-content-neutral);
+  --font-sans: "Satoshi", Arial, sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--clue-background-neutral);
+  color: var(--clue-content-neutral);
+  font-family: "Satoshi", Arial, sans-serif;
+  font-size: var(--clue-ds-typography-text-default-font-size);
+  font-weight: var(--clue-ds-typography-text-default-font-weight);
+  line-height: var(--clue-ds-typography-text-default-line-height);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+::selection {
+  background: #dce7ff;
+}
+
+.clue-scrollbar-hidden {
+  scrollbar-width: none;
+}
+
+.clue-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes clue-view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes clue-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.clue-view-enter {
+  animation: clue-view-enter var(--clue-ds-product-motion-duration-view)
+    var(--clue-ds-product-motion-easing-entry) both;
+}
+
+.clue-panel-enter {
+  animation: clue-panel-enter var(--clue-ds-product-motion-duration-standard)
+    var(--clue-ds-product-motion-easing-standard) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clue-view-enter,
+  .clue-panel-enter {
+    animation: none;
+  }
+}

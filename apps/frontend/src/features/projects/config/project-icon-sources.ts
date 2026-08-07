@@ -1,0 +1,50 @@
+/**
+ * Direct SVG exports from the approved Projects/chat flow in Figma.
+ * The registry stays outside the visual component so asset provenance can be
+ * validated independently.
+ */
+export const projectIconSources = {
+  "align-center": "/icons/projects/align-center.svg",
+  "align-left": "/icons/projects/align-left.svg",
+  "align-right": "/icons/projects/align-right.svg",
+  "align-vertical-around": "/icons/projects/align-vertical-around.svg",
+  "align-vertical-end": "/icons/projects/align-vertical-end.svg",
+  "align-vertical-start": "/icons/projects/align-vertical-start.svg",
+  "arrow-up": "/icons/projects/arrow-up.svg",
+  brush: "/icons/projects/brush.svg",
+  "chevron-down": "/icons/projects/chevron-down.svg",
+  "chevron-right": "/icons/projects/chevron-right.svg",
+  "chevrons-up-down": "/icons/projects/chevrons-up-down.svg",
+  check: "/icons/projects/check.svg",
+  "clipboard-list": "/icons/projects/clipboard-list.svg",
+  clue: "/icons/projects/clue-assistant.svg",
+  close: "/icons/projects/close.svg",
+  edit: "/icons/projects/edit.svg",
+  "edit-active": "/icons/projects/edit-active.svg",
+  expand: "/icons/projects/expand.svg",
+  "file-text": "/icons/projects/file-text.svg",
+  gallery: "/icons/projects/gallery.svg",
+  globe: "/icons/projects/globe.svg",
+  grid: "/icons/projects/gallery.svg",
+  image: "/icons/projects/image.svg",
+  laptop: "/icons/projects/laptop.svg",
+  layers: "/icons/projects/layers.svg",
+  link: "/icons/projects/link.svg",
+  list: "/icons/projects/list.svg",
+  loader: "/icons/projects/loader.svg",
+  lock: "/icons/projects/lock.svg",
+  menu: "/icons/projects/menu.svg",
+  more: "/icons/projects/more.svg",
+  plus: "/icons/projects/plus.svg",
+  rectangle: "/icons/projects/rectangle.svg",
+  search: "/icons/projects/search.svg",
+  sparkles: "/icons/projects/sparkles.svg",
+  "status-check": "/icons/projects/status-check.svg",
+  telescope: "/icons/projects/telescope.svg",
+  "target-accounts": "/icons/projects/target-accounts.svg",
+  text: "/icons/projects/text.svg",
+  visibility: "/icons/projects/visibility.svg",
+  web: "/icons/projects/web.svg",
+} as const;
+
+export type ProjectIconName = keyof typeof projectIconSources;
