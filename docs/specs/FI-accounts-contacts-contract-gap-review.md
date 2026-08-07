@@ -216,3 +216,9 @@ What exists: read-only turn *metadata* endpoints; a loopback-only trial chat; no
 ---
 
 *Once decisions are ratified, each resolution is recorded into `apps/frontend/docs/api-contracts/accounts.md` (and `projects.md` where applicable) per the branch charter, and this doc gets a ratification log appended.*
+
+---
+
+## 9. Ratification log
+
+- **2026-08-08 — D-2 and D-3 RESOLVED by `docs/specs/FI-2-workspace-account-layer.md`** (founder-ratified design, verified by two follow-up code studies). The founder clarified that §1-S1's "structural mismatch" framing was wrong about intent: the frontend's workspace-global `/accounts` **is** the product model. FI-2 defines the two-lens scope rule (global lens = union of all projects' research, attributed; project lens = that project's research only), a real `project_account` membership table (D-3), a `run_lineage` claim→project join spine, a `research_scope` (project_neutral/project_relative) field attribute, TTL-gated no-respend on neutral fields, and project-scoped supersede predicates. D-2's "representative-run rule" dissolves — the global list serves per-project attributed scores instead of one guessed number. D-1's read layer is refined (not replaced) by FI-2 §7; D-4…D-10 remain open.
