@@ -6,8 +6,11 @@ produced it, and :func:`project_run_ids` is the project-lens read predicate's in
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from clue_core import new_run_id
 from clue_research.claimstore import (
@@ -124,6 +127,61 @@ def test_workspace_level_run_belongs_to_no_project() -> None:
             assert await project_run_ids(conn, workspace_id="ws-1", project_id="proj-1") == (
                 project,
             )
+
+    run_async(_run())
+
+
+def test_project_run_id_without_a_project_id_is_refused() -> None:
+    """A run bound to a project run must name its project, or no lens read can find it."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            with pytest.raises(ValueError):
+                await record_run_lineage(
+                    conn,
+                    run_id=new_run_id(),
+                    workspace_id="ws-1",
+                    kind="entity_research",
+                    project_run_id=uuid4(),
+                )
+            # Refused before the execute, so the caller's transaction is untouched and usable.
+            assert await project_run_ids(conn, workspace_id="ws-1", project_id="proj-1") == ()
+
+    run_async(_run())
+
+
+def test_project_run_id_without_a_project_id_is_refused_by_the_database_too() -> None:
+    """The guard is also a CHECK, so a writer bypassing the module cannot record the bad shape."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            with pytest.raises(IntegrityError):
+                await conn.execute(
+                    text(
+                        "INSERT INTO run_lineage (run_id, workspace_id, project_id, "
+                        "project_run_id, kind, created_at) "
+                        "VALUES (:run_id, 'ws-1', NULL, :project_run_id, 'entity_research', now())"
+                    ),
+                    {"run_id": new_run_id(), "project_run_id": uuid4()},
+                )
+
+    run_async(_run())
+
+
+def test_project_run_id_must_reference_a_real_project_run() -> None:
+    """``run_lineage_project_run_fk`` really points at ``project_run (id)``."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            with pytest.raises(IntegrityError):
+                await record_run_lineage(
+                    conn,
+                    run_id=new_run_id(),
+                    workspace_id="ws-1",
+                    kind="entity_research",
+                    project_id="proj-1",
+                    project_run_id=uuid4(),
+                )
 
     run_async(_run())
 

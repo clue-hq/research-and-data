@@ -64,11 +64,16 @@ async def record_run_lineage(
 ) -> None:
     """Attribute one run to its workspace (and project, when it has one). Idempotent.
 
-    Raises :class:`ValueError` on an unknown ``kind`` — before any statement is issued, so a
-    caller's bad kind never leaves a partial write or aborts the caller's transaction.
+    Raises :class:`ValueError` on an unknown ``kind``, or on a ``project_run_id`` with no
+    ``project_id`` (that run would be attributed to a project no lens read can find — the
+    ``run_lineage_project_requires_project_id`` CHECK mirrors it). Both are raised before any
+    statement is issued, so a bad caller never leaves a partial write or poisons a shared
+    transaction.
     """
     if kind not in RUN_LINEAGE_KINDS:
         raise ValueError(f"unknown run lineage kind {kind!r}; expected one of {RUN_LINEAGE_KINDS}")
+    if project_run_id is not None and project_id is None:
+        raise ValueError(f"run lineage for project_run {project_run_id} needs a project_id")
     await conn.execute(
         _RECORD,
         {

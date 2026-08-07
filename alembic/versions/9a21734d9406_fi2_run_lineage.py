@@ -42,6 +42,10 @@ def upgrade() -> None:
             CONSTRAINT run_lineage_pkey PRIMARY KEY (run_id),
             CONSTRAINT run_lineage_project_run_fk FOREIGN KEY (project_run_id)
                 REFERENCES project_run (id),
+            -- A run bound to a concrete project run must name its project: otherwise it is
+            -- attributed to a project the lens read (workspace_id, project_id) can never find.
+            CONSTRAINT run_lineage_project_requires_project_id
+                CHECK (project_run_id IS NULL OR project_id IS NOT NULL),
             CONSTRAINT run_lineage_kind_check CHECK (kind IN
                 ('discovery','import','scoring','tiering','entity_research','committee',
                  'contact_research','narrative','stage0','enrichment','manual'))
