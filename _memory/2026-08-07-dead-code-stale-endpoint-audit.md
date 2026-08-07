@@ -172,3 +172,30 @@ a prefix-convention question rather than an existing conflict.
      missing launch ledger instead of returning a zero-account success.
    - Until bridged, phase-2 project-run screens must treat phases past TIER_CHECKPOINT as
      not-yet-composed.
+
+## Addendum 2 (same day) — DEEP-gap decision RATIFIED: bridge, never unquarantine
+
+Founder ratified the diagnosis with a sharpening: the R1 quarantine correctly retired the
+M8A/M8B/M8C orchestration model (mechanical orchestrator, pre-agent provider preparation,
+committee walking, automatic account→contact progression); verification/handoff are NOT
+obsolete — their input/composition boundary was never migrated to the M8D fleet's outputs.
+Ruling: the quarantine handler leaves the DEEP slot ONLY when replaced by a new M8D-compatible
+adapter; unquarantining/restoring M8C code would reactivate exactly what M8D retired.
+
+Bridge spec drafted: `docs/specs/M8D-R11-deep-phase-bridge.md` (R11.1 join-only DEEP adapter,
+R11.2 fleet-terminal wake source, R11.3 verification selector off the R6 content-addressed
+selection replacing the account_deep_launch read at BOTH consumers with fail-loud semantics,
+R11.4 fleet-shaped DeepExternalWait contract-delta). Additional substrate facts verified while
+grounding it: WAITING_EXTERNAL is already valid for DEEP with wake fall-through re-entering the
+same handler (durable/project.py:440-442,494-506); the R6 launcher binds project_run_id and
+works without the machine being at DEEP (account_research_fleet_launch.py:160, R6 acceptance
+§1); EntityResearchJobStore.list_jobs (audit-flagged zero-caller) gets its first customer in
+R11 or goes in the cleanup PR; the fleet controller computes all_terminal and
+suspended|terminal returns (account_research_fleet.py:1001,207); ExternalResearchWakeDispatcher
+has the pluggable sources seam (external_research_wake.py:128).
+
+Spec §6 open decisions awaiting founder: (a) branch placement (recommended: own research-lane
+worktree like B3/B4, merged in when accepted), (b) PAUSED vs AWAITING_INPUT for the no-launch
+gate, (c) latest-vs-union on multiple fleet runs, (d) budget attribution (single enforcement at
+fleet admission), (e) interim run_verification@1 guard only if R11 is deferred. Implementation
+does not start until §6 is ratified.
