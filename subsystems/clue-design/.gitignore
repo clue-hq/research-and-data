@@ -22,3 +22,14 @@ reference_docs/*
 !reference_docs/
 !reference_docs/ABM-Design-Engine-Temporary-Spec.md
 !reference_docs/Brilliant-Reverse-Engineering-Report.md
+
+# Local-only heavy artifacts — stripped from history 2026-08-04, never re-commit
+apps/api/asset-store/
+apps/agent_runtime/.lumen-runs-A/
+apps/agent_runtime/.lumen-runs-B/
+apps/agent_runtime/.lumen-runs/
+.context/a0-probe/
+.context/attachments/
+.context/**/*.png
+.playwright-mcp/
+apps/editor/public/vendor/
