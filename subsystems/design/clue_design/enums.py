@@ -1,0 +1,128 @@
+"""Design-substrate lifecycle enums (Part II slice D1).
+
+Deliberately package-local, not in ``core.enums`` (the fleet/durable precedent): these are the
+design subsystem's private vocabularies, mirrored one-to-one by Postgres ENUM types created in
+the D1 ``design_*`` migrations. The parity tests in ``tests/design/`` assert the Python members
+and DB labels stay in lock-step (member value == DB label, definition order == DB order).
+
+Scope rule (PD contract §4): only vocabularies that were CLOSED in the merged design subsystem —
+a SQLite CHECK constraint or a code-enforced closed set — become enums. Engine-owned free-text
+vocabularies (document/asset/binding/instance/batch/repair statuses, event types, actor kinds)
+stay ``text``; inventing members for them here would fork the engine's vocabulary.
+"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class DesignDocKind(StrEnum):
+    """``design_doc_kind`` — the two document families (scene engine vs WebDoc)."""
+
+    SCENE = "scene"
+    WEB = "web"
+
+
+class DesignEffectiveBrandSource(StrEnum):
+    """``design_effective_brand_source`` — where a document's effective brand kit came from."""
+
+    REQUEST = "request"
+    DOCUMENT = "document"
+    GENERATED_DEFAULT = "generated_default"
+    BRAND_KIT_LIBRARY = "brand_kit_library"
+    SCENE_REF = "scene_ref"
+
+
+class DesignOpSource(StrEnum):
+    """``design_op_source`` — who authored an operation batch (op log + edit envelopes)."""
+
+    EDITOR = "editor"
+    AGENT = "agent"
+    API = "api"
+    SYSTEM = "system"
+
+
+class DesignBrandApprovalStatus(StrEnum):
+    """``design_brand_approval_status`` — brand-kit review lifecycle."""
+
+    DRAFT = "draft"
+    GENERATED_UNREVIEWED = "generated_unreviewed"
+    APPROVED = "approved"
+    DEPRECATED = "deprecated"
+
+
+class DesignBrandKitSource(StrEnum):
+    """``design_brand_kit_source`` — how a brand-kit version was produced."""
+
+    MANUAL = "manual"
+    UPLOADED = "uploaded"
+    GENERATED = "generated"
+    STYLES = "styles"
+    PLATFORM_DEFAULT = "platform_default"
+    API = "api"
+    WEBSITE = "website"
+    PDF = "pdf"
+    ASSET_UPLOAD = "asset_upload"
+
+
+class DesignDescriptionOrigin(StrEnum):
+    """``design_description_origin`` — asset-description authorship (human curation wins)."""
+
+    AI = "ai"
+    HUMAN = "human"
+
+
+class DesignPublishStatus(StrEnum):
+    """``design_publish_status`` — web-publish serving state."""
+
+    ACTIVE = "active"
+    UNPUBLISHED = "unpublished"
+
+
+class DesignRunStatus(StrEnum):
+    """``design_run_status`` — agent-run lifecycle (temporary shape; reshaped at D5)."""
+
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class DesignIngestionKind(StrEnum):
+    """``design_ingestion_kind`` — brand-kit ingestion input kinds."""
+
+    WEBSITE = "website"
+    PDF = "pdf"
+    ASSET_UPLOAD = "asset_upload"
+
+
+class DesignIngestionStatus(StrEnum):
+    """``design_ingestion_status`` — ingestion-job lifecycle."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class DesignCompilationStatus(StrEnum):
+    """``design_compilation_status`` — custom-component compiler outcomes."""
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    TRANSIENT_ERROR = "transient_error"
+
+
+#: enum-type name -> Python enum, exactly as created in the D1 migrations (parity-test surface).
+DESIGN_PG_ENUMS: dict[str, type[StrEnum]] = {
+    "design_doc_kind": DesignDocKind,
+    "design_effective_brand_source": DesignEffectiveBrandSource,
+    "design_op_source": DesignOpSource,
+    "design_brand_approval_status": DesignBrandApprovalStatus,
+    "design_brand_kit_source": DesignBrandKitSource,
+    "design_description_origin": DesignDescriptionOrigin,
+    "design_publish_status": DesignPublishStatus,
+    "design_run_status": DesignRunStatus,
+    "design_ingestion_kind": DesignIngestionKind,
+    "design_ingestion_status": DesignIngestionStatus,
+    "design_compilation_status": DesignCompilationStatus,
+}

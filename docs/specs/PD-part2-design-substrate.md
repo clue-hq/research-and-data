@@ -1,7 +1,10 @@
 # PD — Part II: Design-Substrate Adoption (implementation contract)
 
-**Status:** D0 EXECUTED 2026-08-07; slice map and D0 rulings ADOPTED. **Open decisions O1–O6
-RATIFIED by the founder 2026-08-07** (with refinements — see §6); D1 is unblocked. One
+**Status:** D0 EXECUTED 2026-08-07; **D1 EXECUTED 2026-08-07** (six migrations
+`7bff99d2ad65 → 51db518c2a68 → c6cb64259ef1 → 47d2e1ca25f1 → 86a9ce389e6e → e79f192828b1`
+chained off `c6d84aa84b79`, single head throughout; `clue_design.enums` + the `tests/design/`
+acceptance suite; `make db-smoke` up→down→up green on a clean throwaway DB). Slice map and D0
+rulings ADOPTED; **O1–O6 RATIFIED by the founder 2026-08-07** (with refinements — see §6). One
 sub-decision remains open: **O6b** (the D2 interim public-serving rule), to be ratified at the
 D2 discussion.
 **Parent:** `docs/specs/design-integration-master-plan.md` §Part II (the authoritative plan).

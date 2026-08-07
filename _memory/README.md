@@ -27,6 +27,11 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-07-part2-d1-design-schema.md` — **Part II D1 done:** six `design_*` migrations off
+  `c6d84aa84b79` (head `e79f192828b1`), 11 package-local enums + parity, immutability triggers,
+  structural tenancy; db-smoke + 6/6 design tests green. Env gotcha: localhost:5432 = Homebrew
+  PG17, NOT the docker container. Pre-existing DB-suite failures (waterfall et al.) proven
+  D1-independent by A/B. Next: D2 after O6b ratification.
 - `2026-08-07-part2-o1-o6-ratified.md` — **O1–O6 RATIFIED (founder); D1 unblocked.** Key
   refinements: `design_brand_kit` promoted to THE platform versioned brand-kit payload (brand
   studio vision); `asset_descriptions` ported with full behavior; O5 atomicity rule binding;
