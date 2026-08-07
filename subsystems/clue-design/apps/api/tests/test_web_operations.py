@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 
@@ -141,7 +142,7 @@ def install_operations(before: dict, after: dict) -> list[dict]:
 def seed_content(client: TestClient, document_id: str, web_doc: dict) -> None:
     """Install a starting content doc WITHOUT creating an undo entry, so the
     manual-edit stack starts clean (push_undo=False)."""
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         store.update_web_document(
             document_id,
@@ -161,7 +162,7 @@ def get_document(client: TestClient, document_id: str) -> dict:
 
 
 def envelopes(client: TestClient, document_id: str) -> list:
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         return store.list_envelopes(document_id, newest_first=False)
     finally:

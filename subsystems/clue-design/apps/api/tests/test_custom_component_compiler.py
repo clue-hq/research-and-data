@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 import lumen_api.main as main_module
 from lumen_api.custom_components import persist_custom_component_source_revision
+from lumen_api.design_store import HybridRepository
 from lumen_api.database import (
     CustomComponentSourceVersionConflict,
     Repository,
@@ -276,7 +277,7 @@ def test_valid_source_versions_compile_into_immutable_complete_artifacts(
         assert response.status_code == 200, response.text
         assert expected in response.content
 
-    repository = Repository(connect(client.app.state.database_path))
+    repository = HybridRepository(connect(client.app.state.database_path))
     try:
         with pytest.raises(sqlite3.IntegrityError):
             repository.connection.execute(
@@ -600,7 +601,7 @@ def test_concurrent_source_compare_and_swap_has_exactly_one_winner(
     store_root = client.app.state.custom_component_store_root
 
     def write(label: str) -> str:
-        repository = Repository(connect(database_path))
+        repository = HybridRepository(connect(database_path))
         try:
             persist_custom_component_source_revision(
                 repository,
@@ -652,7 +653,7 @@ def test_compile_overtaken_by_source_write_cannot_publish_stale_artifact(
 
     def compile_then_advance_source(**kwargs):
         result = original_compile(**kwargs)
-        repository = Repository(connect(client.app.state.database_path))
+        repository = HybridRepository(connect(client.app.state.database_path))
         try:
             persist_custom_component_source_revision(
                 repository,

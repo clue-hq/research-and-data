@@ -69,6 +69,7 @@ from .database import (
     run_migrations,
     utc_now,
 )
+from .design_store import HybridRepository, resolve_workspace_id
 from .font_library import manifest as font_library_manifest
 from .dto import (
     brand_compatibility_dto,
@@ -285,7 +286,9 @@ def _fail_orphaned_runs(database_path: Path) -> None:
     saw only a dead stream). Each orphan gets a terminal result plus an
     `error` run-event so open SSE pollers settle to `done` immediately.
     """
-    store = Repository(connect(database_path))
+    # The sweep enriches orphaned web runs with the document's doc_kind, which
+    # lives on Postgres; dev-default workspace until D5 reshapes runs.
+    store = HybridRepository(connect(database_path))
     try:
         orphans = store.list_running_runs()
         for run in orphans:
@@ -493,10 +496,13 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def asset_store_root() -> str:
         return str(app.state.asset_store_root)
 
-    def repository() -> Repository:
+    def repository(request: Request) -> Repository:
+        # D2.2: the document domain lives on Postgres via clue_design; everything else stays
+        # SQLite until its own slice. Workspace comes from X-Workspace-Id or the dev default
+        # (design_store.resolve_workspace_id; strict 401-on-absent lands at D2.5).
         connection = connect(app.state.database_path)
         try:
-            yield Repository(connection)
+            yield HybridRepository(connection, workspace_id=resolve_workspace_id(request))
         finally:
             connection.close()
 
@@ -1906,9 +1912,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         root = repo_root()
         database_path = app.state.database_path
         override = app.state.agent_turn_runner
+        # D2.2: the worker's store must carry the request's workspace (document domain = PG).
+        workspace_id = repo.workspace_id if isinstance(repo, HybridRepository) else None
 
         def worker() -> None:
-            store = Repository(connect(database_path))
+            store: Repository = (
+                HybridRepository(connect(database_path), workspace_id=workspace_id)
+                if workspace_id is not None
+                else Repository(connect(database_path))
+            )
             try:
 
                 def sink(event_type: str, data: JsonObject) -> None:
@@ -2114,9 +2126,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         model = payload.model
         target_node_ids = payload.target_node_ids
         base_version = payload.base_version
+        # D2.2: the web-turn worker persists the document (PG) — carry the workspace.
+        workspace_id = repo.workspace_id if isinstance(repo, HybridRepository) else None
 
         def worker() -> None:
-            store = Repository(connect(database_path))
+            store: Repository = (
+                HybridRepository(connect(database_path), workspace_id=workspace_id)
+                if workspace_id is not None
+                else Repository(connect(database_path))
+            )
             try:
 
                 def sink(event_type: str, data: JsonObject) -> None:
@@ -5250,15 +5268,20 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def create_asset_metadata(
         payload: AssetMetadataRequest, repo: Repository = Depends(repository)
     ) -> JsonObject:
-        data = (
-            payload.model_dump()
-            if hasattr(payload, "model_dump")
-            else payload.dict()
+        # Retired by design-integration Part II (ratified decision O3,
+        # docs/specs/PD-part2-design-substrate.md §6): the legacy asset_metadata
+        # surface is gone; the asset registry (/assets) is the only writer.
+        raise HTTPException(
+            status_code=410,
+            detail={
+                "code": "asset_metadata.gone",
+                "message": (
+                    "the legacy asset_metadata surface was retired by "
+                    "design-integration Part II (PD contract O3); use the asset "
+                    "registry (/assets)"
+                ),
+            },
         )
-        data["asset_id"] = data["asset_id"] or new_id("asset")
-        if data.get("document_id"):
-            require_document(repo, data["document_id"])
-        return repo.create_asset_metadata(data)
 
     @app.get("/asset-metadata/{asset_id}")
     def get_asset_metadata(

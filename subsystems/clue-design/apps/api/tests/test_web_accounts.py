@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import account_values, create_app
 
 
@@ -167,7 +168,7 @@ def test_account_values_maps_namespace_and_logo_record(client: TestClient) -> No
         "data": {"headline": "Care that connects", "cta": "Book a demo"},
         "notes": "agent-only context — never substituted",
     }
-    repo = Repository(connect(client.app.state.database_path))
+    repo = HybridRepository(connect(client.app.state.database_path))
     try:
         values, asset_records = account_values(account, repo)
     finally:
@@ -201,7 +202,7 @@ def test_account_values_without_domain_or_logo(client: TestClient) -> None:
         "data": {},
         "notes": None,
     }
-    repo = Repository(connect(client.app.state.database_path))
+    repo = HybridRepository(connect(client.app.state.database_path))
     try:
         values, asset_records = account_values(account, repo)
     finally:
@@ -221,7 +222,7 @@ def test_account_values_logo_row_missing_yields_no_record(client: TestClient) ->
         "data": {},
         "notes": None,
     }
-    repo = Repository(connect(client.app.state.database_path))
+    repo = HybridRepository(connect(client.app.state.database_path))
     try:
         values, asset_records = account_values(account, repo)
     finally:

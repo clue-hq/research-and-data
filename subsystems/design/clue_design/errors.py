@@ -34,10 +34,12 @@ class DesignVersionConflictError(DesignStoreError):
     the lost-update gap the SQLite port closes). Callers reload and retry or surface a 409.
     """
 
-    def __init__(self, kind: str, key: str, expected_version: int) -> None:
+    def __init__(self, kind: str, key: str, expected_version: int, current_version: int) -> None:
         super().__init__(
-            f"{kind} version conflict: {key} is no longer at version {expected_version}"
+            f"{kind} version conflict: {key} expected version {expected_version}, "
+            f"is at {current_version}"
         )
         self.kind = kind
         self.key = key
         self.expected_version = expected_version
+        self.current_version = current_version

@@ -24,13 +24,19 @@ class DesignDocKind(StrEnum):
 
 
 class DesignEffectiveBrandSource(StrEnum):
-    """``design_effective_brand_source`` — where a document's effective brand kit came from."""
+    """``design_effective_brand_source`` — where a document's effective brand kit came from.
+
+    ``PLATFORM_DEFAULT`` postdates the D1a CREATE TYPE (the D1 inventory under-read the closed
+    set; the runtime assigns it in four places) — added by migration ``7a9881f9717a`` via
+    ``ALTER TYPE … ADD VALUE``, hence last in definition order (parity-locked).
+    """
 
     REQUEST = "request"
     DOCUMENT = "document"
     GENERATED_DEFAULT = "generated_default"
     BRAND_KIT_LIBRARY = "brand_kit_library"
     SCENE_REF = "scene_ref"
+    PLATFORM_DEFAULT = "platform_default"
 
 
 class DesignOpSource(StrEnum):

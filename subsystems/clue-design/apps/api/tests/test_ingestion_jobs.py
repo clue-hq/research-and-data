@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from lumen_api.database import Repository, connect, run_migrations
+from lumen_api.design_store import HybridRepository
 from lumen_ingestion.jobs import (
     IngestionJobStore,
     new_id,
@@ -128,7 +129,7 @@ def _minimal_kit_row(source: str) -> tuple[dict, dict, list, str]:
 def test_brand_kits_source_check_accepts_website(tmp_path: Path) -> None:
     database_path = tmp_path / "api.sqlite3"
     run_migrations(database_path)
-    repo = Repository(connect(database_path))
+    repo = HybridRepository(connect(database_path))
     for source in ("website", "pdf", "asset_upload"):
         brand_kit, brand_summary, diagnostics, src = _minimal_kit_row(source)
         row = repo.create_brand_kit(brand_kit, brand_summary, diagnostics, src)
@@ -149,14 +150,14 @@ def test_migration_idempotent_fresh_and_reopen(tmp_path: Path) -> None:
     database_path = tmp_path / "api.sqlite3"
     # Fresh apply.
     run_migrations(database_path)
-    repo = Repository(connect(database_path))
+    repo = HybridRepository(connect(database_path))
     repo.create_brand_kit(*_minimal_kit_row("website"))
     repo.connection.close()
 
     # Re-open: run_migrations runs again (re-runs 007's rebuild). Data must
     # survive and the ingestion_jobs table stays usable.
     run_migrations(database_path)
-    repo2 = Repository(connect(database_path))
+    repo2 = HybridRepository(connect(database_path))
     kept = repo2.require_brand_kit("kit_website", 1)
     assert kept["source"] == "website"
     store = IngestionJobStore(connect(database_path))

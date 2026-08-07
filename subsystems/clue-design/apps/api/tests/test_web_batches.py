@@ -16,6 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app, new_id
 
 
@@ -46,7 +47,7 @@ def seed_template(client: TestClient, document_id: str) -> None:
     )
     errors = [d for d in response.get("diagnostics", []) if d.get("severity") == "error"]
     assert not errors, response.get("diagnostics")
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         store.update_web_document(
             document_id,
@@ -195,7 +196,7 @@ def test_resume_from_mid_cursor(client: TestClient) -> None:
     ]
     # Construct a batch left "partial" after its first account (cursor=1), as if
     # the process had been interrupted mid-run.
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         batch = store.create_web_batch(
             {

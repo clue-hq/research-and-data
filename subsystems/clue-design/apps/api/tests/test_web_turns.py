@@ -16,6 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app, workspace_asset_library_manifest
 from lumen_ingestion.describe import DescriptionStore
 
@@ -129,7 +130,7 @@ def install_operations(before: dict, after: dict) -> list[dict]:
 
 
 def seed_web_doc(client: TestClient, document_id: str, web_doc: dict) -> None:
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         store.update_web_document(
             document_id,
@@ -166,7 +167,7 @@ def test_workspace_asset_library_manifest_carries_descriptions_and_provenance(
         ).read_text()
     )
     connection = connect(client.app.state.database_path)
-    repo = Repository(connection)
+    repo = HybridRepository(connection)
     try:
         repo.create_asset_record(record)
         DescriptionStore(connection).put_human(
@@ -398,7 +399,7 @@ def test_web_turn_applied_replays_operations_and_writes_envelope(
 
     # The real operations and their checked inverses are persisted — no
     # replace_web_doc marker survives the agent handoff.
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         envelopes = store.list_envelopes(document["id"])
     finally:
@@ -522,7 +523,7 @@ def test_web_turn_unknown_account_404_before_run(client: TestClient) -> None:
     assert response.status_code == 404, response.text
     assert response.json()["detail"]["code"] == "web_account.not_found"
     # No run was created for the rejected turn.
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         assert store.list_running_runs() == []
     finally:
@@ -562,13 +563,9 @@ def test_web_turn_uses_document_account_when_request_omits_it(client: TestClient
 
     # A derived doc carries its account_id on the row (the B2 derive path would
     # set this; here we set it directly since derive is out of B1 scope).
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
-        store.connection.execute(
-            "UPDATE documents SET account_id = ? WHERE id = ?",
-            (account_id, document["id"]),
-        )
-        store.connection.commit()
+        store.set_document_account(document["id"], account_id)
     finally:
         store.connection.close()
 
@@ -643,7 +640,7 @@ def test_web_turn_failed_leaves_document_unchanged(client: TestClient) -> None:
     after = client.get(f"/documents/{document['id']}").json()
     assert after["current_version"] == before["current_version"] == 0
 
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         assert store.list_envelopes(document["id"]) == []
     finally:
@@ -725,7 +722,7 @@ def test_web_turn_conflict_preserves_edit_committed_while_agent_runs(
     stored = client.get(f"/documents/{document['id']}").json()
     assert stored["current_version"] == 1
     assert stored["scene"]["custom_css"] == human_css
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         envelopes = store.list_envelopes(document["id"])
     finally:

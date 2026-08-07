@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumen_api import image_provider
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import agent_response_from_trace, create_app
 from py_lumen_config import settings
 from py_lumen_obs import bind_request_id, get_logger, unbind_context
@@ -1315,7 +1316,7 @@ def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
     first = TestClient(create_app(database_path))
 
     connection = connect(database_path)
-    repo = Repository(connection)
+    repo = HybridRepository(connection)
     repo.create_document(
         {"id": "doc_web_orphan", "title": "Orphan site", "schema_version": 1, "pages": []},
         doc_kind="web",
@@ -1358,7 +1359,7 @@ def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
     from lumen_api.database import Repository, connect
 
     connection = connect(client.app.state.database_path)
-    repo = Repository(connection)
+    repo = HybridRepository(connection)
     repo.create_run("run_sse", "doc_sse")
     repo.append_run_event("run_sse", "dsl_block_produced", {"iteration": 1})
     repo.set_run_result(
@@ -1390,7 +1391,7 @@ def test_run_event_enriched_with_operations_round_trips_and_streams(
     from lumen_api.database import Repository, connect
 
     connection = connect(client.app.state.database_path)
-    repo = Repository(connection)
+    repo = HybridRepository(connection)
     repo.create_run("run_ops", "doc_ops")
     enriched = {
         "actor": "dsl-author",
@@ -2901,7 +2902,7 @@ def test_failed_finalization_persists_diagnostics(client: TestClient) -> None:
     )
 
 
-def test_asset_metadata_round_trip_stores_references_only(client: TestClient) -> None:
+def test_asset_metadata_endpoint_is_gone(client: TestClient) -> None:
     document = create_document(client)
     response = client.post(
         "/asset-metadata",
@@ -2918,34 +2919,16 @@ def test_asset_metadata_round_trip_stores_references_only(client: TestClient) ->
             "licensing": {"usage": "client_owned"},
         },
     )
-    assert response.status_code == 200, response.text
-
-    loaded = client.get("/asset-metadata/asset_logo").json()
-    assert loaded["source_uri"] == "s3://example/logo.svg"
-    assert loaded["provenance"] == {"source": "uploaded"}
+    assert response.status_code == 410, response.text
+    assert response.json()["detail"]["code"] == "asset_metadata.gone"
 
 
 def test_asset_scene_operations_persist_history_snapshot_and_template(
     client: TestClient,
 ) -> None:
+    # O3: the legacy asset_metadata surface is retired (410) — PD contract
+    # docs/specs/PD-part2-design-substrate.md §6; scene assets ride the scene itself.
     document = create_document(client)
-
-    metadata = client.post(
-        "/asset-metadata",
-        json={
-            "asset_id": "asset_generated_hero",
-            "document_id": document["id"],
-            "kind": "raster_image",
-            "filename": "generated-clinic-hero.png",
-            "source_uri": "s3://example/generated-clinic-hero.png",
-            "mime_type": "image/png",
-            "width": 1600,
-            "height": 900,
-            "provenance": {"source": "agent_generated"},
-            "licensing": {"usage": "generated_commercial_use"},
-        },
-    )
-    assert metadata.status_code == 200, metadata.text
 
     response = client.post(
         f"/documents/{document['id']}/operations",
@@ -3002,9 +2985,6 @@ def test_asset_scene_operations_persist_history_snapshot_and_template(
         revision["scene"]["nodes"]["node_hero_image"]["kind"]["asset_id"]
         == "asset_generated_hero"
     )
-
-    metadata_loaded = client.get("/asset-metadata/asset_generated_hero").json()
-    assert metadata_loaded["source_uri"] == "s3://example/generated-clinic-hero.png"
 
 
 def test_agent_read_surfaces_return_slots_geometry_and_summary(client: TestClient) -> None:
@@ -3178,6 +3158,13 @@ def test_base_version_mismatch_rejects_edit_before_mutation(
     assert client.get(f"/documents/{document['id']}/history").json()["envelopes"] == []
 
 
+@pytest.mark.skip(
+    reason=(
+        "backfill_edit_envelopes is boot-time SQLite machinery the Part-II port "
+        "retires (PD contract §4: not ported; dev data resets); the SQLite "
+        "document tables it wraps are deleted at D2.5"
+    )
+)
 def test_backfill_wraps_pre_envelope_operation_rows(tmp_path: Path) -> None:
     import sqlite3
 

@@ -27,6 +27,7 @@ from .database import (
     connect,
     custom_component_props_schema_issue,
 )
+from .design_store import HybridRepository
 
 
 JsonObject = Dict[str, Any]
@@ -76,7 +77,9 @@ class DurableAgentCustomComponentRegistry:
         self.compile_fn = compile_fn
 
     def _repository(self) -> Repository:
-        return Repository(connect(self.database_path))
+        # The registry reads documents (now Postgres); workspace defaults to the
+        # configured dev workspace until D2.5 threads the request workspace through.
+        return HybridRepository(connect(self.database_path))
 
     @staticmethod
     def _latest_success_for_artifact(

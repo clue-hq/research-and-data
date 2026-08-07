@@ -25,6 +25,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -57,7 +58,7 @@ def _seed_kit(
     summary = brand_summary if brand_summary is not None else {"product_ready": False}
     connection = connect(client.app.state.database_path)
     try:
-        return Repository(connection).create_brand_kit(
+        return HybridRepository(connection).create_brand_kit(
             brand_kit, summary, [], source
         )
     finally:
@@ -67,7 +68,7 @@ def _seed_kit(
 def _read_kit_row(client: TestClient, brand_kit_id: str, version: int | None = None) -> dict:
     connection = connect(client.app.state.database_path)
     try:
-        return Repository(connection).require_brand_kit(brand_kit_id, version)
+        return HybridRepository(connection).require_brand_kit(brand_kit_id, version)
     finally:
         connection.close()
 

@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 
@@ -76,7 +77,7 @@ def seed_template(
     response = client.app.state.core.web_ingest_html(web_doc, "home", html, None, None)
     errors = [d for d in response.get("diagnostics", []) if d.get("severity") == "error"]
     assert not errors, response.get("diagnostics")
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         store.update_web_document(
             document_id,
@@ -99,7 +100,7 @@ def upload_asset_record(client: TestClient) -> tuple[str, dict]:
     )
     assert response.status_code == 200, response.text
     asset_id = response.json()["asset"]["id"]
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         record = store.require_asset_record(asset_id)["asset"]
     finally:
@@ -244,7 +245,7 @@ def test_derive_rejected_on_missing_logo_asset_422(client: TestClient) -> None:
 
     # An account whose logo id does NOT resolve (seeded directly to bypass the
     # create endpoint's resolution check).
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         store.create_web_account(
             "acc_ghost", "Ghost Co", None, "asset_ghost_999", {}, None

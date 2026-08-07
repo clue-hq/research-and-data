@@ -13,8 +13,10 @@ from urllib.parse import urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text as sa_text
 
 from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 
@@ -171,7 +173,7 @@ def create_dialog_document(client: TestClient, document_id: str) -> dict:
         """,
     )
     assert ingested.get("web_doc"), ingested
-    repository = Repository(connect(client.app.state.database_path))
+    repository = HybridRepository(connect(client.app.state.database_path))
     try:
         return repository.create_document(
             ingested["web_doc"],
@@ -487,7 +489,7 @@ def test_publish_rejects_unresolved_tenant_pin_and_malicious_source(
         expected_version=0,
     )
     attach_component(client, document["id"], own)
-    repository = Repository(connect(client.app.state.database_path))
+    repository = HybridRepository(connect(client.app.state.database_path))
     try:
         stored = repository.require_document(document["id"])
         scene = stored["scene"]
@@ -497,12 +499,28 @@ def test_publish_rejects_unresolved_tenant_pin_and_malicious_source(
         ]
         scene["pages"][0]["nodes"]["cc_counter"]["props"] = {}
         # Simulate corrupted storage below the checked-operation boundary. The
-        # publish builder must still enforce tenant resolution.
-        repository.connection.execute(
-            "UPDATE documents SET current_scene_json = ? WHERE id = ?",
-            (json.dumps(scene), document["id"]),
+        # publish builder must still enforce tenant resolution. Reaching into
+        # `_bridge` is deliberate: the write must land BELOW the operation
+        # boundary, and documents now live on Postgres (not SQLite).
+        repository._bridge._run(
+            lambda conn: conn.execute(
+                sa_text(
+                    "UPDATE design_document SET current_scene_json = CAST(:s AS jsonb)"
+                    " WHERE id = :d AND workspace_id = :w"
+                ),
+                {
+                    "s": json.dumps(scene),
+                    "d": document["id"],
+                    "w": repository.workspace_id,
+                },
+            )
         )
-        repository.connection.commit()
+        # The corruption must actually be at rest — a zero-row UPDATE would
+        # silently turn this whole test into a no-op.
+        corrupted = repository.require_document(document["id"])
+        corrupted_node = corrupted["scene"]["pages"][0]["nodes"]["cc_counter"]
+        assert corrupted_node["slug"] == "foreign-card"
+        assert corrupted_node["artifact_id"] == foreign["artifact_id"]
     finally:
         repository.connection.close()
     rejected = client.post(

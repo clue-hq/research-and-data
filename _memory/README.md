@@ -27,6 +27,13 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-08-part2-d22-documents-history-port.md` — **Part II D2.2 done:** documents+history
+  on Postgres behind `HybridRepository` (scene CAS added; legacy asset-metadata 410s per O3);
+  migration `7a9881f9717a` — workspace-local PKs extended to all client-supplied/content-hash
+  id namespaces (**needs founder ratification**), account FK deferred to D2.4; design suite
+  487/0 green after harness adaptation + merge-fallout repairs (fixtures, npm). jsonb does NOT
+  preserve object key order — never select nodes by dict position. Opus-implements/Fable-reviews
+  process now binding.
 - `2026-08-07-part2-d21-dal-foundation.md` — **Part II D2.1 done:** `lumen-api` packaged +
   explicit uv-workspace member (agent-runtime deps deliberately excluded; dead `pypdf` pin
   dropped over a real lockfile conflict; py_lumen_* stay PYTHONPATH until Step-2);

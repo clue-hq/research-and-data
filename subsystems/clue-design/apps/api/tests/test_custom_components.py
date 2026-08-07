@@ -13,6 +13,7 @@ from lumen_api.custom_components import (
     persist_compiled_custom_component_artifact,
     resolve_custom_component_artifact_blob,
 )
+from lumen_api.design_store import HybridRepository
 from lumen_api.database import NotFoundError, Repository, connect, run_migrations
 from lumen_api.main import create_app
 
@@ -47,7 +48,7 @@ def persist_artifact(
     slug: str = "book-a-call",
     suffix: bytes = b"v1",
 ) -> dict:
-    repository = Repository(connect(client.app.state.database_path))
+    repository = HybridRepository(connect(client.app.state.database_path))
     try:
         return persist_compiled_custom_component_artifact(
             repository,
@@ -76,7 +77,7 @@ def create_account_document(client: TestClient, account_id: str) -> dict:
         empty, "home", COMPONENT_HTML, None, None
     )
     assert ingested.get("web_doc"), ingested
-    repository = Repository(connect(client.app.state.database_path))
+    repository = HybridRepository(connect(client.app.state.database_path))
     try:
         return repository.create_document(
             ingested["web_doc"],
@@ -148,7 +149,7 @@ def test_registry_is_content_addressed_immutable_and_account_scoped(
         assert stored.is_file()
         assert stored.stat().st_size == blob["byte_length"]
 
-    repository = Repository(connect(client.app.state.database_path))
+    repository = HybridRepository(connect(client.app.state.database_path))
     try:
         resolved, bundle = resolve_custom_component_artifact_blob(
             repository,
@@ -219,7 +220,11 @@ def test_custom_component_round_trips_and_participates_in_edit_history(
     document = create_account_document(client, "acc_alpha")
     page = document["scene"]["pages"][0]
     containers = page_containers(document["scene"])
-    assert len(containers) >= 2
+    # jsonb does not preserve object key order (the repo-wide hazard; select nodes
+    # by id, never by dict position).
+    assert {"left", "right"} <= set(containers), containers
+    source_container = "left"
+    target_container = "right"
 
     inserted = apply(
         client,
@@ -228,8 +233,8 @@ def test_custom_component_round_trips_and_participates_in_edit_history(
         {
             "kind": "insert_node",
             "page_id": page["id"],
-            "parent": containers[0],
-            "index": len(page["nodes"][containers[0]].get("children") or []),
+            "parent": source_container,
+            "index": len(page["nodes"][source_container].get("children") or []),
             "nodes": [custom_node(artifact)],
             "root": "cc_booking",
         },
@@ -304,14 +309,14 @@ def test_custom_component_round_trips_and_participates_in_edit_history(
             "kind": "move_node",
             "page_id": page["id"],
             "id": "cc_booking",
-            "new_parent": containers[1],
+            "new_parent": target_container,
             "index": 0,
         },
     )
     assert moved.status_code == 200, moved.text
     current = get_document(client, document["id"])
     assert (
-        current["scene"]["pages"][0]["nodes"][containers[1]]["children"][0]
+        current["scene"]["pages"][0]["nodes"][target_container]["children"][0]
         == "cc_booking"
     )
 
@@ -326,7 +331,7 @@ def test_custom_component_round_trips_and_participates_in_edit_history(
         {
             "kind": "insert_node",
             "page_id": page["id"],
-            "parent": containers[1],
+            "parent": target_container,
             "index": 1,
             "nodes": [duplicate],
             "root": "cc_booking_copy",
@@ -447,7 +452,7 @@ def test_invalid_unknown_and_cross_account_references_never_commit(
     ingested = client.app.state.core.web_ingest_html(
         empty, "home", COMPONENT_HTML, None, None
     )["web_doc"]
-    repository = Repository(connect(client.app.state.database_path))
+    repository = HybridRepository(connect(client.app.state.database_path))
     try:
         accountless = repository.create_document(ingested, doc_kind="web")
     finally:
@@ -556,7 +561,7 @@ def test_leaf_reparent_rejected_and_missing_artifact_stays_editable_placeholder(
     assert rejected.status_code == 422
     assert rejected.json()["detail"]["code"] == "web_operations.invalid"
 
-    repository = Repository(connect(client.app.state.database_path))
+    repository = HybridRepository(connect(client.app.state.database_path))
     try:
         repository.connection.execute(
             "DELETE FROM custom_component_artifacts WHERE artifact_id = ?",
@@ -613,7 +618,7 @@ def test_migration_is_deterministic_and_does_not_invent_registry_rows(
 ) -> None:
     database_path = tmp_path / "development.sqlite3"
     run_migrations(database_path)
-    repository = Repository(connect(database_path))
+    repository = HybridRepository(connect(database_path))
     try:
         repository.create_document(
             {
@@ -640,7 +645,7 @@ def test_migration_is_deterministic_and_does_not_invent_registry_rows(
             "SELECT COUNT(*) FROM custom_component_artifacts"
         ).fetchone()[0] == 0
         assert (
-            Repository(connection).require_document("doc_existing_web")["scene"]
+            HybridRepository(connection).require_document("doc_existing_web")["scene"]
             == before
         )
     finally:

@@ -9,6 +9,7 @@ import pytest
 from lumen_api.agent_custom_components import (
     DurableAgentCustomComponentRegistry,
 )
+from lumen_api.design_store import HybridRepository
 from lumen_api.database import (
     CustomComponentSourceVersionConflict,
     NotFoundError,
@@ -73,7 +74,7 @@ def seed(tmp_path: Path):
     database_path = tmp_path / "api.sqlite3"
     app = create_app(database_path)
     core = app.state.core
-    repository = Repository(connect(database_path))
+    repository = HybridRepository(connect(database_path))
     repository.create_web_account(
         "acc_alpha", "Alpha", None, None, {}, None
     )
@@ -110,7 +111,7 @@ def attach(
     artifact_id: str,
     node_id: str,
 ):
-    repository = Repository(connect(app.state.database_path))
+    repository = HybridRepository(connect(app.state.database_path))
     try:
         document = repository.require_document(document_id)
         page = document["scene"]["pages"][0]
@@ -160,7 +161,7 @@ def repin(
     slug: str,
     artifact_id: str,
 ):
-    repository = Repository(connect(app.state.database_path))
+    repository = HybridRepository(connect(app.state.database_path))
     try:
         document = repository.require_document(document_id)
         operation = {

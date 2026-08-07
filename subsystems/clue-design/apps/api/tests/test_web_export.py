@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 
@@ -83,7 +84,7 @@ def ingest_content(client: TestClient, document_id: str) -> dict:
 
 
 def seed_content(client: TestClient, document_id: str, web_doc: dict) -> None:
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         store.update_web_document(
             document_id,
@@ -269,7 +270,7 @@ def seed_font_asset(client: TestClient, asset_id: str, data: bytes) -> str:
             "location": None,
         },
     }
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         store.create_asset_record(record)
     finally:
@@ -308,7 +309,7 @@ def create_font_kit(client: TestClient, ofl_asset: str, locked_asset: str) -> No
         {"weight": 400, "style": "normal", "asset_id": locked_asset, "source_url": None}
     ]
     kit["assets"]["fonts"] = {"brand": included, "locked": excluded}
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         store.create_brand_kit(kit, {}, [], "manual")
     finally:

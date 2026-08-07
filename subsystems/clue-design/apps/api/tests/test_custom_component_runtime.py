@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 
@@ -109,7 +110,7 @@ def create_document(client: TestClient) -> dict:
         None,
     )
     assert ingested.get("web_doc"), ingested
-    repository = Repository(connect(client.app.state.database_path))
+    repository = HybridRepository(connect(client.app.state.database_path))
     try:
         return repository.create_document(
             ingested["web_doc"],
@@ -397,7 +398,7 @@ def test_missing_runtime_host_and_artifact_are_contained_without_losing_siblings
     )
 
     client.app.state.custom_component_runtime_host = runtime_host
-    repository = Repository(connect(client.app.state.database_path))
+    repository = HybridRepository(connect(client.app.state.database_path))
     try:
         repository.connection.execute(
             "DELETE FROM custom_component_artifacts WHERE artifact_id = ?",

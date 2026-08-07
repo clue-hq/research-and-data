@@ -23,6 +23,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumen_api import main as main_module
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 from lumen_ingestion.evidence import BrandEvidence
 from lumen_ingestion.pipeline import run_website_ingestion
@@ -102,7 +103,7 @@ def _read_brand_kit_row(client: TestClient, brand_kit_id: str) -> dict:
 
     connection = connect(client.app.state.database_path)
     try:
-        return Repository(connection).require_brand_kit(brand_kit_id)
+        return HybridRepository(connection).require_brand_kit(brand_kit_id)
     finally:
         connection.close()
 

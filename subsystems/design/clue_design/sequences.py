@@ -60,9 +60,9 @@ async def _allocate(
     row = await conn.execute(
         text(
             f"SELECT COALESCE(MAX({seq_column}), 0) + 1 FROM {child_table} "  # noqa: S608
-            f"WHERE {child_fk} = :parent_id"
+            f"WHERE {child_fk} = :parent_id AND workspace_id = :workspace_id"
         ),
-        {"parent_id": parent_id},
+        {"parent_id": parent_id, "workspace_id": workspace_id},
     )
     return int(row.scalar_one())
 

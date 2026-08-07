@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 
@@ -68,7 +69,7 @@ def seed_content(client: TestClient, document_id: str) -> None:
     )
     errors = [d for d in response.get("diagnostics", []) if d.get("severity") == "error"]
     assert not errors, response.get("diagnostics")
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         store.update_web_document(
             document_id,
@@ -107,7 +108,7 @@ def test_save_as_template_clones_fresh_row(client: TestClient) -> None:
     tpl_nodes = template["scene"]["pages"][0]["nodes"]
     assert set(tpl_nodes) == set(src_nodes)
 
-    store = Repository(connect(client.app.state.database_path))
+    store = HybridRepository(connect(client.app.state.database_path))
     try:
         row = store.require_document(template_id)
     finally:
