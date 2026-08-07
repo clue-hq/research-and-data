@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from clue_core import FieldClass, FieldDef, PassKind, ReuseScope
+from clue_core import FieldClass, FieldDef, PassKind, ResearchScope, ReuseScope
 from clue_research.claimstore import SeedField, get_field, list_fields
 from clue_research.icp import (
     DATA_INFRA,
@@ -368,6 +368,9 @@ def test_pack_field_must_declare_reuse_scope() -> None:
                         value_type="int",
                         pass_kind=PassKind.SCORING,
                         reuse_scope=reuse_scope,
+                        # Species is orthogonal (FI-2 P3) and equally must-declare for a pack
+                        # field; declared here so this test exercises the reuse_scope guard alone.
+                        research_scope=ResearchScope.PROJECT_NEUTRAL,
                     ),
                     pack="scopepack",
                 ),

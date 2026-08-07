@@ -40,6 +40,7 @@ from clue_core import (
     FieldDef,
     PassKind,
     Persona,
+    ResearchScope,
     ResearchSectionKind,
     ReuseScope,
 )
@@ -90,6 +91,10 @@ NARRATIVE_PACK: tuple[SeedField, ...] = (
             # Declared TENANT_PRIVATE: a client-tuned narrative must never amortize cross-tenant
             # (FieldClass.ACCOUNT default is PUBLIC_FOOTPRINT — the leak hazard this closes).
             reuse_scope=ReuseScope.TENANT_PRIVATE,
+            # Declared PROJECT_RELATIVE (FI-2 §5.2): the per-persona argument is product-, ICP- and
+            # campaign-flavored, so each project researches and reads its own (never superseding
+            # another project's narrative for the same (account, persona)).
+            research_scope=ResearchScope.PROJECT_RELATIVE,
         ),
         value_schema=_VALUE_NARRATIVE_SCHEMA,
         # A unique synthesis cannot be corroborated by independent sources — the faithfulness

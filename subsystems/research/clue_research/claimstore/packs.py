@@ -20,7 +20,14 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import EntityType, FieldDef, PassKind, ResearchSectionKind, ReuseScope
+from clue_core import (
+    EntityType,
+    FieldDef,
+    PassKind,
+    ResearchScope,
+    ResearchSectionKind,
+    ReuseScope,
+)
 from clue_research.claimstore.registry import register_field
 from clue_research.claimstore.research_view_routes import (
     ResearchRouteContext,
@@ -92,6 +99,7 @@ def _seed(
     freshness_ttl: timedelta | None = None,
     gate: str | None = None,
     reuse_scope: ReuseScope | None = None,
+    research_scope: ResearchScope | None = None,
     value_schema: dict[str, Any] | None = None,
     corroboration_min: int = 1,
     single_source_sufficient: bool = False,
@@ -110,6 +118,7 @@ def _seed(
             pass_kind=pass_kind,
             gate=gate,
             reuse_scope=reuse_scope,
+            research_scope=research_scope,
         ),
         value_schema=value_schema,
         corroboration_min=corroboration_min,
@@ -407,6 +416,7 @@ CORE_PACK: tuple[SeedField, ...] = (
         PassKind.SCORING,
         freshness_ttl=timedelta(days=30),
         reuse_scope=ReuseScope.TENANT_PRIVATE,
+        research_scope=ResearchScope.PROJECT_RELATIVE,
         value_schema={
             "type": "object",
             "required": ["value"],
@@ -420,6 +430,7 @@ CORE_PACK: tuple[SeedField, ...] = (
         PassKind.SCORING,
         freshness_ttl=timedelta(days=30),
         reuse_scope=ReuseScope.TENANT_PRIVATE,
+        research_scope=ResearchScope.PROJECT_RELATIVE,
         value_schema={
             "type": "object",
             "required": ["value"],
@@ -441,6 +452,7 @@ CORE_PACK: tuple[SeedField, ...] = (
         PassKind.SCORING,
         freshness_ttl=timedelta(days=30),
         reuse_scope=ReuseScope.TENANT_PRIVATE,
+        research_scope=ResearchScope.PROJECT_RELATIVE,
         value_schema={
             "type": "object",
             "required": ["tier", "cutoff_version"],

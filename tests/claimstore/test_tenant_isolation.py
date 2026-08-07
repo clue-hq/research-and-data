@@ -18,6 +18,7 @@ from clue_core import (
     ExtractionMethod,
     FieldDef,
     PassKind,
+    ResearchScope,
     ReuseScope,
     account_claim,
     new_entity_id,
@@ -234,7 +235,14 @@ def test_write_boundary_refuses_undeclared_pack_field() -> None:
         async with rollback_conn() as conn:
             await register_field(
                 conn,
-                FieldDef(field_key="fintech.mrr", value_type="int", pass_kind=PassKind.SCORING),
+                FieldDef(
+                    field_key="fintech.mrr",
+                    value_type="int",
+                    pass_kind=PassKind.SCORING,
+                    # Species is declared (the registry demands it of a pack field); reuse_scope is
+                    # deliberately left undeclared — that is what this test exercises.
+                    research_scope=ResearchScope.PROJECT_NEUTRAL,
+                ),
                 pack="fintech",
             )
             entity = new_entity_id()
