@@ -1,0 +1,395 @@
+.projectSection {
+  margin-top: 12px;
+}
+
+.projectSectionLabel {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  margin: 0;
+  padding: 0 8px;
+  color: var(--clue-ds-color-content-subtle);
+  font-family: var(--clue-ds-product-typography-sidebar-section-label-font-family);
+  font-size: var(--clue-ds-product-typography-sidebar-section-label-font-size);
+  font-weight: var(--clue-ds-product-typography-sidebar-section-label-font-weight);
+  line-height: var(--clue-ds-product-typography-sidebar-section-label-line-height);
+}
+
+.projectGroup {
+  position: relative;
+}
+
+.projectRow,
+.conversationRow {
+  position: relative;
+  min-width: 0;
+  border-radius: 4px;
+  color: var(--clue-ds-color-content-subtle);
+  font-family: var(--clue-ds-product-typography-ui-medium-font-family);
+  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
+  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  line-height: var(--clue-ds-product-typography-ui-medium-line-height);
+}
+
+.projectRow {
+  display: flex;
+  height: 32px;
+  align-items: center;
+}
+
+.projectRow:hover,
+.projectRow:focus-within,
+.projectRowMenuOpen {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.projectToggle {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  align-self: stretch;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0 8px;
+  color: inherit;
+  cursor: pointer;
+  outline: none;
+  text-align: left;
+}
+
+.projectToggle:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--clue-ds-color-border-neutral);
+}
+
+.projectTitle,
+.conversationTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectRowActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0;
+  padding-right: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+
+.projectRow:hover .projectRowActions,
+.projectRow:focus-within .projectRowActions,
+.projectRowMenuOpen .projectRowActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.projectRowAction,
+.dialogIconButton {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+.projectRowAction:hover,
+.projectRowAction:focus-visible,
+.dialogIconButton:hover,
+.dialogIconButton:focus-visible {
+  background: var(--clue-ds-color-bg-neutral-pressed);
+  outline: none;
+}
+
+.conversationList {
+  display: grid;
+}
+
+.conversationRow {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 32px;
+  text-decoration: none;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.conversationRow:hover,
+.conversationRow:focus-visible {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  outline: none;
+}
+
+.conversationRowActive {
+  background: var(--clue-ds-color-bg-neutral-pressed);
+  color: var(--clue-ds-color-content-neutral);
+}
+
+.conversationRowActive:hover {
+  background: var(--clue-ds-color-bg-neutral-pressed);
+}
+
+.emptyChats {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  margin: 0;
+  padding: 0 8px 0 32px;
+  color: var(--clue-ds-color-content-disabled);
+  font-family: var(--clue-ds-product-typography-ui-medium-font-family);
+  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
+  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  line-height: var(--clue-ds-product-typography-ui-medium-line-height);
+}
+
+.runningStatus {
+  display: flex;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.runningSpinner {
+  display: block;
+  width: 12px;
+  height: 12px;
+  animation: sidebar-spin 900ms linear infinite;
+}
+
+.statusBadge {
+  display: inline-flex;
+  height: 20px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-family: var(--clue-ds-product-typography-caption-font-family);
+  font-size: var(--clue-ds-product-typography-caption-font-size);
+  font-weight: 500;
+  line-height: var(--clue-ds-product-typography-caption-line-height);
+  white-space: nowrap;
+}
+
+.reviewBadge {
+  min-width: 62px;
+  background: var(--clue-ds-color-badge-bg-green);
+  color: var(--clue-ds-color-badge-content-green);
+}
+
+.approvalBadge {
+  min-width: 74px;
+  background: var(--clue-ds-color-badge-bg-orange);
+  color: var(--clue-ds-color-badge-content-orange);
+}
+
+.needsInputBadge {
+  min-width: 88px;
+  background: var(--clue-ds-color-badge-bg-blue);
+  color: var(--clue-ds-color-badge-content-blue);
+}
+
+.projectMenu {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 50;
+  width: 184px;
+  padding: 4px;
+  border: 1px solid var(--clue-ds-color-border-subtle);
+  border-radius: 8px;
+  background: var(--clue-ds-color-bg-page);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 6%);
+}
+
+.projectMenuItem {
+  display: flex;
+  width: 100%;
+  height: 32px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0 8px;
+  color: var(--clue-ds-color-content-neutral);
+  cursor: pointer;
+  font-family: var(--clue-ds-product-typography-ui-medium-font-family);
+  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
+  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  line-height: var(--clue-ds-product-typography-ui-medium-line-height);
+  text-align: left;
+}
+
+.projectMenuItem:hover,
+.projectMenuItem:focus-visible {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  outline: none;
+}
+
+.dialogLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.dialogBackdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgb(20 22 26 / 28%);
+  backdrop-filter: blur(1px);
+}
+
+.editDialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(480px, 100%);
+  min-height: 232px;
+  flex-direction: column;
+  gap: 16px;
+  border: 1px solid var(--clue-ds-color-border-subtle);
+  border-radius: 12px;
+  background: var(--clue-ds-color-bg-page);
+  box-shadow: 0 8px 12px rgb(0 0 0 / 10%);
+  padding: 20px;
+}
+
+.dialogHeader {
+  display: flex;
+  height: 28px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dialogHeader h2 {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-product-typography-ui-medium-font-family);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
+}
+
+.projectNameField {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--clue-ds-color-components-input-border);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--clue-ds-color-content-subtle);
+}
+
+.projectNameField:focus-within {
+  border-color: var(--clue-ds-color-border-brand-default);
+  box-shadow: 0 0 0 1px var(--clue-ds-color-border-brand-default);
+}
+
+.projectNameField input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-product-typography-ui-medium-font-family);
+  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
+  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  line-height: var(--clue-ds-product-typography-ui-medium-line-height);
+}
+
+.dialogActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+.dialogActionsRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dialogButton {
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 14px;
+  cursor: pointer;
+  font-family: var(--clue-ds-product-typography-ui-medium-font-family);
+  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
+  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  line-height: var(--clue-ds-product-typography-ui-medium-line-height);
+}
+
+.removeButton {
+  background: var(--clue-ds-color-components-button-bg-critical-default);
+  color: var(--clue-ds-color-content-utility-critical);
+}
+
+.removeButton:hover {
+  background: var(--clue-ds-color-components-button-bg-critical-hover);
+}
+
+.cancelButton {
+  background: transparent;
+  color: var(--clue-ds-color-content-subtle);
+}
+
+.cancelButton:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.saveButton {
+  background: var(--clue-ds-color-bg-brand);
+  color: var(--clue-ds-color-content-knockout);
+}
+
+.saveButton:hover {
+  opacity: 0.92;
+}
+
+.saveButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@keyframes sidebar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runningSpinner {
+    animation: none;
+  }
+
+  .projectRowActions,
+  .conversationRow {
+    transition: none;
+  }
+}

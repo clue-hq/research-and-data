@@ -1,0 +1,102 @@
+.uiRegular {
+  font-family: var(--clue-ds-product-typography-ui-regular-font-family);
+  font-size: var(--clue-ds-product-typography-ui-regular-font-size);
+  font-weight: var(--clue-ds-product-typography-ui-regular-font-weight);
+  line-height: var(--clue-ds-product-typography-ui-regular-line-height);
+}
+
+.uiMedium {
+  font-family: var(--clue-ds-product-typography-ui-medium-font-family);
+  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
+  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  line-height: var(--clue-ds-product-typography-ui-medium-line-height);
+}
+
+.pageTitle {
+  font-family: var(--clue-ds-product-typography-page-title-font-family);
+  font-size: var(--clue-ds-product-typography-page-title-font-size);
+  font-weight: var(--clue-ds-product-typography-page-title-font-weight);
+  line-height: var(--clue-ds-product-typography-page-title-line-height);
+}
+
+.actionMedium {
+  font-family: var(--clue-ds-product-typography-action-medium-font-family);
+  font-size: var(--clue-ds-product-typography-action-medium-font-size);
+  font-weight: var(--clue-ds-product-typography-action-medium-font-weight);
+  line-height: var(--clue-ds-product-typography-action-medium-line-height);
+}
+
+.fieldLabel {
+  font-family: var(--clue-ds-product-typography-field-label-font-family);
+  font-size: var(--clue-ds-product-typography-field-label-font-size);
+  font-weight: var(--clue-ds-product-typography-field-label-font-weight);
+  line-height: var(--clue-ds-product-typography-field-label-line-height);
+}
+
+.sectionHeading {
+  font-family: var(--clue-ds-product-typography-section-heading-font-family);
+  font-size: var(--clue-ds-product-typography-section-heading-font-size);
+  font-weight: var(--clue-ds-product-typography-section-heading-font-weight);
+  line-height: var(--clue-ds-product-typography-section-heading-line-height);
+}
+
+.pillMedium {
+  font-family: var(--clue-ds-product-typography-pill-medium-font-family);
+  font-size: var(--clue-ds-product-typography-pill-medium-font-size);
+  font-weight: var(--clue-ds-product-typography-pill-medium-font-weight);
+  line-height: var(--clue-ds-product-typography-pill-medium-line-height);
+}
+
+.detailTitle {
+  font-family: var(--clue-ds-product-typography-detail-title-font-family);
+  font-size: var(--clue-ds-product-typography-detail-title-font-size);
+  font-weight: var(--clue-ds-product-typography-detail-title-font-weight);
+  line-height: var(--clue-ds-product-typography-detail-title-line-height);
+}
+
+.bodyCopy {
+  font-family: var(--clue-ds-product-typography-body-copy-font-family);
+  font-size: var(--clue-ds-product-typography-body-copy-font-size);
+  font-weight: var(--clue-ds-product-typography-body-copy-font-weight);
+  line-height: var(--clue-ds-product-typography-body-copy-line-height);
+}
+
+.fieldValue {
+  font-family: var(--clue-ds-product-typography-field-value-font-family);
+  font-size: var(--clue-ds-product-typography-field-value-font-size);
+  font-weight: var(--clue-ds-product-typography-field-value-font-weight);
+  line-height: var(--clue-ds-product-typography-field-value-line-height);
+}
+
+.densityTransition {
+  transition: height var(--clue-ds-product-motion-duration-standard)
+    var(--clue-ds-product-motion-easing-standard);
+}
+
+@keyframes popoverEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.popoverEnter {
+  animation: popoverEnter var(--clue-ds-product-motion-duration-fast)
+    var(--clue-ds-product-motion-easing-standard) both;
+  transform-origin: top right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .densityTransition {
+    transition: none;
+  }
+
+  .popoverEnter {
+    animation: none;
+  }
+}
