@@ -1,0 +1,90 @@
+"""``run_lineage`` — the claim→project join spine (FI-2 P2; spec §3).
+
+Every claim carries a ``run_id``; nothing else records *which project* that run served. This
+module is that registry: one row per run, written once at run-mint time, read back as the
+project-lens predicate ``claim.run_id IN project_run_ids(...)``.
+
+Registration is idempotent (``ON CONFLICT (run_id) DO NOTHING``) so a replayed or resumed run
+re-registers harmlessly; the first write wins. A run with no ``project_id`` is workspace-level
+(stage 0, seeds, client-KB) and belongs to no project's lens.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_core import RunId
+
+# Mirrors the ``run_lineage_kind_check`` CHECK in migration 9a21734d9406 (text + CHECK, not a DB
+# enum) — the test suite asserts every kind here is accepted by the constraint.
+RUN_LINEAGE_KINDS = (
+    "discovery",
+    "import",
+    "scoring",
+    "tiering",
+    "entity_research",
+    "committee",
+    "contact_research",
+    "narrative",
+    "stage0",
+    "enrichment",
+    "manual",
+)
+
+_RECORD = text(
+    """
+    INSERT INTO run_lineage (run_id, workspace_id, project_id, project_run_id, kind, created_at)
+    VALUES (:run_id, :workspace_id, :project_id, :project_run_id, :kind, :created_at)
+    ON CONFLICT (run_id) DO NOTHING
+    """
+)
+
+_BY_PROJECT = text(
+    """
+    SELECT run_id FROM run_lineage
+    WHERE workspace_id = :workspace_id AND project_id = :project_id
+    ORDER BY created_at, run_id
+    """
+)
+
+
+async def record_run_lineage(
+    conn: AsyncConnection,
+    *,
+    run_id: uuid.UUID,
+    workspace_id: str,
+    kind: str,
+    project_id: str | None = None,
+    project_run_id: uuid.UUID | None = None,
+    created_at: datetime | None = None,
+) -> None:
+    """Attribute one run to its workspace (and project, when it has one). Idempotent.
+
+    Raises :class:`ValueError` on an unknown ``kind`` — before any statement is issued, so a
+    caller's bad kind never leaves a partial write or aborts the caller's transaction.
+    """
+    if kind not in RUN_LINEAGE_KINDS:
+        raise ValueError(f"unknown run lineage kind {kind!r}; expected one of {RUN_LINEAGE_KINDS}")
+    await conn.execute(
+        _RECORD,
+        {
+            "run_id": run_id,
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "project_run_id": project_run_id,
+            "kind": kind,
+            "created_at": created_at or datetime.now(UTC),
+        },
+    )
+
+
+async def project_run_ids(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> tuple[RunId, ...]:
+    """Every run id attributed to the project — the project-lens read predicate's input."""
+    rows = await conn.execute(_BY_PROJECT, {"workspace_id": workspace_id, "project_id": project_id})
+    return tuple(RunId(run_id) for run_id in rows.scalars())

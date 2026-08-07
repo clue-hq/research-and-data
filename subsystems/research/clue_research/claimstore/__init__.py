@@ -121,6 +121,11 @@ from clue_research.claimstore.research_view_routes import (
     list_research_view_routes,
     register_research_view_route,
 )
+from clue_research.claimstore.run_lineage import (
+    RUN_LINEAGE_KINDS,
+    project_run_ids,
+    record_run_lineage,
+)
 from clue_research.claimstore.tenancy import ALL_WORKSPACES, PUBLIC_ONLY, WorkspaceScope
 
 __all__ = [
@@ -217,4 +222,8 @@ __all__ = [
     "current_field_claims_resolved_for_product",
     "current_values_resolved_for_product",
     "live_derived_claims_for_research_view",
+    # FI-2 P2 run→project lineage
+    "RUN_LINEAGE_KINDS",
+    "record_run_lineage",
+    "project_run_ids",
 ]
