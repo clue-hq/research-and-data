@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-07-alembic-single-head-c6d84aa84b79.md` — **Alembic has ONE head: `c6d84aa84b79`**;
+  all new (incl. Part-II `design_*`) migrations chain off it. A 4-head report was false (it
+  counted Phase-C branch tips already joined by `fc1f3d22a167`). Verify with
+  `uv run alembic heads`, never by eyeballing the versions dir.
 - `2026-08-07-design-subsystem-monorepo-merge.md` — Design-integration **Part I / Step 1** done:
   `clue-design`/*havana* merged into `subsystems/clue-design/` (full history preserved; on
   `origin/main` via PR #40; design-only ancestry = 2nd parent of `3ab4a750`), excluded from the
