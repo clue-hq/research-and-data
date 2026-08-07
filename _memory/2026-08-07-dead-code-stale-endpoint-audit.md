@@ -126,3 +126,49 @@ verification imports), ingestion upload route (byte boundary, not redundant with
    turned on.
 
 No code was modified in this session. Full per-agent reports were delivered in-conversation only.
+
+## Addendum (same day) — founder disposition: cleanup DEFERRED
+
+Founder reviewed the audit and ruled on timing. Recorded here + in the CLAUDE.md backlog
+(entries `[M8D×M7×frontend]` and `[audit 2026-08-07]`) so no future session re-opens this
+prematurely. Endpoint-section claims were additionally re-verified first-hand by the orchestrator
+(launch reality, handoff_app orphanhood, dossier alias handlers/headers/flags, agent-registry
+conditional, PATCH-manifest `idempotency_key=None`, trial loopback gate, ingestion delegation,
+refs-only tool output). Two corrections found in re-verification: there are SEVEN `c7_*` boolean
+flags (not six; all default False — conclusion unchanged), and the handoff-route "collision" is
+namespace adjacency (`/accounts/{id}/handoff` unprefixed vs frontend `/api/v1/accounts/:id`),
+a prefix-convention question rather than an existing conflict.
+
+1. **Reclassification (founder framing, adopted):** most substrate "dead code" is *awaiting
+   composition*, not superseded — composition wiring is complete today only for Stage-0
+   interview, account discovery, account profiling research, contact research, and the
+   buying-committee flow. Uncomposed milestone machinery (positioner, learning loop, seeds,
+   postures, handoff serving, identity review, millicredits) must NOT be deleted.
+2. **True cleanup (superseded-forever: quarantined ~8.5 kLOC, old fleet drivers, Sumble MCP,
+   handoff_app, /dossier aliases, B3 docstrings) is DEFERRED. Trigger:** design-integration
+   branch merged into this branch AND M8D runtime flags exercised on. Then one dedicated
+   stub-and-delete PR (descriptor-only stubs at toolbelt_wiring, delete implementation trees).
+3. **Composition to-do list (wiring backlog, not bugs — audit misfiled these):**
+   synthesis resolvers (`register_synthesis_wiring`), stage0 scrape binder
+   (`stage0_scrape_binder` → `build_toolbelt`), deterministic resolver registrations
+   (waterfall product decision rides along), and the DEEP-phase bridge (below).
+4. **DEEP→VERIFICATION/HANDOFF gap — escalated, mechanics verified first-hand:**
+   - The park is DELIBERATE: `run_composition.py`'s comment says DEEP is "intentionally
+     uncomposed until the governed create_agent() entity runtime lands." The runtime has since
+     landed (R10-accepted, default-off) but was never composed into the phase machine — so this
+     is now "runtime landed, composition pending," i.e. itself a composition-backlog item.
+   - HANDOFF already parks correctly (fail-closed: no handler unless
+     `c7_production_handoff_enabled`).
+   - Inconsistency: `run_verification@1` is un-quarantined (granted to AgentRole.RESEARCH) and
+     silently returns accounts_processed=0 on M8D-researched accounts (its resolver reads
+     `account_deep_launch`, only writer = quarantined `launch_account_deep@1`, agent
+     authority `()`).
+   - **Recommendation presented to founder: park explicitly now; bridge as its own spec'd lane
+     before phase-2 project-level frontend integration.** Bridge shape: a DEEP handler that
+     delegates to the M8D fleet (AccountResearchFleetLauncher + external-wake durable wait) and
+     a verification account resolver read off the M8D run set instead of `account_deep_launch`.
+   - **Pending founder sign-off (small code change, not yet made):** make `run_verification@1`
+     fail loud — either add it to `QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES` or error on a
+     missing launch ledger instead of returning a zero-account success.
+   - Until bridged, phase-2 project-run screens must treat phases past TIER_CHECKPOINT as
+     not-yet-composed.
