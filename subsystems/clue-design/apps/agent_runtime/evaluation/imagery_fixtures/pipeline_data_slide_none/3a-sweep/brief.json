@@ -1,0 +1,11 @@
+{
+  "id": "pipeline_data_slide_none",
+  "artifact": "deck_data_16x9",
+  "prompt": "Design a 1920x1080 data slide: pipeline coverage by stage, 4.2x coverage on an $18M target. Present the figures clearly with one supporting takeaway line.",
+  "expected_decision": "none",
+  "role": "chart_led_takeaway",
+  "risks": [
+    "background photo killing data legibility",
+    "decorative icon clutter competing with the numbers"
+  ]
+}

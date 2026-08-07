@@ -1,0 +1,11 @@
+{
+  "id": "gtm_conf_poster_photo",
+  "artifact": "event_poster_9x16",
+  "prompt": "Design a 1080x1920 event poster for RevMotion '26 \u2014 the GTM conference for AI-native go-to-market. One weekend in San Francisco, Sat-Sun September 12-13, in SoMa. Two days of operators rebuilding pipeline, forecasting, and outbound with AI agents. Speakers from 20+ AI-native GTM teams. Make it feel premium and operator-grade; include the name, tagline, date, city, and a Get your pass call to action.",
+  "expected_decision": "photo",
+  "role": "full_bleed_hero_scrim",
+  "risks": [
+    "headline illegible where scrim thins over busy skyline",
+    "generic Golden-Gate postcard cliche"
+  ]
+}

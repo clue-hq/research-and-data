@@ -1,0 +1,108 @@
+{
+  "per_axis": {
+    "relevance": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "placeholder_real": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "aspect_fit": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "placement": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "legibility": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.2,
+      "hard_gate": true
+    },
+    "resolution_dpi": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "no_in_image_text": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "theme_coherence": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": false
+    }
+  },
+  "gate_failed": false,
+  "weighted_mean": 3.0,
+  "accept": true,
+  "tier": "ship",
+  "judge_ran": true,
+  "judge_reasoning": "Credible professional portrait, undistorted face at natural proportions, hero image bound to a full-bleed top band with the quote sitting on a clean navy plate below \u2014 no overlay legibility risk. On-brand and coherent.",
+  "image_count": 1,
+  "real_image_count": 1,
+  "brief_id": "testimonial_portrait_photo",
+  "expected_decision": "photo",
+  "det": {
+    "dimensions": {
+      "placeholder_real": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "decision": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "aspect_fit": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "legibility": {
+        "score": 3,
+        "gate": false,
+        "notes": [
+          "no text overlaps image"
+        ]
+      },
+      "hero_count": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      }
+    },
+    "gate_failed": false,
+    "accept": true,
+    "image_count": 1,
+    "real_image_count": 1
+  },
+  "run_id": "run_4022b4ddd4c346db802b57045b59eff5",
+  "run_status": "accepted",
+  "png_path": ".lumen-runs-B/run_4022b4ddd4c346db802b57045b59eff5/iterations/001/preview.png"
+}

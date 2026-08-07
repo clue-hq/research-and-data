@@ -1,0 +1,52 @@
+[
+ {
+  "code": "LUMI0220",
+  "severity": "info",
+  "message": "asset token logo.reversed not populated"
+ },
+ {
+  "code": "LUMI0220",
+  "severity": "info",
+  "message": "asset token logo.wordmark not populated"
+ },
+ {
+  "code": "LUMI0220",
+  "severity": "info",
+  "message": "asset token asset.illustration.primary not populated"
+ },
+ {
+  "code": "LUMI0220",
+  "severity": "info",
+  "message": "asset token asset.texture.subtle not populated"
+ },
+ {
+  "code": "LUMI0220",
+  "severity": "info",
+  "message": "asset token asset.icon.primary not populated"
+ },
+ {
+  "code": "LUMI0508",
+  "severity": "warning",
+  "message": "render wait_until=networkidle timed out; proceeding"
+ },
+ {
+  "code": "LUMI0508",
+  "severity": "warning",
+  "message": "render wait_until=networkidle timed out; proceeding"
+ },
+ {
+  "code": "LUMI0508",
+  "severity": "warning",
+  "message": "render wait_until=networkidle timed out; proceeding"
+ },
+ {
+  "code": "LUMI0508",
+  "severity": "warning",
+  "message": "render wait_until=networkidle timed out; proceeding"
+ },
+ {
+  "code": "LUMI0508",
+  "severity": "warning",
+  "message": "render wait_until=networkidle timed out; proceeding"
+ }
+]

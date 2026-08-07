@@ -1,0 +1,10 @@
+// Phase C tokenized report cover
+page report_cover size(816,1056,px)
+  cover fr p(0,0) s(816,1056) fill($surface.canvas)
+    title_block al(v,g($space.stack.default),pad($space.card.padding),x(s)) p(72,96) s(672,hug) fill($surface.card) rd($radius.card)
+      eyebrow text "QUARTERLY ACCOUNT BRIEF" p(0,0) s(560,44) style($type.eyebrow) wrap_text(true) slot(campaign.eyebrow)
+      title text "Growth brief." p(0,0) s(560,260) style($type.display) wrap_text(true) slot(campaign.headline)
+      subtitle text "Research-backed outreach themes." p(0,0) s(560,112) style($type.subtitle) wrap_text(true) slot(offer.message)
+    meta al(v,g($space.stack.tight),pad($space.card.padding),x(s)) p(72,760) s(672,hug) fill($surface.brand.subtle) rd($radius.card)
+      account text "Target account: Example Specialty Group" p(0,0) s(560,44) style($type.label) wrap_text(true) slot(account.name)
+      sender text "Prepared by Insight Health" p(0,0) s(560,36) style($type.caption) wrap_text(true) slot(sender.signature)

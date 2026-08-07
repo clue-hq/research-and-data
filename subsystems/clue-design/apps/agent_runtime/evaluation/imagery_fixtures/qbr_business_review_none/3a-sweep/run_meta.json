@@ -1,0 +1,7 @@
+{
+  "run_id": "run_ce72885e121a45cdb7b994a15334c17d",
+  "run_status": "accepted",
+  "model": "openai:anthropic/claude-opus-4.8",
+  "tag": "3a-sweep",
+  "brief_id": "qbr_business_review_none"
+}

@@ -1,0 +1,442 @@
+"use client";
+
+import { Fragment } from "react";
+import { Group, Line, Path, Rect, Text } from "react-konva";
+import type Konva from "konva";
+import type { NodeId, Operation, Page, Scene } from "@/engine/contracts";
+import { canvasDragOperation, canvasResizeOperation, dragSnapGuides, resizeSnapGuides, type SnapGuide } from "@/engine/canvasOperations";
+import type { ParentComputedOrigin } from "@/engine/renderAdapter";
+import {
+  konvaFillProps,
+  konvaShadowProps,
+  konvaStrokeProps,
+  nodeDescriptor
+} from "@/engine/renderAdapter";
+import { isNodeDirectGeometryEditable, topLevelAncestorId } from "@/engine/sceneQueries";
+
+interface SceneNodeProps {
+  scene: Scene;
+  page: Page;
+  nodeId: NodeId;
+  pageOrigin: { x: number; y: number };
+  selectedNodeId: NodeId | null;
+  onSelectNode: (nodeId: NodeId) => void;
+  onOperation: (operation: Operation) => void;
+  registerNode: (nodeId: NodeId, node: Konva.Node | null) => void;
+  parentComputedOrigin?: ParentComputedOrigin | null;
+  /** Reports the guides engaged by an in-progress drag/resize (page space);
+   * called with `[]` when the gesture ends or no snap is engaged. Optional —
+   * omitted entirely, a node just doesn't report guides (e.g. nested nodes
+   * under a container drag rely on the top-level handler). */
+  onGuidesChange?: (guides: SnapGuide[]) => void;
+}
+
+export function SceneNode({
+  scene,
+  page,
+  nodeId,
+  pageOrigin,
+  selectedNodeId,
+  onSelectNode,
+  onOperation,
+  registerNode,
+  parentComputedOrigin = null,
+  onGuidesChange
+}: SceneNodeProps) {
+  const node = scene.nodes[nodeId];
+  if (!node) {
+    return null;
+  }
+  const descriptor = nodeDescriptor(scene, node, page, parentComputedOrigin);
+  const selected = selectedNodeId === node.id;
+  const directGeometryEditable = isNodeDirectGeometryEditable(scene, node.id);
+  const childParentComputedOrigin = node.computed
+    ? {
+        x: node.computed.layout_bounds.x,
+        y: node.computed.layout_bounds.y
+      }
+    : null;
+
+  // Deliberate container targeting: a single click selects this (deepest)
+  // node via cancelBubble; a double-click instead selects the outermost
+  // top-level container it belongs to — the whole card/group — which a click
+  // can never reach when the container's background is covered by children.
+  // No-ops to a plain re-select when the node is already top-level.
+  const handleSelectContainer = (
+    event: Konva.KonvaEventObject<MouseEvent | TouchEvent>
+  ) => {
+    event.cancelBubble = true;
+    onSelectNode(topLevelAncestorId(scene, node.id) ?? node.id);
+  };
+
+  const handleDragMove = (event: Konva.KonvaEventObject<DragEvent>) => {
+    if (!directGeometryEditable || !onGuidesChange) {
+      return;
+    }
+    onGuidesChange(
+      dragSnapGuides({
+        scene,
+        node,
+        page,
+        pageOrigin,
+        canvasX: event.target.x(),
+        canvasY: event.target.y()
+      })
+    );
+  };
+
+  const handleDragEnd = (event: Konva.KonvaEventObject<DragEvent>) => {
+    onGuidesChange?.([]);
+    if (!directGeometryEditable) {
+      return;
+    }
+    const operation = canvasDragOperation({
+      scene,
+      node,
+      page,
+      pageOrigin,
+      canvasX: event.target.x(),
+      canvasY: event.target.y()
+    });
+    if (operation) {
+      onOperation(operation);
+    }
+  };
+
+  // Live resize: the Transformer drives the target node's scale directly, so
+  // this reads the in-progress geometry for guide visualization only — no
+  // operation is built here (that stays `handleTransformEnd`'s job, matching
+  // the existing commit-on-release policy for resize).
+  const handleTransform = (event: Konva.KonvaEventObject<Event>) => {
+    if (!directGeometryEditable || !onGuidesChange) {
+      return;
+    }
+    const target = event.target;
+    onGuidesChange(
+      resizeSnapGuides({
+        scene,
+        node,
+        page,
+        pageOrigin,
+        transform: {
+          canvasX: target.x(),
+          canvasY: target.y(),
+          rotation: target.rotation(),
+          scaleX: target.scaleX(),
+          scaleY: target.scaleY()
+        }
+      })
+    );
+  };
+
+  const handleTransformEnd = (event: Konva.KonvaEventObject<Event>) => {
+    onGuidesChange?.([]);
+    if (!directGeometryEditable) {
+      return;
+    }
+    const target = event.target;
+    const scaleX = target.scaleX();
+    const scaleY = target.scaleY();
+    target.scaleX(1);
+    target.scaleY(1);
+
+    const operation = canvasResizeOperation({
+      scene,
+      node,
+      page,
+      pageOrigin,
+      transform: {
+        canvasX: target.x(),
+        canvasY: target.y(),
+        rotation: target.rotation(),
+        scaleX,
+        scaleY
+      }
+    });
+    if (operation) {
+      onOperation(operation);
+    }
+  };
+
+  return (
+    <Group
+      ref={(konvaNode) => registerNode(node.id, konvaNode)}
+      id={node.id}
+      name="scene-node"
+      x={pageOrigin.x + descriptor.x}
+      y={pageOrigin.y + descriptor.y}
+      rotation={descriptor.rotation}
+      opacity={descriptor.opacity}
+      draggable={directGeometryEditable}
+      onClick={(event) => {
+        event.cancelBubble = true;
+        onSelectNode(node.id);
+      }}
+      onTap={(event) => {
+        event.cancelBubble = true;
+        onSelectNode(node.id);
+      }}
+      onDblClick={handleSelectContainer}
+      onDblTap={handleSelectContainer}
+      onDragMove={handleDragMove}
+      onDragEnd={handleDragEnd}
+      onTransform={handleTransform}
+      onTransformEnd={handleTransformEnd}
+    >
+      <NodeBody descriptor={descriptor} selected={selected} locked={node.locked} />
+      {descriptor.slotKeys.length > 0 ? <SlotBadge descriptor={descriptor} selected={selected} /> : null}
+      {node.children.map((childId) => (
+        <SceneNode
+          key={childId}
+          scene={scene}
+          page={page}
+          nodeId={childId}
+          pageOrigin={{ x: 0, y: 0 }}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={onSelectNode}
+          onOperation={onOperation}
+          registerNode={registerNode}
+          parentComputedOrigin={childParentComputedOrigin}
+          onGuidesChange={onGuidesChange}
+        />
+      ))}
+    </Group>
+  );
+}
+
+function SlotBadge({
+  descriptor,
+  selected
+}: {
+  descriptor: ReturnType<typeof nodeDescriptor>;
+  selected: boolean;
+}) {
+  const label = descriptor.slotKeys.length === 1 ? descriptor.slotKeys[0] : `${descriptor.slotKeys.length} slots`;
+  const width = Math.max(74, Math.min(170, label.length * 6.8 + 20));
+  const y = Math.max(-26, -descriptor.height - 26);
+  return (
+    <Group x={0} y={y} listening={false}>
+      <Rect
+        width={width}
+        height={20}
+        fill={selected ? "#174f52" : "#fffaf2"}
+        stroke="#256c70"
+        strokeWidth={1}
+        cornerRadius={5}
+        shadowColor="#000000"
+        shadowOpacity={0.12}
+        shadowBlur={6}
+        shadowOffsetY={2}
+      />
+      <Text
+        text={label}
+        width={width}
+        height={20}
+        fill={selected ? "#ffffff" : "#174f52"}
+        fontSize={10}
+        fontStyle="700"
+        align="center"
+        verticalAlign="middle"
+        listening={false}
+      />
+    </Group>
+  );
+}
+
+function NodeBody({
+  descriptor,
+  selected,
+  locked
+}: {
+  descriptor: ReturnType<typeof nodeDescriptor>;
+  selected: boolean;
+  locked: boolean;
+}) {
+  const selectionStroke = selected ? "#256c70" : locked ? "#9b6b5f" : descriptor.stroke;
+  const selectionDash = selected || locked ? [5, 4] : undefined;
+  const fillLayer = descriptor.fills[0] ?? null;
+  const strokeLayer = descriptor.strokes[0] ?? null;
+
+  if (descriptor.kind === "text" && descriptor.text) {
+    return (
+      <Text
+        text={descriptor.text.content}
+        width={descriptor.width}
+        height={textHeightForRender(descriptor)}
+        {...(fillLayer ? konvaFillProps(fillLayer.paint) : { fill: descriptor.fill })}
+        {...konvaShadowProps(descriptor.shadow)}
+        fontFamily={descriptor.text.fontFamily}
+        fontSize={descriptor.text.fontSize}
+        fontStyle={fontStyleFrom(descriptor.text.fontWeight, descriptor.text.italic)}
+        align={descriptor.text.align}
+        direction={textDirectionForKonva(descriptor.text.direction)}
+        lineHeight={descriptor.text.lineHeight}
+        letterSpacing={descriptor.text.letterSpacing}
+        wrap={descriptor.text.wrap === "wrap" ? "word" : "none"}
+        ellipsis={descriptor.text.maxLines !== null}
+        // A7a: Konva is the TEST-ONLY jsdom leg (frontend-practices §4), and it
+        // has no measurer to feed the shared clamped formula — its built-in
+        // verticalAlign uses Konva's real line layout instead. Known, accepted
+        // divergences from D3 on this non-product leg: no overflow clamp
+        // (negative offset when content exceeds the box), and with max_lines
+        // the alignment bound is the capped rect, not the full box.
+        verticalAlign={descriptor.text.valign === "center" ? "middle" : descriptor.text.valign}
+        stroke={selectionStroke ?? undefined}
+        strokeWidth={selected ? 0.35 : 0}
+      />
+    );
+  }
+
+  if (descriptor.kind === "line" && descriptor.line) {
+    return (
+      <Line
+        points={descriptor.line.points}
+        stroke={selectionStroke ?? descriptor.fill}
+        strokeWidth={Math.max(1, descriptor.strokeWidth || 1)}
+        dash={selectionDash ?? strokeLayer?.dash ?? undefined}
+        lineCap={strokeLayer?.lineCap}
+        lineJoin={strokeLayer?.lineJoin}
+        {...konvaShadowProps(descriptor.shadow)}
+      />
+    );
+  }
+
+  if (descriptor.kind === "vector" && descriptor.vector) {
+    return (
+      <Path
+        data={descriptor.vector.pathData}
+        {...(fillLayer ? konvaFillProps(fillLayer.paint) : { fill: descriptor.fill })}
+        {...konvaShadowProps(descriptor.shadow)}
+        stroke={selectionStroke ?? undefined}
+        strokeWidth={descriptor.strokeWidth}
+        dash={selectionDash ?? strokeLayer?.dash ?? undefined}
+        lineCap={strokeLayer?.lineCap}
+        lineJoin={strokeLayer?.lineJoin}
+      />
+    );
+  }
+
+  if (descriptor.kind === "image") {
+    const label = imagePlaceholderLabel(descriptor);
+    return (
+      <Fragment>
+        <Rect
+          width={descriptor.width}
+          height={descriptor.height}
+          fill={descriptor.fill}
+          {...konvaShadowProps(descriptor.shadow)}
+          stroke={selectionStroke ?? "#a79c8a"}
+          strokeWidth={selected ? 1.5 : 1}
+          dash={selectionDash}
+          cornerRadius={descriptor.cornerRadius}
+        />
+        <Text
+          text={label}
+          width={descriptor.width}
+          height={descriptor.height}
+          fill="#5f574c"
+          fontSize={Math.max(10, Math.min(13, descriptor.width / 16))}
+          lineHeight={1.18}
+          align="center"
+          verticalAlign="middle"
+          listening={false}
+        />
+      </Fragment>
+    );
+  }
+
+  // Stacked paints render one geometry copy per layer, matching the SVG
+  // exporter's painting order: fills bottom-to-top, then strokes on top.
+  if (descriptor.fills.length > 1 || descriptor.strokes.length > 1) {
+    return (
+      <Fragment>
+        {descriptor.fills.map((layer, index) => (
+          <Rect
+            key={`fill-${layer.id}`}
+            width={descriptor.width}
+            height={descriptor.height}
+            cornerRadius={descriptor.cornerRadius}
+            {...konvaFillProps(layer.paint)}
+            {...(index === 0 ? konvaShadowProps(descriptor.shadow) : {})}
+          />
+        ))}
+        {descriptor.strokes.map((layer) => (
+          <Rect
+            key={`stroke-${layer.id}`}
+            width={descriptor.width}
+            height={descriptor.height}
+            cornerRadius={descriptor.cornerRadius}
+            {...konvaStrokeProps(layer)}
+          />
+        ))}
+        {selected || locked ? (
+          <Rect
+            width={descriptor.width}
+            height={descriptor.height}
+            cornerRadius={descriptor.cornerRadius}
+            stroke={selectionStroke ?? "#256c70"}
+            strokeWidth={1}
+            dash={selectionDash}
+            listening={false}
+          />
+        ) : null}
+      </Fragment>
+    );
+  }
+
+  const singleStrokeProps =
+    selected || locked
+      ? {
+          stroke: selectionStroke ?? undefined,
+          strokeWidth: selected ? Math.max(1, descriptor.strokeWidth) : descriptor.strokeWidth,
+          dash: selectionDash
+        }
+      : strokeLayer
+        ? konvaStrokeProps(strokeLayer)
+        : { stroke: undefined, strokeWidth: descriptor.strokeWidth };
+
+  return (
+    <Rect
+      width={descriptor.width}
+      height={descriptor.height}
+      {...(fillLayer ? konvaFillProps(fillLayer.paint) : { fill: descriptor.fill })}
+      {...konvaShadowProps(descriptor.shadow)}
+      {...singleStrokeProps}
+      cornerRadius={descriptor.cornerRadius}
+    />
+  );
+}
+
+function imagePlaceholderLabel(descriptor: ReturnType<typeof nodeDescriptor>): string {
+  const image = descriptor.image;
+  if (!image) {
+    return "Image";
+  }
+  const label = image.alt || image.assetLabel || "Image asset";
+  return `${label}\n${image.assetId}`;
+}
+
+function textHeightForRender(descriptor: ReturnType<typeof nodeDescriptor>): number {
+  if (!descriptor.text?.maxLines) {
+    return descriptor.height;
+  }
+  const maxTextHeight = descriptor.text.fontSize * descriptor.text.lineHeight * descriptor.text.maxLines;
+  return Math.min(descriptor.height, maxTextHeight);
+}
+
+function textDirectionForKonva(direction: "ltr" | "rtl" | "auto"): string {
+  return direction === "auto" ? "inherit" : direction;
+}
+
+/** A7b: compose Konva's combined `fontStyle` string from weight + italic. Konva
+ * accepts space-separated `"italic 700"`, or a bare `"italic"` / `"700"` /
+ * `"normal"`. This is the TEST-ONLY jsdom leg (frontend-practices §4); the
+ * product canvas is CanvasKit, which maps italic to a real `fontStyle.slant`. */
+function fontStyleFrom(weight: number, italic: boolean): string {
+  const weightPart =
+    weight >= 700 ? "700" : weight >= 600 ? "600" : weight >= 500 ? "500" : null;
+  if (italic) {
+    return weightPart ? `italic ${weightPart}` : "italic";
+  }
+  return weightPart ?? "normal";
+}

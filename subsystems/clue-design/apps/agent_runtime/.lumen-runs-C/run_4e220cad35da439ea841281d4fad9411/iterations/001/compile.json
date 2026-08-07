@@ -1,0 +1,77 @@
+{
+  "compile": {
+    "status": "error",
+    "applied_operations": 0,
+    "operation_count": 1,
+    "diagnostics": [
+      {
+        "severity": "info",
+        "code": null,
+        "message": "{'diagnostic': {'code': 'LUMD0212', 'hint': 'Unsupported constructs are errors in the DSL compiler, not silently ignored.', 'message': 'unknown property c', 'phase': 'dsl', 'severity': 'error', 'subject': None}, 'span': {'column': 1, 'length': 18, 'line': 16}}",
+        "line": 16,
+        "column": 1,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      },
+      {
+        "severity": "info",
+        "code": null,
+        "message": "{'diagnostic': {'code': 'LUMD0900', 'hint': 'Repair the target reference or use properties compatible with the target kind.', 'message': 'targeted edit edit.target_not_found failed: slot target SlotKey(SlotKey(\"campaign.eyebrow\")) does not exist', 'phase': 'dsl', 'severity': 'error', 'subject': None}, 'span': {'column': 1, 'length': 114, 'line': 2}}",
+        "line": 2,
+        "column": 1,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      }
+    ],
+    "halted_at": {
+      "code": "LUMD0900",
+      "line": 2
+    },
+    "operation_error": null
+  },
+  "operations": [
+    {
+      "kind": "add_page",
+      "page": {
+        "background": [],
+        "bleed": null,
+        "children": [],
+        "id": "pipeline_slide",
+        "name": "pipeline_slide",
+        "safe_area": null,
+        "size": {
+          "height": 1080.0,
+          "orientation": "landscape",
+          "output": {
+            "raster": {
+              "height_px": 1080,
+              "width_px": 1920
+            }
+          },
+          "preset": "custom",
+          "source": {
+            "height": 1080.0,
+            "unit": "px",
+            "width": 1920.0
+          },
+          "unit": "pt",
+          "width": 1920.0
+        }
+      }
+    }
+  ],
+  "dsl_session": {
+    "emitted_slots": {},
+    "parent_stack": [],
+    "previous_can_have_children": true,
+    "previous_structural_depth": null,
+    "seen_node_ids": []
+  },
+  "checkpoint_label": null
+}

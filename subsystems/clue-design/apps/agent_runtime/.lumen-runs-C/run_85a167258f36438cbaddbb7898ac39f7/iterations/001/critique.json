@@ -1,0 +1,65 @@
+{
+  "status": "ok",
+  "critique": {
+    "accepted": false,
+    "summary": "The RevMotion '26 headline dominates cleanly and contrast is fine (white/cyan on #111827), but this fails the thumbnail-legibility bar the brief explicitly demands. The two pieces of key logistical info \u2014 the date/city subtitle (16pt) and the \"Save your seat\" CTA label (16pt) \u2014 are far too small relative to the 80pt headline. At feed-thumbnail size the subtitle and CTA text collapse to unreadable, and the CTA pill is nearly invisible: a #0F172A fill on a #111827 surface gives almost no contrast, so the button reads as a faint ghost box rather than a clear action. The composition is also poorly balanced: the whole content block hugs the vertical center while a large dead band sits between the subtitle (~y=595) and the CTA (~y=912), leaving ~300px of empty space and a bottom-heavy, unfinished feel.",
+    "issues": [
+      {
+        "severity": "error",
+        "category": "typography",
+        "target": {
+          "page_id": "poster_revmotion",
+          "node_id": "subtitle_rm",
+          "slot_key": "offer.primary_message"
+        },
+        "message": "The date/city subtitle 'September 12\u201313 \u00b7 San Francisco' is only 16pt against an 80pt headline. On an event announcement this is the single most important logistical info, yet at thumbnail scale it degrades to an unreadable hairline. The 5:1 headline-to-subtitle jump is too extreme, so the essential when/where does not survive the feed-thumbnail read the brief requires.",
+        "suggested_repair": "Increase subtitle_rm font_size to ~28\u201332pt (e.g. $type.size.xl/2xl) and bump weight to 500\u2013600 so date + city read at thumbnail; keep it on its own line directly under the headline."
+      },
+      {
+        "severity": "error",
+        "category": "contrast",
+        "target": {
+          "page_id": "poster_revmotion",
+          "node_id": "cta_rm",
+          "slot_key": "campaign.cta"
+        },
+        "message": "The CTA pill fill $surface.inverse (#0F172A) sits on the $surface.brand (#111827) poster surface \u2014 a ~1.05:1 luminance difference. The button is nearly invisible; it reads as a faint ghost rectangle, not a clear, tappable action. On a 'Save your seat' CTA this is a hard legibility/prominence failure.",
+        "suggested_repair": "Give the CTA a high-contrast fill against #111827 \u2014 set cta_rm fill to the cyan accent $accent (#0891B2) with $text.inverse label (or a solid white fill with dark label). Do not leave the near-black-on-near-black pill."
+      },
+      {
+        "severity": "warning",
+        "category": "typography",
+        "target": {
+          "page_id": "poster_revmotion",
+          "node_id": "cta_text_rm",
+          "slot_key": "campaign.cta"
+        },
+        "message": "The 'Save your seat' label is 16pt inside a 72px-tall pill, so the text occupies a small fraction of the button height and reads undersized/weak for the action; at thumbnail it is illegible. (Note: the compiled node shows font_weight 400 despite the intended 'bold' \u2014 verify $type.cta actually renders bold.)",
+        "suggested_repair": "Raise cta_text_rm font_size to ~20\u201322pt and confirm bold weight (700) resolves via $type.cta so the label fills the 72px pill and reads at thumbnail."
+      },
+      {
+        "severity": "warning",
+        "category": "visual_balance",
+        "target": {
+          "page_id": "poster_revmotion",
+          "node_id": "main_rm",
+          "slot_key": null
+        },
+        "message": "The headline/subtitle block is vertically centered (~y=478\u2013595) while the CTA is pinned to y=912, leaving a ~300px empty dead band between the subtitle and the button. The poster reads bottom-heavy and unfinished, with a large gap that breaks the spacing rhythm between the main block and the footer CTA.",
+        "suggested_repair": "Tighten the vertical rhythm: move the main_rm block down slightly and pull the CTA up (or add a supporting line) so the subtitle-to-CTA gap is a deliberate, single section break rather than a ~300px void."
+      }
+    ],
+    "repair_instruction": "Keep the clean typographic direction, dark surface, left-aligned spine, and the dominant 80pt headline. Make four surgical fixes: (1) enlarge subtitle_rm to ~28\u201332pt/medium so date+city read at thumbnail; (2) recolor cta_rm to a high-contrast fill (accent cyan $accent or solid white) so the pill is clearly visible on #111827; (3) enlarge cta_text_rm to ~20\u201322pt and ensure bold weight resolves; (4) tighten the vertical gap between the subtitle and the CTA so the ~300px dead band closes. Do not add a hero image or change the overall layout idiom.",
+    "acceptance_notes": [],
+    "requirement_coverage_notes": [
+      "Event name: PRESENT and dominant (RevMotion '26, 80pt) \u2014 passes.",
+      "Date: PRESENT (September 12\u201313) but too small at 16pt to read at thumbnail \u2014 fails the 'read instantly' requirement.",
+      "City: PRESENT (San Francisco) in same 16pt subtitle \u2014 same thumbnail-legibility failure.",
+      "CTA: PRESENT (Save your seat) but low-contrast pill and undersized label undermine 'clear action' at thumbnail.",
+      "Dimensions: 1080x1080 confirmed in export geometry \u2014 passes.",
+      "Eyebrow 'AI-NATIVE GTM \u00b7 LIVE IN SF' is acceptable positioning, not a gratuitous AI-cliche pill (plain letterspaced cyan text, no tinted chip) \u2014 passes.",
+      "No hero image, per deliberate decision \u2014 appropriate for a fast-read typographic poster; no imagery axis triggered."
+    ],
+    "confidence": 0.86
+  }
+}

@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" data-lumen-document-id="run_4e220cad35da439ea841281d4fad9411" data-lumen-page-id="pipeline_slide">
+<defs>
+<clipPath id="lumen-clip-artboard"><rect x="0" y="0" width="1920" height="1080" /></clipPath>
+</defs>
+<g id="lumen-page-pipeline_slide" data-lumen-page-id="pipeline_slide">
+<g id="lumen-node-artboard" data-lumen-node-id="artboard">
+<rect x="0" y="0" width="1920" height="1080" fill="#FFFFFF" data-lumen-fill-id="paint_artboard_fill_1" />
+<g clip-path="url(#lumen-clip-artboard)">
+<g id="lumen-node-header" data-lumen-node-id="header" transform="translate(80 80)">
+<text id="lumen-node-kicker" data-lumen-node-id="kicker" data-lumen-slot-keys="campaign.eyebrow" x="0" y="13" font-family="Inter, Arial, Helvetica, sans-serif" font-size="13" font-weight="750" text-anchor="start" letter-spacing="0.08" direction="ltr" fill="#0891B2" data-lumen-fill-id="paint_kicker_fill_1"><tspan x="0" y="11.1492">PIPELINE COVERAGE BY STAGE</tspan></text>
+<text id="lumen-node-context" data-lumen-node-id="context" x="360" y="13" font-family="Inter, Arial, Helvetica, sans-serif" font-size="13" font-weight="750" text-anchor="end" letter-spacing="0.08" direction="ltr" transform="translate(1400 0)" fill="#0891B2" data-lumen-fill-id="paint_context_fill_1"><tspan x="360" y="11.1492">FY QUOTA REVIEW</tspan></text>
+</g>
+<g id="lumen-node-hero" data-lumen-node-id="hero" transform="translate(80 269)">
+<g id="lumen-node-stats" data-lumen-node-id="stats">
+<g id="lumen-node-coverage" data-lumen-node-id="coverage">
+<text id="lumen-node-coverage_value" data-lumen-node-id="coverage_value" data-lumen-slot-keys="stat.coverage" x="0" y="128" font-family="Inter, Arial, Helvetica, sans-serif" font-size="128" font-weight="850" text-anchor="start" letter-spacing="-0.02" direction="ltr" fill="#155E75" data-lumen-fill-id="paint_coverage_value_fill_1"><tspan x="0" y="102.4827">4.2x</tspan></text>
+<text id="lumen-node-coverage_label" data-lumen-node-id="coverage_label" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="450" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 132)" fill="#4B5563" data-lumen-fill-id="paint_coverage_label_fill_1"><tspan x="0" y="16.0927">pipeline coverage ratio</tspan></text>
+</g>
+<g id="lumen-node-target" data-lumen-node-id="target" transform="translate(688 64)">
+<text id="lumen-node-target_value" data-lumen-node-id="target_value" data-lumen-slot-keys="stat.target" x="0" y="64" font-family="Inter, Arial, Helvetica, sans-serif" font-size="64" font-weight="850" text-anchor="start" letter-spacing="-0.02" direction="ltr" fill="#155E75" data-lumen-fill-id="paint_target_value_fill_1"><tspan x="0" y="51.2413">$18M</tspan></text>
+<text id="lumen-node-target_label" data-lumen-node-id="target_label" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="450" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 68)" fill="#4B5563" data-lumen-fill-id="paint_target_label_fill_1"><tspan x="0" y="16.0927">quota target (FY)</tspan></text>
+</g>
+</g>
+<text id="lumen-node-takeaway" data-lumen-node-id="takeaway" data-lumen-slot-keys="offer.takeaway" x="0" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 168)" fill="#4B5563" data-lumen-fill-id="paint_takeaway_fill_1"><tspan x="0" y="24.0672">Every stage clears the 3x coverage bar, giving healthy margin against the $18M</tspan><tspan x="0" y="54.0672">target.</tspan></text>
+</g>
+<g id="lumen-node-stages" data-lumen-node-id="stages" transform="translate(80 673)">
+<g id="lumen-node-stage_1" data-lumen-node-id="stage_1">
+<rect x="0" y="0" width="410" height="136" rx="12" ry="12" fill="#FFFFFF" data-lumen-fill-id="paint_stage_1_fill_1" stroke="#E5E7EB" stroke-width="1" data-lumen-stroke-id="stroke_stage_1_1" />
+<rect id="lumen-node-stage_1_rule" data-lumen-node-id="stage_1_rule" x="0" y="0" width="362" height="4" rx="2" ry="2" transform="translate(24 24)" fill="#0F766E" data-lumen-fill-id="paint_stage_1_rule_fill_1" />
+<text id="lumen-node-stage_1_value" data-lumen-node-id="stage_1_value" data-lumen-slot-keys="stage.1.value" x="0" y="40" font-family="Inter, Arial, Helvetica, sans-serif" font-size="40" font-weight="850" text-anchor="start" letter-spacing="-0.02" direction="ltr" transform="translate(24 40)" fill="#155E75" data-lumen-fill-id="paint_stage_1_value_fill_1"><tspan x="0" y="32.0258">$24.8M</tspan></text>
+<text id="lumen-node-stage_1_label" data-lumen-node-id="stage_1_label" data-lumen-slot-keys="stage.1.label" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="450" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(24 92)" fill="#4B5563" data-lumen-fill-id="paint_stage_1_label_fill_1"><tspan x="0" y="16.0927">Discovery</tspan></text>
+</g>
+<g id="lumen-node-stage_2" data-lumen-node-id="stage_2" transform="translate(450 0)">
+<rect x="0" y="0" width="410" height="136" rx="12" ry="12" fill="#FFFFFF" data-lumen-fill-id="paint_stage_2_fill_1" stroke="#E5E7EB" stroke-width="1" data-lumen-stroke-id="stroke_stage_2_1" />
+<rect id="lumen-node-stage_2_rule" data-lumen-node-id="stage_2_rule" x="0" y="0" width="362" height="4" rx="2" ry="2" transform="translate(24 24)" fill="#0F766E" data-lumen-fill-id="paint_stage_2_rule_fill_1" />
+<text id="lumen-node-stage_2_value" data-lumen-node-id="stage_2_value" data-lumen-slot-keys="stage.2.value" x="0" y="40" font-family="Inter, Arial, Helvetica, sans-serif" font-size="40" font-weight="850" text-anchor="start" letter-spacing="-0.02" direction="ltr" transform="translate(24 40)" fill="#155E75" data-lumen-fill-id="paint_stage_2_value_fill_1"><tspan x="0" y="32.0258">$21.4M</tspan></text>
+<text id="lumen-node-stage_2_label" data-lumen-node-id="stage_2_label" data-lumen-slot-keys="stage.2.label" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="450" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(24 92)" fill="#4B5563" data-lumen-fill-id="paint_stage_2_label_fill_1"><tspan x="0" y="16.0927">Qualification</tspan></text>
+</g>
+<g id="lumen-node-stage_3" data-lumen-node-id="stage_3" transform="translate(900 0)">
+<rect x="0" y="0" width="410" height="136" rx="12" ry="12" fill="#FFFFFF" data-lumen-fill-id="paint_stage_3_fill_1" stroke="#E5E7EB" stroke-width="1" data-lumen-stroke-id="stroke_stage_3_1" />
+<rect id="lumen-node-stage_3_rule" data-lumen-node-id="stage_3_rule" x="0" y="0" width="362" height="4" rx="2" ry="2" transform="translate(24 24)" fill="#0F766E" data-lumen-fill-id="paint_stage_3_rule_fill_1" />
+<text id="lumen-node-stage_3_value" data-lumen-node-id="stage_3_value" data-lumen-slot-keys="stage.3.value" x="0" y="40" font-family="Inter, Arial, Helvetica, sans-serif" font-size="40" font-weight="850" text-anchor="start" letter-spacing="-0.02" direction="ltr" transform="translate(24 40)" fill="#155E75" data-lumen-fill-id="paint_stage_3_value_fill_1"><tspan x="0" y="32.0258">$17.9M</tspan></text>
+<text id="lumen-node-stage_3_label" data-lumen-node-id="stage_3_label" data-lumen-slot-keys="stage.3.label" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="450" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(24 92)" fill="#4B5563" data-lumen-fill-id="paint_stage_3_label_fill_1"><tspan x="0" y="16.0927">Proposal</tspan></text>
+</g>
+<g id="lumen-node-stage_4" data-lumen-node-id="stage_4" transform="translate(1350 0)">
+<rect x="0" y="0" width="410" height="136" rx="12" ry="12" fill="#FFFFFF" data-lumen-fill-id="paint_stage_4_fill_1" stroke="#E5E7EB" stroke-width="1" data-lumen-stroke-id="stroke_stage_4_1" />
+<rect id="lumen-node-stage_4_rule" data-lumen-node-id="stage_4_rule" x="0" y="0" width="362" height="4" rx="2" ry="2" transform="translate(24 24)" fill="#0F766E" data-lumen-fill-id="paint_stage_4_rule_fill_1" />
+<text id="lumen-node-stage_4_value" data-lumen-node-id="stage_4_value" data-lumen-slot-keys="stage.4.value" x="0" y="40" font-family="Inter, Arial, Helvetica, sans-serif" font-size="40" font-weight="850" text-anchor="start" letter-spacing="-0.02" direction="ltr" transform="translate(24 40)" fill="#155E75" data-lumen-fill-id="paint_stage_4_value_fill_1"><tspan x="0" y="32.0258">$11.5M</tspan></text>
+<text id="lumen-node-stage_4_label" data-lumen-node-id="stage_4_label" data-lumen-slot-keys="stage.4.label" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="450" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(24 92)" fill="#4B5563" data-lumen-fill-id="paint_stage_4_label_fill_1"><tspan x="0" y="16.0927">Negotiation</tspan></text>
+</g>
+</g>
+<g id="lumen-node-footer" data-lumen-node-id="footer" transform="translate(80 984)">
+<text id="lumen-node-source" data-lumen-node-id="source" x="0" y="12" font-family="Inter, Arial, Helvetica, sans-serif" font-size="12" font-weight="500" text-anchor="start" letter-spacing="0" direction="ltr" fill="#4B5563" data-lumen-fill-id="paint_source_fill_1"><tspan x="0" y="12.7705">Source: CRM pipeline snapshot, FY quota model</tspan></text>
+</g>
+</g>
+</g>
+</g>
+</svg>

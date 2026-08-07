@@ -1,0 +1,10 @@
+// Phase C tokenized one-pager section
+page one_pager_section size(1440,900,px)
+  section al(v,g($space.stack.default),pad($space.page.margin),x(s)) p(0,0) s(1440,hug) fill($surface.page)
+    intro al(v,g($space.stack.tight),pad($space.card.padding),x(s)) p(0,0) s(fill,hug) fill($surface.card) rd($radius.card)
+      eyebrow text "ACCOUNT-SPECIFIC SUMMARY" p(0,0) s(1180,44) style($type.eyebrow) wrap_text(true) slot(account.name)
+      headline text "Patient access plan." p(0,0) s(1180,150) style($type.headline) wrap_text(true) slot(campaign.headline)
+      body text "Account-aware automation plan." p(0,0) s(1180,120) style($type.body) wrap_text(true) slot(offer.message)
+    insight al(h,g($space.stack.default),pad($space.card.padding),x(sb),y(c)) p(0,0) s(fill,hug) fill($surface.brand.subtle) rd($radius.card)
+      stat text "42%" p(0,0) s(220,96) style($type.stat) wrap_text(true) slot(research.stat)
+      stat_label text "fewer abandoned conversations." p(0,0) s(860,90) style($type.body.small) wrap_text(true) slot(research.insight)

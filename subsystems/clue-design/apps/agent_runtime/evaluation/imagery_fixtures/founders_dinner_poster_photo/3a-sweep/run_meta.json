@@ -1,0 +1,7 @@
+{
+  "run_id": "run_1ed05167c9d44f97a7feca2ff503a3b3",
+  "run_status": "accepted",
+  "model": "openai:anthropic/claude-opus-4.8",
+  "tag": "3a-sweep",
+  "brief_id": "founders_dinner_poster_photo"
+}

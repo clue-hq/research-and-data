@@ -1,0 +1,763 @@
+{
+  "run_id": "run_4e220cad35da439ea841281d4fad9411",
+  "status": "success",
+  "stop_reason": "reviewer_accepted",
+  "summary": "Pipeline-coverage data slide (1920x1080, 16:9) accepted by visual review (score/confidence 0.85). Clean typographic layout, no imagery (deliberate \u2014 data belongs on type). Hierarchy: 4.2x (128px teal #155E75) dominant > $18M quota target (64px) mid-tier > four stage tiles (40px values) subordinate. Header kicker + FY QUOTA REVIEW context in teal #0891B2; single supporting takeaway line. Four equal 410x136 rounded tiles (rx12, 1px #E5E7EB border, teal #0F766E top rule) at even 450px pitch: Discovery $24.8M, Qualification $21.4M, Proposal $17.9M, Negotiation $11.5M; source caption footer. Brand: platform default, single teal accent, Inter, white bg. Repair loop resolved three prior issues (hero dead zone, hero pairing, inconsistent tile borders) plus a regression where a strokes.set on stage_2 cleared its computed geometry (LUME0201 zero-size render) \u2014 fixed by re-running preflight to re-solve layout before export, then applying stage_3's missing border and re-exporting the full SVG+PNG bundle. Only benign advisories remain (LUME0205/0210 hug-sizing/inside-stroke notes; LUMB0613/0614 font embed/subset export warnings). Final preview valid at 1920x1080.",
+  "final_scene_summary": {
+    "document_id": "run_4e220cad35da439ea841281d4fad9411",
+    "title": "Agent-authored design",
+    "status": {
+      "kind": "draft"
+    },
+    "brand_kit": {
+      "id": "brand_kit_platform_default",
+      "version": 1
+    },
+    "effective_brand": {
+      "source": "platform_default",
+      "brand_kit_id": "brand_kit_platform_default",
+      "brand_kit_version": "1",
+      "brand_kit_name": "Lumen Platform Default",
+      "mode": {
+        "accessibility": "standard",
+        "density": "comfortable",
+        "medium": "digital",
+        "theme": "light"
+      }
+    },
+    "page_count": 1,
+    "node_count": 32,
+    "slot_count": 12,
+    "asset_count": 0,
+    "pages": [
+      {
+        "id": "pipeline_slide",
+        "name": "pipeline_slide",
+        "size": {
+          "height": 1080.0,
+          "orientation": "landscape",
+          "output": {
+            "raster": {
+              "height_px": 1080,
+              "width_px": 1920
+            }
+          },
+          "preset": "custom",
+          "source": {
+            "height": 1080.0,
+            "unit": "px",
+            "width": 1920.0
+          },
+          "unit": "pt",
+          "width": 1920.0
+        },
+        "width": 1920.0,
+        "height": 1080.0,
+        "aspect_ratio": 1.7777777777777777,
+        "children": [
+          "artboard"
+        ],
+        "child_count": 1
+      }
+    ],
+    "slots": [
+      {
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "key": "campaign.eyebrow",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "kicker",
+            "name": null,
+            "kind": "text",
+            "text": "PIPELINE COVERAGE BY STAGE",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 1200.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 14.0,
+                "width": 1200.0,
+                "x": 80.0,
+                "y": 80.0
+              },
+              "render_bounds": {
+                "height": 14.0,
+                "width": 1200.0,
+                "x": 80.0,
+                "y": 80.0
+              }
+            },
+            "slots": [
+              "campaign.eyebrow"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_offer_takeaway_0982d3741a674860",
+        "key": "offer.takeaway",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "takeaway",
+            "name": null,
+            "kind": "text",
+            "text": "Every stage clears the 3x coverage bar, giving healthy margin against the $18M target.",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 1000.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 60.0,
+                "width": 1000.0,
+                "x": 80.0,
+                "y": 437.0
+              },
+              "render_bounds": {
+                "height": 60.0,
+                "width": 1000.0,
+                "x": 80.0,
+                "y": 437.0
+              }
+            },
+            "slots": [
+              "offer.takeaway"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_stage_1_label_dfbba873e6981338",
+        "key": "stage.1.label",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "stage_1_label",
+            "name": null,
+            "kind": "text",
+            "text": "Discovery",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 346.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 20.0,
+                "width": 346.0,
+                "x": 104.0,
+                "y": 765.0
+              },
+              "render_bounds": {
+                "height": 20.0,
+                "width": 346.0,
+                "x": 104.0,
+                "y": 765.0
+              }
+            },
+            "slots": [
+              "stage.1.label"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_stage_1_value_e35b90b113ab9d6b",
+        "key": "stage.1.value",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "stage_1_value",
+            "name": null,
+            "kind": "text",
+            "text": "$24.8M",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 346.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 40.0,
+                "width": 346.0,
+                "x": 104.0,
+                "y": 713.0
+              },
+              "render_bounds": {
+                "height": 40.0,
+                "width": 346.0,
+                "x": 104.0,
+                "y": 713.0
+              }
+            },
+            "slots": [
+              "stage.1.value"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_stage_2_label_8e84b9c5a30bf8f5",
+        "key": "stage.2.label",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "stage_2_label",
+            "name": null,
+            "kind": "text",
+            "text": "Qualification",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 346.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 20.0,
+                "width": 346.0,
+                "x": 554.0,
+                "y": 765.0
+              },
+              "render_bounds": {
+                "height": 20.0,
+                "width": 346.0,
+                "x": 554.0,
+                "y": 765.0
+              }
+            },
+            "slots": [
+              "stage.2.label"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_stage_2_value_aadde8edfc8e6dd2",
+        "key": "stage.2.value",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "stage_2_value",
+            "name": null,
+            "kind": "text",
+            "text": "$21.4M",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 346.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 40.0,
+                "width": 346.0,
+                "x": 554.0,
+                "y": 713.0
+              },
+              "render_bounds": {
+                "height": 40.0,
+                "width": 346.0,
+                "x": 554.0,
+                "y": 713.0
+              }
+            },
+            "slots": [
+              "stage.2.value"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_stage_3_label_c770bbe1459c5e8e",
+        "key": "stage.3.label",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "stage_3_label",
+            "name": null,
+            "kind": "text",
+            "text": "Proposal",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 346.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 20.0,
+                "width": 346.0,
+                "x": 1004.0,
+                "y": 765.0
+              },
+              "render_bounds": {
+                "height": 20.0,
+                "width": 346.0,
+                "x": 1004.0,
+                "y": 765.0
+              }
+            },
+            "slots": [
+              "stage.3.label"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_stage_3_value_4a9dd72274a3ba41",
+        "key": "stage.3.value",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "stage_3_value",
+            "name": null,
+            "kind": "text",
+            "text": "$17.9M",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 346.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 40.0,
+                "width": 346.0,
+                "x": 1004.0,
+                "y": 713.0
+              },
+              "render_bounds": {
+                "height": 40.0,
+                "width": 346.0,
+                "x": 1004.0,
+                "y": 713.0
+              }
+            },
+            "slots": [
+              "stage.3.value"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_stage_4_label_1e509865d04a0e33",
+        "key": "stage.4.label",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "stage_4_label",
+            "name": null,
+            "kind": "text",
+            "text": "Negotiation",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 346.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 20.0,
+                "width": 346.0,
+                "x": 1454.0,
+                "y": 765.0
+              },
+              "render_bounds": {
+                "height": 20.0,
+                "width": 346.0,
+                "x": 1454.0,
+                "y": 765.0
+              }
+            },
+            "slots": [
+              "stage.4.label"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_stage_4_value_f72aadbd1d274e78",
+        "key": "stage.4.value",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "stage_4_value",
+            "name": null,
+            "kind": "text",
+            "text": "$11.5M",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 346.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 40.0,
+                "width": 346.0,
+                "x": 1454.0,
+                "y": 713.0
+              },
+              "render_bounds": {
+                "height": 40.0,
+                "width": 346.0,
+                "x": 1454.0,
+                "y": 713.0
+              }
+            },
+            "slots": [
+              "stage.4.value"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_stat_coverage_95ba9845fd09efcd",
+        "key": "stat.coverage",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "coverage_value",
+            "name": null,
+            "kind": "text",
+            "text": "4.2x",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 640.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 128.0,
+                "width": 640.0,
+                "x": 80.0,
+                "y": 269.0
+              },
+              "render_bounds": {
+                "height": 128.0,
+                "width": 640.0,
+                "x": 80.0,
+                "y": 269.0
+              }
+            },
+            "slots": [
+              "stat.coverage"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_stat_target_0a6b9effe422b7de",
+        "key": "stat.target",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "target_value",
+            "name": null,
+            "kind": "text",
+            "text": "$18M",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 520.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 64.0,
+                "width": 520.0,
+                "x": 768.0,
+                "y": 333.0
+              },
+              "render_bounds": {
+                "height": 64.0,
+                "width": 520.0,
+                "x": 768.0,
+                "y": 333.0
+              }
+            },
+            "slots": [
+              "stat.target"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      }
+    ]
+  },
+  "effective_brand": {
+    "source": "platform_default",
+    "brand_kit_id": "brand_kit_platform_default",
+    "brand_kit_version": "1",
+    "brand_kit_name": "Lumen Platform Default",
+    "mode": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "medium": "digital",
+      "theme": "light"
+    }
+  },
+  "preview_paths": [
+    ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.svg",
+    ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.png",
+    ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.svg",
+    ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.png",
+    ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.png",
+    ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.svg",
+    ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.png",
+    ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.svg",
+    ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.png",
+    ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.svg",
+    ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.png"
+  ],
+  "critique": {
+    "accepted": true,
+    "score": 0.85,
+    "summary": "Clean, correct, brand-aligned pipeline-coverage data slide; all prior blockers resolved in rendered pixels.",
+    "issues": [
+      {
+        "severity": "info",
+        "category": "visual_balance",
+        "message": "Optional: slightly tighten hero-to-tiles vertical gap; not blocking."
+      }
+    ],
+    "confidence": 0.85
+  },
+  "gaps": [],
+  "scene_update_sources": [
+    "compile_dsl_block",
+    "compile_dsl_block",
+    "preflight_design",
+    "apply_structured_edit",
+    "preflight_design",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "preflight_design",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "preflight_design",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "preflight_design",
+    "apply_structured_edit",
+    "apply_structured_edit",
+    "preflight_design",
+    "apply_structured_edit",
+    "preflight_design"
+  ],
+  "seeded_from_initial_scene": false,
+  "ops_valid_through_iteration": 3,
+  "baseline_advisory": null,
+  "accommodation": null
+}

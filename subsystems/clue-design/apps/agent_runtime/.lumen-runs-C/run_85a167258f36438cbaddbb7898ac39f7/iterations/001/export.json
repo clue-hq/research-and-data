@@ -1,0 +1,144 @@
+{
+  "export": {
+    "status": "ok",
+    "requested_format": "png",
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node artboard_rm uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "artboard_rm",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node header_rm uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "header_rm",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node markt_rm uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "markt_rm",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node logo_rm uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "logo_rm",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node main_rm uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "main_rm",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node kicker_rm uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "kicker_rm",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node headline_rm uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "headline_rm",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node subtitle_rm uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "subtitle_rm",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node footer_rm uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "footer_rm",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node cta_text_rm uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "cta_text_rm",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      }
+    ],
+    "artifacts": [
+      {
+        "format": "png",
+        "mime_type": "image/png",
+        "page_id": "poster_revmotion",
+        "byte_len": 34672,
+        "path": ".lumen-runs-C/run_85a167258f36438cbaddbb7898ac39f7/iterations/001/preview.png",
+        "width": 1080.0,
+        "height": 1080.0,
+        "aspect_ratio": 1.0,
+        "critic_input_path": ".lumen-runs-C/run_85a167258f36438cbaddbb7898ac39f7/iterations/001/preview.png",
+        "valid": true,
+        "validation_errors": []
+      }
+    ],
+    "validation_errors": []
+  }
+}

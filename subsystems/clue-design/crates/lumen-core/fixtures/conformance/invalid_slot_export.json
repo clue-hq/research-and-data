@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "id": "doc_invalid_slot_export",
+    "title": "Invalid Slot Export",
+    "artifact_type": "letter",
+    "medium": "print",
+    "brand_kit": null,
+    "status": {
+      "kind": "draft"
+    }
+  },
+  "pages": {
+    "page_a4": {
+      "id": "page_a4",
+      "name": "A4 Letter",
+      "size": {
+        "width": 210.0,
+        "height": 297.0,
+        "unit": "mm",
+        "preset": "a4",
+        "orientation": "portrait"
+      },
+      "children": [
+        "node_contact_name"
+      ],
+      "bleed": null,
+      "safe_area": null,
+      "background": []
+    }
+  },
+  "nodes": {
+    "node_contact_name": {
+      "id": "node_contact_name",
+      "name": "Contact Name",
+      "kind": {
+        "kind": "text",
+        "content": "Dr. Priya Sharma",
+        "font_family": "Inter",
+        "font_size": 18.0,
+        "font_weight": 600,
+        "align": "left"
+      },
+      "transform": {
+        "x": 24.0,
+        "y": 40.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 160.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 28.0
+        }
+      },
+      "children": [],
+      "fills": [],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    }
+  },
+  "slots": {
+    "slot_duplicate_a": {
+      "id": "slot_duplicate_a",
+      "key": "contact.full_name",
+      "label": "Contact full name",
+      "content_type": "text_short",
+      "scope": {
+        "kind": "document"
+      },
+      "bound_nodes": [
+        "node_contact_name"
+      ],
+      "required": true,
+      "placeholder": "Dr. Priya Sharma",
+      "overflow": {
+        "kind": "error"
+      },
+      "formatting": {
+        "max_length": 80,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [
+          "Dr. Maximilian Alexander Whitmore"
+        ],
+        "worst_case": null,
+        "max_length": 80
+      },
+      "image_policy": null,
+      "editability": "template_and_instance",
+      "binding_hints": []
+    },
+    "slot_duplicate_b": {
+      "id": "slot_duplicate_b",
+      "key": "contact.full_name",
+      "label": "Duplicate contact full name",
+      "content_type": "text_short",
+      "scope": {
+        "kind": "page",
+        "id": "page_missing"
+      },
+      "bound_nodes": [
+        "node_missing"
+      ],
+      "required": true,
+      "placeholder": "",
+      "overflow": {
+        "kind": "error"
+      },
+      "formatting": {
+        "max_length": 80,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [],
+        "worst_case": null,
+        "max_length": 80
+      },
+      "image_policy": null,
+      "editability": "template_and_instance",
+      "binding_hints": []
+    }
+  },
+  "export_profiles": [
+    {
+      "name": "",
+      "format": "png",
+      "pdf_intent": null,
+      "raster": {
+        "scale": 0.0,
+        "dpi": 144
+      },
+      "include_bleed": false,
+      "embed_fonts": false
+    },
+    {
+      "name": "download_svg",
+      "format": "svg",
+      "pdf_intent": null,
+      "raster": null,
+      "include_bleed": false,
+      "embed_fonts": false
+    },
+    {
+      "name": "download_svg",
+      "format": "svg",
+      "pdf_intent": null,
+      "raster": null,
+      "include_bleed": false,
+      "embed_fonts": false
+    }
+  ]
+}

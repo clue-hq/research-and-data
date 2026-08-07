@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 595.2756 841.8898" data-lumen-document-id="run_121c8c8d064341d28bf25a06c5e35b79" data-lumen-page-id="onepager_a4">
+<defs>
+<clipPath id="lumen-clip-artboard"><rect x="0" y="0" width="595" height="842" /></clipPath>
+</defs>
+<g id="lumen-page-onepager_a4" data-lumen-page-id="onepager_a4">
+<g id="lumen-node-artboard" data-lumen-node-id="artboard">
+<rect x="0" y="0" width="595" height="842" fill="#FFFFFF" data-lumen-fill-id="paint_artboard_fill_1" />
+<g clip-path="url(#lumen-clip-artboard)">
+<g id="lumen-node-header" data-lumen-node-id="header" transform="translate(48 48)">
+<g id="lumen-node-brand" data-lumen-node-id="brand">
+<rect id="lumen-node-mark" data-lumen-node-id="mark" x="0" y="0" width="32" height="32" rx="16" ry="16" fill="#111827" data-lumen-fill-id="paint_mark_fill_1" />
+<text id="lumen-node-logo" data-lumen-node-id="logo" data-lumen-slot-keys="account.name" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(42 9)" fill="#111827" data-lumen-fill-id="logo_text_fill"><tspan x="0" y="11.9299">Lumen</tspan></text>
+</g>
+<text id="lumen-node-tag" data-lumen-node-id="tag" data-lumen-slot-keys="account.tagline" x="0" y="12" font-family="Inter, Arial, Helvetica, sans-serif" font-size="12" font-weight="500" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(301 8)" fill="#4B5563" data-lumen-fill-id="tag_text_fill"><tspan x="0" y="12.7705">Enablement leave-behind</tspan></text>
+</g>
+<g id="lumen-node-main" data-lumen-node-id="main" transform="translate(48 104)">
+<g id="lumen-node-hero" data-lumen-node-id="hero">
+<text id="lumen-node-eyebrow" data-lumen-node-id="eyebrow" data-lumen-slot-keys="campaign.eyebrow" x="0" y="13" font-family="Inter, Arial, Helvetica, sans-serif" font-size="13" font-weight="750" text-anchor="start" letter-spacing="0.08" direction="ltr" fill="#0891B2" data-lumen-fill-id="eyebrow_text_fill"><tspan x="0" y="11.1492">PRODUCT ENABLEMENT</tspan></text>
+<text id="lumen-node-headline" data-lumen-node-id="headline" data-lumen-slot-keys="campaign.headline" x="0" y="32" font-family="Inter, Arial, Helvetica, sans-serif" font-size="32" font-weight="800" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 22)" fill="#111827" data-lumen-fill-id="headline_text_fill"><tspan x="0" y="27.9827">How Lumen works in three</tspan><tspan x="0" y="62.9827">steps.</tspan></text>
+<text id="lumen-node-subtitle" data-lumen-node-id="subtitle" data-lumen-slot-keys="offer.primary_message" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="450" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 100)" fill="#4B5563" data-lumen-fill-id="subtitle_text_fill"><tspan x="0" y="16.0927">From a plain-language brief to an on-brand, production-ready design.</tspan></text>
+</g>
+<g id="lumen-node-list" data-lumen-node-id="list" transform="translate(0 144)">
+<g id="lumen-node-r1" data-lumen-node-id="r1">
+<g id="lumen-node-n1" data-lumen-node-id="n1">
+<rect x="0" y="0" width="56" height="56" rx="28" ry="28" fill="#CFFAFE" data-lumen-fill-id="paint_n1_fill_1" />
+<text id="lumen-node-n1t" data-lumen-node-id="n1t" x="28" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="middle" letter-spacing="0" direction="ltr" transform="translate(0 13)" fill="#4B5563" data-lumen-fill-id="n1t_text_fill"><tspan x="28" y="24.0672">1</tspan></text>
+</g>
+<g id="lumen-node-t1" data-lumen-node-id="t1" transform="translate(76 0)">
+<text id="lumen-node-t1t" data-lumen-node-id="t1t" data-lumen-slot-keys="step.1.title" x="0" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="start" letter-spacing="0" direction="ltr" fill="#111827" data-lumen-fill-id="t1t_text_fill"><tspan x="0" y="24.0672">Brief it</tspan></text>
+<text id="lumen-node-t1d" data-lumen-node-id="t1d" data-lumen-slot-keys="step.1.desc" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="450" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 36)" fill="#4B5563" data-lumen-fill-id="t1d_text_fill"><tspan x="0" y="16.0927">Describe the account, offer, and goal in plain language.</tspan></text>
+</g>
+</g>
+<g id="lumen-node-r2" data-lumen-node-id="r2" transform="translate(0 72)">
+<g id="lumen-node-n2" data-lumen-node-id="n2">
+<rect x="0" y="0" width="56" height="56" rx="28" ry="28" fill="#CFFAFE" data-lumen-fill-id="paint_n2_fill_1" />
+<text id="lumen-node-n2t" data-lumen-node-id="n2t" x="28" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="middle" letter-spacing="0" direction="ltr" transform="translate(0 13)" fill="#4B5563" data-lumen-fill-id="n2t_text_fill"><tspan x="28" y="24.0672">2</tspan></text>
+</g>
+<g id="lumen-node-t2" data-lumen-node-id="t2" transform="translate(76 0)">
+<text id="lumen-node-t2t" data-lumen-node-id="t2t" data-lumen-slot-keys="step.2.title" x="0" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="start" letter-spacing="0" direction="ltr" fill="#111827" data-lumen-fill-id="t2t_text_fill"><tspan x="0" y="24.0672">It composes on-brand</tspan></text>
+<text id="lumen-node-t2d" data-lumen-node-id="t2d" data-lumen-slot-keys="step.2.desc" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="450" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 36)" fill="#4B5563" data-lumen-fill-id="t2d_text_fill"><tspan x="0" y="16.0927">Lumen assembles a layout using your brand kit and tokens.</tspan></text>
+</g>
+</g>
+<g id="lumen-node-r3" data-lumen-node-id="r3" transform="translate(0 144)">
+<g id="lumen-node-n3" data-lumen-node-id="n3">
+<rect x="0" y="0" width="56" height="56" rx="28" ry="28" fill="#CFFAFE" data-lumen-fill-id="paint_n3_fill_1" />
+<text id="lumen-node-n3t" data-lumen-node-id="n3t" x="28" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="middle" letter-spacing="0" direction="ltr" transform="translate(0 13)" fill="#4B5563" data-lumen-fill-id="n3t_text_fill"><tspan x="28" y="24.0672">3</tspan></text>
+</g>
+<g id="lumen-node-t3" data-lumen-node-id="t3" transform="translate(76 0)">
+<text id="lumen-node-t3t" data-lumen-node-id="t3t" data-lumen-slot-keys="step.3.title" x="0" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="start" letter-spacing="0" direction="ltr" fill="#111827" data-lumen-fill-id="t3t_text_fill"><tspan x="0" y="24.0672">Approve and export</tspan></text>
+<text id="lumen-node-t3d" data-lumen-node-id="t3d" data-lumen-slot-keys="step.3.desc" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="450" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 36)" fill="#4B5563" data-lumen-fill-id="t3d_text_fill"><tspan x="0" y="16.0927">Review the preview, tweak if needed, and export production-</tspan><tspan x="0" y="36.0927">ready.</tspan></text>
+</g>
+</g>
+</g>
+</g>
+<g id="lumen-node-footer" data-lumen-node-id="footer" transform="translate(48 730)">
+<g id="lumen-node-cta" data-lumen-node-id="cta">
+<rect x="0" y="0" width="260" height="64" rx="10" ry="10" fill="#0F172A" data-lumen-fill-id="paint_cta_fill_1" />
+<text id="lumen-node-cta_text" data-lumen-node-id="cta_text" data-lumen-slot-keys="campaign.cta" x="98" y="16" font-family="Inter, Arial, Helvetica, sans-serif" font-size="16" font-weight="800" text-anchor="middle" letter-spacing="0" direction="ltr" transform="translate(32 24)" fill="#FFFFFF" data-lumen-fill-id="cta_text_text_fill"><tspan x="98" y="13.6508">Book a Demo</tspan></text>
+</g>
+<text id="lumen-node-contact" data-lumen-node-id="contact" data-lumen-slot-keys="account.contact" x="0" y="12" font-family="Inter, Arial, Helvetica, sans-serif" font-size="12" font-weight="500" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(280 24)" fill="#4B5563" data-lumen-fill-id="contact_text_fill"><tspan x="0" y="12.7705">lumen.ai/demo</tspan></text>
+</g>
+</g>
+</g>
+</g>
+</svg>

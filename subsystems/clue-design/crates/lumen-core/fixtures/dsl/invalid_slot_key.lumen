@@ -1,0 +1,3 @@
+page page_a4
+  headline text "Bad slot" p(0,0) s(220,48) slot(contact full_name)
+

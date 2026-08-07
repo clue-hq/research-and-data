@@ -1,0 +1,59 @@
+{
+  "id": "asset_generated_hero",
+  "label": "Generated clinic hero",
+  "kind": "raster_image",
+  "status": "ready",
+  "source": {
+    "kind": "generated",
+    "request_id": "gen_hero_1",
+    "model": "mock-image-model"
+  },
+  "media": {
+    "mime_type": "image/png",
+    "filename": "generated-clinic-hero.png",
+    "byte_length": 8192,
+    "digest": {
+      "algorithm": "sha256",
+      "value": "5f0d8a0ce5349a4f1d3c52ce4e77e1799f1cf333c0dd6ec544e2d1aef774ab88"
+    },
+    "location": {
+      "provider": "opaque_asset_store",
+      "opaque_ref": "workspace/acme/generated/hero",
+      "url": null
+    }
+  },
+  "raster": {
+    "pixel_width": 1600,
+    "pixel_height": 900,
+    "dpi_x": 144.0,
+    "dpi_y": 144.0,
+    "has_alpha": false,
+    "color_profile": "srgb",
+    "aspect_ratio": 1.7777777778
+  },
+  "vector": null,
+  "font": null,
+  "logo": null,
+  "license": {
+    "name": "generated_commercial_use",
+    "allow_export": true,
+    "allow_modification": true,
+    "allow_embedding": true,
+    "allow_subsetting": false,
+    "source_url": null,
+    "restrictions": []
+  },
+  "provenance": {
+    "created_by": "agent",
+    "created_at": "2026-06-08T00:00:00Z",
+    "source_label": "image generation",
+    "confidence": 0.82,
+    "notes": [
+      "Generated from campaign prompt."
+    ]
+  },
+  "tags": [
+    "generated",
+    "hero"
+  ]
+}

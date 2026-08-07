@@ -1,0 +1,120 @@
+/* Clue brand-section tokens — seeded verbatim from design/DESIGN.md (Cursor extraction).
+ *
+ * THE ONLY FILE IN THE BRAND SECTION ALLOWED TO CONTAIN LITERAL COLORS.
+ * Components consume var(--…) exclusively; a rebrand is an edit to this file.
+ * Scoped to .brand-app so the editor shell theme (src/app/styles.css) is untouched.
+ *
+ * System summary (DESIGN.md §1): one ink (#26251E) diluted over paper (#F7F7F4) — the
+ * opacity ladder IS the neutral system. No shadows; hairlines + tone carry depth.
+ * Ink-pill CTAs; accent (#F54E00) is a signal, never a fill. Agent pastels only on
+ * agent motifs.
+ */
+
+@font-face {
+  font-family: "InterVariable";
+  src: url("/fonts/InterVariable.ttf") format("truetype-variations");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+.brand-app {
+  /* -- substance: paper + ink (DESIGN.md §3.1) ---------------------------- */
+  --bg-app: #f7f7f4;            /* paper */
+  --bg-card: #f2f1ed;           /* paper.elevated / card */
+  --bg-card-01: #f0efeb;
+  --bg-chip: #ebeae5;           /* card.02 */
+  --bg-inset: #ebeae5;          /* paper.hover */
+  --bg-card-03: #e6e5e0;
+  --bg-card-04: #e1e0db;
+  --bg-card-warm: #f3ede6;
+  --bg-white: #ffffff;          /* product-mock chrome + focus offset ONLY */
+
+  /* -- the ink opacity ladder (DESIGN.md §3.2) — pick a rung, never a gray - */
+  --ink: #26251e;
+  --ink-soft: #3b3a33;
+  --ink-02: rgba(38, 37, 30, 0.025);
+  --ink-05: rgba(38, 37, 30, 0.05);
+  --ink-10: rgba(38, 37, 30, 0.1);
+  --ink-20: rgba(38, 37, 30, 0.2);
+  --ink-40: rgba(38, 37, 30, 0.4);
+  --ink-50: rgba(38, 37, 30, 0.5);
+  --ink-60: rgba(38, 37, 30, 0.6);
+  --ink-92: rgba(38, 37, 30, 0.92);
+
+  /* -- semantic text ------------------------------------------------------ */
+  --text-primary: var(--ink);
+  --text-body: var(--ink-92);
+  --text-muted: var(--ink-60);   /* AA caveat: not below 14px */
+  --text-mid: var(--ink-50);
+  --text-disabled: var(--ink-40);
+  --text-on-ink: #f7f7f4;
+
+  /* -- borders: hairlines, never 2px (DESIGN.md §6) ------------------------ */
+  --border-soft: var(--ink-05);
+  --border-default: var(--ink-10);  /* the hairline */
+  --border-strong: var(--ink-20);
+
+  /* -- accent + status (DESIGN.md §3.3) — accent == signal, never fill ----- */
+  --accent: #f54e00;
+  --accent-pressed: #d04200;     /* the only accent fill allowed (AA w/ white) */
+  --accent-wash: rgba(245, 78, 0, 0.1);
+  --accent-wash-strong: rgba(245, 78, 0, 0.25);
+  --status-success: #1f8a65;
+  --status-success-wash: rgba(31, 138, 101, 0.15);
+  --status-error: #cf2d56;
+  --status-error-wash: rgba(207, 45, 86, 0.15);
+
+  /* -- agent-work pastels (DESIGN.md §3.4) — agent motifs ONLY -------------- */
+  --agent-read: #9fbbe0;
+  --agent-research: #9fc9a2;
+  --agent-generate: #c0a8dd;
+  --agent-thinking: #dfa88f;
+  --agent-done: #d9c58b;
+
+  /* -- buttons (DESIGN.md §4) ---------------------------------------------- */
+  --btn-primary-bg: var(--ink);
+  --btn-primary-bg-hover: var(--ink-soft);
+  --btn-primary-text: var(--text-on-ink);
+  --btn-ghost-border: var(--ink-60);
+
+  /* -- radius (DESIGN.md §6) ------------------------------------------------ */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 9999px;
+
+  /* -- spacing, 4pt (DESIGN.md §6) ------------------------------------------ */
+  --space-xxs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+  --space-section: 96px;
+
+  /* -- typography (DESIGN.md §5; Inter/JetBrains sub in for licensed faces) - */
+  --font-sans: "InterVariable", Inter, system-ui, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --text-display: 52px;   /* sentence case + terminal period */
+  --text-headline: 36px;
+  --text-title: 26px;
+  --text-subtitle: 22px;
+  --text-body-lg: 16px;
+  --text-body-size: 14px;
+  --text-body-sm: 12px;
+  --text-caption: 11px;
+  --text-mono-size: 13px;
+
+  /* -- motion (DESIGN.md §7, verbatim) --------------------------------------- */
+  --duration: 140ms;
+  --duration-slow: 250ms;
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.25, 1, 0.5, 1);
+
+  /* -- focus (the one shadow-class exception) -------------------------------- */
+  --focus-ring: 0 0 0 2px var(--bg-white), 0 0 0 4px var(--accent);
+}

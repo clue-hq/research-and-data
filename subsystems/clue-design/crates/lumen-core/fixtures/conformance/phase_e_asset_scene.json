@@ -1,0 +1,268 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "id": "doc_demo",
+    "title": "Hospital Letter",
+    "artifact_type": "letter",
+    "medium": "print",
+    "brand_kit": null,
+    "status": {
+      "kind": "draft"
+    }
+  },
+  "pages": {
+    "page_a4": {
+      "id": "page_a4",
+      "name": "A4 Letter",
+      "size": {
+        "width": 210.0,
+        "height": 297.0,
+        "unit": "mm",
+        "preset": "a4",
+        "orientation": "portrait"
+      },
+      "children": [
+        "node_contact_name",
+        "node_asset_logo"
+      ],
+      "bleed": null,
+      "safe_area": {
+        "x": 12.0,
+        "y": 12.0,
+        "width": 186.0,
+        "height": 273.0
+      },
+      "background": []
+    }
+  },
+  "nodes": {
+    "node_contact_name": {
+      "id": "node_contact_name",
+      "name": "Contact Name",
+      "kind": {
+        "kind": "text",
+        "content": "Dr. Priya Sharma",
+        "font_family": "Inter",
+        "font_size": 18.0,
+        "font_weight": 600,
+        "align": "left",
+        "line_height": 1.2,
+        "letter_spacing": 0.0,
+        "wrap": "wrap",
+        "direction": "ltr"
+      },
+      "transform": {
+        "x": 24.0,
+        "y": 40.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 160.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 28.0
+        }
+      },
+      "children": [],
+      "fills": [],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false
+    },
+    "node_asset_logo": {
+      "id": "node_asset_logo",
+      "name": "Acme logo",
+      "kind": {
+        "kind": "image",
+        "asset_id": "asset_uploaded_logo",
+        "alt": "Acme logo"
+      },
+      "transform": {
+        "x": 24.0,
+        "y": 120.0,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "flip_x": false,
+        "flip_y": false
+      },
+      "size": {
+        "width": {
+          "kind": "fixed",
+          "value": 48.0
+        },
+        "height": {
+          "kind": "fixed",
+          "value": 48.0
+        }
+      },
+      "children": [],
+      "fills": [],
+      "strokes": [],
+      "corner": {
+        "top_left": 0.0,
+        "top_right": 0.0,
+        "bottom_right": 0.0,
+        "bottom_left": 0.0
+      },
+      "opacity": 1.0,
+      "clip": false,
+      "layout": null,
+      "computed": null,
+      "locked": false,
+      "source_asset_id": "asset_uploaded_logo",
+      "asset_placement": {
+        "fit": "cover",
+        "focal_point": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "alt_text": "Acme logo"
+      }
+    }
+  },
+  "slots": {
+    "slot_contact_name": {
+      "id": "slot_contact_name",
+      "key": "contact.full_name",
+      "label": "Contact full name",
+      "content_type": "text_short",
+      "scope": {
+        "kind": "document"
+      },
+      "bound_nodes": [
+        "node_contact_name"
+      ],
+      "required": true,
+      "placeholder": "Dr. Priya Sharma",
+      "overflow": {
+        "kind": "shrink_font",
+        "min_font_size": 12.0,
+        "max_font_size": 18.0
+      },
+      "formatting": {
+        "max_length": 80,
+        "allowed_pattern": null,
+        "preserve_case": true
+      },
+      "cardinality": {
+        "min_items": 1,
+        "max_items": 1
+      },
+      "conditional": null,
+      "repeater": null,
+      "validation": {
+        "samples": [
+          "Dr. Maximilian Alexander Whitmore"
+        ],
+        "worst_case": null,
+        "max_length": 80
+      },
+      "image_policy": null,
+      "editability": "template_and_instance",
+      "binding_hints": [
+        {
+          "source_path": "contact.full_name",
+          "confidence": 1.0
+        }
+      ]
+    }
+  },
+  "assets": {
+    "asset_uploaded_logo": {
+      "id": "asset_uploaded_logo",
+      "label": "Uploaded Acme logo",
+      "kind": "logo",
+      "status": "ready",
+      "source": {
+        "kind": "uploaded",
+        "filename": "acme-logo.png",
+        "uploaded_by": "designer"
+      },
+      "media": {
+        "mime_type": "image/png",
+        "filename": "acme-logo.png",
+        "byte_length": 96,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "8e5491753553a973d4e82a8ae675fdfbd6c7b06c87629d365a30c7bc659d2195"
+        },
+        "location": {
+          "provider": "local-store",
+          "opaque_ref": "sha256/8e/8e5491753553a973d4e82a8ae675fdfbd6c7b06c87629d365a30c7bc659d2195",
+          "url": null
+        }
+      },
+      "raster": {
+        "pixel_width": 8,
+        "pixel_height": 8,
+        "dpi_x": 300.0,
+        "dpi_y": 300.0,
+        "has_alpha": true,
+        "color_profile": "srgb",
+        "aspect_ratio": 1.0
+      },
+      "vector": null,
+      "font": null,
+      "logo": {
+        "pixel_width": 8,
+        "pixel_height": 8,
+        "width": 120.0,
+        "height": 120.0,
+        "dpi_x": 300.0,
+        "dpi_y": 300.0,
+        "has_transparency": true,
+        "color_mode": "full_color",
+        "clearspace": 12.0
+      },
+      "license": {
+        "name": "client_owned",
+        "allow_export": true,
+        "allow_modification": true,
+        "allow_embedding": true,
+        "allow_subsetting": false,
+        "source_url": null,
+        "restrictions": []
+      },
+      "provenance": {
+        "created_by": "designer",
+        "created_at": "2026-06-08T00:00:00Z",
+        "source_label": "manual upload",
+        "confidence": 1.0,
+        "notes": [
+          "Client supplied logo."
+        ]
+      },
+      "tags": [
+        "logo",
+        "brand"
+      ]
+    }
+  },
+  "export_profiles": [
+    {
+      "name": "print_pdf",
+      "format": "pdf",
+      "pdf_intent": "print",
+      "raster": null,
+      "include_bleed": true,
+      "embed_fonts": true
+    }
+  ]
+}

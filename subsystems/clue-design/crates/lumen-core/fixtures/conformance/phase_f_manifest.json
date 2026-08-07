@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "description": "Phase F editor/export conformance fixtures. Presets are shortcuts only; these cases prove canonical page sizes drive editor descriptors and export output.",
+  "known_divergences": [
+    {
+      "id": "pdf_typography_early_fonts",
+      "area": "print_fidelity",
+      "description": "Early PDF export uses built-in PDF fonts and reports font embedding/subsetting diagnostics until the print fidelity track adds real font embedding."
+    },
+    {
+      "id": "image_asset_placeholders",
+      "area": "asset_resolution",
+      "description": "SVG/PDF previews may show image placeholders until the asset-resolution export adapter resolves real asset bytes."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "square_ad_custom",
+      "label": "Square social ad",
+      "artifact_type": "linkedin_square_ad",
+      "page": {
+        "id": "page_square_ad",
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait"
+      },
+      "probe_node": {
+        "id": "node_square_probe",
+        "x": 48,
+        "y": 64,
+        "width": 160,
+        "height": 96
+      },
+      "coverage": ["custom_size", "editor_descriptor", "svg_export", "pdf_export"]
+    },
+    {
+      "id": "landscape_ad_custom",
+      "label": "Wide digital ad",
+      "artifact_type": "linkedin_landscape_ad",
+      "page": {
+        "id": "page_landscape_ad",
+        "width": 1200,
+        "height": 628,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "landscape"
+      },
+      "probe_node": {
+        "id": "node_landscape_probe",
+        "x": 40,
+        "y": 40,
+        "width": 240,
+        "height": 120
+      },
+      "coverage": ["custom_size", "editor_descriptor", "svg_export", "pdf_export"]
+    },
+    {
+      "id": "portrait_social_custom",
+      "label": "Tall social ad",
+      "artifact_type": "portrait_social_ad",
+      "page": {
+        "id": "page_portrait_social",
+        "width": 1080,
+        "height": 1350,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait"
+      },
+      "probe_node": {
+        "id": "node_portrait_probe",
+        "x": 72,
+        "y": 96,
+        "width": 180,
+        "height": 140
+      },
+      "coverage": ["custom_size", "editor_descriptor", "svg_export", "pdf_export"]
+    },
+    {
+      "id": "email_hero_custom",
+      "label": "Email hero",
+      "artifact_type": "email_hero",
+      "page": {
+        "id": "page_email_hero",
+        "width": 600,
+        "height": 800,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait"
+      },
+      "probe_node": {
+        "id": "node_email_probe",
+        "x": 32,
+        "y": 48,
+        "width": 180,
+        "height": 88
+      },
+      "coverage": ["custom_size", "editor_descriptor", "svg_export", "pdf_export"]
+    },
+    {
+      "id": "report_cover_a4",
+      "label": "Report cover",
+      "artifact_type": "report_cover",
+      "page": {
+        "id": "page_report_cover",
+        "width": 210,
+        "height": 297,
+        "unit": "mm",
+        "preset": "a4",
+        "orientation": "portrait"
+      },
+      "probe_node": {
+        "id": "node_report_probe",
+        "x": 18,
+        "y": 24,
+        "width": 64,
+        "height": 32
+      },
+      "coverage": ["preset_shortcut", "editor_descriptor", "svg_export", "pdf_export"]
+    },
+    {
+      "id": "multi_page_slotted_document",
+      "label": "Multi-page slotted document",
+      "scene_fixture": "crates/lumen-core/fixtures/conformance/valid_multi_page_slots.json",
+      "coverage": ["multi_page", "slots", "sidecar"]
+    },
+    {
+      "id": "brand_token_linkedin_square",
+      "label": "Brand-token LinkedIn square",
+      "dsl_fixture": "crates/lumen-core/fixtures/brand_templates/tokenized_linkedin_square.lumen",
+      "brand_kit_fixture": "crates/lumen-core/fixtures/brand_kits/acme_full.json",
+      "coverage": ["brand_tokens", "preflight", "resolved_export"]
+    }
+  ]
+}

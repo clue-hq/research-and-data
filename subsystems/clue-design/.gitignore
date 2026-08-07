@@ -1,0 +1,35 @@
+package
+.DS_Store
+target/
+node_modules/
+.venv/
+dist/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+# Committed dev default (API port for this workspace) — see the file's comment.
+!apps/editor/.env.development
+.lumen-runs/
+.deepagent-workspace/
+.firecrawl/
+apps/api/*.sqlite3
+apps/editor/public/canvaskit/
+apps/editor/public/fonts/
+apps/editor/public/wasm/
+reference_docs/*
+!reference_docs/
+!reference_docs/ABM-Design-Engine-Temporary-Spec.md
+!reference_docs/Brilliant-Reverse-Engineering-Report.md
+
+# Local-only heavy artifacts — stripped from history 2026-08-04, never re-commit
+apps/api/asset-store/
+apps/agent_runtime/.lumen-runs-A/
+apps/agent_runtime/.lumen-runs-B/
+apps/agent_runtime/.lumen-runs/
+.context/a0-probe/
+.context/attachments/
+.context/**/*.png
+.playwright-mcp/
+apps/editor/public/vendor/

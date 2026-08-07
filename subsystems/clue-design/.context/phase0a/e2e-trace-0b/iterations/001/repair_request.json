@@ -1,0 +1,111 @@
+{
+  "repair_request": {
+    "original_user_request": "Change the headline text to 'Calmer clinics, faster triage'. Keep everything else exactly as it is.\n\nEditor context JSON:\n{\n  \"document_id\": \"doc_probe_0a\",\n  \"active_page_id\": \"hero_poster\",\n  \"selected_node_id\": \"headline\",\n  \"scene_summary\": {\n    \"meta\": {\n      \"artifact_type\": null,\n      \"brand_kit\": {\n        \"id\": \"brand_kit_platform_default\",\n        \"version\": 1\n      },\n      \"id\": \"doc_probe_0a\",\n      \"medium\": null,\n      \"status\": {\n        \"kind\": \"draft\"\n      },\n      \"title\": \"GTM hero poster (probe 0a)\"\n    },\n    \"pages\": [\n      {\n        \"id\": \"hero_poster\",\n        \"name\": \"hero_poster\",\n        \"size\": {\n          \"height\": 1350.0,\n          \"orientation\": \"portrait\",\n          \"output\": {\n            \"raster\": {\n              \"height_px\": 1350,\n              \"width_px\": 1080\n            }\n          },\n          \"preset\": \"custom\",\n          \"source\": {\n            \"height\": 1350.0,\n            \"unit\": \"px\",\n            \"width\": 1080.0\n          },\n          \"unit\": \"pt\",\n          \"width\": 1080.0\n        },\n        \"child_count\": 1,\n        \"children\": [\n          \"canvas\"\n        ]\n      }\n    ],\n    \"nodes\": [\n      {\n        \"id\": \"band\",\n        \"name\": null,\n        \"kind\": \"auto_layout\",\n        \"parent\": {\n          \"kind\": \"node\",\n          \"id\": \"canvas\"\n        },\n        \"child_count\": 3,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      },\n      {\n        \"id\": \"body\",\n        \"name\": null,\n        \"kind\": \"text\",\n        \"parent\": {\n          \"kind\": \"node\",\n          \"id\": \"band\"\n        },\n        \"child_count\": 0,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      },\n      {\n        \"id\": \"canvas\",\n        \"name\": null,\n        \"kind\": \"auto_layout\",\n        \"parent\": {\n          \"kind\": \"page\",\n          \"id\": \"hero_poster\"\n        },\n        \"child_count\": 2,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      },\n      {\n        \"id\": \"headline\",\n        \"name\": null,\n        \"kind\": \"text\",\n        \"parent\": {\n          \"kind\": \"node\",\n          \"id\": \"band\"\n        },\n        \"child_count\": 0,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      },\n      {\n        \"id\": \"hero\",\n        \"name\": null,\n        \"kind\": \"image\",\n        \"parent\": {\n          \"kind\": \"node\",\n          \"id\": \"canvas\"\n        },\n        \"child_count\": 0,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      },\n      {\n        \"id\": \"kicker\",\n        \"name\": null,\n        \"kind\": \"text\",\n        \"parent\": {\n          \"kind\": \"node\",\n          \"id\": \"band\"\n        },\n        \"child_count\": 0,\n        \"slot_keys\": [],\n        \"locked\": false,\n        \"has_computed_geometry\": true\n      }\n    ],\n    \"slots\": [],\n    \"asset_count\": 1,\n    \"export_profile_count\": 0\n  },\n  \"current_diagnostics\": [],\n  \"editor_instruction\": \"Return changes that can be applied to the current canonical Scene. Do not mutate scene JSON outside canonical operations. Prefer targeted repairs when a selected node or diagnostic target is present.\"\n}",
+    "exact_feedback": "{\n  \"kind\": \"visual\",\n  \"feedback\": {\n    \"accepted\": false,\n    \"summary\": \"Headline copy was updated correctly to \\\"Calmer clinics, faster triage\\\", but the rendered poster fails multiple visual gates: the hero image is an abstract green\\u2192blue gradient blob (a stock-clich\\u00e9 \\\"AI\\\" gradient, not a credible photo for a CASE STUDY), text sits far below the image with a huge dead band separating them, and the bottom half of the 1080\\u00d71350 poster is a vast empty white void with no CTA, footer, or brand lockup \\u2014 a truncated, unfinished-looking layout.\",\n    \"issues\": [\n      {\n        \"severity\": \"error\",\n        \"category\": \"imagery\",\n        \"target\": {\n          \"page_id\": \"hero_poster\",\n          \"node_id\": \"hero\",\n          \"slot_key\": null\n        },\n        \"message\": \"The 'hero' image is a generic green-to-blue gradient blob with a glowing orb \\u2014 a canonical AI-clich\\u00e9 'blue/green gradient' asset with no editorial subject. For a CASE STUDY headline about calmer clinics and faster triage it neither shows a place/person/product nor sets credible tone; it reads as placeholder wallpaper.\",\n        \"suggested_repair\": \"Regenerate the hero_image asset as an editorial photograph relevant to the case study (e.g. a calm clinic reception or a clinician at a triage station, soft daylight, uncluttered composition, no text) or replace it with a purposeful photo; do not use an abstract gradient here.\"\n      },\n      {\n        \"severity\": \"error\",\n        \"category\": \"visual_balance\",\n        \"target\": {\n          \"page_id\": \"hero_poster\",\n          \"node_id\": \"canvas\",\n          \"slot_key\": null\n        },\n        \"message\": \"The lower ~45% of the 1350pt-tall poster is an empty white void below the body line. The band (kicker + headline + body) sits mid-page with a large dead zone above (between hero and kicker) and an even larger dead band beneath the body \\u2014 the page reads truncated/unfinished, not composed.\",\n        \"suggested_repair\": \"Anchor the band content to the bottom of the canvas (or wrap in a fill-height main with y(sb) so hero pins top and text pins bottom), tighten the gap between hero and kicker, and add the missing footer content (brand lockup + CTA) so the bottom half is not a void.\"\n      },\n      {\n        \"severity\": \"warning\",\n        \"category\": \"hierarchy\",\n        \"target\": {\n          \"page_id\": \"hero_poster\",\n          \"node_id\": \"headline\",\n          \"slot_key\": null\n        },\n        \"message\": \"On a 1080\\u00d71350 canvas the headline reads small relative to the surface \\u2014 it does not clearly dominate; the huge empty gradient image is the loudest region by area, inverting the hierarchy.\",\n        \"suggested_repair\": \"Step the headline size up (e.g. font_size($type.size.6xl) or 7xl) so it clearly dominates the composition, and/or shrink the hero band so the headline is the primary focal point.\"\n      },\n      {\n        \"severity\": \"info\",\n        \"category\": \"request_satisfaction\",\n        \"target\": {\n          \"page_id\": \"hero_poster\",\n          \"node_id\": \"headline\",\n          \"slot_key\": null\n        },\n        \"message\": \"The requested headline copy change to 'Calmer clinics, faster triage' is applied correctly.\",\n        \"suggested_repair\": \"No change needed for the copy edit itself; the failures above are pre-existing composition/imagery problems the request said to leave as-is, but they still make the artifact unshippable.\"\n      }\n    ],\n    \"repair_instruction\": \"Two blocking fixes: (1) Replace the hero image \\u2014 the current asset renders as a generic green\\u2192blue gradient blob (AI clich\\u00e9, not a credible case-study photo). Regenerate hero_image as an editorial photograph on-brief (calm clinic reception / clinician at triage, soft natural light, uncluttered negative space, no text) and re-place it into the 'hero' node with fit:cover + a sensible focal point. (2) Fix the empty lower half of the poster: wrap the canvas children so the hero pins to the top and the text band pins to the bottom (e.g. canvas al(v, x(s), y(sb)) with the band anchored bottom), reduce the gap between hero and kicker, and step the headline to font_size($type.size.6xl) so it dominates. If a footer/CTA is intended, add it \\u2014 otherwise center the band vertically so the whitespace becomes symmetric margin, not a truncated void.\",\n    \"acceptance_notes\": [],\n    \"requirement_coverage_notes\": [\n      \"Headline text now reads 'Calmer clinics, faster triage' \\u2014 the requested copy edit is satisfied.\",\n      \"The user asked to keep everything else exactly as-is; the composition and imagery failures listed are pre-existing but still make the rendered artifact unacceptable and are flagged for awareness.\"\n    ],\n    \"confidence\": 0.9\n  },\n  \"repair_class\": \"layout_cluster\",\n  \"cluster\": {\n    \"page_id\": \"hero_poster\",\n    \"root_frame_id\": \"canvas\",\n    \"parent_node_id\": null,\n    \"descendant_node_ids\": [\n      \"hero\",\n      \"band\"\n    ],\n    \"background_node_id\": \"canvas\",\n    \"diagnostic_codes\": [\n      \"LUMV0800\"\n    ]\n  },\n  \"permissions\": [\n    \"modify_position\",\n    \"modify_size\",\n    \"modify_sizing_mode\",\n    \"modify_auto_layout\",\n    \"modify_padding\",\n    \"modify_gap\",\n    \"modify_wrap\",\n    \"modify_clip\",\n    \"modify_page_background\",\n    \"convert_diagnosed_background\"\n  ],\n  \"prohibitions\": [\n    \"do not delete pages\",\n    \"do not re-declare existing pages\",\n    \"do not delete unrelated nodes\",\n    \"do not edit unrelated slots\",\n    \"do not edit unrelated Brand Kit tokens\",\n    \"do not replace unrelated assets\",\n    \"do not regenerate the whole scene\",\n    \"do not hide overflow with clipping unless the content also fits\"\n  ],\n  \"repair_class_reason\": \"visual_critique_requires_structural_layout_repair\"\n}",
+    "diagnostics": [],
+    "target": {
+      "page_id": "hero_poster",
+      "node_id": "hero",
+      "slot_key": null
+    },
+    "repair_class": "layout_cluster",
+    "cluster": {
+      "page_id": "hero_poster",
+      "root_frame_id": "canvas",
+      "parent_node_id": null,
+      "descendant_node_ids": [
+        "hero",
+        "band"
+      ],
+      "background_node_id": "canvas",
+      "diagnostic_codes": [
+        "LUMV0800"
+      ]
+    },
+    "scene_summary": {
+      "document_id": "doc_probe_0a",
+      "title": "GTM hero poster (probe 0a)",
+      "status": {
+        "kind": "draft"
+      },
+      "brand_kit": {
+        "id": "brand_kit_platform_default",
+        "version": 1
+      },
+      "effective_brand": {
+        "source": "platform_default",
+        "brand_kit_id": "brand_kit_platform_default",
+        "brand_kit_version": "1",
+        "brand_kit_name": "Lumen Platform Default",
+        "mode": {
+          "accessibility": "standard",
+          "density": "comfortable",
+          "medium": "digital",
+          "theme": "light"
+        }
+      },
+      "page_count": 1,
+      "node_count": 6,
+      "slot_count": 0,
+      "asset_count": 1,
+      "pages": [
+        {
+          "id": "hero_poster",
+          "name": "hero_poster",
+          "size": {
+            "height": 1350.0,
+            "orientation": "portrait",
+            "output": {
+              "raster": {
+                "height_px": 1350,
+                "width_px": 1080
+              }
+            },
+            "preset": "custom",
+            "source": {
+              "height": 1350.0,
+              "unit": "px",
+              "width": 1080.0
+            },
+            "unit": "pt",
+            "width": 1080.0
+          },
+          "width": 1080.0,
+          "height": 1350.0,
+          "aspect_ratio": 0.8,
+          "children": [
+            "canvas"
+          ],
+          "child_count": 1
+        }
+      ],
+      "slots": []
+    },
+    "allowed_edit_surface": "structured_ops",
+    "permissions": [
+      "modify_position",
+      "modify_size",
+      "modify_sizing_mode",
+      "modify_auto_layout",
+      "modify_padding",
+      "modify_gap",
+      "modify_wrap",
+      "modify_clip",
+      "modify_page_background",
+      "convert_diagnosed_background"
+    ],
+    "prohibitions": [
+      "do not delete pages",
+      "do not re-declare existing pages",
+      "do not delete unrelated nodes",
+      "do not edit unrelated slots",
+      "do not edit unrelated Brand Kit tokens",
+      "do not replace unrelated assets",
+      "do not regenerate the whole scene",
+      "do not hide overflow with clipping unless the content also fits"
+    ],
+    "forbidden_changes": [
+      "do not remove unrelated existing nodes"
+    ]
+  }
+}

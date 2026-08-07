@@ -1,0 +1,20 @@
+{
+  "run_id": "run_424269ae843c43c89104f1b603a48478",
+  "prompt": "Design a 1080x1080 hiring announcement: Staff Design Engineer, remote US, building the rendering engine behind Lumen. Drive applications. Make it bold and typographic.",
+  "seeded_from_initial_scene": false,
+  "scene_summary": {
+    "document_id": "run_424269ae843c43c89104f1b603a48478",
+    "title": "Agent-authored design",
+    "status": {
+      "kind": "draft"
+    },
+    "brand_kit": null,
+    "effective_brand": null,
+    "page_count": 0,
+    "node_count": 0,
+    "slot_count": 0,
+    "asset_count": 0,
+    "pages": [],
+    "slots": []
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "pricing_living_type_portrait_none": {
+    "artifact": "portrait_4x5_1080x1350",
+    "expected_decision": "none",
+    "role": "living_type_statement",
+    "risks": [
+      "an unearned decorative photo or blue-to-purple gradient added where clean type would win",
+      "headline not dominant — no single squint focal point",
+      "raw font sizes/weights instead of brand type tokens"
+    ],
+    "editor": {
+      "primary_surface": "text toolbar + token-aware overrides + freehand text (plan Phases 4.1, 1)",
+      "managed_layout": "single centered v-stack (headline / subhead / CTA) with hug sizing and token gaps",
+      "freehand_targets": ["headline (detach to reposition/scale the living type)", "CTA button (drag)"],
+      "targeted_edits": [
+        "change the headline font to a clean sans-serif (Space Grotesk)",
+        "make the headline bold and emphasize '1/10th'",
+        "match this treatment on the other pages"
+      ],
+      "exercises": [
+        "contextual text toolbar (font/weight/size/line-height)",
+        "clear the sibling *_token on a raw override (stale-token clobber fix)",
+        "freehand detach of a managed text node",
+        "per-turn Compare/Revert on a one-property edit"
+      ]
+    }
+  },
+  "how_it_works_square_icons": {
+    "artifact": "social_square_1x1_1080x1080",
+    "expected_decision": "icon",
+    "role": "icon_grid_2x2",
+    "risks": [
+      "icons inconsistently sized or off the grid",
+      "icons fight the labels or use a rainbow of colors",
+      "gratuitous background photo muddying contrast (icon decision means no photo)"
+    ],
+    "editor": {
+      "primary_surface": "managed auto-layout + components/repeat + align/order/group (plan Phases 1, 4.2, 4.3)",
+      "managed_layout": "2x2 grid: outer v-stack of two h-rows; each cell a hug v-stack (icon / label / descriptor); gap + pad from tokens",
+      "freehand_targets": ["one cell (detach to nudge)", "the whole grid group (move/resize)"],
+      "targeted_edits": [
+        "swap the step-2 icon for a lightning bolt",
+        "reorder the steps so Review comes before Generate",
+        "tighten the grid gap and align all four cells"
+      ],
+      "exercises": [
+        "hug/fill/gap/pad managed auto-layout",
+        "per-instance component override across 4 near-identical cells",
+        "managed-drag reorder (MoveNode by index) — steps have order",
+        "align/distribute + group/ungroup",
+        "'match other pages' propagation via stable NodeIds"
+      ]
+    }
+  },
+  "platform_launch_deck_hero_photo": {
+    "artifact": "deck_16x9_1920x1080",
+    "expected_decision": "photo",
+    "role": "full_bleed_hero_scrim",
+    "risks": [
+      "section label / headline illegible where the scrim thins over a wide busy photo",
+      "subject lost or awkwardly cropped by the 16:9 frame",
+      "gratuitous stock scene that muddies contrast instead of setting tone"
+    ],
+    "editor": {
+      "primary_surface": "image inspector + AI image-edit + z-order stack (plan Phases 3, 4.2)",
+      "managed_layout": "full-bleed image node + scrim rect + bottom v-stack (label / headline), z-ordered in one artboard frame",
+      "freehand_targets": ["headline block (reposition over the image)", "scrim rect (resize / opacity)"],
+      "targeted_edits": [
+        "re-crop the hero so the subject sits on the left third (focal point)",
+        "make the product mockup in the image dark-theme (AI image edit, before/after accept)",
+        "darken the scrim so the headline reads cleanly"
+      ],
+      "exercises": [
+        "image fit/focal ('crop') inspector",
+        "prompt-driven AI image edit with Before/After Accept/Reject",
+        "z-order reorder of image / scrim / text",
+        "freehand reposition of text over the image"
+      ]
+    }
+  }
+}

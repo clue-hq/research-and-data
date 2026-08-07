@@ -1,0 +1,514 @@
+{
+  "id": "brand_kit_platform_default",
+  "version": 1,
+  "name": "Lumen Platform Default",
+  "description": "Fallback brand kit used when a user has not uploaded or generated a brand kit.",
+  "sources": [
+    {
+      "kind": "default_seed",
+      "reason": "Platform fallback for tokenized design generation"
+    }
+  ],
+  "provenance": {
+    "created_by": "lumen",
+    "created_at": "2026-06-08",
+    "updated_at": null,
+    "confidence": 1.0,
+    "notes": [
+      "Use only when no user/client/generated brand kit is available."
+    ]
+  },
+  "modes": {
+    "axes": {
+      "accessibility": [
+        "standard",
+        "high_contrast",
+        "large_text"
+      ],
+      "density": [
+        "comfortable",
+        "compact"
+      ],
+      "theme": [
+        "light",
+        "dark"
+      ]
+    },
+    "defaults": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "theme": "light"
+    }
+  },
+  "tokens": {
+    "colors": {
+      "surface.brand": {
+        "value": {
+          "default": {
+            "kind": "hex",
+            "value": "#111827"
+          },
+          "modes": {
+            "theme.dark": {
+              "kind": "hex",
+              "value": "#E5E7EB"
+            },
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            }
+          }
+        },
+        "role": "surface",
+        "description": "Default branded surface",
+        "provenance": null
+      },
+      "surface.background": {
+        "value": {
+          "default": {
+            "kind": "hex",
+            "value": "#FFFFFF"
+          },
+          "modes": {
+            "theme.dark": {
+              "kind": "hex",
+              "value": "#0F172A"
+            }
+          }
+        },
+        "role": "surface",
+        "description": "Default page/background surface",
+        "provenance": null
+      },
+      "surface.muted": {
+        "value": {
+          "default": {
+            "kind": "hex",
+            "value": "#F3F4F6"
+          },
+          "modes": {
+            "theme.dark": {
+              "kind": "hex",
+              "value": "#1F2937"
+            }
+          }
+        },
+        "role": "surface",
+        "description": "Default muted surface",
+        "provenance": null
+      },
+      "text.primary": {
+        "value": {
+          "default": {
+            "kind": "hex",
+            "value": "#111827"
+          },
+          "modes": {
+            "theme.dark": {
+              "kind": "hex",
+              "value": "#F9FAFB"
+            }
+          }
+        },
+        "role": "text",
+        "description": "Default primary text",
+        "provenance": null
+      },
+      "text.secondary": {
+        "value": {
+          "default": {
+            "kind": "hex",
+            "value": "#4B5563"
+          },
+          "modes": {
+            "theme.dark": {
+              "kind": "hex",
+              "value": "#CBD5E1"
+            }
+          }
+        },
+        "role": "text",
+        "description": "Default secondary text",
+        "provenance": null
+      },
+      "text.inverse": {
+        "value": {
+          "default": {
+            "kind": "hex",
+            "value": "#FFFFFF"
+          },
+          "modes": {
+            "theme.dark": {
+              "kind": "hex",
+              "value": "#111827"
+            }
+          }
+        },
+        "role": "text",
+        "description": "Default text on branded surfaces",
+        "provenance": null
+      },
+      "accent.primary": {
+        "value": {
+          "default": {
+            "kind": "hex",
+            "value": "#0F766E"
+          },
+          "modes": {
+            "theme.dark": {
+              "kind": "hex",
+              "value": "#5EEAD4"
+            }
+          }
+        },
+        "role": "accent",
+        "description": "Default accent color",
+        "provenance": null
+      }
+    },
+    "typography": {
+      "type.headline": {
+        "value": {
+          "default": {
+            "kind": "style",
+            "font_family": "Inter",
+            "font_size": 32.0,
+            "font_weight": 800,
+            "line_height": 1.1,
+            "letter_spacing": 0.0,
+            "color": "text.inverse",
+            "font_asset": "brand"
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "kind": "style",
+              "font_family": "Inter",
+              "font_size": 36.0,
+              "font_weight": 800,
+              "line_height": 1.15,
+              "letter_spacing": 0.0,
+              "color": "text.inverse",
+              "font_asset": "brand"
+            }
+          }
+        },
+        "role": "headline",
+        "description": "Default headline style",
+        "provenance": null
+      },
+      "type.body": {
+        "value": {
+          "default": {
+            "kind": "style",
+            "font_family": "Inter",
+            "font_size": 16.0,
+            "font_weight": 400,
+            "line_height": 1.45,
+            "letter_spacing": 0.0,
+            "color": "text.primary",
+            "font_asset": "brand"
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "kind": "style",
+              "font_family": "Inter",
+              "font_size": 18.0,
+              "font_weight": 400,
+              "line_height": 1.5,
+              "letter_spacing": 0.0,
+              "color": "text.primary",
+              "font_asset": "brand"
+            }
+          }
+        },
+        "role": "body",
+        "description": "Default body style",
+        "provenance": null
+      },
+      "type.caption": {
+        "value": {
+          "default": {
+            "kind": "style",
+            "font_family": "Inter",
+            "font_size": 12.0,
+            "font_weight": 500,
+            "line_height": 1.35,
+            "letter_spacing": 0.0,
+            "color": "text.secondary",
+            "font_asset": "brand"
+          },
+          "modes": {}
+        },
+        "role": "caption",
+        "description": "Default caption style",
+        "provenance": null
+      }
+    },
+    "numbers": {},
+    "spacing": {
+      "space.xs": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 4.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "spacing",
+        "description": null,
+        "provenance": null
+      },
+      "space.sm": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 8.0,
+            "unit": "px"
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "value": 6.0,
+              "unit": "px"
+            }
+          }
+        },
+        "role": "spacing",
+        "description": null,
+        "provenance": null
+      },
+      "space.md": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 12.0,
+            "unit": "px"
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "value": 10.0,
+              "unit": "px"
+            }
+          }
+        },
+        "role": "spacing",
+        "description": null,
+        "provenance": null
+      },
+      "space.lg": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 16.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "spacing",
+        "description": null,
+        "provenance": null
+      },
+      "space.xl": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 24.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "spacing",
+        "description": null,
+        "provenance": null
+      }
+    },
+    "radii": {
+      "radius.sm": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 4.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "radius",
+        "description": null,
+        "provenance": null
+      },
+      "radius.md": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 8.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "radius",
+        "description": null,
+        "provenance": null
+      },
+      "radius.lg": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 12.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "radius",
+        "description": null,
+        "provenance": null
+      }
+    },
+    "stroke_widths": {
+      "stroke.width.thin": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 1.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "stroke",
+        "description": null,
+        "provenance": null
+      },
+      "stroke.width.firm": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 2.0,
+            "unit": "px"
+          },
+          "modes": {}
+        },
+        "role": "stroke",
+        "description": null,
+        "provenance": null
+      }
+    },
+    "opacity": {
+      "opacity.subtle": {
+        "value": {
+          "default": {
+            "kind": "number",
+            "value": 0.72,
+            "unit": "ratio"
+          },
+          "modes": {}
+        },
+        "role": "visibility",
+        "description": null,
+        "provenance": null
+      }
+    },
+    "shadows": {},
+    "effects": {},
+    "assets": {},
+    "aliases": {
+      "brand.primary": {
+        "token": "surface.brand",
+        "description": "Legacy alias for the default brand surface"
+      },
+      "color.surface": {
+        "token": "surface.brand",
+        "description": "Chrome alias for default surface"
+      }
+    }
+  },
+  "assets": {
+    "fonts": {
+      "brand": {
+        "family": "Inter",
+        "source": {
+          "kind": "system",
+          "family": "Inter"
+        },
+        "faces": [
+          {
+            "weight": 400,
+            "style": "normal",
+            "asset_id": null,
+            "source_url": null
+          },
+          {
+            "weight": 500,
+            "style": "normal",
+            "asset_id": null,
+            "source_url": null
+          },
+          {
+            "weight": 700,
+            "style": "normal",
+            "asset_id": null,
+            "source_url": null
+          },
+          {
+            "weight": 800,
+            "style": "normal",
+            "asset_id": null,
+            "source_url": null
+          }
+        ],
+        "fallback_stack": [
+          "Arial",
+          "sans-serif"
+        ],
+        "scripts": [
+          "latin"
+        ],
+        "license": {
+          "name": "platform_system_font",
+          "embeddable": false,
+          "subsettable": false,
+          "source_url": null,
+          "restrictions": [
+            "System font fallback; do not assume embeddable font files are available."
+          ]
+        },
+        "provenance": null
+      }
+    },
+    "logos": {},
+    "images": {}
+  },
+  "constraints": {
+    "allow_gradients": true,
+    "tone": [
+      "clear",
+      "neutral",
+      "business"
+    ],
+    "imagery": [
+      "use uploaded or generated assets when available"
+    ],
+    "iconography": [
+      "simple line icons"
+    ],
+    "accessibility_notes": [
+      "Prefer AA contrast",
+      "Use client or generated brand kits when available"
+    ],
+    "print_constraints": [
+      "System fonts are not guaranteed to be embeddable for final print exports"
+    ],
+    "contrast_pairs": [
+      {
+        "foreground": "text.inverse",
+        "background": "surface.brand",
+        "min_ratio": 4.5
+      },
+      {
+        "foreground": "text.primary",
+        "background": "surface.background",
+        "min_ratio": 4.5
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "run_id": "run_0103c9a412c54050a3fd37eb2c0cebe1",
+  "prompt": "Design a 1080x1350 quote card for social and sales decks: 'Lumen replaced three vendors and a week of design ops.' \u2014 Priya N., VP Brand, Northwind. Feature the quote and attribution prominently.",
+  "seeded_from_initial_scene": false,
+  "scene_summary": {
+    "document_id": "run_0103c9a412c54050a3fd37eb2c0cebe1",
+    "title": "Agent-authored design",
+    "status": {
+      "kind": "draft"
+    },
+    "brand_kit": null,
+    "effective_brand": null,
+    "page_count": 0,
+    "node_count": 0,
+    "slot_count": 0,
+    "asset_count": 0,
+    "pages": [],
+    "slots": []
+  }
+}

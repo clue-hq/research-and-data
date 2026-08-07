@@ -1,0 +1,2861 @@
+{
+  "approval_status": "approved",
+  "assets": {
+    "fonts": {
+      "brand": {
+        "faces": [
+          {
+            "asset_id": null,
+            "source_url": null,
+            "style": "normal",
+            "weight": 400
+          },
+          {
+            "asset_id": null,
+            "source_url": null,
+            "style": "normal",
+            "weight": 500
+          },
+          {
+            "asset_id": null,
+            "source_url": null,
+            "style": "normal",
+            "weight": 700
+          },
+          {
+            "asset_id": null,
+            "source_url": null,
+            "style": "normal",
+            "weight": 800
+          }
+        ],
+        "fallback_stack": [
+          "Arial",
+          "sans-serif"
+        ],
+        "family": "Source Sans 3",
+        "license": {
+          "embeddable": true,
+          "name": "generated_system_font",
+          "restrictions": [],
+          "source_url": null,
+          "subsettable": true
+        },
+        "provenance": {
+          "confidence": 0.7,
+          "source": "brand_seed"
+        },
+        "scripts": [
+          "latin"
+        ],
+        "source": {
+          "family": "Source Sans 3",
+          "kind": "system"
+        }
+      }
+    },
+    "images": {},
+    "logos": {
+      "mark": {
+        "allowed_backgrounds": [
+          "surface.page",
+          "surface.card",
+          "surface.brand"
+        ],
+        "clearspace": 16.0,
+        "license": null,
+        "min_size": 48.0,
+        "provenance": {
+          "confidence": 0.75,
+          "source": "brand_seed"
+        },
+        "usage": "mark",
+        "variants": [
+          {
+            "asset_id": "asset_logo_mark",
+            "color_mode": "full_color",
+            "height": 48.0,
+            "name": "mark",
+            "width": 48.0
+          }
+        ]
+      },
+      "primary": {
+        "allowed_backgrounds": [
+          "surface.page",
+          "surface.card",
+          "surface.brand"
+        ],
+        "clearspace": 16.0,
+        "license": null,
+        "min_size": 48.0,
+        "provenance": {
+          "confidence": 0.75,
+          "source": "brand_seed"
+        },
+        "usage": "primary",
+        "variants": [
+          {
+            "asset_id": "asset_logo_primary",
+            "color_mode": "full_color",
+            "height": 32.0,
+            "name": "full_color",
+            "width": 120.0
+          }
+        ]
+      }
+    }
+  },
+  "compatibility_policy": {
+    "allow_critical_mode_fallbacks": false,
+    "allow_unapproved_asset_placeholders": true,
+    "require_product_ready_tokens": true
+  },
+  "constraints": {
+    "accessibility_notes": [
+      "Maintain AA contrast for primary text.",
+      "Use high-contrast mode before final export when required."
+    ],
+    "allow_gradients": true,
+    "contrast_pairs": [
+      {
+        "background": "surface.page",
+        "foreground": "text.primary",
+        "min_ratio": 4.5
+      },
+      {
+        "background": "surface.brand",
+        "foreground": "text.inverse",
+        "min_ratio": 4.5
+      }
+    ],
+    "iconography": [
+      "Use simple line or filled icons aligned to brand stroke width."
+    ],
+    "imagery": [
+      "Prefer brand-approved photography, illustration, or uploaded campaign assets."
+    ],
+    "print_constraints": [
+      "Use print medium mode for print/PDF exports.",
+      "Avoid low-opacity text in print artifacts."
+    ],
+    "tone": [
+      "calm",
+      "clinical",
+      "expert"
+    ]
+  },
+  "description": "Healthcare ABM demo brand with product-ready Phase C design-system tokens.",
+  "id": "brand_kit_acme",
+  "modes": {
+    "axes": {
+      "accessibility": [
+        "standard",
+        "high_contrast",
+        "large_text"
+      ],
+      "density": [
+        "comfortable",
+        "compact"
+      ],
+      "medium": [
+        "digital",
+        "print"
+      ],
+      "theme": [
+        "light",
+        "dark"
+      ]
+    },
+    "defaults": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "medium": "digital",
+      "theme": "light"
+    }
+  },
+  "name": "Acme Health",
+  "provenance": {
+    "confidence": 0.78,
+    "created_at": "generated",
+    "created_by": "lumen_brand_seed_generator",
+    "notes": [
+      "Generated Brand Kits require human review before approval.",
+      "Color ramps are deterministic OKLCH-derived approximations.",
+      "Website URL was preserved as source context; no crawler ran in lumen-core."
+    ],
+    "updated_at": null
+  },
+  "sources": [
+    {
+      "confidence": 1.0,
+      "kind": "manual",
+      "label": "Phase C healthcare fixture"
+    },
+    {
+      "captured_at": null,
+      "confidence": 0.55,
+      "kind": "website",
+      "url": "https://example.test/acme-health"
+    },
+    {
+      "asset_id": "asset_logo_primary",
+      "confidence": 0.7,
+      "filename": "primary",
+      "kind": "logo_file"
+    },
+    {
+      "asset_id": "asset_logo_mark",
+      "confidence": 0.7,
+      "filename": "mark",
+      "kind": "logo_file"
+    }
+  ],
+  "tokens": {
+    "aliases": {},
+    "assets": {
+      "asset.icon.primary": {
+        "description": "Primary icon placeholder",
+        "provenance": {
+          "confidence": 0.8,
+          "source": "platform_default"
+        },
+        "value": {
+          "default": {
+            "asset_id": "asset_platform_icon_primary",
+            "kind": "asset"
+          },
+          "modes": {}
+        }
+      },
+      "asset.illustration.primary": {
+        "description": "Primary illustration placeholder",
+        "provenance": {
+          "confidence": 0.8,
+          "source": "platform_default"
+        },
+        "value": {
+          "default": {
+            "asset_id": "asset_platform_illustration_primary",
+            "kind": "asset"
+          },
+          "modes": {}
+        }
+      },
+      "asset.texture.subtle": {
+        "description": "Subtle texture placeholder",
+        "provenance": {
+          "confidence": 0.8,
+          "source": "platform_default"
+        },
+        "value": {
+          "default": {
+            "asset_id": "asset_platform_texture_subtle",
+            "kind": "asset"
+          },
+          "modes": {}
+        }
+      },
+      "logo.mark": {
+        "description": "Generated logo.mark logo token",
+        "provenance": {
+          "confidence": 0.74,
+          "source": "brand_seed"
+        },
+        "value": {
+          "default": {
+            "kind": "logo",
+            "logo_id": "primary",
+            "variant": "mark"
+          },
+          "modes": {}
+        }
+      },
+      "logo.primary": {
+        "description": "Generated logo.primary logo token",
+        "provenance": {
+          "confidence": 0.74,
+          "source": "brand_seed"
+        },
+        "value": {
+          "default": {
+            "kind": "logo",
+            "logo_id": "primary",
+            "variant": "full_color"
+          },
+          "modes": {}
+        }
+      },
+      "logo.reversed": {
+        "description": "Generated logo.reversed logo token",
+        "provenance": {
+          "confidence": 0.74,
+          "source": "brand_seed"
+        },
+        "value": {
+          "default": {
+            "kind": "logo",
+            "logo_id": "primary",
+            "variant": "reversed"
+          },
+          "modes": {}
+        }
+      },
+      "logo.wordmark": {
+        "description": "Generated logo.wordmark logo token",
+        "provenance": {
+          "confidence": 0.74,
+          "source": "brand_seed"
+        },
+        "value": {
+          "default": {
+            "kind": "logo",
+            "logo_id": "primary",
+            "variant": "wordmark"
+          },
+          "modes": {}
+        }
+      }
+    },
+    "colors": {
+      "border.brand": {
+        "description": "Generated brand border",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "border",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.primary.700"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.primary.300"
+            }
+          }
+        }
+      },
+      "border.default": {
+        "description": "Generated default border",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "border",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.300"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.600"
+            }
+          }
+        }
+      },
+      "border.strong": {
+        "description": "Generated strong border",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "border",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.600"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.300"
+            }
+          }
+        }
+      },
+      "border.subtle": {
+        "description": "Generated subtle border",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "border",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.200"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.800"
+            }
+          }
+        }
+      },
+      "focus.ring": {
+        "description": "Generated focus ring",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "focus",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.accent.500"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.accent.300"
+            }
+          }
+        }
+      },
+      "palette.accent.100": {
+        "description": "Generated palette.accent color ramp stop 100",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.14,
+            "h": 149.59328025215947,
+            "kind": "oklch",
+            "l": 0.93
+          },
+          "modes": {}
+        }
+      },
+      "palette.accent.200": {
+        "description": "Generated palette.accent color ramp stop 200",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.14,
+            "h": 149.59328025215947,
+            "kind": "oklch",
+            "l": 0.86
+          },
+          "modes": {}
+        }
+      },
+      "palette.accent.300": {
+        "description": "Generated palette.accent color ramp stop 300",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.14,
+            "h": 149.59328025215947,
+            "kind": "oklch",
+            "l": 0.78
+          },
+          "modes": {}
+        }
+      },
+      "palette.accent.400": {
+        "description": "Generated palette.accent color ramp stop 400",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.14,
+            "h": 149.59328025215947,
+            "kind": "oklch",
+            "l": 0.68
+          },
+          "modes": {}
+        }
+      },
+      "palette.accent.50": {
+        "description": "Generated palette.accent color ramp stop 50",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.14,
+            "h": 149.59328025215947,
+            "kind": "oklch",
+            "l": 0.97
+          },
+          "modes": {}
+        }
+      },
+      "palette.accent.500": {
+        "description": "Generated palette.accent color ramp stop 500",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.14,
+            "h": 149.59328025215947,
+            "kind": "oklch",
+            "l": 0.58
+          },
+          "modes": {}
+        }
+      },
+      "palette.accent.600": {
+        "description": "Generated palette.accent color ramp stop 600",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.14,
+            "h": 149.59328025215947,
+            "kind": "oklch",
+            "l": 0.49
+          },
+          "modes": {}
+        }
+      },
+      "palette.accent.700": {
+        "description": "Generated palette.accent color ramp stop 700",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.14,
+            "h": 149.59328025215947,
+            "kind": "oklch",
+            "l": 0.4
+          },
+          "modes": {}
+        }
+      },
+      "palette.accent.800": {
+        "description": "Generated palette.accent color ramp stop 800",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.14,
+            "h": 149.59328025215947,
+            "kind": "oklch",
+            "l": 0.31
+          },
+          "modes": {}
+        }
+      },
+      "palette.accent.900": {
+        "description": "Generated palette.accent color ramp stop 900",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.14,
+            "h": 149.59328025215947,
+            "kind": "oklch",
+            "l": 0.23
+          },
+          "modes": {}
+        }
+      },
+      "palette.accent.950": {
+        "description": "Generated palette.accent color ramp stop 950",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.14,
+            "h": 149.59328025215947,
+            "kind": "oklch",
+            "l": 0.16
+          },
+          "modes": {}
+        }
+      },
+      "palette.neutral.100": {
+        "description": "Generated palette.neutral color ramp stop 100",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.025,
+            "h": 264.7655020398088,
+            "kind": "oklch",
+            "l": 0.93
+          },
+          "modes": {}
+        }
+      },
+      "palette.neutral.200": {
+        "description": "Generated palette.neutral color ramp stop 200",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.025,
+            "h": 264.7655020398088,
+            "kind": "oklch",
+            "l": 0.86
+          },
+          "modes": {}
+        }
+      },
+      "palette.neutral.300": {
+        "description": "Generated palette.neutral color ramp stop 300",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.025,
+            "h": 264.7655020398088,
+            "kind": "oklch",
+            "l": 0.78
+          },
+          "modes": {}
+        }
+      },
+      "palette.neutral.400": {
+        "description": "Generated palette.neutral color ramp stop 400",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.025,
+            "h": 264.7655020398088,
+            "kind": "oklch",
+            "l": 0.68
+          },
+          "modes": {}
+        }
+      },
+      "palette.neutral.50": {
+        "description": "Generated palette.neutral color ramp stop 50",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.025,
+            "h": 264.7655020398088,
+            "kind": "oklch",
+            "l": 0.97
+          },
+          "modes": {}
+        }
+      },
+      "palette.neutral.500": {
+        "description": "Generated palette.neutral color ramp stop 500",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.025,
+            "h": 264.7655020398088,
+            "kind": "oklch",
+            "l": 0.58
+          },
+          "modes": {}
+        }
+      },
+      "palette.neutral.600": {
+        "description": "Generated palette.neutral color ramp stop 600",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.025,
+            "h": 264.7655020398088,
+            "kind": "oklch",
+            "l": 0.49
+          },
+          "modes": {}
+        }
+      },
+      "palette.neutral.700": {
+        "description": "Generated palette.neutral color ramp stop 700",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.025,
+            "h": 264.7655020398088,
+            "kind": "oklch",
+            "l": 0.4
+          },
+          "modes": {}
+        }
+      },
+      "palette.neutral.800": {
+        "description": "Generated palette.neutral color ramp stop 800",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.025,
+            "h": 264.7655020398088,
+            "kind": "oklch",
+            "l": 0.31
+          },
+          "modes": {}
+        }
+      },
+      "palette.neutral.900": {
+        "description": "Generated palette.neutral color ramp stop 900",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.025,
+            "h": 264.7655020398088,
+            "kind": "oklch",
+            "l": 0.23
+          },
+          "modes": {}
+        }
+      },
+      "palette.neutral.950": {
+        "description": "Generated palette.neutral color ramp stop 950",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.025,
+            "h": 264.7655020398088,
+            "kind": "oklch",
+            "l": 0.16
+          },
+          "modes": {}
+        }
+      },
+      "palette.primary.100": {
+        "description": "Generated palette.primary color ramp stop 100",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.07382381488920986,
+            "h": 207.87981654900904,
+            "kind": "oklch",
+            "l": 0.93
+          },
+          "modes": {}
+        }
+      },
+      "palette.primary.200": {
+        "description": "Generated palette.primary color ramp stop 200",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.07382381488920986,
+            "h": 207.87981654900904,
+            "kind": "oklch",
+            "l": 0.86
+          },
+          "modes": {}
+        }
+      },
+      "palette.primary.300": {
+        "description": "Generated palette.primary color ramp stop 300",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.07382381488920986,
+            "h": 207.87981654900904,
+            "kind": "oklch",
+            "l": 0.78
+          },
+          "modes": {}
+        }
+      },
+      "palette.primary.400": {
+        "description": "Generated palette.primary color ramp stop 400",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.07382381488920986,
+            "h": 207.87981654900904,
+            "kind": "oklch",
+            "l": 0.68
+          },
+          "modes": {}
+        }
+      },
+      "palette.primary.50": {
+        "description": "Generated palette.primary color ramp stop 50",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.07382381488920986,
+            "h": 207.87981654900904,
+            "kind": "oklch",
+            "l": 0.97
+          },
+          "modes": {}
+        }
+      },
+      "palette.primary.500": {
+        "description": "Generated palette.primary color ramp stop 500",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.07382381488920986,
+            "h": 207.87981654900904,
+            "kind": "oklch",
+            "l": 0.58
+          },
+          "modes": {}
+        }
+      },
+      "palette.primary.600": {
+        "description": "Generated palette.primary color ramp stop 600",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.07382381488920986,
+            "h": 207.87981654900904,
+            "kind": "oklch",
+            "l": 0.49
+          },
+          "modes": {}
+        }
+      },
+      "palette.primary.700": {
+        "description": "Generated palette.primary color ramp stop 700",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.07382381488920986,
+            "h": 207.87981654900904,
+            "kind": "oklch",
+            "l": 0.4
+          },
+          "modes": {}
+        }
+      },
+      "palette.primary.800": {
+        "description": "Generated palette.primary color ramp stop 800",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.07382381488920986,
+            "h": 207.87981654900904,
+            "kind": "oklch",
+            "l": 0.31
+          },
+          "modes": {}
+        }
+      },
+      "palette.primary.900": {
+        "description": "Generated palette.primary color ramp stop 900",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.07382381488920986,
+            "h": 207.87981654900904,
+            "kind": "oklch",
+            "l": 0.23
+          },
+          "modes": {}
+        }
+      },
+      "palette.primary.950": {
+        "description": "Generated palette.primary color ramp stop 950",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.07382381488920986,
+            "h": 207.87981654900904,
+            "kind": "oklch",
+            "l": 0.16
+          },
+          "modes": {}
+        }
+      },
+      "palette.secondary.100": {
+        "description": "Generated palette.secondary color ramp stop 100",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.08598966084720172,
+            "h": 186.49620600703673,
+            "kind": "oklch",
+            "l": 0.93
+          },
+          "modes": {}
+        }
+      },
+      "palette.secondary.200": {
+        "description": "Generated palette.secondary color ramp stop 200",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.08598966084720172,
+            "h": 186.49620600703673,
+            "kind": "oklch",
+            "l": 0.86
+          },
+          "modes": {}
+        }
+      },
+      "palette.secondary.300": {
+        "description": "Generated palette.secondary color ramp stop 300",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.08598966084720172,
+            "h": 186.49620600703673,
+            "kind": "oklch",
+            "l": 0.78
+          },
+          "modes": {}
+        }
+      },
+      "palette.secondary.400": {
+        "description": "Generated palette.secondary color ramp stop 400",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.08598966084720172,
+            "h": 186.49620600703673,
+            "kind": "oklch",
+            "l": 0.68
+          },
+          "modes": {}
+        }
+      },
+      "palette.secondary.50": {
+        "description": "Generated palette.secondary color ramp stop 50",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.08598966084720172,
+            "h": 186.49620600703673,
+            "kind": "oklch",
+            "l": 0.97
+          },
+          "modes": {}
+        }
+      },
+      "palette.secondary.500": {
+        "description": "Generated palette.secondary color ramp stop 500",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.08598966084720172,
+            "h": 186.49620600703673,
+            "kind": "oklch",
+            "l": 0.58
+          },
+          "modes": {}
+        }
+      },
+      "palette.secondary.600": {
+        "description": "Generated palette.secondary color ramp stop 600",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.08598966084720172,
+            "h": 186.49620600703673,
+            "kind": "oklch",
+            "l": 0.49
+          },
+          "modes": {}
+        }
+      },
+      "palette.secondary.700": {
+        "description": "Generated palette.secondary color ramp stop 700",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.08598966084720172,
+            "h": 186.49620600703673,
+            "kind": "oklch",
+            "l": 0.4
+          },
+          "modes": {}
+        }
+      },
+      "palette.secondary.800": {
+        "description": "Generated palette.secondary color ramp stop 800",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.08598966084720172,
+            "h": 186.49620600703673,
+            "kind": "oklch",
+            "l": 0.31
+          },
+          "modes": {}
+        }
+      },
+      "palette.secondary.900": {
+        "description": "Generated palette.secondary color ramp stop 900",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.08598966084720172,
+            "h": 186.49620600703673,
+            "kind": "oklch",
+            "l": 0.23
+          },
+          "modes": {}
+        }
+      },
+      "palette.secondary.950": {
+        "description": "Generated palette.secondary color ramp stop 950",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "palette",
+        "value": {
+          "default": {
+            "alpha": 1.0,
+            "c": 0.08598966084720172,
+            "h": 186.49620600703673,
+            "kind": "oklch",
+            "l": 0.16
+          },
+          "modes": {}
+        }
+      },
+      "surface.accent": {
+        "description": "Generated accent surface",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "surface",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.accent.500"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.accent.300"
+            }
+          }
+        }
+      },
+      "surface.brand": {
+        "description": "Generated branded surface",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "surface",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.primary.800"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.primary.300"
+            }
+          }
+        }
+      },
+      "surface.brand.subtle": {
+        "description": "Generated subtle branded surface",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "surface",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.primary.100"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.primary.900"
+            }
+          }
+        }
+      },
+      "surface.canvas": {
+        "description": "Generated main canvas surface",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "surface",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.50"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.950"
+            }
+          }
+        }
+      },
+      "surface.card": {
+        "description": "Generated card surface",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "surface",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.100"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.800"
+            }
+          }
+        }
+      },
+      "surface.elevated": {
+        "description": "Generated elevated surface",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "surface",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.50"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.700"
+            }
+          }
+        }
+      },
+      "surface.inverse": {
+        "description": "Generated inverse surface",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "surface",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.950"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.50"
+            }
+          }
+        }
+      },
+      "surface.muted": {
+        "description": "Generated muted surface",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "surface",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.200"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.800"
+            }
+          }
+        }
+      },
+      "surface.page": {
+        "description": "Generated artifact page surface",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "surface",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.50"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.900"
+            }
+          }
+        }
+      },
+      "text.accent": {
+        "description": "Generated accent text",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "text",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.accent.700"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.accent.300"
+            }
+          }
+        }
+      },
+      "text.brand": {
+        "description": "Generated brand text",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "text",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.primary.800"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.primary.300"
+            }
+          }
+        }
+      },
+      "text.inverse": {
+        "description": "Generated inverse text",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "text",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.50"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.950"
+            }
+          }
+        }
+      },
+      "text.muted": {
+        "description": "Generated muted text",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "text",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.600"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.300"
+            }
+          }
+        }
+      },
+      "text.primary": {
+        "description": "Generated primary text",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "text",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.950"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.50"
+            }
+          }
+        }
+      },
+      "text.secondary": {
+        "description": "Generated secondary text",
+        "provenance": {
+          "confidence": 0.78,
+          "source": "brand_seed"
+        },
+        "role": "text",
+        "value": {
+          "default": {
+            "kind": "alias",
+            "token": "palette.neutral.700"
+          },
+          "modes": {
+            "accessibility.high_contrast": {
+              "kind": "hex",
+              "value": "#000000"
+            },
+            "theme.dark": {
+              "kind": "alias",
+              "token": "palette.neutral.200"
+            }
+          }
+        }
+      }
+    },
+    "effects": {},
+    "numbers": {},
+    "opacity": {
+      "opacity.disabled": {
+        "description": "Platform default visibility token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "visibility",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "ratio",
+            "value": 0.38
+          },
+          "modes": {}
+        }
+      },
+      "opacity.emphasis": {
+        "description": "Platform default visibility token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "visibility",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "ratio",
+            "value": 1.0
+          },
+          "modes": {}
+        }
+      },
+      "opacity.muted": {
+        "description": "Platform default visibility token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "visibility",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "ratio",
+            "value": 0.64
+          },
+          "modes": {}
+        }
+      },
+      "opacity.overlay": {
+        "description": "Platform default visibility token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "visibility",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "ratio",
+            "value": 0.88
+          },
+          "modes": {}
+        }
+      },
+      "opacity.scrim": {
+        "description": "Platform default visibility token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "visibility",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "ratio",
+            "value": 0.56
+          },
+          "modes": {}
+        }
+      },
+      "opacity.subtle": {
+        "description": "Platform default visibility token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "visibility",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "ratio",
+            "value": 0.72
+          },
+          "modes": {}
+        }
+      }
+    },
+    "radii": {
+      "radius.badge": {
+        "description": "Platform default radius token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "radius",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 999.0
+          },
+          "modes": {}
+        }
+      },
+      "radius.button": {
+        "description": "Platform default radius token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "radius",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 10.0
+          },
+          "modes": {}
+        }
+      },
+      "radius.card": {
+        "description": "Platform default radius token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "radius",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 16.0
+          },
+          "modes": {}
+        }
+      },
+      "radius.full": {
+        "description": "Platform default radius token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "radius",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 999.0
+          },
+          "modes": {}
+        }
+      },
+      "radius.lg": {
+        "description": "Platform default radius token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "radius",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 12.0
+          },
+          "modes": {}
+        }
+      },
+      "radius.md": {
+        "description": "Platform default radius token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "radius",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 8.0
+          },
+          "modes": {}
+        }
+      },
+      "radius.none": {
+        "description": "Platform default radius token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "radius",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 0.0
+          },
+          "modes": {}
+        }
+      },
+      "radius.sm": {
+        "description": "Platform default radius token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "radius",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 4.0
+          },
+          "modes": {}
+        }
+      },
+      "radius.xl": {
+        "description": "Platform default radius token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "radius",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 20.0
+          },
+          "modes": {}
+        }
+      },
+      "radius.xs": {
+        "description": "Platform default radius token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "radius",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 2.0
+          },
+          "modes": {}
+        }
+      }
+    },
+    "shadows": {},
+    "spacing": {
+      "space.0": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 0.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 0.0
+            }
+          }
+        }
+      },
+      "space.1": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 4.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 3.0
+            }
+          }
+        }
+      },
+      "space.10": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 40.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 36.0
+            }
+          }
+        }
+      },
+      "space.12": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 48.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 40.0
+            }
+          }
+        }
+      },
+      "space.16": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 64.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 56.0
+            }
+          }
+        }
+      },
+      "space.2": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 8.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 6.0
+            }
+          }
+        }
+      },
+      "space.3": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 12.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 10.0
+            }
+          }
+        }
+      },
+      "space.4": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 16.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 14.0
+            }
+          }
+        }
+      },
+      "space.5": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 20.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            }
+          }
+        }
+      },
+      "space.6": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 24.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 20.0
+            }
+          }
+        }
+      },
+      "space.8": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 32.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 28.0
+            }
+          }
+        }
+      },
+      "space.card.padding": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 24.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 20.0
+            }
+          }
+        }
+      },
+      "space.lg": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 16.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 14.0
+            }
+          }
+        }
+      },
+      "space.md": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 12.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 10.0
+            }
+          }
+        }
+      },
+      "space.page.margin": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 64.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 48.0
+            }
+          }
+        }
+      },
+      "space.section": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 48.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 40.0
+            }
+          }
+        }
+      },
+      "space.sm": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 8.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 6.0
+            }
+          }
+        }
+      },
+      "space.stack.default": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 16.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            }
+          }
+        }
+      },
+      "space.stack.loose": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 24.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 20.0
+            }
+          }
+        }
+      },
+      "space.stack.tight": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 8.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 6.0
+            }
+          }
+        }
+      },
+      "space.xl": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 24.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 20.0
+            }
+          }
+        }
+      },
+      "space.xs": {
+        "description": "Platform default spacing token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "spacing",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 4.0
+          },
+          "modes": {
+            "density.compact": {
+              "kind": "number",
+              "unit": "px",
+              "value": 3.0
+            }
+          }
+        }
+      }
+    },
+    "stroke_widths": {
+      "stroke.width.bold": {
+        "description": "Platform default stroke token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "stroke",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 3.0
+          },
+          "modes": {}
+        }
+      },
+      "stroke.width.card": {
+        "description": "Platform default stroke token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "stroke",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 1.0
+          },
+          "modes": {}
+        }
+      },
+      "stroke.width.default": {
+        "description": "Platform default stroke token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "stroke",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 1.5
+          },
+          "modes": {}
+        }
+      },
+      "stroke.width.divider": {
+        "description": "Platform default stroke token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "stroke",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 1.0
+          },
+          "modes": {}
+        }
+      },
+      "stroke.width.firm": {
+        "description": "Platform default stroke token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "stroke",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 2.0
+          },
+          "modes": {}
+        }
+      },
+      "stroke.width.focus": {
+        "description": "Platform default stroke token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "stroke",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 2.0
+          },
+          "modes": {}
+        }
+      },
+      "stroke.width.hairline": {
+        "description": "Platform default stroke token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "stroke",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 0.5
+          },
+          "modes": {}
+        }
+      },
+      "stroke.width.thin": {
+        "description": "Platform default stroke token",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "stroke",
+        "value": {
+          "default": {
+            "kind": "number",
+            "unit": "px",
+            "value": 1.0
+          },
+          "modes": {}
+        }
+      }
+    },
+    "typography": {
+      "type.body": {
+        "description": "Platform default type.body role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "body",
+        "value": {
+          "default": {
+            "color": "text.primary",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 18.0,
+            "font_weight": 450,
+            "kind": "style",
+            "letter_spacing": 0.0,
+            "line_height": 1.42
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 20.0,
+              "font_weight": 450,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.46
+            }
+          }
+        }
+      },
+      "type.body.small": {
+        "description": "Platform default type.body.small role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "body.small",
+        "value": {
+          "default": {
+            "color": "text.secondary",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 14.0,
+            "font_weight": 450,
+            "kind": "style",
+            "letter_spacing": 0.0,
+            "line_height": 1.4
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.secondary",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 16.0,
+              "font_weight": 450,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.44
+            }
+          }
+        }
+      },
+      "type.caption": {
+        "description": "Platform default type.caption role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "caption",
+        "value": {
+          "default": {
+            "color": "text.secondary",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 12.0,
+            "font_weight": 500,
+            "kind": "style",
+            "letter_spacing": 0.02,
+            "line_height": 1.35
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.secondary",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 14.0,
+              "font_weight": 500,
+              "kind": "style",
+              "letter_spacing": 0.02,
+              "line_height": 1.3900000000000001
+            }
+          }
+        }
+      },
+      "type.cta": {
+        "description": "Platform default type.cta role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "cta",
+        "value": {
+          "default": {
+            "color": "text.inverse",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 16.0,
+            "font_weight": 800,
+            "kind": "style",
+            "letter_spacing": 0.0,
+            "line_height": 1.05
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.inverse",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 18.0,
+              "font_weight": 800,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.09
+            }
+          }
+        }
+      },
+      "type.display": {
+        "description": "Platform default type.display role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "display",
+        "value": {
+          "default": {
+            "color": "text.primary",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 72.0,
+            "font_weight": 850,
+            "kind": "style",
+            "letter_spacing": -0.02,
+            "line_height": 1.0
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 80.0,
+              "font_weight": 850,
+              "kind": "style",
+              "letter_spacing": -0.02,
+              "line_height": 1.04
+            }
+          }
+        }
+      },
+      "type.eyebrow": {
+        "description": "Platform default type.eyebrow role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "eyebrow",
+        "value": {
+          "default": {
+            "color": "text.accent",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 13.0,
+            "font_weight": 750,
+            "kind": "style",
+            "letter_spacing": 0.08,
+            "line_height": 1.1
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.accent",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 15.0,
+              "font_weight": 750,
+              "kind": "style",
+              "letter_spacing": 0.08,
+              "line_height": 1.1400000000000001
+            }
+          }
+        }
+      },
+      "type.headline": {
+        "description": "Platform default type.headline role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "headline",
+        "value": {
+          "default": {
+            "color": "text.primary",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 56.0,
+            "font_weight": 800,
+            "kind": "style",
+            "letter_spacing": -0.01,
+            "line_height": 1.06
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 62.0,
+              "font_weight": 800,
+              "kind": "style",
+              "letter_spacing": -0.01,
+              "line_height": 1.1
+            }
+          }
+        }
+      },
+      "type.label": {
+        "description": "Platform default type.label role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "label",
+        "value": {
+          "default": {
+            "color": "text.primary",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 14.0,
+            "font_weight": 700,
+            "kind": "style",
+            "letter_spacing": 0.0,
+            "line_height": 1.1
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 16.0,
+              "font_weight": 700,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.1400000000000001
+            }
+          }
+        }
+      },
+      "type.legal": {
+        "description": "Platform default type.legal role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "legal",
+        "value": {
+          "default": {
+            "color": "text.muted",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 10.0,
+            "font_weight": 450,
+            "kind": "style",
+            "letter_spacing": 0.0,
+            "line_height": 1.35
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.muted",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 12.0,
+              "font_weight": 450,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.3900000000000001
+            }
+          }
+        }
+      },
+      "type.stat": {
+        "description": "Platform default type.stat role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "stat",
+        "value": {
+          "default": {
+            "color": "text.brand",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 48.0,
+            "font_weight": 850,
+            "kind": "style",
+            "letter_spacing": -0.02,
+            "line_height": 1.0
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.brand",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 54.0,
+              "font_weight": 850,
+              "kind": "style",
+              "letter_spacing": -0.02,
+              "line_height": 1.04
+            }
+          }
+        }
+      },
+      "type.subtitle": {
+        "description": "Platform default type.subtitle role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "subtitle",
+        "value": {
+          "default": {
+            "color": "text.secondary",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 24.0,
+            "font_weight": 650,
+            "kind": "style",
+            "letter_spacing": 0.0,
+            "line_height": 1.24
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.secondary",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 27.0,
+              "font_weight": 650,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.28
+            }
+          }
+        }
+      },
+      "type.title": {
+        "description": "Platform default type.title role",
+        "provenance": {
+          "confidence": 1.0,
+          "source": "platform_default"
+        },
+        "role": "title",
+        "value": {
+          "default": {
+            "color": "text.primary",
+            "font_asset": "brand",
+            "font_family": "Source Sans 3",
+            "font_size": 36.0,
+            "font_weight": 750,
+            "kind": "style",
+            "letter_spacing": -0.005,
+            "line_height": 1.12
+          },
+          "modes": {
+            "accessibility.large_text": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Source Sans 3",
+              "font_size": 40.0,
+              "font_weight": 750,
+              "kind": "style",
+              "letter_spacing": -0.005,
+              "line_height": 1.1600000000000001
+            }
+          }
+        }
+      }
+    }
+  },
+  "version": 3
+}

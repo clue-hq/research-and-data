@@ -1,0 +1,172 @@
+/* Website-mode gate (/new) — layout-only additions over the brand-section
+ * component vocabulary (brand.css). Every value is a token from tokens.css —
+ * NO literal colors (kit-data hexes render inline via style props), NO shadows;
+ * hairlines + tone carry depth (design/DESIGN.md §1, §4, §6). Prefixed `.new-`. */
+
+.new-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- top wordmark strip (DESIGN.md §8.1) --------------------------------- */
+.new-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  height: 56px;
+  padding: 0 var(--space-lg);
+  border-bottom: 1px solid var(--border-default);
+}
+.new-wordmark {
+  font-weight: 700;
+  font-size: var(--text-body-lg);
+  color: var(--text-primary);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+.new-wordmark .dot { color: var(--accent); }
+.new-topbar nav { display: flex; gap: var(--space-md); flex: 1; }
+.new-topbar nav a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: var(--text-body-size);
+  transition: color var(--duration) var(--ease-out);
+}
+.new-topbar nav a:hover { color: var(--text-primary); }
+
+/* --- centered composer column -------------------------------------------- */
+.new-main {
+  flex: 1;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-3xl) var(--space-lg) var(--space-2xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+.new-head { display: flex; flex-direction: column; gap: var(--space-xs); }
+.new-head .display { margin: 0; }
+
+/* --- type toggle row (chips, DESIGN.md §8.5) — one selected -------------- */
+.new-type-row { display: flex; gap: var(--space-xs); }
+.new-app .new-type-chip {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-body-size);
+  padding: var(--space-xs) var(--space-md);
+  transition: background var(--duration) var(--ease-out), color var(--duration) var(--ease-out);
+}
+.new-app .new-type-chip:hover:not(.is-selected) { background: var(--bg-card-03); }
+.new-type-beta {
+  color: var(--text-disabled);
+  font-size: var(--text-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.new-type-chip.is-selected .new-type-beta { color: var(--text-muted); }
+
+/* --- composer card (tone, no border/shadow — DESIGN.md §8.4) ------------- */
+.new-composer { display: flex; flex-direction: column; gap: var(--space-md); }
+.new-composer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--border-default);
+}
+.new-composer-head-label { font-size: var(--text-body-sm); color: var(--text-muted); }
+.new-app .new-prompt {
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+  background: var(--bg-white);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm);
+  font-size: var(--text-body-lg);
+  line-height: 1.5;
+}
+.new-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+.new-composer-actions .status-pill { margin-right: auto; }
+
+/* --- brand-kit selector (chip trigger + popover listbox) ----------------- */
+.new-kit-select { position: relative; }
+.new-app .new-kit-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  color: var(--text-body);
+  background: var(--bg-chip);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-xxs) var(--space-sm);
+  transition: background var(--duration) var(--ease-out), border-color var(--duration) var(--ease-out);
+}
+.new-app .new-kit-trigger:hover { background: var(--bg-card-03); }
+.new-kit-trigger-chevron { color: var(--text-muted); flex: none; }
+
+.new-kit-menu {
+  position: absolute;
+  top: calc(100% + var(--space-xxs));
+  right: 0;
+  z-index: 30;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-xxs);
+  background: var(--bg-app);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+.new-app .new-kit-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-body-size);
+  color: var(--text-body);
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  transition: background var(--duration) var(--ease-out);
+}
+.new-app .new-kit-option:hover { background: var(--bg-chip); }
+.new-app .new-kit-option.is-selected { background: var(--bg-card-04); color: var(--text-primary); }
+.new-kit-option-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* palette dots — a kit's identity at a glance (colors are inline kit data). */
+.new-kit-dots { display: inline-flex; gap: 3px; flex: none; }
+.new-kit-dots > span {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-soft);
+}
+
+.new-kit-empty { padding: var(--space-xs) var(--space-sm); color: var(--text-disabled); font-size: var(--text-body-sm); }
+
+/* --- template + account selects (Website flow personalization) ----------- */
+.new-template-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+.new-template-row .field { flex: 1; min-width: 220px; }

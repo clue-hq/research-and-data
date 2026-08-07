@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350" data-lumen-document-id="run_0103c9a412c54050a3fd37eb2c0cebe1" data-lumen-page-id="quote_card">
+<defs>
+<clipPath id="lumen-clip-artboard"><rect x="0" y="0" width="1080" height="1350" /></clipPath>
+</defs>
+<g id="lumen-page-quote_card" data-lumen-page-id="quote_card">
+<g id="lumen-node-artboard" data-lumen-node-id="artboard">
+<rect x="0" y="0" width="1080" height="1350" fill="#111827" data-lumen-fill-id="paint_artboard_fill_1" />
+<g clip-path="url(#lumen-clip-artboard)">
+<g id="lumen-node-main" data-lumen-node-id="main" transform="translate(96 96)">
+<text id="lumen-node-quote_mark" data-lumen-node-id="quote_mark" x="0" y="96" font-family="Inter, Arial, Helvetica, sans-serif" font-size="96" font-weight="850" text-anchor="start" letter-spacing="-0.02" direction="ltr" transform="translate(0 331)" opacity="0.64" fill="#FFFFFF" data-lumen-fill-id="paint_quote_mark_fill_1"><tspan x="0" y="76.862">“</tspan></text>
+<text id="lumen-node-quote" data-lumen-node-id="quote" data-lumen-slot-keys="quote.text" x="0" y="64" font-family="Inter, Arial, Helvetica, sans-serif" font-size="64" font-weight="800" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 443)" fill="#FFFFFF" data-lumen-fill-id="paint_quote_fill_1"><tspan x="0" y="55.9655">Lumen replaced three</tspan><tspan x="0" y="125.9655">vendors and a week of</tspan><tspan x="0" y="195.9655">design ops.</tspan></text>
+<rect id="lumen-node-accent_rule" data-lumen-node-id="accent_rule" x="0" y="0" width="96" height="6" rx="3" ry="3" transform="translate(0 739)" fill="#0F766E" data-lumen-fill-id="paint_accent_rule_fill_1" />
+<text id="lumen-node-author_name" data-lumen-node-id="author_name" data-lumen-slot-keys="author.name" x="0" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 761)" fill="#FFFFFF" data-lumen-fill-id="paint_author_name_fill_1"><tspan x="0" y="24.0672">Priya N.</tspan></text>
+<text id="lumen-node-author_role" data-lumen-node-id="author_role" data-lumen-slot-keys="author.role" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="450" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 807)" opacity="0.64" fill="#FFFFFF" data-lumen-fill-id="paint_author_role_fill_1"><tspan x="0" y="16.0927">VP Brand, Northwind</tspan></text>
+</g>
+</g>
+</g>
+</g>
+</svg>

@@ -1,0 +1,790 @@
+"""W-isolation backend/normalization/materializer + RIDER 2 (usage capture).
+
+The W-isolation section exercises the REAL deepagents `FilesystemBackend` via our
+`AgentWorkspaceBackend` subclass (`virtual_mode=True`) — no stubbing — so the
+normalization + containment behavior is proven against the actual resolution logic
+it wraps. Importing the backend at module top pins its parent to the real class at
+collection time (before any other test's deepagents stub runs). It also unit-tests
+the pure `normalize_agent_key`/`to_virtual` helpers and the workspace materializer.
+
+RIDER 2 drives `UsageCaptureHandler.on_llm_end` with a stubbed `LLMResult` and a
+minimal fake tools object to prove one trace event is recorded per usage-bearing
+call, that role attribution rides through, and that a callback exception never
+propagates.
+"""
+
+from __future__ import annotations
+
+import json
+import types
+from pathlib import Path
+
+import pytest
+
+from lumen_agent.fs_backend import AgentWorkspaceBackend
+from lumen_agent.materialize import materialize_agent_workspace
+from lumen_agent.paths import host_to_virtual, normalize_agent_key, to_virtual
+from lumen_agent.usage_capture import (
+    UsageCaptureHandler,
+    _extract_usage,
+    attach_usage_capture,
+)
+
+
+# ============================================================================
+# W-isolation — normalization helper (D1, pure function table)
+# ============================================================================
+
+_WS = "/ws/.deepagent-workspace"
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        # host-absolute under the workspace root → tail under `/`
+        (f"{_WS}/run_x/workspace/brief.md", "/run_x/workspace/brief.md"),
+        (_WS, "/"),
+        # legacy knowledge_docs — bare, repo-absolute, and `/`-rooted forms
+        (
+            "apps/agent_runtime/knowledge_docs/skills/create-design/SKILL.md",
+            "/knowledge_docs/skills/create-design/SKILL.md",
+        ),
+        (
+            "/Users/x/havana/apps/agent_runtime/knowledge_docs/AGENT.md",
+            "/knowledge_docs/AGENT.md",
+        ),
+        (
+            "/apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/grammar.md",
+            "/knowledge_docs/knowledge/lumen-dsl/grammar.md",
+        ),
+        # gate-R regression: the BARE directory forms (no trailing slash) — an
+        # `ls` on the knowledge root was the live failure form of 2026-07-10
+        ("/apps/agent_runtime/knowledge_docs", "/knowledge_docs"),
+        ("apps/agent_runtime/knowledge_docs/", "/knowledge_docs"),
+        ("/Users/x/havana/apps/agent_runtime/knowledge_docs", "/knowledge_docs"),
+        ("/.lumen-runs", "/"),
+        (".lumen-runs/", "/"),
+        # legacy `.lumen-runs/` — bare, `/`-rooted, and host-embedded forms
+        (".lumen-runs/run_x/workspace/brief.md", "/run_x/workspace/brief.md"),
+        ("/.lumen-runs/run_x/f", "/run_x/f"),
+        ("/Users/x/havana/.lumen-runs/run_y/f", "/run_y/f"),
+        # plain virtual paths pass through unchanged
+        ("/run_x/workspace/rounds/round_1/direction.md", "/run_x/workspace/rounds/round_1/direction.md"),
+        ("/knowledge_docs/AGENT.md", "/knowledge_docs/AGENT.md"),
+        ("/.deepagent/skills/create-design/SKILL.md", "/.deepagent/skills/create-design/SKILL.md"),
+        # relative paths pass through unchanged
+        ("rounds/round_1/direction.md", "rounds/round_1/direction.md"),
+    ],
+)
+def test_normalize_agent_key_table(key, expected):
+    assert normalize_agent_key(key, _WS) == expected
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        f"{_WS}/../../etc/passwd",  # host-absolute-under-ws with a climb
+        f"{_WS}/run_x/../../secret",
+        "../../etc/passwd",  # plain relative climb
+        "apps/agent_runtime/knowledge_docs/../../../etc/passwd",  # via the legacy marker
+    ],
+)
+def test_normalize_agent_key_never_manufactures_an_escape(key):
+    """A `..` climb must SURVIVE normalization (never be collapsed away), so the
+    backend's own traversal guard still rejects it."""
+    assert ".." in normalize_agent_key(key, _WS)
+
+
+# ============================================================================
+# W-isolation — to_virtual / host_to_virtual (D5)
+# ============================================================================
+
+
+def test_host_to_virtual_under_root(tmp_path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    assert host_to_virtual(root / "run_1" / "preview.png", root) == "/run_1/preview.png"
+    assert host_to_virtual(root, root) == "/"
+
+
+def test_host_to_virtual_leaves_external_paths_untouched(tmp_path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    external = tmp_path / "elsewhere" / "x.png"
+    assert host_to_virtual(external, root) == str(external)
+
+
+def test_to_virtual_uses_config_workspace_root(tmp_path):
+    root = tmp_path / "ws"
+    root.mkdir()
+    config = types.SimpleNamespace(workspace_root=root)
+    assert to_virtual(root / "run_9" / "iterations" / "1" / "preview.png", config) == (
+        "/run_9/iterations/1/preview.png"
+    )
+
+
+# ============================================================================
+# W-isolation — AgentWorkspaceBackend (real deepagents FilesystemBackend, virtual)
+# ============================================================================
+
+
+@pytest.fixture
+def ws_backend(tmp_path: Path):
+    """A virtual-mode backend rooted at a tmp workspace seeded with a run
+    workspace file, a materialized knowledge_docs file, and a skills dir."""
+    root = tmp_path
+    (root / "run_1" / "workspace").mkdir(parents=True)
+    (root / "run_1" / "workspace" / "brief.md").write_text("hello", encoding="utf-8")
+    (root / "knowledge_docs").mkdir()
+    (root / "knowledge_docs" / "grammar.md").write_text("# grammar", encoding="utf-8")
+    (root / ".deepagent" / "skills" / "create-design").mkdir(parents=True)
+    return root, AgentWorkspaceBackend(str(root))
+
+
+def test_backend_is_virtual_mode(ws_backend):
+    _root, backend = ws_backend
+    assert backend.virtual_mode is True
+
+
+def test_read_write_edit_via_virtual_paths(ws_backend):
+    _root, backend = ws_backend
+    result = backend.read("/run_1/workspace/brief.md")
+    assert result.error is None
+    assert "hello" in (result.file_data or {}).get("content", "")
+
+    write = backend.write("/run_1/workspace/rounds/round_1/direction.md", "do the thing")
+    assert write.error is None
+    edit = backend.edit(
+        "/run_1/workspace/rounds/round_1/direction.md", "do the thing", "do it well"
+    )
+    assert edit.error is None
+
+
+def test_host_absolute_under_ws_is_normalized_and_served(ws_backend):
+    """A model-emitted HOST-absolute path under the workspace resolves (D1): the
+    prefix is stripped and the file is served."""
+    root, backend = ws_backend
+    result = backend.read(str(root / "run_1" / "workspace" / "brief.md"))
+    assert result.error is None
+    assert "hello" in (result.file_data or {}).get("content", "")
+
+
+def test_legacy_knowledge_docs_path_is_normalized_and_served(ws_backend):
+    _root, backend = ws_backend
+    result = backend.read("apps/agent_runtime/knowledge_docs/grammar.md")
+    assert result.error is None
+    assert "# grammar" in (result.file_data or {}).get("content", "")
+
+
+def test_absolute_outside_is_reanchored_not_escaped(ws_backend):
+    """`/etc/hosts` is re-anchored under the virtual root (contained), so it is
+    simply not-found — never a read of the real host file, never a crash."""
+    _root, backend = ws_backend
+    result = backend.read("/etc/hosts")
+    assert result.error is not None
+    assert "not found" in result.error.lower()
+
+
+def test_dotdot_traversal_surfaces_clean_error(ws_backend):
+    """A `..` climb that reaches the backend surfaces a clean teaching error
+    (converted to PermissionError so read/write/edit never crash the turn)."""
+    _root, backend = ws_backend
+    result = backend.read("/run_1/../../secret")
+    assert result.error is not None
+    assert "workspace root" in result.error
+
+
+def test_symlink_escape_surfaces_clean_error(ws_backend, tmp_path):
+    """A symlink INSIDE the workspace whose target resolves outside it is rejected
+    with a clean error (not an uncaught ValueError)."""
+    root, backend = ws_backend
+    outside = tmp_path.parent / "ws_outside_secret.txt"
+    outside.write_text("secret", encoding="utf-8")
+    link = root / "run_1" / "link_to_secret.txt"
+    link.symlink_to(outside)
+    result = backend.read("/run_1/link_to_secret.txt")
+    assert result.error is not None
+    assert "workspace root" in result.error
+
+
+def test_write_deny_globs_target_the_readonly_virtual_trees():
+    """The harness denies writes to every derived read-only virtual tree."""
+    from lumen_agent.harness import _filesystem_permissions
+
+    perms = _filesystem_permissions()
+    assert len(perms) == 1
+    perm = perms[0]
+    assert set(perm.paths) == {
+        "/.deepagent/**",
+        "/knowledge_docs/**",
+        "/custom_components",
+        "/custom_components/**",
+    }
+    assert perm.operations == ["write"]
+    assert perm.mode == "deny"
+
+
+def test_custom_component_projection_has_public_paths_and_typed_writes_only(
+    tmp_path: Path,
+):
+    root = tmp_path / "workspace"
+    projection = root / "run_1" / "custom_components"
+    component = projection / "pricing-card"
+    component.mkdir(parents=True)
+    entry = component / "pricing-card.tsx"
+    entry.write_text("export default function Card() { return null; }")
+    backend = AgentWorkspaceBackend(
+        str(root), custom_components_root=projection
+    )
+
+    read = backend.read(
+        "/custom_components/pricing-card/pricing-card.tsx"
+    )
+    assert read.error is None
+    assert "function Card" in (read.file_data or {}).get("content", "")
+    listed = backend.ls("/custom_components/pricing-card")
+    assert listed.error is None
+    assert [item["path"] for item in listed.entries or []] == [
+        "/custom_components/pricing-card/pricing-card.tsx"
+    ]
+
+    denied = backend.edit(
+        "/custom_components/pricing-card/pricing-card.tsx",
+        "return null",
+        "return <div />",
+    )
+    assert denied.error is not None
+    assert "write_custom_component_source" in denied.error
+    internal_alias = backend.write(
+        "/run_1/custom_components/pricing-card/helper.ts",
+        "export const value = 1;",
+    )
+    assert internal_alias.error is not None
+    assert "read-only projection" in internal_alias.error
+    assert entry.read_text() == "export default function Card() { return null; }"
+
+
+# ============================================================================
+# W-isolation — materializer (D2)
+# ============================================================================
+
+
+def _source_tree(tmp_path: Path) -> Path:
+    src = tmp_path / "src_knowledge_docs"
+    (src / "skills" / "create-design").mkdir(parents=True)
+    (src / "skills" / "create-design" / "SKILL.md").write_text("skill", encoding="utf-8")
+    (src / "knowledge" / "lumen-dsl").mkdir(parents=True)
+    (src / "knowledge" / "lumen-dsl" / "grammar.md").write_text("g", encoding="utf-8")
+    (src / "AGENT.md").write_text("# agent doc", encoding="utf-8")
+    return src
+
+
+def test_materialize_syncs_skills_knowledge_and_agent_doc(tmp_path):
+    src = _source_tree(tmp_path)
+    ws = tmp_path / "ws"
+    config = types.SimpleNamespace(workspace_root=ws)
+
+    materialize_agent_workspace(config, source_knowledge_docs=src)
+
+    assert (ws / ".deepagent" / "AGENTS.md").read_text(encoding="utf-8") == "# agent doc"
+    assert (ws / ".deepagent" / "skills" / "create-design" / "SKILL.md").exists()
+    assert (ws / "knowledge_docs" / "knowledge" / "lumen-dsl" / "grammar.md").exists()
+    # The knowledge copy includes the skills subtree (intra-doc refs resolve).
+    assert (ws / "knowledge_docs" / "skills" / "create-design" / "SKILL.md").exists()
+    assert (ws / ".deepagent" / ".sync-stamp").exists()
+
+
+def test_materialize_is_idempotent_on_matching_stamp(tmp_path):
+    src = _source_tree(tmp_path)
+    ws = tmp_path / "ws"
+    config = types.SimpleNamespace(workspace_root=ws)
+
+    materialize_agent_workspace(config, source_knowledge_docs=src)
+    # A sentinel that would be wiped by a re-sync (which rebuilds `.deepagent`).
+    sentinel = ws / ".deepagent" / "sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    materialize_agent_workspace(config, source_knowledge_docs=src)
+    assert sentinel.exists(), "matching stamp must skip the re-sync"
+
+
+def test_materialize_resyncs_when_source_changes(tmp_path):
+    src = _source_tree(tmp_path)
+    ws = tmp_path / "ws"
+    config = types.SimpleNamespace(workspace_root=ws)
+
+    materialize_agent_workspace(config, source_knowledge_docs=src)
+    sentinel = ws / ".deepagent" / "sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    # Change the source: the stamp no longer matches → full re-sync (wipes sentinel).
+    (src / "skills" / "effects").mkdir(parents=True)
+    (src / "skills" / "effects" / "SKILL.md").write_text("fx", encoding="utf-8")
+
+    materialize_agent_workspace(config, source_knowledge_docs=src)
+    assert not sentinel.exists(), "changed source must trigger a full re-sync"
+    assert (ws / ".deepagent" / "skills" / "effects" / "SKILL.md").exists()
+
+
+def test_materialize_loud_failure_on_missing_source(tmp_path):
+    ws = tmp_path / "ws"
+    config = types.SimpleNamespace(workspace_root=ws)
+    with pytest.raises(RuntimeError, match="knowledge source tree missing"):
+        materialize_agent_workspace(
+            config, source_knowledge_docs=tmp_path / "does_not_exist"
+        )
+
+
+# ============================================================================
+# RIDER 2 — per-model-call token usage capture
+# ============================================================================
+
+
+class _FakeTools:
+    """Minimal stand-in for LumenDesignTools.record — accumulates events."""
+
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def record(self, actor, event, input_summary=None, output_summary=None, diagnostics=None, payload=None):
+        self.events.append(
+            {
+                "actor": actor,
+                "event": event,
+                "output_summary": output_summary,
+                "payload": payload or {},
+            }
+        )
+
+
+def _llm_result_with_usage(input_tokens=120, output_tokens=48, total_tokens=168):
+    """A real `LLMResult` carrying a valid `usage_metadata` (pydantic's
+    `UsageMetadata` requires `total_tokens`, which real providers always set)."""
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    usage = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+    message = AIMessage(content="ok", usage_metadata=usage)
+    return LLMResult(generations=[[ChatGeneration(message=message)]])
+
+
+class _FakeUsageResult:
+    """A minimal LLMResult-shaped object with a message whose usage_metadata
+    OMITS total_tokens — proves the handler computes the total itself. (A real
+    `AIMessage` cannot omit it: pydantic requires the field.)"""
+
+    class _Gen:
+        def __init__(self, message):
+            self.message = message
+
+    class _Msg:
+        def __init__(self, usage):
+            self.usage_metadata = usage
+
+    def __init__(self, usage):
+        self.generations = [[self._Gen(self._Msg(usage))]]
+        self.llm_output = None
+
+
+def test_on_llm_end_records_one_usage_event_with_role():
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role="author")
+    handler.on_llm_end(_llm_result_with_usage())
+
+    assert len(tools.events) == 1
+    event = tools.events[0]
+    assert event["event"] == "model_call_usage"
+    assert event["payload"] == {
+        "input_tokens": 120,
+        "output_tokens": 48,
+        "total_tokens": 168,
+        "role": "author",
+    }
+
+
+def test_total_tokens_computed_when_absent():
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role=None)
+    handler.on_llm_end(_FakeUsageResult({"input_tokens": 10, "output_tokens": 5}))
+
+    event = tools.events[0]
+    assert event["payload"]["total_tokens"] == 15
+    # No role recorded when attribution is not attempted.
+    assert "role" not in event["payload"]
+
+
+def test_no_usage_metadata_records_nothing():
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools)
+    result = LLMResult(generations=[[ChatGeneration(message=AIMessage(content="hi"))]])
+    handler.on_llm_end(result)
+    assert tools.events == []
+
+
+def test_callback_exception_does_not_propagate_and_warns_once():
+    class _BoomTools:
+        def __init__(self):
+            self.calls = []
+
+        def record(self, actor, event, **kwargs):
+            self.calls.append(event)
+            if event == "model_call_usage":
+                raise RuntimeError("record blew up")
+            # the warning record itself succeeds
+
+    tools = _BoomTools()
+    handler = UsageCaptureHandler(tools, role="reviewer")
+    # Must NOT raise.
+    handler.on_llm_end(_llm_result_with_usage())
+    handler.on_llm_end(_llm_result_with_usage())
+
+    # A warning was recorded exactly once (warned flag), after the failed usage.
+    assert tools.calls.count("model_call_usage_warning") == 1
+
+
+def test_extract_usage_from_llm_output_fallback():
+    from langchain_core.outputs import LLMResult
+
+    result = LLMResult(
+        generations=[[]],
+        llm_output={"token_usage": {"prompt_tokens": 7, "completion_tokens": 3}},
+    )
+    usage = _extract_usage(result)
+    assert usage == {"input_tokens": 7, "output_tokens": 3, "total_tokens": 10}
+
+
+# ------------------------------------------------------------------ #
+# L0 (latency trace enrichment) — cached/reasoning + duration + model id
+# ------------------------------------------------------------------ #
+
+
+def test_extract_usage_reads_cached_and_reasoning_from_usage_metadata():
+    """usage_metadata's provider-normalized detail sub-dicts surface as
+    `cached_input_tokens` (input_token_details.cache_read) and
+    `reasoning_output_tokens` (output_token_details.reasoning)."""
+    usage = {
+        "input_tokens": 100,
+        "output_tokens": 40,
+        "total_tokens": 140,
+        "input_token_details": {"cache_read": 80},
+        "output_token_details": {"reasoning": 12},
+    }
+    result = _extract_usage(_FakeUsageResult(usage))
+    assert result["cached_input_tokens"] == 80
+    assert result["reasoning_output_tokens"] == 12
+    assert result["input_tokens"] == 100
+
+
+def test_extract_usage_reads_cached_and_reasoning_from_llm_output_raw():
+    """OpenRouter/OpenAI raw usage nests the breakdowns under `*_tokens_details`
+    (`prompt_tokens_details.cached_tokens`, `completion_tokens_details.
+    reasoning_tokens`)."""
+    from langchain_core.outputs import LLMResult
+
+    result = LLMResult(
+        generations=[[]],
+        llm_output={
+            "token_usage": {
+                "prompt_tokens": 200,
+                "completion_tokens": 60,
+                "total_tokens": 260,
+                "prompt_tokens_details": {"cached_tokens": 150},
+                "completion_tokens_details": {"reasoning_tokens": 25},
+            }
+        },
+    )
+    usage = _extract_usage(result)
+    assert usage["cached_input_tokens"] == 150
+    assert usage["reasoning_output_tokens"] == 25
+
+
+def test_extract_usage_omits_cached_and_reasoning_when_absent():
+    """No detail sub-dicts ⇒ the keys are OMITTED, never null/zero — preserving the
+    payload's 'omit rather than null' convention."""
+    usage = _extract_usage(_llm_result_with_usage())
+    assert "cached_input_tokens" not in usage
+    assert "reasoning_output_tokens" not in usage
+
+
+def test_on_llm_end_records_duration_from_start_end_pairing():
+    """duration_ms is the wall-clock between the matching on_*_start and on_llm_end
+    for the same run_id (a float ms)."""
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role="author")
+    handler.on_chat_model_start({}, [[]], run_id="r1")
+    handler.on_llm_end(_llm_result_with_usage(), run_id="r1")
+
+    payload = tools.events[0]["payload"]
+    assert "duration_ms" in payload
+    assert isinstance(payload["duration_ms"], float)
+    assert payload["duration_ms"] >= 0.0
+
+
+def test_on_llm_end_omits_duration_when_no_start_seen():
+    """Without a paired start (unknown run_id), duration_ms is omitted, not zero."""
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role="author")
+    handler.on_llm_end(_llm_result_with_usage(), run_id="never-started")
+    assert "duration_ms" not in tools.events[0]["payload"]
+
+
+def test_on_llm_end_records_model_id_from_response_llm_output():
+    """model_id is the slug the completion reports it was served by."""
+    from langchain_core.outputs import LLMResult
+
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role="reviewer")
+    result = LLMResult(
+        generations=[[]],
+        llm_output={
+            "model_name": "x-ai/grok-4.5",
+            "token_usage": {"prompt_tokens": 5, "completion_tokens": 2},
+        },
+    )
+    handler.on_llm_end(result, run_id="r2")
+    assert tools.events[0]["payload"]["model_id"] == "x-ai/grok-4.5"
+
+
+def test_on_llm_end_falls_back_to_start_model_id_when_response_omits_it():
+    """When the completion carries no slug, the id captured at on_*_start (from the
+    serialized kwargs / metadata) backstops model_id."""
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role="orchestrator")
+    handler.on_chat_model_start(
+        {"kwargs": {"model": "anthropic/claude-opus-4.8"}}, [[]], run_id="r3"
+    )
+    # _FakeUsageResult has llm_output=None → no slug in the response.
+    handler.on_llm_end(
+        _FakeUsageResult({"input_tokens": 3, "output_tokens": 1, "total_tokens": 4}),
+        run_id="r3",
+    )
+    assert tools.events[0]["payload"]["model_id"] == "anthropic/claude-opus-4.8"
+
+
+def test_on_llm_end_omits_model_id_when_undiscoverable():
+    """No slug anywhere ⇒ model_id is omitted rather than a placeholder string."""
+    tools = _FakeTools()
+    handler = UsageCaptureHandler(tools, role="author")
+    handler.on_llm_end(_llm_result_with_usage(), run_id="r4")
+    assert "model_id" not in tools.events[0]["payload"]
+
+
+def test_attach_usage_capture_returns_same_model_with_handler_on_callbacks():
+    """attach_usage_capture appends the handler to the model's OWN `.callbacks`
+    field and returns the SAME object (no RunnableBinding wrapper — that broke
+    deepagents' resolve_model, probe-r9). Verified against a REAL BaseChatModel."""
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    tools = _FakeTools()
+    model = FakeListChatModel(responses=["hi"])
+    returned = attach_usage_capture(model, tools, role="orchestrator")
+    # Same object, same type — still a BaseChatModel (what resolve_model demands).
+    assert returned is model
+    callbacks = model.callbacks or []
+    assert any(isinstance(cb, UsageCaptureHandler) for cb in callbacks)
+
+
+def test_attach_usage_capture_appends_never_replaces_existing_callbacks():
+    """A pre-existing callback on the model's `.callbacks` list survives — we
+    append, never replace."""
+    from langchain_core.callbacks import BaseCallbackHandler
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    class _Other(BaseCallbackHandler):
+        pass
+
+    other = _Other()
+    tools = _FakeTools()
+    model = FakeListChatModel(responses=["hi"], callbacks=[other])
+    attach_usage_capture(model, tools, role="author")
+    assert other in model.callbacks
+    assert any(isinstance(cb, UsageCaptureHandler) for cb in model.callbacks)
+
+
+def test_attach_usage_capture_passes_through_object_without_callbacks_field():
+    """A plain object (test sentinel) with no `callbacks` field is returned as-is
+    so assembly is never disturbed and no warning is raised."""
+    tools = _FakeTools()
+    sentinel = object()
+    assert attach_usage_capture(sentinel, tools, role="author") is sentinel
+    assert tools.events == []
+
+
+def test_attach_usage_capture_fires_on_real_invoke():
+    """The instance-level handler fires on a REAL model invoke (langchain_core
+    passes `self.callbacks` into CallbackManager.configure as local_callbacks),
+    so usage capture is wired end-to-end without any wrapper — the crux of the
+    fix. The fake model emits no usage_metadata, so we assert the handler's
+    on_llm_end ran by observing it processed the call (no event, since no usage),
+    which we confirm separately; here we prove the callback machinery reaches it
+    by using a handler that flags on_llm_end."""
+    from langchain_core.callbacks import BaseCallbackHandler
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    fired: list[str] = []
+
+    class _Flag(BaseCallbackHandler):
+        def on_llm_end(self, *a, **k):
+            fired.append("end")
+
+    model = FakeListChatModel(responses=["hi"])
+    model.callbacks = [_Flag()]
+    model.invoke("hello")
+    assert fired == ["end"]
+
+
+def test_wired_handler_records_role_on_the_instance():
+    """The handler appended to a real model's `.callbacks` carries the role and
+    records it when it fires (driven here via a manual on_llm_end since the fake
+    model emits no usage_metadata)."""
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    tools = _FakeTools()
+    model = FakeListChatModel(responses=["hi"])
+    attach_usage_capture(model, tools, role="reviewer")
+    handler = next(
+        cb for cb in model.callbacks if isinstance(cb, UsageCaptureHandler)
+    )
+    handler.on_llm_end(_llm_result_with_usage(total_tokens=200))
+    assert tools.events[0]["payload"]["role"] == "reviewer"
+    assert tools.events[0]["payload"]["total_tokens"] == 200
+
+
+# ============================================================================
+# RIDER 2 — harness wiring (models handed to deepagents carry the capture handler)
+# ============================================================================
+
+
+def test_harness_attaches_usage_capture_to_all_three_role_models(tmp_path, monkeypatch):
+    """create_design_deepagent must hand deepagents models whose OWN `.callbacks`
+    field carries a UsageCaptureHandler — one per role, with the role label — using
+    REAL BaseChatModel instances (each role a SEPARATE instance, so instance-level
+    callbacks attribute cleanly and never cross-contaminate)."""
+    import sys
+    import types
+
+    from agent_fixtures import FakeCoreClient, runtime_config
+
+    captured: dict = {}
+
+    def fake_create_deep_agent(**kwargs):
+        captured["kwargs"] = kwargs
+        return types.SimpleNamespace(invoke=lambda *a, **k: {"messages": []})
+
+    class _FakeFilesystemPermission:
+        def __init__(self, operations, paths, mode="allow"):
+            self.operations, self.paths, self.mode = operations, paths, mode
+
+    class _FakeFilesystemBackend:
+        def __init__(self, root_dir, virtual_mode=None, max_file_size_mb=10):
+            self.root_dir = root_dir
+
+    module = types.ModuleType("deepagents")
+    module.create_deep_agent = fake_create_deep_agent
+    module.FilesystemPermission = _FakeFilesystemPermission
+    module.DeepAgentState = type("_S", (dict,), {})
+    backends = types.ModuleType("deepagents.backends")
+    fsmod = types.ModuleType("deepagents.backends.filesystem")
+    fsmod.FilesystemBackend = _FakeFilesystemBackend
+    monkeypatch.setitem(sys.modules, "deepagents", module)
+    monkeypatch.setitem(sys.modules, "deepagents.backends", backends)
+    monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", fsmod)
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+
+    # A REAL BaseChatModel per call, so attach_usage_capture appends the handler
+    # to its own `.callbacks` field. A fresh instance per call mirrors the harness
+    # contract (three roles → three instances).
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    monkeypatch.setattr(
+        "lumen_agent.llm.init_model",
+        lambda *a, **k: FakeListChatModel(responses=["ok"]),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "lumen_agent.llm.assert_all_role_models_support_image_input",
+        lambda config: None,
+        raising=False,
+    )
+
+    from lumen_agent.harness import create_design_deepagent
+
+    create_design_deepagent("Make a poster", runtime_config(tmp_path))
+    kwargs = captured["kwargs"]
+
+    def _roles_on(model):
+        callbacks = getattr(model, "callbacks", None) or []
+        return {cb._role for cb in callbacks if isinstance(cb, UsageCaptureHandler)}
+
+    assert _roles_on(kwargs["model"]) == {"orchestrator"}
+    subs = {s["name"]: s for s in kwargs["subagents"]}
+    assert _roles_on(subs["lumen-dsl-author"]["model"]) == {"author"}
+    assert _roles_on(subs["lumen-visual-reviewer"]["model"]) == {"reviewer"}
+    # Three SEPARATE instances (no dedupe) — the orchestrator instance is not the
+    # author instance even though ids match, so their handlers never cross-fire.
+    assert kwargs["model"] is not subs["lumen-dsl-author"]["model"]
+    assert subs["lumen-dsl-author"]["model"] is not subs["lumen-visual-reviewer"]["model"]
+
+
+# ============================================================================
+# INTEGRATION-REGRESSION GUARD — probe-r9 CONSTRUCTION FAILURE
+# ============================================================================
+#
+# This is the test that WOULD HAVE CAUGHT the incident and must never regress.
+#
+# The bug: attach_usage_capture wrapped each role model via `.with_config(...)`,
+# producing a RunnableBinding. deepagents' `resolve_model` passes through only
+# `isinstance(model, BaseChatModel)`; a RunnableBinding is not one, so it fell to
+# the string-spec path where `get_provider_profile(spec)` does `spec.count(":")`
+# → `AttributeError('ChatOpenAI' object has no attribute 'count')`, killing EVERY
+# turn at construction in <20s. The other harness tests all STUB create_deep_agent,
+# so the wrapped object never met the real resolve_model — they were blind to it.
+#
+# This test runs the REAL deepagents (create_deep_agent + resolve_model), stubbing
+# ONLY init_model (to a real ChatOpenAI that opens no socket at construction) and
+# the multimodal probe (which would hit the network). If attach_usage_capture ever
+# returns a non-BaseChatModel again, resolve_model raises here and this fails.
+
+
+def test_real_deepagents_construction_does_not_raise(tmp_path, monkeypatch):
+    """Exercises the REAL deepagents resolve_model on exactly the model objects the
+    harness passes it. NO deepagents stub. Regression guard for the probe-r9
+    construction failure (RunnableBinding wrapper crashing get_provider_profile)."""
+    from langchain_openai import ChatOpenAI
+
+    from agent_fixtures import FakeCoreClient, runtime_config
+
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+
+    # A REAL ChatOpenAI per call: it is a BaseChatModel (what resolve_model demands)
+    # and opens NO socket at construction, so this stays fully offline. A fresh
+    # instance per call mirrors the harness's three-instances contract.
+    def _real_chat_model(*a, **k):
+        return ChatOpenAI(model="x", api_key="sk-test", base_url="http://localhost:1")
+
+    monkeypatch.setattr(
+        "lumen_agent.llm.init_model", _real_chat_model, raising=False
+    )
+    # The multimodal probe would hit OpenRouter over the network; no-op it. The
+    # regression under test is resolve_model, not the probe.
+    monkeypatch.setattr(
+        "lumen_agent.llm.assert_all_role_models_support_image_input",
+        lambda config: None,
+        raising=False,
+    )
+
+    from lumen_agent.harness import create_design_deepagent
+
+    # Must construct without raising — the whole point. Pre-fix this raised
+    # AttributeError('ChatOpenAI' object has no attribute 'count') inside
+    # deepagents.resolve_model.
+    agent, tools = create_design_deepagent("Make a poster", runtime_config(tmp_path))
+    assert agent is not None
+    assert tools is not None

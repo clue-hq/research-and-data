@@ -1,0 +1,68 @@
+{
+  "font": null,
+  "id": "hero_image",
+  "kind": "raster_image",
+  "label": "Generated hero",
+  "license": {
+    "allow_embedding": true,
+    "allow_export": true,
+    "allow_modification": true,
+    "allow_subsetting": false,
+    "name": "generated_commercial_use",
+    "restrictions": [],
+    "source_url": null
+  },
+  "logo": null,
+  "media": {
+    "byte_length": 78223,
+    "digest": {
+      "algorithm": "sha256",
+      "value": "3bd986c14fd1eadb6f19e792c316bc4cbc1c9fc7ad964c3ec815e7bb30e06659"
+    },
+    "filename": null,
+    "location": {
+      "opaque_ref": "sha256/3b/3bd986c14fd1eadb6f19e792c316bc4cbc1c9fc7ad964c3ec815e7bb30e06659",
+      "provider": "local-store",
+      "url": null
+    },
+    "mime_type": "image/png",
+    "thumbnail": {
+      "location": {
+        "opaque_ref": "sha256/cb/cb16c307cf65258260b915e95fd5f6b5d4591f945581b8d46fc3a40c09f5dbe2",
+        "provider": "local-store",
+        "url": null
+      },
+      "mime_type": "image/png",
+      "pixel_height": 144,
+      "pixel_width": 256
+    }
+  },
+  "provenance": {
+    "confidence": null,
+    "created_at": "2026-06-19T14:22:23.533630+00:00",
+    "created_by": "agent",
+    "notes": [
+      "model=google/gemini-2.5-flash-image",
+      "provider=image-gen-v1",
+      "request_id=baseline-step1b"
+    ],
+    "source_label": "image generation"
+  },
+  "raster": {
+    "aspect_ratio": 1.7777777777777777,
+    "color_profile": null,
+    "dpi_x": null,
+    "dpi_y": null,
+    "has_alpha": false,
+    "pixel_height": 720,
+    "pixel_width": 1280
+  },
+  "source": {
+    "kind": "generated",
+    "model": "google/gemini-2.5-flash-image",
+    "request_id": "hero_image"
+  },
+  "status": "ready",
+  "tags": [],
+  "vector": null
+}

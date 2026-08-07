@@ -1,0 +1,2221 @@
+{
+  "preflight": {
+    "status": "ok",
+    "has_errors": true,
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "LUMB0613",
+        "message": "font asset brand is not marked embeddable for export",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      },
+      {
+        "severity": "warning",
+        "code": "LUMB0614",
+        "message": "font asset brand is not marked subsettable for PDF export",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      },
+      {
+        "severity": "error",
+        "code": "LUMB0301",
+        "message": "number token space.2xl is not defined for this style field",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "stats",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      }
+    ],
+    "brand_source": "platform_default",
+    "brand_kit_id": "brand_kit_platform_default",
+    "brand_kit_version": "1",
+    "brand_mode": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "medium": "digital",
+      "theme": "light"
+    }
+  },
+  "raw_preflight": {
+    "has_errors": true,
+    "brand_ref_operations": [
+      {
+        "brand_kit_id": "brand_kit_platform_default",
+        "kind": "set_brand_kit_ref",
+        "version": 1
+      }
+    ],
+    "token_operations": [
+      {
+        "kind": "update_node",
+        "node_id": "artboard",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_artboard_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#FFFFFF"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "set",
+            "value": {
+              "align_x": "start",
+              "align_y": "start",
+              "gap": 48.0,
+              "grow": 0.0,
+              "padding": [
+                80.0,
+                80.0,
+                80.0,
+                80.0
+              ]
+            }
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "context",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_context_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#0891B2"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "right",
+              "content": "FY QUOTA REVIEW",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 13.0,
+              "font_weight": 750,
+              "kind": "text",
+              "letter_spacing": 0.08,
+              "line_height": 1.1,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "coverage",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "set",
+            "value": {
+              "align_x": "start",
+              "align_y": "start",
+              "gap": 4.0,
+              "grow": 0.0,
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "coverage_label",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_coverage_label_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#4B5563"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "pipeline coverage ratio",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 14.0,
+              "font_weight": 450,
+              "kind": "text",
+              "letter_spacing": 0.0,
+              "line_height": 1.4,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "coverage_value",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_coverage_value_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#155E75"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "4.2x",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 128.0,
+              "font_weight": 850,
+              "kind": "text",
+              "letter_spacing": -0.02,
+              "line_height": 1.0,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "hero",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "set",
+            "value": {
+              "align_x": "start",
+              "align_y": "center",
+              "gap": 16.0,
+              "grow": 0.0,
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "kicker",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_kicker_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#0891B2"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "PIPELINE COVERAGE BY STAGE",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 13.0,
+              "font_weight": 750,
+              "kind": "text",
+              "letter_spacing": 0.08,
+              "line_height": 1.1,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "source",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_source_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#4B5563"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "Source: CRM pipeline snapshot, FY quota model",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 12.0,
+              "font_weight": 500,
+              "kind": "text",
+              "letter_spacing": 0.0,
+              "line_height": 1.35,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_1",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "set",
+            "value": {
+              "bottom_left": 12.0,
+              "bottom_right": 12.0,
+              "top_left": 12.0,
+              "top_right": 12.0
+            }
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_1_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#FFFFFF"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "set",
+            "value": {
+              "align_x": "start",
+              "align_y": "start",
+              "gap": 12.0,
+              "grow": 0.0,
+              "padding": [
+                24.0,
+                24.0,
+                24.0,
+                24.0
+              ]
+            }
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_1_label",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_1_label_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#4B5563"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "Discovery",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 14.0,
+              "font_weight": 450,
+              "kind": "text",
+              "letter_spacing": 0.0,
+              "line_height": 1.4,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_1_rule",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "set",
+            "value": {
+              "bottom_left": 999.0,
+              "bottom_right": 999.0,
+              "top_left": 999.0,
+              "top_right": 999.0
+            }
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_1_rule_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#0F766E"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_1_value",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_1_value_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#155E75"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "$24.8M",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 40.0,
+              "font_weight": 850,
+              "kind": "text",
+              "letter_spacing": -0.02,
+              "line_height": 1.0,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_2",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "set",
+            "value": {
+              "bottom_left": 12.0,
+              "bottom_right": 12.0,
+              "top_left": 12.0,
+              "top_right": 12.0
+            }
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_2_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#FFFFFF"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "set",
+            "value": {
+              "align_x": "start",
+              "align_y": "start",
+              "gap": 12.0,
+              "grow": 0.0,
+              "padding": [
+                24.0,
+                24.0,
+                24.0,
+                24.0
+              ]
+            }
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_2_label",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_2_label_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#4B5563"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "Qualification",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 14.0,
+              "font_weight": 450,
+              "kind": "text",
+              "letter_spacing": 0.0,
+              "line_height": 1.4,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_2_rule",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "set",
+            "value": {
+              "bottom_left": 999.0,
+              "bottom_right": 999.0,
+              "top_left": 999.0,
+              "top_right": 999.0
+            }
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_2_rule_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#0F766E"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_2_value",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_2_value_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#155E75"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "$21.4M",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 40.0,
+              "font_weight": 850,
+              "kind": "text",
+              "letter_spacing": -0.02,
+              "line_height": 1.0,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_3",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "set",
+            "value": {
+              "bottom_left": 12.0,
+              "bottom_right": 12.0,
+              "top_left": 12.0,
+              "top_right": 12.0
+            }
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_3_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#FFFFFF"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "set",
+            "value": {
+              "align_x": "start",
+              "align_y": "start",
+              "gap": 12.0,
+              "grow": 0.0,
+              "padding": [
+                24.0,
+                24.0,
+                24.0,
+                24.0
+              ]
+            }
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_3_label",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_3_label_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#4B5563"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "Proposal",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 14.0,
+              "font_weight": 450,
+              "kind": "text",
+              "letter_spacing": 0.0,
+              "line_height": 1.4,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_3_rule",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "set",
+            "value": {
+              "bottom_left": 999.0,
+              "bottom_right": 999.0,
+              "top_left": 999.0,
+              "top_right": 999.0
+            }
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_3_rule_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#0F766E"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_3_value",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_3_value_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#155E75"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "$17.9M",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 40.0,
+              "font_weight": 850,
+              "kind": "text",
+              "letter_spacing": -0.02,
+              "line_height": 1.0,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_4",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "set",
+            "value": {
+              "bottom_left": 12.0,
+              "bottom_right": 12.0,
+              "top_left": 12.0,
+              "top_right": 12.0
+            }
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_4_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#FFFFFF"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "set",
+            "value": {
+              "align_x": "start",
+              "align_y": "start",
+              "gap": 12.0,
+              "grow": 0.0,
+              "padding": [
+                24.0,
+                24.0,
+                24.0,
+                24.0
+              ]
+            }
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_4_label",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_4_label_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#4B5563"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "Negotiation",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 14.0,
+              "font_weight": 450,
+              "kind": "text",
+              "letter_spacing": 0.0,
+              "line_height": 1.4,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_4_rule",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "set",
+            "value": {
+              "bottom_left": 999.0,
+              "bottom_right": 999.0,
+              "top_left": 999.0,
+              "top_right": 999.0
+            }
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_4_rule_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#0F766E"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stage_4_value",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_stage_4_value_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#155E75"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "$11.5M",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 40.0,
+              "font_weight": 850,
+              "kind": "text",
+              "letter_spacing": -0.02,
+              "line_height": 1.0,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "stages",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "set",
+            "value": {
+              "align_x": "space_between",
+              "align_y": "start",
+              "gap": 16.0,
+              "grow": 0.0,
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "takeaway",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_takeaway_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#4B5563"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "Every stage clears the 3x coverage bar, giving healthy margin against the $18M target.",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 24.0,
+              "font_weight": 650,
+              "kind": "text",
+              "letter_spacing": 0.0,
+              "line_height": 1.24,
+              "max_lines": 2,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "target",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "set",
+            "value": {
+              "align_x": "start",
+              "align_y": "start",
+              "gap": 4.0,
+              "grow": 0.0,
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "target_label",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_target_label_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#4B5563"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "quota target (FY)",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 14.0,
+              "font_weight": 450,
+              "kind": "text",
+              "letter_spacing": 0.0,
+              "line_height": 1.4,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "target_value",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_target_value_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#155E75"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "$18M",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 64.0,
+              "font_weight": 850,
+              "kind": "text",
+              "letter_spacing": -0.02,
+              "line_height": 1.0,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      }
+    ],
+    "layout_operations": []
+  },
+  "effective_brand": {
+    "source": "platform_default",
+    "brand_kit_id": "brand_kit_platform_default",
+    "brand_kit_version": "1",
+    "brand_kit_name": "Lumen Platform Default",
+    "mode": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "medium": "digital",
+      "theme": "light"
+    }
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "source": {
+    "kind": "uploaded_pdf",
+    "asset_id": "asset_insight_brandguide_pdf",
+    "filename": "insight-brand-guidelines.pdf",
+    "confidence": 0.8
+  },
+  "colors": [
+    {
+      "value": "#FFFFFF",
+      "weight": 30.0,
+      "theme": "light",
+      "role_hints": ["page-bg", "named:Paper White"],
+      "name": "Paper White",
+      "pointer": {"source": "pdf", "locator": "page 3 :: color system"}
+    },
+    {
+      "value": "#101828",
+      "weight": 20.0,
+      "theme": "light",
+      "role_hints": ["body-text", "named:Ink"],
+      "name": "Ink",
+      "pointer": {"source": "pdf", "locator": "page 3 :: color system"}
+    },
+    {
+      "value": "#0F766E",
+      "weight": 14.0,
+      "theme": "light",
+      "role_hints": ["button-bg", "named:Deep Teal"],
+      "name": "Deep Teal",
+      "pointer": {"source": "pdf", "locator": "page 4 :: primary color"}
+    },
+    {
+      "value": "#F4B740",
+      "weight": 6.0,
+      "theme": "light",
+      "role_hints": ["accent", "named:Amber"],
+      "name": "Amber",
+      "pointer": {"source": "pdf", "locator": "page 4 :: accent color"}
+    },
+    {
+      "value": "#0B0F19",
+      "weight": 12.0,
+      "theme": "dark",
+      "role_hints": ["page-bg"],
+      "name": "Night",
+      "pointer": {"source": "pdf", "locator": "page 12 :: dark lockup"}
+    },
+    {
+      "value": "#E7E9EC",
+      "weight": 8.0,
+      "theme": "dark",
+      "role_hints": ["body-text"],
+      "name": "Cloud",
+      "pointer": {"source": "pdf", "locator": "page 12 :: dark lockup text"}
+    },
+    {
+      "value": "#2DD4BF",
+      "weight": 5.0,
+      "theme": "dark",
+      "role_hints": ["accent"],
+      "name": "Bright Teal",
+      "pointer": {"source": "pdf", "locator": "page 13 :: dark accent"}
+    }
+  ],
+  "type_samples": [
+    {
+      "label": "pdf-heading",
+      "family": "Ginto",
+      "weight": 700,
+      "size_px": 40.0,
+      "line_height": 1.1,
+      "pointer": {"source": "pdf", "locator": "page 6 :: typography"}
+    },
+    {
+      "label": "pdf-body",
+      "family": "Ginto",
+      "weight": 400,
+      "size_px": 15.0,
+      "line_height": 1.5,
+      "pointer": {"source": "pdf", "locator": "page 6 :: typography"}
+    }
+  ],
+  "fonts": [
+    {
+      "family": "Ginto",
+      "role_hint": "heading",
+      "faces": [],
+      "fallback_stack": ["Arial", "sans-serif"],
+      "license_hint": "trial-filename",
+      "pointer": {"source": "pdf", "locator": "page 6 :: typography specimen"}
+    }
+  ],
+  "logos": [
+    {
+      "asset_id": "asset_pdf_logo_primary",
+      "color_mode_hint": "full_color",
+      "usage_hint": "primary",
+      "width": 200.0,
+      "height": 44.0,
+      "pointer": {"source": "pdf", "locator": "page 2 :: primary logo"}
+    },
+    {
+      "asset_id": "asset_pdf_logo_reversed",
+      "color_mode_hint": "reversed",
+      "usage_hint": "primary",
+      "width": 200.0,
+      "height": 44.0,
+      "pointer": {"source": "pdf", "locator": "page 12 :: reversed logo"}
+    }
+  ],
+  "images": [],
+  "numbers": [
+    {"kind": "spacing", "value": 32.0, "weight": 2.0, "role_hints": ["section"], "pointer": {"source": "pdf", "locator": "page 8 :: grid"}}
+  ],
+  "shadows": [],
+  "rules": [
+    {"kind": "clearspace", "text": "Clearspace equals the height of the mark on all sides.", "numeric_value": 24.0, "pointer": {"source": "pdf", "locator": "page 2 :: clearspace"}},
+    {"kind": "min_size", "text": "Do not reproduce the logo smaller than 32px tall.", "numeric_value": 32.0, "pointer": {"source": "pdf", "locator": "page 2 :: minimum size"}},
+    {"kind": "dont", "text": "Do not stretch, recolor, or rotate the logo.", "numeric_value": null, "pointer": {"source": "pdf", "locator": "page 2 :: misuse"}},
+    {"kind": "tone", "text": "Confident, precise, reassuring.", "numeric_value": null, "pointer": {"source": "pdf", "locator": "page 1 :: voice"}},
+    {"kind": "print", "text": "Use Pantone 3272 C for spot-color print.", "numeric_value": null, "pointer": {"source": "pdf", "locator": "page 5 :: print"}}
+  ],
+  "screenshots": [],
+  "narrative": {
+    "brand_name": "Insight Health",
+    "url": null,
+    "tagline": "Precision care, at scale.",
+    "summary_facts": ["Brand guidelines v2.", "Approved 2026."],
+    "text_excerpt": "These guidelines govern the Insight Health identity across print and digital."
+  }
+}

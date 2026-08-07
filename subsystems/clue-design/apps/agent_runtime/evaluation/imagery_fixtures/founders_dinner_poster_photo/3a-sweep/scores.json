@@ -1,0 +1,106 @@
+{
+  "per_axis": {
+    "relevance": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "placeholder_real": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "aspect_fit": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "placement": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "legibility": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.2,
+      "hard_gate": true
+    },
+    "resolution_dpi": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "no_in_image_text": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "theme_coherence": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": false
+    }
+  },
+  "gate_failed": false,
+  "weighted_mean": 3.0,
+  "accept": true,
+  "tier": "ship",
+  "judge_ran": true,
+  "judge_reasoning": "Credible full-bleed dusk rooftop dinner photo that earns its place for an event invite; text sits low over the naturally dark tabletop/foreground with a gradient scrim, so headline, details, and RSVP button remain legible. Aspect fills the frame with no distortion or dead bands, and the intimate candlelit dinner avoids the generic rooftop-party cliche while staying on-brief and on-brand.",
+  "image_count": 1,
+  "real_image_count": 1,
+  "brief_id": "founders_dinner_poster_photo",
+  "expected_decision": "photo",
+  "det": {
+    "dimensions": {
+      "placeholder_real": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "decision": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "aspect_fit": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "legibility": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "hero_count": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      }
+    },
+    "gate_failed": false,
+    "accept": true,
+    "image_count": 1,
+    "real_image_count": 1
+  },
+  "run_id": "run_1ed05167c9d44f97a7feca2ff503a3b3",
+  "run_status": "accepted",
+  "png_path": ".lumen-runs-A/run_1ed05167c9d44f97a7feca2ff503a3b3/iterations/001/preview.png"
+}

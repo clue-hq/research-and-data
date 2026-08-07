@@ -1,0 +1,12 @@
+{
+  "asset_id": "asset_img_run_4d5d_0",
+  "source_kind": "generated",
+  "model": "google/gemini-3-pro-image",
+  "status": "ready",
+  "asset_kind": "raster_image",
+  "pixel_width": 1024,
+  "pixel_height": 1024,
+  "rendered_width": 1080.0,
+  "rendered_height": 1080.0,
+  "fit": "cover"
+}

@@ -1,0 +1,88 @@
+{
+  "per_axis": {
+    "relevance": {
+      "final": 1,
+      "judge": 2,
+      "det_cap": 1,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "placeholder_real": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "aspect_fit": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "placement": {
+      "final": 2,
+      "judge": 2,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "legibility": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.2,
+      "hard_gate": true
+    },
+    "resolution_dpi": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "no_in_image_text": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "theme_coherence": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": false
+    }
+  },
+  "gate_failed": false,
+  "weighted_mean": 2.615,
+  "accept": false,
+  "tier": "redo",
+  "judge_ran": true,
+  "judge_reasoning": "The brief expected an icon row above the steps; the design uses numbered circles instead of any icons/illustrations, so the expected iconography is absent (relevance/placement lightly dinged), though numbered badges are a clean, coherent substitute with no image-quality defects.",
+  "image_count": 0,
+  "real_image_count": 0,
+  "brief_id": "how_it_works_onepager_icons",
+  "expected_decision": "icon",
+  "det": {
+    "dimensions": {
+      "decision": {
+        "score": 1,
+        "gate": false,
+        "notes": [
+          "expected icons/illustration; none present"
+        ]
+      }
+    },
+    "gate_failed": false,
+    "accept": false,
+    "image_count": 0,
+    "real_image_count": 0
+  },
+  "run_id": "run_121c8c8d064341d28bf25a06c5e35b79",
+  "run_status": "accepted",
+  "png_path": ".lumen-runs-C/run_121c8c8d064341d28bf25a06c5e35b79/iterations/001/preview.png"
+}
