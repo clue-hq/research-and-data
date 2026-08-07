@@ -1,0 +1,126 @@
+# FI Lane D — The production chat surface + conversation-mediated research launch (D-9 Option B)
+
+**Status: DRAFT — contract-gap review + charter, awaiting founder discussion and §6 sign-off. Nothing here is ratified. Full end-to-end scope per the founder's 2026-08-08 no-shortcuts directive: speed comes from parallel worktrees, never from cutting designed features.**
+
+Date: 2026-08-08. Branch: `platform/frontend-integration`.
+Parent rulings: FI-1 §9 — **D-9 RESOLVED Option B** (research launch is a deepagent tool call inside the project conversation, authorized by the user's confirming turn; the production chat surface **S6 enters MVP scope**). Doc A (`clue-hq-platform-agent-runtime.md`) is the binding vocabulary; the harness doc's REQ-18–22 define the agent-workspace surface and the project/thread/tab shell.
+Method: two read-only Opus code studies (2026-08-08: agent-turn substrate + launch authority chain; frontend chat contract). Every baseline fact carries a file:line citation from them.
+
+---
+
+## 0. The one-paragraph verdict
+
+The **doctrine and the substrate agree with Option B** — Doc A already prescribes exactly this shape ("fleet work is LAUNCHED, never performed, in-thread: the tool enqueues to the detached worker; the narrator streams progress back", Doc A:219-220), the turn substrate (C6) is durable, append-only-by-trigger, and replay-safe, and the launch tool's entire authority chain exists as governed tools. What is missing is the **connective tissue at every seam**: no thread/tab entity (REQ-21 is spec-only), no production conversational route (the trial is loopback + file-tenancy + per-request full recomposition), no `action_ref` on any of the 10 production `ToolContext` construction sites (making every human-receipt gate — including the directive confirmation Option B depends on — uninvocable), no streaming of any kind (`graph.ainvoke` is a single blocking call), an un-flavoured `open_gate_refs` as the only durable approval hook, and a frontend whose transcript is 100% client-manufactured from a phase enum with zero transport, zero message repository, and zero estimate/confirmation surface. One latent blocker found: **`draft_account_research_directive@2` is un-callable through the agent seam today** (its `TRUSTED_TURN_FIELD`s aren't `CapturedTurn` fields) — Option B's first step is broken before its famous missing piece (`action_ref`) is even reached.
+
+---
+
+## 1. Verified baseline — backend
+
+### 1.1 The turn substrate is real and doctrine-locked (build on it, never around it)
+
+- Migration `7e9269ed8a81`: `agent_turn` (+event ledger), `agent_thread_message` (one content-addressed blob per message, `UNIQUE(workspace_id, thread_id, sequence)`, roles system/user/assistant/tool), `agent_artifact_ref` (closed `owner_kind`/`ref_role` vocabularies — a typed-part design must fit them or migrate), `agent_artifact_subject` (DSAR reachability without body inspection), `agent_artifact_tombstone`, the seven-layer `agent_context_*` receipts (ordinal↔name CHECK-locked; `token_count <= token_budget` in SQL), `agent_model_call`, `agent_finalization` (+`ref_role ∈ ('output','open_gate')`). **Append-only is a DB trigger on all 13 tables**, not a convention.
+- No part-level identity: a turn yields two thread rows (user+assistant), ids derived `uuid5(turn_id, role)`; tool calls have durable identity (`agent_plan_operation.operation_id`, `agent_tool_result`) but are not thread messages — nothing joins them into transcript order.
+- **`thread_id` is a plain text column; no `thread` table, no `tab` table, no `campaign_artifact` catalog exists.** REQ-21's shell ("threads belong to projects", typed object-ref vocabulary, per-tab edit contracts) is specified only (`harness doc:1043-1082`).
+- Doctrine constraints on any streaming/typed-parts design: the context window is a cache, never a store; tool results return receipts, not goods (Doc A §3a:301-333); L6 is append-only thread history — "mutated/rewritten history" is in the never-includes cell (Doc A:288). **A streamed typed part is therefore a projection of durable receipts, never a new store.**
+- **Correctness hazard for production threads:** L6 assembly iterates ascending `sequence` and stops at budget — long threads silently drop the **newest** messages (`platform/agents/clue_agents/context.py:449-454,614-641`; trial budget 96k bytes). Must be inverted (newest-first-retained) or windowed before production chat.
+- Defect L6 (FI-1): `agent_turns_for_project` has no LIMIT/cursor (`platform/projections/clue_projections/agents.py:205-227`).
+
+### 1.2 The trial surface: right substrate, wrong everything-else
+
+`POST /v1/trials/{id}/turns` (loopback-only, `trial_enabled=False` default, tenancy from a local `session.json`, mandatory `Idempotency-Key`): per request it rebuilds storage + gateway + the whole toolbelt + recipe seeding + context assembler + runtime (`stage0_trial.py:600-731`), runs recipe0 to its interaction gate, executes the deepagent graph **in-process, blocking** (`await asyncio.wait_for(graph.ainvoke(...))`, `runtime.py:311-327`, LangGraph `AsyncPostgresSaver`), and returns one JSON body. Deterministic ids (`turn_id = uuid5(session, seq)`), committed-outcome replay short-circuit, user message persisted (artifact + DSAR binding + `onboarding_input actor='human'`) **before** model spend, `actor_id` a hardcoded literal (`"stage0-trial-user"`). Its surface (`STAGE0_CONVERSATION_TRIAL_SURFACE`) **withholds `launch_account_research`/`launch_contact_research`**; an undeclared surface raises at resolve (surface policy is a ceiling: same profile, subtracted addresses — `agent_registry_wiring.py:167-190`).
+
+### 1.3 HITL is turn-terminal; the approval hook is under-specified
+
+No LangGraph `interrupt()` anywhere. `finalize_turn` is `return_direct=True` with up to 2 bounded repair rounds; `awaiting_input`/`blocked` must carry `open_gate_refs` or `next_action_refs` (`contracts.py:938-942`) — but `open_gate_refs` is an un-flavoured `DomainObjectRef` (no gate kind, prompt, options, expiry) that **nothing reads back**. The human answers in a brand-new turn. `_HUMAN_ONLY_TOOLS` (11 tools incl. `confirm_account_research_directive`, `submit_tier_checkpoint`, `adjust_budget`) are structurally absent from every model surface and today are invocable only via `POST /tools/{name}` — which builds `ToolContext` with **no `actor_id`, no `action_ref`** → `422 trusted_human_receipt_required` — or via trial slash commands that bypass tools entirely.
+
+### 1.4 The `action_ref` seam: doctrine present, plumbing absent, plus one latent blocker
+
+- Doctrine at `ToolContext` (`envelope.py:234-236`): human gates derive receipts from ambient `actor_id`/`action_ref`; caller-authored arguments never choose who approved. Enforced per-tool (directive confirm v2 deleted the caller-authored fields entirely; `launch_account_research@1` → `launch_action_ref_missing`; the launcher re-asserts and persists `source_action_ref` durably into `entity_research_run` and the launch `request_sha`).
+- **All 10 production `ToolContext` construction sites set neither field** (C5 executor ×3, agent execution wiring, projections `POST /tools`, supervisor, ingestion, research-view ×2); the only site that does is a manual acceptance script. The platform has an actor *class* (human/agent enum) but no actor *identity* at the tool boundary.
+- The right extension seam exists: turn-binding (PC-C8 §6) — `TRUSTED_TURN_FIELD` markers stripped from model-visible schemas, values **derived** from the turn's own artifact + `onboarding_input(actor='human')` join, plan-supplied values rejected (`turn_binding.py:157-210`, `agent_execution_wiring.py:235-282`). `CapturedTurn` serves 5 fields; `value_for` raises `unbindable_field` for others.
+- **Latent blocker:** `draft_account_research_directive@2` marks `user_instruction` and `source_turn_ref` as `TRUSTED_TURN_FIELD` (`research_directive_tools.py:72-81`), neither is a `CapturedTurn` field, and `head-of-abm/v22` pins the tool — so the agent-plan path raises `CapturedTurnUnavailable` today. Every existing test drives it via toolbelt/HTTP, never the agent seam.
+
+### 1.5 The launch authority chain — exists vs missing (Option B step map)
+
+| Step | State |
+|---|---|
+| Project run (`start_confirmed_project_run@1`) | exists, agent-callable |
+| Tier checkpoint per account | exists; human-only tool; **only** `persist_discovery_selection_tier` writes the claim shape the launcher demands (`project_run_id` + `disposition='selected'`, HUMAN/tier-1) — the scoring-mode writer never satisfies it |
+| Agent drafts directive (`draft_…@2`) | tool exists, agent authority — **un-callable through the agent seam (§1.4 blocker)** |
+| Estimate presented | partial: directive preview carries counts; the estimate is Σ per-account `effort_policy.budget_cap_cents` computed *inside the launcher*; **no first-class agent-callable estimate tool** (`estimate_project` is reserved `post_stage0_not_admitted`) |
+| User confirms directive (`confirm_…@2`) | tool exists, human-only, requires ambient `actor_id`+`action_ref` → **uninvocable in production** |
+| Confirming turn supplies `action_ref` | **missing entirely** |
+| Agent launches (`launch_account_research@1`) | blocked three ways: withheld on the only conversational surface; `entity_research_runtime_enabled=False`; composed only into the fleet worker (`fleet_main.py:427-436`; the HTTP process gets `entity_research_agent_not_composed`) |
+| Approval-card gate object | missing (`open_gate_refs` un-flavoured, unread) |
+| Per-account status read-back | missing (L2 index, L3 projection columns — owned by Lanes B/C) |
+| Post-launch narration | run identity is deterministic (`request_sha` → `research_run_id`), `approval_refs = (source_action_ref, directive.confirming_turn_ref)` already first-class; canary policy (first 10 jobs) is data |
+
+### 1.6 Streaming and process reality
+
+- **Nothing streams in the agent plane.** The gateway chat model has `_astream` with fallback + cost annotation — **uncalled**. The pinned LangGraph 1.2.6 offers `astream`/`astream_events` — unused. The natural attachment point without touching the graph invocation is the already-installed per-turn LangChain callback (`DurableAgentModelCallHandler` — today `on_chat_model_start`/`on_llm_end` only; `on_llm_new_token`/`on_tool_start`/`on_tool_end` are open). Note `tool_choice="required"`: assistant prose exists **only** inside `finalize_turn.user_message` — that bounds what a streamed "text part" means on this surface.
+- B4 SSE: token store reusable verbatim (nullable `run_id` already means workspace-wide tokens); `Last-Event-ID`/`plan_replay`/`_sse_frame` reusable; **the `run_event` outbox is not** (`run_id uuid NOT NULL`) — a turn stream needs its own outbox (or a migration widening `run_event`).
+- Off-HTTP agent execution precedent exists: the entity-research fleet runs full deepagent turns in the worker (`account_research_turn_wiring.py:488-560` — same substrate: `turns.create`, replay short-circuit, context assembly, checkpointer). There is **no `AGENT_TURN` fleet task kind** yet. Doc A: "the thread session never executes long-running work… sessions attach/detach" (:226-228).
+
+---
+
+## 2. Verified baseline — frontend (`apps/frontend`)
+
+- One chat feature (`features/projects`). The transcript is **manufactured client-side from a 6-value phase enum** (`build-project-messages.ts`); `submitMessage()` clears the prompt and jumps phase — **a user's follow-up turn is unrepresentable**. No message/thread/run repository exists (only `getHome`/`getProject`); the sidebar bypasses its own repository (fixture imported directly in the hook, violating `frontend.md:95`).
+- Part union (7 kinds, `project-workspace.ts:232-275`): `text`/`reasoning`/`action`/`tool`/`plan`/`task`/`sources`. **`plan` and `sources` parts carry only an id** — they point at project-singleton blobs (a second plan or per-message sources is unrepresentable). Tool part: 7-state machine in schema, hardcoded `output-available` in fixtures, collapsed to a Completed/Running binary in the UI; `output` is `z.string().min(1)` (structured results must be pre-rendered to prose); no `toolName`/`toolCallId`.
+- **Zero transport.** No SSE/WebSocket/fetch-stream code; streaming is `setTimeout` on fixture-authored delays that are **part of the validated backend payload** (`previewTimeline` — a real backend must ship fake timer data or the route 500s). The authored envelope proposal (`ProjectMessagePartEvent` with `partId`/`sequence`/`type: part.created|updated|completed|failed`, `ai-elements-and-reasoning.md:161-173`) exists in prose only; no Zod schema has `sequence`/`threadId`/`messageId`.
+- **Approval/confirmation:** plan-approval card is hardcoded (`state="approval-requested"`, id `"plan-approval"`), is not a message part, leaves no durable record when answered (responded/denied branches of the vendored primitive unwired). **No cost/estimate surface exists anywhere** — credits appear only as post-hoc display strings (`"6,048 credits spent"`). `needs-input`/`review`/`approval` exist only as sidebar badges; the sidebar's 5-status vocabulary and the workspace's 6-phase vocabulary never meet.
+- D-4-class parse hazards specific to chat: `text.min(1)` (an empty-then-filled streamed part is unrepresentable), `parts.min(1)` (no empty message to stream into), `tools.min(2)` arity trap, required fixture-only subtrees (`previewTimeline`, `reasoningTrace`, `questionnaire`, `plan`), reasoning `label` as backend-authored display copy ("Thought for 5 seconds"), credits as strings not numbers.
+- **The design intent for Option B already exists on paper, uncoded:** `docs/figma/projects-chat-flow.md:39-99` specifies the research-execution component library — 8 activity states (Scoping → Light research → Checkpoint → Deep research → Synthesizing → Complete/Partial/Needs-input), run aggregation ("one visible research task whether it covers one account or 500"), and "Production progression is event-driven. Prototype timeouts … must not become the backend lifecycle model."
+- Thread shell: `ProjectThreadSchema = {id, title}` only; thread switching doesn't change the transcript; all thread CRUD is local-memory; no pagination anywhere; REQ-21's typed `refs[]` on messages has no frontend counterpart (nearest: the 2-value `action` part).
+
+---
+
+## 3. Design — six pillars
+
+**P1 — The durable shell (REQ-21 lands).** A real `thread` table (`id, workspace_id, project_id FK, created_by, status, title, created_at` — the harness doc's shape), turn/message pagination (fixes L6-defect), and the typed object-ref vocabulary on messages (`refs[]` as `DomainObjectRef`+flavor) so chat can open tabs. `agent_turn.thread_id`/`agent_thread_message.thread_id` gain FK validation for new writes (legacy rows grandfathered; text column stays, constraint added `NOT VALID`+validate). Thread CRUD as governed tools + endpoints per the frontend's authored contract (`POST /projects`, `POST …/threads`, rename/pin/archive).
+
+**P2 — Actor identity + turn-derived `action_ref`.** Two halves, two owners: **(a)** Lane B's HTTP-edge actor seam (auth → `actor_id` into every `ToolContext` construction site — all 10 audited sites). **(b)** Lane D's turn half: extend `CapturedTurn` with the turn's durable identity (`turn_ref = the (onboarding_input_id | artifact_key) triple`) and thread `constitution.actor_id` + a derived `action_ref` into the C5 executor's `ToolContext` sites — the binding stays *derived, never passed* (the PC-C8 security model). Fix the §1.4 blocker: either register `user_instruction`/`source_turn_ref` as bindable `CapturedTurn` fields or re-mark them — decided explicitly, with a test driving `draft_account_research_directive@2` through the agent seam. A confirming turn then *is* the receipt: `confirmed_by = actor_id`, `confirming_action_ref = turn_ref`, exactly what the launcher already persists as `approval_refs`.
+
+**P3 — Turn execution architecture (the big structural decision — §6-D1).** Recommended: **async, worker-executed turns.** `POST /v1/projects/{id}/threads/{tid}/turns` (production app; real tenancy header + Lane B auth) validates, persists the user message + turn row (the substrate already does this before spend), enqueues a new `AGENT_TURN` fleet task, returns `202 {turn_id}`; the fleet worker — which already composes the gateway, toolbelt, launch services, and runs deepagent turns for entity research — executes the graph; the client attaches to the turn stream (P4). This matches Doc A (:226-228), reuses the committed-outcome replay short-circuit for crash-safety, kills the per-request recomposition (composition happens once at worker startup), and — decisively for Option B — **the launch tools are already composed in that process**. The alternative (compose the gateway into the HTTP process and run blocking turns) is recorded and rejected: it contradicts Doc A, duplicates fleet composition, and blocks HTTP workers on model latency.
+
+**P4 — Streaming + typed parts as projections of durable receipts.** A turn-scoped event outbox (`agent_turn_event_stream` — new table mirroring `run_event`'s shape; token store + replay machinery reused verbatim), emitting the frontend's authored envelope (`part.created|updated|completed|failed`, `sequence`, `partId`). Parts are **projections, never stores** (Doc A §3a): `tool` parts from `agent_plan_operation`/`agent_tool_result` via the callback's `on_tool_start`/`on_tool_end`; `reasoning` parts from model-round receipts; `text` from the finalize envelope's message (chunked via `on_llm_new_token` if §6-D2 chooses token streaming); `task` parts from fleet/run projections (the post-launch narration REQ-11 promises); part ids derived from durable ids (`operation_id`, `uuid5(turn, role)`) — stable because the substrate's ids are. Emission is best-effort/at-least-once post-commit (the B4 discipline); the durable turn outcome never depends on the stream.
+
+**P5 — The Option B kickoff flow, end-to-end.** (a) **Flavored gate objects**: a typed `agent_gate` record (kind ∈ {directive_confirmation, plan_approval, budget_approval, …}, subject refs, presented-estimate payload, status open/answered, answering `turn_id`+`action_ref`) that `open_gate_refs` points at — giving the approval card a durable, readable, auditable object; answering it is what flips the gate and never expires silently. (b) **First-class estimate**: an agent-callable read tool (`estimate_account_research@1` — new; `estimate_project` stays reserved) computing exactly the launcher's Σ `effort_policy.budget_cap_cents` for the drafted directive + account set, so the number the user confirms is *the* number the launcher will verify (`expected_estimated_cost_cents` exact-match). (c) The conversational sequence, each step already governed: agent drafts directive → presents gate card (estimate + account set + directive summary) → turn ends `awaiting_input` with the gate ref → user's confirming turn (P2 receipt) → `confirm_account_research_directive@2` → `launch_account_research@1` → launch narration streams as `task` parts fed by fleet projections. (d) A **new declared surface** for the project conversation (grants the launch pair + drafting tools; withholds nothing the profile doesn't pin; every skill's `required_tools` re-checked — the C8 regression trap). (e) `entity_research_runtime_enabled` flips on for the worker as part of this lane's rollout gate.
+
+**P6 — Frontend chat rebuilt at the repository seam.** Real repositories (threads, messages, turns, runs) with fixture + HTTP + **stream** adapters; the part schemas amended per the contract deltas below; the approval card wired to the gate object (requested/responded/denied states all rendered — answered approvals leave a visible record); the Figma research-execution component library implemented against the run/fleet projections; the two status vocabularies unified (thread status derives from the latest turn's status + open gates); phase-enum transcript manufacturing deleted.
+
+**Frontend contract deltas** (recorded into `apps/frontend/docs/api-contracts/projects.md` on landing, per the branch charter): parts gain `sequence`; messages gain `threadId`/`createdAt`/`refs[]`; `plan`/`sources` become payload-carrying parts (singletons retired); tool parts carry `toolName` + typed state driven by real transitions; credits/estimates become numbers (cents) + client formatting (D-5); `previewTimeline`/`reasoningTrace`/display-copy blobs leave the wire (D-4/D-5 vocabulary); `text.min(1)`→ streamed-part-compatible absence vocabulary; a new `gate` part kind (or `action` extension) carrying the estimate payload; sidebar repository bypass fixed.
+
+---
+
+## 4. Slices (each independently landable; per-slice sign-off per the branch charter)
+
+- **D0 — durable shell.** P1: `thread` table + FKs + pagination + `refs[]` vocabulary + thread CRUD tools/endpoints. Also: L6-truncation inversion (newest-retained) + the missing `get_onboarding_input_for_artifact` index. AC: thread CRUD round-trips over HTTP with real tenancy; turn list paginates; a 200-message thread keeps its newest messages in L6; db-smoke green.
+- **D1 — identity + action_ref (with Lane B).** P2 incl. the directive-tool blocker fix. AC: `confirm_account_research_directive@2` succeeds end-to-end from a turn on a dev workspace, `confirmed_by`/`confirming_action_ref` equal the ambient turn values; a plan-supplied `action_ref` is rejected; `draft_…@2` drives through the agent seam in a test.
+- **D2 — async turn execution.** P3: `AGENT_TURN` task kind, worker composition (once, at startup), the production turn route, replay short-circuit honored, trial surface retired to dev-only. AC: concurrent turns on two workspaces execute without cross-talk; a worker crash mid-turn resumes to the committed outcome; the HTTP process never touches the gateway.
+- **D3 — streaming.** P4: turn outbox + SSE endpoint + part projections. AC: a full turn replays byte-identically via `Last-Event-ID`; every emitted part id resolves to a durable row; stream loss never changes the durable outcome.
+- **D4 — the kickoff flow.** P5: gate objects, estimate tool, the new surface, launch narration. AC (the Option-B acceptance): in one conversation on a two-account fixture with approved tier checkpoints — agent drafts, presents the exact estimate, turn ends `awaiting_input` with a readable gate; the confirming turn launches; `entity_research_run.source_action_ref` equals the confirming turn's ref; `approval_refs` carries both refs; a non-confirming turn does *not* launch; the canary policy surfaces in narration.
+- **D5 — frontend rebuild.** P6 + contract deltas. AC: fixtures→HTTP flip streams a real turn end-to-end; the approval card renders requested/responded/denied from the gate object; the research task aggregates N accounts into one visible task per the Figma spec; no phase-enum manufacturing remains.
+
+Ordering: D0 ∥ D1 (different files) → D2 → D3 ∥ D4 → D5 (D5's schema amendments can start at D0). Cross-lane: D1(a) is Lane B's; D4's status read-back needs Lane C's L2/L3; nothing here touches Lane E/F/G files. Chokepoints per FI-3 discipline: api composition root, alembic single-head.
+
+---
+
+## 5. Testing strategy
+
+The canonical fixture is **one project, one thread, one confirmed directive, two accounts with human tier checkpoints**. Assertions are receipt-based (turn journals, gate rows, `approval_refs`, A9/idempotency ledgers), never log- or stream-based; the stream is verified separately by replay-determinism. Adversarial cases from the studies: plan-supplied `action_ref`/`confirmed_by` (must refuse), model self-selecting a capture record (the PC-C8 scoping), duplicate turn submission under one `Idempotency-Key`, gate answered by a different actor than the gate's addressee, launch with a stale estimate (`expected_estimated_cost_cents` mismatch must refuse).
+
+---
+
+## 6. Open decisions (founder — none ratified)
+
+- **D1 — turn execution architecture:** async worker-executed turns (recommended, §3-P3) vs gateway-in-HTTP blocking turns. This is the lane's load-bearing structural call.
+- **D2 — streaming granularity:** part-level events only, vs + token-streamed finalize text (`on_llm_new_token`). Recommend part-level first, token streaming as a D3 extension — it is additive on the same outbox, not a redesign.
+- **D3 — the gate object:** new durable `agent_gate` table (recommended) vs flavoring `open_gate_refs` in place. The table is a migration on the agent plane; the alternative leaves approval state unreadable.
+- **D4 — user identity:** Lane B's actor seam needs a decision on what `actor_id` *is* for MVP (a real auth principal vs a per-workspace trusted header identity). Option B's receipts are only as meaningful as this identity — flagging that this is a Band-1 platform decision Lane D consumes but must not make.
+- **D5 — estimate tool:** new `estimate_account_research@1` (recommended) vs un-reserving `estimate_project`.
+- **D6 — trial surface disposition** after D2: retire vs keep as the dev harness (recommend keep, dev-only, unchanged).
+
+---
+
+*Ratification log: (pending founder review of §6 and the pillar shape.)*
