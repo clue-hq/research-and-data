@@ -46,6 +46,7 @@ from clue_research.identity.normalize import (
     normalize_name,
     registrable_domain,
 )
+from clue_research.membership import repoint_project_accounts
 
 # A safety cap on the merged_into walk, independent of the cycle guard — a defensive bound so a
 # pathologically long (but acyclic) chain can never hang a read either.
@@ -345,7 +346,11 @@ async def mark_merged(
     (the ``merged ⟺ merged_into`` CHECK is satisfied atomically). Idempotent on the pair.
 
     Refuses a cross-workspace pair (accounts are workspace-local; founder ruling 2026-07-22) with a
-    clear :class:`CrossWorkspaceMergeError` *before* the composite merge FK would fire."""
+    clear :class:`CrossWorkspaceMergeError` *before* the composite merge FK would fire.
+
+    For an account, the loser's FI-2 ``project_account`` memberships re-point to the survivor in
+    this same transaction (spec §2), so membership is never orphaned on a merged-away account and
+    no caller has to remember the second step."""
     if loser_id == survivor_id:
         raise MergeCycleError("an entity cannot be merged into itself")
     table = _table(entity_type)
@@ -381,6 +386,14 @@ async def mark_merged(
         ),
         {"survivor": survivor_id},
     )
+    # FI-2 §2: project membership follows the survivor. Accounts only — a contact has no
+    # ``project_account`` row. ``workspace_id`` is the pair's (already agreed) workspace; it is
+    # None only when neither row exists, in which case the UPDATEs above were no-ops too.
+    workspace_id = scopes.get(loser_id)
+    if entity_type is EntityType.ACCOUNT and workspace_id is not None:
+        await repoint_project_accounts(
+            conn, workspace_id=workspace_id, loser_id=loser_id, survivor_id=survivor_id
+        )
 
 
 # --- reads ------------------------------------------------------------------
