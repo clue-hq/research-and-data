@@ -168,12 +168,11 @@ tables; the transient `brand_kits_new` does not exist at rest.)
   Slug namespaces stay tenant-local (no cross-tenant squatting; "slug taken" leaks nothing).
   Global URL uniqueness is a **serving-layer concern** (Part IV candidates: tenant subdomain,
   `/w/{workspace}/{slug}` paths, or a globally-allocated public alias).
-  - **O6b — OPEN (ratify at the D2 discussion):** with duplicate workspace-local slugs, the
-    current `/p/{slug}` route is ambiguous the moment D2 lands. Interim options: (a)
-    temporarily include the workspace in public URLs (`/w/{workspace_id}/p/{slug}`), (b)
-    temporarily disable standalone public serving, (c) a separate globally-unique public-route
-    mapping until Part IV. *Recommendation: (a)* — dev-only traffic, no new table, dissolves
-    cleanly into Part IV's real routing.
+  - **O6b — RATIFIED (founder, 2026-08-07): option (a).** D2 replaces the ambiguous
+    `/p/{slug}` route with the temporary workspace-scoped `/w/{workspace_id}/p/{slug}` —
+    dev-only traffic, no new table, deliberately disposable. **Part IV owns the real public
+    routing and DELETES this interim route when it ships** — recorded as Part-IV item 5 (and
+    in its gate) in `docs/specs/design-integration-master-plan.md` so it cannot be forgotten.
 
 ## 7. D1 / D2 acceptance criteria
 

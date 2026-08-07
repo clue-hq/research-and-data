@@ -24,9 +24,10 @@ refinements' context).
   committed); binding requirements regardless: restart-survivable runs + **multiple concurrent
   design-deepagent sessions** per user. D5 discussion re-opens the host question.
 - **O6** ✅ slugs workspace-local: `design_web_publish` PK `(workspace_id, slug)`; global URL
-  uniqueness = serving layer (Part IV). **O6b OPEN (ratify at D2):** interim rule for the
-  now-ambiguous `/p/{slug}` route — (a) workspace in public URLs / (b) disable standalone
-  public serving / (c) global public-route mapping. Recommendation on record: (a).
+  uniqueness = serving layer (Part IV). **O6b ✅ RATIFIED (founder, 2026-08-07): option (a)**
+  — D2 serves via the temporary `/w/{workspace_id}/p/{slug}` route (dev-only, no new table,
+  disposable). Part IV owns real public routing and DELETES the interim route — recorded as
+  Part-IV item 5 + gate in `docs/specs/design-integration-master-plan.md`.
 - **Append-only principle preserved (founder, same session):** the design history tables stay
   append-only with NO history-destroying compaction — undo writes forward envelopes, never
   truncates. D8 may address only DSAR/erasure reach + operational storage (partitioning/
