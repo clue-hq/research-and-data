@@ -1,8 +1,9 @@
 # PD — Part II: Design-Substrate Adoption (implementation contract)
 
-**Status:** D0 EXECUTED 2026-08-07; slice map and D0 rulings ADOPTED. Open decisions O1–O5 are
-DRAFTED with recommendations and ratified at the D1 discussion, before any D1 migration is
-written.
+**Status:** D0 EXECUTED 2026-08-07; slice map and D0 rulings ADOPTED. **Open decisions O1–O6
+RATIFIED by the founder 2026-08-07** (with refinements — see §6); D1 is unblocked. One
+sub-decision remains open: **O6b** (the D2 interim public-serving rule), to be ratified at the
+D2 discussion.
 **Parent:** `docs/specs/design-integration-master-plan.md` §Part II (the authoritative plan).
 This document is Part II's frozen implementation contract: slices, gates, the SQLite→Postgres
 table map, mapping rules, and the decisions register. Where this doc and the master plan
@@ -23,7 +24,7 @@ platform substrate seams (spine / alembic / storage / run_event / fleet / toolbe
 | **D2** | Persistence code port (DAL swap; SQLite deleted) | II.1 | D1 | design API suite green on Postgres; `MAX(seq)+1` races fixed; SQLite files + `migrations/*.sql` + `run_migrations` deleted; design apps re-enter uv workspace |
 | **D3** | Concept joins: brand kits ↔ brand spine; design accounts ↔ `account_entity` | II.2 | D2 | joins live at the composition root; born-nullable FKs tightened per O1/O2 rulings |
 | **D4** | Assets onto `clue_storage` (content-addressed fs/S3) | II.2 | D2 | asset bytes in platform storage via `record_artifact` (row-before-blob); API-local `asset-store/` retired |
-| **D5** | Execution onto the fleet | II.3 | D2 | design runs survive worker kill + restart (kill-and-resume test); daemon threads gone; LangGraph state in `AsyncPostgresSaver` |
+| **D5** | Durable execution (fleet per the master plan; host re-examined per the O5 founder FYI — concurrent multi-session design runs are binding either way) | II.3 | D2 | design runs survive worker kill + restart (kill-and-resume test); daemon threads gone; LangGraph state in `AsyncPostgresSaver` |
 | **D6** | Design writes through the toolbelt | II.4 | D5 | every design mutation behind a registered, precondition-checked, idempotency-keyed tool |
 | **D7** | Design events onto `run_event` | II.5 | D5 | `design.*` topics on the durable stream; single-use stream tokens; SQLite-polling SSE deleted |
 | **D8** | Part II closeout | gate | all | master-plan Part-II gate verified end to end; DSAR reach over design rows assessed; docs + `_memory` |
@@ -112,7 +113,7 @@ chained off `c6d84aa84b79`, one head throughout.
 | 16 | `agent_runs` | `design_agent_run` | **Temporary shape** (reshaped in D5 onto the fleet job pattern: `lease_generation`, `checkpoint_thread_id`, subject columns — the `entity_research_job` precedent). D1/D2 port: PK `run_id text` (`run_…`); `status` enum (`running`\|`succeeded`\|`failed`); `document_id` composite FK SET NULL (real FK now); `result_json jsonb`; timestamps. |
 | 17 | `run_events` | `design_run_event` | **Explicitly temporary — dies in D7** (replaced by `design.*` topics on the platform `run_event` stream; subject widening follows the C5.1 precedent: nullable design-subject FK column + partial index, NOT a repurposed `run_id`). D1/D2 port: PK `id bigint identity`; composite FK → `design_agent_run` CASCADE; `seq int` UNIQUE `(run_id, seq)` via parent-row lock; `event_type text` (free vocabulary preserved), `data_json jsonb`, `created_at`. |
 | 18 | `ingestion_jobs` | `design_ingestion_job` | PK `job_id text` (`ingest_…`); `kind` enum (`website`\|`pdf`\|`asset_upload`), `status` enum (`queued`\|`running`\|`succeeded`\|`failed`), `stage`, `progress real` (0–1 CHECK), `request_json jsonb` (staged-file `tmp_path`s move to platform storage keys in D4), `evidence_json jsonb`, result pointer `(brand_kit_id, brand_kit_version)` composite FK SET NULL (real now), `error_json jsonb`, timestamps. Index `(workspace_id, status, created_at)`. Execution → fleet in D5 (fixes the no-orphan-sweep restart hole). |
-| 19 | `web_publishes` | `design_web_publish` | PK `slug text` — **decision refined at D1:** slug is a *public URL segment*; global-unique vs per-workspace-unique changes serving semantics. Draft: PK `(workspace_id, slug)` + a serving-layer global-slug policy deferred to Part IV. `document_id` composite FK; `doc_version int`, `html`/`previous_html text` (one-step rollback buffer), `previous_doc_version`, `runtime_version`, `status` enum (`active`\|`unpublished`), `publish_id`/`previous_publish_id` FKs → `design_web_publish_revision` (real now), timestamps NOT NULL. Index `(workspace_id, document_id, updated_at DESC)` (fixes the unindexed lookup). |
+| 19 | `web_publishes` | `design_web_publish` | **PK `(workspace_id, slug)` — O6 RATIFIED** (slugs workspace-local; global URL uniqueness is a serving-layer concern; interim `/p/{slug}` ambiguity rule = O6b, ratify at D2). `document_id` composite FK; `doc_version int`, `html`/`previous_html text` (one-step rollback buffer), `previous_doc_version`, `runtime_version`, `status` enum (`active`\|`unpublished`), `publish_id`/`previous_publish_id` FKs → `design_web_publish_revision` (real now), timestamps NOT NULL. Index `(workspace_id, document_id, updated_at DESC)` (fixes the unindexed lookup). |
 | 20 | `web_publish_revisions` | `design_web_publish_revision` | PK `publish_id text` (`webpub_<package_digest>` — content-hash, shape CHECK); `slug`, composite doc FK; `doc_version`, `html text`, `html_digest`, `manifest_json jsonb`, `manifest_digest`, `package_digest`, `runtime_version`, `created_at`. Immutable: no-UPDATE **and** no-DELETE triggers. Indexes `(workspace_id, slug, created_at DESC)`, `(workspace_id, document_id, created_at DESC)`. |
 | 21 | `web_accounts` | `design_account` | PK `account_id text` (`acc_…`); `name`, `domain`, `logo_asset_id` composite FK → `design_asset` SET NULL (real now); `data_json jsonb` (flat string map → `account.<key>` substitution vars), `notes text` (agent-context only — **never** a substitution value; documented in `COMMENT`), timestamps. **O1:** born-nullable composite FK `(account_entity_id, workspace_id) → account_entity(id, workspace_id)`; joined + tightened in D3. Anchor. |
 | 22 | `web_batches` | `design_web_batch` | PK `batch_id text` (`wbatch_…`); composite FK template doc; `template_doc_version` pin, `status` enum, `account_ids_json jsonb`, `publish bool`, `slug_base`, `cursor int` (D5 supersedes), `manifest_json jsonb`, timestamps. |
@@ -124,31 +125,52 @@ chained off `c6d84aa84b79`, one head throughout.
 (26 rows because `asset_metadata` is dropped and rows 23–26 unpack the 4 custom-component
 tables; the transient `brand_kits_new` does not exist at rest.)
 
-## 6. Open decisions (drafted; ratify at the D1 discussion)
+## 6. Decisions register — O1–O6 RATIFIED (founder, 2026-08-07)
 
-- **O1 — `design_account.account_entity_id`: born-nullable.** *Recommended.* The end-state
-  (design accounts = projections over workspace-scoped `account_entity`) requires the identity
-  join to happen at the api composition root (`clue_design` may not import `clue_research` —
-  independence). D1 ships the column as a nullable composite FK (integrity enforced when
-  present); D3 wires resolve-or-create at the root and decides NOT NULL promotion. Alternative:
-  NOT NULL from birth (drags composition-root CRUD into D1).
-- **O2 — `design_brand_kit.brand_id`: born-nullable; promotion question for D3.** *Recommended.*
-  Same mechanics as O1 against the brand spine. D3 additionally decides (founder input) whether
-  `design_brand_kit` becomes **the** platform versioned brand-kit payload — the backlog notes no
-  such payload exists and Part III's delegation bundle requires a version-pinned kit; this table
-  is the natural candidate.
-- **O3 — drop `asset_metadata`.** *Recommended.* Not ported; endpoint 410s in D2. Conservative
-  alternative: fold rows into `design_asset.record_json` provenance.
-- **O4 — interim tenancy source = `X-Workspace-Id` header seam.** *Recommended.* The design API
-  has no auth today; D2 adopts the platform's header-resolver (401 when absent — the
-  `projections_app` seam) so every row is scoped from the first Postgres write. The editor dev
-  harness sends a configured dev workspace id. Real authn is Part IV.
-- **O5 — sync→async bridge until D5.** *Acknowledged scaffolding.* Daemon-thread agent workers
-  bridge to the async DAL (`asyncio.run` per operation on dedicated connections) between D2 and
-  D5, then die with the threads. Kept minimal and marked disposable.
-- **O6 — `design_web_publish` slug scope** (surfaced by the D0 mapping): per-workspace PK
-  `(workspace_id, slug)` recommended; global slug uniqueness becomes a serving-layer concern
-  (Part IV). Flagged because it changes public-URL semantics.
+- **O1 — RATIFIED as recommended.** `design_account.workspace_id NOT NULL`;
+  `account_entity_id NULLABLE`; when present the DB enforces the composite FK
+  `(account_entity_id, workspace_id) → account_entity(id, workspace_id)`. D3 wires
+  resolve-or-create at the api composition root and decides NOT NULL promotion.
+- **O2 — RATIFIED as recommended, and the D3 promotion question is decided NOW:
+  `design_brand_kit` becomes THE platform versioned brand-kit payload.** Born-nullable
+  composite `(brand_id, workspace_id) → brand` FK in D1; D3 completes the join. Product
+  context recorded for D3/Part IV: each client workspace gets a complete knowledge base plus a
+  **brand studio** surface per brand — a brand-design-kit section carrying the brand design
+  system tokens *and* the brand's asset store. `design_brand_kit` (+ `design_asset`) is the
+  durable payload behind that surface, and the version-pinned kit Part III's delegation bundle
+  references. (Founder's Figma screenshots of the brand-studio design exist but were not
+  captured into the repo yet — attach at D3.)
+- **O3 — RATIFIED with clarified wording: drop ONLY the legacy `asset_metadata` table.**
+  `asset_descriptions` is expressly **preserved and ported** as `design_asset_description` with
+  its full behavior: AI generation, human-wins conditional upsert, model attribution, caching,
+  and description stamping into versioned brand kits (§5 row 10; the D2 DAL port carries the
+  behavior, not just the rows).
+- **O4 — RATIFIED as recommended.** Interim tenancy source = the platform's `X-Workspace-Id`
+  header-resolver seam (401 when absent) from the first Postgres write; editor dev harness
+  sends a configured dev workspace id; real authn is Part IV.
+- **O5 — RATIFIED as recommended, with the atomicity rule made binding:** the D2 bridge is
+  `asyncio.run(dal_coroutine(...))` per operation, each bridge call obtaining a connection
+  bound to *its own* loop (never a pool/connection from another loop). **Any operation that
+  needs atomicity — e.g. lock-parent-and-allocate-next-sequence — must be ONE DAL coroutine in
+  ONE transaction, never composed from several `asyncio.run` calls.** Known costs accepted
+  (loop/connection churn, awkward cancellation, restart still kills in-flight work); both the
+  daemon threads and the bridge are deleted at D5.
+  **Founder FYI recorded for D5 planning:** the fleet may NOT end up hosting the design
+  deepagent (current leaning, not committed). The binding requirements regardless of host:
+  design runs survive restarts, and **multiple concurrent design-deepagent sessions per user**
+  (start a second design session while the first still works) must be possible. D5's
+  discussion re-opens the host question against those requirements before implementation.
+- **O6 — RATIFIED: publish slugs are workspace-local.** `design_web_publish` PK =
+  `(workspace_id, slug)`; e.g. `(ws_alpha, "acme-q3")` and `(ws_beta, "acme-q3")` coexist.
+  Slug namespaces stay tenant-local (no cross-tenant squatting; "slug taken" leaks nothing).
+  Global URL uniqueness is a **serving-layer concern** (Part IV candidates: tenant subdomain,
+  `/w/{workspace}/{slug}` paths, or a globally-allocated public alias).
+  - **O6b — OPEN (ratify at the D2 discussion):** with duplicate workspace-local slugs, the
+    current `/p/{slug}` route is ambiguous the moment D2 lands. Interim options: (a)
+    temporarily include the workspace in public URLs (`/w/{workspace_id}/p/{slug}`), (b)
+    temporarily disable standalone public serving, (c) a separate globally-unique public-route
+    mapping until Part IV. *Recommendation: (a)* — dev-only traffic, no new table, dissolves
+    cleanly into Part IV's real routing.
 
 ## 7. D1 / D2 acceptance criteria
 
@@ -166,9 +188,14 @@ throwaway Postgres DB; `make check` green.
 
 ## 8. Deferred / explicitly out of Part-II-D1/D2 scope
 
-- Compaction/retention for the append-only design tables (operation log, envelopes,
-  diagnostics, snapshots, publish revisions) — unbounded today by design; revisit at D8 with
-  DSAR.
+- **The append-only, full-history discipline is a PRESERVED PRINCIPLE, not a porting
+  accident** (founder ruling 2026-08-07): the operation log, edit envelopes, diagnostics,
+  snapshots, and publish revisions stay append-only with no history truncation — undo/redo
+  writes new *forward* envelopes (`reverts_batch_id`/`reapplies_batch_id`), never rewrites or
+  deletes history, exactly as today. What D8 may revisit is narrowly scoped: DSAR/erasure reach
+  over design rows (the platform's tombstone discipline, which is itself append-only) and
+  operational storage concerns (partitioning, archival tiers) — **never** silent compaction
+  that destroys design history.
 - The `run_event` subject widening (D7) and fleet job reshape (D5) — schemas noted temporary in
   §5 rows 16–17.
 - Full Part-I Step 2 (lib dedup, deepagents pin, strict-gate burn-down, path-filtered CI).
