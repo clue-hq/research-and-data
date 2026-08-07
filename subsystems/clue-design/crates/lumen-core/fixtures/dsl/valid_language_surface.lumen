@@ -1,0 +1,10 @@
+// language surface
+page(page_a4)
+  layout al(h,g(16),pad(12),x(c)) p(12,12) s(fill:1,hug) wrap(true)
+    card frame p(0,0) s(240,hug) fill(linear(90,stop(#ffffff,0),stop(#e5e7eb,1)))
+      icon v("M0 0L16 16L0 16Z") p(0,0) s(16,16) fill(#111827)
+      avatar image asset(contact_avatar) p(0,24) s(48,48) slot(contact.avatar)
+      divider line to(160,0) p(0,88) stroke(#111827,1)
+      contact_name t("Dr. Priya Sharma","Inter",18,700,left) p(0,104) s(220,hug) slot(contact.full_name)
+      badge c p(0,140) s(72,24) f[(fill_badge,$primary.bold)] rot(2) sk(0,0) flip(none)
+  instance_copy inst(card) p(280,12) s(240,hug)

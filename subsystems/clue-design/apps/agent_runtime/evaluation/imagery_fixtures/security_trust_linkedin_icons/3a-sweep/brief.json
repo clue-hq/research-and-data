@@ -1,0 +1,11 @@
+{
+  "id": "security_trust_linkedin_icons",
+  "artifact": "linkedin_wide_1200x627",
+  "prompt": "Design a 1200x627 LinkedIn trust post: Security you can audit. SOC 2 Type II, SSO, RBAC, and field-level encryption by default. Convey rigor and trust; surface the four guarantees clearly.",
+  "expected_decision": "icon",
+  "role": "icon_row_compliance_plate",
+  "risks": [
+    "hoodie-hacker / padlock-on-binary cliche if a photo is chosen",
+    "icon row cramped in the 627px height"
+  ]
+}

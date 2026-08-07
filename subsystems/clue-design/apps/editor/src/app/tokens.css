@@ -1,0 +1,175 @@
+/* Clue editor tokens — the single source of visual truth for the editor shell.
+ *
+ * THE ONLY FILE IN THE EDITOR SHELL ALLOWED TO CONTAIN LITERAL COLORS.
+ * Components consume var(--…) exclusively; a rebrand is an edit to this file.
+ * Seeded verbatim from design/DESIGN.md (Cursor extraction) and kept in lockstep
+ * with the shipped brand layer (apps/editor/src/app/brand/tokens.css).
+ *
+ * Scope note: the brand layer scopes these under `.brand-app`; here they sit at
+ * `:root` because this is the editor SHELL restyle — the whole app skin (topbar,
+ * panels, canvas chrome) reads them. R0 remaps the legacy chrome/panel/teal
+ * var VALUES onto these semantics (see styles.css) without touching
+ * component markup; R1 migrates markup to consume the semantics directly.
+ *
+ * System summary (DESIGN.md §1): one ink (#26251E) diluted over paper (#F7F7F4) —
+ * the opacity ladder IS the neutral system. No shadows; hairlines + tone carry
+ * depth. Ink-pill CTAs; accent (#F54E00) is a signal, never a fill. Agent
+ * pastels only on agent motifs.
+ */
+
+@font-face {
+  font-family: "InterVariable";
+  src: url("/fonts/InterVariable.ttf") format("truetype-variations");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  /* -- substance: paper + ink (DESIGN.md §3.1) ---------------------------- */
+  --bg-app: #f7f7f4;            /* paper */
+  --bg-canvas: #f5f5f5;         /* workspace surface behind artboards */
+  --bg-card: #f2f1ed;           /* paper.elevated / card */
+  --bg-card-01: #f0efeb;
+  --bg-chip: #ebeae5;           /* card.02 */
+  --bg-inset: #ebeae5;          /* paper.hover */
+  --bg-card-03: #e6e5e0;
+  --bg-card-04: #e1e0db;
+  --bg-card-warm: #f3ede6;
+  --bg-white: #ffffff;          /* product-mock chrome + focus offset ONLY */
+
+  /* -- the ink opacity ladder (DESIGN.md §3.2) — pick a rung, never a gray - */
+  --ink: #26251e;
+  --ink-soft: #3b3a33;
+  --ink-02: rgba(38, 37, 30, 0.025);
+  --ink-05: rgba(38, 37, 30, 0.05);
+  --ink-10: rgba(38, 37, 30, 0.1);
+  --ink-20: rgba(38, 37, 30, 0.2);
+  --ink-40: rgba(38, 37, 30, 0.4);
+  --ink-50: rgba(38, 37, 30, 0.5);
+  --ink-60: rgba(38, 37, 30, 0.6);
+  --ink-92: rgba(38, 37, 30, 0.92);
+
+  /* -- semantic text ------------------------------------------------------ */
+  --text-primary: var(--ink);
+  --text-body: var(--ink-92);
+  --text-muted: var(--ink-60);   /* AA caveat: not below 14px */
+  --text-mid: var(--ink-50);
+  --text-disabled: var(--ink-40);
+  --text-on-ink: #f7f7f4;
+
+  /* -- borders: hairlines, never 2px (DESIGN.md §6) ------------------------ */
+  --border-soft: var(--ink-05);
+  --border-default: var(--ink-10);  /* the hairline */
+  --border-strong: var(--ink-20);
+
+  /* -- accent + status (DESIGN.md §3.3) — accent == signal, never fill ----- */
+  --accent: #f54e00;
+  --accent-pressed: #d04200;     /* the only accent fill allowed (AA w/ white) */
+  --accent-wash: rgba(245, 78, 0, 0.1);
+  --accent-wash-strong: rgba(245, 78, 0, 0.25);
+  --status-success: #1f8a65;
+  --status-success-wash: rgba(31, 138, 101, 0.15);
+  --status-error: #cf2d56;
+  --status-error-wash: rgba(207, 45, 86, 0.15);
+
+  /* -- agent-work pastels (DESIGN.md §3.4) — agent motifs ONLY -------------- */
+  --agent-read: #9fbbe0;
+  --agent-research: #9fc9a2;
+  --agent-generate: #c0a8dd;
+  --agent-thinking: #dfa88f;
+  --agent-done: #d9c58b;
+
+  /* -- buttons (DESIGN.md §4) ---------------------------------------------- */
+  --btn-primary-bg: var(--ink);
+  --btn-primary-bg-hover: var(--ink-soft);
+  --btn-primary-text: var(--text-on-ink);
+  --btn-ghost-border: var(--ink-60);
+
+  /* -- radius (DESIGN.md §6) ------------------------------------------------ */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 9999px;
+
+  /* -- spacing, 4pt (DESIGN.md §6) ------------------------------------------ */
+  --space-xxs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+  --space-section: 96px;
+
+  /* -- typography (DESIGN.md §5; Inter/JetBrains sub in for licensed faces) - */
+  --font-sans: "InterVariable", Inter, system-ui, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --text-display: 52px;   /* sentence case + terminal period */
+  --text-headline: 36px;
+  --text-title: 26px;
+  --text-subtitle: 22px;
+  --text-body-lg: 16px;
+  --text-body-size: 14px;
+  --text-body-sm: 12px;
+  --text-caption: 11px;
+  --text-mono-size: 13px;
+
+  /* -- motion (DESIGN.md §7, verbatim) --------------------------------------- */
+  --duration: 140ms;
+  --duration-slow: 250ms;
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.25, 1, 0.5, 1);
+
+  /* -- focus (the one shadow-class exception) -------------------------------- */
+  --focus-ring: 0 0 0 2px var(--bg-white), 0 0 0 4px var(--accent);
+
+  /* -- print guides (W3): trim = red cut line, bleed = blue outer boundary,
+        safe = teal inner margin. The one canvas-chrome color set that must NOT
+        be an ink rung — print guides are conventional signal colors. --------- */
+  --guide-trim: #e5484d;
+  --guide-bleed: #4c8dff;
+  --guide-safe: #256c70;
+
+}
+
+/* -- shadcn/ui theming bridge (FRONTEND-BRAND-GUIDE §9) ----------------------
+ * Maps shadcn's semantic vars onto Clue tokens so shadcn/ui + (later) AI
+ * Elements inherit the Cursor skin instead of the default Vercel look. Defined
+ * ONCE, here, next to the token layer.
+ *
+ * Scoped under `.brand-app` ON PURPOSE, NOT at :root — this avoids the §9
+ * "trap": shadcn's `--accent` is a HOVER SURFACE, but Clue's `--accent` (above,
+ * at :root) is the orange SIGNAL used by --accent-wash / --focus-ring. Putting
+ * shadcn's `--accent: var(--bg-chip)` at :root would clobber the orange signal
+ * for the entire editor shell. Scoping the bridge to the shadcn/AI-Elements
+ * surfaces (which mount inside `.brand-app`, per §2) keeps both meanings intact.
+ *
+ * `--primary` maps to the INK pill (DESIGN.md §4 / §9), never the orange accent:
+ * accent fails AA as a button fill (DESIGN.md §11). This is deliberate and
+ * overrides the accent-as-primary shorthand in the R0 brief — DESIGN.md wins
+ * where it and any other doc disagree (per FRONTEND-BRAND-GUIDE preamble). */
+.brand-app {
+  --background: var(--bg-app);
+  --foreground: var(--text-primary);
+  --card: var(--bg-card);
+  --card-foreground: var(--text-primary);
+  --popover: var(--bg-app);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--ink);             /* ink pill — accent is NEVER a fill */
+  --primary-foreground: var(--text-on-ink);
+  --secondary: var(--bg-chip);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-inset);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--bg-chip);          /* hover surface, NOT orange */
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--status-error);
+  --destructive-foreground: var(--text-on-ink);
+  --border: var(--border-default);
+  --input: var(--border-default);
+  --ring: var(--accent-pressed);     /* focus = our orange family */
+  --radius: var(--radius-md);
+}

@@ -1,0 +1,254 @@
+{
+  "run_id": "run_0103c9a412c54050a3fd37eb2c0cebe1",
+  "status": "accepted",
+  "stop_reason": "visual_review_accepted",
+  "summary": "Portrait 1080x1350 testimonial quote card (social + sales decks) composed as a bold branded typographic layout \u2014 no image (intentional; a photo would be gratuitous on a pure-typographic quote card). Dark $surface.brand (#111827) artboard, $text.inverse white text, a large decorative 96pt opening quote-mark (opacity 0.64), the hero quote 'Lumen replaced three vendors and a week of design ops.' at 64pt/800 across three lines, a teal $accent.primary (#0F766E) 96x6 accent rule, and the attribution 'Priya N.' (24pt) / 'VP Brand, Northwind' (14pt, opacity 0.64). Poster idiom: top-anchored artboard with a fill-height y(center) main region centering the single focal block. Slots: quote.text, author.name, author.role. One preflight repair (accent.default -> accent.primary, node accent_rule). Preflight clean (only environmental LUMB0613/0614 font warnings). Visual review accepted (confidence 0.86): quote dominates the squint test, single left spine at x=96, strong contrast, no clipping, quote and attribution both prominent.",
+  "final_scene_summary": {
+    "document_id": "run_0103c9a412c54050a3fd37eb2c0cebe1",
+    "title": "Agent-authored design",
+    "status": {
+      "kind": "draft"
+    },
+    "brand_kit": {
+      "id": "brand_kit_platform_default",
+      "version": 1
+    },
+    "effective_brand": {
+      "source": "platform_default",
+      "brand_kit_id": "brand_kit_platform_default",
+      "brand_kit_version": "1",
+      "brand_kit_name": "Lumen Platform Default",
+      "mode": {
+        "accessibility": "standard",
+        "density": "comfortable",
+        "medium": "digital",
+        "theme": "light"
+      }
+    },
+    "page_count": 1,
+    "node_count": 7,
+    "slot_count": 3,
+    "asset_count": 0,
+    "pages": [
+      {
+        "id": "quote_card",
+        "name": "quote_card",
+        "size": {
+          "height": 1350.0,
+          "orientation": "portrait",
+          "output": {
+            "raster": {
+              "height_px": 1350,
+              "width_px": 1080
+            }
+          },
+          "preset": "custom",
+          "source": {
+            "height": 1350.0,
+            "unit": "px",
+            "width": 1080.0
+          },
+          "unit": "pt",
+          "width": 1080.0
+        },
+        "width": 1080.0,
+        "height": 1350.0,
+        "aspect_ratio": 0.8,
+        "children": [
+          "artboard"
+        ],
+        "child_count": 1
+      }
+    ],
+    "slots": [
+      {
+        "id": "slot_author_name_f9a0feeadcb7d80b",
+        "key": "author.name",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "author_name",
+            "name": null,
+            "kind": "text",
+            "text": "Priya N.",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 888.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 30.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 857.0
+              },
+              "render_bounds": {
+                "height": 30.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 857.0
+              }
+            },
+            "slots": [
+              "author.name"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_author_role_010479915523a918",
+        "key": "author.role",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "author_role",
+            "name": null,
+            "kind": "text",
+            "text": "VP Brand, Northwind",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 888.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 20.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 903.0
+              },
+              "render_bounds": {
+                "height": 20.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 903.0
+              }
+            },
+            "slots": [
+              "author.role"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_quote_text_1d2493413643852c",
+        "key": "quote.text",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "quote",
+            "name": null,
+            "kind": "text",
+            "text": "Lumen replaced three vendors and a week of design ops.",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 888.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 280.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 539.0
+              },
+              "render_bounds": {
+                "height": 280.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 539.0
+              }
+            },
+            "slots": [
+              "quote.text"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      }
+    ]
+  },
+  "effective_brand": {
+    "source": "platform_default",
+    "brand_kit_id": "brand_kit_platform_default",
+    "brand_kit_version": "1",
+    "brand_kit_name": "Lumen Platform Default",
+    "mode": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "medium": "digital",
+      "theme": "light"
+    }
+  },
+  "preview_paths": [
+    ".lumen-runs-C/run_0103c9a412c54050a3fd37eb2c0cebe1/iterations/002/preview.svg",
+    ".lumen-runs-C/run_0103c9a412c54050a3fd37eb2c0cebe1/iterations/002/preview.png"
+  ],
+  "critique": {
+    "accepted": true,
+    "confidence": 0.86,
+    "summary": "Quote dominates, single left spine, strong contrast, no clipping, attribution prominent, no-image decision correct."
+  },
+  "gaps": [],
+  "scene_update_sources": [
+    "compile_dsl_block",
+    "preflight_design",
+    "compile_dsl_block",
+    "preflight_design"
+  ],
+  "seeded_from_initial_scene": false,
+  "ops_valid_through_iteration": null,
+  "baseline_advisory": null,
+  "accommodation": null
+}

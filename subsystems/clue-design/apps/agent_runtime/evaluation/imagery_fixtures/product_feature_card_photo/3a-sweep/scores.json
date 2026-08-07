@@ -1,0 +1,106 @@
+{
+  "per_axis": {
+    "relevance": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "placeholder_real": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    },
+    "aspect_fit": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "placement": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": true
+    },
+    "legibility": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": 3,
+      "weight": 1.2,
+      "hard_gate": true
+    },
+    "resolution_dpi": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "no_in_image_text": {
+      "final": 1,
+      "judge": 1,
+      "det_cap": null,
+      "weight": 0.8,
+      "hard_gate": false
+    },
+    "theme_coherence": {
+      "final": 3,
+      "judge": 3,
+      "det_cap": null,
+      "weight": 1.0,
+      "hard_gate": false
+    }
+  },
+  "gate_failed": false,
+  "weighted_mean": 2.795,
+  "accept": false,
+  "tier": "redo",
+  "judge_ran": true,
+  "judge_reasoning": "Full-bleed product-in-context photo with a strong dark gradient scrim gives excellent headline legibility and clear entry point. The main deduction is the monitor screen showing baked-in UI text ('Typography', Aa specimens, garbled letterforms) rendered inside the image, which fails the no-in-image-text axis.",
+  "image_count": 1,
+  "real_image_count": 1,
+  "brief_id": "product_feature_card_photo",
+  "expected_decision": "photo",
+  "det": {
+    "dimensions": {
+      "placeholder_real": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "decision": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "aspect_fit": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "legibility": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      },
+      "hero_count": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      }
+    },
+    "gate_failed": false,
+    "accept": true,
+    "image_count": 1,
+    "real_image_count": 1
+  },
+  "run_id": "run_4d5dd73fc0344827b5b5da3aee230759",
+  "run_status": "accepted",
+  "png_path": ".lumen-runs-B/run_4d5dd73fc0344827b5b5da3aee230759/iterations/002/preview.png"
+}

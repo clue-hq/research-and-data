@@ -1,0 +1,11 @@
+{
+  "id": "gtm_conf_social_none",
+  "artifact": "social_square_1x1",
+  "prompt": "Design a 1080x1080 social announcement square: AI-native GTM, live in SF. RevMotion '26, September 12-13. It must stop the feed at thumbnail size and read instantly; include the event name, date, city, and a Save your seat call to action.",
+  "expected_decision": "none",
+  "role": "type_led",
+  "risks": [
+    "gratuitous photo shrinks date/CTA at thumbnail",
+    "image competes with headline (two focal points)"
+  ]
+}

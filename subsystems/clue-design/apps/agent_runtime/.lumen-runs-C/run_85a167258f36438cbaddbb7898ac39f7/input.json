@@ -1,0 +1,20 @@
+{
+  "run_id": "run_85a167258f36438cbaddbb7898ac39f7",
+  "prompt": "Design a 1080x1080 social announcement square: AI-native GTM, live in SF. RevMotion '26, September 12-13. It must stop the feed at thumbnail size and read instantly; include the event name, date, city, and a Save your seat call to action.",
+  "seeded_from_initial_scene": false,
+  "scene_summary": {
+    "document_id": "run_85a167258f36438cbaddbb7898ac39f7",
+    "title": "Agent-authored design",
+    "status": {
+      "kind": "draft"
+    },
+    "brand_kit": null,
+    "effective_brand": null,
+    "page_count": 0,
+    "node_count": 0,
+    "slot_count": 0,
+    "asset_count": 0,
+    "pages": [],
+    "slots": []
+  }
+}

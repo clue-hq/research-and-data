@@ -1,0 +1,11 @@
+{
+  "id": "founders_dinner_poster_photo",
+  "artifact": "event_poster_4x5",
+  "prompt": "Design a 1080x1350 invitation poster: Founders Dinner \u2014 an intimate evening for 30 climate-tech founders. Rooftop, downtown Austin. Thursday 7pm. By invitation only. Make it feel exclusive and warm; include date, time, venue, and an RSVP cue.",
+  "expected_decision": "photo",
+  "role": "full_bleed_hero_scrim",
+  "risks": [
+    "illegible RSVP/date over a busy dusk image",
+    "cliche rooftop-party stock undercutting 'exclusive'"
+  ]
+}

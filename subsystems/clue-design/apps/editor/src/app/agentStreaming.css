@@ -1,0 +1,134 @@
+/*
+ * Live-design-streaming S2 — the reveal-theater chrome.
+ *
+ * Parked-file strategy (design D6): every streaming style lives HERE, in a
+ * dedicated sheet imported beside styles.css from the app entry, so the parked
+ * shell CSS (styles.css / tokens.css) is never touched. All values COMPOSE the
+ * existing token layer (var(--...) from tokens.css) — no new tokens, no raw
+ * near-duplicates of a token's value.
+ *
+ * The chrome is pure DOM/SVG in the selection overlay, so it never triggers a
+ * wasm repaint: the create-flash fades via a keyframe, the design cursor glides
+ * via a transform transition.
+ */
+
+/* S2.1 draw-the-box choreography. Per element the accent outline is DRAGGED out
+ * from the top-left corner to the element's full bbox, then the content
+ * materializes inside it and the outline fades. The RevealChrome group (keyed on
+ * the reveal seq, so each reveal restarts the machine) drives the phases by
+ * toggling the `is-drawn` / `is-fading` classes and updating the cursor-position
+ * / duration CSS custom properties inline; every actual declaration lives HERE
+ * and composes the token layer. The transition DURATIONS are per-element data
+ * (a small chip draws faster than a hero) fed in as `--reveal-*-ms` vars. */
+
+/* The dragged outline. `vector-effect: non-scaling-stroke` keeps the stroke
+ * width constant while the rect is scaled from a point up to full size, so the
+ * box never renders a fat hairline mid-draw. */
+.agent-reveal-box {
+  fill: var(--accent-wash);
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Corner-drag reveal (insert_node): scale from the top-left to full bbox. */
+.agent-reveal-box.is-corner {
+  transform-box: fill-box;
+  transform-origin: top left;
+  transform: scale(0.02);
+  transition:
+    transform var(--reveal-draw-ms, 300ms) var(--ease-out),
+    opacity var(--reveal-fade-ms, 250ms) var(--ease-out);
+}
+
+.agent-reveal-box.is-corner.is-drawn {
+  transform: scale(1);
+}
+
+/* Whole-artboard placeholder (add_page): no corner-drag — the outline appears
+ * over the whole artboard, then fades. */
+.agent-reveal-box.is-artboard {
+  opacity: 0;
+  transition:
+    opacity var(--reveal-draw-ms, 300ms) var(--ease-out);
+}
+
+.agent-reveal-box.is-artboard.is-drawn {
+  opacity: 1;
+}
+
+/* Once the content has materialized, the outline fades over the fade duration.
+ * Triple-class so it outranks the `.is-drawn` opacity for the artboard case. */
+.agent-reveal-box.is-corner.is-drawn.is-fading,
+.agent-reveal-box.is-artboard.is-drawn.is-fading {
+  opacity: 0;
+  transition: opacity var(--reveal-fade-ms, 250ms) var(--ease-out);
+}
+
+/* Reduced motion: a static outline, no draw/scale, no transition. */
+.agent-reveal-box.is-static {
+  transform: none;
+  opacity: 1;
+  transition: none;
+}
+
+/* The design cursor arrow rides the moving bottom-right drag corner as the box
+ * draws (and glides in from the previous element's corner). The overlay updates
+ * `--reveal-cursor-x/y` and swaps `--reveal-cursor-ms` between the travel and
+ * draw durations; the transition animates the glide. */
+.agent-reveal-cursor {
+  transform: translate(var(--reveal-cursor-x, 0px), var(--reveal-cursor-y, 0px));
+  transition: transform var(--reveal-cursor-ms, 200ms) var(--ease-out);
+}
+
+.agent-reveal-cursor.is-static {
+  transition: none;
+}
+
+.agent-reveal-cursor-glyph {
+  fill: var(--accent);
+  stroke: var(--bg-white);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+/* The element-name label chip anchored at the box's top-left. */
+.agent-reveal-label-bg {
+  fill: var(--accent);
+  opacity: 0.94;
+}
+
+.agent-reveal-label-text {
+  fill: var(--btn-primary-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+/* D5 copy: the state-aware second line under the "Agent is designing" banner. */
+.agent-designing-substatus {
+  color: var(--text-muted);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+}
+
+/* A11y — prefers-reduced-motion. The hook ALSO collapses the pump to one fast
+ * beat and marks the reveal reduced-motion (so the chrome adds `is-static`), but
+ * this media block is the belt-and-braces guarantee: even if a reveal somehow
+ * animated, motion is killed here — the outline is static (full box, no scale)
+ * and the cursor jumps instead of gliding. Kept fully INFORMATIVE. */
+@media (prefers-reduced-motion: reduce) {
+  .agent-reveal-box.is-corner {
+    transform: scale(1);
+    transition: none;
+  }
+
+  .agent-reveal-box.is-artboard {
+    opacity: 1;
+    transition: none;
+  }
+
+  .agent-reveal-cursor {
+    transition: none;
+  }
+}

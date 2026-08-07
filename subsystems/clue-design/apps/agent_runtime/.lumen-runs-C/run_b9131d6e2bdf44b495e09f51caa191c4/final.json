@@ -1,0 +1,572 @@
+{
+  "run_id": "run_b9131d6e2bdf44b495e09f51caa191c4",
+  "status": "accepted",
+  "stop_reason": "visual_review_accepted",
+  "summary": "1080x1080 feature-drop announcement for the real-time collaboration feature, delivered as a clean typographic poster (no hero photo \u2014 imagery decision recorded as deliberately NO image). Layout: brand lockup header; top-anchored focal block (NEW FEATURE eyebrow, 80pt weight-800 hero 'Live Collaboration', 26pt messaging line 'Comment, resolve, and version together.', and a three-column icon-marker row Comment/Resolve/Version built from library icons in subtle-cyan pill chips); footer with a dark CTA button 'See What's New' and a right-aligned URL caption. All 9 personalizable text nodes are slotted (account.name/url, campaign.eyebrow/headline/cta, offer.primary_message, feature.1-3.label). Compile clean (54 ops); preflight clean (only non-failing font-embedding warnings LUMB0613/0614). Visual review iteration 1 flagged two warnings (subtitle under-weighted vs 24pt marker labels; upper dead band from vertical centering); both fixed via two surgical edits (subtitle 16->26pt; main align_y center->start with 72pt top offset). Visual review iteration 2 accepted (confidence 0.82). Final preview: .lumen-runs-C/run_b9131d6e2bdf44b495e09f51caa191c4/iterations/001/preview.svg (canonical) and preview.png (1080x1080).",
+  "final_scene_summary": {
+    "document_id": "run_b9131d6e2bdf44b495e09f51caa191c4",
+    "title": "Agent-authored design",
+    "status": {
+      "kind": "draft"
+    },
+    "brand_kit": {
+      "id": "brand_kit_platform_default",
+      "version": 1
+    },
+    "effective_brand": {
+      "source": "platform_default",
+      "brand_kit_id": "brand_kit_platform_default",
+      "brand_kit_version": "1",
+      "brand_kit_name": "Lumen Platform Default",
+      "mode": {
+        "accessibility": "standard",
+        "density": "comfortable",
+        "medium": "digital",
+        "theme": "light"
+      }
+    },
+    "page_count": 1,
+    "node_count": 26,
+    "slot_count": 9,
+    "asset_count": 0,
+    "pages": [
+      {
+        "id": "poster",
+        "name": "poster",
+        "size": {
+          "height": 1080.0,
+          "orientation": "landscape",
+          "output": {
+            "raster": {
+              "height_px": 1080,
+              "width_px": 1080
+            }
+          },
+          "preset": "custom",
+          "source": {
+            "height": 1080.0,
+            "unit": "px",
+            "width": 1080.0
+          },
+          "unit": "pt",
+          "width": 1080.0
+        },
+        "width": 1080.0,
+        "height": 1080.0,
+        "aspect_ratio": 1.0,
+        "children": [
+          "artboard"
+        ],
+        "child_count": 1
+      }
+    ],
+    "slots": [
+      {
+        "id": "slot_account_name_06eb8ff1c8310c35",
+        "key": "account.name",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "logo",
+            "name": null,
+            "kind": "text",
+            "text": "Lumen Workspace",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 400.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 15.0,
+                "width": 400.0,
+                "x": 152.0,
+                "y": 111.0
+              },
+              "render_bounds": {
+                "height": 15.0,
+                "width": 400.0,
+                "x": 152.0,
+                "y": 111.0
+              }
+            },
+            "slots": [
+              "account.name"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_account_url_7d483f2c4bd7c747",
+        "key": "account.url",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "url",
+            "name": null,
+            "kind": "text",
+            "text": "yourapp.com",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 320.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 16.0,
+                "width": 320.0,
+                "x": 664.0,
+                "y": 940.0
+              },
+              "render_bounds": {
+                "height": 16.0,
+                "width": 320.0,
+                "x": 664.0,
+                "y": 940.0
+              }
+            },
+            "slots": [
+              "account.url"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_campaign_cta_3859a6984f5f9a8b",
+        "key": "campaign.cta",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "cta_text",
+            "name": null,
+            "kind": "text",
+            "text": "See What's New",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fill",
+                "value": {
+                  "weight": 1.0
+                }
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 17.0,
+                "width": 228.0,
+                "x": 132.0,
+                "y": 940.0
+              },
+              "render_bounds": {
+                "height": 17.0,
+                "width": 228.0,
+                "x": 132.0,
+                "y": 940.0
+              }
+            },
+            "slots": [
+              "campaign.cta"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "key": "campaign.eyebrow",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "kicker",
+            "name": null,
+            "kind": "text",
+            "text": "NEW FEATURE",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 888.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 14.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 260.0
+              },
+              "render_bounds": {
+                "height": 14.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 260.0
+              }
+            },
+            "slots": [
+              "campaign.eyebrow"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_campaign_headline_65eba10e0a95172f",
+        "key": "campaign.headline",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "headline",
+            "name": null,
+            "kind": "text",
+            "text": "Live Collaboration",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 888.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 88.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 290.0
+              },
+              "render_bounds": {
+                "height": 88.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 290.0
+              }
+            },
+            "slots": [
+              "campaign.headline"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_feature_1_label_5ad063a61ced6fe8",
+        "key": "feature.1.label",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "m1label",
+            "name": null,
+            "kind": "text",
+            "text": "Comment",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 280.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 30.0,
+                "width": 280.0,
+                "x": 96.0,
+                "y": 512.0
+              },
+              "render_bounds": {
+                "height": 30.0,
+                "width": 280.0,
+                "x": 96.0,
+                "y": 512.0
+              }
+            },
+            "slots": [
+              "feature.1.label"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_feature_2_label_12ce5d6212f77065",
+        "key": "feature.2.label",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "m2label",
+            "name": null,
+            "kind": "text",
+            "text": "Resolve",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 280.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 30.0,
+                "width": 280.0,
+                "x": 400.0,
+                "y": 512.0
+              },
+              "render_bounds": {
+                "height": 30.0,
+                "width": 280.0,
+                "x": 400.0,
+                "y": 512.0
+              }
+            },
+            "slots": [
+              "feature.2.label"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_feature_3_label_ef92d9083fa8b1fe",
+        "key": "feature.3.label",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "m3label",
+            "name": null,
+            "kind": "text",
+            "text": "Version",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 280.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 30.0,
+                "width": 280.0,
+                "x": 704.0,
+                "y": 512.0
+              },
+              "render_bounds": {
+                "height": 30.0,
+                "width": 280.0,
+                "x": 704.0,
+                "y": 512.0
+              }
+            },
+            "slots": [
+              "feature.3.label"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_offer_primary_message_66c2f13a2eec8735",
+        "key": "offer.primary_message",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "subtitle",
+            "name": null,
+            "kind": "text",
+            "text": "Comment, resolve, and version together.",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 820.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 38.0,
+                "width": 820.0,
+                "x": 96.0,
+                "y": 394.0
+              },
+              "render_bounds": {
+                "height": 38.0,
+                "width": 820.0,
+                "x": 96.0,
+                "y": 394.0
+              }
+            },
+            "slots": [
+              "offer.primary_message"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      }
+    ]
+  },
+  "effective_brand": {
+    "source": "platform_default",
+    "brand_kit_id": "brand_kit_platform_default",
+    "brand_kit_version": "1",
+    "brand_kit_name": "Lumen Platform Default",
+    "mode": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "medium": "digital",
+      "theme": "light"
+    }
+  },
+  "preview_paths": [
+    ".lumen-runs-C/run_b9131d6e2bdf44b495e09f51caa191c4/iterations/001/preview.svg",
+    ".lumen-runs-C/run_b9131d6e2bdf44b495e09f51caa191c4/iterations/001/preview.png",
+    ".lumen-runs-C/run_b9131d6e2bdf44b495e09f51caa191c4/iterations/001/preview.svg",
+    ".lumen-runs-C/run_b9131d6e2bdf44b495e09f51caa191c4/iterations/001/preview.png"
+  ],
+  "critique": {
+    "accepted": true,
+    "summary": "Iteration 2 resolves both prior warnings. 80pt hero dominates; 26pt messaging line outweighs 24pt marker labels; top-anchoring closes the upper dead band. No blocker/major issues; brand tokens honored; no clipping.",
+    "issues": [],
+    "confidence": 0.82
+  },
+  "gaps": [],
+  "scene_update_sources": [
+    "compile_dsl_block",
+    "preflight_design",
+    "apply_structured_edit",
+    "apply_operations",
+    "preflight_design"
+  ],
+  "seeded_from_initial_scene": false,
+  "ops_valid_through_iteration": 1,
+  "baseline_advisory": null,
+  "accommodation": null
+}

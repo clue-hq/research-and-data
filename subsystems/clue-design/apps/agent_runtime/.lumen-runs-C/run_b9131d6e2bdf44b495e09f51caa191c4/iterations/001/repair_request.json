@@ -1,0 +1,580 @@
+{
+  "repair_request": {
+    "original_user_request": "Design a 1080x1080 feature-drop announcement: real-time collaboration. Comment, resolve, and version together. Make it friendly and modern; lead with a single clear visual idea and the feature name.",
+    "exact_feedback": "Raise the subtitle 'Comment, resolve, and version together.' to ~22-24pt so it out-weighs the 24pt marker labels, and pull the vertically-centered main column upward (main align_y start with a small top offset) to close the empty band between the header and the eyebrow/headline block.",
+    "diagnostics": [
+      {
+        "severity": "info",
+        "code": "hierarchy",
+        "message": "{'code': 'hierarchy', 'target_node_id': 'subtitle'}",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "subtitle",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      },
+      {
+        "severity": "info",
+        "code": "visual_balance",
+        "message": "{'code': 'visual_balance', 'target_node_id': 'main'}",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "main",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      }
+    ],
+    "target": {
+      "page_id": null,
+      "node_id": null,
+      "slot_key": null
+    },
+    "repair_class": null,
+    "cluster": null,
+    "scene_summary": {
+      "document_id": "run_b9131d6e2bdf44b495e09f51caa191c4",
+      "title": "Agent-authored design",
+      "status": {
+        "kind": "draft"
+      },
+      "brand_kit": {
+        "id": "brand_kit_platform_default",
+        "version": 1
+      },
+      "effective_brand": {
+        "source": "platform_default",
+        "brand_kit_id": "brand_kit_platform_default",
+        "brand_kit_version": "1",
+        "brand_kit_name": "Lumen Platform Default",
+        "mode": {
+          "accessibility": "standard",
+          "density": "comfortable",
+          "medium": "digital",
+          "theme": "light"
+        }
+      },
+      "page_count": 1,
+      "node_count": 26,
+      "slot_count": 9,
+      "asset_count": 0,
+      "pages": [
+        {
+          "id": "poster",
+          "name": "poster",
+          "size": {
+            "height": 1080.0,
+            "orientation": "landscape",
+            "output": {
+              "raster": {
+                "height_px": 1080,
+                "width_px": 1080
+              }
+            },
+            "preset": "custom",
+            "source": {
+              "height": 1080.0,
+              "unit": "px",
+              "width": 1080.0
+            },
+            "unit": "pt",
+            "width": 1080.0
+          },
+          "width": 1080.0,
+          "height": 1080.0,
+          "aspect_ratio": 1.0,
+          "children": [
+            "artboard"
+          ],
+          "child_count": 1
+        }
+      ],
+      "slots": [
+        {
+          "id": "slot_account_name_06eb8ff1c8310c35",
+          "key": "account.name",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "logo",
+              "name": null,
+              "kind": "text",
+              "text": "Lumen Workspace",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 400.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 15.0,
+                  "width": 400.0,
+                  "x": 152.0,
+                  "y": 111.0
+                },
+                "render_bounds": {
+                  "height": 15.0,
+                  "width": 400.0,
+                  "x": 152.0,
+                  "y": 111.0
+                }
+              },
+              "slots": [
+                "account.name"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_account_url_7d483f2c4bd7c747",
+          "key": "account.url",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "url",
+              "name": null,
+              "kind": "text",
+              "text": "yourapp.com",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 320.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 16.0,
+                  "width": 320.0,
+                  "x": 664.0,
+                  "y": 940.0
+                },
+                "render_bounds": {
+                  "height": 16.0,
+                  "width": 320.0,
+                  "x": 664.0,
+                  "y": 940.0
+                }
+              },
+              "slots": [
+                "account.url"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_campaign_cta_3859a6984f5f9a8b",
+          "key": "campaign.cta",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "cta_text",
+              "name": null,
+              "kind": "text",
+              "text": "See What's New",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fill",
+                  "value": {
+                    "weight": 1.0
+                  }
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 17.0,
+                  "width": 228.0,
+                  "x": 132.0,
+                  "y": 940.0
+                },
+                "render_bounds": {
+                  "height": 17.0,
+                  "width": 228.0,
+                  "x": 132.0,
+                  "y": 940.0
+                }
+              },
+              "slots": [
+                "campaign.cta"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_campaign_eyebrow_92252b6be2914522",
+          "key": "campaign.eyebrow",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "kicker",
+              "name": null,
+              "kind": "text",
+              "text": "NEW FEATURE",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 888.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 14.0,
+                  "width": 888.0,
+                  "x": 96.0,
+                  "y": 393.0
+                },
+                "render_bounds": {
+                  "height": 14.0,
+                  "width": 888.0,
+                  "x": 96.0,
+                  "y": 393.0
+                }
+              },
+              "slots": [
+                "campaign.eyebrow"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_campaign_headline_65eba10e0a95172f",
+          "key": "campaign.headline",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "headline",
+              "name": null,
+              "kind": "text",
+              "text": "Live Collaboration",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 888.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 88.0,
+                  "width": 888.0,
+                  "x": 96.0,
+                  "y": 423.0
+                },
+                "render_bounds": {
+                  "height": 88.0,
+                  "width": 888.0,
+                  "x": 96.0,
+                  "y": 423.0
+                }
+              },
+              "slots": [
+                "campaign.headline"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_feature_1_label_5ad063a61ced6fe8",
+          "key": "feature.1.label",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "m1label",
+              "name": null,
+              "kind": "text",
+              "text": "Comment",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 280.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 30.0,
+                  "width": 280.0,
+                  "x": 96.0,
+                  "y": 630.0
+                },
+                "render_bounds": {
+                  "height": 30.0,
+                  "width": 280.0,
+                  "x": 96.0,
+                  "y": 630.0
+                }
+              },
+              "slots": [
+                "feature.1.label"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_feature_2_label_12ce5d6212f77065",
+          "key": "feature.2.label",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "m2label",
+              "name": null,
+              "kind": "text",
+              "text": "Resolve",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 280.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 30.0,
+                  "width": 280.0,
+                  "x": 400.0,
+                  "y": 630.0
+                },
+                "render_bounds": {
+                  "height": 30.0,
+                  "width": 280.0,
+                  "x": 400.0,
+                  "y": 630.0
+                }
+              },
+              "slots": [
+                "feature.2.label"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_feature_3_label_ef92d9083fa8b1fe",
+          "key": "feature.3.label",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "m3label",
+              "name": null,
+              "kind": "text",
+              "text": "Version",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 280.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 30.0,
+                  "width": 280.0,
+                  "x": 704.0,
+                  "y": 630.0
+                },
+                "render_bounds": {
+                  "height": 30.0,
+                  "width": 280.0,
+                  "x": 704.0,
+                  "y": 630.0
+                }
+              },
+              "slots": [
+                "feature.3.label"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_offer_primary_message_66c2f13a2eec8735",
+          "key": "offer.primary_message",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "subtitle",
+              "name": null,
+              "kind": "text",
+              "text": "Comment, resolve, and version together.",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 820.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 23.0,
+                  "width": 820.0,
+                  "x": 96.0,
+                  "y": 527.0
+                },
+                "render_bounds": {
+                  "height": 23.0,
+                  "width": 820.0,
+                  "x": 96.0,
+                  "y": 527.0
+                }
+              },
+              "slots": [
+                "offer.primary_message"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        }
+      ]
+    },
+    "allowed_edit_surface": "structured_ops",
+    "permissions": [
+      "modify subtitle font size/weight",
+      "modify main align_y"
+    ],
+    "prohibitions": [
+      "do not re-declare page or nodes",
+      "do not change copy",
+      "do not change headline"
+    ],
+    "forbidden_changes": []
+  }
+}

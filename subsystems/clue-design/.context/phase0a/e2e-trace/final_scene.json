@@ -1,0 +1,553 @@
+{
+  "assets": {
+    "hero_image": {
+      "font": null,
+      "id": "hero_image",
+      "kind": "raster_image",
+      "label": "Hero image",
+      "license": {
+        "allow_embedding": false,
+        "allow_export": false,
+        "allow_modification": false,
+        "allow_subsetting": false,
+        "name": "generated",
+        "restrictions": [],
+        "source_url": null
+      },
+      "logo": null,
+      "media": {
+        "byte_length": 78223,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "3bd986c14fd1eadb6f19e792c316bc4cbc1c9fc7ad964c3ec815e7bb30e06659"
+        },
+        "filename": null,
+        "location": {
+          "opaque_ref": "sha256/3b/3bd986c14fd1eadb6f19e792c316bc4cbc1c9fc7ad964c3ec815e7bb30e06659",
+          "provider": "local-store",
+          "url": null
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "opaque_ref": "sha256/cb/cb16c307cf65258260b915e95fd5f6b5d4591f945581b8d46fc3a40c09f5dbe2",
+            "provider": "local-store",
+            "url": null
+          },
+          "mime_type": "image/png",
+          "pixel_height": 144,
+          "pixel_width": 256
+        }
+      },
+      "provenance": {
+        "confidence": null,
+        "created_at": null,
+        "created_by": "probe_0a",
+        "notes": [],
+        "source_label": null
+      },
+      "raster": {
+        "aspect_ratio": 1.7777777777777777,
+        "color_profile": null,
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_height": 720,
+        "pixel_width": 1280
+      },
+      "source": {
+        "kind": "generated",
+        "model": "fixture",
+        "request_id": "probe-0a"
+      },
+      "status": "ready",
+      "tags": [],
+      "vector": null
+    }
+  },
+  "export_profiles": [],
+  "meta": {
+    "artifact_type": null,
+    "brand_kit": {
+      "id": "brand_kit_platform_default",
+      "version": 1
+    },
+    "id": "doc_probe_0a",
+    "medium": null,
+    "status": {
+      "kind": "draft"
+    },
+    "title": "GTM hero poster (probe 0a)"
+  },
+  "nodes": {
+    "band": {
+      "children": [
+        "kicker",
+        "headline",
+        "body"
+      ],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 540.0,
+          "width": 1080.0,
+          "x": 0.0,
+          "y": 810.0
+        },
+        "render_bounds": {
+          "height": 540.0,
+          "width": 1080.0,
+          "x": 0.0,
+          "y": 810.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_band_fill_1",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "band",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "center",
+        "gap": 16.0,
+        "grow": 0.0,
+        "padding": [
+          24.0,
+          24.0,
+          24.0,
+          24.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 1080.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "body": {
+      "children": [],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 160.0,
+          "width": 936.0,
+          "x": 24.0,
+          "y": 1145.0
+        },
+        "render_bounds": {
+          "height": 160.0,
+          "width": 936.0,
+          "x": 24.0,
+          "y": 1145.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "body_text_fill",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#111827"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "body",
+      "kind": {
+        "align": "left",
+        "content": "How Insight Health cut phone wait times by 63% with AI intake.",
+        "direction": "ltr",
+        "font_family": "Inter",
+        "font_size": 16.0,
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.45,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 160.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 936.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "canvas": {
+      "children": [
+        "hero",
+        "band"
+      ],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 1350.0,
+          "width": 1080.0,
+          "x": 0.0,
+          "y": 0.0
+        },
+        "render_bounds": {
+          "height": 1350.0,
+          "width": 1080.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_canvas_fill_1",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "canvas",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "start",
+        "gap": 0.0,
+        "grow": 0.0,
+        "padding": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 1350.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 1080.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "headline": {
+      "children": [],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 210.0,
+          "width": 936.0,
+          "x": 24.0,
+          "y": 919.0
+        },
+        "render_bounds": {
+          "height": 210.0,
+          "width": 936.0,
+          "x": 24.0,
+          "y": 919.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "headline_text_fill",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#111827"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "headline",
+      "kind": {
+        "align": "left",
+        "content": "Calmer clinics, faster triage",
+        "direction": "ltr",
+        "font_family": "Inter",
+        "font_size": 32.0,
+        "font_weight": 800,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.1,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 210.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 936.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "hero": {
+      "children": [],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 810.0,
+          "width": 1080.0,
+          "x": 0.0,
+          "y": 0.0
+        },
+        "render_bounds": {
+          "height": 810.0,
+          "width": 1080.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "hero",
+      "kind": {
+        "alt": null,
+        "asset_id": "hero_image",
+        "kind": "image"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 810.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 1080.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "kicker": {
+      "children": [],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 48.0,
+          "width": 936.0,
+          "x": 24.0,
+          "y": 855.0
+        },
+        "render_bounds": {
+          "height": 48.0,
+          "width": 936.0,
+          "x": 24.0,
+          "y": 855.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "kicker_text_fill",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#111827"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "kicker",
+      "kind": {
+        "align": "left",
+        "content": "CASE STUDY",
+        "direction": "ltr",
+        "font_family": "Inter",
+        "font_size": 16.0,
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.45,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 48.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 936.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    }
+  },
+  "pages": {
+    "hero_poster": {
+      "background": [],
+      "bleed": null,
+      "children": [
+        "canvas"
+      ],
+      "id": "hero_poster",
+      "name": "hero_poster",
+      "safe_area": null,
+      "size": {
+        "height": 1350.0,
+        "orientation": "portrait",
+        "output": {
+          "raster": {
+            "height_px": 1350,
+            "width_px": 1080
+          }
+        },
+        "preset": "custom",
+        "source": {
+          "height": 1350.0,
+          "unit": "px",
+          "width": 1080.0
+        },
+        "unit": "pt",
+        "width": 1080.0
+      }
+    }
+  },
+  "schema_version": 1,
+  "slots": {}
+}

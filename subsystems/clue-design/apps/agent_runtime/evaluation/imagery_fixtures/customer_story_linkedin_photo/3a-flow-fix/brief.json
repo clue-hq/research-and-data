@@ -1,0 +1,11 @@
+{
+  "id": "customer_story_linkedin_photo",
+  "artifact": "linkedin_wide_1200x627",
+  "prompt": "Design a 1200x627 LinkedIn post: meet the team behind Atlas Health's claims-automation rollout, which cut adjudication time 60%. Drive readers to the customer story. Make it feel human and credible.",
+  "expected_decision": "photo",
+  "role": "image_band_type_panel",
+  "risks": [
+    "diverse-people-at-laptop stock cliche",
+    "faces cropped or distorted by the 1.9:1 frame"
+  ]
+}

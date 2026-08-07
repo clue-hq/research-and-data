@@ -1,0 +1,702 @@
+{
+  "repair_request": {
+    "original_user_request": "Design a 1920x1080 data slide: pipeline coverage by stage, 4.2x coverage on an $18M target. Present the figures clearly with one supporting takeaway line.",
+    "exact_feedback": "Redistribute vertical rhythm so the empty y560-y800 band collapses to a normal section gap (lower hero start, raise stage row), and give the four stage tiles real definition with a subtle neutral surface tint or 1px border (keep rx=12 and the 4px teal top rule). Optionally tighten the 4.2x-to-$18M horizontal pairing. Issue 1 (error, visual_balance, stages): large empty band ~y560-y800 makes composition top-loaded. Issue 2 (error, hierarchy, stage_1): stage tiles white-on-white with no border/shadow do not read as cards; add subtle tint or 1px border. Issue 3 (warning, spacing, hero): wide undefined gap between 4.2x and $18M reads as two islands; tighten to ~120-160px.",
+    "diagnostics": [],
+    "target": {
+      "page_id": null,
+      "node_id": null,
+      "slot_key": null
+    },
+    "repair_class": null,
+    "cluster": null,
+    "scene_summary": {
+      "document_id": "run_4e220cad35da439ea841281d4fad9411",
+      "title": "Agent-authored design",
+      "status": {
+        "kind": "draft"
+      },
+      "brand_kit": {
+        "id": "brand_kit_platform_default",
+        "version": 1
+      },
+      "effective_brand": {
+        "source": "platform_default",
+        "brand_kit_id": "brand_kit_platform_default",
+        "brand_kit_version": "1",
+        "brand_kit_name": "Lumen Platform Default",
+        "mode": {
+          "accessibility": "standard",
+          "density": "comfortable",
+          "medium": "digital",
+          "theme": "light"
+        }
+      },
+      "page_count": 1,
+      "node_count": 32,
+      "slot_count": 12,
+      "asset_count": 0,
+      "pages": [
+        {
+          "id": "pipeline_slide",
+          "name": "pipeline_slide",
+          "size": {
+            "height": 1080.0,
+            "orientation": "landscape",
+            "output": {
+              "raster": {
+                "height_px": 1080,
+                "width_px": 1920
+              }
+            },
+            "preset": "custom",
+            "source": {
+              "height": 1080.0,
+              "unit": "px",
+              "width": 1920.0
+            },
+            "unit": "pt",
+            "width": 1920.0
+          },
+          "width": 1920.0,
+          "height": 1080.0,
+          "aspect_ratio": 1.7777777777777777,
+          "children": [
+            "artboard"
+          ],
+          "child_count": 1
+        }
+      ],
+      "slots": [
+        {
+          "id": "slot_campaign_eyebrow_92252b6be2914522",
+          "key": "campaign.eyebrow",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "kicker",
+              "name": null,
+              "kind": "text",
+              "text": "PIPELINE COVERAGE BY STAGE",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 1200.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 14.0,
+                  "width": 1200.0,
+                  "x": 80.0,
+                  "y": 80.0
+                },
+                "render_bounds": {
+                  "height": 14.0,
+                  "width": 1200.0,
+                  "x": 80.0,
+                  "y": 80.0
+                }
+              },
+              "slots": [
+                "campaign.eyebrow"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_offer_takeaway_0982d3741a674860",
+          "key": "offer.takeaway",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "takeaway",
+              "name": null,
+              "kind": "text",
+              "text": "Every stage clears the 3x coverage bar, giving healthy margin against the $18M target.",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 1000.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 60.0,
+                  "width": 1000.0,
+                  "x": 80.0,
+                  "y": 501.0
+                },
+                "render_bounds": {
+                  "height": 60.0,
+                  "width": 1000.0,
+                  "x": 80.0,
+                  "y": 501.0
+                }
+              },
+              "slots": [
+                "offer.takeaway"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_stage_1_label_dfbba873e6981338",
+          "key": "stage.1.label",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "stage_1_label",
+              "name": null,
+              "kind": "text",
+              "text": "Discovery",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 346.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 20.0,
+                  "width": 346.0,
+                  "x": 104.0,
+                  "y": 892.0
+                },
+                "render_bounds": {
+                  "height": 20.0,
+                  "width": 346.0,
+                  "x": 104.0,
+                  "y": 892.0
+                }
+              },
+              "slots": [
+                "stage.1.label"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_stage_1_value_e35b90b113ab9d6b",
+          "key": "stage.1.value",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "stage_1_value",
+              "name": null,
+              "kind": "text",
+              "text": "$24.8M",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 346.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 40.0,
+                  "width": 346.0,
+                  "x": 104.0,
+                  "y": 840.0
+                },
+                "render_bounds": {
+                  "height": 40.0,
+                  "width": 346.0,
+                  "x": 104.0,
+                  "y": 840.0
+                }
+              },
+              "slots": [
+                "stage.1.value"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_stage_2_label_8e84b9c5a30bf8f5",
+          "key": "stage.2.label",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "stage_2_label",
+              "name": null,
+              "kind": "text",
+              "text": "Qualification",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 346.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 20.0,
+                  "width": 346.0,
+                  "x": 554.0,
+                  "y": 892.0
+                },
+                "render_bounds": {
+                  "height": 20.0,
+                  "width": 346.0,
+                  "x": 554.0,
+                  "y": 892.0
+                }
+              },
+              "slots": [
+                "stage.2.label"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_stage_2_value_aadde8edfc8e6dd2",
+          "key": "stage.2.value",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "stage_2_value",
+              "name": null,
+              "kind": "text",
+              "text": "$21.4M",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 346.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 40.0,
+                  "width": 346.0,
+                  "x": 554.0,
+                  "y": 840.0
+                },
+                "render_bounds": {
+                  "height": 40.0,
+                  "width": 346.0,
+                  "x": 554.0,
+                  "y": 840.0
+                }
+              },
+              "slots": [
+                "stage.2.value"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_stage_3_label_c770bbe1459c5e8e",
+          "key": "stage.3.label",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "stage_3_label",
+              "name": null,
+              "kind": "text",
+              "text": "Proposal",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 346.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 20.0,
+                  "width": 346.0,
+                  "x": 1004.0,
+                  "y": 892.0
+                },
+                "render_bounds": {
+                  "height": 20.0,
+                  "width": 346.0,
+                  "x": 1004.0,
+                  "y": 892.0
+                }
+              },
+              "slots": [
+                "stage.3.label"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_stage_3_value_4a9dd72274a3ba41",
+          "key": "stage.3.value",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "stage_3_value",
+              "name": null,
+              "kind": "text",
+              "text": "$17.9M",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 346.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 40.0,
+                  "width": 346.0,
+                  "x": 1004.0,
+                  "y": 840.0
+                },
+                "render_bounds": {
+                  "height": 40.0,
+                  "width": 346.0,
+                  "x": 1004.0,
+                  "y": 840.0
+                }
+              },
+              "slots": [
+                "stage.3.value"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_stage_4_label_1e509865d04a0e33",
+          "key": "stage.4.label",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "stage_4_label",
+              "name": null,
+              "kind": "text",
+              "text": "Negotiation",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 346.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 20.0,
+                  "width": 346.0,
+                  "x": 1454.0,
+                  "y": 892.0
+                },
+                "render_bounds": {
+                  "height": 20.0,
+                  "width": 346.0,
+                  "x": 1454.0,
+                  "y": 892.0
+                }
+              },
+              "slots": [
+                "stage.4.label"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_stage_4_value_f72aadbd1d274e78",
+          "key": "stage.4.value",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "stage_4_value",
+              "name": null,
+              "kind": "text",
+              "text": "$11.5M",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 346.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 40.0,
+                  "width": 346.0,
+                  "x": 1454.0,
+                  "y": 840.0
+                },
+                "render_bounds": {
+                  "height": 40.0,
+                  "width": 346.0,
+                  "x": 1454.0,
+                  "y": 840.0
+                }
+              },
+              "slots": [
+                "stage.4.value"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_stat_coverage_95ba9845fd09efcd",
+          "key": "stat.coverage",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "coverage_value",
+              "name": null,
+              "kind": "text",
+              "text": "4.2x",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 760.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 128.0,
+                  "width": 760.0,
+                  "x": 80.0,
+                  "y": 333.0
+                },
+                "render_bounds": {
+                  "height": 128.0,
+                  "width": 760.0,
+                  "x": 80.0,
+                  "y": 333.0
+                }
+              },
+              "slots": [
+                "stat.coverage"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_stat_target_0a6b9effe422b7de",
+          "key": "stat.target",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "target_value",
+              "name": null,
+              "kind": "text",
+              "text": "$18M",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 520.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 64.0,
+                  "width": 520.0,
+                  "x": 888.0,
+                  "y": 397.0
+                },
+                "render_bounds": {
+                  "height": 64.0,
+                  "width": 520.0,
+                  "x": 888.0,
+                  "y": 397.0
+                }
+              },
+              "slots": [
+                "stat.target"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        }
+      ]
+    },
+    "allowed_edit_surface": "structured_ops",
+    "permissions": [],
+    "prohibitions": [],
+    "forbidden_changes": []
+  }
+}

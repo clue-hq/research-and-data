@@ -1,0 +1,11 @@
+{
+  "id": "collab_feature_social_illustration",
+  "artifact": "social_square_1x1",
+  "prompt": "Design a 1080x1080 feature-drop announcement: real-time collaboration. Comment, resolve, and version together. Make it friendly and modern; lead with a single clear visual idea and the feature name.",
+  "expected_decision": "icon",
+  "role": "spot_illustration_type_below",
+  "risks": [
+    "off-brand illustration palette (corporate-memphis default)",
+    "illustration too detailed, steals the focal point"
+  ]
+}

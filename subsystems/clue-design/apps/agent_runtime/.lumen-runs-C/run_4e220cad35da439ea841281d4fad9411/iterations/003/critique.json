@@ -1,0 +1,32 @@
+{
+  "status": "ok",
+  "critique": {
+    "accepted": true,
+    "summary": "Clean, correct, brand-aligned pipeline-coverage data slide. Prior blockers resolved in rendered pixels: all four stage tiles render identically (equal 410x136 rounded rects, matching 1px #E5E7EB borders, equal teal top rules, even 450px pitch, no overlaps), stage_2 ($21.4M Qualification) present, hero right side filled by paired $18M target block (no dead zone). Hierarchy unambiguous: 4.2x (128px teal) dominates, $18M (64px) mid-tier, stage values (40px) subordinate, labels/footer smallest. Contrast clean throughout. No imagery per brief. Single teal accent family, Inter, white background. Only benign font embed/subset export warnings remain.",
+    "issues": [
+      {
+        "severity": "info",
+        "category": "visual_balance",
+        "target": {
+          "page_id": "pipeline_slide",
+          "node_id": "stages",
+          "slot_key": null
+        },
+        "message": "Tall-ish empty band between hero takeaway (~y525) and stage tiles (y673); reads as intentional breathing room, could optionally be tightened.",
+        "suggested_repair": "Optional: raise stages row ~40-60px to even vertical rhythm; not required for acceptance."
+      }
+    ],
+    "repair_instruction": null,
+    "acceptance_notes": [
+      "Alignment: shared 80px margins and left spine at x80; consistent 24px inset in tiles.",
+      "Spacing: four tiles evenly spaced 450px pitch, no overlaps.",
+      "Hierarchy: squint test passes, 4.2x single focal point.",
+      "Contrast: teal figures and #4B5563 text on white all legible.",
+      "Clipping: all figures sit inside 410px tiles.",
+      "Request+Brand: matches data-slide type at 1920x1080, clear figures, exactly one takeaway, no imagery, single teal accent + Inter + white bg.",
+      "Prior issues verified resolved: tile borders consistent across all four, stage_2 present, hero dead zone filled."
+    ],
+    "requirement_coverage_notes": [],
+    "confidence": 0.85
+  }
+}

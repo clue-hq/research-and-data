@@ -1,0 +1,142 @@
+/* lumen-platform v2 — base styles for platform components. Versioned with
+   the runtime; included only when the page uses a Component node. */
+/* No `position` override: the UA's modal styles (fixed + inset 0 + margin
+   auto) center the open dialog, and that fixed box is already the containing
+   block for the absolute close control. */
+dialog[data-lumen-dialog] {
+  border: none; border-radius: 16px; padding: 0;
+  width: 100%; max-width: min(560px, calc(100vw - 2rem));
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.25);
+}
+dialog[data-lumen-dialog]::backdrop { background: rgb(0 0 0 / 0.5); }
+.lumen-dialog-close {
+  position: absolute; top: 0.75rem; right: 0.75rem; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border: none; border-radius: 9999px;
+  background: transparent; color: inherit; font-size: 1.25rem;
+  line-height: 1; cursor: pointer;
+}
+.lumen-dialog-close:hover { background: rgb(0 0 0 / 0.08); }
+details[data-lumen-acc-item] > summary { cursor: pointer; list-style: none; }
+details[data-lumen-acc-item] > summary::-webkit-details-marker { display: none; }
+.lumen-marquee { overflow: hidden; display: flex; }
+.lumen-marquee-track {
+  display: flex; flex: none; min-width: 100%;
+  animation: lumen-marquee var(--lumen-marquee-duration, 30s) linear infinite;
+}
+.lumen-marquee[data-direction="right"] .lumen-marquee-track { animation-direction: reverse; }
+.lumen-marquee[data-pause-on-hover="true"]:hover .lumen-marquee-track { animation-play-state: paused; }
+@keyframes lumen-marquee { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@media (prefers-reduced-motion: reduce) { .lumen-marquee-track { animation: none; } }
+/* nav_menu: inline row from md:, hamburger dropdown below. */
+.lumen-nav { position: relative; }
+.lumen-nav-row { display: none; }
+.lumen-nav-menu { display: block; }
+.lumen-nav-menu > summary {
+  cursor: pointer; list-style: none; display: inline-flex;
+  align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem;
+}
+.lumen-nav-menu > summary::-webkit-details-marker { display: none; }
+.lumen-nav-panel {
+  position: absolute; right: 0; top: calc(100% + 0.5rem); z-index: 40;
+  display: flex; flex-direction: column; gap: 0.5rem; min-width: 12rem;
+  padding: 1rem; border-radius: 12px; background: var(--color-light, #fff);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.18);
+}
+@media (min-width: 768px) {
+  .lumen-nav-row { display: flex; align-items: center; gap: 1.5rem; }
+  .lumen-nav-menu { display: none; }
+}
+/* carousel: scroll-snap track with overlay arrows. */
+.lumen-carousel { position: relative; }
+.lumen-carousel-track {
+  display: flex; gap: 1rem; overflow-x: auto;
+  scroll-snap-type: x mandatory; scrollbar-width: none;
+}
+.lumen-carousel-track::-webkit-scrollbar { display: none; }
+.lumen-carousel-track > * { flex: none; scroll-snap-align: center; }
+.lumen-carousel-arrow {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.5rem; height: 2.5rem; border: none; border-radius: 9999px;
+  cursor: pointer; background: rgb(0 0 0 / 0.55); color: #fff;
+  font-size: 1.25rem; line-height: 1;
+}
+.lumen-carousel-arrow[data-dir="prev"] { left: 0.75rem; }
+.lumen-carousel-arrow[data-dir="next"] { right: 0.75rem; }
+/* tabs */
+.lumen-tabs-list { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.lumen-tab {
+  border: none; background: transparent; cursor: pointer;
+  padding: 0.5rem 1rem; border-radius: 9999px; font: inherit; color: inherit;
+  opacity: 0.65;
+}
+.lumen-tab[aria-selected="true"] { opacity: 1; background: rgb(0 0 0 / 0.06); }
+/* embeds */
+.lumen-embed { border: 0; width: 100%; display: block; }
+/* P6.1 custom-component safe fallback. P6.3 replaces the contents with a
+   dedicated sandboxed runtime while preserving this host box and node id. */
+.lumen-custom-component-placeholder {
+  box-sizing: border-box; display: flex; flex-direction: column; gap: 0.375rem;
+  min-height: 8rem; max-width: 100%; overflow: hidden; padding: 1rem;
+  border: 1px dashed var(--color-border, #94a3b8); border-radius: 0.75rem;
+  background: var(--color-surface-muted, #f8fafc);
+  color: var(--color-text, #172033);
+}
+.lumen-custom-component-placeholder > span,
+.lumen-custom-component-placeholder > small { opacity: 0.65; }
+
+/* P6.3: every executable custom component lives in a second opaque-origin
+   sandbox. The outer host remains the selectable/resizable canonical node. */
+.lumen-custom-component-runtime {
+  position: relative;
+  display: block;
+  min-width: 0;
+  min-height: 80px;
+  overflow: hidden;
+}
+.lumen-custom-component-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
+  border: 0;
+  background: transparent;
+}
+.lumen-custom-component-runtime[data-custom-component-intrinsic="true"]
+  > .lumen-custom-component-frame {
+  height: 160px;
+}
+/* The outer editor bridge owns hit testing, selection, dragging, and resize.
+   Delivery frames omit this marker and remain fully interactive. */
+.lumen-custom-component-runtime[data-custom-component-editor="true"]
+  > .lumen-custom-component-frame {
+  pointer-events: none;
+}
+.lumen-custom-component-state {
+  position: absolute;
+  inset: auto 8px 8px auto;
+  z-index: 1;
+  max-width: calc(100% - 16px);
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(127, 29, 29, 0.94);
+  color: white;
+  font: 600 11px/1.3 system-ui, sans-serif;
+}
+.lumen-custom-component-state:empty { display: none; }
+.lumen-custom-component-unavailable {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 120px;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  padding: 18px;
+  border: 1px dashed rgba(127, 29, 29, 0.45);
+  border-radius: 12px;
+  background: rgba(254, 242, 242, 0.92);
+  color: #7f1d1d;
+}
+.lumen-custom-component-unavailable > span,
+.lumen-custom-component-unavailable > small { opacity: 0.72; }

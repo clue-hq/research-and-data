@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" data-lumen-document-id="run_c267a27b4be04f2894aa87c770f6da26" data-lumen-page-id="pipeline_slide">
+<defs>
+<clipPath id="lumen-clip-artboard"><rect x="0" y="0" width="1920" height="1080" /></clipPath>
+</defs>
+<g id="lumen-page-pipeline_slide" data-lumen-page-id="pipeline_slide">
+<g id="lumen-node-artboard" data-lumen-node-id="artboard">
+<rect x="0" y="0" width="1920" height="1080" fill="#FFFFFF" data-lumen-fill-id="paint_artboard_fill_1" />
+<g clip-path="url(#lumen-clip-artboard)">
+<g id="lumen-node-header" data-lumen-node-id="header" transform="translate(120 100)">
+<g id="lumen-node-mark" data-lumen-node-id="mark">
+<rect x="0" y="0" width="44" height="44" rx="22" ry="22" fill="#111827" data-lumen-fill-id="paint_mark_fill_1" />
+<text id="lumen-node-mark_glyph" data-lumen-node-id="mark_glyph" x="22" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" text-anchor="middle" letter-spacing="0" direction="ltr" transform="translate(0 15)" fill="#FFFFFF" data-lumen-fill-id="mark_glyph_text_fill"><tspan x="22" y="11.9299">P</tspan></text>
+</g>
+<text id="lumen-node-eyebrow" data-lumen-node-id="eyebrow" data-lumen-slot-keys="campaign.eyebrow" x="0" y="13" font-family="Inter, Arial, Helvetica, sans-serif" font-size="13" font-weight="750" text-anchor="start" letter-spacing="0.08" direction="ltr" transform="translate(52 15)" fill="#0891B2" data-lumen-fill-id="eyebrow_text_fill"><tspan x="0" y="11.1492">Q3 PIPELINE REVIEW</tspan></text>
+</g>
+<g id="lumen-node-main" data-lumen-node-id="main" transform="translate(120 192)">
+<g id="lumen-node-hero" data-lumen-node-id="hero" transform="translate(0 276)">
+<text id="lumen-node-hero_value" data-lumen-node-id="hero_value" x="0" y="128" font-family="Inter, Arial, Helvetica, sans-serif" font-size="128" font-weight="850" text-anchor="start" letter-spacing="-0.02" direction="ltr" fill="#155E75" data-lumen-fill-id="hero_value_text_fill"><tspan x="0" y="102.4827">4.2x</tspan></text>
+<text id="lumen-node-hero_label" data-lumen-node-id="hero_label" data-lumen-slot-keys="campaign.hero_label" x="0" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 144)" fill="#4B5563" data-lumen-fill-id="hero_label_text_fill"><tspan x="0" y="24.0672">pipeline coverage on an $18M target</tspan></text>
+<text id="lumen-node-takeaway" data-lumen-node-id="takeaway" data-lumen-slot-keys="campaign.takeaway" x="0" y="16" font-family="Inter, Arial, Helvetica, sans-serif" font-size="16" font-weight="400" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 190)" fill="#111827" data-lumen-fill-id="takeaway_text_fill"><tspan x="0" y="18.375">Coverage is healthy across every stage, with committed pipeline alone</tspan><tspan x="0" y="41.375">covering 59% of the $18M target.</tspan></text>
+</g>
+<g id="lumen-node-chart" data-lumen-node-id="chart" transform="translate(780 222)">
+<g id="lumen-node-row1" data-lumen-node-id="row1">
+<text id="lumen-node-row1_name" data-lumen-node-id="row1_name" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" text-anchor="start" letter-spacing="0" direction="ltr" fill="#111827" data-lumen-fill-id="row1_name_text_fill"><tspan x="0" y="11.9299">Discovery</tspan></text>
+<g id="lumen-node-row1_bar" data-lumen-node-id="row1_bar" transform="translate(0 23)">
+<rect id="lumen-node-row1_fill" data-lumen-node-id="row1_fill" x="0" y="0" width="760" height="44" rx="22" ry="22" fill="#111827" data-lumen-fill-id="paint_row1_fill_fill_1" />
+<text id="lumen-node-row1_value" data-lumen-node-id="row1_value" x="0" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(768 7)" fill="#4B5563" data-lumen-fill-id="row1_value_text_fill"><tspan x="0" y="24.0672">$28.4M</tspan></text>
+</g>
+</g>
+<g id="lumen-node-row2" data-lumen-node-id="row2" transform="translate(0 91)">
+<text id="lumen-node-row2_name" data-lumen-node-id="row2_name" x="0" y="18" font-family="Inter, Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="start" letter-spacing="0" direction="ltr" fill="#111827" data-lumen-fill-id="row2_name_text_fill"><tspan x="0" y="16.0528">Evaluation</tspan></text>
+<g id="lumen-node-row2_bar" data-lumen-node-id="row2_bar" transform="translate(0 23)">
+<rect id="lumen-node-row2_fill" data-lumen-node-id="row2_fill" x="0" y="0" width="562" height="44" rx="22" ry="22" fill="#111827" data-lumen-fill-id="paint_row2_fill_fill_1" />
+<text id="lumen-node-row2_value" data-lumen-node-id="row2_value" x="0" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(570 7)" fill="#4B5563" data-lumen-fill-id="row2_value_text_fill"><tspan x="0" y="24.0672">$21.0M</tspan></text>
+</g>
+</g>
+<g id="lumen-node-row3" data-lumen-node-id="row3" transform="translate(0 182)">
+<text id="lumen-node-row3_name" data-lumen-node-id="row3_name" x="0" y="18" font-family="Inter, Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="start" letter-spacing="0" direction="ltr" fill="#111827" data-lumen-fill-id="row3_name_text_fill"><tspan x="0" y="16.0528">Proposal</tspan></text>
+<g id="lumen-node-row3_bar" data-lumen-node-id="row3_bar" transform="translate(0 28)">
+<rect id="lumen-node-row3_fill" data-lumen-node-id="row3_fill" x="0" y="0" width="417" height="44" rx="22" ry="22" fill="#111827" data-lumen-fill-id="paint_row3_fill_fill_1" />
+<text id="lumen-node-row3_value" data-lumen-node-id="row3_value" x="0" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(425 7)" fill="#4B5563" data-lumen-fill-id="row3_value_text_fill"><tspan x="0" y="24.0672">$15.6M</tspan></text>
+</g>
+</g>
+<g id="lumen-node-row4" data-lumen-node-id="row4" transform="translate(0 278)">
+<text id="lumen-node-row4_name" data-lumen-node-id="row4_name" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" text-anchor="start" letter-spacing="0" direction="ltr" fill="#111827" data-lumen-fill-id="row4_name_text_fill"><tspan x="0" y="11.9299">Commit</tspan></text>
+<g id="lumen-node-row4_bar" data-lumen-node-id="row4_bar" transform="translate(0 23)">
+<rect id="lumen-node-row4_fill" data-lumen-node-id="row4_fill" x="0" y="0" width="284" height="44" rx="22" ry="22" fill="#111827" data-lumen-fill-id="paint_row4_fill_fill_1" />
+<text id="lumen-node-row4_value" data-lumen-node-id="row4_value" x="0" y="24" font-family="Inter, Arial, Helvetica, sans-serif" font-size="24" font-weight="650" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(292 7)" fill="#4B5563" data-lumen-fill-id="row4_value_text_fill"><tspan x="0" y="24.0672">$10.6M</tspan></text>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</svg>

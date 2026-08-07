@@ -1,0 +1,124 @@
+{
+  "probes": {
+    "probe_1_seeded_modify": {
+      "modify_status": "ok",
+      "applied_operations": 1,
+      "operation_count": 1,
+      "halted_at": null,
+      "diagnostics": [],
+      "headline_content_after": "Calmer clinics, faster triage",
+      "headline_changed": true,
+      "untouched_nodes_identical": [],
+      "node_count_before_after": [
+        6,
+        6
+      ],
+      "missing_target": {
+        "status": "error",
+        "halted_at": {
+          "code": "LUMD0901",
+          "line": 1
+        },
+        "first_diag": {
+          "severity": "info",
+          "code": null,
+          "message": "{'diagnostic': {'code': 'LUMD0901', 'hint': 'Use a node id from the current scene.', 'message': 'target node no_such_node does not exist', 'phase': 'dsl', 'severity': 'error', 'subject': None}, 'span': {'column': 1, 'length': 12, 'line': 1}}",
+          "line": 1,
+          "column": 1,
+          "target_page_id": null,
+          "target_node_id": null,
+          "target_slot_id": null,
+          "target_slot_key": null,
+          "suggested_repair": null
+        }
+      }
+    },
+    "probe_2_reauthor_id": {
+      "reauthor": {
+        "status": "error",
+        "halted_at": {
+          "code": "LUMD0401",
+          "line": 2
+        },
+        "applied_operations": 0,
+        "operation_count": 1,
+        "first_diag": {
+          "severity": "info",
+          "code": null,
+          "message": "{'diagnostic': {'code': 'LUMD0401', 'hint': 'Every DSL element must have a stable unique id.', 'message': 'duplicate node id headline', 'phase': 'dsl', 'severity': 'error', 'subject': None}, 'span': {'column': 1, 'length': 8, 'line': 2}}",
+          "line": 2,
+          "column": 1,
+          "target_page_id": null,
+          "target_node_id": null,
+          "target_slot_id": null,
+          "target_slot_key": null,
+          "suggested_repair": null
+        },
+        "scene_changed_nodes": [],
+        "pages_before": [
+          "hero_poster"
+        ],
+        "pages_after": [
+          "hero_poster"
+        ]
+      },
+      "mixed_block": {
+        "status": "error",
+        "halted_at": {
+          "code": "LUMD0401",
+          "line": 2
+        },
+        "applied_operations": 0,
+        "first_diag": {
+          "severity": "info",
+          "code": null,
+          "message": "{'diagnostic': {'code': 'LUMD0401', 'hint': 'Every DSL element must have a stable unique id.', 'message': 'duplicate node id headline', 'phase': 'dsl', 'severity': 'error', 'subject': None}, 'span': {'column': 1, 'length': 8, 'line': 2}}",
+          "line": 2,
+          "column": 1,
+          "target_page_id": null,
+          "target_node_id": null,
+          "target_slot_id": null,
+          "target_slot_key": null,
+          "suggested_repair": null
+        },
+        "kicker_changed": false,
+        "kicker_content_after": "CASE STUDY",
+        "scene_changed_nodes": []
+      }
+    },
+    "probe_3_id_stability": {
+      "delete_status_code": 200,
+      "headline_gone_after_delete": true,
+      "undo_status_code": 200,
+      "undo_restores_same_id": true,
+      "undo_restored_node_identical": true,
+      "undo_parent_children": [
+        "kicker",
+        "headline",
+        "body"
+      ],
+      "same_id_recreate_status_code": 200,
+      "same_id_recreate_present": true,
+      "same_id_recreate_children": [
+        "kicker",
+        "headline",
+        "body"
+      ]
+    }
+  },
+  "setup": {
+    "document_id": "doc_probe_0a",
+    "node_ids": [
+      "band",
+      "body",
+      "canvas",
+      "headline",
+      "hero",
+      "kicker"
+    ],
+    "page_ids": [
+      "hero_poster"
+    ],
+    "scratch": "/var/folders/wc/ndxjgy7s7vjb8d9rfk4tyjtr0000gn/T/lumen-probe0a-zq0xclmo"
+  }
+}

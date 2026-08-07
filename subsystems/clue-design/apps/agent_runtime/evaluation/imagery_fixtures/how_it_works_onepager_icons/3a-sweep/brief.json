@@ -1,0 +1,11 @@
+{
+  "id": "how_it_works_onepager_icons",
+  "artifact": "a4_one_pager_icons",
+  "prompt": "Design an A4 portrait one-pager enablement leave-behind: How Lumen works in 3 steps. 1) Brief it. 2) It composes on-brand. 3) You approve and export. Make each step scannable and equal in weight.",
+  "expected_decision": "icon",
+  "role": "icon_row_above_steps",
+  "risks": [
+    "mismatched icon set (inconsistent stroke weights/styles)",
+    "photo wrongly chosen where icons are correct"
+  ]
+}

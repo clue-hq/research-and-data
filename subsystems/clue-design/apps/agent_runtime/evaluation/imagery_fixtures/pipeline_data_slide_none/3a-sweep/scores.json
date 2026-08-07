@@ -1,0 +1,37 @@
+{
+  "per_axis": {
+    "relevance": {
+      "final": 3,
+      "judge": null,
+      "det_cap": 3,
+      "weight": 1.0,
+      "hard_gate": false
+    }
+  },
+  "gate_failed": false,
+  "weighted_mean": 3.0,
+  "accept": true,
+  "tier": "ship",
+  "judge_ran": false,
+  "judge_reasoning": "",
+  "image_count": 0,
+  "real_image_count": 0,
+  "brief_id": "pipeline_data_slide_none",
+  "expected_decision": "none",
+  "det": {
+    "dimensions": {
+      "decision": {
+        "score": 3,
+        "gate": false,
+        "notes": []
+      }
+    },
+    "gate_failed": false,
+    "accept": true,
+    "image_count": 0,
+    "real_image_count": 0
+  },
+  "run_id": "run_4e220cad35da439ea841281d4fad9411",
+  "run_status": "success",
+  "png_path": ".lumen-runs-C/run_4e220cad35da439ea841281d4fad9411/iterations/003/preview.png"
+}

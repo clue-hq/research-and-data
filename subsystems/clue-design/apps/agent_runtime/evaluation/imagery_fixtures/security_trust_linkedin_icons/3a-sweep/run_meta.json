@@ -1,0 +1,7 @@
+{
+  "run_id": "run_420aa8e565df4df58bbfd09ce2cc2636",
+  "run_status": "accepted",
+  "model": "openai:anthropic/claude-opus-4.8",
+  "tag": "3a-sweep",
+  "brief_id": "security_trust_linkedin_icons"
+}

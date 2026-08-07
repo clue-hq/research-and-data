@@ -1,0 +1,215 @@
+{
+  "assets": {},
+  "export_profiles": [
+    {
+      "embed_fonts": false,
+      "format": "png",
+      "include_bleed": false,
+      "name": "agent_png",
+      "pdf_intent": null,
+      "raster": {
+        "dpi": 96,
+        "scale": 1.0
+      }
+    }
+  ],
+  "meta": {
+    "artifact_type": "card",
+    "brand_kit": null,
+    "id": "doc_a4_effects_visual",
+    "medium": "digital",
+    "status": {
+      "kind": "draft"
+    },
+    "title": "A4 Effects Visual"
+  },
+  "nodes": {
+    "wash": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "bleed": true,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "effects": [],
+      "fills": [
+        {
+          "id": "wash_fill",
+          "paint": {
+            "angle": 120.0,
+            "kind": "linear_gradient",
+            "stops": [
+              {
+                "color": {
+                  "kind": "hex",
+                  "value": "#dbe6ff"
+                },
+                "position": 0.0
+              },
+              {
+                "color": {
+                  "kind": "hex",
+                  "value": "#f6ecff"
+                },
+                "position": 1.0
+              }
+            ]
+          }
+        }
+      ],
+      "id": "wash",
+      "kind": {
+        "kind": "rect"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 380.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 500.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": -50.0,
+        "y": -40.0
+      }
+    },
+    "card": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 4.0,
+        "bottom_right": 40.0,
+        "top_left": 40.0,
+        "top_right": 4.0
+      },
+      "effects": [
+        {
+          "id": "card_glow",
+          "kind": {
+            "kind": "glow",
+            "color": {
+              "kind": "hex",
+              "value": "#a855f7"
+            },
+            "opacity": 0.85,
+            "blur": 22.0,
+            "spread": 6.0
+          }
+        },
+        {
+          "id": "card_blur",
+          "kind": {
+            "kind": "layer_blur",
+            "radius": 3.0
+          }
+        },
+        {
+          "id": "card_inner",
+          "kind": {
+            "kind": "inner_shadow",
+            "color": {
+              "kind": "hex",
+              "value": "#10233f"
+            },
+            "opacity": 0.7,
+            "x": 0.0,
+            "y": 6.0,
+            "blur": 10.0,
+            "spread": 2.0
+          }
+        }
+      ],
+      "fills": [
+        {
+          "id": "card_fill",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#6d8bff"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "card",
+      "kind": {
+        "kind": "rect"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 150.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 240.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 80.0,
+        "y": 75.0
+      }
+    }
+  },
+  "pages": {
+    "page_a4_effects": {
+      "background": [
+        {
+          "id": "paint_page_bg",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#faf7f0"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "bleed": null,
+      "children": [
+        "wash",
+        "card"
+      ],
+      "id": "page_a4_effects",
+      "name": "A4 Effects",
+      "safe_area": null,
+      "size": {
+        "height": 300.0,
+        "orientation": "landscape",
+        "preset": "custom",
+        "unit": "px",
+        "width": 400.0
+      }
+    }
+  },
+  "schema_version": 1,
+  "slots": {}
+}

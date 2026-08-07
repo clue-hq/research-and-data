@@ -1,0 +1,3275 @@
+{
+  "compile": {
+    "status": "ok",
+    "applied_operations": 74,
+    "operation_count": 74,
+    "diagnostics": [],
+    "halted_at": null,
+    "operation_error": null
+  },
+  "operations": [
+    {
+      "kind": "add_page",
+      "page": {
+        "background": [],
+        "bleed": null,
+        "children": [],
+        "id": "onepager_a4",
+        "name": "onepager_a4",
+        "safe_area": null,
+        "size": {
+          "height": 841.8897637795276,
+          "orientation": "portrait",
+          "output": {
+            "physical": {
+              "height": 297.0,
+              "unit": "mm",
+              "width": 210.0
+            }
+          },
+          "preset": "a4",
+          "source": {
+            "height": 297.0,
+            "unit": "mm",
+            "width": 210.0
+          },
+          "unit": "pt",
+          "width": 595.2755905511812
+        }
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": true,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_artboard_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.page"
+            }
+          }
+        ],
+        "id": "artboard",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.stack.loose",
+          "grow": 0.0,
+          "padding": [
+            48.0,
+            48.0,
+            48.0,
+            48.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "onepager_a4",
+        "kind": "page"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "header",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "space_between",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.md",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 499.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "brand",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 10.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 280.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "header",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.badge",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_mark_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.brand"
+            }
+          }
+        ],
+        "id": "mark",
+        "kind": {
+          "kind": "rect"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 32.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 32.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "brand",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "logo",
+        "kind": {
+          "align": "left",
+          "content": "Lumen",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.label",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 230.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "brand",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_account_name_06eb8ff1c8310c35",
+        "image_policy": null,
+        "key": "account.name",
+        "label": "account.name",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Lumen",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "logo",
+      "slot_id": "slot_account_name_06eb8ff1c8310c35"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "tag",
+        "kind": {
+          "align": "left",
+          "content": "Enablement leave-behind",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.caption",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 209.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "header",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_account_tagline_9a482c70a907100c",
+        "image_policy": null,
+        "key": "account.tagline",
+        "label": "account.tagline",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Enablement leave-behind",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "tag",
+      "slot_id": "slot_account_tagline_9a482c70a907100c"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "main",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.stack.loose",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 499.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "hero",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.stack.tight",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 499.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "main",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "eyebrow",
+        "kind": {
+          "align": "left",
+          "content": "PRODUCT ENABLEMENT",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.eyebrow",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 499.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "hero",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "image_policy": null,
+        "key": "campaign.eyebrow",
+        "label": "campaign.eyebrow",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "PRODUCT ENABLEMENT",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "eyebrow",
+      "slot_id": "slot_campaign_eyebrow_92252b6be2914522"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "headline",
+        "kind": {
+          "align": "left",
+          "content": "How Lumen works in three steps.",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.12,
+          "max_lines": 2,
+          "style_token": "type.headline",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 499.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "hero",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_headline_65eba10e0a95172f",
+        "image_policy": null,
+        "key": "campaign.headline",
+        "label": "campaign.headline",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "How Lumen works in three steps.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "headline",
+      "slot_id": "slot_campaign_headline_65eba10e0a95172f"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "subtitle",
+        "kind": {
+          "align": "left",
+          "content": "From a plain-language brief to an on-brand, production-ready design.",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.4,
+          "max_lines": 3,
+          "style_token": "type.body.small",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 499.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "hero",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_offer_primary_message_66c2f13a2eec8735",
+        "image_policy": null,
+        "key": "offer.primary_message",
+        "label": "offer.primary_message",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "From a plain-language brief to an on-brand, production-ready design.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "subtitle",
+      "slot_id": "slot_offer_primary_message_66c2f13a2eec8735"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "list",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.stack.default",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 499.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "main",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "r1",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 20.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 499.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "list",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.full",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_n1_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.brand.subtle"
+            }
+          }
+        ],
+        "id": "n1",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "center",
+          "align_y": "center",
+          "gap": 0.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 56.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 56.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "r1",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "n1t",
+        "kind": {
+          "align": "center",
+          "content": "1",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.subtitle",
+          "wrap": "no_wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "n1",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "t1",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 6.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 423.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "r1",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "t1t",
+        "kind": {
+          "align": "left",
+          "content": "Brief it",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.15,
+          "max_lines": 1,
+          "style_token": "type.subtitle",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 423.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "t1",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_1_title_5efb494b4473b11e",
+        "image_policy": null,
+        "key": "step.1.title",
+        "label": "step.1.title",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Brief it",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "t1t",
+      "slot_id": "slot_step_1_title_5efb494b4473b11e"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "t1d",
+        "kind": {
+          "align": "left",
+          "content": "Describe the account, offer, and goal in plain language.",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.4,
+          "max_lines": 2,
+          "style_token": "type.body.small",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 423.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "t1",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_1_desc_8a8c9df6dd5ba4c9",
+        "image_policy": null,
+        "key": "step.1.desc",
+        "label": "step.1.desc",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Describe the account, offer, and goal in plain language.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "t1d",
+      "slot_id": "slot_step_1_desc_8a8c9df6dd5ba4c9"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "r2",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 20.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 499.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "list",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.full",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_n2_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.brand.subtle"
+            }
+          }
+        ],
+        "id": "n2",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "center",
+          "align_y": "center",
+          "gap": 0.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 56.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 56.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "r2",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "n2t",
+        "kind": {
+          "align": "center",
+          "content": "2",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.subtitle",
+          "wrap": "no_wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "n2",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "t2",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 6.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 423.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "r2",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "t2t",
+        "kind": {
+          "align": "left",
+          "content": "It composes on-brand",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.15,
+          "max_lines": 1,
+          "style_token": "type.subtitle",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 423.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "t2",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_2_title_f9916e7f6924828f",
+        "image_policy": null,
+        "key": "step.2.title",
+        "label": "step.2.title",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "It composes on-brand",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "t2t",
+      "slot_id": "slot_step_2_title_f9916e7f6924828f"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "t2d",
+        "kind": {
+          "align": "left",
+          "content": "Lumen assembles a layout using your brand kit and tokens.",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.4,
+          "max_lines": 2,
+          "style_token": "type.body.small",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 423.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "t2",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_2_desc_465f36d544a3d212",
+        "image_policy": null,
+        "key": "step.2.desc",
+        "label": "step.2.desc",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Lumen assembles a layout using your brand kit and tokens.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "t2d",
+      "slot_id": "slot_step_2_desc_465f36d544a3d212"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "r3",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 20.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 499.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "list",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.full",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_n3_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.brand.subtle"
+            }
+          }
+        ],
+        "id": "n3",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "center",
+          "align_y": "center",
+          "gap": 0.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 56.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 56.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "r3",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "n3t",
+        "kind": {
+          "align": "center",
+          "content": "3",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.subtitle",
+          "wrap": "no_wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "n3",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "t3",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 6.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 423.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "r3",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "t3t",
+        "kind": {
+          "align": "left",
+          "content": "Approve and export",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.15,
+          "max_lines": 1,
+          "style_token": "type.subtitle",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 423.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "t3",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_3_title_9912c0007255fb7c",
+        "image_policy": null,
+        "key": "step.3.title",
+        "label": "step.3.title",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Approve and export",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "t3t",
+      "slot_id": "slot_step_3_title_9912c0007255fb7c"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "t3d",
+        "kind": {
+          "align": "left",
+          "content": "Review the preview, tweak if needed, and export production-ready.",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.4,
+          "max_lines": 2,
+          "style_token": "type.body.small",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 423.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "t3",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_3_desc_b2ff2bec78f5bb8b",
+        "image_policy": null,
+        "key": "step.3.desc",
+        "label": "step.3.desc",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Review the preview, tweak if needed, and export production-ready.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "t3d",
+      "slot_id": "slot_step_3_desc_b2ff2bec78f5bb8b"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "footer",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "space_between",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.md",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 499.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.button",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_cta_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.inverse"
+            }
+          }
+        ],
+        "id": "cta",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "center",
+          "align_y": "center",
+          "gap": 0.0,
+          "grow": 0.0,
+          "padding": [
+            16.0,
+            32.0,
+            16.0,
+            32.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 64.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 260.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "footer",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "cta_text",
+        "kind": {
+          "align": "center",
+          "content": "Book a Demo",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.cta",
+          "wrap": "no_wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "cta",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_cta_3859a6984f5f9a8b",
+        "image_policy": null,
+        "key": "campaign.cta",
+        "label": "campaign.cta",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Book a Demo",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "cta_text",
+      "slot_id": "slot_campaign_cta_3859a6984f5f9a8b"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "contact",
+        "kind": {
+          "align": "left",
+          "content": "lumen.ai/demo",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.caption",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 219.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "footer",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_account_contact_713a105b356d0576",
+        "image_policy": null,
+        "key": "account.contact",
+        "label": "account.contact",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "lumen.ai/demo",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "contact",
+      "slot_id": "slot_account_contact_713a105b356d0576"
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "logo"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_account_name_06eb8ff1c8310c35",
+        "image_policy": null,
+        "key": "account.name",
+        "label": "account.name",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Lumen",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Lumen"
+          ],
+          "worst_case": "Lumen"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "tag"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_account_tagline_9a482c70a907100c",
+        "image_policy": null,
+        "key": "account.tagline",
+        "label": "account.tagline",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Enablement leave-behind",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Enablement leave-behind"
+          ],
+          "worst_case": "Enablement leave-behind"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "eyebrow"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "image_policy": null,
+        "key": "campaign.eyebrow",
+        "label": "campaign.eyebrow",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "PRODUCT ENABLEMENT",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "PRODUCT ENABLEMENT"
+          ],
+          "worst_case": "PRODUCT ENABLEMENT"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "headline"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_headline_65eba10e0a95172f",
+        "image_policy": null,
+        "key": "campaign.headline",
+        "label": "campaign.headline",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "How Lumen works in three steps.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "How Lumen works in three steps."
+          ],
+          "worst_case": "How Lumen works in three steps."
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "subtitle"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_offer_primary_message_66c2f13a2eec8735",
+        "image_policy": null,
+        "key": "offer.primary_message",
+        "label": "offer.primary_message",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "From a plain-language brief to an on-brand, production-ready design.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "From a plain-language brief to an on-brand, production-ready design."
+          ],
+          "worst_case": "From a plain-language brief to an on-brand, production-ready design."
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "t1t"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_1_title_5efb494b4473b11e",
+        "image_policy": null,
+        "key": "step.1.title",
+        "label": "step.1.title",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Brief it",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Brief it"
+          ],
+          "worst_case": "Brief it"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "t1d"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_1_desc_8a8c9df6dd5ba4c9",
+        "image_policy": null,
+        "key": "step.1.desc",
+        "label": "step.1.desc",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Describe the account, offer, and goal in plain language.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Describe the account, offer, and goal in plain language."
+          ],
+          "worst_case": "Describe the account, offer, and goal in plain language."
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "t2t"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_2_title_f9916e7f6924828f",
+        "image_policy": null,
+        "key": "step.2.title",
+        "label": "step.2.title",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "It composes on-brand",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "It composes on-brand"
+          ],
+          "worst_case": "It composes on-brand"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "t2d"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_2_desc_465f36d544a3d212",
+        "image_policy": null,
+        "key": "step.2.desc",
+        "label": "step.2.desc",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Lumen assembles a layout using your brand kit and tokens.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Lumen assembles a layout using your brand kit and tokens."
+          ],
+          "worst_case": "Lumen assembles a layout using your brand kit and tokens."
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "t3t"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_3_title_9912c0007255fb7c",
+        "image_policy": null,
+        "key": "step.3.title",
+        "label": "step.3.title",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Approve and export",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Approve and export"
+          ],
+          "worst_case": "Approve and export"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "t3d"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_step_3_desc_b2ff2bec78f5bb8b",
+        "image_policy": null,
+        "key": "step.3.desc",
+        "label": "step.3.desc",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Review the preview, tweak if needed, and export production-ready.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Review the preview, tweak if needed, and export production-ready."
+          ],
+          "worst_case": "Review the preview, tweak if needed, and export production-ready."
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "cta_text"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_cta_3859a6984f5f9a8b",
+        "image_policy": null,
+        "key": "campaign.cta",
+        "label": "campaign.cta",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Book a Demo",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Book a Demo"
+          ],
+          "worst_case": "Book a Demo"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "contact"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_account_contact_713a105b356d0576",
+        "image_policy": null,
+        "key": "account.contact",
+        "label": "account.contact",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "lumen.ai/demo",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "lumen.ai/demo"
+          ],
+          "worst_case": "lumen.ai/demo"
+        }
+      }
+    }
+  ],
+  "dsl_session": {
+    "emitted_slots": {
+      "account.contact": "slot_account_contact_713a105b356d0576",
+      "account.name": "slot_account_name_06eb8ff1c8310c35",
+      "account.tagline": "slot_account_tagline_9a482c70a907100c",
+      "campaign.cta": "slot_campaign_cta_3859a6984f5f9a8b",
+      "campaign.eyebrow": "slot_campaign_eyebrow_92252b6be2914522",
+      "campaign.headline": "slot_campaign_headline_65eba10e0a95172f",
+      "offer.primary_message": "slot_offer_primary_message_66c2f13a2eec8735",
+      "step.1.desc": "slot_step_1_desc_8a8c9df6dd5ba4c9",
+      "step.1.title": "slot_step_1_title_5efb494b4473b11e",
+      "step.2.desc": "slot_step_2_desc_465f36d544a3d212",
+      "step.2.title": "slot_step_2_title_f9916e7f6924828f",
+      "step.3.desc": "slot_step_3_desc_b2ff2bec78f5bb8b",
+      "step.3.title": "slot_step_3_title_9912c0007255fb7c"
+    },
+    "parent_stack": [
+      {
+        "indent": 0,
+        "parent": {
+          "id": "onepager_a4",
+          "kind": "page"
+        }
+      },
+      {
+        "indent": 1,
+        "parent": {
+          "id": "artboard",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 2,
+        "parent": {
+          "id": "footer",
+          "kind": "node"
+        }
+      }
+    ],
+    "previous_can_have_children": false,
+    "previous_structural_depth": 3,
+    "seen_node_ids": [
+      "artboard",
+      "brand",
+      "contact",
+      "cta",
+      "cta_text",
+      "eyebrow",
+      "footer",
+      "header",
+      "headline",
+      "hero",
+      "list",
+      "logo",
+      "main",
+      "mark",
+      "n1",
+      "n1t",
+      "n2",
+      "n2t",
+      "n3",
+      "n3t",
+      "r1",
+      "r2",
+      "r3",
+      "subtitle",
+      "t1",
+      "t1d",
+      "t1t",
+      "t2",
+      "t2d",
+      "t2t",
+      "t3",
+      "t3d",
+      "t3t",
+      "tag"
+    ]
+  },
+  "checkpoint_label": null
+}

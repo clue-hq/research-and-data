@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350" data-lumen-document-id="doc_image_hero" data-lumen-page-id="page_hero">
+<defs>
+<clipPath id="lumen-clip-artboard"><rect x="0" y="0" width="1080" height="1350" /></clipPath>
+<clipPath id="lumen-image-clip-photo"><rect x="0" y="0" width="1080" height="1350" /></clipPath>
+</defs>
+<g id="lumen-page-page_hero" data-lumen-page-id="page_hero">
+<rect x="0" y="0" width="1080" height="1350" fill="#ffffff" data-lumen-fill-id="paint_page_bg" />
+<g id="lumen-node-artboard" data-lumen-node-id="artboard">
+<rect x="0" y="0" width="1080" height="1350" fill="#0e1a1f" data-lumen-fill-id="fill_artboard" />
+<g clip-path="url(#lumen-clip-artboard)">
+<g id="lumen-node-photo" data-lumen-node-id="photo" clip-path="url(#lumen-image-clip-photo)" data-lumen-asset-id="hero_photo" data-lumen-image-fit="focal-crop" data-lumen-alt="Care team at a clinic front desk">
+<image x="-135" y="0" width="1350" height="1350" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAC4jAAAuIwF4pT92AAAAEklEQVR4nGP4z8DwHx9mGBkKAMLXf4EvceABAAAAAElFTkSuQmCC" />
+</g>
+<rect id="lumen-node-scrim" data-lumen-node-id="scrim" x="0" y="0" width="1080" height="1350" opacity="0.56" fill="#0b1f24" data-lumen-fill-id="fill_scrim" />
+<text id="lumen-node-headline" data-lumen-node-id="headline" x="0" y="64" font-family="Inter, Arial, Helvetica, sans-serif" font-size="64" font-weight="700" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(80 1090)" fill="#ffffff" data-lumen-fill-id="fill_headline"><tspan x="0" y="64">Faster triage, calmer</tspan><tspan x="0" y="131.84">clinics.</tspan></text>
+</g>
+</g>
+</g>
+</svg>

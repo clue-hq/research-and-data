@@ -1,0 +1,24 @@
+package
+.DS_Store
+target/
+node_modules/
+.venv/
+dist/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+# Committed dev default (API port for this workspace) — see the file's comment.
+!apps/editor/.env.development
+.lumen-runs/
+.deepagent-workspace/
+.firecrawl/
+apps/api/*.sqlite3
+apps/editor/public/canvaskit/
+apps/editor/public/fonts/
+apps/editor/public/wasm/
+reference_docs/*
+!reference_docs/
+!reference_docs/ABM-Design-Engine-Temporary-Spec.md
+!reference_docs/Brilliant-Reverse-Engineering-Report.md

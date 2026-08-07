@@ -1,0 +1,69 @@
+{
+  "id": "asset_uploaded_logo",
+  "label": "Uploaded Acme logo",
+  "kind": "logo",
+  "status": "ready",
+  "source": {
+    "kind": "uploaded",
+    "filename": "acme-logo.png",
+    "uploaded_by": "designer"
+  },
+  "media": {
+    "mime_type": "image/png",
+    "filename": "acme-logo.png",
+    "byte_length": 4096,
+    "digest": {
+      "algorithm": "sha256",
+      "value": "b6f7b3f24118b8f54a4f3b7b8f1ac77f3cb74d9a77c81c6551a72164888aa001"
+    },
+    "location": {
+      "provider": "opaque_asset_store",
+      "opaque_ref": "workspace/acme/logo",
+      "url": null
+    }
+  },
+  "raster": {
+    "pixel_width": 1200,
+    "pixel_height": 1200,
+    "dpi_x": 300.0,
+    "dpi_y": 300.0,
+    "has_alpha": true,
+    "color_profile": "srgb",
+    "aspect_ratio": 1.0
+  },
+  "vector": null,
+  "font": null,
+  "logo": {
+    "pixel_width": 1200,
+    "pixel_height": 1200,
+    "width": 120.0,
+    "height": 120.0,
+    "dpi_x": 300.0,
+    "dpi_y": 300.0,
+    "has_transparency": true,
+    "color_mode": "full_color",
+    "clearspace": 12.0
+  },
+  "license": {
+    "name": "client_owned",
+    "allow_export": true,
+    "allow_modification": true,
+    "allow_embedding": true,
+    "allow_subsetting": false,
+    "source_url": null,
+    "restrictions": []
+  },
+  "provenance": {
+    "created_by": "designer",
+    "created_at": "2026-06-08T00:00:00Z",
+    "source_label": "manual upload",
+    "confidence": 1.0,
+    "notes": [
+      "Client supplied logo."
+    ]
+  },
+  "tags": [
+    "logo",
+    "brand"
+  ]
+}

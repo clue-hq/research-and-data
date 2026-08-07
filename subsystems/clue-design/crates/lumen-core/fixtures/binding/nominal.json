@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "binding_set_id": "bind_acme_dr_sharma",
+  "template_revision_id": "tmpl_mailer_v1",
+  "audience": {
+    "account_id": "acct_acme",
+    "contact_id": "ct_sharma"
+  },
+  "values": {
+    "contact.full_name": {
+      "kind": "text",
+      "value": "Dr. Priya Sharma"
+    },
+    "account.logo": {
+      "kind": "asset",
+      "asset_id": "asset_acme_logo"
+    },
+    "campaign.cta": {
+      "kind": "text",
+      "value": "Book your demo"
+    },
+    "research.key_insights": {
+      "kind": "list",
+      "items": [
+        {
+          "kind": "text",
+          "value": "Reduced patient wait times by 38%"
+        },
+        {
+          "kind": "text",
+          "value": "Cut intake admin workload in half"
+        },
+        {
+          "kind": "text",
+          "value": "Integrated with Epic in two weeks"
+        }
+      ]
+    },
+    "research.quote": {
+      "kind": "text",
+      "value": "Their team shipped twice as fast as any vendor we have worked with."
+    }
+  },
+  "links": {
+    "landing_page": {
+      "url": "https://go.example.com/acme/dr-sharma"
+    }
+  },
+  "generated": {
+    "qr_landing": {
+      "provider": "qr",
+      "input": {
+        "url_from": "links.landing_page.url",
+        "ec_level": "h"
+      },
+      "bind_to_slot": "campaign.qr"
+    }
+  }
+}

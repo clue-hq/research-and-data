@@ -1,0 +1,224 @@
+{
+ "schema_version": 1,
+ "meta": {
+  "id": "doc_demo",
+  "title": "Hospital Letter",
+  "artifact_type": "letter",
+  "medium": "print",
+  "brand_kit": null,
+  "status": {
+   "kind": "draft"
+  }
+ },
+ "pages": {
+  "page_a4": {
+   "id": "page_a4",
+   "name": "A4 Letter",
+   "size": {
+    "width": 800.0,
+    "height": 600.0,
+    "unit": "px",
+    "preset": "custom",
+    "orientation": "landscape"
+   },
+   "children": [
+    "hero",
+    "sibling"
+   ],
+   "bleed": null,
+   "safe_area": {
+    "x": 12.0,
+    "y": 12.0,
+    "width": 186.0,
+    "height": 273.0
+   },
+   "background": []
+  }
+ },
+ "nodes": {
+  "hero": {
+   "id": "hero",
+   "name": "Hero",
+   "kind": {
+    "kind": "frame"
+   },
+   "transform": {
+    "x": 40.0,
+    "y": 40.0,
+    "rotation": 0.0,
+    "skew_x": 0.0,
+    "skew_y": 0.0,
+    "flip_x": false,
+    "flip_y": false
+   },
+   "size": {
+    "width": {
+     "kind": "fixed",
+     "value": 400.0
+    },
+    "height": {
+     "kind": "fixed",
+     "value": 300.0
+    }
+   },
+   "children": [
+    "headline",
+    "box"
+   ],
+   "fills": [],
+   "strokes": [],
+   "corner": {
+    "top_left": 0.0,
+    "top_right": 0.0,
+    "bottom_right": 0.0,
+    "bottom_left": 0.0
+   },
+   "opacity": 1.0,
+   "clip": false,
+   "layout": null,
+   "computed": null,
+   "locked": false
+  },
+  "headline": {
+   "id": "headline",
+   "name": "Headline",
+   "kind": {
+    "kind": "text",
+    "content": "Hello",
+    "font_family": "Inter",
+    "font_size": 18.0,
+    "font_weight": 600,
+    "align": "left",
+    "line_height": 1.2,
+    "letter_spacing": 0.0,
+    "wrap": "no_wrap",
+    "direction": "ltr"
+   },
+   "transform": {
+    "x": 20.0,
+    "y": 20.0,
+    "rotation": 0.0,
+    "skew_x": 0.0,
+    "skew_y": 0.0,
+    "flip_x": false,
+    "flip_y": false
+   },
+   "size": {
+    "width": {
+     "kind": "fixed",
+     "value": 200.0
+    },
+    "height": {
+     "kind": "fixed",
+     "value": 40.0
+    }
+   },
+   "children": [],
+   "fills": [],
+   "strokes": [],
+   "corner": {
+    "top_left": 0.0,
+    "top_right": 0.0,
+    "bottom_right": 0.0,
+    "bottom_left": 0.0
+   },
+   "opacity": 1.0,
+   "clip": false,
+   "layout": null,
+   "computed": null,
+   "locked": false
+  },
+  "box": {
+   "id": "box",
+   "name": "Box",
+   "kind": {
+    "kind": "rect"
+   },
+   "transform": {
+    "x": 20.0,
+    "y": 80.0,
+    "rotation": 0.0,
+    "skew_x": 0.0,
+    "skew_y": 0.0,
+    "flip_x": false,
+    "flip_y": false
+   },
+   "size": {
+    "width": {
+     "kind": "fixed",
+     "value": 100.0
+    },
+    "height": {
+     "kind": "fixed",
+     "value": 100.0
+    }
+   },
+   "children": [],
+   "fills": [],
+   "strokes": [],
+   "corner": {
+    "top_left": 0.0,
+    "top_right": 0.0,
+    "bottom_right": 0.0,
+    "bottom_left": 0.0
+   },
+   "opacity": 1.0,
+   "clip": false,
+   "layout": null,
+   "computed": null,
+   "locked": false
+  },
+  "sibling": {
+   "id": "sibling",
+   "name": "Sibling",
+   "kind": {
+    "kind": "rect"
+   },
+   "transform": {
+    "x": 500.0,
+    "y": 40.0,
+    "rotation": 0.0,
+    "skew_x": 0.0,
+    "skew_y": 0.0,
+    "flip_x": false,
+    "flip_y": false
+   },
+   "size": {
+    "width": {
+     "kind": "fixed",
+     "value": 80.0
+    },
+    "height": {
+     "kind": "fixed",
+     "value": 80.0
+    }
+   },
+   "children": [],
+   "fills": [],
+   "strokes": [],
+   "corner": {
+    "top_left": 0.0,
+    "top_right": 0.0,
+    "bottom_right": 0.0,
+    "bottom_left": 0.0
+   },
+   "opacity": 1.0,
+   "clip": false,
+   "layout": null,
+   "computed": null,
+   "locked": false
+  }
+ },
+ "slots": {},
+ "assets": {},
+ "export_profiles": [
+  {
+   "name": "print_pdf",
+   "format": "pdf",
+   "pdf_intent": "print",
+   "raster": null,
+   "include_bleed": true,
+   "embed_fonts": true
+  }
+ ]
+}

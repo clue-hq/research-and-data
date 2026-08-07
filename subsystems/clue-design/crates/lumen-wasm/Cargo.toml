@@ -1,0 +1,24 @@
+[package]
+name = "lumen-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# cdylib for the wasm-bindgen module the editor loads; rlib so native
+# `cargo test -p lumen-wasm` can link the engine logic directly.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+lumen-core = { path = "../lumen-core" }
+serde.workspace = true
+serde_json.workspace = true
+wasm-bindgen = "0.2"
+
+[build-dependencies]
+# Content-hash of the shared engine sources for the W5 handshake stamp
+# (crates/build_support/engine_stamp.rs). Already in the workspace lockfile.
+sha2 = "0.10"
+
+[dev-dependencies]
+serde_json.workspace = true

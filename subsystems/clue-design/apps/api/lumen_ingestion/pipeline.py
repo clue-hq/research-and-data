@@ -1,0 +1,1027 @@
+"""`run_website_ingestion` — the website ingestion job glue (slice 1 §9).
+
+Wires the capture package (Agent A) to slice-0's normalizer and the persistence
+API, running inside a FastAPI ``BackgroundTasks`` worker. The whole thing is
+driven through ``run_ingestion_job`` from slice 0 so it *never raises*: every
+failure lands on the job row instead.
+
+The capture package (``lumen_ingestion.capture``) and the core client
+(``lumen_api.core``) are imported lazily so this module stays importable even
+while Agent A's capture files do not yet exist, and so tests can inject stubs
+without pulling in playwright / httpx. ``capture`` and ``build_evidence`` are
+both injectable parameters whose defaults resolve the real callables at call
+time.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+from pathlib import Path
+from typing import Any, Awaitable, Callable, Optional, Protocol
+
+from lumen_api.database import Repository, connect
+from py_lumen_config import settings
+
+from .jobs import IngestionJobStore, StageReporter, run_ingestion_job
+from .normalizer import normalize_evidence
+
+JsonObject = dict[str, Any]
+
+logger = logging.getLogger(__name__)
+
+
+class _CaptureCallable(Protocol):
+    def __call__(
+        self, url: str, *, reporter: StageReporter, force_render: bool = ...
+    ) -> Awaitable[Any]: ...
+
+
+class _BuildEvidenceCallable(Protocol):
+    def __call__(
+        self, outcome: Any, *, core: Any, store_root: str, reporter: StageReporter
+    ) -> Any: ...
+
+
+def _default_capture(
+    url: str, *, reporter: StageReporter, force_render: bool = False
+) -> Awaitable[Any]:
+    from .capture import capture_website
+
+    return capture_website(url, reporter=reporter, force_render=force_render)
+
+
+def _default_build_evidence(
+    outcome: Any, *, core: Any, store_root: str, reporter: StageReporter
+) -> Any:
+    from .capture.evidence_builder import build_evidence
+
+    return build_evidence(outcome, core=core, store_root=store_root, reporter=reporter)
+
+
+def _core_client() -> Any:
+    from lumen_api.core import CoreClient
+
+    return CoreClient()
+
+
+class _RecordingCore:
+    """Proxy over CoreClient that captures ingest_asset records.
+
+    The capture layer writes bytes into the asset STORE via core.ingest_asset
+    but the /assets/{id} routes serve from the DB asset RECORDS (the upload
+    route persists both). Wrapping the client here lets each pipeline persist
+    the records afterward without threading a sink through the capture layer.
+    ingest_asset may run in worker threads (list.append is GIL-atomic);
+    persistence happens on the pipeline thread via `persist_records`.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self.records: list[JsonObject] = []
+
+    def ingest_asset(self, *args: Any, **kwargs: Any) -> Any:
+        response = self._inner.ingest_asset(*args, **kwargs)
+        record = ((response or {}).get("asset") or {}).get("record") or {}
+        if record.get("id"):
+            self.records.append(record)
+        return response
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def persist_records(self, repo: Repository) -> None:
+        seen: set[str] = set()
+        for record in self.records:
+            asset_id = str(record["id"])
+            if asset_id in seen:
+                continue
+            seen.add(asset_id)
+            repo.create_asset_record(record)
+
+
+def _capture_diagnostics(outcome: Any) -> list[JsonObject]:
+    diagnostics = getattr(outcome, "diagnostics", None) or []
+    return [dict(d) for d in diagnostics]
+
+
+def _validation_diagnostics(validation: JsonObject) -> list[JsonObject]:
+    return list(validation.get("diagnostics") or [])
+
+
+# ---------------------------------------------------------------------------
+# Description engine hook (slice 3 §6) — shared by all three ingestion paths.
+#
+# ``describe.py`` (Agent A) may not exist while this module is edited, so the
+# describer + ``apply_descriptions`` are both resolved lazily at call time and
+# every entry point is injectable so tests can stub them. The website + PDF
+# paths call ``_maybe_describe`` which is a GUARANTEED no-op pass-through when
+# ``describe.py`` is absent or a NullDescriber is in play — the existing suites
+# must stay green even if Agent A's files land after these edits.
+# ---------------------------------------------------------------------------
+
+
+class _DescriberProtocol(Protocol):
+    def describe(self, items: list[Any]) -> list[Any]: ...
+
+
+class _ApplyDescriptionsCallable(Protocol):
+    def __call__(
+        self,
+        evidence: Any,
+        *,
+        connection: Any,
+        describer: Any,
+        resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
+        reporter: Callable[[str, float], None],
+        rasterize_svg: Callable[[str], "bytes | None"] | None = None,
+        diagnostics: list | None = None,
+    ) -> Any: ...
+
+
+def resolve_describer() -> Any:
+    """Return the configured ``AssetDescriber`` (Agent A's describe.py).
+
+    ``OpenRouterDescriber`` when ``LUMEN_INGESTION_DESCRIBE=1`` else the
+    deterministic ``NullDescriber``. Resolved lazily so this module imports
+    without describe.py present; if describe.py is missing entirely a tiny
+    inline null describer is returned so callers still get a real object.
+    """
+    try:
+        from .describe import NullDescriber, OpenRouterDescriber
+    except ImportError:
+        logger.debug("describe.py unavailable; using inline null describer")
+        return _InlineNullDescriber()
+
+    if settings.lumen_ingestion_describe:
+        return OpenRouterDescriber()
+    return NullDescriber()
+
+
+class _InlineNullDescriber:
+    """Fallback describer used only when describe.py is absent. Returns
+    ``[None] * len(items)`` so ``apply_descriptions`` (also absent) is never
+    reached — this exists purely to keep ``resolve_describer`` total."""
+
+    def describe(self, items: list[Any]) -> list[Any]:
+        return [None] * len(items)
+
+
+def _default_apply_descriptions(
+    evidence: Any,
+    *,
+    connection: Any,
+    describer: Any,
+    resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
+    reporter: Callable[[str, float], None],
+    rasterize_svg: Callable[[str], "bytes | None"] | None = None,
+    diagnostics: list | None = None,
+) -> Any:
+    """Lazily resolve Agent A's ``apply_descriptions`` and call it.
+
+    Raises ``ImportError`` when describe.py is absent — callers wrap this in
+    ``_maybe_describe`` which swallows that into a debug-level pass-through.
+    """
+    from .describe import apply_descriptions
+
+    return apply_descriptions(
+        evidence,
+        connection=connection,
+        describer=describer,
+        resolve_bytes=resolve_bytes,
+        reporter=reporter,
+        rasterize_svg=rasterize_svg,
+        diagnostics=diagnostics,
+    )
+
+
+
+def _font_metrics_map(evidence: Any, resolve_bytes) -> dict:
+    """K4 rung 2: measured metrics per font family, from the stored face
+    bytes. Best-effort — a face that cannot be read or parsed contributes
+    nothing, and a kit with no readable faces gets the identity ramp."""
+    from .normalizer.font_metrics import extract_font_metrics
+
+    metrics: dict = {}
+    for font in getattr(evidence, "fonts", []) or []:
+        family = getattr(font, "family", None)
+        if not family or family in metrics:
+            continue
+        for face in getattr(font, "faces", []) or []:
+            asset_id = getattr(face, "asset_id", None)
+            if not asset_id:
+                continue
+            resolved = resolve_bytes(asset_id)
+            if not resolved:
+                continue
+            measured = extract_font_metrics(resolved[0])
+            if measured:
+                metrics[family] = measured
+                break
+    return metrics
+
+
+def _maybe_describe(
+    evidence: Any,
+    *,
+    connection: Any,
+    repo: Repository,
+    asset_store_root: str,
+    reporter: Callable[[str, float], None],
+    describer: Any | None = None,
+    apply_descriptions: _ApplyDescriptionsCallable | None = None,
+    diagnostics: list | None = None,
+) -> Any:
+    """Stamp AI descriptions onto ``evidence`` — a guaranteed no-op when
+    describe.py is absent or errors.
+
+    Wraps the lazy ``apply_descriptions`` import in ``try/except ImportError``
+    with a debug-level pass-through so the website + PDF suites stay green even
+    if Agent A's describe.py lands after this code. An unexpected error still
+    never fails the ingest, but it is no longer invisible: it lands in
+    ``diagnostics`` as a LUMI0803 warning (imagery slice 1 — the silent
+    describe failure cost the kit its entire image metadata once already).
+    """
+    apply = apply_descriptions or _default_apply_descriptions
+    describer = describer if describer is not None else resolve_describer()
+    resolve_bytes = _make_resolve_bytes(repo, asset_store_root)
+    try:
+        return apply(
+            evidence,
+            connection=connection,
+            describer=describer,
+            resolve_bytes=resolve_bytes,
+            reporter=reporter,
+            rasterize_svg=_make_rasterize_svg(repo, asset_store_root),
+            diagnostics=diagnostics,
+        )
+    except ImportError:
+        logger.debug("describe.py unavailable; skipping description pass")
+        return evidence
+    except Exception as error:  # never let the description engine fail the ingest
+        logger.warning("apply_descriptions failed; skipping", exc_info=True)
+        if diagnostics is not None:
+            diagnostics.append(
+                {
+                    "code": "LUMI0803",
+                    "severity": "warning",
+                    "message": f"asset description pass failed entirely: {error}",
+                }
+            )
+        return evidence
+
+
+def _make_rasterize_svg(
+    repo: Repository, asset_store_root: str
+) -> Callable[[str], "bytes | None"]:
+    """Rasterize a stored SVG asset through the ENGINE renderer (imagery
+    slice 1): wrap the asset in a minimal one-image scene and export a PNG —
+    the same `skia_safe::svg::Dom` path production rendering uses, so the
+    describe preview shows exactly what a design would. Returns None on any
+    failure — the caller emits the LUMI0804 diagnostic."""
+
+    def rasterize(asset_id: str) -> "bytes | None":
+        try:
+            from lumen_api.core import CoreClient
+
+            core = CoreClient()
+            record = repo.require_asset_record(asset_id)
+            asset = record.get("asset") or record
+            # `new_scene` yields an empty scene with ZERO pages, so an
+            # export against it produced no artifact and every SVG declined
+            # (LUMI0804). Give the raster its own square page and insert the
+            # image into it — the same page+image shape production rendering
+            # uses.
+            page_id = "page_svg_raster"
+            scene = core.new_scene("doc_svg_raster", "svg raster")
+            scene["pages"] = {page_id: _raster_page(page_id)}
+            scene.setdefault("assets", {})[asset_id] = asset
+            core_result = core.apply_operations(
+                scene,
+                [
+                    {
+                        "kind": "insert_node",
+                        "parent": {"kind": "page", "id": page_id},
+                        "index": 0,
+                        "node": _raster_image_node(asset_id),
+                    }
+                ],
+            )
+            scene = core_result.get("scene") or scene
+            export = core.export_preview(
+                scene,
+                "png",
+                page_ids=[page_id],
+                raise_on_error=False,
+                asset_store_root=asset_store_root,
+            )
+            for artifact in (export.get("export") or {}).get("artifacts") or []:
+                # The engine emits raw pixel bytes under `bytes` (a list of
+                # ints), never `bytes_base64` — reading the wrong key silently
+                # dropped every rasterized preview.
+                raw = artifact.get("bytes")
+                if raw:
+                    return bytes(raw)
+            return None
+        except Exception:  # noqa: BLE001 - raster failure is the caller's diagnostic
+            logger.debug("svg rasterization failed for %s", asset_id, exc_info=True)
+            return None
+
+    return rasterize
+
+
+# Public seam names for callers outside the pipeline (the /describe-assets
+# backfill route builds the same resolve/rasterize pair the ingest pass uses).
+def make_resolve_bytes(repo: Repository, asset_store_root: str):
+    return _make_resolve_bytes(repo, asset_store_root)
+
+
+def make_rasterize_svg(repo: Repository, asset_store_root: str):
+    return _make_rasterize_svg(repo, asset_store_root)
+
+
+def _raster_page(page_id: str) -> dict:
+    """A minimal square page (canonical pt units) sized to the raster viewport,
+    so the SVG fills a 512×512 preview."""
+    side = 512.0
+    return {
+        "id": page_id,
+        "name": "svg raster",
+        "size": {
+            "width": side,
+            "height": side,
+            "unit": "pt",
+            "preset": None,
+            "orientation": "portrait",
+        },
+        "children": [],
+        "bleed": None,
+        "safe_area": None,
+        "background": [],
+    }
+
+
+def _raster_image_node(asset_id: str) -> dict:
+    """A minimal absolute-positioned image node filling the raster viewport."""
+    side = 512.0
+    return {
+        "id": "svg_raster_image",
+        "name": "svg raster image",
+        "kind": {"kind": "image", "asset_id": asset_id, "alt": None},
+        "children": [],
+        "fills": [],
+        "strokes": [],
+        "opacity": 1.0,
+        "clip": False,
+        "locked": False,
+        "layout": None,
+        "computed": None,
+        "position_mode": "absolute",
+        "absolute_box": {"x": 0.0, "y": 0.0, "width": side, "height": side},
+        "size": {
+            "width": {"kind": "fixed", "value": side},
+            "height": {"kind": "fixed", "value": side},
+        },
+        "transform": {
+            "x": 0.0,
+            "y": 0.0,
+            "rotation": 0.0,
+            "skew_x": 0.0,
+            "skew_y": 0.0,
+            "flip_x": False,
+            "flip_y": False,
+        },
+        "corner": {
+            "top_left": 0.0,
+            "top_right": 0.0,
+            "bottom_left": 0.0,
+            "bottom_right": 0.0,
+        },
+    }
+
+
+def _make_resolve_bytes(
+    repo: Repository, asset_store_root: str
+) -> Callable[[str], "tuple[bytes, str] | None"]:
+    """Build the ``resolve_bytes`` callable (§1): asset_id → (bytes, mime) via
+    ``Repository.require_asset_record`` → ``media.location.opaque_ref`` (provider
+    ``local-store``) → store path. Mirrors main.py ``get_asset_bytes``. Returns
+    ``None`` for ANY miss — never raises."""
+    root = Path(asset_store_root).resolve()
+
+    def resolve_bytes(asset_id: str) -> "tuple[bytes, str] | None":
+        try:
+            stored = repo.require_asset_record(asset_id)
+        except Exception:
+            return None
+        record = stored.get("asset") or {}
+        media = record.get("media") or {}
+        location = media.get("location") or {}
+        opaque_ref = location.get("opaque_ref")
+        if location.get("provider") != "local-store" or not opaque_ref:
+            return None
+        candidate = (root / opaque_ref).resolve()
+        if root != candidate and root not in candidate.parents:
+            return None
+        if not candidate.is_file():
+            return None
+        try:
+            data = candidate.read_bytes()
+        except OSError:
+            return None
+        mime = media.get("mime_type") or "application/octet-stream"
+        return (data, mime)
+
+    return resolve_bytes
+
+
+def run_website_ingestion(
+    database_path: str | Path,
+    asset_store_root: str,
+    job_id: str,
+    *,
+    capture: _CaptureCallable = _default_capture,
+    build_evidence: _BuildEvidenceCallable = _default_build_evidence,
+    describer: Any | None = None,
+    apply_descriptions: _ApplyDescriptionsCallable | None = None,
+) -> None:
+    """Run a website ingestion job to a terminal state. Never raises.
+
+    Safe for ``BackgroundTasks``: opens its own sqlite connection, builds an
+    ``IngestionJobStore``, and hands the work to ``run_ingestion_job`` (which
+    captures any exception onto the job row).
+    """
+    connection = connect(Path(database_path))
+    try:
+        store = IngestionJobStore(connection)
+        repo = Repository(connection)
+        core = _RecordingCore(_core_client())
+
+        def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
+            return _ingest(
+                store=store,
+                repo=repo,
+                core=core,
+                connection=connection,
+                asset_store_root=asset_store_root,
+                job_id=job_id,
+                reporter=reporter,
+                capture=capture,
+                build_evidence=build_evidence,
+                describer=describer,
+                apply_descriptions=apply_descriptions,
+            )
+
+        run_ingestion_job(store, job_id, work)
+    finally:
+        connection.close()
+
+
+def _ingest(
+    *,
+    store: IngestionJobStore,
+    repo: Repository,
+    core: Any,
+    connection: Any,
+    asset_store_root: str,
+    job_id: str,
+    reporter: StageReporter,
+    capture: _CaptureCallable,
+    build_evidence: _BuildEvidenceCallable,
+    describer: Any | None = None,
+    apply_descriptions: _ApplyDescriptionsCallable | None = None,
+) -> "tuple[str, int, Optional[str]]":
+    job = store.require(job_id)
+    request = job["request"]
+    url = request["url"]
+    force_render = bool(request.get("force_render", False))
+    requested_kit_id = request.get("brand_kit_id")
+    requested_name = request.get("name")
+
+    outcome = asyncio.run(capture(url, reporter=reporter, force_render=force_render))
+    evidence = build_evidence(
+        outcome, core=core, store_root=asset_store_root, reporter=reporter
+    )
+
+    describe_diagnostics: list = []
+    evidence = _maybe_describe(
+        evidence,
+        connection=connection,
+        repo=repo,
+        asset_store_root=asset_store_root,
+        reporter=reporter,
+        describer=describer,
+        apply_descriptions=apply_descriptions,
+        diagnostics=describe_diagnostics,
+    )
+
+    # Persist DB asset records for everything the capture layer ingested so
+    # /assets/{id}/bytes|thumbnail and the library can serve them.
+    getattr(core, "persist_records", lambda _repo: None)(repo)
+
+    reporter("Preparing your brand kit…", 0.85)
+
+    suffix = job_id.split("_", 1)[-1]
+    brand_kit_id = requested_kit_id or f"brand_kit_ing_{suffix}"
+    name = requested_name or _kit_name(evidence, url)
+    created_at = (job["created_at"] or "").split("T", 1)[0]
+
+    result = normalize_evidence(
+        evidence,
+        brand_kit_id=brand_kit_id,
+        name=name,
+        created_at=created_at or job["created_at"],
+        version=1,
+        font_metrics=_font_metrics_map(
+            evidence, _make_resolve_bytes(repo, asset_store_root)
+        ),
+    )
+    kit = result.brand_kit
+
+    # Persist mirroring main.py's create_brand_kit flow, but for a draft
+    # ingestion kit (product_ready=False — the human reviews before publish).
+    validation = core.validate_brand_kit(kit, product_ready=False, raise_on_error=False)
+    if not validation.get("ok"):
+        codes = sorted(
+            {
+                str(d.get("code"))
+                for d in validation.get("diagnostics") or []
+                if d.get("severity") == "error"
+            }
+        )
+        raise RuntimeError(f"ingested brand kit failed draft validation: {codes}")
+    validated_kit = validation.get("brand_kit") or kit
+    summary_response = core.summarize_brand_kit(validated_kit, raise_on_error=False)
+    summary = summary_response.get("brand_summary") or {}
+    summary["ingestion"] = result.ingestion_report
+
+    diagnostics = (
+        result.diagnostics
+        + _capture_diagnostics(outcome)
+        + _validation_diagnostics(validation)
+        + describe_diagnostics
+    )
+
+    record = repo.create_brand_kit(validated_kit, summary, diagnostics, "website")
+
+    evidence_json = _evidence_dump(evidence)
+    return (record["brand_kit_id"], int(record["version"]), evidence_json)
+
+
+def _kit_name(evidence: Any, url: str) -> str:
+    narrative = getattr(evidence, "narrative", None)
+    brand_name = getattr(narrative, "brand_name", None) if narrative else None
+    if brand_name:
+        return brand_name
+    from urllib.parse import urlparse
+
+    host = urlparse(url).hostname
+    return host or url
+
+
+def _evidence_dump(evidence: Any) -> Optional[str]:
+    """Dump BrandEvidence to JSON for the job row (it carries no raw bytes)."""
+    if evidence is None:
+        return None
+    if hasattr(evidence, "model_dump"):
+        return json.dumps(evidence.model_dump(), sort_keys=True, separators=(",", ":"))
+    return json.dumps(evidence, sort_keys=True, separators=(",", ":"))
+
+
+# ---------------------------------------------------------------------------
+# PDF ingestion (slice 2 §1/§4) — additive; mirrors the website path above.
+#
+# ``extract`` is an injectable parameter whose default lazily resolves Agent A's
+# ``extract_pdf_evidence`` at call time, so this module stays importable while
+# ``capture/pdf.py`` does not yet exist and tests can inject a stub without
+# pulling pymupdf / Pillow. The PDF bytes live in a tmp file named by ``job_id``
+# (written by the route); the pipeline reads then deletes it in a ``finally``.
+# ---------------------------------------------------------------------------
+
+
+class _ExtractPdfCallable(Protocol):
+    def __call__(
+        self,
+        pdf_bytes: bytes,
+        filename: str,
+        *,
+        core: Any,
+        store_root: str,
+        reporter: Callable[[str, float], None],
+    ) -> Any: ...
+
+
+def _default_extract_pdf(
+    pdf_bytes: bytes,
+    filename: str,
+    *,
+    core: Any,
+    store_root: str,
+    reporter: Callable[[str, float], None],
+) -> Any:
+    from .capture.pdf import extract_pdf_evidence
+
+    return extract_pdf_evidence(
+        pdf_bytes,
+        filename,
+        core=core,
+        store_root=store_root,
+        reporter=reporter,
+    )
+
+
+def run_pdf_ingestion(
+    database_path: str | Path,
+    asset_store_root: str,
+    job_id: str,
+    *,
+    extract: _ExtractPdfCallable = _default_extract_pdf,
+    describer: Any | None = None,
+    apply_descriptions: _ApplyDescriptionsCallable | None = None,
+) -> None:
+    """Run a PDF ingestion job to a terminal state. Never raises.
+
+    Safe for ``BackgroundTasks``: opens its own sqlite connection, builds an
+    ``IngestionJobStore``, and hands the work to ``run_ingestion_job`` (which
+    captures any exception onto the job row). The uploaded PDF bytes are read
+    from ``request["tmp_path"]`` and that tmp file is always deleted before the
+    job reaches a terminal state.
+    """
+    connection = connect(Path(database_path))
+    try:
+        store = IngestionJobStore(connection)
+        repo = Repository(connection)
+        core = _RecordingCore(_core_client())
+
+        def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
+            return _ingest_pdf(
+                store=store,
+                repo=repo,
+                core=core,
+                connection=connection,
+                asset_store_root=asset_store_root,
+                job_id=job_id,
+                reporter=reporter,
+                extract=extract,
+                describer=describer,
+                apply_descriptions=apply_descriptions,
+            )
+
+        run_ingestion_job(store, job_id, work)
+    finally:
+        connection.close()
+
+
+def _ingest_pdf(
+    *,
+    store: IngestionJobStore,
+    repo: Repository,
+    core: Any,
+    connection: Any,
+    asset_store_root: str,
+    job_id: str,
+    reporter: StageReporter,
+    extract: _ExtractPdfCallable,
+    describer: Any | None = None,
+    apply_descriptions: _ApplyDescriptionsCallable | None = None,
+) -> "tuple[str, int, Optional[str]]":
+    job = store.require(job_id)
+    request = job["request"]
+    filename = request.get("filename") or "brand-guidelines.pdf"
+    requested_kit_id = request.get("brand_kit_id")
+    requested_name = request.get("name")
+    tmp_path = request.get("tmp_path")
+
+    try:
+        if not tmp_path or not os.path.exists(tmp_path):
+            raise RuntimeError(
+                f"LUMI0605: uploaded PDF tmp file was not found (tmp_path={tmp_path!r})"
+            )
+        pdf_bytes = Path(tmp_path).read_bytes()
+
+        extraction = extract(
+            pdf_bytes,
+            filename,
+            core=core,
+            store_root=asset_store_root,
+            reporter=reporter,
+        )
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+    evidence = getattr(extraction, "evidence", extraction)
+
+    describe_diagnostics: list = []
+    evidence = _maybe_describe(
+        evidence,
+        connection=connection,
+        repo=repo,
+        asset_store_root=asset_store_root,
+        reporter=reporter,
+        describer=describer,
+        apply_descriptions=apply_descriptions,
+        diagnostics=describe_diagnostics,
+    )
+
+    # Persist DB asset records for everything the capture layer ingested so
+    # /assets/{id}/bytes|thumbnail and the library can serve them.
+    getattr(core, "persist_records", lambda _repo: None)(repo)
+
+    reporter("Preparing your brand kit…", 0.85)
+
+    suffix = job_id.split("_", 1)[-1]
+    brand_kit_id = requested_kit_id or f"brand_kit_ing_{suffix}"
+    name = requested_name or _pdf_kit_name(evidence, filename)
+    created_at = (job["created_at"] or "").split("T", 1)[0]
+
+    result = normalize_evidence(
+        evidence,
+        brand_kit_id=brand_kit_id,
+        name=name,
+        created_at=created_at or job["created_at"],
+        version=1,
+        font_metrics=_font_metrics_map(
+            evidence, _make_resolve_bytes(repo, asset_store_root)
+        ),
+    )
+    kit = result.brand_kit
+
+    validation = core.validate_brand_kit(kit, product_ready=False, raise_on_error=False)
+    if not validation.get("ok"):
+        codes = sorted(
+            {
+                str(d.get("code"))
+                for d in validation.get("diagnostics") or []
+                if d.get("severity") == "error"
+            }
+        )
+        raise RuntimeError(f"ingested brand kit failed draft validation: {codes}")
+    validated_kit = validation.get("brand_kit") or kit
+    summary_response = core.summarize_brand_kit(validated_kit, raise_on_error=False)
+    summary = summary_response.get("brand_summary") or {}
+    summary["ingestion"] = result.ingestion_report
+
+    diagnostics = (
+        result.diagnostics
+        + _pdf_extraction_diagnostics(extraction)
+        + _validation_diagnostics(validation)
+        + describe_diagnostics
+    )
+
+    record = repo.create_brand_kit(validated_kit, summary, diagnostics, "pdf")
+
+    evidence_json = _evidence_dump(evidence)
+    return (record["brand_kit_id"], int(record["version"]), evidence_json)
+
+
+def _pdf_extraction_diagnostics(extraction: Any) -> list[JsonObject]:
+    diagnostics = getattr(extraction, "diagnostics", None) or []
+    return [dict(d) for d in diagnostics]
+
+
+def _pdf_kit_name(evidence: Any, filename: str) -> str:
+    narrative = getattr(evidence, "narrative", None)
+    brand_name = getattr(narrative, "brand_name", None) if narrative else None
+    if brand_name:
+        return brand_name
+    stem = Path(filename).stem.replace("_", " ").replace("-", " ").strip()
+    return stem.title() if stem else "Brand Kit"
+
+
+# ---------------------------------------------------------------------------
+# Asset-upload ingestion (slice 3 §6) — additive; mirrors the PDF path.
+#
+# ``analyze`` is an injectable parameter whose default lazily resolves Agent A's
+# ``analyze_uploads`` at call time, so this module stays importable while
+# ``capture/uploads.py`` does not yet exist and tests can inject a stub without
+# pulling Pillow. Uploaded files live in tmp files named by ``job_id`` (written
+# by the route); the pipeline reads then deletes ALL of them in a ``finally``.
+# ---------------------------------------------------------------------------
+
+
+class _AnalyzeUploadsCallable(Protocol):
+    def __call__(
+        self,
+        files: list[Any],
+        *,
+        core: Any,
+        store_root: str,
+        reporter: Callable[[str, float], None],
+    ) -> Any: ...
+
+
+def _default_analyze_uploads(
+    files: list[Any],
+    *,
+    core: Any,
+    store_root: str,
+    reporter: Callable[[str, float], None],
+) -> Any:
+    from .capture.uploads import analyze_uploads
+
+    return analyze_uploads(
+        files,
+        core=core,
+        store_root=store_root,
+        reporter=reporter,
+    )
+
+
+def _upload_file_input(filename: str, content_type: Optional[str], data: bytes) -> Any:
+    """Build an ``UploadFileInput`` (§1). Lazily resolves Agent A's dataclass so
+    this module imports without ``capture/uploads.py`` present; falls back to a
+    duck-typed shim carrying the same attribute names when it is absent (only
+    reachable in tests that also stub ``analyze``)."""
+    try:
+        from .capture.uploads import UploadFileInput
+    except ImportError:
+        return _UploadFileInputShim(
+            filename=filename, content_type=content_type, data=data
+        )
+    return UploadFileInput(filename=filename, content_type=content_type, data=data)
+
+
+class _UploadFileInputShim:
+    __slots__ = ("filename", "content_type", "data")
+
+    def __init__(self, *, filename: str, content_type: Optional[str], data: bytes):
+        self.filename = filename
+        self.content_type = content_type
+        self.data = data
+
+
+def run_asset_ingestion(
+    database_path: str | Path,
+    asset_store_root: str,
+    job_id: str,
+    *,
+    analyze: _AnalyzeUploadsCallable = _default_analyze_uploads,
+    describer: Any | None = None,
+    apply_descriptions: _ApplyDescriptionsCallable | None = None,
+) -> None:
+    """Run an asset-upload ingestion job to a terminal state. Never raises.
+
+    Safe for ``BackgroundTasks``: opens its own sqlite connection, builds an
+    ``IngestionJobStore``, and hands the work to ``run_ingestion_job`` (which
+    captures any exception onto the job row). The uploaded files live in tmp
+    files listed in ``request["files"][*]["tmp_path"]`` and are always deleted
+    before the job reaches a terminal state.
+    """
+    connection = connect(Path(database_path))
+    try:
+        store = IngestionJobStore(connection)
+        repo = Repository(connection)
+        core = _RecordingCore(_core_client())
+
+        def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
+            return _ingest_assets(
+                store=store,
+                repo=repo,
+                core=core,
+                connection=connection,
+                asset_store_root=asset_store_root,
+                job_id=job_id,
+                reporter=reporter,
+                analyze=analyze,
+                describer=describer,
+                apply_descriptions=apply_descriptions,
+            )
+
+        run_ingestion_job(store, job_id, work)
+    finally:
+        connection.close()
+
+
+def _ingest_assets(
+    *,
+    store: IngestionJobStore,
+    repo: Repository,
+    core: Any,
+    connection: Any,
+    asset_store_root: str,
+    job_id: str,
+    reporter: StageReporter,
+    analyze: _AnalyzeUploadsCallable,
+    describer: Any | None = None,
+    apply_descriptions: _ApplyDescriptionsCallable | None = None,
+) -> "tuple[str, int, Optional[str]]":
+    job = store.require(job_id)
+    request = job["request"]
+    requested_kit_id = request.get("brand_kit_id")
+    requested_name = request.get("name")
+    file_specs = list(request.get("files") or [])
+    tmp_paths = [spec.get("tmp_path") for spec in file_specs]
+
+    try:
+        inputs: list[Any] = []
+        for spec in file_specs:
+            tmp_path = spec.get("tmp_path")
+            if not tmp_path or not os.path.exists(tmp_path):
+                raise RuntimeError(
+                    "LUMI0605: uploaded asset tmp file was not found "
+                    f"(tmp_path={tmp_path!r})"
+                )
+            inputs.append(
+                _upload_file_input(
+                    filename=spec.get("filename") or Path(tmp_path).name,
+                    content_type=spec.get("content_type"),
+                    data=Path(tmp_path).read_bytes(),
+                )
+            )
+
+        analysis = analyze(
+            inputs,
+            core=core,
+            store_root=asset_store_root,
+            reporter=reporter,
+        )
+    finally:
+        for tmp_path in tmp_paths:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+    # ``analyze_uploads`` returns (evidence, diagnostics); tolerate a bare
+    # evidence return from simpler stubs too.
+    if isinstance(analysis, tuple):
+        evidence, analyze_diagnostics = analysis[0], list(analysis[1] or [])
+    else:
+        evidence, analyze_diagnostics = analysis, []
+
+    describe_diagnostics: list = []
+    evidence = _maybe_describe(
+        evidence,
+        connection=connection,
+        repo=repo,
+        asset_store_root=asset_store_root,
+        reporter=reporter,
+        describer=describer,
+        apply_descriptions=apply_descriptions,
+        diagnostics=describe_diagnostics,
+    )
+
+    # Persist DB asset records for everything the capture layer ingested so
+    # /assets/{id}/bytes|thumbnail and the library can serve them.
+    getattr(core, "persist_records", lambda _repo: None)(repo)
+
+    reporter("Preparing your brand kit…", 0.85)
+
+    suffix = job_id.split("_", 1)[-1]
+    brand_kit_id = requested_kit_id or f"brand_kit_ing_{suffix}"
+    name = requested_name or _asset_kit_name(evidence, len(file_specs))
+    created_at = (job["created_at"] or "").split("T", 1)[0]
+
+    result = normalize_evidence(
+        evidence,
+        brand_kit_id=brand_kit_id,
+        name=name,
+        created_at=created_at or job["created_at"],
+        version=1,
+        font_metrics=_font_metrics_map(
+            evidence, _make_resolve_bytes(repo, asset_store_root)
+        ),
+    )
+    kit = result.brand_kit
+
+    validation = core.validate_brand_kit(kit, product_ready=False, raise_on_error=False)
+    if not validation.get("ok"):
+        codes = sorted(
+            {
+                str(d.get("code"))
+                for d in validation.get("diagnostics") or []
+                if d.get("severity") == "error"
+            }
+        )
+        raise RuntimeError(f"ingested brand kit failed draft validation: {codes}")
+    validated_kit = validation.get("brand_kit") or kit
+    summary_response = core.summarize_brand_kit(validated_kit, raise_on_error=False)
+    summary = summary_response.get("brand_summary") or {}
+    summary["ingestion"] = result.ingestion_report
+
+    diagnostics = (
+        result.diagnostics
+        + analyze_diagnostics
+        + _validation_diagnostics(validation)
+        + describe_diagnostics
+    )
+
+    record = repo.create_brand_kit(validated_kit, summary, diagnostics, "asset_upload")
+
+    evidence_json = _evidence_dump(evidence)
+    return (record["brand_kit_id"], int(record["version"]), evidence_json)
+
+
+def _asset_kit_name(evidence: Any, file_count: int) -> str:
+    narrative = getattr(evidence, "narrative", None)
+    brand_name = getattr(narrative, "brand_name", None) if narrative else None
+    if brand_name:
+        return brand_name
+    return f"Uploaded assets ({file_count} files)"

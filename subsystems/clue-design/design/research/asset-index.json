@@ -1,0 +1,857 @@
+[
+ {
+  "file": "assets/screenshots/bf0e849b8136__screenshot.png",
+  "kind": "screenshot",
+  "url": "https://cursor.com/#screenshot",
+  "sha256": "bf0e849b8136d0a5d606e175470649330bba7b7064f3296dd9232bc68bdc599d",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 2917547
+ },
+ {
+  "file": "assets/fonts/d295cbdbb0e6_cursor-icons-16.woff2",
+  "kind": "font",
+  "url": "https://cursor.com/marketing-static/fonts/cursor-icons-16.woff2",
+  "sha256": "d295cbdbb0e60a0a32df6dc47786beb717fa176e16e436d53a32be64420c7fed",
+  "content_type": "font/woff2",
+  "page": "/",
+  "bytes": 89084
+ },
+ {
+  "file": "assets/logos/9c941729e513_apple-touch-icon.png",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/apple-touch-icon.png",
+  "sha256": "9c941729e51318224f1b6ea71d8ffc3b45dd4e6271653ed36d2a77e4066208a3",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 1711
+ },
+ {
+  "file": "assets/images/0b108182dc32_opengraph-default.png",
+  "kind": "image",
+  "url": "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/og/opengraph-default.png",
+  "sha256": "0b108182dc32fda5d166de76a40d8db00ad30f70de1be7da1735f448cc5656d6",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 11076
+ },
+ {
+  "file": "assets/images/519acd519b32_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-cc24ca462279ca23250c.jpg&w=3840&q=70",
+  "sha256": "519acd519b3250f02db9fe59e923dde8c83ff0fb81cff0fb5b2a575f26fe8dc0",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 668550
+ },
+ {
+  "file": "assets/images/0b0e25bcdae8_cursor-wallpaper.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/demos/cursor-wallpaper.png",
+  "sha256": "0b0e25bcdae8d466bcba8af657a9241427cee1ee3e2d93863794eb0dd635f48a",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 1457185
+ },
+ {
+  "file": "assets/images/e1f80690e046_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-85923e7fafe00c9c0d1f.jpg&w=3840&q=70",
+  "sha256": "e1f80690e046768104accf11294629e919655cc079c2b3c779347eb612d75dde",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 244796
+ },
+ {
+  "file": "assets/images/d542f141471c_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Fusers%2Fswhitmore.png&w=48&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "d542f141471c65e2d84877a5c0de6d3840d5f696d972bbd8f99af653cf19753f",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 1821
+ },
+ {
+  "file": "assets/images/5b5b099cae00_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Fusers%2Feric.jpeg&w=48&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "5b5b099cae0047b3dc4ae30551681a21c511cc296a823d8c7f14aed84c9d24c2",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 797
+ },
+ {
+  "file": "assets/images/8e9a16f854ff_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Fusers%2Frikki.jpg&w=48&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "8e9a16f854ffdf931803339c63e76ce831149d8742cf80c618d9e505b079c921",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 725
+ },
+ {
+  "file": "assets/images/601ef4a7765a_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Fusers%2Fryo.png&w=48&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "601ef4a7765a043df721bfb37998dd16d85350bbf73312baecc9ee973cac911a",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 1277
+ },
+ {
+  "file": "assets/images/8f6fa068fa43_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Fusers%2Fswhitmore.png&w=64&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "8f6fa068fa4393cfde05f4a059c37e9d86382158c6842a95717251a6c3d9b669",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 2720
+ },
+ {
+  "file": "assets/images/8a3860f47887_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Fusers%2Feric.jpeg&w=64&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "8a3860f47887d23609357ba4c77efbeefd00c2bf71c986632e7188a8ae4bccbf",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 1083
+ },
+ {
+  "file": "assets/images/22a7124b3bfd_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Ficon-192x192.png&w=64&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "22a7124b3bfd63ee45c6c25538b97711b6379385bcf965a4acb972a306733884",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 532
+ },
+ {
+  "file": "assets/images/812c383b821d_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Finternal-brand%2Finternal-brand-023-3291bb4c.jpg&w=3840&q=70",
+  "sha256": "812c383b821d81034cbf86e4a688b2f1fa46554782409767836c6b261603774b",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 571163
+ },
+ {
+  "file": "assets/images/2d9fc9fbc2f6_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Fautomate%2Fcard-time-to-merge.png&w=3840&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "2d9fc9fbc2f6b8de56696cf14c0d2bea7abc6ea6881f9d87fe964bef9795b0bc",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 24097
+ },
+ {
+  "file": "assets/images/ebdb5ce5a571_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fdiana-hu-avatar.png&w=96&q=70",
+  "sha256": "ebdb5ce5a5712597d5e34376d06b812a5c514b859c28f47f36c5164760e770f9",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 4705
+ },
+ {
+  "file": "assets/images/b87323250ce7_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-b7d40eac35d910f3448b.png&w=96&q=70",
+  "sha256": "b87323250ce77894209fbba35fb79110282c2385385af3f14823787b5b8e2736",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 4903
+ },
+ {
+  "file": "assets/images/a9d27679b73a_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fandrej-karpathy-avatar.png&w=96&q=70",
+  "sha256": "a9d27679b73a1a1947c2cf5bb782d49a70f3750eb8e055a07d5c15fbda84fd33",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 4819
+ },
+ {
+  "file": "assets/images/b89b4cda412e_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fpatrick-collison-avatar.png&w=96&q=70",
+  "sha256": "b89b4cda412e4b7de934b280b6b76888e41ff17f715e2bf0405af9f6a1cbb9ca",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 8201
+ },
+ {
+  "file": "assets/images/3fe3ac81aac5_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fshadcn-avatar.png&w=96&q=70",
+  "sha256": "3fe3ac81aac5b0af7a314c207c95b1f1eabeb3bdd30e59b556e5c61dfbd06b05",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 5855
+ },
+ {
+  "file": "assets/images/21fa75257d20_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fgreg-brockman-avatar.jpg&w=96&q=70",
+  "sha256": "21fa75257d2069c2d53a5a356d93f6349935d6c992be7bf1cae730fcd14d7be3",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 1415
+ },
+ {
+  "file": "assets/images/f6bb978207d8_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-fd9b3b4cd7d670f9f7d8.png&w=3840&q=70",
+  "sha256": "f6bb978207d80ff46beeb84457233a806843ba3782f3c1bf246dbe1688a1176a",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 3689
+ },
+ {
+  "file": "assets/images/b2ba7ff0872e_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-3cb319c263fd5a76115b.png&w=3840&q=70",
+  "sha256": "b2ba7ff0872e9a9d7bb2d2bfc78a5eb899ebbaacfadc10723a37dbc9a69b87ab",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 543
+ },
+ {
+  "file": "assets/images/09b01c951489_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fhomepage%2Fhomepage-team-photo-1.jpg&w=1920&q=70",
+  "sha256": "09b01c9514892aa9bc82c30469eb81846e9f9aaf02166f6504d8a87e88f54887",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 273396
+ },
+ {
+  "file": "assets/images/c946e5724491_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fhomepage%2Fhomepage-team-photo.jpg&w=1920&q=70",
+  "sha256": "c946e57244911b2253eedf57c54d8da6c59e0c2bc7c983fef2baa6b05e7381c7",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 76138
+ },
+ {
+  "file": "assets/images/6db88788ec85_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fsasha-rush.jpeg&w=48&q=70",
+  "sha256": "6db88788ec858df8d57cb5cf4d410ea33321548d8e5340c67f3de01469384f4a",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 873
+ },
+ {
+  "file": "assets/images/ced9c801aa5d_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Favatars.slack-edge.com%2F2026-04-27%2F11006579904322_8cc5cfeb3c8a21bb79db_original.jpg&w=48&q=70",
+  "sha256": "ced9c801aa5d3b8879e135e8ea99b767a7339ec5cc463765f51fd7de6c0d82a1",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 783
+ },
+ {
+  "file": "assets/images/af08f679bb44_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fkevin-niparko.png&w=48&q=70",
+  "sha256": "af08f679bb447ca7333ed4f94e9016ec979c599eae003d489b22561971c9261e",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 3153
+ },
+ {
+  "file": "assets/images/c94729a48ebd_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fnaman-jain-avatar.png&w=48&q=70",
+  "sha256": "c94729a48ebdd8f641ecc10c5c292f0f123631f33d10bbd84e72989849df1429",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 2486
+ },
+ {
+  "file": "assets/images/6f0bdec445c9_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Ferik-nilsson-v2.png&w=48&q=70",
+  "sha256": "6f0bdec445c9b146189dad23470a9b8a37e3271373e291608dad92e161512a94",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 1475
+ },
+ {
+  "file": "assets/images/f3636c05d5bf_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fian-huang-v3.jpeg&w=48&q=70",
+  "sha256": "f3636c05d5bf3569e1b68cdcb6e5e2c784470357a7e0a3381a3b722667b44848",
+  "content_type": "image/jpeg",
+  "page": "/",
+  "bytes": 747
+ },
+ {
+  "file": "assets/images/601ef4a7765a_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fryo-lu.png&w=48&q=70",
+  "sha256": "601ef4a7765a043df721bfb37998dd16d85350bbf73312baecc9ee973cac911a",
+  "content_type": "image/png",
+  "page": "/",
+  "bytes": 1277
+ },
+ {
+  "file": "assets/screenshots/027842423c84_pricing_screenshot.png",
+  "kind": "screenshot",
+  "url": "https://cursor.com/pricing#screenshot",
+  "sha256": "027842423c843da0a86084f17bca70597952baeb682a76871e726f15d63bfa1c",
+  "content_type": "image/png",
+  "page": "/pricing",
+  "bytes": 266384
+ },
+ {
+  "file": "assets/logos/9c941729e513_apple-touch-icon.png",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/apple-touch-icon.png",
+  "sha256": "9c941729e51318224f1b6ea71d8ffc3b45dd4e6271653ed36d2a77e4066208a3",
+  "content_type": "image/png",
+  "page": "/pricing",
+  "bytes": 1711
+ },
+ {
+  "file": "assets/images/0b108182dc32_opengraph-default.png",
+  "kind": "image",
+  "url": "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/og/opengraph-default.png",
+  "sha256": "0b108182dc32fda5d166de76a40d8db00ad30f70de1be7da1735f448cc5656d6",
+  "content_type": "image/png",
+  "page": "/pricing",
+  "bytes": 11076
+ },
+ {
+  "file": "assets/screenshots/0ebc0520d9da_enterprise_screenshot.png",
+  "kind": "screenshot",
+  "url": "https://cursor.com/enterprise#screenshot",
+  "sha256": "0ebc0520d9da9c2db02d3ad311df6e2bdb1a65a1ceb7b1367ef9ffcabfe1e632",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 2017022
+ },
+ {
+  "file": "assets/logos/b89b4cda412e_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fpatrick-collison-avatar.png&w=96&q=70",
+  "sha256": "b89b4cda412e4b7de934b280b6b76888e41ff17f715e2bf0405af9f6a1cbb9ca",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 8201
+ },
+ {
+  "file": "assets/logos/b87323250ce7_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-b7d40eac35d910f3448b.png&w=96&q=70",
+  "sha256": "b87323250ce77894209fbba35fb79110282c2385385af3f14823787b5b8e2736",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 4903
+ },
+ {
+  "file": "assets/logos/c74d20815f31_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-294206209c12734f40e8.jpg&w=96&q=70",
+  "sha256": "c74d20815f31f1c9c47cf3fdfe4f90e6b1c6153effc6408c65e103fac5e621f4",
+  "content_type": "image/jpeg",
+  "page": "/enterprise",
+  "bytes": 1271
+ },
+ {
+  "file": "assets/logos/ee0e23141245_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-d3a0c9ffab8449d88e3d.jpg&w=96&q=70",
+  "sha256": "ee0e2314124515f18d48159ea24bb48c37acb13da781b37233ece50dea6cdda7",
+  "content_type": "image/jpeg",
+  "page": "/enterprise",
+  "bytes": 1398
+ },
+ {
+  "file": "assets/logos/af89940419e7_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Fusers%2Faleksey-stukalov.jpg&w=96&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "af89940419e7a3475c6e71e718bda5ce57b5912b507ade8ca3a023f0549f13d0",
+  "content_type": "image/jpeg",
+  "page": "/enterprise",
+  "bytes": 1537
+ },
+ {
+  "file": "assets/logos/a6842df2c7e0_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-e0f252dcaf5a3a4d04c1.heif&w=96&q=70",
+  "sha256": "a6842df2c7e072af1f9c2b385560f2c3a28de863d556255e0a0f0bd83dc334ac",
+  "content_type": "image/jpeg",
+  "page": "/enterprise",
+  "bytes": 1068
+ },
+ {
+  "file": "assets/logos/9c941729e513_apple-touch-icon.png",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/apple-touch-icon.png",
+  "sha256": "9c941729e51318224f1b6ea71d8ffc3b45dd4e6271653ed36d2a77e4066208a3",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 1711
+ },
+ {
+  "file": "assets/images/97e1fd5528a8_enterprise-og.png",
+  "kind": "image",
+  "url": "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/uploads/enterprise-og.png",
+  "sha256": "97e1fd5528a8790e356b79ba3c2db1b8856f193c01fbe98dee0503b6ca7ad63a",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 282504
+ },
+ {
+  "file": "assets/images/0fe722ec18fa_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fheadshots%2FShan%2520A%2520headshot.jpeg&w=96&q=70",
+  "sha256": "0fe722ec18fa55ae49ac09682f184372676d51afed0565e2631f63fb5d14bc33",
+  "content_type": "image/jpeg",
+  "page": "/enterprise",
+  "bytes": 2040
+ },
+ {
+  "file": "assets/images/8ddfeb56a035_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-8e2e88cff7f33224ddd7.jpg&w=3840&q=70",
+  "sha256": "8ddfeb56a0356044b382c0fb2a724b165f50a11a98dde91e525f4d67d3e8d117",
+  "content_type": "image/jpeg",
+  "page": "/enterprise",
+  "bytes": 739926
+ },
+ {
+  "file": "assets/images/6e9c7358ddbc_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-4ee11afa97d06ce1bff9.jpg&w=96&q=70",
+  "sha256": "6e9c7358ddbc506b2a5f131568e7b017353c308bdd7357e13ab7707de18e0225",
+  "content_type": "image/jpeg",
+  "page": "/enterprise",
+  "bytes": 1425
+ },
+ {
+  "file": "assets/images/b8483ac2c68d_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-0a66efa21dd4b7e6c526.jpg&w=3840&q=70",
+  "sha256": "b8483ac2c68dff4c1c5b69768c3bc147f68f947ac9b193a7214b2a522cd46f74",
+  "content_type": "image/jpeg",
+  "page": "/enterprise",
+  "bytes": 192431
+ },
+ {
+  "file": "assets/images/b0df9bc1c118_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fheadshots%2Fmichelle-change-headshot.png&w=96&q=70",
+  "sha256": "b0df9bc1c118c5957829e771ac6cd839127c6b6c0da3305f05f368ba9ef7d8a0",
+  "content_type": "image/jpeg",
+  "page": "/enterprise",
+  "bytes": 1548
+ },
+ {
+  "file": "assets/images/6644c498aab2_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-214fe44b44ebb3a38c3c.png&w=3840&q=70",
+  "sha256": "6644c498aab24babdcf03db82f79a54cc82df42c16110fea43a97e06e0a2db9e",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 543
+ },
+ {
+  "file": "assets/images/f0130d868895_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-e7193be5129e61392f38.png&w=3840&q=70",
+  "sha256": "f0130d868895317a98fbf50e9c94f5603eddacf28b264ff9743f8f9dab3c53bd",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 543
+ },
+ {
+  "file": "assets/images/4749b66b09aa_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fenterprise-graphic-1.png&w=3840&q=70",
+  "sha256": "4749b66b09aa0f7de3f4a4db34daeff3f34cb7f3f8136bb3cfb95b38a2b94e9e",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 5479
+ },
+ {
+  "file": "assets/images/61b1db58b1bc_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fenterprise-graphic-2.png&w=3840&q=70",
+  "sha256": "61b1db58b1bcbe17171a2be262e4969003ede2cc95586535b17d6001f5b1654f",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 5508
+ },
+ {
+  "file": "assets/images/d62a2ff14618_enterprise-avatar.png",
+  "kind": "image",
+  "url": "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/avatars/enterprise-avatar.png",
+  "sha256": "d62a2ff14618c46f229c88ea7563fd6f3c641b4b5a35a2522a1a73773fd95ddf",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 312
+ },
+ {
+  "file": "assets/images/e3d77384c950_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fenterprise-bg.jpg&w=3840&q=70",
+  "sha256": "e3d77384c950889eb32f78e3cbc016a013c52058e3f4334ada8a180dc2e4ce74",
+  "content_type": "image/jpeg",
+  "page": "/enterprise",
+  "bytes": 503569
+ },
+ {
+  "file": "assets/images/e6e98a6399cd_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-0f82efbbc1a26deeca19.png&w=3840&q=70",
+  "sha256": "e6e98a6399cd7311bf3abd9cddbe78c6e25d20eba0c031a30ec8e2e5beeb391d",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 3689
+ },
+ {
+  "file": "assets/images/8f6fa068fa43_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Fusers%2Fswhitmore.png&w=64&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "8f6fa068fa4393cfde05f4a059c37e9d86382158c6842a95717251a6c3d9b669",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 2720
+ },
+ {
+  "file": "assets/images/938c8a973e9f_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Ficon-192x192.png&w=48&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "938c8a973e9f8994ecd0b72d1f5d2c3caba5413fb5c446a9d618f484bfb6b6de",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 497
+ },
+ {
+  "file": "assets/images/d542f141471c_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Fusers%2Fswhitmore.png&w=48&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "d542f141471c65e2d84877a5c0de6d3840d5f696d972bbd8f99af653cf19753f",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 1821
+ },
+ {
+  "file": "assets/images/f10d20740cbb_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Ficon-192x192.png&w=32&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "f10d20740cbb434cf56806dcf1a76828fd62922767e63bed699938ebebf43fac",
+  "content_type": "image/png",
+  "page": "/enterprise",
+  "bytes": 383
+ },
+ {
+  "file": "assets/screenshots/47a740ec7563_students_screenshot.png",
+  "kind": "screenshot",
+  "url": "https://cursor.com/students#screenshot",
+  "sha256": "47a740ec75634b50ff7b7fd1910c686b91c756b9ca92cf229e1dd6e053c9f150",
+  "content_type": "image/png",
+  "page": "/students",
+  "bytes": 340972
+ },
+ {
+  "file": "assets/logos/c59dc1facb6a_berkeley.svg",
+  "kind": "logo",
+  "url": "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/universities/berkeley.svg",
+  "sha256": "c59dc1facb6a9434d81912916a8b9f83c66384e01205d97f886a263591a85625",
+  "content_type": "image/svg+xml",
+  "page": "/students",
+  "bytes": 13498
+ },
+ {
+  "file": "assets/logos/2255879f505f_berkeley-dark.svg",
+  "kind": "logo",
+  "url": "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/universities/berkeley-dark.svg",
+  "sha256": "2255879f505fe85a9402a4831029245e8012829e89478ec04a82f672a4e1bfa6",
+  "content_type": "image/svg+xml",
+  "page": "/students",
+  "bytes": 13498
+ },
+ {
+  "file": "assets/logos/9c941729e513_apple-touch-icon.png",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/apple-touch-icon.png",
+  "sha256": "9c941729e51318224f1b6ea71d8ffc3b45dd4e6271653ed36d2a77e4066208a3",
+  "content_type": "image/png",
+  "page": "/students",
+  "bytes": 1711
+ },
+ {
+  "file": "assets/images/0b108182dc32_opengraph-default.png",
+  "kind": "image",
+  "url": "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/og/opengraph-default.png",
+  "sha256": "0b108182dc32fda5d166de76a40d8db00ad30f70de1be7da1735f448cc5656d6",
+  "content_type": "image/png",
+  "page": "/students",
+  "bytes": 11076
+ },
+ {
+  "file": "assets/images/29bde95008fd_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-6d64ea467b847eb37baf.heif&w=96&q=70",
+  "sha256": "29bde95008fdb459674891824a0b80595acc1d9b88cf287758f531fa9a4b0d0c",
+  "content_type": "image/jpeg",
+  "page": "/students",
+  "bytes": 1996
+ },
+ {
+  "file": "assets/images/677b8bf91956_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-f429ff56390e350bc9f0.heif&w=96&q=70",
+  "sha256": "677b8bf91956da3f2cc44db0aab427545e4eb032c02d609a4f810260cfcab8a7",
+  "content_type": "image/png",
+  "page": "/students",
+  "bytes": 8878
+ },
+ {
+  "file": "assets/images/1006633b3f55_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-506ea64f0826d299c35c.heif&w=96&q=70",
+  "sha256": "1006633b3f552d9cccd6a6a8d87e7f65e16353c6e5f13ad585854b3a7589fdc9",
+  "content_type": "image/jpeg",
+  "page": "/students",
+  "bytes": 1585
+ },
+ {
+  "file": "assets/images/758d988b9f6b_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-6c58fa065d222b512028.heif&w=96&q=70",
+  "sha256": "758d988b9f6b92c5b977b27ffc6c4b8666696b412a4ea1dd525ff86275bdbb77",
+  "content_type": "image/jpeg",
+  "page": "/students",
+  "bytes": 1408
+ },
+ {
+  "file": "assets/images/e7d72385ef42_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-80759decd1ef3af71782.heif&w=96&q=70",
+  "sha256": "e7d72385ef423cb88287f4acbecad6f6efeb8cea8ff4275ec7ac193485bc2057",
+  "content_type": "image/jpeg",
+  "page": "/students",
+  "bytes": 1940
+ },
+ {
+  "file": "assets/images/f5d541baf1e6_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-0c50661fb0cea20c38ca.heif&w=96&q=70",
+  "sha256": "f5d541baf1e6180fd821c95ac169392535d76778114bca8f962ed9c87cbe095b",
+  "content_type": "image/jpeg",
+  "page": "/students",
+  "bytes": 1510
+ },
+ {
+  "file": "assets/images/00e40b1b8586_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-70b0609308b433e6411f.heif&w=96&q=70",
+  "sha256": "00e40b1b8586b114597da9630ce01a857de08a8f1d890d48503ce17dcaace120",
+  "content_type": "image/jpeg",
+  "page": "/students",
+  "bytes": 1476
+ },
+ {
+  "file": "assets/images/f956e259a4b6_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fmisc%2Fasset-434844fd5a7eb71e823e.heif&w=96&q=70",
+  "sha256": "f956e259a4b6a69ba72b417ff2378591f454dc07f7dcd4b3d82e42138a79376c",
+  "content_type": "image/jpeg",
+  "page": "/students",
+  "bytes": 2584
+ },
+ {
+  "file": "assets/screenshots/ce8c545d148c_blog_screenshot.png",
+  "kind": "screenshot",
+  "url": "https://cursor.com/blog#screenshot",
+  "sha256": "ce8c545d148cfcaaf884d2b88c78ae788c466ef6a23d7720be6c8dabf44c8c9e",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 986932
+ },
+ {
+  "file": "assets/logos/87057ca2cfd4_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fblog%2Fmobile-og-image-final-1-.png&w=3840&q=70",
+  "sha256": "87057ca2cfd4e0036d474a155af26c0c35cc9e96e7745679cd351debb08bf9c8",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 122524
+ },
+ {
+  "file": "assets/logos/abac12dc8631_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fuploads%2Frh-og-reward-hacking.png&w=3840&q=70",
+  "sha256": "abac12dc86310df4b8ae3a21d7c43a9c9ad9fa7704ccc20379a0c645ede1a1a2",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 154758
+ },
+ {
+  "file": "assets/logos/004c46c1b28c_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Fblog%2Fog%2Fdesign-mode.gif&w=3840&q=70",
+  "sha256": "004c46c1b28c999382f7690130f9b63236da862501e734e63991cdb3935a79ee",
+  "content_type": "image/gif",
+  "page": "/blog",
+  "bytes": 479577
+ },
+ {
+  "file": "assets/logos/f9371f5b8b79_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fi.ytimg.com%2Fvi%2FXbZvC4KTH68%2Fmaxresdefault.jpg&w=3840&q=70",
+  "sha256": "f9371f5b8b79c21764b1eb49936ab2c71a2d5405e352d5afaf1af7c2df3b3057",
+  "content_type": "image/jpeg",
+  "page": "/blog",
+  "bytes": 55060
+ },
+ {
+  "file": "assets/logos/3047729cfa5a_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fi.ytimg.com%2Fvi%2F29BYxvvF1iM%2Fmaxresdefault.jpg&w=3840&q=70",
+  "sha256": "3047729cfa5a991ddb1fe8e304800a0ba3b101da909f422bd650a5c07da03749",
+  "content_type": "image/jpeg",
+  "page": "/blog",
+  "bytes": 65927
+ },
+ {
+  "file": "assets/logos/80d110adeaf2_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fi.ytimg.com%2Fvi%2FTQhv6Wol6Ns%2Fmaxresdefault.jpg&w=3840&q=70",
+  "sha256": "80d110adeaf2c5232f04067a309b5083aaa1b62bb4abca9f0786e34fb021a3c4",
+  "content_type": "image/jpeg",
+  "page": "/blog",
+  "bytes": 71172
+ },
+ {
+  "file": "assets/logos/9abbb6d94685_image.svg",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fi.ytimg.com%2Fvi%2FIccjZDV93lw%2Fmaxresdefault.jpg&w=3840&q=70",
+  "sha256": "9abbb6d9468501f7e93a4357db21df2b450f844cc06e055e64dc9355e4fa3959",
+  "content_type": "image/jpeg",
+  "page": "/blog",
+  "bytes": 50658
+ },
+ {
+  "file": "assets/logos/9c941729e513_apple-touch-icon.png",
+  "kind": "logo",
+  "url": "https://cursor.com/marketing-static/apple-touch-icon.png",
+  "sha256": "9c941729e51318224f1b6ea71d8ffc3b45dd4e6271653ed36d2a77e4066208a3",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 1711
+ },
+ {
+  "file": "assets/images/dda2fb4dba9b_opengraph-blog.png",
+  "kind": "image",
+  "url": "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/blog/og/opengraph-blog.png",
+  "sha256": "dda2fb4dba9b2702276477bc64512989b6b36ba888cf06999377ee2e7e7dcb97",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 31376
+ },
+ {
+  "file": "assets/images/ced9c801aa5d_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Favatars.slack-edge.com%2F2026-04-27%2F11006579904322_8cc5cfeb3c8a21bb79db_original.jpg&w=48&q=70",
+  "sha256": "ced9c801aa5d3b8879e135e8ea99b767a7339ec5cc463765f51fd7de6c0d82a1",
+  "content_type": "image/jpeg",
+  "page": "/blog",
+  "bytes": 783
+ },
+ {
+  "file": "assets/images/8e9a16f854ff_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=%2Fmarketing-static%2Fusers%2Frikki.jpg&w=48&q=70&dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx",
+  "sha256": "8e9a16f854ffdf931803339c63e76ce831149d8742cf80c618d9e505b079c921",
+  "content_type": "image/jpeg",
+  "page": "/blog",
+  "bytes": 725
+ },
+ {
+  "file": "assets/images/af08f679bb44_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fkevin-niparko.png&w=48&q=70",
+  "sha256": "af08f679bb447ca7333ed4f94e9016ec979c599eae003d489b22561971c9261e",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 3153
+ },
+ {
+  "file": "assets/images/c94729a48ebd_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fnaman-jain-avatar.png&w=48&q=70",
+  "sha256": "c94729a48ebdd8f641ecc10c5c292f0f123631f33d10bbd84e72989849df1429",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 2486
+ },
+ {
+  "file": "assets/images/6f0bdec445c9_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Ferik-nilsson-v2.png&w=48&q=70",
+  "sha256": "6f0bdec445c9b146189dad23470a9b8a37e3271373e291608dad92e161512a94",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 1475
+ },
+ {
+  "file": "assets/images/f3636c05d5bf_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fian-huang-v3.jpeg&w=48&q=70",
+  "sha256": "f3636c05d5bf3569e1b68cdcb6e5e2c784470357a7e0a3381a3b722667b44848",
+  "content_type": "image/jpeg",
+  "page": "/blog",
+  "bytes": 747
+ },
+ {
+  "file": "assets/images/601ef4a7765a_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fryo-lu.png&w=48&q=70",
+  "sha256": "601ef4a7765a043df721bfb37998dd16d85350bbf73312baecc9ee973cac911a",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 1277
+ },
+ {
+  "file": "assets/images/e041e89e29d1_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fthenewstack.png&w=3840&q=70",
+  "sha256": "e041e89e29d1a1ab9698dacf7dc6783e025b63aa80bd11f7d0be8de6b9ca8507",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 4128
+ },
+ {
+  "file": "assets/images/8fdd0a824449_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Ftechcrunch-2.png&w=3840&q=70",
+  "sha256": "8fdd0a824449c8784071a0b5039e92cf2e0816dfa99acb337b9f0a51cb134537",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 25139
+ },
+ {
+  "file": "assets/images/5b19b9c8790d_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fbloomberg.png&w=3840&q=70",
+  "sha256": "5b19b9c8790d803ec62f17a1f3e1223bac184d33c7894ddfb1043f706e00f659",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 3020
+ },
+ {
+  "file": "assets/images/7c42e4aa2d64_image.png",
+  "kind": "image",
+  "url": "https://cursor.com/marketing-static/_next/image?url=https%3A%2F%2Fptht05hbb1ssoooe.public.blob.vercel-storage.com%2Fassets%2Favatars%2Fcnbc.png&w=3840&q=70",
+  "sha256": "7c42e4aa2d6429de9d8f003e847c89f787a44de45859455b76cf41d1f227775b",
+  "content_type": "image/png",
+  "page": "/blog",
+  "bytes": 2629
+ }
+]

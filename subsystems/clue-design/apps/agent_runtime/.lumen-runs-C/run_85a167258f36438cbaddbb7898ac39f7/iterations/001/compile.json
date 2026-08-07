@@ -1,0 +1,1296 @@
+{
+  "compile": {
+    "status": "ok",
+    "applied_operations": 28,
+    "operation_count": 28,
+    "diagnostics": [],
+    "halted_at": null,
+    "operation_error": null
+  },
+  "operations": [
+    {
+      "kind": "add_page",
+      "page": {
+        "background": [],
+        "bleed": null,
+        "children": [],
+        "id": "poster_revmotion",
+        "name": "poster_revmotion",
+        "safe_area": null,
+        "size": {
+          "height": 1080.0,
+          "orientation": "landscape",
+          "output": {
+            "raster": {
+              "height_px": 1080,
+              "width_px": 1080
+            }
+          },
+          "preset": "custom",
+          "source": {
+            "height": 1080.0,
+            "unit": "px",
+            "width": 1080.0
+          },
+          "unit": "pt",
+          "width": 1080.0
+        }
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": true,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_artboard_rm_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.brand"
+            }
+          }
+        ],
+        "id": "artboard_rm",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.section",
+          "grow": 0.0,
+          "padding": [
+            96.0,
+            96.0,
+            96.0,
+            96.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "poster_revmotion",
+        "kind": "page"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "header_rm",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 12.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard_rm",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.badge",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_mark_rm_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.inverse"
+            }
+          }
+        ],
+        "id": "mark_rm",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "center",
+          "align_y": "center",
+          "gap": 0.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 44.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 44.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "header_rm",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "markt_rm",
+        "kind": {
+          "align": "center",
+          "content": "RM",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.eyebrow",
+          "wrap": "no_wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "mark_rm",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_logo_rm_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.inverse"
+            }
+          }
+        ],
+        "id": "logo_rm",
+        "kind": {
+          "align": "left",
+          "content": "RevMotion",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.label",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 400.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "header_rm",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_account_name_06eb8ff1c8310c35",
+        "image_policy": null,
+        "key": "account.name",
+        "label": "account.name",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "RevMotion",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "logo_rm",
+      "slot_id": "slot_account_name_06eb8ff1c8310c35"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "main_rm",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.stack.default",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard_rm",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_kicker_rm_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.inverse"
+            }
+          }
+        ],
+        "id": "kicker_rm",
+        "kind": {
+          "align": "left",
+          "content": "AI-NATIVE GTM \u00b7 LIVE IN SF",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.eyebrow",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "main_rm",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "image_policy": null,
+        "key": "campaign.eyebrow",
+        "label": "campaign.eyebrow",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "AI-NATIVE GTM \u00b7 LIVE IN SF",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "kicker_rm",
+      "slot_id": "slot_campaign_eyebrow_92252b6be2914522"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_headline_rm_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.inverse"
+            }
+          }
+        ],
+        "id": "headline_rm",
+        "kind": {
+          "align": "left",
+          "content": "RevMotion '26",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_size_token": "type.size.7xl",
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.04,
+          "max_lines": 2,
+          "style_token": "type.headline",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "main_rm",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_headline_65eba10e0a95172f",
+        "image_policy": null,
+        "key": "campaign.headline",
+        "label": "campaign.headline",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "RevMotion '26",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "headline_rm",
+      "slot_id": "slot_campaign_headline_65eba10e0a95172f"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_subtitle_rm_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.inverse"
+            }
+          }
+        ],
+        "id": "subtitle_rm",
+        "kind": {
+          "align": "left",
+          "content": "September 12\u201313 \u00b7 San Francisco",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.4,
+          "max_lines": 2,
+          "style_token": "type.body",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 820.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "main_rm",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_offer_primary_message_66c2f13a2eec8735",
+        "image_policy": null,
+        "key": "offer.primary_message",
+        "label": "offer.primary_message",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "September 12\u201313 \u00b7 San Francisco",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "subtitle_rm",
+      "slot_id": "slot_offer_primary_message_66c2f13a2eec8735"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "footer_rm",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.md",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard_rm",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.button",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_cta_rm_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.inverse"
+            }
+          }
+        ],
+        "id": "cta_rm",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "center",
+          "align_y": "center",
+          "gap": 0.0,
+          "grow": 0.0,
+          "padding": [
+            18.0,
+            36.0,
+            18.0,
+            36.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 72.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 340.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "footer_rm",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "cta_text_rm",
+        "kind": {
+          "align": "center",
+          "content": "Save your seat",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.cta",
+          "wrap": "no_wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "cta_rm",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_cta_3859a6984f5f9a8b",
+        "image_policy": null,
+        "key": "campaign.cta",
+        "label": "campaign.cta",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Save your seat",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "cta_text_rm",
+      "slot_id": "slot_campaign_cta_3859a6984f5f9a8b"
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "logo_rm"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_account_name_06eb8ff1c8310c35",
+        "image_policy": null,
+        "key": "account.name",
+        "label": "account.name",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "RevMotion",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "RevMotion"
+          ],
+          "worst_case": "RevMotion Events"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "kicker_rm"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "image_policy": null,
+        "key": "campaign.eyebrow",
+        "label": "campaign.eyebrow",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "AI-NATIVE GTM \u00b7 LIVE IN SF",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "AI-NATIVE GTM \u00b7 LIVE IN SF"
+          ],
+          "worst_case": "AI-NATIVE GTM \u00b7 LIVE IN SF"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "headline_rm"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_headline_65eba10e0a95172f",
+        "image_policy": null,
+        "key": "campaign.headline",
+        "label": "campaign.headline",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "RevMotion '26",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "RevMotion '26"
+          ],
+          "worst_case": "RevMotion '26"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "subtitle_rm"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_offer_primary_message_66c2f13a2eec8735",
+        "image_policy": null,
+        "key": "offer.primary_message",
+        "label": "offer.primary_message",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "September 12\u201313 \u00b7 San Francisco",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "September 12\u201313 \u00b7 San Francisco"
+          ],
+          "worst_case": "September 12\u201313 \u00b7 San Francisco"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "cta_text_rm"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_cta_3859a6984f5f9a8b",
+        "image_policy": null,
+        "key": "campaign.cta",
+        "label": "campaign.cta",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Save your seat",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Save your seat"
+          ],
+          "worst_case": "Save your seat"
+        }
+      }
+    }
+  ],
+  "dsl_session": {
+    "emitted_slots": {
+      "account.name": "slot_account_name_06eb8ff1c8310c35",
+      "campaign.cta": "slot_campaign_cta_3859a6984f5f9a8b",
+      "campaign.eyebrow": "slot_campaign_eyebrow_92252b6be2914522",
+      "campaign.headline": "slot_campaign_headline_65eba10e0a95172f",
+      "offer.primary_message": "slot_offer_primary_message_66c2f13a2eec8735"
+    },
+    "parent_stack": [
+      {
+        "indent": 0,
+        "parent": {
+          "id": "poster_revmotion",
+          "kind": "page"
+        }
+      },
+      {
+        "indent": 1,
+        "parent": {
+          "id": "artboard_rm",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 2,
+        "parent": {
+          "id": "footer_rm",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 3,
+        "parent": {
+          "id": "cta_rm",
+          "kind": "node"
+        }
+      }
+    ],
+    "previous_can_have_children": false,
+    "previous_structural_depth": 4,
+    "seen_node_ids": [
+      "artboard_rm",
+      "cta_rm",
+      "cta_text_rm",
+      "footer_rm",
+      "header_rm",
+      "headline_rm",
+      "kicker_rm",
+      "logo_rm",
+      "main_rm",
+      "mark_rm",
+      "markt_rm",
+      "subtitle_rm"
+    ]
+  },
+  "checkpoint_label": null
+}

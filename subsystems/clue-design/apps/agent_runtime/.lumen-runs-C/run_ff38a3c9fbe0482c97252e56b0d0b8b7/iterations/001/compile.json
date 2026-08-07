@@ -1,0 +1,1070 @@
+{
+  "compile": {
+    "status": "ok",
+    "applied_operations": 23,
+    "operation_count": 23,
+    "diagnostics": [],
+    "halted_at": null,
+    "operation_error": null
+  },
+  "operations": [
+    {
+      "kind": "add_page",
+      "page": {
+        "background": [],
+        "bleed": null,
+        "children": [],
+        "id": "quote_card",
+        "name": "quote_card",
+        "safe_area": null,
+        "size": {
+          "height": 1350.0,
+          "orientation": "portrait",
+          "output": {
+            "raster": {
+              "height_px": 1350,
+              "width_px": 1080
+            }
+          },
+          "preset": "custom",
+          "source": {
+            "height": 1350.0,
+            "unit": "px",
+            "width": 1080.0
+          },
+          "unit": "pt",
+          "width": 1080.0
+        }
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": true,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_artboard_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.brand"
+            }
+          }
+        ],
+        "id": "artboard",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.section",
+          "grow": 0.0,
+          "padding": [
+            96.0,
+            96.0,
+            96.0,
+            96.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "quote_card",
+        "kind": "page"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "header",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 12.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_eyebrow_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.inverse"
+            }
+          }
+        ],
+        "id": "eyebrow",
+        "kind": {
+          "align": "left",
+          "content": "CUSTOMER STORY",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.eyebrow",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "opacity_token": "opacity.muted",
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 600.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "header",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "image_policy": null,
+        "key": "campaign.eyebrow",
+        "label": "campaign.eyebrow",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "CUSTOMER STORY",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "eyebrow",
+      "slot_id": "slot_campaign_eyebrow_92252b6be2914522"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "main",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.stack.default",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_quote_mark_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.inverse"
+            }
+          }
+        ],
+        "id": "quote_mark",
+        "kind": {
+          "align": "left",
+          "content": "\u201c",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_size_token": "type.size.9xl",
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 0.9,
+          "max_lines": 1,
+          "style_token": "type.display",
+          "wrap": "no_wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "opacity_token": "opacity.muted",
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "main",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_quote_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.inverse"
+            }
+          }
+        ],
+        "id": "quote",
+        "kind": {
+          "align": "left",
+          "content": "Lumen replaced three vendors and a week of design ops.",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_size_token": "type.size.6xl",
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.1,
+          "max_lines": 5,
+          "style_token": "type.headline",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "main",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_quote_8babd1b948df7d51",
+        "image_policy": null,
+        "key": "campaign.quote",
+        "label": "campaign.quote",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Lumen replaced three vendors and a week of design ops.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "quote",
+      "slot_id": "slot_campaign_quote_8babd1b948df7d51"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "footer",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.stack.tight",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.full",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_accent_rule_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "accent.primary"
+            }
+          }
+        ],
+        "id": "accent_rule",
+        "kind": {
+          "kind": "rect"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 4.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 48.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "footer",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_attribution_name_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.inverse"
+            }
+          }
+        ],
+        "id": "attribution_name",
+        "kind": {
+          "align": "left",
+          "content": "Priya N.",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.subtitle",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "footer",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_attribution_name_37af4395b82de54b",
+        "image_policy": null,
+        "key": "attribution.name",
+        "label": "attribution.name",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Priya N.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "attribution_name",
+      "slot_id": "slot_attribution_name_37af4395b82de54b"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_attribution_role_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.inverse"
+            }
+          }
+        ],
+        "id": "attribution_role",
+        "kind": {
+          "align": "left",
+          "content": "VP Brand, Northwind",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 2,
+          "style_token": "type.body.small",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "opacity_token": "opacity.muted",
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 888.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "footer",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_attribution_role_3badbe3c2db84058",
+        "image_policy": null,
+        "key": "attribution.role",
+        "label": "attribution.role",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "VP Brand, Northwind",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "attribution_role",
+      "slot_id": "slot_attribution_role_3badbe3c2db84058"
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "eyebrow"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "image_policy": null,
+        "key": "campaign.eyebrow",
+        "label": "campaign.eyebrow",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "CUSTOMER STORY",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "CUSTOMER STORY"
+          ],
+          "worst_case": "CUSTOMER STORY"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "quote"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_quote_8babd1b948df7d51",
+        "image_policy": null,
+        "key": "campaign.quote",
+        "label": "campaign.quote",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Lumen replaced three vendors and a week of design ops.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Lumen replaced three vendors and a week of design ops."
+          ],
+          "worst_case": "Lumen replaced three vendors and a full week of manual design operations work."
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "attribution_name"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_attribution_name_37af4395b82de54b",
+        "image_policy": null,
+        "key": "attribution.name",
+        "label": "attribution.name",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Priya N.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Priya N."
+          ],
+          "worst_case": "Priyanka Natarajan"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "attribution_role"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_attribution_role_3badbe3c2db84058",
+        "image_policy": null,
+        "key": "attribution.role",
+        "label": "attribution.role",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "VP Brand, Northwind",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "VP Brand, Northwind"
+          ],
+          "worst_case": "VP Brand & Creative, Northwind Industries"
+        }
+      }
+    }
+  ],
+  "dsl_session": {
+    "emitted_slots": {
+      "attribution.name": "slot_attribution_name_37af4395b82de54b",
+      "attribution.role": "slot_attribution_role_3badbe3c2db84058",
+      "campaign.eyebrow": "slot_campaign_eyebrow_92252b6be2914522",
+      "campaign.quote": "slot_campaign_quote_8babd1b948df7d51"
+    },
+    "parent_stack": [
+      {
+        "indent": 0,
+        "parent": {
+          "id": "quote_card",
+          "kind": "page"
+        }
+      },
+      {
+        "indent": 1,
+        "parent": {
+          "id": "artboard",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 2,
+        "parent": {
+          "id": "footer",
+          "kind": "node"
+        }
+      }
+    ],
+    "previous_can_have_children": false,
+    "previous_structural_depth": 3,
+    "seen_node_ids": [
+      "accent_rule",
+      "artboard",
+      "attribution_name",
+      "attribution_role",
+      "eyebrow",
+      "footer",
+      "header",
+      "main",
+      "quote",
+      "quote_mark"
+    ]
+  },
+  "checkpoint_label": null
+}

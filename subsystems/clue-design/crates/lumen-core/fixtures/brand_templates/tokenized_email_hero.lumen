@@ -1,0 +1,8 @@
+// Phase C tokenized email hero
+page email_header size(1200,520,px)
+  hero al(v,g($space.stack.tight),pad($space.card.padding),x(s)) p(48,48) s(1104,hug) fill($surface.brand) rd($radius.card)
+    eyebrow text "FOR OPERATIONS LEADERS" p(0,0) s(980,44) style($type.eyebrow) wrap_text(true) slot(campaign.eyebrow)
+    headline text "Capture every call." p(0,0) s(980,120) style($type.headline) wrap_text(true) slot(campaign.headline)
+    body text "Capture demand with AI phone agents." p(0,0) s(980,92) style($type.body) wrap_text(true) slot(offer.message)
+    cta text "See the workflow" p(0,0) s(360,56) style($type.cta) wrap_text(true) slot(campaign.cta)
+  footer text "Insight Health" p(48,452) s(320,40) style($type.label) wrap_text(true) slot(sender.signature)
