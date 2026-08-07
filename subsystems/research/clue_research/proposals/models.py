@@ -120,6 +120,16 @@ class FieldProposalPayload(BaseModel):
                 raise ValueError(
                     f"pack field {self.field_def.field_key!r} must explicitly declare reuse_scope"
                 )
+            # Species has no ratified default for a vertical pack either (FI-2 P3), and
+            # ``register_field`` refuses one at promotion — so refuse it here, before a proposal is
+            # durably staged with a frozen payload and approved by a human it can never satisfy.
+            # ``client.*`` (the tenant-local dynamic Client-KB namespace) is exempt: it is
+            # workspace-scoped by construction and ratified project_neutral (FI-2 §5.2).
+            if self.field_def.research_scope is None and namespace != "client":
+                raise ValueError(
+                    f"pack field {self.field_def.field_key!r} must explicitly declare "
+                    "research_scope"
+                )
         elif self.pack is not None:
             raise ValueError("canonical field namespaces must not declare a pack")
         if self.sensitive and self.field_def.gate != SENSITIVE_OUTREACH_DISABLED_GATE:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from clue_api import (
     IngestionProposalSink,
@@ -25,6 +25,7 @@ from clue_core import (
     NormalizedText,
     RawArtifact,
     ResearchMode,
+    ResearchScope,
     ReuseScope,
     UseClass,
     account_claim,
@@ -38,6 +39,7 @@ from clue_core.ingestion import (
     new_ingestion_job_id,
     new_ingestion_segment_id,
 )
+from clue_core.proposals import FieldProposalId
 from clue_projections import field_proposals
 from clue_research.claimstore import (
     WorkspaceScope,
@@ -56,6 +58,7 @@ from clue_research.ingestion import (
     IngestionTarget,
     MaterialContext,
 )
+from clue_research.proposals import get_field_proposal
 from clue_research.review import ObservabilitySurface
 from clue_research.sources import get_source, is_resolver_bound, unbind_resolver
 from clue_storage import StorageBackend
@@ -157,6 +160,61 @@ def test_ingestion_unmapped_target_routes_into_c2_proposals(
             assert [card.field_proposal_id for card in cards] == [proposal_id]
             assert cards[0].field_key == "account.upload_discovered_signal"
             assert cards[0].proposed_by_actor == "agent"
+
+    run_async(scenario())
+
+
+def test_ingestion_unmapped_pack_target_declares_a_species(
+    require_profiling_db: None,
+) -> None:
+    """FI-2 P3: a ``<pack>.*`` field must declare a ``research_scope`` at *authoring*, so this sink
+    has to stamp one — otherwise an unmapped vertical target raises out of the ingestion engine
+    instead of being preserved as a reviewable proposal."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=True) as conn:
+            project = await seed_project(conn, f"ws-phase-c-pack-{uuid4().hex[:8]}")
+            now = datetime.now(UTC)
+            job = IngestionJob(
+                id=new_ingestion_job_id(),
+                workspace_id=project.workspace_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
+                artifact_key=f"{project.workspace_id}/artifact",
+                content_sha256="c" * 64,
+                declared_context=DeclaredMaterialContext(
+                    brand_id=project.brand_id,
+                    project_id=project.project_id,
+                ),
+                declared_context_hash="d" * 64,
+                media_type="text/plain",
+                adapter_key="text",
+                status=IngestionStatus.EXTRACTING,
+                created_by_actor="agent",
+                created_at=now,
+                updated_at=now,
+            )
+            sink = IngestionProposalSink(conn_factory=conn_session_factory(conn))
+            proposal_id = await sink.preserve_unmapped(
+                job=job,
+                segment_ids=(new_ingestion_segment_id(),),
+                target=IngestionTarget(
+                    entity_id=new_entity_id(),
+                    entity_type="account",
+                    field_key="new_vertical.upload_discovered_signal",
+                    material_context=MaterialContext.CLIENT_ABOUT_TARGET,
+                ),
+            )
+            stored = await get_field_proposal(
+                conn,
+                FieldProposalId(UUID(proposal_id)),
+                workspace_id=project.workspace_id,
+            )
+            assert stored is not None
+            assert stored.payload.pack == "new_vertical"
+            # Neutral is the safe species (a wrong neutral costs a skipped re-spend, never a leak);
+            # a reviewer widens it deliberately, exactly as with the tenant-private reuse stamp.
+            assert stored.payload.field_def.research_scope is ResearchScope.PROJECT_NEUTRAL
 
     run_async(scenario())
 

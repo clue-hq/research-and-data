@@ -178,8 +178,9 @@ class FieldDef(BaseModel):
     reuse_scope: ReuseScope | None = None
     # Field **species** declared at the field (contract-delta 2026-08-08, FI-2 slice 0 — mirrors
     # ``reuse_scope`` exactly). ``None`` means "fall back to the ratified default"
-    # (:func:`default_research_scope`); a ``<pack>.*`` field must declare one (the registry's
-    # authoring guard is fail-loud, ``client.*`` excepted — it is neutral by construction). Drives
+    # (:func:`default_research_scope`); a ``<pack>.*`` field must declare one — fail-loud at pack
+    # authoring, at field-proposal validation, and at registration alike (``client.*`` excepted —
+    # it is neutral by construction and workspace-scoped). Drives
     # economics (may a fresh claim from another project be reused?) and project-lens membership,
     # never privacy — that stays ``reuse_scope``'s job. An additive extension of the
     # field_definition contract (conventions §4).
@@ -242,9 +243,6 @@ def resolve_reuse_scope(field: FieldDef) -> ReuseScope | None:
 # contact and is therefore ``PROJECT_NEUTRAL`` — including ``account.operational_pain`` /
 # ``.strategic_moves`` and ``account.resonance.*`` (ratified neutral: the *facts* are account
 # truth; the campaign-relative angle lives in the value narrative).
-_PROJECT_RELATIVE_CLASSES: frozenset[FieldClass] = frozenset(
-    {FieldClass.ACCOUNT, FieldClass.CONTACT}
-)
 _PROJECT_RELATIVE_PREFIXES: tuple[str, ...] = ("account.scoring.",)  # fit / intent / tier + kin
 _PROJECT_RELATIVE_KEYS: frozenset[str] = frozenset(
     {
@@ -259,18 +257,22 @@ def default_research_scope(field_class: FieldClass, field_key: str) -> ResearchS
     """The default :class:`ResearchScope` (species) of a field (FI-2 §5.2).
 
     ``PROJECT_RELATIVE`` for the ratified relative families — ``account.scoring.*``,
-    ``account.value_narrative``, ``contact.persona``, ``contact.role_on_committee`` — which live
-    only in the ``ACCOUNT``/``CONTACT`` classes; every other field is ``PROJECT_NEUTRAL``, the safe
-    species (a neutral read is a superset read; the economics consequence of a wrong neutral is a
-    skipped re-spend, never a leaked or mis-attributed claim). A ``<pack>.*`` field has no
-    *authored* default — the registry refuses to register one that declares nothing (``client.*``
-    excepted) — so the neutral answer here only ever serves ``client.*`` and legacy rows. The
-    per-field declaration (``FieldDef.research_scope``) overrides this (see
-    :func:`resolve_research_scope`).
+    ``account.value_narrative``, ``contact.persona``, ``contact.role_on_committee``; every other
+    field is ``PROJECT_NEUTRAL``, the safe species (a neutral read is a superset read; the
+    economics consequence of a wrong neutral is a skipped re-spend, never a leaked or
+    mis-attributed claim). A ``<pack>.*`` field has no *authored* default — pack authoring and the
+    registry both refuse one that declares nothing (``client.*`` excepted) — so the neutral answer
+    here only ever serves ``client.*`` and legacy rows. The per-field declaration
+    (``FieldDef.research_scope``) overrides this (see :func:`resolve_research_scope`).
+
+    The **field key alone decides**: this function *is* the ratified rule, so it cannot return a
+    different species than §5.2 for a given key. ``field_class`` is accepted for symmetry with
+    :func:`default_reuse_scope` (and so a caller that already classified the key can pass it), but
+    it deliberately does not participate — a mismatched pair could otherwise silently downgrade a
+    relative key to neutral.
     """
-    if field_class in _PROJECT_RELATIVE_CLASSES and (
-        field_key in _PROJECT_RELATIVE_KEYS or field_key.startswith(_PROJECT_RELATIVE_PREFIXES)
-    ):
+    del field_class  # documented above: the key is the rule; the class must not change the answer
+    if field_key in _PROJECT_RELATIVE_KEYS or field_key.startswith(_PROJECT_RELATIVE_PREFIXES):
         return ResearchScope.PROJECT_RELATIVE
     return ResearchScope.PROJECT_NEUTRAL
 

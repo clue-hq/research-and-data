@@ -44,6 +44,7 @@ from clue_core import (
     LLMGateway,
     Message,
     PassKind,
+    ResearchScope,
     ReuseScope,
     Role,
     VolunteeredStatementId,
@@ -743,8 +744,13 @@ def _field_proposal_payloads(
     for key, (pass_kind, concept) in drafts.items():
         raw = concept or {}
         reuse_raw = raw.get("reuse_scope")
+        research_raw = raw.get("research_scope")
         try:
             reuse_scope = ReuseScope(reuse_raw) if isinstance(reuse_raw, str) else None
+            # A <pack>.* concept must declare its species too (FI-2 P3); an undeclared one is
+            # refused by FieldProposalPayload below and lands in ``rejected`` rather than being
+            # staged as an un-promotable proposal. client.* concepts are exempt (ratified neutral).
+            research_scope = ResearchScope(research_raw) if isinstance(research_raw, str) else None
             field_class = classify_field_key(key)
             pack = key.split(".", 1)[0] if field_class.value == "pack" else None
             value_schema = raw.get("value_schema")
@@ -760,6 +766,7 @@ def _field_proposal_payloads(
                         tier_plan=("generic_web",),
                         pass_kind=pass_kind,
                         reuse_scope=reuse_scope,
+                        research_scope=research_scope,
                     ),
                     value_schema=value_schema if isinstance(value_schema, dict) else None,
                     description=(
@@ -960,7 +967,13 @@ def _synthesis_messages(
         '[{"field_key": scoring_field_key, "weight": number}], "fit_threshold": number, '
         '"intent_threshold": number}, "new_field_concepts": [{"field_key": str, '
         '"value_type": str, "pass_kind": "scoring"|"deep", "reuse_scope": '
-        '"public_footprint"|"tenant_private"|null, "description": str, "rationale": str}]}]}. '
+        '"public_footprint"|"tenant_private"|null, "research_scope": '
+        '"project_neutral"|"project_relative"|null, "description": str, "rationale": str}]}]}. '
+        "A concept in a NEW vertical namespace (a key whose prefix is not core/account/contact) "
+        "must declare BOTH reuse_scope and research_scope — a namespaced field has no safe "
+        "default for either, so one that omits them is rejected rather than proposed. Use "
+        'research_scope="project_relative" only for a value that is an ICP/campaign-relative '
+        'judgement (a score, a persona, a targeting argument); a world-fact is "project_neutral". '
         "No prose, no code fences."
     )
     user = json.dumps(

@@ -18,6 +18,7 @@ from clue_core import (
     FieldDef,
     Modality,
     PassKind,
+    ResearchScope,
     ReuseScope,
 )
 from clue_core.proposals import ProposalAuthority, ProposalStatus
@@ -565,6 +566,39 @@ def test_low_yield_policy_source_is_disabled() -> None:
     run_async(scenario())
 
 
+def test_a_pack_proposal_without_a_species_is_refused_before_it_is_staged() -> None:
+    """FI-2 P3: the species must-declare rule is enforced at *authoring*, not only at promotion.
+
+    ``register_field`` refuses an undeclared ``<pack>.*`` species, so a proposal that omits it
+    could be durably staged with a frozen payload, approved by a human, and then be permanently
+    un-promotable. Refusing the payload keeps that state unreachable.
+    """
+
+    with pytest.raises(ValidationError, match="explicitly declare research_scope"):
+        FieldProposalPayload(
+            field_def=FieldDef(
+                field_key="new_vertical.install_base",
+                value_type="str",
+                pass_kind=PassKind.DEEP,
+                reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
+            ),
+            pack="new_vertical",
+            rationale="Missing species classification cannot be promoted.",
+        )
+    declared = FieldProposalPayload(
+        field_def=FieldDef(
+            field_key="new_vertical.install_base",
+            value_type="str",
+            pass_kind=PassKind.DEEP,
+            reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
+            research_scope=ResearchScope.PROJECT_RELATIVE,
+        ),
+        pack="new_vertical",
+        rationale="An explicitly campaign-relative pack field.",
+    )
+    assert declared.field_def.research_scope is ResearchScope.PROJECT_RELATIVE
+
+
 def test_invalid_pack_reuse_and_source_yields_reject_loudly() -> None:
     with pytest.raises(ValidationError, match="invalid field_key"):
         FieldProposalPayload(
@@ -591,6 +625,7 @@ def test_invalid_pack_reuse_and_source_yields_reject_loudly() -> None:
             value_type="str",
             pass_kind=PassKind.DEEP,
             reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
+            research_scope=ResearchScope.PROJECT_NEUTRAL,
         ),
         pack="new_vertical",
         rationale="Explicit public-footprint classification.",

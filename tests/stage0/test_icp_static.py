@@ -16,7 +16,7 @@ from clue_research.stage0 import (
     estimate_campaign,
 )
 from clue_research.stage0.icp_confirm import _diff, _select
-from clue_research.stage0.icp_synthesis import _bounded, _parse_json
+from clue_research.stage0.icp_synthesis import _bounded, _parse_json, _synthesis_messages
 from clue_research.stage0.icp_types import (
     CandidateSignal,
     FirmographicDimensions,
@@ -149,3 +149,22 @@ def test_diff_is_empty_when_confirmed_as_proposed() -> None:
     base = _select(proposal, ICPProposalEdits())
     confirmed = _select(proposal, ICPProposalEdits())
     assert _diff(base, confirmed, notes=None).is_empty
+
+
+def test_the_synthesis_prompt_asks_for_both_field_scopes() -> None:
+    """FI-2 P3: the species must-declare guard is only *reachable* if the model is told to declare
+    one — a prompt that asks for ``reuse_scope`` alone would make every vertical concept the
+    synthesizer drafts auto-reject at payload validation."""
+
+    messages = _synthesis_messages(
+        kb_claims={},
+        project_statements=(),
+        scoring_keys=frozenset(),
+        deep_keys=frozenset(),
+        pack_field_keys={},
+    )
+    system = messages[0].content
+    assert '"reuse_scope"' in system
+    assert '"research_scope"' in system
+    assert "project_neutral" in system
+    assert "project_relative" in system

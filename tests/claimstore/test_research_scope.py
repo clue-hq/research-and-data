@@ -14,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from clue_core import (
+    FieldClass,
     FieldDef,
     PassKind,
     ResearchScope,
@@ -64,6 +65,24 @@ def _default_for(field_key: str) -> ResearchScope:
 )
 def test_the_ratified_species_table_is_the_default(field_key: str, expected: ResearchScope) -> None:
     assert _default_for(field_key) == expected
+
+
+def test_the_field_key_alone_decides_the_default() -> None:
+    """``field_class`` is accepted for symmetry with ``default_reuse_scope`` but must never change
+    the answer — a mismatched pair cannot silently downgrade a ratified relative key."""
+
+    for wrong_class in FieldClass:
+        assert (
+            default_research_scope(wrong_class, "account.scoring.fit")
+            is ResearchScope.PROJECT_RELATIVE
+        )
+        assert (
+            default_research_scope(wrong_class, "contact.persona") is ResearchScope.PROJECT_RELATIVE
+        )
+        assert (
+            default_research_scope(wrong_class, "core.employee_count")
+            is ResearchScope.PROJECT_NEUTRAL
+        )
 
 
 def test_a_scoring_field_is_relative_by_prefix_not_by_enumeration() -> None:
@@ -181,6 +200,9 @@ def test_changing_a_registered_field_species_is_a_redefinition() -> None:
 
 
 # --- (d) a <pack>.* field must declare its species -------------------------
+# Registration is the last of three gates; the two authoring gates are tested beside their
+# reuse_scope twins — tests/icp/test_packs_framework.py (pack authoring) and
+# tests/proposals/test_proposals.py (field-proposal payload validation).
 
 
 def test_an_undeclared_pack_field_is_refused_before_any_write() -> None:
