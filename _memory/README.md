@@ -27,6 +27,11 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-07-design-subsystem-monorepo-merge.md` — Design-integration **Part I / Step 1** done:
+  `clue-design`/*havana* merged into `subsystems/clue-design/` (full history preserved; on
+  `origin/main` via PR #40; design-only ancestry = 2nd parent of `3ab4a750`), excluded from the
+  uv workspace + ruff pending Step-2 hygiene. Parts II–IV (substrate / agent / surface) not
+  started. Authoritative plan: `docs/specs/design-integration-master-plan.md`.
 - `2026-08-06-m8d-r9-parallel-execution.md` — R9 accepted: exact-wave dependency checks,
   atomic budget/provider admission, concurrent Exa/Sumble execution, partial-result joining,
   callback-race-safe composite waits, cold-resume/crash replay, DSAR, and isolated-DB evidence.
