@@ -129,7 +129,7 @@ AC (two-project fixture, per FI-2 §10): job → `completed` ⇒ one VERIFIED `a
 **E2 — `contact.overview`.** Same seam, contact fleet handler post-`project`, the §4.1 eligibility filter, the binding-stamp rule.
 AC: SENSITIVE facet present on the contact ⇒ provably absent from the prompt payload and the evidence span; all-WEAK inputs ⇒ claim born WEAK and not served (merge test); otherwise as E1.
 
-**E3 (optional, §7-D3) — compose the Positioner.** Construct `Positioner` with the existing api-root seams (`build_client_knowledge_retriever`, `ProductionHandoffCommitteeReader`, `FaithfulnessJudgeImpl`) and invoke it from the same post-finalize step for account jobs, behind its own flag. Depends on E0 (L1). Note: the narrative supersede predicate must gain `project_id` per FI-2 §6.4 **before** any production second-project narrative run — that change is FI-2 slice 3's, and E3 must not land ahead of it.
+**E3 (§7-D3) — compose the Positioner.** Construct `Positioner` with the existing api-root seams (`build_client_knowledge_retriever`, `ProductionHandoffCommitteeReader`, `FaithfulnessJudgeImpl`) and invoke it from the same post-finalize step for account jobs, behind its own flag. Depends on E0 (L1). **In scope for this lane** (founder directive 2026-08-08: no MVP scope cuts; a built module ships end-to-end — speed comes from parallelization, not subtraction). Its one hard gate is a *correctness ordering*, not a cut: the narrative supersede predicate must gain `project_id` per FI-2 §6.4 **before** any production second-project narrative run — that change is FI-2 slice 3's, and E3 must not land ahead of it (parallelize the build; serialize only the landing).
 
 ---
 
@@ -143,7 +143,7 @@ Ledger- and claim-based, never log-based: A9 rows + `claim_support` + verdict ro
 
 - **D1 — outcome gate:** synthesize on {`completed`, `needs_review`} (recommended; `research_outcome` stamped) vs `completed` only (skips most real jobs today).
 - **D2 — species:** `account.summary` and `contact.overview` as PROJECT_NEUTRAL (recommended: one live prose per entity, refreshed on any project's completion, serving every lens — matches the MVP one-detail-view ruling) vs PROJECT_RELATIVE (per-project prose, coexisting, lineage-grouped; flips §2.5's supersede key in the same change).
-- **D3 — E3 in or out of MVP:** composing the Positioner is cheap once the seam exists, but its output feeds the VALUE_NARRATIVE section, not the MVP `summaryParagraphs`; recommend **out** (fast-follow, after FI-2 slice 3's supersede change).
+- **D3 — E3 in or out of MVP:** **recommend IN** (amended 2026-08-08 per the founder's no-shortcuts directive: the synthesis module ships end-to-end; the original "out" recommendation was MVP thrift, not architecture). E3 is built in parallel with E1/E2 and lands after FI-2 slice 3's project-scoped supersede change — a sequencing gate that protects the two-lens model, not a scope cut.
 - **D4 — L1's visible contract change** (the empty VALUE_NARRATIVE section on every account view) — acknowledge.
 
 ---
