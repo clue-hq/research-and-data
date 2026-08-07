@@ -47,7 +47,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        # head-of-abm@v21 and research-specialist@v7 cut over entity research to the
+        # head-of-abm@v22 re-pins propose_field@2 (its input schema gained FI-2's
+        # FieldDef.research_scope species declaration) through stage0-interview@v10; v21 and
+        # research-specialist@v7 cut over entity research to the
         # separately launched M8D create_agent fleets while retaining historical exact replay;
         # the exact-set O2 launch and truthful A2 draft preview remain the governed primitives,
         # alongside S1/E1 targeted-enrichment and dynamic Client-KB proposal/materialization
@@ -57,7 +59,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # inspection-tool grants + delegation withholding) and task 1.4's:
         # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
         # nested authority, and B1 layer 2's engine-defaulted claim entity.
-        AgentRole.HEAD_OF_ABM: ("aa10ba488c903d6ff911c6b54ddaad6c1a596a715876f00ca26c0a98ab4a1a28"),
+        AgentRole.HEAD_OF_ABM: ("1e6708383f7fe77730d5dd77c8bf933160b454110308bce59d42bea89a96bce5"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -181,7 +183,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v9"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v10"
     assert disclosures[1].resource.address == "skill:account-deep-steering@v2"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -266,7 +268,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v9")
+    body = head.open_skill("skill:stage0-interview@v10")
 
     assert required_guidance in body
 
