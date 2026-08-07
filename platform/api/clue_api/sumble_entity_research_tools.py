@@ -69,6 +69,7 @@ from clue_core.entity_research import (
     ResearchFieldResultProjection,
     ResearchSubjectType,
 )
+from clue_research.claimstore import record_run_lineage
 from clue_research.durable import (
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
@@ -924,6 +925,19 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
         # existing member/role claims instead of superseding them per tool call.
         run_id = RunId(UUID(str(durable.project_run_id)))
         async with self._conn_factory() as conn:
+            # FI-2 P2 (spec §3): register the committee run in the same transaction as the
+            # role/persona/discovery claims ``discover_committee`` writes below. Idempotent, so a
+            # repeat committee call re-registers harmlessly. Because this run id *is* the project
+            # run, the enrichment materializer may already have registered it under its own kind —
+            # first writer wins on ``kind``; the project attribution is identical either way.
+            await record_run_lineage(
+                conn,
+                run_id=UUID(str(run_id)),
+                workspace_id=durable.workspace_id,
+                kind="committee",
+                project_id=durable.project_id,
+                project_run_id=UUID(str(durable.project_run_id)),
+            )
             committee = await discover_committee(
                 conn,
                 account_entity_id=EntityId(request.target_entity_id),

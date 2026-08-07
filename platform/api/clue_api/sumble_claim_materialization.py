@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from enum import StrEnum
 from typing import cast
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -29,6 +30,7 @@ from clue_research.claimstore import (
     get_effective_field,
     insert_claim,
     load_core_pack,
+    record_run_lineage,
 )
 from clue_research.identity import canonical_member_ids
 from clue_research.resolvers.sumble import (
@@ -77,6 +79,7 @@ class SumbleClaimMaterializer:
         self,
         *,
         workspace_id: str,
+        project_id: str,
         project_run_id: ProjectRunId,
         account_id: EntityId,
         field_key: str,
@@ -101,6 +104,19 @@ class SumbleClaimMaterializer:
         if source_key not in field.field_def.tier_plan:
             raise SumbleClaimMaterializationError(
                 f"field plan no longer admits {source_key} for {field_key}"
+            )
+        # FI-2 P2 (spec §3): every Sumble claim is stamped with the project run itself as its
+        # ``run_id`` (the M8C C1 lineage trigger requires it), so that is the id the project lens
+        # must resolve. Registered once per materialized field, before the claim write below;
+        # idempotent, so the run's later fields (and any replay) re-register harmlessly.
+        async with self._conn_factory() as conn:
+            await record_run_lineage(
+                conn,
+                run_id=UUID(str(project_run_id)),
+                workspace_id=workspace_id,
+                kind="enrichment",
+                project_id=project_id,
+                project_run_id=UUID(str(project_run_id)),
             )
         typed_source = cast(SumbleSourceKey, source_key)
         resolver = build_sumble_resolvers(

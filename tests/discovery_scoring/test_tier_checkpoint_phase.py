@@ -53,6 +53,8 @@ from clue_research.icp import (
 )
 from clue_research.icp.rubric import TierBand, TierCutoffs
 from clue_research.identity import insert_account_entity
+from tests._run_lineage import assert_written_claims_are_attributable
+from tests._workspace import seed_phase_run
 
 from .conftest import rollback_conn, run_async
 
@@ -224,6 +226,8 @@ async def _seed_and_score(conn: AsyncConnection) -> ProjectRunId:
     await load_core_pack(conn)
     await _seed_active_icp(conn)
     scoring_ctx = _ctx(project_run_id, phase=ProjectPhase.SCORING)
+    # FI-2 P2: the phases register run lineage against a real project_run (FK).
+    await seed_phase_run(conn, scoring_ctx)
     await _seed_admitted(
         conn, scoring_ctx, name="High", domain="high.example", employee_count=500, funding=True
     )
@@ -331,6 +335,30 @@ def test_cutoff_adjustment_retiers_and_reestimates_without_respend() -> None:
             # NO Pass-A re-spend: the score (fit) claims are unchanged, and no tier claim written
             assert await _live_count(conn, FIT_FIELD) == fit_before
             assert await _live_count(conn, TIER_FIELD) == 0
+
+    run_async(_run())
+
+
+def test_approved_checkpoint_registers_its_tiering_run_in_run_lineage() -> None:
+    """FI-2 P2: the per-account tier claims back-join to the run's project."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            project_run_id = await _seed_and_score(conn)
+            ctx = _ctx(project_run_id, params=_decision(action="approve"))
+            handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
+
+            result = await handler.run(ctx)
+            assert result.status is PhaseStatus.COMPLETED
+
+            await assert_written_claims_are_attributable(
+                conn,
+                str(result.payload["tier_checkpoint_run_id"]),
+                kind="tiering",
+                workspace_id=ctx.workspace_id,
+                project_id=ctx.project_id,
+                project_run_id=ctx.project_run_id,
+            )
 
     run_async(_run())
 
@@ -628,6 +656,7 @@ def test_discovery_criteria_checkpoint_approves_only_selected_without_numeric_sc
                 field_resolutions=tuple(resolutions),
             )
             project_run_id = new_project_run_id()
+            await seed_phase_run(conn, _ctx(project_run_id))
             handler = TierCheckpointPhaseHandler(
                 session_factory=_session_factory(conn),
                 sealed_account_reader=_SealedReader(sealed),

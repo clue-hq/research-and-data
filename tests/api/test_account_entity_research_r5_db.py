@@ -1123,6 +1123,37 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
             assert Decimal(counts["job_spent"]) == Decimal("8.75")
             assert Decimal(counts["run_spent"]) == Decimal("8.75")
 
+            # FI-2 P2: the account claims this run wrote carry a per-tool-call materialization run
+            # id (not the launch research run id) — every one of them is registered and
+            # project-attributed, so the project lens can back-join them.
+            unattributed = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM claim "
+                        "WHERE entity_id=:account_id AND source_key='exa_deep' "
+                        "AND run_id NOT IN (SELECT run_id FROM run_lineage "
+                        "WHERE workspace_id=:workspace_id AND project_id=:project_id "
+                        "AND kind='entity_research')"
+                    ),
+                    {
+                        "account_id": authorization.subject_entity_id,
+                        "workspace_id": authorization.workspace_id,
+                        "project_id": authorization.project_id,
+                    },
+                )
+            ).scalar_one()
+            assert unattributed == 0
+            written_claims = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM claim "
+                        "WHERE entity_id=:account_id AND source_key='exa_deep'"
+                    ),
+                    {"account_id": authorization.subject_entity_id},
+                )
+            ).scalar_one()
+            assert written_claims > 0
+
     run_async(scenario())
 
 

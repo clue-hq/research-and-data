@@ -69,6 +69,7 @@ from clue_research.claimstore import (
     get_field,
     insert_claim,
     load_core_pack,
+    record_run_lineage,
 )
 from clue_research.icp import (
     ScoringRubric,
@@ -143,6 +144,7 @@ async def import_accounts(
     workspace_id: str,
     client_entity_id: EntityId,
     import_batch_id: str | None = None,
+    project_id: str | None = None,
     crm_enrich: bool = False,
     decided_by: str = "auto",
     disposition_policy: DispositionPolicy = DEFAULT_DISPOSITION_POLICY,
@@ -158,7 +160,11 @@ async def import_accounts(
     resolution admits/merges entities and writes provenance + marker claims that commit together.
     Each row's full admit + write phase is wrapped in its own ``begin_nested`` savepoint (and each
     contact in a further nested one), so a poison row rolls back only its own writes and surfaces in
-    ``unresolved[]`` — one bad row never aborts the batch."""
+    ``unresolved[]`` — one bad row never aborts the batch.
+
+    ``project_id`` attributes the batch's run to a project in ``run_lineage`` (FI-2 P2). Import has
+    no project context of its own yet — the caller supplies it; ``None`` registers the batch as a
+    workspace-level run, which is the honest state until the import surface threads a project."""
     batch_id = import_batch_id or f"imp-{uuid4().hex[:12]}"
     run_id = import_batch_run_id(batch_id)
     scope = WorkspaceScope.for_workspace(workspace_id)
@@ -168,6 +174,17 @@ async def import_accounts(
         # contact.import_record must exist before any claim is written (insert_claim validates it).
         await load_core_pack(conn)
         await load_import_pack(conn)
+
+        # FI-2 P2 (spec §3): register the batch's run once, in the caller's transaction — the same
+        # one every provenance/marker claim below commits in. Idempotent, so a retried import with
+        # the same ``import_batch_id`` (which re-derives the same run id) re-registers harmlessly.
+        await record_run_lineage(
+            conn,
+            run_id=run_id,
+            workspace_id=workspace_id,
+            kind="import",
+            project_id=project_id,
+        )
 
         rubric = await get_rubric_version(
             conn, icp_spec_ref.workspace_id, icp_spec_ref.icp_key, icp_spec_ref.icp_version

@@ -7,6 +7,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -31,7 +32,11 @@ from clue_core import (
     RunId,
     classify_field_key,
 )
-from clue_research.claimstore import FieldRegistryScope, get_effective_field
+from clue_research.claimstore import (
+    FieldRegistryScope,
+    get_effective_field,
+    record_run_lineage,
+)
 from clue_research.directives import effective_account_research_directive
 from clue_research.durable import (
     list_external_research_result_artifacts,
@@ -499,6 +504,18 @@ class ExaDeepContactSnapshotMaterializer:
         )
         results: list[ExaDeepContactMaterializedField] = []
         async with self._conn_factory() as conn:
+            # FI-2 P2 (spec §3): the caller's ``run_id`` is a per-tool-call id derived from the
+            # launch research run, and it is what every facet claim below carries — so it is the id
+            # the project lens must resolve. Registered once here, in the same transaction as those
+            # writes; idempotent, so a replayed tool call re-registers harmlessly.
+            await record_run_lineage(
+                conn,
+                run_id=UUID(str(run_id)),
+                workspace_id=intent.workspace_id,
+                kind="contact_research",
+                project_id=intent.project_id,
+                project_run_id=UUID(str(intent.project_run_id)),
+            )
             account, contact = await _require_current_subject(conn, intent=intent)
             effective = await effective_account_research_directive(
                 conn,

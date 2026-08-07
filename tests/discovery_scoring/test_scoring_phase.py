@@ -49,6 +49,8 @@ from clue_research.icp import (
     rubric_to_slot,
 )
 from clue_research.identity import insert_account_entity
+from tests._run_lineage import assert_written_claims_are_attributable
+from tests._workspace import seed_phase_run
 
 from .conftest import rollback_conn, run_async
 
@@ -164,6 +166,7 @@ def test_scoring_phase_scores_admitted_and_records_yield() -> None:
             await load_core_pack(conn)
             await _seed_active_icp(conn)
             ctx = _ctx()
+            await seed_phase_run(conn, ctx)
             e1 = await _seed_admitted(conn, ctx, name="Alpha", domain="alpha.example")
             e2 = await _seed_admitted(conn, ctx, name="Beta", domain="beta.example")
 
@@ -220,6 +223,7 @@ def test_scoring_phase_uses_only_sealed_manifest_membership() -> None:
             await load_core_pack(conn)
             await _seed_active_icp(conn)
             ctx = _ctx()
+            await seed_phase_run(conn, ctx)
             sealed = await _seed_admitted(conn, ctx, name="Sealed", domain="sealed.example")
             mutable_only = await _seed_admitted(
                 conn, ctx, name="Mutable only", domain="mutable-only.example"
@@ -246,6 +250,7 @@ def test_scoring_phase_replay_is_idempotent() -> None:
             await load_core_pack(conn)
             await _seed_active_icp(conn)
             ctx = _ctx()
+            await seed_phase_run(conn, ctx)
             eid = await _seed_admitted(conn, ctx, name="Alpha", domain="alpha.example")
 
             handler = ScoringPhaseHandler(session_factory=_session_factory(conn))
@@ -260,6 +265,35 @@ def test_scoring_phase_replay_is_idempotent() -> None:
             scope = WorkspaceScope.for_workspace(CLIENT)
             assert len(await claims_for(conn, eid, FIT_FIELD, scope=scope)) == 1
             assert len(await claims_for(conn, eid, INTENT_FIELD, scope=scope)) == 1
+
+    run_async(_run())
+
+
+def test_scoring_phase_registers_its_run_in_run_lineage() -> None:
+    """FI-2 P2: the fit/intent claims this phase writes back-join to the run's project."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            await _seed_active_icp(conn)
+            ctx = _ctx()
+            await seed_phase_run(conn, ctx)
+            await _seed_admitted(conn, ctx, name="Alpha", domain="alpha.example")
+
+            handler = ScoringPhaseHandler(session_factory=_session_factory(conn))
+            result = await handler.run(ctx)
+            assert result.status is PhaseStatus.COMPLETED
+
+            await assert_written_claims_are_attributable(
+                conn,
+                str(result.payload["scoring_run_id"]),
+                kind="scoring",
+                workspace_id=ctx.workspace_id,
+                project_id=ctx.project_id,
+                project_run_id=ctx.project_run_id,
+            )
+            # Replay re-registers harmlessly rather than failing.
+            assert (await handler.run(ctx)).status is PhaseStatus.COMPLETED
 
     run_async(_run())
 

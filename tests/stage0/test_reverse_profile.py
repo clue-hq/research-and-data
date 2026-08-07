@@ -51,6 +51,7 @@ from clue_research.stage0.fields import (
     CLIENT_PROOF_POINT,
     CLIENT_VALUE_PROP,
 )
+from tests._run_lineage import assert_written_claims_are_attributable
 from tests.stage0._fakes import FakeResolver, RecordingJudge, make_tier4_claim
 from tests.stage0.conftest import rollback_conn, run_async
 
@@ -463,5 +464,23 @@ def test_client_customer_is_multi_valued_list() -> None:
             )
             assert cv is not None
             assert isinstance(cv.value_json, list) and len(cv.value_json) == 2  # 1-to-N preserved
+
+    run_async(_run())
+
+
+def test_reverse_profile_registers_its_run_in_run_lineage() -> None:
+    """FI-2 P2: the Client-KB claims back-join to a workspace-level stage-0 run (no project)."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            _bind_firecrawl(_owned_values())
+            run_id = new_run_id()
+            await reverse_profile(conn, _input(), workspace_id=_CLIENT, run_id=run_id)
+
+            await assert_written_claims_are_attributable(
+                conn, run_id, kind="stage0", workspace_id=_CLIENT, project_id=None
+            )
+            # Resuming the same run re-registers harmlessly.
+            await reverse_profile(conn, _input(), workspace_id=_CLIENT, run_id=run_id)
 
     run_async(_run())

@@ -56,6 +56,7 @@ from clue_research.resolvers.sumble import (
 )
 from clue_storage import FsStorage
 from clue_toolbelt import PreconditionFailed, ToolContext, invoke_tool
+from tests._run_lineage import assert_written_claims_are_attributable
 from tests.api.test_exa_targeted_enrichment_e1 import _advance_sealed_run_to_deep
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
@@ -332,6 +333,17 @@ def test_s1_real_db_three_snapshots_conflict_preservation_and_zero_call_replay(
                 scope=WorkspaceScope.for_workspace(workspace_id),
             )
             assert merged is not None and merged.conflict is True
+
+            # FI-2 P2: every Sumble claim carries the project run as its run_id, and that run is
+            # registered so the project lens can back-join it.
+            await assert_written_claims_are_attributable(
+                conn,
+                started.project_run_id,
+                kind="enrichment",
+                workspace_id=workspace_id,
+                project_id=started.project_id,
+                project_run_id=started.project_run_id,
+            )
 
             spent = Decimal(
                 (

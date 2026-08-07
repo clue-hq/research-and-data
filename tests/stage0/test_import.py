@@ -33,6 +33,9 @@ from clue_research.stage0 import (
     ImportRow,
     import_accounts,
 )
+from clue_research.stage0.import_accounts import import_batch_run_id
+from tests._run_lineage import assert_written_claims_are_attributable
+from tests._workspace import seed_project
 from tests.stage0._fakes import FakeCrmResolver, build_confirmed_icp
 from tests.stage0.conftest import rollback_conn, run_async
 
@@ -394,5 +397,50 @@ def test_reimport_same_batch_does_not_duplicate_entities() -> None:
             assert first.resolved[0].account_entity_id == second.resolved[0].account_entity_id
             # the second pass auto-merges onto the existing entity (deterministic strong key)
             assert second.resolved[0].resolution_method == "deterministic"
+
+    run_async(_run())
+
+
+def test_import_batch_registers_its_run_in_run_lineage() -> None:
+    """FI-2 P2: every claim an import batch writes back-joins to a registered run.
+
+    Import carries no project context of its own yet (the caller supplies one), so an unattributed
+    batch registers as a workspace-level run — and a batch handed a project registers under it.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            client = await _client_entity(conn, "lineage")
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
+            rows = [ImportRow(row_index=1, name="Lineage Inc", domain="lineage.example")]
+
+            await import_accounts(
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client, import_batch_id="bl"
+            )
+            await assert_written_claims_are_attributable(
+                conn,
+                import_batch_run_id("bl"),
+                kind="import",
+                workspace_id=_CLIENT,
+                project_id=None,
+            )
+
+            project = await seed_project(conn, _CLIENT, name="Import project")
+            await import_accounts(
+                conn,
+                rows,
+                icp,
+                workspace_id=_CLIENT,
+                client_entity_id=client,
+                import_batch_id="bl-project",
+                project_id=project.project_id,
+            )
+            await assert_written_claims_are_attributable(
+                conn,
+                import_batch_run_id("bl-project"),
+                kind="import",
+                workspace_id=_CLIENT,
+                project_id=project.project_id,
+            )
 
     run_async(_run())

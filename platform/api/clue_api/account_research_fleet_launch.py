@@ -41,7 +41,7 @@ from clue_core.entity_research import (
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet import EntityResearchJobEnvelope, EntityResearchRunEnvelope
-from clue_research.claimstore import WorkspaceScope, claims_for
+from clue_research.claimstore import WorkspaceScope, claims_for, record_run_lineage
 from clue_research.directives import effective_account_research_directive, get_research_directive
 from clue_research.durable import (
     ensure_account_run,
@@ -425,6 +425,19 @@ class AccountResearchFleetLauncher:
                 confirmed_at=directive.confirmed_at,
             )
             research_run_id = uuid5(_RUN_NAMESPACE, request_sha)
+            # FI-2 P2 (spec §3): attribute the research run to its project inside the launch
+            # transaction — the same one the run/job rows below commit in. Idempotent, so a
+            # re-confirmed identical request (same ``request_sha`` -> same run id) re-registers
+            # harmlessly. The per-tool-call materialization runs derived from this id register
+            # themselves at their own mint sites (that is what ``claim.run_id`` actually carries).
+            await record_run_lineage(
+                conn,
+                run_id=research_run_id,
+                workspace_id=request.workspace_id,
+                kind="entity_research",
+                project_id=project_run.project_id,
+                project_run_id=UUID(str(request.project_run_id)),
+            )
             lifecycle = ResearchRunLifecycleContract(
                 run_id=research_run_id,
                 run_kind=ResearchRunKind.ACCOUNT_RESEARCH,

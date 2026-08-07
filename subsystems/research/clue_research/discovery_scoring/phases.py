@@ -42,7 +42,7 @@ from clue_core import (
     SealedDiscoveryAccounts,
 )
 from clue_db import ConnFactory, transaction
-from clue_research.claimstore import ALL_WORKSPACES
+from clue_research.claimstore import ALL_WORKSPACES, record_run_lineage
 from clue_research.discovery_scoring.coverage import (
     DEFAULT_COVERAGE_CONFIG,
     CoverageConfig,
@@ -160,6 +160,17 @@ class DiscoveryPhaseHandler:
                         )
                     },
                 )
+            # FI-2 P2 (spec §3): attribute the run to its project once, in the same transaction as
+            # the admission writes below — never per claim. Idempotent, so an M7 replay (which
+            # re-derives the same run id) re-registers harmlessly.
+            await record_run_lineage(
+                conn,
+                run_id=run_id,
+                workspace_id=ctx.workspace_id,
+                kind="discovery",
+                project_id=ctx.project_id,
+                project_run_id=ctx.project_run_id,
+            )
             result = await discover(
                 spec=spec,
                 run_id=run_id,
@@ -387,6 +398,17 @@ class ScoringPhaseHandler:
                 else await admitted_account_ids(conn, run_id=discovery_run, scope=ALL_WORKSPACES)
             )
 
+            # FI-2 P2 (spec §3): one attribution row for the scoring run, in the same transaction
+            # as the score writes below. Idempotent, so an M7 replay re-registers harmlessly.
+            await record_run_lineage(
+                conn,
+                run_id=scoring_run,
+                workspace_id=ctx.workspace_id,
+                kind="scoring",
+                project_id=ctx.project_id,
+                project_run_id=ctx.project_run_id,
+            )
+
             scored = written = replayed = errors = 0
             total_cost = Decimal(0)
             yield_rows: list[SourceYieldRow] = []
@@ -587,6 +609,16 @@ class TierCheckpointPhaseHandler:
         tiered = replayed = errors = 0
         if approved:
             tier_run = _tier_checkpoint_run_id(ctx, decision_version)
+            # FI-2 P2 (spec §3): attribute the tiering run before the per-account tier writes
+            # below, in the same transaction. Idempotent under replay of the same decision.
+            await record_run_lineage(
+                conn,
+                run_id=tier_run,
+                workspace_id=ctx.workspace_id,
+                kind="tiering",
+                project_id=ctx.project_id,
+                project_run_id=ctx.project_run_id,
+            )
             for account_id in effective_ids:
                 savepoint = await conn.begin_nested()
                 try:
@@ -769,6 +801,17 @@ class TierCheckpointPhaseHandler:
             tiered = replayed = errors = 0
             if approved:
                 tier_run = _tier_checkpoint_run_id(ctx, cversion)
+                # FI-2 P2 (spec §3): attribute the tiering run before the per-account tier writes
+                # below, in the same transaction. A resume with the same approved cutoffs re-derives
+                # the same run id and re-registers harmlessly.
+                await record_run_lineage(
+                    conn,
+                    run_id=tier_run,
+                    workspace_id=ctx.workspace_id,
+                    kind="tiering",
+                    project_id=ctx.project_id,
+                    project_run_id=ctx.project_run_id,
+                )
                 for view in views:
                     savepoint = await conn.begin_nested()
                     try:

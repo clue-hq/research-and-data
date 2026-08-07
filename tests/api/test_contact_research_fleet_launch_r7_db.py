@@ -38,6 +38,7 @@ from clue_research.identity import insert_contact_entity, stamp_reuse
 from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE
 from clue_research.profiling.committee.admission import DISCOVERY_PROVENANCE_FIELD
 from clue_storage import FsStorage
+from tests._run_lineage import assert_run_registered
 from tests.contact_research.test_c6_contact_selection_db import (
     _materialize,
     _selection_seed,
@@ -333,6 +334,22 @@ def test_non_committee_and_committee_contacts_launch_with_exact_local_authority(
                 "external_ops": 0,
                 "channel_ops": 0,
             }
+
+            # FI-2 P2: the launched contact research run is attributed to its project at launch.
+            launched_project_id = (
+                await conn.execute(
+                    text("SELECT project_id FROM project_run WHERE id=:id"),
+                    {"id": seed.project_run_id},
+                )
+            ).scalar_one()
+            await assert_run_registered(
+                conn,
+                launched.research_run_id,
+                kind="contact_research",
+                workspace_id=WORKSPACE_ID,
+                project_id=launched_project_id,
+                project_run_id=seed.project_run_id,
+            )
 
             launch_replay = await launcher.launch(
                 launch_request,

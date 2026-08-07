@@ -23,7 +23,10 @@ from clue_core import (
     new_project_run_id,
 )
 from clue_research.discovery_scoring import ChannelRegistry, DiscoveryPhaseHandler
+from clue_research.discovery_scoring.phases import discovery_run_id
 from clue_research.icp import create_icp_spec
+from tests._run_lineage import assert_written_claims_are_attributable
+from tests._workspace import seed_phase_run
 
 from .conftest import const_channel, record, rollback_conn, run_async
 
@@ -93,7 +96,9 @@ def test_discovery_phase_discovers_admits_and_records_yield() -> None:
             handler = DiscoveryPhaseHandler(
                 channels=ChannelRegistry((channel,)), session_factory=_session_factory(conn)
             )
-            result = await handler.run(_ctx())
+            ctx = _ctx()
+            await seed_phase_run(conn, ctx)
+            result = await handler.run(ctx)
 
             assert result.status is PhaseStatus.COMPLETED
             assert result.accounts_processed == 2
@@ -126,6 +131,7 @@ def test_discovery_phase_replay_is_idempotent() -> None:
                 channels=ChannelRegistry((channel,)), session_factory=_session_factory(conn)
             )
             ctx = _ctx()  # same ctx → same deterministic discovery run_id on replay
+            await seed_phase_run(conn, ctx)
 
             first = await handler.run(ctx)
             second = await handler.run(ctx)
@@ -134,6 +140,36 @@ def test_discovery_phase_replay_is_idempotent() -> None:
             assert second.payload["admitted"] == 1  # re-admits to the same entity
             assert await _count_accounts(conn) == 1  # no duplicate entity
             assert await _count_provenance(conn) == 1  # no duplicate provenance claim
+
+    run_async(_run())
+
+
+def test_discovery_phase_registers_its_run_in_run_lineage() -> None:
+    """FI-2 P2: the admitted candidates' provenance claims back-join to this run's project."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _seed_active_icp(conn)
+            channel = const_channel("exa", [record("exa:1", domain="alpha.example", name="Alpha")])
+            handler = DiscoveryPhaseHandler(
+                channels=ChannelRegistry((channel,)), session_factory=_session_factory(conn)
+            )
+            ctx = _ctx()
+            await seed_phase_run(conn, ctx)
+
+            result = await handler.run(ctx)
+            assert result.status is PhaseStatus.COMPLETED
+
+            await assert_written_claims_are_attributable(
+                conn,
+                discovery_run_id(ctx),
+                kind="discovery",
+                workspace_id=ctx.workspace_id,
+                project_id=ctx.project_id,
+                project_run_id=ctx.project_run_id,
+            )
+            # Replay re-registers harmlessly (ON CONFLICT DO NOTHING) rather than failing.
+            assert (await handler.run(ctx)).status is PhaseStatus.COMPLETED
 
     run_async(_run())
 

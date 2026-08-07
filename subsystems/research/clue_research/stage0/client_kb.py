@@ -73,6 +73,7 @@ from clue_research.claimstore import (
     get_field,
     insert_claim,
     list_effective_fields,
+    record_run_lineage,
     supersede_claim,
 )
 from clue_research.identity import (
@@ -172,6 +173,12 @@ async def reverse_profile(
     ) as span:
         # Field registry must carry the client.* fields before any client claim is written.
         await load_client_knowledge_pack(conn)
+
+        # FI-2 P2 (spec §3): reverse profiling is a workspace-level stage-0 run — the Client KB
+        # belongs to no project, so ``project_id`` stays NULL. Registered once, in the caller's
+        # transaction, ahead of every claim below; idempotent, so a resumed run (same ``run_id``)
+        # re-registers harmlessly.
+        await record_run_lineage(conn, run_id=run, workspace_id=workspace_id, kind="stage0")
 
         client_entity_id = await _resolve_client(conn, client_input, workspace_id=workspace_id)
         apply_attributes(span, {ATTR_ENTITY_ID: client_entity_id})
@@ -585,6 +592,10 @@ async def client_kb_write_target_for_materialization(
         )
     )
     if marker is None:
+        # FI-2 P2 (spec §3): a workspace-level stage-0 run (no project). Registered only on the
+        # branches that actually mint a new version — the reuse branch below returns the *existing*
+        # run, already registered by whoever created it, so nothing is registered that never wrote.
+        await record_run_lineage(conn, run_id=run_id, workspace_id=workspace_id, kind="stage0")
         version = await _write_version_marker(
             conn,
             client_entity_id=client_entity_id,
@@ -641,6 +652,7 @@ async def client_kb_write_target_for_materialization(
         product_id=product_id,
     )
     filled = set(prior_claims).intersection(CLIENT_BASELINE_FIELDS)
+    await record_run_lineage(conn, run_id=run_id, workspace_id=workspace_id, kind="stage0")
     new_version = await _write_version_marker(
         conn,
         client_entity_id=client_entity_id,
