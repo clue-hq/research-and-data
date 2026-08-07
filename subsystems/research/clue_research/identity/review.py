@@ -788,7 +788,15 @@ async def split_merge(
 
     Restoration is for the common case (a single merge, reversed before the survivor changed); it
     clears the absorbed keys from the survivor first so the partial-unique constraints permit the
-    loser to take them back. If no auto-merge audit is found, only the pointer is un-set."""
+    loser to take them back. If no auto-merge audit is found, only the pointer is un-set.
+
+    **Known gap — FI-2 ``project_account`` membership is NOT restored.** ``mark_merged`` re-points
+    the loser's project memberships onto the survivor (``membership.repoint_project_accounts``), and
+    this split does not move them back: the revived loser comes back with zero memberships and the
+    survivor keeps the absorbed ones. Restoring them needs the moved ``project_id``s recorded in the
+    merge's disposition payload (the way ``relinquished_strong_keys`` already is), which is real
+    scope for the **M2.4 review-surface composition** — uncomposed today, so the gap is accepted and
+    deferred rather than half-built here."""
     table = _entity_table(entity_type)
     prior = await _latest_auto_merge(conn, loser_id)
 

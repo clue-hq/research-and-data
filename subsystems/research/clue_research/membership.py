@@ -6,15 +6,21 @@ queryable state instead of folklore recomputed from discovery lineage. This modu
 junction's whole write/read surface:
 
 * :func:`ensure_project_account` — the idempotent upsert every admission/import/directive write
-  site calls inside its own transaction. **The first add wins**: ``added_via``/``added_at`` record
-  the first channel and time, so a later add through another channel is a no-op on the row.
+  site calls inside its own transaction. **The first add wins for a given account**:
+  ``added_via``/``added_at`` record the first channel and time that *this* account joined the
+  project, so a later add through another channel is a no-op on the row.
 * :func:`projects_for_accounts` — the account-first read behind the frontend account row's
   ``projects[]``; ordered ``added_at`` ascending, so element 0 is the recorded ``primaryProjectId``
   policy (earliest membership), not an ``ORDER BY created_at DESC`` guess.
 * :func:`accounts_for_project` — the project-first read behind a project's target-account list.
 * :func:`repoint_project_accounts` — moves a merge loser's memberships onto the survivor. Wired
   into ``identity.mark_merged`` so it runs in the merge's own transaction and no caller has to
-  remember it.
+  remember it. Where *both* accounts already belonged to a project, the **survivor's existing row
+  is kept** (spec §2's ``ON CONFLICT DO NOTHING``) — the loser's possibly-earlier ``added_at`` is
+  deliberately not adopted, so "first add wins" does not carry across a merge. **A merge's
+  membership move is not reversible:** ``identity.split_merge`` un-does a merge's entity rows but
+  does not restore the moved memberships — restoration is deferred to the M2.4 review composition
+  (see that function's docstring).
 
 **Both workspace anchors are enforced by the database** (migration ``61b00ee9c70a``): composite FKs
 to ``account_entity (id, workspace_id)`` and ``project (project_id, workspace_id)`` — the real
@@ -159,7 +165,21 @@ async def repoint_project_accounts(
     never be orphaned on a merged-away account. Within-workspace only, like every merge (B3); a
     project both accounts already belonged to keeps the *survivor's* row, so the survivor's own
     ``added_at`` history is not rewritten by the merge.
+
+    Raises :class:`ValueError` when ``loser_id == survivor_id`` — self-re-pointing is never a real
+    merge, and the mirror-then-delete would conflict on identical primary keys and then **delete
+    every membership of that account**. Refused before any statement is issued, so a bad caller
+    leaves no partial write and does not poison a shared transaction (same guard idiom as
+    :func:`ensure_project_account`; ``identity.mark_merged`` raises ``MergeCycleError`` on the same
+    pair, but this function is callable on its own).
+
+    The move is one-way: ``identity.split_merge`` does not restore it (deferred to M2.4).
     """
+    if loser_id == survivor_id:
+        raise ValueError(
+            f"cannot re-point project membership from {loser_id} onto itself; "
+            "loser_id and survivor_id must differ"
+        )
     params = {"workspace_id": workspace_id, "loser_id": loser_id, "survivor_id": survivor_id}
     await conn.execute(_REPOINT_INSERT, params)
     await conn.execute(_REPOINT_DELETE, {k: params[k] for k in ("workspace_id", "loser_id")})

@@ -199,6 +199,34 @@ def test_repoint_moves_loser_memberships_and_merges_with_the_survivors() -> None
     run_async(_run())
 
 
+def test_repointing_an_account_onto_itself_is_refused_not_a_wipe() -> None:
+    """Self-re-pointing would mirror onto identical PKs and then DELETE every membership."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            project = await seed_project(conn, "ws_m4b")
+            account = await insert_account_entity(
+                conn, canonical_name="Acme", primary_domain="acme-m4b.com", workspace_id="ws_m4b"
+            )
+            await ensure_project_account(
+                conn,
+                workspace_id="ws_m4b",
+                project_id=project.project_id,
+                account_entity_id=account,
+                added_via="discovered",
+            )
+            with pytest.raises(ValueError):
+                await repoint_project_accounts(
+                    conn, workspace_id="ws_m4b", loser_id=account, survivor_id=account
+                )
+            # Refused before any statement: the connection is usable and nothing was deleted.
+            assert await accounts_for_project(
+                conn, workspace_id="ws_m4b", project_id=project.project_id
+            ) == (account,)
+
+    run_async(_run())
+
+
 def test_mark_merged_repoints_membership_in_the_same_transaction() -> None:
     """The identity merge itself moves membership — no caller has to remember to."""
 
