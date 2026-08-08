@@ -151,4 +151,19 @@ Ledger- and claim-based, never log-based: A9 rows + `claim_support` + verdict ro
 
 ---
 
+## 8. Worktree kickoff (read this first in the Lane E worktree)
+
+Added at finalization (2026-08-08) so a fresh agent can start cold. All §7 decisions are ratified; nothing here is pending.
+
+1. **Worktree/branch.** New worktree off `platform/frontend-integration`; suggested branch `platform/lane-e-prose-synthesis`. Merges back into `platform/frontend-integration`. Local commits only; never push (repo rule).
+2. **Required reading, in order:** this charter (§0–§7); `docs/specs/FI-lane-demarcation.md` **§2.5** (binding exclusions — the "must never touch" list); `docs/specs/FI-M12-verification-toggle-compat.md` (the optional-judge contract your writers are born with); `_memory/2026-08-08-lane-e-charter.md` + `_memory/2026-08-08-lane-e-ratified-and-m12-toggle-compat.md` (study facts — do not re-derive them).
+3. **Your files** (demarcation §2.5): `subsystems/research/clue_research/narrative/prose.py` (new), the L1 tuple entry in `narrative/research_views.py` (that one edit only), a new prose field-pack module registered via `narrative_wiring` (PF-7 pattern — **not** in `narrative/fields.py`), the fleet-handler `ProseSynthesisStep` + `synthesize_entity_prose@1` tool. **Never edit:** `current_values`/merge, positioner/fields supersede predicates, `account_entity_research.py`, `frontend_read/**`, `run_lineage` registration, `api-contracts/accounts.md`. A read-surface field addition is a request to the FI-2 agent.
+4. **Build order:** E0 → E1 → E2 → E3 (§5). E0 is fully unblocked. E3's FI-2 §6.4 sequencing gate is **satisfied** (`5fa0403c`+`6626edf3`); E3 lands after FI-2 slice 3 finishes landing on the integration branch — check `git log` for slice-3 completion before landing E3, build in parallel regardless.
+5. **The verification toggle.** The A+B merge/judge compatibility change (`FI-M12-verification-toggle-compat.md`) is implemented **from the primary worktree, not yours** (its files are outside your territory). Your obligations: `prose.py` accepts `judge: FaithfulnessJudge | None` (skip + metric when `None`, claim stays unverified), and every E1/E2/E3 acceptance suite runs with `CLUE_VERIFICATION_ENABLED` **both** `true` and `false`. If you reach E1 before the A+B change has landed, the disabled-mode AC "claim visible in `current_values`" will fail on the merge gate — coordinate landing order rather than touching `merge.py`.
+6. **D2 amendment is load-bearing:** the supersede key is `(entity, field, workspace, project_id=None)` and `value_json` carries `project_id: null` from day one (§2.5). Do not "simplify" it away.
+7. **Checks:** the research-side gate is `make check` (targeted suites per §6); if you mint a migration, Alembic hash ids chained off the current head (`870fe4f2af87` at demarcation time — re-check), single head per branch, expect `alembic merge` at integration. The frontend rendering of either state waits on FI-2's D-4 flip — your backend slices land first and that is expected (§4.4).
+8. **Memory protocol:** keep `_memory/` session notes as you go (repo rule); close each slice with a dated entry.
+
+---
+
 *Ratification log: 2026-08-08 — founder ruled all four §7 decisions (D1 both-outcomes+stamp; D2 PROJECT_NEUTRAL with the day-one `project_id` key dimension amendment; D3 E3 IN, landing after FI-2 slice 3; D4 acknowledged). Lane E is unblocked: E0 may start. Related same-day ruling: M12/Lane-E writers must honor `CLUE_VERIFICATION_ENABLED` in both states — see `docs/specs/FI-M12-verification-toggle-compat.md`.*

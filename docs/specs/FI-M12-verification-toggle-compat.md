@@ -1,6 +1,6 @@
 # FI — M12 / Lane-E compatibility with the runtime verification toggle
 
-**Status: DESIGN APPROVED 2026-08-08 (founder) — awaiting spec review, then implementation plan.**
+**Status: RATIFIED 2026-08-08 (founder; spec review complete same day) — ready for implementation.**
 Date: 2026-08-08. Branch: `platform/frontend-integration`.
 Parent: the temporary M9 runtime toggle `CLUE_VERIFICATION_ENABLED` (`Settings.verification_enabled`, default `true`; commit `784fb662`; context `_memory/2026-08-08-m9-runtime-verification-toggle.md`). Sibling: `docs/specs/FI-lane-E-on-completion-synthesis.md` (ratified same day — its E1/E2/E3 writers are first consumers of this contract).
 
@@ -53,3 +53,11 @@ Rejected alternative, recorded: scoping the relaxation to M12's narrative output
 ## 6. Scope
 
 Small — `merge.py` (+ accessor), `positioner.py`, `handoff.py`, the composition roots touched by `784fb662`, Lane-E `prose.py` when it is born, and tests. On the order of one focused day; small precisely because M12 is not yet composed in production.
+
+## 7. Ownership & landing (demarcation ruling)
+
+**This change is NOT Lane E's to implement.** `FI-lane-demarcation.md` §2.5 forbids Lane E from editing `current_values`/merge and the positioner's internals — exactly the files §3 touches. Therefore:
+
+- The A+B change is implemented **from the primary integration worktree** (where `784fb662` landed), as its own small commit series on `platform/frontend-integration`, independent of Lane E's worktree.
+- **Lane E consumes the contract only:** its new `prose.py` (E1/E2) is *born* honoring the optional-judge rule (§3-A), and its E1/E2/E3 acceptance runs validate with `CLUE_VERIFICATION_ENABLED` in **both** states (the demarcation §2.5 awareness note, now concrete).
+- Landing order: **E0 needs none of this** (no LLM, no judge). Land the A+B change before or alongside **E1**; E3 (Positioner composition) requires it in place.

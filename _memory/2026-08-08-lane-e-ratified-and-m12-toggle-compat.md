@@ -16,6 +16,10 @@ Investigation findings (two Opus read-only sweeps, 2026-08-08 — do not re-deri
 - Merge-policy threading: every production read resolves to the single `DEFAULT_MERGE_POLICY` constant (`merge.py:115`); NO caller overrides `require_verified_tier4` or sets `fallback_to_unpromotable=True` anywhere (prod or tests). `clue_config.schema.MergePolicy`/`WorkspaceConfig.merge_policy` are imported by nothing (matches the [M9.2×M0.4] backlog note).
 - Approved design: (A) judge optional in Positioner/Lane-E prose/handoff filter, skip+metric when None; (B) effective default merge policy derived from settings at one claimstore accessor (`require_verified_tier4 = settings.verification_enabled`) — global-when-off, founder-approved. REJECTED/WEAK exclusions stay on in both modes. Scope: ~1 focused day.
 
+## Finalization (same day)
+- `FI-M12-verification-toggle-compat.md` **RATIFIED** (founder reviewed same day). §7 ownership ruling added: the A+B change is implemented **from the primary integration worktree** — demarcation §2.5 forbids Lane E from touching `merge.py`/positioner internals. Lane E only consumes the optional-judge contract in its new `prose.py` and tests both toggle states. Landing order: E0 needs nothing; A+B lands before/with E1; E3 requires it.
+- Lane E charter gained **§8 worktree kickoff** (branch `platform/lane-e-prose-synthesis` off `platform/frontend-integration`, reading list, file territory, build order, toggle obligations, D2 key discipline, check gates). Lane E worktree is ready to spawn.
+
 ## Next
-- Founder reviews `FI-M12-verification-toggle-compat.md`; then write the implementation plan (superpowers writing-plans) and implement.
-- Lane E E0 can start independently.
+- Founder spawns the Lane E worktree → agent starts at E0 per charter §8.
+- Primary worktree (here): write the A+B implementation plan and implement it before Lane E reaches E1.
