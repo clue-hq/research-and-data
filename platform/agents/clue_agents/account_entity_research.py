@@ -144,6 +144,39 @@ class AccountCommitteePlanProjection(_FrozenModel):
     questions: tuple[NonEmptyStr, ...] = ()
 
 
+class AccountExistingClaimProjection(_FrozenModel):
+    """One admitted field's *already known* current truth, read before this job spends (FI-2 §6.1).
+
+    Mirrors ``ContactExistingClaimProjection`` and adds ``research_scope`` — the field's species,
+    which the account economics need: a ``project_neutral`` fact is the world's answer and any
+    project may reuse it while it is fresh, evidence-backed and conflict-free (born-complete);
+    a ``project_relative`` value is *this* project's answer, so another project's fresh claim is
+    never a substitute for researching it here.
+    """
+
+    field_key: NonEmptyStr
+    claim_ref: NonEmptyStr
+    value: JsonValue
+    source_url: str | None = None
+    source_tier: int = Field(ge=1, le=4)
+    evidence_span: str | None = None
+    confidence: float = Field(ge=0, le=1)
+    freshness_state: Literal["fresh", "stale"]
+    conflict: bool
+    research_scope: Literal["project_neutral", "project_relative"]
+
+    @property
+    def born_complete(self) -> bool:
+        """Whether this existing claim answers the field without spending anything (FI-2 §6.1)."""
+
+        return (
+            self.research_scope == "project_neutral"
+            and self.freshness_state == "fresh"
+            and bool(self.evidence_span)
+            and not self.conflict
+        )
+
+
 class AccountResearchStateProjection(_FrozenModel):
     job_id: UUID
     account_entity_id: UUID
@@ -151,6 +184,7 @@ class AccountResearchStateProjection(_FrozenModel):
     admitted_field_keys: tuple[NonEmptyStr, ...]
     admitted_source_keys: tuple[NonEmptyStr, ...]
     committee_source_keys: tuple[NonEmptyStr, ...]
+    existing_claims: tuple[AccountExistingClaimProjection, ...] = ()
     result_refs: tuple[NonEmptyStr, ...]
     completed_field_keys: tuple[NonEmptyStr, ...]
     unresolved_field_keys: tuple[NonEmptyStr, ...]
@@ -169,6 +203,12 @@ class AccountCoverageProjection(_FrozenModel):
     completed_field_keys: tuple[NonEmptyStr, ...]
     unresolved_field_keys: tuple[NonEmptyStr, ...]
     unresolved_reasons: tuple[NonEmptyStr, ...]
+    #: Why a completed field cost nothing — ``"<field_key>:existing_claim_fresh"`` per field the
+    #: job never researched because a fresh, evidence-backed, conflict-free ``project_neutral``
+    #: claim already answered it (FI-2 §6.1). It rides ``coverage_json`` rather than a column
+    #: (there is none, and this is a ledger *explanation*, not authority — the authority is
+    #: ``claim_refs``, which cites the exact claims that stood in for the spend).
+    skipped_field_reasons: tuple[NonEmptyStr, ...] = ()
     committee_result_refs: tuple[NonEmptyStr, ...]
     committee_member_ids: tuple[UUID, ...]
     committee_status: Literal["complete", "partial", "needs_review"]
@@ -186,6 +226,7 @@ __all__ = [
     "AccountBuyingUnitScope",
     "AccountCommitteePlanProjection",
     "AccountCoverageProjection",
+    "AccountExistingClaimProjection",
     "AccountResearchStateProjection",
     "AssessAccountCoverageInput",
     "DiscoverBuyingCommitteeInput",

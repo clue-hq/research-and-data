@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from langchain_core.tools import StructuredTool
@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents.account_entity_research import (
     AccountCommitteePlanProjection,
     AccountCoverageProjection,
+    AccountExistingClaimProjection,
     AccountResearchStateProjection,
     AssessAccountCoverageInput,
     FinalizeAccountResearchInput,
@@ -39,7 +40,13 @@ from clue_agents.entity_research_runtime import (
     current_entity_research_tool_execution,
 )
 from clue_api.entity_research_tools import convert_engine_authority_rejections
-from clue_core import EntityId, ProjectRunId, serialize_value_json
+
+# The species read is the one in the FI-2 read layer, imported rather than restated: "is this
+# field project-relative?" must have exactly one answer for the economics here and for the lens
+# that renders the resulting claims (it resolves through `core.resolve_research_scope` over the
+# *effective* registry, retired declarations included — see its docstring).
+from clue_api.frontend_read.account_detail import field_species
+from clue_core import EntityId, ProjectRunId, ResearchScope, serialize_value_json
 from clue_core.entity_research import (
     EntityResearchJobAuthorization,
     FinalizationVerification,
@@ -48,6 +55,7 @@ from clue_core.entity_research import (
     ResearchFinalizationReceipt,
     ResearchSubjectType,
 )
+from clue_research.claimstore import WorkspaceScope, current_values
 from clue_research.directives import effective_account_research_directive
 from clue_research.durable import find_account_runs_for_entity
 
@@ -135,6 +143,7 @@ class AccountResearchStateStore:
     ) -> AccountResearchStateProjection:
         active = active or self._active_account()
         authorization = active.context.authorization
+        admitted = authorization.selection.admitted_field_keys
         async with self._conn_factory() as conn:
             job = (
                 (
@@ -175,6 +184,9 @@ class AccountResearchStateStore:
                 ).scalar_one()
             )
             committee_plan = await read_account_committee_plan(conn, authorization=authorization)
+            existing_claims = await self._existing_claims(
+                conn, authorization=authorization, admitted=admitted
+            )
         latest: dict[str, Mapping[str, object]] = {}
         committee_refs: list[str] = []
         member_ids: list[UUID] = []
@@ -188,9 +200,14 @@ class AccountResearchStateStore:
                 value = cast(UUID, row["target_entity_id"])
                 if value not in member_ids:
                     member_ids.append(value)
-        admitted = authorization.selection.admitted_field_keys
+        # FI-2 §6.1: a field this workspace already knows — neutral species, fresh, evidence-backed
+        # and conflict-free — is born complete: the job never plans, spends or researches it, and
+        # the coverage ledger cites the existing claim instead of a result of its own.
+        born_complete = {item.field_key for item in existing_claims if item.born_complete}
         completed = tuple(
-            key for key in admitted if key in latest and str(latest[key]["outcome"]) == "found"
+            key
+            for key in admitted
+            if key in born_complete or (key in latest and str(latest[key]["outcome"]) == "found")
         )
         unresolved = tuple(key for key in admitted if key not in set(completed))
         return AccountResearchStateProjection(
@@ -200,6 +217,7 @@ class AccountResearchStateStore:
             admitted_field_keys=admitted,
             admitted_source_keys=authorization.selection.admitted_source_keys,
             committee_source_keys=authorization.selection.committee_source_keys,
+            existing_claims=existing_claims,
             result_refs=tuple(f"research-result:{row['result_id']}" for row in results),
             completed_field_keys=completed,
             unresolved_field_keys=unresolved,
@@ -209,6 +227,46 @@ class AccountResearchStateStore:
             spent_cents=str(Decimal(job["spent_cents"])),
             contact_research_request_count=contact_count,
             committee_plan=committee_plan,
+        )
+
+    @staticmethod
+    async def _existing_claims(
+        conn: AsyncConnection,
+        *,
+        authorization: EntityResearchJobAuthorization,
+        admitted: Sequence[str],
+    ) -> tuple[AccountExistingClaimProjection, ...]:
+        """What this workspace already knows about the admitted fields (FI-2 §6.1).
+
+        One canonical-merge read (never a raw ``claim.workspace_id`` filter — the workspace scope
+        is the claimstore's own predicate) plus one species read, so the agent sees the account's
+        current truth before it plans, and the engine can decide which fields are born complete.
+        """
+
+        subject = EntityId(authorization.subject_entity_id)
+        workspace_id = str(authorization.workspace_id)
+        current = await current_values(
+            conn,
+            [subject],
+            admitted,
+            scope=WorkspaceScope.for_workspace(workspace_id),
+        )
+        species = await field_species(conn, workspace_id=workspace_id, field_keys=list(admitted))
+        return tuple(
+            AccountExistingClaimProjection(
+                field_key=key,
+                claim_ref=f"claim:{value.provenance.claim_id}",
+                value=value.value_json,
+                source_url=value.provenance.source_url,
+                source_tier=int(value.provenance.source_tier),
+                evidence_span=value.provenance.evidence_span,
+                confidence=float(value.provenance.confidence),
+                freshness_state=cast(Literal["fresh", "stale"], value.freshness_state.value),
+                conflict=value.conflict,
+                research_scope=species.get(key, ResearchScope.PROJECT_NEUTRAL).value,
+            )
+            for key in admitted
+            if (value := current.get((subject, key))) is not None
         )
 
     async def evidence(self, inputs: InspectAccountEvidenceInput) -> dict[str, JsonValue]:
@@ -280,14 +338,41 @@ class AccountResearchStateStore:
                     latest_account.setdefault(
                         str(row["field_key"]), cast(Mapping[str, object], row)
                     )
+            # The ledger explains every field's money: a field this job researched reports its
+            # result outcome; a field it did not reports *why* the claim already on file could not
+            # stand in for the spend (FI-2 §6.1 — same reason vocabulary as the contact runtime,
+            # plus the species reason only the account axis can produce).
+            existing_by_field = {item.field_key: item for item in state.existing_claims}
             for field_key in state.unresolved_field_keys:
                 selected_row = latest_account.get(field_key)
-                reason = (
-                    "not_researched"
-                    if selected_row is None
-                    else f"{selected_row['outcome']}:{selected_row['verification_status']}"
-                )
+                existing = existing_by_field.get(field_key)
+                if selected_row is not None:
+                    reason = f"{selected_row['outcome']}:{selected_row['verification_status']}"
+                elif existing is None:
+                    reason = "not_researched"
+                elif existing.research_scope != "project_neutral":
+                    # A fresh relative claim is another project's answer, never this project's.
+                    reason = "existing_claim_project_relative"
+                elif existing.conflict:
+                    reason = "existing_claim_conflict"
+                elif existing.freshness_state != "fresh":
+                    reason = f"existing_claim_{existing.freshness_state}"
+                else:
+                    reason = "existing_claim_missing_evidence"
                 unresolved_reasons.append(f"{field_key}:{reason}")
+            # "Skipped" means the money was never spent: a field this job *did* research reports
+            # its result, even if a fresh claim also happens to be on file for it.
+            completed = set(state.completed_field_keys)
+            researched = {
+                key for key, row in latest_account.items() if str(row["outcome"]) == "found"
+            }
+            skipped_field_reasons = tuple(
+                f"{item.field_key}:existing_claim_fresh"
+                for item in state.existing_claims
+                if item.born_complete
+                and item.field_key in completed
+                and item.field_key not in researched
+            )
 
             scope_count = int(
                 (
@@ -384,6 +469,15 @@ class AccountResearchStateStore:
                     .all()
                 )
             )
+            # A born-complete field's evidence is the claim that made it complete: fold those claim
+            # ids into the ledger so the coverage cites what stood in for the research spend, and
+            # the finalization engine can verify it (FI-2 §6.1, the contact runtime's mechanism).
+            existing_claim_ids = tuple(
+                item.claim_ref.removeprefix("claim:")
+                for item in state.existing_claims
+                if item.born_complete and item.field_key in set(state.completed_field_keys)
+            )
+            claim_ids = tuple(dict.fromkeys((*claim_ids, *existing_claim_ids)))
             projection = AccountCoverageProjection(
                 coverage_id=coverage_id,
                 coverage_ledger_ref=f"account-coverage:{coverage_id}",
@@ -391,6 +485,7 @@ class AccountResearchStateStore:
                 completed_field_keys=state.completed_field_keys,
                 unresolved_field_keys=state.unresolved_field_keys,
                 unresolved_reasons=tuple(unresolved_reasons),
+                skipped_field_reasons=skipped_field_reasons,
                 committee_result_refs=state.committee_result_refs,
                 committee_member_ids=state.committee_member_ids,
                 committee_status=cast(Any, committee_status),
@@ -978,6 +1073,7 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                             """
                             SELECT intent.proposal_json, intent.proposal_sha256,
                                    intent.current_state_sha256, coverage.committee_status,
+                                   coverage.completed_field_keys,
                                    job.current_state_sha256 AS job_state,
                                    job.spent_cents AS job_spent_cents,
                                    run.spent_cents AS run_spent_cents,
@@ -1021,6 +1117,18 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                                                       fold.provider_operation_ref
                                             )
                                       )) AS pending_operations
+                                   ,ARRAY(SELECT DISTINCT result_field.field_key
+                                     FROM entity_research_result_field result_field
+                                     JOIN entity_research_result result
+                                       ON result.result_id=result_field.result_id
+                                     JOIN entity_research_result_evidence evidence
+                                       ON evidence.result_id=result_field.result_id
+                                      AND evidence.field_ordinal=result_field.ordinal
+                                     WHERE 'research-result:' || result.result_id::text =
+                                           ANY(coverage.result_refs)
+                                       AND result_field.subject_type='account'
+                                       AND result_field.target_entity_id=intent.account_entity_id
+                                       AND result_field.outcome='found') AS result_evidence_fields
                                    ,(SELECT count(*)
                                      FROM unnest(coverage.completed_field_keys) completed(field_key)
                                      WHERE NOT EXISTS (
@@ -1038,6 +1146,23 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                                                intent.account_entity_id
                                            AND result_field.field_key=completed.field_key
                                            AND result_field.outcome='found'
+                                     )
+                                     -- FI-2 §6.1: a field this job never researched is evidenced
+                                     -- by the live claim the coverage cited instead of spending
+                                     -- (born-complete). The claim must still be visible to this
+                                     -- workspace and carry an evidence span, so "completed" never
+                                     -- means "asserted without evidence".
+                                     AND NOT EXISTS (
+                                         SELECT 1 FROM claim existing
+                                         WHERE 'claim:' || existing.id::text =
+                                               ANY(coverage.claim_refs)
+                                           AND existing.entity_id=intent.account_entity_id
+                                           AND existing.field_key=completed.field_key
+                                           AND existing.superseded_by IS NULL
+                                           AND existing.evidence_span IS NOT NULL
+                                           AND btrim(existing.evidence_span)<>''
+                                           AND (existing.reuse_scope='public_footprint'
+                                                OR existing.workspace_id=intent.workspace_id)
                                      )) AS missing_completed_evidence
                             FROM entity_research_account_finalization_intent intent
                             JOIN entity_research_account_coverage coverage
@@ -1063,6 +1188,34 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                 .mappings()
                 .first()
             )
+            # The engine re-derives the skip rule itself rather than trusting the coverage: every
+            # completed field with no result of its own must still be answered, right now, by a
+            # fresh, evidence-backed, conflict-free *neutral* claim (FI-2 §6.1).
+            existing_completed = (
+                frozenset()
+                if row is None
+                else frozenset(row["completed_field_keys"])
+                - frozenset(row["result_evidence_fields"])
+            )
+            current = (
+                {}
+                if not existing_completed
+                else await current_values(
+                    conn,
+                    [EntityId(authorization.subject_entity_id)],
+                    existing_completed,
+                    scope=WorkspaceScope.for_workspace(str(authorization.workspace_id)),
+                )
+            )
+            species = (
+                {}
+                if not existing_completed
+                else await field_species(
+                    conn,
+                    workspace_id=str(authorization.workspace_id),
+                    field_keys=sorted(existing_completed),
+                )
+            )
         if (
             row is None
             or ResearchFinalizationProposal.model_validate(row["proposal_json"]) != proposal
@@ -1070,6 +1223,18 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
             raise EntityResearchFinalizationRejected(
                 "model finalization lacks the exact engine-tool proposal intent"
             )
+        borrowable = {
+            key
+            for (_entity_id, key), value in current.items()
+            if value.freshness_state.value == "fresh"
+            and value.provenance.evidence_span
+            and not value.conflict
+        }
+        relative_borrowed = {
+            key
+            for key in existing_completed
+            if species.get(key, ResearchScope.PROJECT_NEUTRAL) is not ResearchScope.PROJECT_NEUTRAL
+        }
         no_pending = int(row["pending_operations"]) == 0
         state_matches = (
             str(row["job_state"])
@@ -1088,7 +1253,9 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
         )
         verification = FinalizationVerification(
             no_pending_operations=no_pending,
-            evidence_complete=int(row["missing_completed_evidence"]) == 0,
+            evidence_complete=(
+                int(row["missing_completed_evidence"]) == 0 and existing_completed <= borrowable
+            ),
             coverage_matches=coverage_matches and review_shape,
             spend_reconciled=(
                 no_pending
@@ -1099,7 +1266,9 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                 bool(proposal.identity_use_verification_ref)
                 and str(row["committee_status"]) in {"complete", "partial", "needs_review"}
             ),
-            policy_scope_respected=int(row["contact_requests"]) == 0,
+            # A project-relative field is this project's own question: no other project's claim,
+            # however fresh, may close it (FI-2 §6.1 / R3).
+            policy_scope_respected=int(row["contact_requests"]) == 0 and not relative_borrowed,
             current_state_matches=state_matches,
         )
         if not verification.all_passed():
