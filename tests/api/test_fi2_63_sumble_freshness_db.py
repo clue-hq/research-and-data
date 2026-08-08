@@ -41,7 +41,11 @@ from clue_api.sumble_account_gaps import (
     compile_sumble_account_gap_preflight,
 )
 from clue_api.sumble_entity_research_tools import SumbleAccountSemanticEnrichmentAction
-from clue_api.toolbelt_wiring import build_toolbelt
+from clue_api.toolbelt_wiring import (
+    EnrichAccountGapsInput,
+    EnrichAccountGapsTool,
+    build_toolbelt,
+)
 from clue_core import (
     AccountGapReason,
     EntityId,
@@ -51,6 +55,7 @@ from clue_core import (
     ResearchScope,
     RunId,
     account_claim,
+    new_operation_id,
 )
 from clue_core.entity_research import (
     FieldSourceAuthority,
@@ -63,8 +68,8 @@ from clue_research.resolvers.sumble import JOBS_SOURCE_KEY
 from clue_storage import FsStorage
 from clue_toolbelt import PreconditionFailed, ToolContext, invoke_tool
 from tests.api.test_sumble_account_gaps_s1 import (
-    _SumbleHttp,
     _seed_selected_high_tier_account,
+    _SumbleHttp,
 )
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
@@ -317,7 +322,15 @@ def test_fi2_63b_the_m8d_path_converts_ineligibility_into_a_governed_skip(
 def test_fi2_63b_the_legacy_toolbelt_path_keeps_its_precondition_failure(
     tmp_path: Path,
 ) -> None:
-    """The human-facing tool contract is unchanged: a loud precondition, not a governed turn."""
+    """The human-facing tool contract is unchanged: a loud precondition, not a governed turn.
+
+    ``enrich_account_gaps@1`` is in ``QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES``, so a *registry*
+    invocation never reaches eligibility at all — asserted first, so the quarantine cannot quietly
+    lapse. The tool object itself is still the live implementation the human path would run (and
+    the one an exact replay resolves), so ``invoke`` is exercised directly: §6.3(b) must convert
+    ineligibility to :class:`EntityResearchGovernedRejection` on the M8D action *only*, and leave
+    this one raising ``PreconditionFailed('sumble_account_gap_ineligible')``.
+    """
 
     async def scenario() -> None:
         workspace_id = "ws-fi2-63d"
@@ -340,26 +353,39 @@ def test_fi2_63b_the_legacy_toolbelt_path_keeps_its_precondition_failure(
             async def same_connection() -> AsyncIterator[AsyncConnection]:
                 yield conn
 
-            starter, _http = _starter(conn, storage=storage, domain="insighthealth.ai")
+            starter, http = _starter(conn, storage=storage, domain="insighthealth.ai")
+            body = {
+                "project_run_id": str(run_id),
+                "account_entity_id": str(account_id),
+                "field_expected_value_credits": {_HIRING: "5"},
+                "provider_credit_cap": 5,
+                "allow_unbounded_tech": False,
+            }
+            ctx = ToolContext(
+                workspace_id=workspace_id,
+                actor="human:fi2-63d",
+                conn_factory=same_connection,
+                operation_id=new_operation_id(),
+            )
             registry = build_toolbelt(
                 storage=storage,
                 gateway=None,
                 conn_factory=same_connection,
                 account_gap_enrichment_starter=starter,
             )
+            with pytest.raises(PreconditionFailed) as quarantined:
+                await invoke_tool(registry, "enrich_account_gaps", body, ctx, idempotency_ttl_s=60)
+            assert quarantined.value.reason_codes == ("entity_research_agent_not_composed",)
+
+            tool = EnrichAccountGapsTool(
+                starter=starter,
+                conn_factory=same_connection,
+                cents_per_credit=Decimal("0.5"),
+            )
             with pytest.raises(PreconditionFailed) as refused:
-                await invoke_tool(
-                    registry,
-                    "enrich_account_gaps",
-                    {
-                        "project_run_id": str(run_id),
-                        "account_entity_id": str(account_id),
-                        "field_expected_value_credits": {_HIRING: "5"},
-                        "provider_credit_cap": 5,
-                        "allow_unbounded_tech": False,
-                    },
-                    ctx=ToolContext(workspace_id=workspace_id, actor="human:fi2-63d"),
-                )
-            assert "sumble_account_gap_ineligible" in str(refused.value)
+                await tool.invoke(EnrichAccountGapsInput.model_validate(body), ctx)
+            assert refused.value.reason_codes == ("sumble_account_gap_ineligible",)
+            assert "confidently resolved, fresh" in refused.value.failures[0].message
+            assert http.calls == []
 
     run_async(scenario())
