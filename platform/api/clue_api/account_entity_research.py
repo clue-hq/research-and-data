@@ -114,7 +114,11 @@ async def existing_account_claims(
             confidence=float(value.provenance.confidence),
             freshness_state=cast(Literal["fresh", "stale"], value.freshness_state.value),
             conflict=value.conflict,
-            research_scope=species.get(key, ResearchScope.PROJECT_NEUTRAL).value,
+            # Fail closed: an unresolvable species is reported *relative*, the species that is
+            # never skippable.  ``field_species`` answers for every declared field, so this
+            # default is unreachable today; if it ever becomes reachable, the safe reading of
+            # "we do not know whose answer this is" is "it is not the workspace's to borrow".
+            research_scope=species.get(key, ResearchScope.PROJECT_RELATIVE).value,
         )
         for key in field_keys
         if (value := current.get((subject, key))) is not None
@@ -1013,6 +1017,19 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
         if call.tool_name == "research_account_deep":
             if sources != {_QUALITATIVE_SOURCE}:
                 raise AccountResearchAuthorityError("qualitative account research uses Exa Deep")
+            if not fields:
+                # A zero-field bundle buys nothing and cannot be repaired downstream:
+                # ``EntityResearchSemanticToolInput.field_keys`` has no minimum length and the
+                # record-time field/source pairing check is itself conditional on a non-empty
+                # ``field_keys``, so the call would reach the Exa action and die there on
+                # ``EntityResearchResultIntegrityError`` — the *suspending* species under R10.
+                # The first-call rule used to catch it as a side effect; net of the borrowed set
+                # a wholly-borrowed account has an empty ``primary``, so it no longer does.
+                # Refuse it here instead, as the turn the agent can act on: the correct move on an
+                # all-borrowed account is to finalize, not to call with nothing.
+                raise AccountResearchAuthorityError(
+                    "Exa account research needs at least one field to buy"
+                )
             # FI-2 §6.2: the borrowed set — admitted fields a fresh, evidence-backed,
             # conflict-free *neutral* claim already answers.  The M8D Exa bundle is compiled
             # straight from ``field_keys``, and Exa (unlike Sumble, whose own preflight refuses a
@@ -1022,9 +1039,16 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
             # *net* of the borrowed set: the agent sees exactly these fields as already complete
             # in its state read, so a prompt-obedient omission must pass, not cost a turn.
             #
-            # Every fact the three rules below weigh is read in **one** snapshot: the borrowed set
-            # and the prior-call history decide the same question ("what is left to buy?") and two
-            # separate reads could straddle a concurrent write and answer it inconsistently.
+            # Every fact the three rules below weigh is read on **one** connection, inside one
+            # transaction: the borrowed set and the prior-call history decide the same question
+            # ("what is left to buy?"), and reading them on two connections could interleave a
+            # concurrent write between them and answer it inconsistently.  The injected factory is
+            # ``clue_db.transaction`` in production, which is READ COMMITTED: this is one
+            # transaction, not one snapshot — each statement
+            # still sees its own snapshot; the guarantee here is that they are ordered, not
+            # that they are simultaneous.  (``repeatable_read_transaction`` exists for the
+            # stronger property and is deliberately not used: the guard reads far less than it
+            # would cost to serialize.)
             async with self._conn_factory() as conn:
                 borrowed = await born_complete_account_field_keys(
                     conn,

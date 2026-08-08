@@ -171,6 +171,34 @@ def test_fi2_62_a_lazy_omission_of_an_unresearched_primary_field_is_still_refuse
     run_async(scenario())
 
 
+def test_fi2_62_an_empty_exa_bundle_is_refused_repairably() -> None:
+    """A wholly-borrowed account leaves ``primary`` empty — an empty call must still be refused.
+
+    ``EntityResearchSemanticToolInput.field_keys`` has no minimum length and the record-time
+    field/source pairing check is itself conditional on a non-empty ``field_keys``, so a
+    zero-field ``research_account_deep`` call clears authority and reaches
+    ``ExaDeepSemanticAccountResearchAction.execute``, whose ``not request.field_keys`` branch
+    raises ``EntityResearchResultIntegrityError`` — the *suspending* species under R10, which
+    wedges the job. Before the ``primary - borrowed`` relaxation the first-call rule refused this
+    call repairably; the relaxation must not trade a governed refusal for a suspension.
+
+    This refuses the call, it does not require one: an all-borrowed account still finalizes with
+    zero research calls (the Task-2 zero-result close). It is only an agent that *asks* for
+    nothing that gets a turn back.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_p1_research(conn)
+            with pytest.raises(
+                AccountResearchAuthorityError,
+                match="Exa account research needs at least one field to buy",
+            ):
+                await _authorize(conn, fixture=fixture, admitted=_BORROWED, field_keys=())
+
+    run_async(scenario())
+
+
 def test_fi2_62_asking_exa_to_re_buy_a_borrowed_field_is_refused() -> None:
     """No provider is paid for a fact already on file, however the agent phrases the request."""
 
