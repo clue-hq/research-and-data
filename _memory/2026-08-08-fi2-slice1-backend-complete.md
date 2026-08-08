@@ -93,3 +93,20 @@ Tests: 88 across the four suites (+22 app), all green on a per-branch throwaway 
 memberships (mutation-proven — a per-membership lookup fails it), a cross-workspace name-leak guard, and a
 list-valued-facet fixture proving `typeCount` is per-field not per-item (the `solo` contact now carries a
 three-item `public_appearances`; the "no facets at all" zero case moved to `masked`).
+
+## SLICE 1 FULLY COMPLETE incl. frontend flip (Task 6a+6b, 2026-08-08)
+
+- 6a (047901df+4715756c): projects[].name via shared batched project_names() (tenancy-proven); signals.typeCount.
+- 6b (a0317511+0f8656ad+9cbeee34): accounts flow bound to the live API at the repository seam. Zod = as-built
+  wire (open enums where backend is CHECK-not-enum — live smoke caught addedVia:"manual"); accounts-only
+  `CLUE_ACCOUNTS_API_BASE_URL` (projects repos PINNED to fixtures until phase 2 — the shared var broke the home
+  route); 404s discriminate on error.code (misconfig throws loud, never renders empty workspace); honest
+  pagination (Showing X of Y + load-more via server action, config server-derived); per-row contact links via
+  route param (killed a hardcoded-contact 404 bug + dead-click drawer); generic pack-fact renderer (D-7
+  dynamic industry-pack fields); dev proxy in next.config (same-origin; browse next dev on localhost NOT
+  127.0.0.1 or server actions are refused). Frontend gate green (design-system:build/lint/build, 24 tests).
+- OPEN: design review of `account-detail-screen.tsx` + `contact-profile-content.tsx` (minimum honest rendering
+  after D-7 dropped their fixture fields; reviewer judged honest-not-butchered). Founder ack still pending:
+  C6 re-pin, hq_geo owner, workspace research_scope NOT NULL, logoPath carve-out confirmation.
+- Lane demarcation registry (127b626b) acknowledged: slices 2-3 + accounts frontend + accounts.md are this
+  lane's reserved territory; other lanes alembic-merge against head `870fe4f2af87`.
