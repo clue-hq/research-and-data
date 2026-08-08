@@ -60,3 +60,11 @@ seam, no adapter change needed); phase-2 cross-origin POST needs deliberate CORS
 - `localhost:5432` on this machine resolves to a docker postgres; the host server is `127.0.0.1:5432`; the
   shared `clue` DB is stamped at an off-branch revision — always use per-branch throwaway DBs.
 - Slices 2 (C7 lineage convergence) and 3 (economics incl. §6.4 project-scoped supersedes) not started.
+
+## Task-6 gate RESOLVED (founder, 2026-08-08 — recorded in FI-1 §9)
+
+D-4/D-5/D-6/D-7 ratified (D-6 incl. not_launchable now; no overallFit; D-7: fixture-only fields were
+industry-pack placeholders — packs' custom fields render DYNAMICALLY when the account's industry pack yields
+claims; the hardcoded fixture fields are dropped, not preserved). signals = count of SIGNAL TYPES (unit kept).
+CORS: same-origin proxy in prod, exact localhost origin in dev, no wildcard. projects[].name: plan-owner
+addendum — membership rows gain name via read-layer join. Task 6 unblocked.
