@@ -17,6 +17,7 @@ from clue_api.deep.composition import _live_tier_for_project
 from clue_api.entity_research_quarantine import EntityResearchAgentNotComposed
 from clue_core import (
     Claim,
+    EntityId,
     ExtractionMethod,
     ICPCreatedFrom,
     ICPSpec,
@@ -247,39 +248,51 @@ def test_high_tier_resolver_selects_only_current_run_human_approved_criteria_acc
 
 
 # --- FI-2 §6.4: the resolver reads ITS OWN project's live tier ---------------
+def _tier_claim(account_id: EntityId, **extra: JsonValue) -> Claim:
+    value_json: dict[str, JsonValue] = {"tier": "high", "cutoff_version": "v-a", "icp_key": _ICP}
+    value_json.update(extra)
+    return account_claim(
+        entity_id=account_id,
+        field_key=TIER_FIELD,
+        value_json=value_json,
+        source_tier=1,
+        extraction_method=ExtractionMethod.HUMAN,
+        confidence=1.0,
+        run_id=new_run_id(),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+    )
+
+
 def test_live_tier_for_project_picks_this_projects_tier() -> None:
     """Since §6.4 stopped cross-project supersession, one account can carry several live tier
     claims — one per project. The resolver must read its own (not whichever landed last), skip
-    another project's entirely, and still honour an unstamped legacy tier."""
+    another project's entirely, and fall back to an unstamped tier when it wrote none."""
     account_id = new_entity_id()
-
-    def _claim(**extra: JsonValue) -> Claim:
-        value_json: dict[str, JsonValue] = {
-            "tier": "high",
-            "cutoff_version": "v-a",
-            "icp_key": _ICP,
-        }
-        value_json.update(extra)
-        return account_claim(
-            entity_id=account_id,
-            field_key=TIER_FIELD,
-            value_json=value_json,
-            source_tier=1,
-            extraction_method=ExtractionMethod.HUMAN,
-            confidence=1.0,
-            run_id=new_run_id(),
-            research_mode=ResearchMode.ACCOUNT_PROFILING,
-        )
-
-    p2 = _claim(project_id="prj-two", tier="low")
-    p1 = _claim(project_id="prj-one")
-    legacy = _claim()
+    p2 = _tier_claim(account_id, project_id="prj-two", tier="low")
+    p1 = _tier_claim(account_id, project_id="prj-one")
+    unstamped = _tier_claim(account_id)
 
     # P2's claim is the most recent, but P1's phase must read P1's tier.
     mine = _live_tier_for_project([p2, p1], project_id="prj-one")
     assert mine is not None and mine["tier"] == "high"
     # Only another project's tier is live → this project selects nothing (never P2's).
     assert _live_tier_for_project([p2], project_id="prj-one") is None
-    # An unstamped legacy tier belongs to no project's lens, so any project may read it.
-    fallback = _live_tier_for_project([p2, legacy], project_id="prj-one")
+    # An unstamped tier is attributed to no project by this predicate, so any project may use it.
+    fallback = _live_tier_for_project([p2, unstamped], project_id="prj-one")
     assert fallback is not None and fallback["tier"] == "high"
+
+
+def test_live_tier_for_project_prefers_own_stamp_over_a_newer_unstamped_tier() -> None:
+    """The two-pass rule. "Unstamped" is an OPEN class, not a pre-§6.4 leftover — a writer that has
+    not been taught to stamp still produces one — so a *more recent* unstamped tier (e.g. another
+    project's criteria-selection tier) must never shadow this project's own stamped tier and
+    silently drop the account from the deep set. Own stamp wins regardless of recency."""
+    account_id = new_entity_id()
+    newer_unstamped = _tier_claim(account_id, tier="low", decision_basis="discovery_criteria")
+    mine = _tier_claim(account_id, project_id="prj-one")
+
+    # claims_for orders most-recent-first: the unstamped claim leads, but P1's own must win.
+    selected = _live_tier_for_project([newer_unstamped, mine], project_id="prj-one")
+    assert selected is not None
+    assert selected["tier"] == "high"
+    assert selected["project_id"] == "prj-one"

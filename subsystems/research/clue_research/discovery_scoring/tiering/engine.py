@@ -302,29 +302,41 @@ async def persist_discovery_selection_tier(
     workspace_id: str,
     icp_key: str,
     icp_version: int,
+    project_id: str | None = None,
 ) -> tuple[ClaimId, bool]:
-    """Persist the human approval over a criterion-selected account without synthetic scores."""
+    """Persist the human approval over a criterion-selected account without synthetic scores.
 
+    ``project_id`` (FI-2 §6.4) is stamped alongside the existing ``project_run_id`` pin. It changes
+    no supersession here — this path is already pinned to the exact project run, which is strictly
+    narrower — but it keeps this writer *out* of the unstamped class that
+    :func:`~clue_research.claimstore.project_supersedable` is allowed to absorb, and lets the
+    read side (``deep.composition._live_tier_for_project``) tell "this project's selection tier"
+    from "some other project's". Optional only so existing callers stay valid; every caller has a
+    project and should pass it."""
+
+    value_json: dict[str, JsonValue] = {
+        "tier": tier,
+        "decision_basis": "discovery_criteria",
+        "selection_policy_version": selection_policy_version,
+        "decision_version": decision_version,
+        # The existing field contract requires this version slot. In criteria mode it is
+        # the content-addressed human selection decision, not a numeric-score cutoff.
+        "cutoff_version": decision_version,
+        "discovery_batch_id": discovery_batch_id,
+        "discovery_seal_sha256": discovery_seal_sha256,
+        "project_run_id": str(project_run_id),
+        "disposition": view.disposition.value,
+        "evidence_claim_ids": [str(value) for value in view.evidence_claim_ids],
+        "icp_key": icp_key,
+        "icp_version": icp_version,
+    }
+    if project_id is not None:
+        value_json["project_id"] = project_id
     tier_claim = stamp_reuse(
         account_claim(
             entity_id=view.account_id,
             field_key=TIER_FIELD,
-            value_json={
-                "tier": tier,
-                "decision_basis": "discovery_criteria",
-                "selection_policy_version": selection_policy_version,
-                "decision_version": decision_version,
-                # The existing field contract requires this version slot. In criteria mode it is
-                # the content-addressed human selection decision, not a numeric-score cutoff.
-                "cutoff_version": decision_version,
-                "discovery_batch_id": discovery_batch_id,
-                "discovery_seal_sha256": discovery_seal_sha256,
-                "project_run_id": str(project_run_id),
-                "disposition": view.disposition.value,
-                "evidence_claim_ids": [str(value) for value in view.evidence_claim_ids],
-                "icp_key": icp_key,
-                "icp_version": icp_version,
-            },
+            value_json=value_json,
             source_tier=1,
             extraction_method=ExtractionMethod.HUMAN,
             confidence=1.0,

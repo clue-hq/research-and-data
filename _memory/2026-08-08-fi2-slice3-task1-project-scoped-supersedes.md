@@ -77,3 +77,41 @@ per-branch throwaway DB: 32 failures vs a 30-failure clean-HEAD baseline on its 
 attachments — the known clue-design guard-exclusion follow-up) and one order-dependent
 `tests/resolvers/test_resolvers.py` case that passes in isolation. Everything else is the documented
 shared-DB pollution class (all pass on a fresh DB in isolation).
+
+## Fix round (task review, same day — commit follows `5fa0403c`)
+
+Review approved the predicate (verified strictly narrowing on both families; six other tier readers
+structurally immune). Three rulings applied:
+
+1. **"Unstamped ⇒ pre-§6.4" was factually wrong.** `persist_discovery_selection_tier` stamped
+   `project_run_id` but no `project_id` — it wrote unstamped tiers *today*, not historically. The
+   unstamped class is **open**, not a frozen leftover. Consequences fixed:
+   - `_live_tier_for_project` is now **two-pass**: prefer a payload stamped for this project
+     (regardless of recency), fall back to an unstamped one only when this project stamped none. The
+     single-pass version let a *newer* unstamped selection tier from P2 shadow P1's own stamped M6.4
+     tier → silent account drop from the deep set. Test:
+     `test_live_tier_for_project_prefers_own_stamp_over_a_newer_unstamped_tier`.
+   - The three "legacy (pre-§6.4)" docstrings (`deep/composition.py`, `claim_writes.py`,
+     `run_lineage.py`) now say **unstamped**, with the open-class caveat spelled out.
+   - **Ruled YES on shrinking the class:** `persist_discovery_selection_tier` gained an optional
+     `project_id`, passed at both call sites (`phases.py` → `ctx.project_id`; the trial fixture →
+     `PROJECT_ID`). It changes no supersession there (that path is already pinned to the exact
+     project run, strictly narrower) — it keeps the writer out of the absorbable class and lets the
+     read side distinguish it. Asserted in `test_tier_checkpoint_phase.py`.
+2. **Absorb-rule rationale corrected** (`run_lineage.py`). The old text called unstamped claims
+   "unattributable" — false: P2 `run_lineage` attributes most of them via `run_id`, and the
+   read-side lens uses exactly that. The honest statement now in the docstring: the predicate stays
+   pure/sync (no connection, no await — it sits in a hot supersede loop) and therefore does *not*
+   consult lineage, so **the rule can absorb a claim lineage would attribute to another project**.
+   Acceptable only under the B3 synthetic-data ruling while the unstamped class is drained by
+   teaching writers to stamp. Also corrected the "at most one claim" undercount — the narrative path
+   uses `supersede_claims` over **all** matching lives.
+3. **Minor:** noted at `write_icp_scoped_claim` that coexisting tier/score claims can now flip
+   `current_value.conflict = True` (exact-equality `merge._conflict`). Cosmetic — no consumer reads
+   `CurrentValue.conflict`; the authoritative surface is M9.2's `conflict_flag`. Cross-referenced to
+   the existing [M9.2×M1.2] backlog item, with the open question recorded there: whether two lenses
+   coexisting should count as a conflict at all.
+
+Fix-round gate: `tests/narrative tests/discovery_scoring tests/claimstore tests/api/deep` green;
+`tests/durable tests/integration` green on a fresh DB; mypy 577 clean; ruff/format clean on all
+touched files; `lint-imports` 24/24. No migration.

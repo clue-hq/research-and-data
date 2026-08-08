@@ -244,10 +244,9 @@ def build_high_tier_resolver(
                     continue
                 # FI-2 §6.4: an account shared by two projects now carries **two** live tier
                 # claims (P2's tier no longer supersedes P1's), so "the most recent live claim"
-                # is no longer this project's by construction. Take the most recent live tier
-                # THIS project wrote; an unstamped legacy tier is still honoured (it belongs to
-                # no project's lens, so any project may read it — the read-side mirror of the
-                # legacy absorb rule).
+                # is no longer this project's by construction. Prefer the most recent live tier
+                # THIS project wrote and fall back to an unstamped one only if it wrote none —
+                # the read-side mirror of the write-side absorb rule.
                 value = _live_tier_for_project(
                     await claims_for(conn, entity_id, TIER_FIELD, scope=scope),
                     project_id=ctx.project_id,
@@ -287,24 +286,34 @@ def build_high_tier_resolver(
 def _live_tier_for_project(
     live: Sequence[Claim], *, project_id: str
 ) -> Mapping[str, JsonValue] | None:
-    """The most-recent live ``account.scoring.tier`` payload belonging to ``project_id`` (FI-2
-    §6.4), or ``None``.
+    """The most-recent live ``account.scoring.tier`` payload this project may act on (FI-2 §6.4),
+    or ``None``.
 
     ``claims_for`` returns live claims most-recent-first. Since §6.4 stopped cross-project
     supersession, several may be live at once — one per project that tiered the account — so this
-    picks the caller's own rather than whichever landed last. A payload with **no** ``project_id``
-    is a legacy (pre-§6.4) tier attributed to no project and is accepted by any project; a payload
-    stamped for a *different* project is skipped.
+    picks the caller's own rather than whichever landed last.
+
+    **Two passes, deliberately.** An **unstamped** payload (no ``project_id``) is not necessarily a
+    pre-§6.4 leftover: ``persist_discovery_selection_tier`` historically wrote unstamped tiers, and
+    any writer that has not yet been taught to stamp still does. Such a payload is attributed to no
+    project *by this predicate*, so any project may fall back to it — but only as a **fallback**. A
+    single pass that accepted the first stamped-or-unstamped match would let a more recent *other*
+    project's unstamped selection tier shadow this project's own stamped M6.4 tier and silently
+    drop the account from the deep set. So: pass 1 takes the most recent payload stamped for
+    ``project_id``; pass 2 runs only if pass 1 found nothing, and takes the most recent unstamped
+    payload. A payload stamped for a *different* project is never returned.
     """
+    fallback: Mapping[str, JsonValue] | None = None
     for claim in live:
         value = claim.value_json
         if not isinstance(value, dict):
             continue
         stamped = value.get("project_id")
-        if isinstance(stamped, str) and stamped != project_id:
-            continue
-        return value
-    return None
+        if stamped == project_id:
+            return value  # pass 1: this project's own, most recent first
+        if not isinstance(stamped, str) and fallback is None:
+            fallback = value  # pass 2 candidate: the most recent unstamped payload
+    return fallback
 
 
 def _tier_cutoffs(raw: JsonValue | None) -> TierCutoffs | None:

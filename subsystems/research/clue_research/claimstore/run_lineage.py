@@ -130,14 +130,34 @@ def project_supersedable(prior_project_id: object, writing_project_id: str | Non
       before §6.4; only cross-project destruction stops.
     * **Different project → never.** P2 regenerating a narrative/tier for the same key coexists
       with P1's; each lens keeps serving its own.
-    * **Unstamped prior (``None``) → supersedable, by whichever project touches it first.** This is
-      the deliberate migration-free rule for legacy (pre-§6.4) claims. The alternative — never
-      supersede an unstamped claim — leaves a permanently live, unattributable zombie competing in
-      every project's ``current_value`` forever. Absorbing it on first touch instead keeps the
-      "one live winner" invariant, preserves today's exact behaviour for a workspace that has only
-      one project, and costs at most one legacy claim its liveness (its row is retained, superseded
-      — append-only history is never broken). Deployed databases hold synthetic development data
-      only (the B3 ruling), so no real lens can be harmed by the choice.
+    * **Unstamped prior (``None``) → supersedable, by whichever project touches it first.**
+
+    The unstamped rule is the deliberate migration-free choice, and it is a **real trade-off, not a
+    free win** — state it honestly:
+
+    * "Unstamped" is **not** a synonym for "pre-§6.4". Any writer that does not set
+      ``value_json["project_id"]`` produces one, today and tomorrow
+      (``persist_discovery_selection_tier`` did until it was taught to stamp). The class is open.
+    * An unstamped claim is **not** unattributable. The FI-2 P2 ``run_lineage`` spine attributes
+      most of them to a project through ``claim.run_id``, and the read-side lens uses exactly that.
+      This predicate deliberately does not consult it: it is pure and synchronous (no connection, no
+      await) so it can sit inside a hot supersede loop, and the write path must not take a second
+      query per candidate.
+    * So the honest cost: **this rule can absorb a claim that lineage would attribute to a
+      different project.** That is a genuine, if narrow, cross-project write. It is acceptable only
+      because every database holds synthetic development data (the B3 ruling), so no real lens can
+      be harmed while the unstamped class is drained by teaching each writer to stamp.
+    * What it buys: the "one live winner" invariant survives. Never superseding an unstamped claim
+      would instead leave permanently live claims competing in every project's ``current_value``
+      forever, with no project able to retire them. Behaviour for a single-project workspace is
+      unchanged, and nothing is lost irrecoverably — an absorbed row is retained, superseded, so
+      append-only history is never broken.
+    * Note the narrative path supersedes **every** matching live claim
+      (``supersede_claims``), not just one, so a single write can absorb more than one unstamped
+      claim.
+
+    The right way to shrink the risk is to stamp at the source: every new score-family/narrative
+    writer should pass its ``project_id``.
 
     ``prior_project_id`` is typed ``object`` because it comes straight out of a ``value_json`` dict:
     a non-string stamp is not a project and is treated as unstamped.

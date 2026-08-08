@@ -1614,6 +1614,7 @@ async def _commit_handoff(
         workspace_id=WORKSPACE_ID,
         icp_key=deep_icp.icp_key,
         icp_version=deep_icp.version,
+        project_id=PROJECT_ID,  # FI-2 §6.4: stamped, never unstamped
     )
     committee_plan_bytes = json.dumps(
         DEFAULT_RESEARCH_DIRECTIVE.committee_plan.model_dump(mode="json"),

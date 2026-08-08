@@ -696,6 +696,9 @@ def test_discovery_criteria_checkpoint_approves_only_selected_without_numeric_sc
             value = selected_tiers[0].value_json
             assert value["decision_basis"] == "discovery_criteria"
             assert value["project_run_id"] == str(project_run_id)
+            # FI-2 §6.4: the selection path stamps its project too, so it never lands in the
+            # unstamped class an absorbing cross-project write is allowed to take.
+            assert value["project_id"] == "prj-test"
             assert "fit_score" not in value and "intent_score" not in value
 
             rejected_approval = await handler.run(

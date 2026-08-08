@@ -48,8 +48,12 @@ def claim_project_run_id(claim: Claim) -> str | None:
 
 
 def claim_project_id(claim: Claim) -> str | None:
-    """The owning **project** stamp for a score-family claim (FI-2 §6.4), or ``None`` on a legacy
-    (pre-§6.4) claim.
+    """The owning **project** stamp for a score-family claim (FI-2 §6.4), or ``None`` when the
+    claim is *unstamped*.
+
+    "Unstamped" is not a synonym for "pre-§6.4": it is any claim whose writer does not set
+    ``value_json["project_id"]``, which includes claims written long after §6.4 by a writer that
+    has not been taught to stamp. Treat the class as open, not as a frozen historical leftover.
 
     Coarser than :func:`claim_project_run_id` on purpose: a project re-tiers/re-scores an account
     across successive runs and must keep exactly one live winner, so the *run* is not the right
@@ -80,11 +84,20 @@ async def write_icp_scoped_claim(
     *different* run of the same ``(ICP, product)`` is **superseded** so the merged truth keeps one
     live winner for that scope (append-only history preserved). A claim from another ICP or product
     is left untouched (D5 / C7.1 per-product fit), and — since FI-2 §6.4 — so is a claim belonging
-    to a **different project** (``claim_project_id``, absorbing an unstamped legacy claim once; see
+    to a **different project** (``claim_project_id``, absorbing an *unstamped* claim once; see
     :func:`~clue_research.claimstore.project_supersedable`), so a second project scoring or tiering
     a shared account never destroys the first project's lens. The caller supplies the already-
     ``stamp_reuse``-stamped ``claim`` and the read ``scope``; this owns only the read →
-    replay-check → scoped supersede → insert sequence (the shared protocol)."""
+    replay-check → scoped supersede → insert sequence (the shared protocol).
+
+    **Side effect of §6.4 coexistence, noted:** two projects' live tier/score claims on one account
+    now disagree on value, so ``claimstore.merge._conflict`` (exact-equality over tier≤2 sources)
+    can set ``current_value.conflict = True`` for these fields where it previously could not. That
+    is cosmetic today — **no consumer reads ``CurrentValue.conflict``** (the mode-aware,
+    authoritative surface is M9.2's ``conflict_flag`` table), and the divergence between the two
+    conflict surfaces is already a tracked backlog item ([M9.2×M1.2] in ``CLAUDE.md``). Whoever
+    lands that fix should decide there whether a cross-project coexistence counts as a conflict at
+    all — it is two lenses, not two contradicting sources."""
     # Serialize writers in the exact score family before reading the live set. Without this lock,
     # two concurrent retries can both observe no predecessor and leave two live exact-scope rows.
     lock_key = ":".join(
