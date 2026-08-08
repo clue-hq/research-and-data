@@ -136,9 +136,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "DROP TRIGGER IF EXISTS agent_turn_submission_append_only ON agent_turn_submission"
-    )
+    op.execute("DROP TRIGGER IF EXISTS agent_turn_submission_append_only ON agent_turn_submission")
     op.execute("DROP INDEX IF EXISTS agent_turn_submission_thread_order")
     op.execute("DROP TABLE IF EXISTS agent_turn_submission")
 

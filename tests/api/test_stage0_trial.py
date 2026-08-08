@@ -121,9 +121,7 @@ def test_stage0_turn_and_context_use_frozen_subject_binding_kinds(
     # (one owner for the trial and the production turn route), so the seam this patches moved with
     # it. What the test asserts is unchanged, and that is the point: the trial still binds the same
     # two subject kinds and still captures `actor='human'` before the model is woken.
-    monkeypatch.setattr(
-        "clue_api.conversation_capture.submit_onboarding_input", capture_onboarding
-    )
+    monkeypatch.setattr("clue_api.conversation_capture.submit_onboarding_input", capture_onboarding)
 
     # The turn's first act after capturing the user message is compiling the L3 project card
     # (PC-C8 §10 replaced the stage/readiness snapshot pair with it), so that is where this test

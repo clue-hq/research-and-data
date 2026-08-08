@@ -107,6 +107,18 @@ class SubmitTurnRequest(_Request):
 
     message: str = Field(min_length=1, max_length=32_000)
 
+    @model_validator(mode="after")
+    def message_is_not_blank(self) -> SubmitTurnRequest:
+        """Whitespace is not a message.
+
+        The length bound alone would let ``"   "`` through to the capture path, which refuses it —
+        a 500 for what is plainly a bad request. Refusing here makes it the 422 it is.
+        """
+
+        if not self.message.strip():
+            raise ValueError("message must contain something other than whitespace")
+        return self
+
 
 # --- responses ---------------------------------------------------------------------------------
 
