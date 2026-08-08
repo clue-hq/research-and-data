@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   AuthenticatedSessionSchema,
   RequestPrincipalSchema,
+  resolveWorkspaceMembership,
 } from "./session";
 
 test("session wire schema contains only Clue-owned identity values", () => {
@@ -31,4 +32,24 @@ test("principal wire schema refuses provider fields", () => {
     provider_subject: "clerk-user",
   });
   assert.equal(parsed.success, false);
+});
+
+test("workspace selection falls back when the cookie is absent or revoked", () => {
+  const session = AuthenticatedSessionSchema.parse({
+    user_id: "usr_123",
+    memberships: [
+      {
+        membership_id: "wsm_active",
+        workspace_id: "ws_active",
+        role_key: "viewer",
+        permissions: ["project.read"],
+      },
+    ],
+  });
+
+  assert.equal(resolveWorkspaceMembership(session, null)?.workspace_id, "ws_active");
+  assert.equal(
+    resolveWorkspaceMembership(session, "ws_revoked")?.workspace_id,
+    "ws_active",
+  );
 });

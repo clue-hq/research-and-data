@@ -95,9 +95,16 @@ def build_application(
         )
 
     async def startup_check() -> None:
-        if resolved.projections_auth_mode != "local_header":
+        if resolved.projections_auth_mode == "service":
             raise RuntimeError(
                 "service authentication mode is selected but no service-auth resolver is wired"
+            )
+        if (
+            resolved.projections_auth_mode == "authenticated_principal"
+            and not resolved.auth_enabled
+        ):
+            raise RuntimeError(
+                "authenticated-principal projections mode requires CLUE_AUTH_ENABLED=true"
             )
         async with transaction() as conn:
             await conn.execute(text("SELECT 1"))

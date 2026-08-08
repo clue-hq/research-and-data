@@ -2,7 +2,11 @@ from datetime import UTC, datetime
 
 import pytest
 
-from clue_api.auth_tool_context import tool_context_for_principal, tool_context_for_service
+from clue_api.auth_tool_context import (
+    require_human_authority,
+    tool_context_for_principal,
+    tool_context_for_service,
+)
 from clue_auth import RequestPrincipal, ServicePrincipal
 from clue_core import new_operation_id
 from clue_db import transaction
@@ -73,6 +77,26 @@ def test_service_principal_cannot_impersonate_a_human_membership() -> None:
             actor_id="svc_agent_turn_worker",
             membership_id="wsm_internal",
         )
+
+
+def test_authenticated_service_action_ref_cannot_pass_a_human_only_gate() -> None:
+    service = tool_context_for_service(
+        _service(),
+        conn_factory=transaction,
+        operation_id=new_operation_id(),
+        action_ref="turn-action:approved_turn",
+    )
+    human = tool_context_for_principal(
+        _human(),
+        conn_factory=transaction,
+        operation_id=new_operation_id(),
+        action_ref="turn-action:approved_turn",
+    )
+
+    assert require_human_authority(service, action_ref_required=True)[0].reason_code == (
+        "trusted_human_receipt_required"
+    )
+    assert require_human_authority(human, action_ref_required=True) == ()
 
 
 def test_human_and_service_principal_actor_classes_are_not_interchangeable() -> None:

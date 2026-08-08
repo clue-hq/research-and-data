@@ -11,7 +11,7 @@ import httpx
 import jwt
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-from clue_auth.errors import AuthenticationRequired, SessionInvalid
+from clue_auth.errors import AuthenticationRequired, AuthenticationUnavailable, SessionInvalid
 from clue_auth.principal import (
     AuthenticationRequest,
     ExternalSession,
@@ -46,6 +46,7 @@ class ClerkAuthenticator:
         self._keys: OrderedDict[str, tuple[float, Any]] = OrderedDict()
         self._lock = asyncio.Lock()
         self._last_refresh_at: float | None = None
+        self._last_refresh_failure_at: float | None = None
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -78,10 +79,12 @@ class ClerkAuthenticator:
             if not loaded:
                 raise ValueError("JWKS contains no usable RS256 keys")
         except (httpx.HTTPError, ValueError, jwt.PyJWKError) as exc:
-            raise SessionInvalid("session signing keys are unavailable") from exc
+            self._last_refresh_failure_at = asyncio.get_running_loop().time()
+            raise AuthenticationUnavailable("session signing keys are unavailable") from exc
 
         now = asyncio.get_running_loop().time()
         self._last_refresh_at = now
+        self._last_refresh_failure_at = None
         # A successful JWKS response is the provider's complete current keyset. Replacing the
         # cache is what makes rotation-out/revocation effective; merging would retain a removed
         # signing key forever.
@@ -110,6 +113,11 @@ class ClerkAuthenticator:
                 and now - self._last_refresh_at < refresh_floor
             ):
                 raise SessionInvalid("session token references an unknown signing key")
+            if (
+                self._last_refresh_failure_at is not None
+                and now - self._last_refresh_failure_at < refresh_floor
+            ):
+                raise AuthenticationUnavailable("session signing keys are unavailable")
             await self._refresh_keys()
             refreshed = self._keys.get(kid)
             if refreshed is None:
@@ -163,7 +171,7 @@ class ClerkAuthenticator:
         return ExternalSession(
             provider_key=self.provider_key,
             provider_subject=subject,
-            session_id=session_id,
+            provider_session_subject=session_id,
             issued_at=utc_from_timestamp(claims["iat"]),
             expires_at=utc_from_timestamp(claims["exp"]),
             authenticated_at=now,

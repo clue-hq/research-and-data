@@ -34,6 +34,16 @@ from clue_api import (
     build_toolbelt,
     create_projections_app,
 )
+from clue_auth import (
+    DatabaseAuthorizer,
+    DatabaseIdentityResolver,
+    DatabaseMembershipLoader,
+    LocalFixtureAuthenticator,
+    PrincipalService,
+    create_platform_user,
+    link_auth_identity,
+)
+from clue_auth.store import create_workspace_membership
 from clue_config import load_settings
 from clue_core import (
     ProjectPhase,
@@ -99,6 +109,7 @@ def _app(
     registry: ToolRegistry | None = None,
     sse_live_tail: bool = False,
     expose_agent_registry: bool = False,
+    auth_service: PrincipalService | None = None,
 ):
     cf = conn_session_factory(conn)
     resolved_registry = (
@@ -125,11 +136,22 @@ def _app(
         agent_registry=(
             build_agent_profile_registry(resolved_registry) if expose_agent_registry else None
         ),
+        auth_service=auth_service,
     )
 
 
 def _client(app) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
+
+
+def _auth_service(conn) -> PrincipalService:
+    factory = conn_session_factory(conn)
+    return PrincipalService(
+        authenticator=LocalFixtureAuthenticator(),
+        identity_resolver=DatabaseIdentityResolver(conn_factory=factory),
+        authorizer=DatabaseAuthorizer(conn_factory=factory),
+        memberships_for_user=DatabaseMembershipLoader(conn_factory=factory),
+    )
 
 
 def _frames(body: str) -> list[dict]:
@@ -561,6 +583,50 @@ def test_tool_route_precondition_422_replay_and_conflict() -> None:
                 )
                 assert conflict.status_code == 409
                 assert conflict.json()["detail"]["error"] == "idempotency_conflict"
+
+    run_async(_run())
+
+
+def test_authenticated_tool_route_ignores_actor_header_and_journals_internal_principal() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            await seed_workspace(conn, _WS)
+            user = await create_platform_user(conn)
+            await link_auth_identity(
+                conn,
+                user_id=user.user_id,
+                provider_key="local_fixture",
+                provider_subject="tool-user",
+            )
+            membership = await create_workspace_membership(
+                conn,
+                workspace_id=_WS,
+                user_id=user.user_id,
+                role_key="operator",
+            )
+            registry = ToolRegistry()
+            registry.register(EchoTool(), make_default=True)
+            app = _app(conn, registry=registry, auth_service=_auth_service(conn))
+            async with _client(app) as client:
+                response = await client.post(
+                    "/tools/echo",
+                    json={"value": 8},
+                    headers={
+                        "X-Clue-Local-Auth-Subject": "tool-user",
+                        "X-Clue-Workspace-Id": _WS,
+                        "X-Actor": "agent",
+                    },
+                )
+            assert response.status_code == 200
+            authority = (
+                await conn.execute(
+                    text(
+                        "SELECT invocation_actor, principal_kind, actor_id, membership_id "
+                        "FROM execution_node_authority ORDER BY created_at DESC LIMIT 1"
+                    )
+                )
+            ).one()
+            assert authority == ("human", "human", user.user_id, membership.membership_id)
 
     run_async(_run())
 

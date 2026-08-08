@@ -19,9 +19,9 @@ from clue_auth import (
     LocalFixtureAuthenticator,
     PrincipalService,
     create_platform_user,
-    create_workspace_membership,
     link_auth_identity,
 )
+from clue_auth.store import create_workspace_membership
 from clue_spine import create_workspace
 
 from .conftest import rollback_conn, run_async
@@ -84,6 +84,7 @@ def test_session_and_principal_routes_expose_internal_values_and_stable_errors()
 
             assert missing.status_code == 401
             assert missing.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
+            assert missing.json()["error"]["requestId"] == missing.headers["X-Request-Id"]
             assert session.status_code == 200
             assert session.json()["user_id"] == user.user_id
             assert session.json()["memberships"][0]["membership_id"] == membership.membership_id

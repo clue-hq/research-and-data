@@ -14,6 +14,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from clue_api.auth_tool_context import tool_context_for_principal
+from clue_api.auth_wiring import principal_from_request
 from clue_api.tool_outputs import IngestionRetryOutput, IngestionSubmitOutput
 from clue_config.ingestion import DEFAULT_INGESTION_POLICY, IngestionPolicy
 from clue_core import RawArtifact, new_operation_id, operation_id_from_key
@@ -379,6 +381,9 @@ def build_ingestion_router(
             raise HTTPException(status_code=422, detail="invalid X-Ingestion-Context") from exc
         content = await _read_upload_body(request, max_bytes=policy.max_bytes)
         try:
+            principal = principal_from_request(request)
+            if principal is not None:
+                principal.require("thread.write")
             artifact_key = await capture_upload(
                 content=content,
                 media_type=media_type,
@@ -386,6 +391,28 @@ def build_ingestion_router(
                 storage=storage,
                 conn_factory=conn_factory,
                 policy=policy,
+            )
+            operation_id = (
+                operation_id_from_key(
+                    workspace_id,
+                    f"tool:submit_ingestion:{idempotency_key}",
+                )
+                if idempotency_key is not None
+                else new_operation_id()
+            )
+            tool_context = (
+                tool_context_for_principal(
+                    principal,
+                    conn_factory=conn_factory,
+                    operation_id=operation_id,
+                )
+                if principal is not None
+                else ToolContext(
+                    workspace_id=workspace_id,
+                    actor=actor,
+                    conn_factory=conn_factory,
+                    operation_id=operation_id,
+                )
             )
             return await tool_invoker.invoke(
                 "submit_ingestion",
@@ -398,19 +425,7 @@ def build_ingestion_router(
                     "project_id": context.project_id,
                     "declared_context": DeclaredMaterialInput.of(context).model_dump(mode="json"),
                 },
-                ToolContext(
-                    workspace_id=workspace_id,
-                    actor=actor,
-                    conn_factory=conn_factory,
-                    operation_id=(
-                        operation_id_from_key(
-                            workspace_id,
-                            f"tool:submit_ingestion:{idempotency_key}",
-                        )
-                        if idempotency_key is not None
-                        else new_operation_id()
-                    ),
-                ),
+                tool_context,
                 idempotency_key=idempotency_key,
             )
         except ValueError as exc:

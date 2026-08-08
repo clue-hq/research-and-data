@@ -22,8 +22,8 @@ from clue_auth import (
     RequestPrincipal,
     ServicePrincipal,
     create_platform_user,
-    create_workspace_membership,
 )
+from clue_auth.store import create_workspace_membership
 from clue_config import Settings
 from clue_core import ExecutionId, new_execution_id, new_operation_id
 from clue_execution import (
@@ -33,6 +33,7 @@ from clue_execution import (
     OperationConflict,
     ParameterArtifactState,
     StaleCursor,
+    ToolAuthorityStateChanged,
     get_cursor,
     rebuild_cursor,
     resolve_parameter_body,
@@ -377,7 +378,7 @@ def test_authenticated_authority_is_durable_and_cannot_change_on_replay() -> Non
             malformed_principal = principal.model_copy(
                 update={"membership_id": other_membership.membership_id}
             )
-            with pytest.raises(DBAPIError):
+            with pytest.raises(ToolAuthorityStateChanged):
                 await invoker.invoke(
                     tool.name,
                     {"value": 10},

@@ -10,7 +10,12 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from clue_auth import AuthenticationRequest, AuthenticationRequired, SessionInvalid
+from clue_auth import (
+    AuthenticationRequest,
+    AuthenticationRequired,
+    AuthenticationUnavailable,
+    SessionInvalid,
+)
 from clue_auth.providers import ClerkAuthenticator, ClerkJwtConfig
 
 from .conftest import run_async
@@ -74,8 +79,36 @@ def test_valid_session_maps_only_to_transient_external_session_and_reuses_jwks()
 
         assert first.provider_key == "clerk"
         assert first.provider_subject == "user_provider_123"
-        assert first.session_id == "session_123"
+        assert first.provider_session_subject == "session_123"
         assert second.provider_subject == first.provider_subject
+        assert len(calls) == 1
+
+    run_async(scenario())
+
+
+def test_jwks_outage_is_retryable_and_throttled_without_forcing_signout() -> None:
+    async def scenario() -> None:
+        private, _jwk = _keys()
+        calls: list[int] = []
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            calls.append(1)
+            return httpx.Response(503)
+
+        authenticator = ClerkAuthenticator(
+            ClerkJwtConfig(
+                jwks_url=f"{ISSUER}/.well-known/jwks.json",
+                issuer=ISSUER,
+                audience=AUDIENCE,
+                authorized_parties=(AZP,),
+            ),
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        request = AuthenticationRequest(authorization=f"Bearer {_token(private)}")
+        with pytest.raises(AuthenticationUnavailable):
+            await authenticator.authenticate(request)
+        with pytest.raises(AuthenticationUnavailable):
+            await authenticator.authenticate(request)
         assert len(calls) == 1
 
     run_async(scenario())

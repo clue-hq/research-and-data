@@ -8,6 +8,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from sqlalchemy import text
 
+from clue_api.auth_tool_context import tool_context_for_internal_service
 from clue_api.deep.handler import (
     DeepCanaryController,
     DeepCanaryGateResult,
@@ -41,7 +42,7 @@ from clue_fleet import AccountAdmissionDecision, TierPriority
 from clue_research.durable import AccountSpec
 from clue_research.review import ObservabilitySurface
 from clue_research.sources import SourceCallEvent, SourceCallObserver
-from clue_toolbelt import ToolContext, ToolInvoker
+from clue_toolbelt import ToolInvoker
 
 
 class DbSourceCallObserver:
@@ -278,9 +279,9 @@ class ToolbeltSupervisorActions:
         await self._invoker.invoke(
             "apply_run_control",
             body,
-            ToolContext(
+            tool_context_for_internal_service(
+                service_id="svc_run_supervisor",
                 workspace_id=workspace_id,
-                actor="agent",
                 conn_factory=self._conn_factory,
                 operation_id=operation_id,
                 parent_execution_id=execution_id,

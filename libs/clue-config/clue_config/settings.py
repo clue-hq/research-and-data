@@ -16,7 +16,7 @@ import json
 from decimal import Decimal
 from typing import Annotated, Any, Final, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Canonical fallback when ``CLUE_SYNTHESIS_MODEL`` is unset — keep in sync with GatewayConfig docs.
@@ -317,7 +317,7 @@ class Settings(BaseSettings):
     # ``auth_identity`` row and is construction-time forbidden in production.
     # Env: ``CLUE_AUTH_ENVIRONMENT`` / ``CLUE_AUTH_MODE``.
     auth_enabled: bool = False
-    auth_environment: Literal["local", "test", "production"] = "local"
+    auth_environment: Literal["local", "test", "production"] | None = None
     auth_mode: Literal["local_fixture", "clerk"] = "local_fixture"
     # Clerk JWT verification metadata. No Clerk secret is required at the FastAPI edge: the
     # short-lived session JWT is verified against the instance JWKS. All are deployment settings,
@@ -344,7 +344,9 @@ class Settings(BaseSettings):
     # Header tenancy is explicitly local/manual-test only; service auth must be wired before that
     # mode can be selected in production.
     # Env: ``CLUE_PROJECTIONS_AUTH_MODE``.
-    projections_auth_mode: Literal["local_header", "service"] = "local_header"
+    projections_auth_mode: Literal["local_header", "authenticated_principal", "service"] = (
+        "local_header"
+    )
 
     # --- scrape backend (Phase B2.4, founder addition) ---
     # Which ScrapeBackend the tier-2 HTML→markdown adapter uses when none is injected:
@@ -433,6 +435,26 @@ class Settings(BaseSettings):
                 "production must use Clerk authentication; local fixture auth is forbidden"
             )
         return value
+
+    @model_validator(mode="after")
+    def _validate_enabled_auth_environment(self) -> Settings:
+        if self.auth_enabled and self.auth_environment is None:
+            raise ValueError(
+                "CLUE_AUTH_ENVIRONMENT must be set explicitly when CLUE_AUTH_ENABLED=true"
+            )
+        if self.auth_environment == "production" and self.auth_mode == "local_fixture":
+            raise ValueError(
+                "production must use Clerk authentication; local fixture auth is forbidden"
+            )
+        if (
+            self.auth_enabled
+            and self.auth_environment == "production"
+            and self.projections_auth_mode == "local_header"
+        ):
+            raise ValueError(
+                "production authentication forbids the local-header projections resolver"
+            )
+        return self
 
 
 def load_settings(**kwargs: Any) -> Settings:

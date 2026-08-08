@@ -11,6 +11,7 @@ from pydantic import Field, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.auth_tool_context import require_human_authority
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.tool_outputs import (
     ConfirmedProjectRunOutput,
@@ -1034,8 +1035,13 @@ class ConfirmProjectProductTool(_Stage0Tool):
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ConfirmProjectProductInput)
-        if ctx.actor != "human":
-            return _failure("human_required", "only a human can confirm the project product")
+        authority = require_human_authority(
+            ctx,
+            reason_code="human_required",
+            message="only an authenticated human can confirm the project product",
+        )
+        if authority:
+            return authority
         async with self._conn_factory() as conn:
             project = await get_project(conn, inputs.project_id)
             product = await get_product(conn, inputs.product_id)
@@ -1200,8 +1206,13 @@ class OverrideStage0ReadinessTool(_Stage0Tool):
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, OverrideStage0ReadinessInput)
-        if ctx.actor != "human":
-            return _failure("human_required", "only a human can record just-go")
+        authority = require_human_authority(
+            ctx,
+            reason_code="human_required",
+            message="only an authenticated human can record just-go",
+        )
+        if authority:
+            return authority
         decision_uuid = _uuid(inputs.readiness_decision_id)
         if decision_uuid is None:
             return _failure("readiness_not_found", "readiness decision does not exist")

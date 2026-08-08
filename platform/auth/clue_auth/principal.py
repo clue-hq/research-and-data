@@ -12,7 +12,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_auth.models import RoleKey, WorkspaceMembership
+from clue_auth.models import RoleKey, UserStatus, WorkspaceMembership
 from clue_auth.policy import Permission
 from clue_core import UtcDatetime
 
@@ -33,7 +33,7 @@ class ExternalSession(BaseModel):
 
     provider_key: str
     provider_subject: str
-    session_id: str
+    provider_session_subject: str | None = None
     issued_at: UtcDatetime
     expires_at: UtcDatetime
     authenticated_at: UtcDatetime
@@ -46,6 +46,7 @@ class InternalIdentity(BaseModel):
 
     user_id: str
     auth_identity_id: str
+    user_status: UserStatus
     authenticated_at: UtcDatetime
 
 
@@ -111,7 +112,7 @@ class Authorizer(Protocol):
         identity: InternalIdentity,
         *,
         workspace_id: str,
-        permission: Permission | None = None,
+        permission: Permission,
     ) -> RequestPrincipal: ...
 
 
@@ -156,7 +157,7 @@ class PrincipalService:
         request: AuthenticationRequest,
         *,
         workspace_id: str,
-        permission: Permission | None = None,
+        permission: Permission,
     ) -> RequestPrincipal:
         identity = await self.identity(request)
         return await self._authorizer.require(

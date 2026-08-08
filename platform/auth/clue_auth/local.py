@@ -21,7 +21,7 @@ class LocalFixtureAuthenticator:
         return ExternalSession(
             provider_key=self.provider_key,
             provider_subject=subject,
-            session_id=f"local:{subject}",
+            provider_session_subject=f"local:{subject}",
             issued_at=now,
             expires_at=now + timedelta(minutes=5),
             authenticated_at=now,

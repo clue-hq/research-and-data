@@ -51,6 +51,7 @@ from clue_agents.contracts import (
 )
 from clue_agents.ports import ExecutionProgress, OperationFailure
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.auth_tool_context import tool_context_for_internal_service
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
 from clue_api.turn_binding import (
     CapturedTurn,
@@ -74,7 +75,6 @@ from clue_execution import (
 )
 from clue_toolbelt import (
     PreconditionFailed,
-    ToolContext,
     ToolInvoker,
     ToolRegistry,
     ToolResult,
@@ -1415,9 +1415,9 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                             input_refs=dict(trusted_arguments[step.node_key]),
                             depends_on=step.depends_on,
                         ),
-                        ctx=ToolContext(
+                        ctx=tool_context_for_internal_service(
+                            service_id="svc_agent_execution",
                             workspace_id=constitution.workspace_id,
-                            actor="agent",
                             conn_factory=self._conn_factory,
                             operation_id=operation_id,
                             execution_id=constitution.execution_id,

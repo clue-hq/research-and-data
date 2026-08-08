@@ -174,3 +174,19 @@ def test_auth_clerk_authorized_parties_accept_shell_safe_list() -> None:
         "https://app.example",
         "http://localhost:3000",
     )
+
+
+def test_enabled_auth_requires_explicit_environment() -> None:
+    with pytest.raises(ValidationError, match="CLUE_AUTH_ENVIRONMENT must be set explicitly"):
+        load_settings(_env_file=None, auth_enabled=True)
+
+
+def test_production_auth_refuses_local_header_workspace_authority() -> None:
+    with pytest.raises(ValidationError, match="forbids the local-header"):
+        load_settings(
+            _env_file=None,
+            auth_enabled=True,
+            auth_environment="production",
+            auth_mode="clerk",
+            projections_auth_mode="local_header",
+        )

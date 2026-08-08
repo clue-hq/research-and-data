@@ -10,6 +10,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import JsonValue
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -45,6 +46,10 @@ class StaleCursor(RuntimeError):
 
 class OperationConflict(RuntimeError):
     pass
+
+
+class ToolAuthorityStateChanged(RuntimeError):
+    """A durable user/membership authority no longer satisfies its database anchors."""
 
 
 class LostExecutionLease(RuntimeError):
@@ -581,9 +586,10 @@ class DbInvocationJournal(InvocationJournal):
                 },
             )
             node_created = node_insert.rowcount == 1
-            await conn.execute(
-                text(
-                    """
+            try:
+                await conn.execute(
+                    text(
+                        """
                     INSERT INTO execution_node_authority
                         (node_id, execution_id, authority_workspace_id, invocation_actor,
                          principal_kind, actor_id, membership_id, action_ref)
@@ -593,21 +599,31 @@ class DbInvocationJournal(InvocationJournal):
                         SELECT 1 FROM execution_attempt a WHERE a.node_id = :node_id
                     )
                     ON CONFLICT (node_id) DO NOTHING
-                    """
-                ),
-                {
-                    "node_id": node_id,
-                    "execution_id": execution_id,
-                    "authority_workspace_id": (
-                        context.workspace_id if context.principal_kind is not None else None
+                        """
                     ),
-                    "invocation_actor": context.actor,
-                    "principal_kind": context.principal_kind,
-                    "actor_id": context.actor_id,
-                    "membership_id": context.membership_id,
-                    "action_ref": context.action_ref,
-                },
-            )
+                    {
+                        "node_id": node_id,
+                        "execution_id": execution_id,
+                        "authority_workspace_id": (
+                            context.workspace_id if context.principal_kind is not None else None
+                        ),
+                        "invocation_actor": context.actor,
+                        "principal_kind": context.principal_kind,
+                        "actor_id": context.actor_id,
+                        "membership_id": context.membership_id,
+                        "action_ref": context.action_ref,
+                    },
+                )
+            except IntegrityError as exc:
+                constraint = getattr(getattr(exc.orig, "__cause__", None), "constraint_name", None)
+                if constraint in {
+                    "execution_node_authority_membership_actor_fk",
+                    "execution_node_authority_membership_workspace_fk",
+                }:
+                    raise ToolAuthorityStateChanged(
+                        "authenticated user or workspace membership state changed"
+                    ) from exc
+                raise
             node = (
                 (
                     await conn.execute(
@@ -1049,6 +1065,7 @@ __all__ = [
     "LostExecutionLease",
     "JournalCrashHook",
     "OperationConflict",
+    "ToolAuthorityStateChanged",
     "StaleCursor",
     "get_cursor",
     "rebuild_cursor",

@@ -22,11 +22,11 @@ from clue_auth import (
     UserDisabled,
     WorkspaceForbidden,
     create_platform_user,
-    create_workspace_membership,
     link_auth_identity,
     suspend_platform_user,
     suspend_workspace_membership,
 )
+from clue_auth.store import create_workspace_membership
 from clue_spine import create_workspace
 
 from .conftest import rollback_conn, run_async
@@ -39,7 +39,7 @@ def _session(subject: str) -> ExternalSession:
     return ExternalSession(
         provider_key="local_fixture",
         provider_subject=subject,
-        session_id=f"local:{subject}",
+        provider_session_subject=f"local:{subject}",
         issued_at=NOW,
         expires_at=NOW + timedelta(minutes=5),
         authenticated_at=NOW,
@@ -89,6 +89,7 @@ def test_resolver_and_authorizer_emit_only_internal_principal_values() -> None:
             assert principal.membership_id == membership.membership_id
             assert principal.workspace_id == workspace.workspace_id
             assert principal.principal_kind == "human"
+            assert principal.user_id == user.user_id
             assert mapping.provider_subject not in principal.model_dump_json()
             assert "local_fixture" not in principal.model_dump_json()
             assert session.user_id == user.user_id
@@ -128,7 +129,11 @@ def test_unprovisioned_disabled_cross_workspace_and_permission_cases_are_distinc
                 await resolver.resolve(_session("absent-subject"))
             identity = await resolver.resolve(_session("viewer-subject"))
             with pytest.raises(WorkspaceForbidden):
-                await authorizer.require(identity, workspace_id=other_workspace.workspace_id)
+                await authorizer.require(
+                    identity,
+                    workspace_id=other_workspace.workspace_id,
+                    permission="project.read",
+                )
             with pytest.raises(PermissionDenied):
                 await authorizer.require(
                     identity,
@@ -138,7 +143,11 @@ def test_unprovisioned_disabled_cross_workspace_and_permission_cases_are_distinc
 
             await suspend_workspace_membership(conn, membership.membership_id, now=NOW)
             with pytest.raises(WorkspaceForbidden):
-                await authorizer.require(identity, workspace_id=workspace.workspace_id)
+                await authorizer.require(
+                    identity,
+                    workspace_id=workspace.workspace_id,
+                    permission="project.read",
+                )
             await suspend_platform_user(conn, user.user_id, now=NOW)
             with pytest.raises(UserDisabled):
                 await resolver.resolve(_session("viewer-subject"))

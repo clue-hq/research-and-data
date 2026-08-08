@@ -1,12 +1,14 @@
 import { cookies } from "next/headers";
-import { auth } from "@clerk/nextjs/server";
+import { ClueAuthenticationError } from "@/auth/backend";
 import { clueApiBaseUrl, isAuthenticationEnabled } from "@/auth/config";
+import { providerSessionToken } from "@/auth/server";
 import {
   backendPath,
   backendRequestHeaders,
   browserResponseHeaders,
   hasAllowedOrigin,
 } from "@/auth/bff";
+import { loadProtectedSession } from "@/features/session/data/session-dal";
 import { WORKSPACE_COOKIE } from "@/features/session/model/session";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
@@ -22,17 +24,31 @@ async function proxyRequest(request: Request, context: RouteContext) {
   if (!hasAllowedOrigin(request)) {
     return errorResponse(403, "REQUEST_ORIGIN_FORBIDDEN", "Mutation origin is not allowed");
   }
-  const session = await auth({ acceptsToken: "session_token" });
-  if (!session.isAuthenticated) {
-    return errorResponse(401, "AUTHENTICATION_REQUIRED", "Sign in to continue");
-  }
-  const token = await session.getToken();
+  const token = await providerSessionToken();
   if (!token) {
-    return errorResponse(401, "SESSION_INVALID", "The session has expired");
+    return errorResponse(401, "AUTHENTICATION_REQUIRED", "Sign in to continue");
   }
   const { path } = await context.params;
   const cookieStore = await cookies();
-  const workspaceId = cookieStore.get(WORKSPACE_COOKIE)?.value ?? null;
+  const requestedWorkspaceId = cookieStore.get(WORKSPACE_COOKIE)?.value ?? null;
+  let protectedSession;
+  try {
+    protectedSession = await loadProtectedSession(token, requestedWorkspaceId);
+  } catch (error) {
+    if (error instanceof ClueAuthenticationError) {
+      return errorResponse(error.status, error.code, error.message);
+    }
+    throw error;
+  }
+  const workspaceId = protectedSession.principal.workspace_id;
+  if (workspaceId !== requestedWorkspaceId) {
+    cookieStore.set(WORKSPACE_COOKIE, workspaceId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    });
+  }
   const target = new URL(backendPath(path), clueApiBaseUrl());
   target.search = new URL(request.url).search;
   const method = request.method.toUpperCase();

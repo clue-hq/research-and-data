@@ -15,6 +15,16 @@ export function clueApiBaseUrl(): string {
   return configured.replace(/\/+$/, "");
 }
 
+export function clerkJwtTemplate(): string {
+  const configured = process.env.CLUE_CLERK_JWT_TEMPLATE?.trim();
+  if (!configured) {
+    throw new Error(
+      "CLUE_CLERK_JWT_TEMPLATE is required when CLUE_AUTH_ENABLED=true",
+    );
+  }
+  return configured;
+}
+
 export function requireAuthenticationConfiguration(): void {
   if (!isAuthenticationEnabled()) return;
   const missing = [
@@ -24,6 +34,7 @@ export function requireAuthenticationConfiguration(): void {
     ],
     ["CLERK_SECRET_KEY", process.env.CLERK_SECRET_KEY],
     ["CLUE_API_BASE_URL", process.env.CLUE_API_BASE_URL],
+    ["CLUE_CLERK_JWT_TEMPLATE", process.env.CLUE_CLERK_JWT_TEMPLATE],
   ]
     .filter(([, value]) => !value?.trim())
     .map(([name]) => name);

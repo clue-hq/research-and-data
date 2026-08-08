@@ -1,12 +1,14 @@
-import { SignOutButton } from "@clerk/nextjs";
 import type { ProtectedSession } from "../model/session";
+import { SessionSignOut } from "./session-sign-out";
 
 export function SessionControls({
   session,
   onWorkspaceChange,
+  onClearWorkspace,
 }: Readonly<{
   session: ProtectedSession;
   onWorkspaceChange: (formData: FormData) => Promise<void>;
+  onClearWorkspace: () => Promise<void>;
 }>) {
   return (
     <aside
@@ -39,14 +41,10 @@ export function SessionControls({
           Switch
         </button>
       </form>
-      <SignOutButton redirectUrl="/sign-in">
-        <button
-          className="h-8 rounded-md bg-[var(--primary)] px-3 text-sm text-white"
-          type="button"
-        >
-          Sign out
-        </button>
-      </SignOutButton>
+      <SessionSignOut
+        className="h-8 rounded-md bg-[var(--primary)] px-3 text-sm text-white disabled:opacity-60"
+        onClearWorkspace={onClearWorkspace}
+      />
     </aside>
   );
 }

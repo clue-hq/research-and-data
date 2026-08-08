@@ -257,6 +257,110 @@ async def set_workspace_membership_role(
     return _model(WorkspaceMembership, row)
 
 
+async def _require_membership_manager(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    acting_membership_id: str,
+) -> WorkspaceMembership:
+    actor = await get_membership(
+        conn,
+        workspace_id=workspace_id,
+        membership_id=acting_membership_id,
+    )
+    if (
+        actor is None
+        or actor.status != "active"
+        or not role_has_permission(actor.role_key, "workspace.manage_members")
+    ):
+        raise MembershipPermissionError(
+            "an active workspace membership with workspace.manage_members is required"
+        )
+    return actor
+
+
+async def _require_owner_survives(
+    conn: AsyncConnection,
+    *,
+    target: WorkspaceMembership,
+) -> None:
+    if target.status != "active" or target.role_key != "owner":
+        return
+    remaining = int(
+        (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM workspace_membership "
+                    "WHERE workspace_id = :workspace_id AND membership_id <> :membership_id "
+                    "AND status = 'active' AND role_key = 'owner'"
+                ),
+                {
+                    "workspace_id": target.workspace_id,
+                    "membership_id": target.membership_id,
+                },
+            )
+        ).scalar_one()
+    )
+    if remaining == 0:
+        raise MembershipPermissionError("a workspace must retain at least one active owner")
+
+
+async def create_workspace_member(
+    conn: AsyncConnection,
+    *,
+    acting_membership_id: str,
+    workspace_id: str,
+    user_id: str,
+    role_key: str,
+    status: Literal["invited", "active"] = "active",
+    membership_id: str | None = None,
+    now: datetime | None = None,
+) -> WorkspaceMembership:
+    actor = await _require_membership_manager(
+        conn,
+        workspace_id=workspace_id,
+        acting_membership_id=acting_membership_id,
+    )
+    if not role_can_assign(actor.role_key, role_key):
+        raise MembershipPermissionError("membership manager cannot grant this role")
+    return await create_workspace_membership(
+        conn,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        role_key=role_key,
+        status=status,
+        membership_id=membership_id,
+        now=now,
+    )
+
+
+async def change_workspace_member_role(
+    conn: AsyncConnection,
+    *,
+    acting_membership_id: str,
+    workspace_id: str,
+    membership_id: str,
+    role_key: str,
+) -> WorkspaceMembership:
+    actor = await _require_membership_manager(
+        conn,
+        workspace_id=workspace_id,
+        acting_membership_id=acting_membership_id,
+    )
+    if not role_can_assign(actor.role_key, role_key):
+        raise MembershipPermissionError("membership manager cannot grant this role")
+    target = await get_membership(
+        conn,
+        workspace_id=workspace_id,
+        membership_id=membership_id,
+    )
+    if target is None or target.status == "revoked":
+        raise LifecycleTransitionError("membership is absent or revoked")
+    if target.role_key == "owner" and role_key != "owner":
+        await _require_owner_survives(conn, target=target)
+    return await set_workspace_membership_role(conn, membership_id, role_key)
+
+
 async def create_workspace_invitation(
     conn: AsyncConnection,
     *,
@@ -580,6 +684,85 @@ async def revoke_workspace_membership(
             now=now or datetime.now(UTC),
         ),
     )
+
+
+async def revoke_workspace_member(
+    conn: AsyncConnection,
+    *,
+    acting_membership_id: str,
+    workspace_id: str,
+    membership_id: str,
+    now: datetime | None = None,
+) -> WorkspaceMembership:
+    await _require_membership_manager(
+        conn,
+        workspace_id=workspace_id,
+        acting_membership_id=acting_membership_id,
+    )
+    target = await get_membership(
+        conn,
+        workspace_id=workspace_id,
+        membership_id=membership_id,
+    )
+    if target is None:
+        raise LifecycleTransitionError("membership is absent")
+    await _require_owner_survives(conn, target=target)
+    return await revoke_workspace_membership(conn, membership_id, now=now)
+
+
+async def readmit_workspace_member(
+    conn: AsyncConnection,
+    *,
+    acting_membership_id: str,
+    workspace_id: str,
+    membership_id: str,
+    role_key: str,
+    now: datetime | None = None,
+) -> WorkspaceMembership:
+    actor = await _require_membership_manager(
+        conn,
+        workspace_id=workspace_id,
+        acting_membership_id=acting_membership_id,
+    )
+    if not role_can_assign(actor.role_key, role_key):
+        raise MembershipPermissionError("membership manager cannot grant this role")
+    result = await conn.execute(
+        text(
+            f"UPDATE workspace_membership SET status = 'active', role_key = :role_key, "
+            f"activated_at = :now, revoked_at = NULL "
+            f"WHERE membership_id = :membership_id AND workspace_id = :workspace_id "
+            f"AND status = 'revoked' RETURNING {_MEMBERSHIP_COLUMNS}"
+        ),
+        {
+            "membership_id": membership_id,
+            "workspace_id": workspace_id,
+            "role_key": require_role_key(role_key),
+            "now": now or datetime.now(UTC),
+        },
+    )
+    row = result.mappings().first()
+    if row is None:
+        raise LifecycleTransitionError("membership is absent or not revoked")
+    return _model(WorkspaceMembership, row)
+
+
+async def erase_invitation_delivery_target(
+    conn: AsyncConnection,
+    invited_address: str,
+) -> int:
+    """Erase pending/expired/revoked invitation PII before it ever maps to a user id."""
+
+    normalized = _clean(invited_address, label="invited_address").casefold()
+    result = await conn.execute(
+        text(
+            "UPDATE workspace_invitation SET invited_address = 'erased:' || invitation_id "
+            "WHERE accepted_by_user_id IS NULL "
+            "AND lower(btrim(invited_address)) = :invited_address "
+            "AND invited_address <> 'erased:' || invitation_id"
+        ),
+        {"invited_address": normalized},
+    )
+    return result.rowcount
 
 
 async def identity_bundle(conn: AsyncConnection, user_id: str) -> IdentityBundle | None:

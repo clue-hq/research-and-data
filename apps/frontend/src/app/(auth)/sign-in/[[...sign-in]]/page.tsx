@@ -11,7 +11,11 @@ export default function SignInPage() {
   }
   return (
     <main className="grid min-h-screen place-items-center p-6">
-      <SignIn fallbackRedirectUrl="/" path="/sign-in" routing="path" />
+      <SignIn
+        fallbackRedirectUrl="/session/establish"
+        path="/sign-in"
+        routing="path"
+      />
     </main>
   );
 }

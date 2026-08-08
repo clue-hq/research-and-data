@@ -13,6 +13,7 @@ import {
   RequestPrincipalSchema,
   WORKSPACE_COOKIE,
   type ProtectedSession,
+  resolveWorkspaceMembership,
 } from "../model/session";
 
 function handleAuthenticationError(error: unknown): never {
@@ -32,33 +33,40 @@ function handleAuthenticationError(error: unknown): never {
 export async function getProtectedSession(): Promise<ProtectedSession | null> {
   if (!isAuthenticationEnabled()) return null;
   const token = await requireProviderSessionToken();
+  const cookieStore = await cookies();
+  const requested = cookieStore.get(WORKSPACE_COOKIE)?.value;
   try {
-    const session = AuthenticatedSessionSchema.parse(
-      await fetchClueAuthentication("/auth/v1/session", { token }),
-    );
-    if (session.memberships.length === 0) {
-      redirect("/access-denied?code=IDENTITY_NOT_PROVISIONED");
-    }
-    const cookieStore = await cookies();
-    const requested = cookieStore.get(WORKSPACE_COOKIE)?.value;
-    const membership =
-      session.memberships.find((item) => item.workspace_id === requested) ??
-      session.memberships[0];
-    if (!membership) redirect("/access-denied?code=WORKSPACE_FORBIDDEN");
-    const principal = RequestPrincipalSchema.parse(
-      await fetchClueAuthentication("/auth/v1/principal", {
-        token,
-        workspaceId: membership.workspace_id,
-      }),
-    );
-    return {
-      userId: session.user_id,
-      memberships: session.memberships,
-      principal,
-    };
+    return await loadProtectedSession(token, requested);
   } catch (error) {
     handleAuthenticationError(error);
   }
+}
+
+export async function loadProtectedSession(
+  token: string,
+  requestedWorkspaceId: string | null | undefined,
+): Promise<ProtectedSession> {
+  const session = AuthenticatedSessionSchema.parse(
+    await fetchClueAuthentication("/auth/v1/session", { token }),
+  );
+  const membership = resolveWorkspaceMembership(session, requestedWorkspaceId);
+  if (!membership) {
+    throw new ClueAuthenticationError(
+      "User has no active Clue workspace membership",
+      { code: "WORKSPACE_FORBIDDEN", status: 403 },
+    );
+  }
+  const principal = RequestPrincipalSchema.parse(
+    await fetchClueAuthentication("/auth/v1/principal", {
+      token,
+      workspaceId: membership.workspace_id,
+    }),
+  );
+  return {
+    userId: session.user_id,
+    memberships: session.memberships,
+    principal,
+  };
 }
 
 export async function requireWorkspaceMembership(

@@ -38,3 +38,16 @@ export interface ProtectedSession {
   memberships: readonly SessionMembership[];
   principal: RequestPrincipal;
 }
+
+export function resolveWorkspaceMembership(
+  session: AuthenticatedSession,
+  requestedWorkspaceId: string | null | undefined,
+): SessionMembership | null {
+  return (
+    session.memberships.find(
+      (membership) => membership.workspace_id === requestedWorkspaceId,
+    ) ??
+    session.memberships[0] ??
+    null
+  );
+}

@@ -11,8 +11,10 @@ server and forwards it to FastAPI; FastAPI verifies it independently and resolve
 `auth_identity` to a Clue `platform_user`.
 
 Authentication remains default-off until B5 with `CLUE_AUTH_ENABLED=false`. Enabling it requires
-`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and server-only `CLUE_API_BASE_URL`; missing
-configuration fails loudly and never enters Clerk keyless mode.
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, server-only `CLUE_API_BASE_URL`, and a
+`CLUE_CLERK_JWT_TEMPLATE` whose `aud` claim equals backend `CLUE_AUTH_CLERK_AUDIENCE`; missing
+configuration fails loudly and never enters Clerk keyless mode or forwards a default token whose
+audience the API cannot accept.
 
 ## Server session reads
 
@@ -27,6 +29,10 @@ memberships[]: membership_id, workspace_id, role_key, permissions[]
 accepts it only when the resolved Clue user has a current active membership and returns the closed
 internal principal. The selected workspace is stored in the HttpOnly, SameSite=Lax
 `clue_workspace_id` cookie; changing it calls `/auth/v1/principal` before setting the cookie.
+The post-sign-in establishment route seeds the first active membership. Every BFF request reloads
+the active membership set; an absent or revoked selection falls back to the first currently active
+membership and replaces the cookie before proxying. Signing out erases the workspace cookie before
+ending the provider session.
 
 ## Same-origin BFF
 

@@ -7,10 +7,12 @@ tool context.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from clue_auth import RequestPrincipal, ServicePrincipal
 from clue_core import ExecutionId, ExecutionNodeId, OperationId
 from clue_db import ConnFactory
-from clue_toolbelt import ToolContext
+from clue_toolbelt import PreconditionFailure, ToolContext
 
 
 def tool_context_for_principal(
@@ -83,4 +85,81 @@ def tool_context_for_service(
     )
 
 
-__all__ = ["tool_context_for_principal", "tool_context_for_service"]
+def tool_context_for_internal_service(
+    *,
+    service_id: str,
+    workspace_id: str,
+    conn_factory: ConnFactory,
+    operation_id: OperationId,
+    action_ref: str | None = None,
+    quality_mode: str | None = None,
+    execution_id: ExecutionId | None = None,
+    execution_node_id: ExecutionNodeId | None = None,
+    execution_node_key: str | None = None,
+    parent_execution_id: ExecutionId | None = None,
+    execution_worker_id: str | None = None,
+    lease_generation: int | None = None,
+) -> ToolContext:
+    """Bind a composition-root-owned process identity without inventing human membership.
+
+    Credential validation remains the future service-auth adapter's job. This helper closes the
+    current in-process composition sites so detached work is durably a service principal instead
+    of an anonymous legacy ``actor="agent"`` context.
+    """
+
+    return tool_context_for_service(
+        ServicePrincipal(
+            service_id=service_id,
+            workspace_id=workspace_id,
+            permissions=frozenset(),
+            authenticated_at=datetime.now(UTC),
+        ),
+        conn_factory=conn_factory,
+        operation_id=operation_id,
+        action_ref=action_ref,
+        quality_mode=quality_mode,
+        execution_id=execution_id,
+        execution_node_id=execution_node_id,
+        execution_node_key=execution_node_key,
+        parent_execution_id=parent_execution_id,
+        execution_worker_id=execution_worker_id,
+        lease_generation=lease_generation,
+    )
+
+
+def require_human_authority(
+    ctx: ToolContext,
+    *,
+    action_ref_required: bool = False,
+    reason_code: str = "trusted_human_receipt_required",
+    message: str = "this operation requires authenticated human authority",
+) -> tuple[PreconditionFailure, ...]:
+    """Fail an authenticated service principal at every human-only tool boundary.
+
+    Legacy-null contexts remain temporarily accepted while auth is disabled; B5 removes that
+    branch. Once Lane B auth constructs a context, actor class alone is never sufficient.
+    """
+
+    if ctx.principal_kind is None:
+        if ctx.actor != "human":
+            return (PreconditionFailure(reason_code="human_required", message=message),)
+        if action_ref_required and ctx.action_ref is None:
+            return (PreconditionFailure(reason_code=reason_code, message=message),)
+        return ()
+    if (
+        ctx.principal_kind != "human"
+        or ctx.actor != "human"
+        or ctx.actor_id is None
+        or ctx.membership_id is None
+        or (action_ref_required and ctx.action_ref is None)
+    ):
+        return (PreconditionFailure(reason_code=reason_code, message=message),)
+    return ()
+
+
+__all__ = [
+    "require_human_authority",
+    "tool_context_for_internal_service",
+    "tool_context_for_principal",
+    "tool_context_for_service",
+]

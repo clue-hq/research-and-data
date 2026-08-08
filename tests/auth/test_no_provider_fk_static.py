@@ -6,6 +6,11 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+from sqlalchemy import text
+
+from .conftest import rollback_conn, run_async
+
 REPO = Path(__file__).resolve().parents[2]
 
 _KEY_CLAUSE = re.compile(
@@ -16,7 +21,7 @@ _KEY_CLAUSE = re.compile(
 _BANNED_KEY = re.compile(
     r"\b(?:provider_subject|provider_session_subject|clerk(?:_[a-z0-9]+)*|"
     r"auth_provider_org(?:anization)?_id|identity_provider_org(?:anization)?_id|"
-    r"email(?:_address)?|session_token)\b",
+    r"email(?:_address)?|invited_address|session_token)\b",
     re.IGNORECASE,
 )
 _BANNED_SCHEMA_ID = re.compile(
@@ -88,3 +93,34 @@ def test_provider_jwt_interpretation_is_confined_to_authenticator_adapter() -> N
                 if isinstance(node, ast.ImportFrom) and node.module == "jwt":
                     offenders.append(str(path.relative_to(REPO)))
     assert not offenders, f"provider JWT interpretation escaped the authenticator: {offenders}"
+
+
+@pytest.mark.usefixtures("require_auth_db")
+def test_live_schema_has_no_provider_or_email_primary_foreign_key() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            rows = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT tc.table_name, kcu.column_name, tc.constraint_type
+                        FROM information_schema.table_constraints tc
+                        JOIN information_schema.key_column_usage kcu
+                          ON kcu.constraint_schema = tc.constraint_schema
+                         AND kcu.constraint_name = tc.constraint_name
+                         AND kcu.table_name = tc.table_name
+                        WHERE tc.table_schema = 'public'
+                          AND tc.constraint_type IN ('PRIMARY KEY', 'FOREIGN KEY')
+                        ORDER BY tc.table_name, kcu.column_name
+                        """
+                    )
+                )
+            ).all()
+            offenders = [
+                f"{table}.{column} ({constraint_type})"
+                for table, column, constraint_type in rows
+                if _BANNED_KEY.search(str(column)) or _BANNED_SCHEMA_ID.search(str(column))
+            ]
+            assert not offenders, f"provider-authored live schema keys: {offenders}"
+
+    run_async(scenario())

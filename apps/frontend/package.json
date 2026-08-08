@@ -15,7 +15,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "tsx --test src/**/*.test.ts",
+    "test": "find src -name '*.test.ts' -print0 | xargs -0 tsx --test",
     "lint": "eslint"
   },
   "dependencies": {

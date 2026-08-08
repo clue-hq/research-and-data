@@ -44,6 +44,13 @@ class SessionInvalid(PrincipalError):
     status_code = 401
 
 
+class AuthenticationUnavailable(PrincipalError):
+    """The configured identity provider cannot currently verify otherwise-usable sessions."""
+
+    code = "AUTHENTICATION_UNAVAILABLE"
+    status_code = 503
+
+
 class IdentityNotProvisioned(PrincipalError):
     code = "IDENTITY_NOT_PROVISIONED"
     status_code = 403

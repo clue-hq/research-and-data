@@ -20,3 +20,8 @@ export async function selectWorkspace(formData: FormData): Promise<void> {
   });
   revalidatePath("/", "layout");
 }
+
+export async function clearWorkspaceSelection(): Promise<void> {
+  const cookieStore = await cookies();
+  cookieStore.delete(WORKSPACE_COOKIE);
+}

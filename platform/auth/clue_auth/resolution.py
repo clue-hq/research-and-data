@@ -41,6 +41,7 @@ class DatabaseIdentityResolver:
         return InternalIdentity(
             user_id=mapping.user_id,
             auth_identity_id=mapping.auth_identity_id,
+            user_status=user.status,
             authenticated_at=session.authenticated_at,
         )
 
@@ -54,7 +55,7 @@ class DatabaseAuthorizer:
         identity: InternalIdentity,
         *,
         workspace_id: str,
-        permission: Permission | None = None,
+        permission: Permission,
     ) -> RequestPrincipal:
         async with self._conn_factory() as conn:
             user = await get_platform_user(conn, identity.user_id)
@@ -68,7 +69,7 @@ class DatabaseAuthorizer:
             if membership is None or membership.status != "active":
                 raise WorkspaceForbidden("user has no active membership in this workspace")
         permissions = permissions_for_role(membership.role_key)
-        if permission is not None and permission not in permissions:
+        if permission not in permissions:
             raise PermissionDenied(f"permission {permission!r} is required")
         return RequestPrincipal(
             user_id=identity.user_id,
