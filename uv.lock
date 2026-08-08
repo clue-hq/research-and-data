@@ -11,6 +11,7 @@ resolution-markers = [
 members = [
     "clue-agents",
     "clue-api",
+    "clue-auth",
     "clue-config",
     "clue-content",
     "clue-core",
@@ -676,6 +677,25 @@ requires-dist = [
     { name = "clue-toolbelt", editable = "platform/toolbelt" },
     { name = "fastapi", specifier = ">=0.138.0" },
     { name = "uvicorn", specifier = ">=0.35.0" },
+]
+
+[[package]]
+name = "clue-auth"
+version = "0.0.0"
+source = { editable = "platform/auth" }
+dependencies = [
+    { name = "clue-core" },
+    { name = "clue-spine" },
+    { name = "pydantic" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "clue-core", editable = "libs/clue-core" },
+    { name = "clue-spine", editable = "libs/clue-spine" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
 ]
 
 [[package]]
