@@ -31,6 +31,16 @@ def test_gateway_config_picks_up_env_synthesis_model(monkeypatch: pytest.MonkeyP
     assert default_gateway_config().synthesis_model == "openai/gpt-4o-mini"
 
 
+def test_verification_is_default_on_and_can_be_disabled_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("CLUE_VERIFICATION_ENABLED", raising=False)
+    assert load_settings(_env_file=None).verification_enabled is True  # type: ignore[call-arg]
+
+    monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "false")
+    assert load_settings(_env_file=None).verification_enabled is False  # type: ignore[call-arg]
+
+
 def test_exa_account_deep_controls_are_independent_bounded_and_default_off(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

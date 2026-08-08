@@ -2207,11 +2207,12 @@ class RunVerificationTool(_CapabilityTool):
         assert spec is not None
         handler = self._wrap_snapshots(
             build_verification_phase_handler(
-                gateway=self._require_gateway(),
+                gateway=self._gateway,
                 account_resolver=build_high_tier_resolver(
                     spec=spec, session_factory=self._conn_factory
                 ),
                 session_factory=self._conn_factory,
+                verification_enabled=self._settings.verification_enabled,
             )
         )
         result = await handler.run(self._phase_ctx(run, ProjectPhase.VERIFICATION))
@@ -2221,6 +2222,7 @@ class RunVerificationTool(_CapabilityTool):
             references={
                 "status": result.status.value,
                 "accounts_processed": result.accounts_processed,
+                "verification_enabled": result.payload.get("verification_enabled", True),
             },
         )
 
@@ -2639,7 +2641,7 @@ def build_toolbelt(
     )
     entailment_judge = (
         None
-        if gateway is None
+        if gateway is None or not resolved_settings.verification_enabled
         else FaithfulnessClaimEntailmentJudge(
             judge=FaithfulnessJudgeImpl(gateway=gateway, conn_factory=conn_factory)
         )

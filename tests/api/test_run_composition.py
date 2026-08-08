@@ -161,6 +161,17 @@ def test_composed_registry_holds_every_phase() -> None:
     run_async(scenario())
 
 
+def test_verification_switch_prevents_reverse_profiling_judge_construction() -> None:
+    settings = load_settings(
+        gateway_allow_stub=True,
+        c7_production_handoff_enabled=True,
+        verification_enabled=False,
+        _env_file=None,
+    )
+    driver = _driver({}, settings=settings)
+    assert driver._rp_judge is None
+
+
 def test_composed_run_uses_loud_entity_research_quarantine() -> None:
     async def scenario() -> None:
         row = _row("a")

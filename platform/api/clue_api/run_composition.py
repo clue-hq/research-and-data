@@ -285,9 +285,15 @@ class ComposingRunDriver:
             event_emitter if event_emitter is not None else NullRunEventEmitter()
         )
         self._spec_loader: SpecLoader = spec_loader if spec_loader is not None else self._load_spec
-        # The reverse-profiling faithfulness judge over the shared gateway — one instance, reused
-        # across every composed registry (it holds no per-run state).
-        self._rp_judge = FaithfulnessJudgeImpl(gateway=self._gateway)
+        # The reverse-profiling M9.3 faithfulness judge over the shared gateway — one instance,
+        # reused across every composed registry (it holds no per-run state). The same temporary
+        # deployment switch that bypasses the VERIFICATION phase's M9 checks must also prevent this
+        # earlier M9 judge call; otherwise "verification disabled" would still incur judge spend.
+        self._rp_judge = (
+            FaithfulnessJudgeImpl(gateway=self._gateway)
+            if self._settings.verification_enabled
+            else None
+        )
         # A probe machine over the SHARED store for status reads (its registry is unused for status;
         # advance always runs on the composed per-run machine).
         self._probe = ProjectRun(store=self._store, budget_engine=self._budget, ledger=self._ledger)
@@ -415,14 +421,14 @@ class ComposingRunDriver:
         # M8D R1: DEEP is intentionally uncomposed until the governed ``create_agent()`` entity
         # runtime lands.  Crucially, this composition contains no scheduler, provider preparer,
         # mechanical account profiler, committee walker, or contact fan-out to fall back to.
-        deep = EntityResearchQuarantineComposition(
-            handler=EntityResearchQuarantinePhaseHandler()
-        )
+        deep = EntityResearchQuarantineComposition(handler=EntityResearchQuarantinePhaseHandler())
         registry.register(deep.handler)
 
         # VERIFICATION — the same high-tier resolver instance as DEEP.
         verification = build_verification_phase_handler(
-            gateway=self._gateway, account_resolver=high_tier_resolver
+            gateway=self._gateway,
+            account_resolver=high_tier_resolver,
+            verification_enabled=self._settings.verification_enabled,
         )
         registry.register(verification)
 

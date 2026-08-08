@@ -91,6 +91,16 @@ class Settings(BaseSettings):
     # a rewritten constant.
     judge_model: str | None = None
 
+    # Temporary master switch for M9 runtime verification. False keeps the canonical VERIFICATION
+    # phase in the durable state-machine sequence, but skips deterministic corroboration and
+    # prevents the API composition roots from constructing the M9.3 faithfulness judge (including
+    # the earlier reverse-profiling and toolbelt entailment call sites). Structural controls outside
+    # that runtime pass (pre-spend authorization, born contact identity binding,
+    # freshness/retention, and M10's use gate) remain active. Unverified tier-4 claims remain
+    # excluded by the merge policy.
+    # Env: ``CLUE_VERIFICATION_ENABLED``.
+    verification_enabled: bool = True
+
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
     fleet_poll_interval_s: float = 1.0
