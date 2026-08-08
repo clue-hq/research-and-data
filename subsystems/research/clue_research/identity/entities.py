@@ -435,7 +435,9 @@ async def enrich_account(
             )
     except IntegrityError:
         # A concurrent writer took a strong key between the pre-check and this write. The savepoint
-        # is rolled back; retry with only the fields no unique index guards.
+        # is rolled back; retry with only the fields no unique index guards — which drops *every*
+        # strong key this call would have added, not just the contested one (the loser is at most
+        # one round of enrichment; the next sighting re-attempts from scratch).
         if not (aliases or geo):
             return False
         async with conn.begin_nested():

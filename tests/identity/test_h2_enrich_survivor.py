@@ -28,6 +28,7 @@ from clue_research.identity import (
     embed_account,
     enrich_account,
     enrich_survivor,
+    entities,
     get_account,
     insert_account_entity,
     resolve,
@@ -241,6 +242,61 @@ def test_a_domain_another_account_already_holds_is_skipped_not_raised() -> None:
             assert account is not None
             assert account.primary_domain is None  # the fill was skipped
             assert changed and "novaflow" in account.aliases  # the rest still landed
+
+    run_async(_run())
+
+
+def test_a_key_taken_after_the_pre_check_degrades_to_the_same_skip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The race the pre-check cannot close: blind the pre-check so the write hits the *real* unique
+    index, and the SAVEPOINT fallback is what has to hold — the ingest still succeeds, every strong
+    key the call would have added is dropped, the unguarded fields still land, and the caller's
+    connection is left usable (a rolled-back savepoint, not a poisoned transaction)."""
+
+    async def _blind(*_args: object, **_kwargs: object) -> bool:
+        return True  # "free" — exactly what a concurrent writer's commit makes into a lie
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws = await seed_workspace(conn, _WS)
+            await _seed_account(
+                conn,
+                workspace_id=ws,
+                name="Holder",
+                domain="contested.example",
+                registry_ids={"DUNS": "123456789"},
+            )
+            survivor = await _seed_account(conn, workspace_id=ws, domain=None)
+            monkeypatch.setattr(entities, "_strong_key_is_free", _blind)
+
+            assert await enrich_account(
+                conn,
+                survivor,
+                workspace_id=ws,
+                primary_domain="contested.example",
+                add_registry_ids={"DUNS": "123456789"},
+                add_aliases=("Novaflow",),
+                hq_geo={"country": "US"},
+            )
+            account = await get_account(conn, survivor)
+            assert account is not None
+            assert account.primary_domain is None and account.registry_ids == {}
+            assert "novaflow" in account.aliases and account.hq_geo == {"country": "US"}
+
+            # Nothing *but* contested strong keys: there is no second attempt to make, and the
+            # caller is told nothing was written rather than being handed an IntegrityError.
+            other = await _seed_account(
+                conn, workspace_id=ws, name="Quietwave Systems", domain=None
+            )
+            assert not await enrich_account(
+                conn, other, workspace_id=ws, primary_domain="contested.example"
+            )
+            still_clean = await get_account(conn, other)
+            assert still_clean is not None and still_clean.primary_domain is None
+
+            # The transaction survived both failed writes — the savepoints absorbed them.
+            assert await _version(conn, survivor) == 2
 
     run_async(_run())
 
