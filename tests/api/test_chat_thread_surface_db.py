@@ -36,7 +36,8 @@ from clue_api.chat import (
 )
 from clue_config import Settings, load_settings
 from clue_toolbelt import DbIdempotencyStore, ToolRegistry
-from tests._workspace import seed_project
+from tests._identity import seed_principal
+from tests._workspace import seed_project as _seed_project_row
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
     conn_session_factory,
@@ -91,6 +92,19 @@ class _MemoryStorage:
 
 def _settings(**kwargs: object) -> Settings:
     return load_settings(_env_file=None, chat_enabled=True, **kwargs)
+
+
+async def seed_project(conn, workspace_id: str, *, name: str):
+    """Seed the project **and** the principal's Lane B rows.
+
+    Lane D's B1-join migration made ``agent_thread.created_by_user_id`` a real foreign key onto
+    ``platform_user``, so the identity this suite's principal carries must exist before any thread
+    it creates can be written.
+    """
+
+    project = await _seed_project_row(conn, workspace_id, name=name)
+    await seed_principal(conn, workspace_id=workspace_id, user_id=USER_ID)
+    return project
 
 
 def _principal(workspace_id: str, *, permissions: frozenset[str] | None = None) -> RequestPrincipal:

@@ -34,6 +34,7 @@ from clue_projections import (
     thread_messages,
     threads_for_project,
 )
+from tests._identity import seed_principal
 from tests._workspace import seed_project
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
@@ -171,6 +172,14 @@ def test_thread_listing_pages_by_keyset_and_stops_at_its_workspace(
         async with rollback_conn(seed_pack=False) as conn:
             project = await seed_project(conn, "ws-d0-threads", name="D0 threads")
             other = await seed_project(conn, "ws-d0-other", name="D0 other tenant")
+            # Lane D's B1 join made both ownership columns real foreign keys, so the creator this
+            # listing cites has to exist in Lane B's substrate before a thread can name it.
+            owner = await seed_principal(
+                conn,
+                workspace_id=project.workspace_id,
+                user_id="usr_d0",
+                membership_id="wsm_d0",
+            )
             factory = conn_session_factory(conn)
 
             ids = []
@@ -181,8 +190,8 @@ def test_thread_listing_pages_by_keyset_and_stops_at_its_workspace(
                     workspace_id=project.workspace_id,
                     project_id=project.project_id,
                     title=f"thread {index}",
-                    created_by_user_id="usr_d0",
-                    created_via_membership_id="wsm_d0",
+                    created_by_user_id=owner.user_id,
+                    created_via_membership_id=owner.membership_id,
                 )
                 # `now()` is transaction time, so five rows written in one transaction share a
                 # timestamp and would order by their random ids. Distinct times make the assertion

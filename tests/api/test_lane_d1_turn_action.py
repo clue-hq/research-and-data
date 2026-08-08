@@ -71,6 +71,7 @@ from clue_research.stage0 import submit_onboarding_input
 from clue_spine import Project
 from clue_storage import FsStorage
 from clue_toolbelt import PreconditionFailed, ToolContext, ToolRegistry, invoke_tool
+from tests._identity import seed_principal
 from tests._workspace import seed_project
 from tests.agents.conftest import artifact, constitution, domain_ref
 from tests.api.test_account_deep_fixture_a1 import _pages
@@ -291,6 +292,15 @@ async def _persist_human_turn(
     so the fixture writes the row the same shape D2 will.
     """
 
+    # Lane D's B1 join made the submitter columns real foreign keys onto platform_user /
+    # workspace_membership, so a claimed submitter must exist before the turn cites it.
+    if submitted_by_user_id is not None:
+        await seed_principal(
+            conn,
+            workspace_id=workspace_id,
+            user_id=submitted_by_user_id,
+            membership_id=submitted_via_membership_id,
+        )
     message_ref = await artifacts.persist_body(
         workspace_id=workspace_id,
         data=message.encode(),
