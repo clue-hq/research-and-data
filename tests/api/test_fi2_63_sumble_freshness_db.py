@@ -39,7 +39,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.entity_research_tools import EntityResearchGovernedRejection
-from clue_api.frontend_read.account_detail import field_species
 from clue_api.sumble_account_gaps import (
     _SOURCE_BY_FIELD,
     SumbleAccountGapCoordinator,
@@ -70,7 +69,7 @@ from clue_core.entity_research import (
     GovernedResearchToolRequest,
     ResearchSubjectType,
 )
-from clue_research.claimstore import insert_claim
+from clue_research.claimstore import field_species, insert_claim
 from clue_research.identity import stamp_reuse
 from clue_research.resolvers.sumble import JOBS_SOURCE_KEY
 from clue_storage import FsStorage

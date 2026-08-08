@@ -44,12 +44,6 @@ from clue_api.entity_research_tools import (
     convert_engine_authority_rejections,
     semantic_validation_error,
 )
-
-# The species read is the one in the FI-2 read layer, imported rather than restated: "is this
-# field project-relative?" must have exactly one answer for the economics here and for the lens
-# that renders the resulting claims (it resolves through `core.resolve_research_scope` over the
-# *effective* registry, retired declarations included — see its docstring).
-from clue_api.frontend_read.account_detail import field_species
 from clue_core import EntityId, ProjectRunId, ResearchScope, serialize_value_json
 from clue_core.entity_research import (
     EntityResearchJobAuthorization,
@@ -59,7 +53,12 @@ from clue_core.entity_research import (
     ResearchFinalizationReceipt,
     ResearchSubjectType,
 )
-from clue_research.claimstore import WorkspaceScope, current_values
+
+# "Is this field project-relative?" must have exactly one answer for the economics here and for
+# the lens that renders the resulting claims, so the species read is imported rather than restated
+# (it resolves through `core.resolve_research_scope` over the *effective* registry, retired
+# declarations included — see its docstring).
+from clue_research.claimstore import WorkspaceScope, current_values, field_species
 from clue_research.directives import effective_account_research_directive
 from clue_research.durable import find_account_runs_for_entity
 
@@ -1341,7 +1340,12 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
         relative_borrowed = {
             key
             for key in existing_completed
-            if species.get(key, ResearchScope.PROJECT_NEUTRAL) is not ResearchScope.PROJECT_NEUTRAL
+            # Fail closed, like the other two species lookups (the §6.1 state read and the §6.3
+            # Sumble ladder): an unresolvable species is treated as *relative*, the species that
+            # may never close a field with another project's claim. ``field_species`` answers for
+            # every declared field, so this default is unreachable today; if it ever becomes
+            # reachable, "we cannot tell whose answer this is" must not buy the borrow.
+            if species.get(key, ResearchScope.PROJECT_RELATIVE) is not ResearchScope.PROJECT_NEUTRAL
         }
         no_pending = int(row["pending_operations"]) == 0
         state_matches = (

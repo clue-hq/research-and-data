@@ -89,20 +89,19 @@ from clue_core import (
     Persona,
     ProjectRunId,
     ResearchScope,
-    classify_field_key,
     decode_jsonb_scalar,
-    default_research_scope,
     reference_time,
-    resolve_research_scope,
 )
 from clue_db import ConnFactory
 from clue_research.claimstore import (
-    FieldFilters,
-    FieldRegistryScope,
     WorkspaceScope,
     claims_by_ids,
     current_values,
-    list_effective_fields,
+    # FI-2 P3's one species derivation, which now lives beside ``list_effective_fields`` in the
+    # claim-store registry: the research economics (the account runtime's fresh-skip, the R5 guard,
+    # the Sumble gap ladder) must answer "is this field project-relative?" exactly as this read
+    # layer does, and a research-path module importing a BFF module was the wrong direction.
+    field_species,
 )
 from clue_research.compliance import load_workspace_policy
 from clue_research.identity import get_account, get_contacts, surviving_id
@@ -324,44 +323,6 @@ async def latest_project_run_context(
     if row is None:
         return None
     return ProjectRunContext(project_run_id=ProjectRunId(row[0]), product_id=row[1])
-
-
-async def field_species(
-    conn: AsyncConnection, *, workspace_id: str, field_keys: Sequence[str]
-) -> dict[str, ResearchScope]:
-    """Split ``field_keys`` by species, through the *effective* (global + workspace) registry.
-
-    Always via :func:`~clue_core.resolve_research_scope`, never the raw
-    ``field_definition.research_scope`` column: a global row may legitimately carry ``NULL`` and the
-    ratified key rule decides (FI-2 slice-0 handoff).
-
-    **Deactivated and retired declarations are included on purpose** (``active=None`` +
-    ``include_retired``). Species is a property of the *declaration*, and a declaration outlives its
-    activation: a field's live claims do not change meaning the moment the field stops being
-    researched. The default active-only read would silently fold a deactivated
-    ``project_relative`` pack field back to ``project_neutral`` and migrate its existing claims from
-    a project section into ``neutralFacts`` — a bucket change with no data change, which is exactly
-    the kind of silent drift this endpoint must not produce.
-
-    A key with **no** registry row at all (its definition was deleted, not merely retired) falls
-    back to :func:`~clue_core.default_research_scope`, the same ratified key rule
-    ``resolve_research_scope`` applies to an undeclared field.
-    """
-    if not field_keys:
-        return {}
-    registry = {
-        item.field_def.field_key: resolve_research_scope(item.field_def)
-        for item in await list_effective_fields(
-            conn,
-            scope=FieldRegistryScope.for_workspace(workspace_id),
-            filters=FieldFilters(active=None),
-            include_retired=True,
-        )
-    }
-    return {
-        key: registry.get(key, default_research_scope(classify_field_key(key), key))
-        for key in field_keys
-    }
 
 
 def _reference_time(observed_at: datetime | None, collected_at: datetime) -> datetime:

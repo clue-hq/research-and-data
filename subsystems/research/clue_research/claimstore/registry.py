@@ -40,7 +40,9 @@ from clue_core import (
     ReuseScope,
     classify_field_key,
     decode_jsonb,
+    default_research_scope,
     field_namespace,
+    resolve_research_scope,
     resolve_reuse_scope,
     serialize_value_json,
 )
@@ -1102,6 +1104,51 @@ async def list_effective_fields(
         resolved.extend(locals_resolved)
 
     return tuple(sorted(resolved, key=lambda item: item.field_def.field_key))
+
+
+async def field_species(
+    conn: AsyncConnection, *, workspace_id: str, field_keys: Sequence[str]
+) -> dict[str, ResearchScope]:
+    """Split ``field_keys`` by species, through the *effective* (global + workspace) registry.
+
+    Always via :func:`~clue_core.resolve_research_scope`, never the raw
+    ``field_definition.research_scope`` column: a global row may legitimately carry ``NULL`` and the
+    ratified key rule decides (FI-2 slice-0 handoff).
+
+    **Deactivated and retired declarations are included on purpose** (``active=None`` +
+    ``include_retired``). Species is a property of the *declaration*, and a declaration outlives its
+    activation: a field's live claims do not change meaning the moment the field stops being
+    researched. The default active-only read would silently fold a deactivated
+    ``project_relative`` pack field back to ``project_neutral`` and migrate its existing claims from
+    a project section into ``neutralFacts`` — a bucket change with no data change, which is exactly
+    the kind of silent drift the read layer must not produce, and the same reading the research
+    economics must take when it decides whether a claim is the workspace's to borrow.
+
+    A key with **no** registry row at all (its definition was deleted, not merely retired) falls
+    back to :func:`~clue_core.default_research_scope`, the same ratified key rule
+    ``resolve_research_scope`` applies to an undeclared field.
+
+    Lives here, beside :func:`list_effective_fields`, because "is this field project-relative?" must
+    have exactly one answer for four consumers that are otherwise unrelated: the FI-2 read layer's
+    section routing, the account runtime's fresh-skip, the R5 execution guard, and the Sumble gap
+    ladder. It was originally written in the read-layer module, which made a research-path module
+    import a BFF module — the wrong direction, and the reason it moved.
+    """
+    if not field_keys:
+        return {}
+    registry = {
+        item.field_def.field_key: resolve_research_scope(item.field_def)
+        for item in await list_effective_fields(
+            conn,
+            scope=FieldRegistryScope.for_workspace(workspace_id),
+            filters=FieldFilters(active=None),
+            include_retired=True,
+        )
+    }
+    return {
+        key: registry.get(key, default_research_scope(classify_field_key(key), key))
+        for key in field_keys
+    }
 
 
 async def validate_value(

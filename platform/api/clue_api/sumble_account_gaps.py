@@ -21,11 +21,6 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
-
-# The species read is the FI-2 read layer's, imported rather than restated (it resolves through
-# ``core.resolve_research_scope`` over the effective registry) so the gap economics and the lens
-# that renders the resulting claims never disagree about what a field's species is.
-from clue_api.frontend_read.account_detail import field_species
 from clue_api.sumble_claim_materialization import (
     SumbleClaimMaterializer,
     SumbleFieldDisposition,
@@ -58,6 +53,10 @@ from clue_research.claimstore import (
     WorkspaceScope,
     claims_for,
     current_value,
+    # One species derivation for the whole platform (it resolves through
+    # ``core.resolve_research_scope`` over the effective registry), so the gap economics and the
+    # lens that renders the resulting claims never disagree about what a field's species is.
+    field_species,
     get_effective_field,
 )
 from clue_research.discovery_scoring.tiering import TIER_FIELD
