@@ -11,6 +11,10 @@ mandates:
 * **Closed vocabularies are enum columns**, not free text: ``approval_status`` and ``source``
   are cast to ``design_brand_approval_status`` / ``design_brand_kit_source``, so the SQLite
   CHECK that guarded ``source`` is now a type.
+* **The O2 brand-spine join (D3).** ``create_brand_kit`` stamps ``brand_id`` via
+  :mod:`clue_design.joins` (explicit id wins; else resolve-or-create the workspace's brand;
+  NULL when the workspace is multi-brand), and every read surfaces it. Still nullable — see
+  ``joins``' docstring for the deferred NOT NULL promotion.
 
 Versions are immutable-by-convention: a new version is a NEW row, never an in-place rewrite of
 ``brand_kit_json``. The single exception is the ported approval flip, which deliberately writes
@@ -31,12 +35,15 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, iso, load_json
 from clue_design.errors import DesignNotFoundError
+from clue_design.joins import resolve_brand_id
 
 
 def _brand_kit_from_row(row: Any) -> JsonObject:
     return {
         "brand_kit_id": row.brand_kit_id,
         "version": row.version,
+        # D3: the O2 brand-spine join, surfaced (NULL when the workspace is multi-brand).
+        "brand_id": row.brand_id,
         "name": row.name,
         "approval_status": row.approval_status,
         "product_ready": bool(row.product_ready),
@@ -96,18 +103,26 @@ async def create_brand_kit(
     brand_summary: JsonObject,
     diagnostics: list[JsonObject],
     source: str,
+    brand_id: str | None = None,
 ) -> JsonObject:
-    """Publish one kit VERSION (the id/version come from the kit payload itself)."""
+    """Publish one kit VERSION (the id/version come from the kit payload itself).
+
+    D3 stamps the O2 brand-spine join here: an explicit ``brand_id`` wins (a foreign-workspace
+    one is refused structurally by ``design_brand_kit_brand_fk``); otherwise the workspace's
+    brand is resolved-or-created — see :func:`clue_design.joins.resolve_brand_id` for the
+    one/none/several rules and why a multi-brand workspace stamps NULL.
+    """
     brand_kit_id = str(brand_kit["id"])
     version = int(brand_kit["version"])
+    resolved_brand_id = await resolve_brand_id(conn, workspace_id=workspace_id, brand_id=brand_id)
     await conn.execute(
         text(
             """
             INSERT INTO design_brand_kit (
-              brand_kit_id, version, workspace_id, name, approval_status, product_ready,
-              source, brand_kit_json, brand_summary_json, diagnostics_json
+              brand_kit_id, version, workspace_id, brand_id, name, approval_status,
+              product_ready, source, brand_kit_json, brand_summary_json, diagnostics_json
             )
-            VALUES (:b, :v, :w, :name, CAST(:approval AS design_brand_approval_status),
+            VALUES (:b, :v, :w, :brand, :name, CAST(:approval AS design_brand_approval_status),
                     :product_ready, CAST(:source AS design_brand_kit_source),
                     CAST(:kit AS jsonb), CAST(:summary AS jsonb), CAST(:diagnostics AS jsonb))
             """
@@ -116,6 +131,7 @@ async def create_brand_kit(
             "b": brand_kit_id,
             "v": version,
             "w": workspace_id,
+            "brand": resolved_brand_id,
             "name": brand_kit["name"],
             "approval": brand_kit.get("approval_status"),
             "product_ready": bool(brand_summary.get("product_ready")),

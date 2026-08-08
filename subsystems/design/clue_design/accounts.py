@@ -18,6 +18,10 @@ the contract mandates:
   ``design_document (id, workspace_id)`` (NO ACTION — a batch pins its template's provenance).
   Batch **manifests** carry account ids inside jsonb and are deliberately NOT constrained
   (ported as-is): a manifest is a historical record of what a run did, not a live join.
+* **The O1 account-spine join (D3).** ``create_web_account`` / ``update_web_account`` stamp
+  ``account_entity_id`` from the account's DOMAIN via :mod:`clue_design.joins` (resolve-or-
+  create; a domain-less account stays NULL), and every read surfaces it. Still nullable — see
+  ``joins``' docstring for the deferred NOT NULL promotion.
 * **``counts`` stay derived.** ``design_web_batch`` stores no counts column — the API computes
   them from ``manifest_json`` at read time, exactly as the SQLite original did.
 
@@ -39,11 +43,16 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, iso, load_json
 from clue_design.errors import DesignNotFoundError
+from clue_design.joins import normalize_domain, resolve_account_entity_id
 
 
 def _web_account_from_row(row: Any) -> JsonObject:
     return {
         "account_id": row.account_id,
+        # D3: the O1 account-spine join, surfaced (NULL for a domain-less account).
+        "account_entity_id": (
+            None if row.account_entity_id is None else str(row.account_entity_id)
+        ),
         "name": row.name,
         "domain": row.domain,
         "logo_asset_id": row.logo_asset_id,
@@ -112,24 +121,32 @@ async def create_web_account(
 ) -> JsonObject:
     """Insert one ABM target-company row.
 
-    ``account_entity_id`` (the O1 join onto the platform account spine) is deliberately left
-    NULL: resolve-or-create against ``account_entity`` is D3's decision, not this port's.
+    D3 stamps ``account_entity_id`` (the O1 join onto the platform account spine) here: the
+    account's domain resolves-or-creates the workspace's ``account_entity`` — see
+    :func:`clue_design.joins.resolve_account_entity_id`. A domain-less account stays NULL
+    (name-only matching is identity resolution's job and is never faked here).
     A ``logo_asset_id`` that names no asset in this workspace is now refused by
     ``design_account_logo_fk`` — the endpoint's 422 resolution check runs first, so the FK is
     the structural backstop rather than the primary error surface.
     """
+    entity_id = await resolve_account_entity_id(
+        conn, workspace_id=workspace_id, domain=domain, name=name
+    )
     await conn.execute(
         text(
             """
             INSERT INTO design_account (
-              account_id, workspace_id, name, domain, logo_asset_id, data_json, notes
+              account_id, workspace_id, account_entity_id, name, domain, logo_asset_id,
+              data_json, notes
             )
-            VALUES (:a, :w, :name, :domain, :logo, CAST(:data AS jsonb), :notes)
+            VALUES (:a, :w, CAST(:entity AS uuid), :name, :domain, :logo,
+                    CAST(:data AS jsonb), :notes)
             """
         ),
         {
             "a": account_id,
             "w": workspace_id,
+            "entity": entity_id,
             "name": name,
             "domain": domain,
             "logo": logo_asset_id,
@@ -156,24 +173,39 @@ async def update_web_account(
     conn: AsyncConnection, *, workspace_id: str, account_id: str, patch: JsonObject
 ) -> JsonObject:
     """Partial update: only keys present in ``patch`` are written (the endpoint validates them
-    first); ``data`` replaces the map wholesale when present. Row-locked read-modify-write."""
+    first); ``data`` replaces the map wholesale when present. Row-locked read-modify-write.
+
+    D3 keeps the O1 account-spine stamp in step with the domain: a CHANGED domain re-resolves
+    (resolve-or-create) onto the entity that domain names, a CLEARED domain NULLs the stamp,
+    and an unchanged domain leaves it exactly as it was (a pre-D3 row keeps its NULL until its
+    domain is next written — a backfill is Part III's, not this write path's).
+    """
     account = await get_web_account(
         conn, workspace_id=workspace_id, account_id=account_id, for_update=True
     )
     if account is None:
         raise DesignNotFoundError("web_account", account_id)
+    name = patch["name"] if "name" in patch else account["name"]
+    domain = patch["domain"] if "domain" in patch else account["domain"]
+    entity_id = account["account_entity_id"]
+    if "domain" in patch and normalize_domain(domain) != normalize_domain(account["domain"]):
+        entity_id = await resolve_account_entity_id(
+            conn, workspace_id=workspace_id, domain=domain, name=name
+        )
     await conn.execute(
         text(
             """
             UPDATE design_account
             SET name = :name, domain = :domain, logo_asset_id = :logo,
+                account_entity_id = CAST(:entity AS uuid),
                 data_json = CAST(:data AS jsonb), notes = :notes, updated_at = now()
             WHERE account_id = :a AND workspace_id = :w
             """
         ),
         {
-            "name": patch["name"] if "name" in patch else account["name"],
-            "domain": patch["domain"] if "domain" in patch else account["domain"],
+            "name": name,
+            "domain": domain,
+            "entity": entity_id,
             "logo": patch["logo_asset_id"]
             if "logo_asset_id" in patch
             else account["logo_asset_id"],

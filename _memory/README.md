@@ -27,6 +27,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-08-part2-d3-concept-joins.md` — **Part II D3 done:** brand-kit brand_id +
+  design_account account_entity_id stamped via resolve-or-create (clue_design/joins.py,
+  interim scaffolding; Part III owns governed creation + NOT NULL + backfill); suite 490/0.
 - `2026-08-08-part2-d24a-personalization-accounts.md` + `2026-08-08-part2-d24b-publishes-components.md`
   — **Part II D2.4 done (two Opus rounds):** personalization/accounts/batches (A) and
   publishes/components + O6b `/w/{ws}/p/…` public routes, bare routes deleted (B); document→

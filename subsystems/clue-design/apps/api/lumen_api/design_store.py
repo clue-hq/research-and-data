@@ -502,7 +502,10 @@ class HybridRepository:
         brand_summary: JsonObject,
         diagnostics: List[JsonObject],
         source: str,
+        brand_id: Optional[str] = None,
     ) -> JsonObject:
+        """Publish a kit version. ``brand_id`` (D3, optional) pins the O2 brand-spine join
+        explicitly; omitted, the DAL resolves-or-creates the workspace's brand."""
         return self._bridge._run(
             lambda conn: design_brand.create_brand_kit(
                 conn,
@@ -511,6 +514,7 @@ class HybridRepository:
                 brand_summary=brand_summary,
                 diagnostics=diagnostics,
                 source=source,
+                brand_id=brand_id,
             )
         )
 
