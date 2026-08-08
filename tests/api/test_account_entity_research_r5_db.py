@@ -142,6 +142,12 @@ _MOVES = "account.strategic_moves"
 _HIRING = "account.hiring_velocity_eng"
 _QUALITATIVE_QUESTION = "Where is administrative work creating avoidable burden?"
 _STRUCTURED_QUESTION = "What is the current hiring velocity for operational roles?"
+#: What ``_FixtureAccountProviders`` answers an account-field call with, per field.
+_R5_FIELD_VALUES: Mapping[str, object] = {
+    _PAIN: "Referral intake depends on repeated manual fax reconciliation.",
+    _MOVES: "The practice is expanding its centralized referral program.",
+    _HIRING: 4,
+}
 _COMMITTEE_QUESTION = "Who participates in this product buying decision at the same office?"
 
 
@@ -396,11 +402,17 @@ class _FixtureAccountProviders(EntityResearchProviderAction):
         conn_factory: Callable[[], Any],
         contacts: tuple[UUID, UUID],
         lineage: _FixtureLineageReader,
+        field_values: Mapping[str, object] | None = None,
     ) -> None:
         self._storage = storage
         self._conn_factory = conn_factory
         self._contacts = contacts
         self._lineage = lineage
+        # The three R5 fields this fixture has always answered, plus anything a caller adds.
+        # Additive on purpose: a suite that researches a *different* field (FI-2 slice 3 buys a
+        # project-relative one) supplies its value here instead of copying the whole
+        # claim/artifact plumbing below.
+        self._field_values: Mapping[str, object] = {**_R5_FIELD_VALUES, **(field_values or {})}
         self.calls: list[str] = []
 
     async def execute(
@@ -485,11 +497,7 @@ class _FixtureAccountProviders(EntityResearchProviderAction):
         snapshot_ref: str,
         provider_request_id: str,
     ) -> tuple[ProviderResearchProjectionDraft, str, str]:
-        values: Mapping[str, object] = {
-            _PAIN: "Referral intake depends on repeated manual fax reconciliation.",
-            _MOVES: "The practice is expanding its centralized referral program.",
-            _HIRING: 4,
-        }
+        values: Mapping[str, object] = self._field_values
         spans = {
             field: f"Grounded evidence for {field}: {values[field]}" for field in request.field_keys
         }
