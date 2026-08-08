@@ -31,7 +31,10 @@ from pydantic import BaseModel, ValidationError
 
 import clue_obs
 from clue_agents import AgentProfileRegistry
-from clue_api.frontend_read import install_frontend_read_surface
+from clue_api.frontend_read import (
+    frontend_read_workspace_resolver,
+    install_frontend_read_surface,
+)
 from clue_api.ingestion_tools import (
     build_ingestion_router,
 )
@@ -752,6 +755,7 @@ def create_projections_app(
         app.dependency_overrides[header_workspace_resolver] = workspace_resolver
         app.dependency_overrides[ingestion_header_workspace_resolver] = workspace_resolver
         app.dependency_overrides[research_workspace_resolver] = workspace_resolver
+        app.dependency_overrides[frontend_read_workspace_resolver] = workspace_resolver
     if actor_resolver is not None:
         app.dependency_overrides[header_actor_resolver] = actor_resolver
         app.dependency_overrides[ingestion_header_actor_resolver] = actor_resolver

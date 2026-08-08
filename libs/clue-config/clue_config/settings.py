@@ -32,6 +32,14 @@ _CORS_ORIGINS_FORMAT_ERROR: Final = (
     "comma-separated list (https://app.example,http://localhost:3000)"
 )
 
+_CORS_WILDCARD_ERROR: Final = (
+    'CLUE_FRONTEND_CORS_ALLOW_ORIGINS must not contain "*": the platform sends credentials and '
+    "authorizes tenants from a trusted X-Workspace-Id header, and Starlette does not refuse the "
+    "wildcard-plus-credentials combination — it echoes back whichever Origin asked, which would "
+    "make every browser origin a credentialed caller of the whole app. List the exact origins "
+    "(https://app.example,http://localhost:3000)"
+)
+
 
 def _parse_string_list(value: Any, format_error: str) -> Any:
     """Accept a JSON array *or* a plain comma-separated list for a ``tuple[str, ...]`` setting.
@@ -369,9 +377,17 @@ class Settings(BaseSettings):
     @field_validator("frontend_cors_allow_origins", mode="before")
     @classmethod
     def _parse_frontend_cors_allow_origins(cls, value: Any) -> Any:
-        """Accept a JSON array *or* a plain comma-separated list of browser origins."""
+        """Accept a JSON array *or* a plain comma-separated list of browser origins, and refuse
+        ``"*"`` outright — see :data:`_CORS_WILDCARD_ERROR`. The refusal lives here rather than at
+        the middleware so a wildcard fails at process start, loudly, instead of silently widening
+        an already-running deployment."""
 
-        return _parse_string_list(value, _CORS_ORIGINS_FORMAT_ERROR)
+        parsed = _parse_string_list(value, _CORS_ORIGINS_FORMAT_ERROR)
+        if isinstance(parsed, list | tuple) and any(
+            isinstance(item, str) and item.strip() == "*" for item in parsed
+        ):
+            raise ValueError(_CORS_WILDCARD_ERROR)
+        return parsed
 
 
 def load_settings(**kwargs: Any) -> Settings:

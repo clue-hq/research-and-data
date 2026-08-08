@@ -23,6 +23,11 @@ slice-0 rule that a claim/entity read is scoped by the *entity*, never by a reus
 a composite leading with ``workspace_id`` would not be usable for the subject-keyed probe. Pure
 index addition: no column, constraint, enum, or data change, and ``downgrade()`` drops exactly what
 ``upgrade()`` created.
+
+Built non-concurrently (a plain ``CREATE INDEX``) so the migration stays inside Alembic's
+transaction: ``CONCURRENTLY`` cannot run in one, and would have to be an out-of-band operational
+step. Revisit only if this table has grown large enough that its brief write lock matters at
+deploy time.
 """
 
 from __future__ import annotations
