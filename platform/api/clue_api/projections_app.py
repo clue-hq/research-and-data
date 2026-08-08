@@ -31,6 +31,7 @@ from pydantic import BaseModel, ValidationError
 
 import clue_obs
 from clue_agents import AgentProfileRegistry
+from clue_api.frontend_read import install_frontend_read_surface
 from clue_api.ingestion_tools import (
     build_ingestion_router,
 )
@@ -741,6 +742,11 @@ def create_projections_app(
         response = await call_next(request)
         response.headers[PROJECTIONS_SCHEMA_HEADER] = PROJECTIONS_SCHEMA_VERSION
         return response
+
+    # FI-2 slice 1: the `/frontend/v1` read surface — its own router, error envelope, request id,
+    # and the process's CORS policy. Both halves are default-off (flag / empty origins), so an
+    # unconfigured deployment is byte-identical to the pre-FI-2 app.
+    install_frontend_read_surface(app, settings=resolved, conn_factory=conn_factory)
 
     if workspace_resolver is not None:
         app.dependency_overrides[header_workspace_resolver] = workspace_resolver

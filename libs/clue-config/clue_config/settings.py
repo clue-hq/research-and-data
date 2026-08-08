@@ -27,6 +27,36 @@ _ALLOWLIST_FORMAT_ERROR: Final = (
     "list (ws-a,ws-b)"
 )
 
+_CORS_ORIGINS_FORMAT_ERROR: Final = (
+    'CLUE_FRONTEND_CORS_ALLOW_ORIGINS must be a JSON array (["https://app.example"]) or a '
+    "comma-separated list (https://app.example,http://localhost:3000)"
+)
+
+
+def _parse_string_list(value: Any, format_error: str) -> Any:
+    """Accept a JSON array *or* a plain comma-separated list for a ``tuple[str, ...]`` setting.
+
+    Both spellings survive the ways these values actually reach a process (a JSON array in a
+    ``.env`` file; a bare comma-separated list that a shell ``source`` cannot mangle). A value that
+    is neither fails as *its own* field, with a message naming both accepted formats, rather than
+    aborting the construction of every other setting (see the ``NoDecode`` note at the call sites).
+    """
+
+    if not isinstance(value, str):
+        return value
+    raw = value.strip()
+    if not raw:
+        return ()
+    if raw.startswith("["):
+        try:
+            decoded = json.loads(raw)
+        except ValueError as exc:
+            raise ValueError(format_error) from exc
+        if not isinstance(decoded, list):
+            raise ValueError(format_error)
+        return decoded
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
 
 class Settings(BaseSettings):
     """Deploy-time settings read from the environment (not secrets)."""
@@ -242,6 +272,22 @@ class Settings(BaseSettings):
     # Env: ``CLUE_C7_WORKSPACE_CANARY_IDS``.
     c7_workspace_canary_ids: tuple[str, ...] = ()
 
+    # --- FI-2 frontend-read layer (slice 1) -------------------------------------------------
+    # One default-off gate over the whole ``/frontend/v1`` router — the workspace-scoped, Band-2
+    # read surface the frontend's accounts flow binds to. Off means the routes are never
+    # registered (a request 404s exactly as it does today) and this router's error envelope /
+    # request-id handlers are never installed, so no existing surface changes shape. Same posture
+    # as the C7 block above: activation is a deployment decision, rollback disables routes only.
+    # Env: ``CLUE_FRONTEND_READ_ENABLED``.
+    frontend_read_enabled: bool = False
+    # Browser origins allowed to call this process cross-origin. Empty (the default) adds **no**
+    # CORS middleware at all — same-origin only, which is what a Next.js proxy deployment wants;
+    # a value opts the whole app into standard ``CORSMiddleware`` for exactly those origins. Read
+    # only at app construction. ``NoDecode`` + the validator below accept a JSON array *or* a bare
+    # comma-separated list, for the same shell-``source`` reason as the agent allowlist.
+    # Env: ``CLUE_FRONTEND_CORS_ALLOW_ORIGINS``.
+    frontend_cors_allow_origins: Annotated[tuple[str, ...], NoDecode] = ()
+
     # --- local Clue Trial canary ------------------------------------------------------------
     # The Sumble-only founder acceptance surface is never part of the default production app.
     # It must be enabled explicitly and binds to loopback by default. Env:
@@ -316,28 +362,16 @@ class Settings(BaseSettings):
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod
     def _parse_agent_workspace_allowlist(cls, value: Any) -> Any:
-        """Accept a JSON array *or* a plain comma-separated list of workspace ids.
+        """Accept a JSON array *or* a plain comma-separated list of workspace ids."""
 
-        Both spellings survive the ways this value actually reaches a process (a JSON array in a
-        ``.env`` file; a bare comma-separated list that a shell ``source`` cannot mangle). A value
-        that is neither fails as *this* field, with a message naming the variable and both accepted
-        formats, rather than aborting the construction of every other setting.
-        """
+        return _parse_string_list(value, _ALLOWLIST_FORMAT_ERROR)
 
-        if not isinstance(value, str):
-            return value
-        raw = value.strip()
-        if not raw:
-            return ()
-        if raw.startswith("["):
-            try:
-                decoded = json.loads(raw)
-            except ValueError as exc:
-                raise ValueError(_ALLOWLIST_FORMAT_ERROR) from exc
-            if not isinstance(decoded, list):
-                raise ValueError(_ALLOWLIST_FORMAT_ERROR)
-            return decoded
-        return tuple(item.strip() for item in raw.split(",") if item.strip())
+    @field_validator("frontend_cors_allow_origins", mode="before")
+    @classmethod
+    def _parse_frontend_cors_allow_origins(cls, value: Any) -> Any:
+        """Accept a JSON array *or* a plain comma-separated list of browser origins."""
+
+        return _parse_string_list(value, _CORS_ORIGINS_FORMAT_ERROR)
 
 
 def load_settings(**kwargs: Any) -> Settings:
