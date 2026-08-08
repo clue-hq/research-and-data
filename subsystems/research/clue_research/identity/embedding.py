@@ -22,6 +22,7 @@ import hashlib
 import math
 from typing import Protocol, runtime_checkable
 
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -158,3 +159,71 @@ async def embed_account(
         },
     )
     return True
+
+
+class BackfillReport(BaseModel):
+    """What one :func:`backfill_account_embeddings` pass did (``scanned`` = rows it found missing
+    an embedding, ``embedded`` = rows it wrote). A converged store reports zero for both."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    scanned: int = 0
+    embedded: int = 0
+
+
+# Only *live* accounts are worth embedding: a merged loser is a pure redirect (``surviving_id``
+# resolves through it) and the probabilistic candidate query already filters ``status <> 'merged'``,
+# so embedding one would cost a row and buy nothing.
+_UNEMBEDDED_ACCOUNTS = text(
+    """
+    SELECT a.id, a.canonical_name
+    FROM account_entity a
+    LEFT JOIN account_entity_embedding e ON e.entity_id = a.id
+    WHERE e.entity_id IS NULL
+      AND a.status <> 'merged'
+      AND (CAST(:ws AS text) IS NULL OR a.workspace_id = :ws)
+    ORDER BY a.id
+    LIMIT :limit
+    """
+)
+
+
+async def backfill_account_embeddings(
+    conn: AsyncConnection,
+    *,
+    embedder: Embedder = DEFAULT_EMBEDDER,
+    workspace_id: str | None = None,
+    batch_size: int = 500,
+) -> BackfillReport:
+    """Embed every live ``account_entity`` that has no ``account_entity_embedding`` row.
+
+    The one-shot repair for accounts minted before the admission path embedded (FI-2 §1.2-H1): an
+    unembedded account is invisible to the resolver's ANN arm, so a later name-only encounter scores
+    below the review floor and silently duplicates it. Already-embedded rows are **not** selected,
+    so a re-embed under a new ``embedder.model_version`` is still an explicit, separate act (see
+    :func:`embed_account`) — this only fills holes. Idempotent: a second pass reports zero.
+
+    Batches by ``batch_size`` (each batch re-queries, so rows written are naturally excluded from
+    the next one) and is scopeable to a single ``workspace_id``. Runs inside the caller's
+    transaction — the CLI (``scripts/backfill_account_embeddings.py``) supplies one.
+    """
+    scanned = embedded = 0
+    while True:
+        rows = (
+            (await conn.execute(_UNEMBEDDED_ACCOUNTS, {"ws": workspace_id, "limit": batch_size}))
+            .mappings()
+            .all()
+        )
+        if not rows:
+            return BackfillReport(scanned=scanned, embedded=embedded)
+        for row in rows:
+            scanned += 1
+            await conn.execute(
+                _UPSERT_EMBEDDING,
+                {
+                    "entity_id": row["id"],
+                    "embedding": vector_literal(embedder.embed(row["canonical_name"])),
+                    "model_version": embedder.model_version,
+                },
+            )
+            embedded += 1

@@ -110,13 +110,23 @@ def _domain_lock_id(workspace_id: str, domain: str) -> EntityId:
 def _to_observation(candidate: CandidateHypothesis) -> Observation:
     """Build the identity-service :class:`Observation` from a candidate. The strong key is the
     candidate's *own* registrable domain (never ``source_url``, which may be a platform host); the
-    name is the unresolved company name. Resolution folds/normalizes these (M2)."""
+    name is the unresolved company name. Resolution folds/normalizes these (M2).
+
+    ``aliases`` carries the candidate's raw name (FI-2 §1.2-H1). A hypothesis has no alias list of
+    its own — the one name a channel reported is all there is — but the scorer's ``alias_overlap``
+    arm compares the observation's *name-keys* against the candidate entity's stored match-key
+    index, so supplying it is what lets an exact normalized-name hit earn that arm. Without it the
+    arm is dead weight for every discovered candidate (import supplies its row's aliases here for
+    exactly the same reason), and the arm is the difference between "route this to review" and
+    "silently mint a duplicate" for a domain-less re-encounter. It is a distinct signal from
+    ``name_token_jaccard``: overlap needs the whole folded key to match, not merely tokens."""
     domain = registrable_domain(candidate.candidate_domain) if candidate.candidate_domain else None
     return Observation(
         name=candidate.raw_name or "",
         entity_type=EntityType.ACCOUNT,
         domain=domain,
         geo=candidate.candidate_geo,
+        aliases=(candidate.raw_name,) if candidate.raw_name else (),
     )
 
 
@@ -258,6 +268,11 @@ async def _admit_resolved(
         # never disagree, because they are the same value.
         project_id=project_id,
         decided_by="discovery",
+        # FI-2 §1.2-H1: the gate's own embedder rides through to the new-entity path, so an
+        # account this admission mints is embedded in the same transaction that created it. The
+        # gate already resolves *against* embeddings; before this it never wrote one, so every
+        # discovered account was a permanent ANN blind spot to the next name-only encounter.
+        embedder=embedder,
     )
     if decision.outcome is DispositionOutcome.ENQUEUED:
         return AdmissionResult(status=AdmissionStatus.NEEDS_REVIEW, review_task_id=decision.task_id)
@@ -312,6 +327,12 @@ async def admit(
     ``ADMITTED`` outcome joins here: a ``NEEDS_REVIEW`` candidate has no entity yet, so the project
     is stamped on the enqueued review task and the human resolution joins the entity it creates or
     merges into (``identity.resolve_merge_into`` / ``resolve_create_new_entity``).
+
+    ``embedder`` is the swappable name-embedding model. It is used **both** to resolve the candidate
+    (the ANN arm) and — since FI-2 §1.2-H1 — to embed an account this admission *mints*, in the same
+    transaction, so the next name-only encounter of that company can find it. Defaulted, so no
+    caller has to supply one; swap it (with the matching ``resolution_policy.model_version``) to
+    change the model.
 
     ``added_via`` overrides the channel the membership records. It defaults to
     :func:`membership_channel` over the candidate's ``matched_channel`` — pass it only when the

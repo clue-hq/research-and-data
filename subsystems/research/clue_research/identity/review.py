@@ -53,6 +53,7 @@ from clue_research.claimstore import (
     merge_claims,
 )
 from clue_research.identity.canonicalize import plan_merge
+from clue_research.identity.embedding import Embedder, embed_account
 from clue_research.identity.entities import (
     get_account,
     insert_account_entity,
@@ -367,6 +368,7 @@ async def disposition(
     project_id: str | None = None,
     decided_by: str = "auto",
     subject_entity_id: EntityId | None = None,
+    embedder: Embedder | None = None,
 ) -> Disposition:
     """Decide what to do with a resolution result (the seam callers use).
 
@@ -378,6 +380,13 @@ async def disposition(
       resulting account to the project this admission was serving.
     * below ``review_low_threshold`` (or no candidate) → **new entity**: a fresh ``candidate`` is
       admitted from the observation (or the pre-admitted ``subject`` is kept). Returns the new id.
+
+    ``embedder`` (FI-2 §1.2-H1) embeds a *newly minted* account so the next encounter of the same
+    company can find it through the resolver's ANN arm. It is **optional**: passed ``None`` this
+    behaves exactly as it did before — the caller either embeds the entity itself (M5's import
+    pipeline does, right after this returns) or accepts that it stays unembedded. An entity this
+    call did not mint (an auto-merge survivor, a pre-admitted ``subject``) is never re-embedded
+    here — re-embedding is an explicit act (see :func:`~clue_research.identity.embed_account`).
     """
     top = result.top
     entity_type = observation.entity_type
@@ -438,6 +447,10 @@ async def disposition(
             registry_ids=observation.registry_ids,
             workspace_id=workspace_id,
         )
+        if embedder is not None:
+            # FI-2 §1.2-H1: embed at creation, or the next name-only encounter of this company
+            # scores with the cosine arm zeroed, falls below the review floor, and duplicates it.
+            await embed_account(conn, new_id, embedder=embedder)
     if new_id is None:
         # A contact resolves *under* an account (M2.1), so it cannot be admitted standalone here;
         # the caller must pre-admit it (pass subject_entity_id). Fail loudly, never return None.
@@ -727,10 +740,21 @@ async def resolve_merge_into(
 
 
 async def resolve_create_new_entity(
-    conn: AsyncConnection, task_id: EntityId, *, resolved_by: str
+    conn: AsyncConnection,
+    task_id: EntityId,
+    *,
+    resolved_by: str,
+    embedder: Embedder | None = None,
 ) -> EntityId:
     """Human decision: none of the candidates match → admit a new ``candidate`` entity from the
-    observation (or keep the pre-admitted subject) and close the task."""
+    observation (or keep the pre-admitted subject) and close the task.
+
+    ``embedder`` is the same optional FI-2 §1.2-H1 dependency :func:`disposition` takes, for the
+    same reason: a human-minted account that is never embedded is invisible to the resolver's ANN
+    arm, so the *next* name-only encounter of that company duplicates it — re-opening the very
+    ambiguity this resolution just settled. The M2.4 review surface that composes this call must
+    pass one.
+    """
     task = await get_task(conn, task_id)
     if task is None:
         raise ValueError(f"review task {task_id} not found")
@@ -750,6 +774,8 @@ async def resolve_create_new_entity(
             registry_ids=obs.registry_ids,
             workspace_id=task.workspace_id,
         )
+        if embedder is not None:
+            await embed_account(conn, new_id, embedder=embedder)
     if new_id is None:
         raise NotImplementedError(
             "cannot admit a new contact entity without an account_entity_id — the task must carry "

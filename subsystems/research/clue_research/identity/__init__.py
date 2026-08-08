@@ -27,8 +27,10 @@ from clue_research.identity.embedding import (
     DEFAULT_EMBEDDER,
     DEFAULT_MODEL_VERSION,
     EMBEDDING_DIM,
+    BackfillReport,
     Embedder,
     HashingEmbedder,
+    backfill_account_embeddings,
     embed_account,
     vector_literal,
 )
@@ -192,6 +194,8 @@ __all__ = [
     "DEFAULT_EMBEDDER",
     "DEFAULT_MODEL_VERSION",
     "EMBEDDING_DIM",
+    "backfill_account_embeddings",
+    "BackfillReport",
     "embed_account",
     "vector_literal",
     # canonicalization (M2.2; M2.3 applies the write)
