@@ -362,7 +362,9 @@ drives all four endpoints over one seeded workspace, and
 
 The surface is flag-gated (`frontend_read_enabled`, default off; the routes 404
 when it is off), is served under `/frontend/v1`, and requires the tenant header
-`X-Workspace-Id` on every request. It is read-only: no create, update, delete,
+`X-Workspace-Id` on every data request (the one exception is
+`GET /frontend/v1/health`, an unscoped liveness probe that carries no tenant).
+It is read-only: no create, update, delete,
 research-launch, query-POST, table-config, `search`, or `sort` endpoint exists
 yet, and the only list query parameters are `projectId`, `cursor`, and `limit`.
 
@@ -522,6 +524,27 @@ empty page, not a `404`, and the rows it does return still carry their full
 
 ### Ratified deviations from the proposal
 
+- **`projects[]` is `{ projectId, addedVia, addedAt }`; the proposed
+  `{ id, name }` is gone, and no slice-1 endpoint resolves a project name.** The
+  membership row carries how and when the project acquired the account, which the
+  proposal had no slot for; the display name lives on the project record, which
+  this surface does not read. This is an **open decision and a Task-6 blocker**,
+  not a silent narrowing: the accounts table sorts and filters by project, and
+  `src/features/accounts/model/account-query.ts` (lines 80-91) searches on
+  `project.name`, which no response here can satisfy. Either add `name` to the
+  membership row, or resolve names client-side from the project catalog
+  (`GET /api/v1/projects/sidebar` in `projects.md`) and key everything else on
+  `projectId`. Decide before the adapter flip.
+- **`employeeBand: "100-200"` becomes `employeeCount: 1200`, an integer.** The
+  backend holds a headcount claim, not a band; banding is a display decision the
+  frontend owns.
+- **`revenueBand` keeps its name but changes value space.** It now carries the
+  backend claim vocabulary (for example `100m_500m`), not the proposed
+  `"$1 - $10M"` display string, and it is **not** a guaranteed closed enum — the
+  value is whatever the field's writer produced. Same key with a different
+  vocabulary is exactly the mismatch a Zod `z.string()` will accept and a label
+  map will silently mis-render, so treat it as an opaque token and render through
+  a lookup with a fallback.
 - **`scores[]` is a list keyed by `(projectId, icpKey, icpVersion)`, on both the
   list row and the detail section** — one project can score an account under
   several ICPs and versions, so a single `fitScore` would require guessing a
@@ -534,7 +557,10 @@ empty page, not a `404`, and the rows it does return still carry their full
   `not_started | in_progress | fully_enriched | failed`. There is no `failed`:
   a crashed worker re-queues the job and suspends the fleet, so the honest state
   is always "halted, awaiting a human". `completed` means the job's own terminal
-  outcome, not the stronger "fully enriched".
+  outcome, not the stronger "fully enriched". An entry may name a project the
+  account has **no** membership row for (research was launched for a project that
+  no longer targets it); that is reported rather than hidden, so do not assume
+  `researchStatus[].projectId` is always a member of `projects[]`.
 - **`titleRestricted` (row) and `restricted` (profile fact) mark withheld
   values** — a display-denied field is served absent with the marker and with no
   provenance, while a field the backend simply does not hold is absent and
@@ -548,9 +574,16 @@ empty page, not a `404`, and the rows it does return still carry their full
   two-family whitelist (`contact.facet.recent_post`,
   `contact.facet.public_appearances`). A list-valued field counts as **1**;
   whether a richer unit (per item) is wanted is an open founder question.
-- **Merged accounts redirect**: `GET /accounts/{id}` and the contact profile
-  serve the survivor with `redirectedFrom` set to the requested id. Lists carry
-  no redirect vocabulary — a merged loser simply does not appear as a row.
+- **Merged accounts redirect on the detail only.** `GET /accounts/{id}` follows a
+  merged loser to its survivor and sets `redirectedFrom` to the requested account
+  id. Account lists carry no redirect vocabulary at all — a merged loser simply
+  does not appear as a row, and the `meta.total` does not count it.
+- **The contact endpoints follow a merged account silently.** Both accept a
+  merged-loser account id and serve the survivor's committee, but the contacts
+  list has no marker of any kind, and the profile's `redirectedFrom` tracks a
+  merged **contact** only: request a survivor contact under a merged account id
+  and it is `null` while `accountId` is the survivor's. So a client that wants to
+  correct a stale account link must compare `accountId` with the id it asked for.
 - **`logoUrl` is always `null`** for now (it replaces `logoPath`); no logo
   pipeline exists, and the field is present so it can start returning values
   without a schema change.
@@ -564,38 +597,74 @@ empty page, not a `404`, and the rows it does return still carry their full
   `{ data, meta }`. Either the adapters unwrap on the list side only, or the
   backend adds a wrapper — decide at the adapter flip.
 - **Fact `value` payloads are opaque backend JSON.** `neutralFacts[].value`,
-  `insights[].value`, `narratives[].value`, `registryIds`, and `hqGeo` are
-  passed through verbatim from the claim, so their internal keys are the
-  writer's (snake_case, e.g. the narrative's `angle_label`) and are not part of
-  this layer's camelCase vocabulary.
+  `insights[].value`, `narratives[].value`, `professionalFacts[].value`, plus
+  `registryIds` and `hqGeo`, are passed through verbatim from the claim, so their
+  internal keys are the writer's (snake_case, e.g. the narrative's `angle_label`)
+  and are not part of this layer's camelCase vocabulary. Type them as unknown
+  JSON per `fieldKey`, not as a camelCase object.
+- **A project section's `projectId` and membership fields are independently
+  nullable.** `projectId: null` is the unattributed bucket (claims whose run maps
+  to no project — manual ingestion and the documented lineage exemptions), always
+  served last and only when it has content. `addedVia` / `addedAt` are also
+  `null` for a project that produced research on the account **without** a
+  membership row; that state should not occur, so it is reported rather than
+  hidden. A project with a membership and no work still gets an empty section,
+  because "targeted, nothing produced yet" is a real state.
 - **The detail carries no research status.** Status is a `(account, project)`
   fact served on the list row; a detail or preview badge must read it from the
   list response until a later slice adds it.
 - **No display strings anywhere.** `sizeLabel`, `locationsLabel`,
   `revenueLabel`, `websiteLabel`, `dateLabel`, `timeLabel`, and
   `previewTitle` are not served; the frontend formats from semantic values.
-  `domain` replaces `websiteUrl`, and `freshness` (`fresh` | `stale`) is served
-  as an enum.
+  `domain` replaces `websiteUrl`. `freshness` is an enum that emits exactly
+  `fresh` and `stale`: it reports the merge's own two states (a past-TTL winner
+  is labelled, never dropped), and the backend's third disposition, `expired`,
+  is a retention age-out that can never win a merge and so never reaches this
+  wire.
 
 ### Pending founder ratification (FI-1 D-4–D-7)
 
-These gate the adapter flip (Task 6 of the slice-1 plan); none of them changes
-the backend shapes above.
+These gate the adapter flip (Task 6 of the slice-1 plan). Most are frontend
+schema decisions over the shapes above; where one implies further backend work,
+that is called out rather than assumed.
 
-1. **D-4 — absence and redaction vocabulary in the Zod schemas.** Every
-   enrichment field is nullable/optional on this wire, and redaction is carried
-   by `titleRestricted` / `restricted`. The current schemas reject that and must
-   adopt it before any HTTP repository is enabled.
-2. **D-5 — display strings leave the frontend schemas.** The `*Label` fields
-   have no backend source and must be formatted client-side from the ISO
-   timestamps and semantic values above.
-3. **D-6 — enum adoption.** `researchStatus` takes the five-value backend
-   vocabulary, `persona` and `roleOnCommittee` take the four backend personas,
-   `freshness` and `addedVia` are new enums, and `overallFit` needs a ruling
-   (tier badge from `scores[].fit`, or a versioned policy band) since the
-   backend serves raw scores only.
-4. **D-7 — drop or respec the fields with no backend data.**
-   `referralFit` / `directAccessFit` / `recallFit`, `locationCount`,
-   `influence`, non-LinkedIn `socials`, `avatarUrl`, `researchIsRefreshing`, and
-   the `emailStatus` widening are all unserved in slice 1; each is either
-   dropped from the schemas or specified as new backend work.
+1. **D-4 — nullable/optional everywhere the backend can be correctly empty, plus
+   a per-field `availability` / `reasonCodes` redaction vocabulary** (mirroring
+   the backend's `ResearchItemState`), so the UI can tell **"not researched"**
+   from **"researched, not found"** from "withheld by policy". That capability is
+   the ask and it is unchanged. Slice 1 ships a deliberately narrower form —
+   nullability everywhere plus a boolean `restricted` / `titleRestricted` for the
+   policy-withheld case — because this read layer serves the merge's current
+   value and holds no per-field research-attempt state on the contact path; the
+   account-level approximation is `coverage.unresolvedFieldKeys`, which names
+   fields research asked for and could not answer. Adopt the full vocabulary in
+   the schemas, and expect the backend to widen the wire when the per-field state
+   exists. Nullability alone is still required before any HTTP repository is
+   enabled — the current schemas crash on it.
+2. **D-5 — display strings leave the wire.** `timeLabel`, `dateLabel`,
+   `editedLabel`, `sizeLabel`, `revenueLabel`, and `locationsLabel` become ISO
+   timestamps and semantic values that the frontend formats; `personaTone` stays
+   frontend-side.
+3. **D-6 — enum reconciliation.** `researchStatus` widens to the honest backend
+   set; slice 1 serves `not_started | in_progress | needs_review | completed |
+   suspended` and does **not** yet serve `not_launchable`, which depends on the
+   launch surface owned by Lane D (FI-1 D-9) — ratify it in the vocabulary now so
+   the schema does not need a second widening when Lane D lands. `persona` and
+   `roleOnCommittee` adopt the four backend personas. `emailStatus` widens
+   (`available | lookup | pending | unavailable` at least), which is moot on this
+   surface because slice 1 serves no email data at all (G3). `overallFit` needs a
+   ruling — a two-value tier badge or a versioned-policy three-band cut over
+   `scores[].fit`, never a hardcoded adapter constant — since the backend serves
+   raw scores only. `activity.kind` widens to the backend event kinds with a
+   projection-layer label map (no activity endpoint exists in slice 1). `freshness`
+   and `addedVia` are new enums this slice introduces.
+4. **D-7 — drop or respec the pure no-datas.** `referralFit` /
+   `directAccessFit` / `recallFit` (or spec them as new rubric dimensions — note
+   the backend already serves an `intent` score the frontend does not use),
+   `locationCount`, `xUrl` requiredness, non-LinkedIn `socials`, `influence` (or
+   define it as a recorded derivation — slice 1 does serve
+   `roleOnCommittee.confidence`), `researchIsRefreshing` (or add real schema),
+   `avatarUrl` (G1: no avatar pipeline, and the browser does not scrape), and
+   `logoPath` (cheapest real fix: a `core.company_logo_url` field plus a
+   materializer, which is what `logoUrl: null` is waiting for). None is served in
+   slice 1; each is either dropped from the schemas or specified as backend work.

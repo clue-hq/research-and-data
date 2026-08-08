@@ -51,6 +51,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.frontend_read import FRONTEND_READ_PREFIX, AccountResearchStatusValue
+
+# The signal whitelist is the endpoint's own — imported, never re-declared here, so a rename in the
+# read layer moves this fixture with it instead of silently seeding a field nothing counts.
+from clue_api.frontend_read.contacts import CONTACT_SIGNAL_FIELD_KEYS, FACET_RECENT_POST
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
 from clue_core import (
@@ -123,7 +127,6 @@ _ACCOUNTS = f"{FRONTEND_READ_PREFIX}/accounts"
 #: ratified §5.2 table, so a hardcoded list would be wrong). It proves the neutral/relative split is
 #: read from the registry, on the composed surface as well as in the Task-3 suite.
 _INSIGHT_FIELD = "fi2read.campaign_insight"
-_RECENT_POST = "contact.facet.recent_post"
 
 
 # --- harness ----------------------------------------------------------------------------------
@@ -673,7 +676,11 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         persona=Persona.ECONOMIC_BUYER,
         extra=(
             (CURRENT_TITLE, "VP Finance", UseClass.PROFESSIONAL_PUBLIC),
-            (_RECENT_POST, "posted about procurement", UseClass.PERSONAL_PUBLIC_NON_SENSITIVE),
+            (
+                FACET_RECENT_POST,
+                "posted about procurement",
+                UseClass.PERSONAL_PUBLIC_NON_SENSITIVE,
+            ),
         ),
     )
     # A held-but-display-denied (special-category) title: the value must never appear, and both
@@ -941,6 +948,24 @@ def test_the_detail_committee_and_the_contacts_list_are_the_same_governed_people
             ]
             assert in_list[str(fixture.masked)]["projectIds"] == [fixture.project_a.project_id]
 
+            # ...and they agree on *nobody*, too: role and persona are what make someone a committee
+            # member, so a workspace that will not display those claims empties both surfaces at
+            # once. Until the shared display gate landed this was a live leak — the detail listed
+            # names and roles the contacts table correctly withheld.
+            await conn.execute(
+                text(
+                    "INSERT INTO workspace_policy (policy_id, workspace_id, posture, "
+                    "display_professional_public, version) "
+                    "VALUES (:pid, :ws, 'conservative_default', false, 9)"
+                ),
+                {"pid": f"p-{uuid.uuid4()}", "ws": _WS},
+            )
+            assert (await _detail(conn, fixture.acme)).json()["committee"] == []
+            assert (await _contacts(conn, fixture.acme)).json() == {
+                "data": [],
+                "meta": {"total": 0},
+            }
+
     run_async(scenario())
 
 
@@ -969,6 +994,8 @@ def test_a_display_denied_field_is_withheld_identically_on_the_row_and_the_profi
             shared_row = rows[str(fixture.shared)]
             assert shared_row["title"] == "VP Finance"
             assert shared_row["titleRestricted"] is False
+            # One facet seeded, from the endpoint's own signal whitelist.
+            assert FACET_RECENT_POST in CONTACT_SIGNAL_FIELD_KEYS
             assert shared_row["signals"] == {"count": 1}
             shared_profile = (await _profile(conn, fixture.acme, fixture.shared)).json()
             assert _facts(shared_profile)[CURRENT_TITLE]["value"] == "VP Finance"
@@ -1134,14 +1161,18 @@ _BANNED_KEYS = {
     "formatted",
 }
 
-#: Wire slots whose contents are a **claim's own JSON**, not this layer's vocabulary: a fact's
-#: ``value`` is served verbatim (the M12.1 narrative object carries ``persona`` / ``argument`` /
-#: ``angle_label`` — the synthesizer's field names, snake_case, unchanged), and ``registryIds`` /
-#: ``hqGeo`` are opaque maps keyed by registry and geo component. The Band-2 rule constrains the
-#: *envelope* the read layer authors; it cannot rename the inside of a stored claim without
-#: fabricating a shape no writer produces. So the sweep stops at these slots, and the frontend must
-#: treat them as opaque backend JSON — recorded in the as-built contract, not papered over here.
-_OPAQUE_PAYLOAD_KEYS = {"value", "registryIds", "hqGeo"}
+#: The carve-out is anchored on the **shapes** that carry a claim's own JSON, not on a key name:
+#: a fact row is exactly a dict carrying ``fieldKey`` (the four fact slots — ``neutralFacts``,
+#: ``insights``, ``narratives``, ``professionalFacts``), and its ``value`` is served verbatim (the
+#: M12.1 narrative object carries ``persona`` / ``argument`` / ``angle_label`` — the synthesizer's
+#: own field names, snake_case, unchanged). The account-detail root additionally carries two opaque
+#: maps keyed by registry and geo component. Anchoring this way means a *new* ``value`` key
+#: somewhere else on the wire is still swept. The Band-2 rule constrains the envelope this layer
+#: authors; it cannot rename the inside of a stored claim without fabricating a shape no writer
+#: produces — so the frontend treats these slots as opaque backend JSON (recorded in the contract).
+_FACT_ROW_MARKER = "fieldKey"
+_DETAIL_ROOT_MARKER = "projectSections"
+_DETAIL_OPAQUE_MAPS = ("registryIds", "hqGeo")
 
 
 def test_no_display_string_reaches_any_of_the_four_payloads() -> None:
@@ -1163,6 +1194,13 @@ def test_no_display_string_reaches_any_of_the_four_payloads() -> None:
             personas = {persona.value for persona in Persona}
             statuses = {status.value for status in AccountResearchStatusValue}
 
+            def opaque(node: dict[str, Any], key: str) -> bool:
+                """True only for the claim-owned payloads: a fact row's ``value``, and the account
+                detail root's two opaque maps."""
+                if key == "value":
+                    return _FACT_ROW_MARKER in node
+                return key in _DETAIL_OPAQUE_MAPS and _DETAIL_ROOT_MARKER in node
+
             def walk(node: Any, path: str) -> None:
                 if isinstance(node, dict):
                     for key, value in node.items():
@@ -1174,7 +1212,7 @@ def test_no_display_string_reaches_any_of_the_four_payloads() -> None:
                             assert value in personas, f"{path}.{key} = {value}"
                         if key == "status":
                             assert value in statuses, f"{path}.{key} = {value}"
-                        if key not in _OPAQUE_PAYLOAD_KEYS:
+                        if not opaque(node, key):
                             walk(value, f"{path}.{key}")
                 elif isinstance(node, list):
                     for index, value in enumerate(node):
