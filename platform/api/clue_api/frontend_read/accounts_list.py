@@ -42,7 +42,7 @@ import base64
 import binascii
 import uuid
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Any
@@ -135,7 +135,7 @@ class AccountResearchStatusValue(StrEnum):
     SUSPENDED = "suspended"
 
 
-class _WireModel(BaseModel):
+class WireModel(BaseModel):
     """Frozen, camelCase-on-the-wire, snake_case in Python — the frontend's JSON convention."""
 
     model_config = ConfigDict(
@@ -143,7 +143,7 @@ class _WireModel(BaseModel):
     )
 
 
-class AccountProjectMembership(_WireModel):
+class AccountProjectMembership(WireModel):
     """One project that targets this account, and how/when it joined."""
 
     project_id: str
@@ -151,14 +151,16 @@ class AccountProjectMembership(_WireModel):
     added_at: datetime
 
 
-class AccountProjectScore(_WireModel):
-    """One project's Pass-A score for this account, under the ICP that produced it.
+class ProjectScore(WireModel):
+    """A Pass-A score under one ICP — the score itself, with no project attached.
 
     ``fit`` and ``intent`` are independently nullable: a project may have scored fit and not intent
     (or vice versa), and reporting the missing half as ``0`` would be a fabrication.
+
+    The nested shape: the account-detail endpoint already knows which project's section it is
+    filling, so repeating the id inside every score there would be noise.
     """
 
-    project_id: str
     fit: float | None = None
     intent: float | None = None
     icp_key: str | None = None
@@ -166,14 +168,20 @@ class AccountProjectScore(_WireModel):
     scored_at: datetime
 
 
-class AccountResearchStatus(_WireModel):
+class AccountProjectScore(ProjectScore):
+    """A :class:`ProjectScore` carrying the project it belongs to — the flat list row's shape."""
+
+    project_id: str
+
+
+class AccountResearchStatus(WireModel):
     """The research status of this account *within* one project."""
 
     project_id: str
     status: AccountResearchStatusValue
 
 
-class AccountListRow(_WireModel):
+class AccountListRow(WireModel):
     """One row of the global accounts list."""
 
     id: uuid.UUID
@@ -191,14 +199,14 @@ class AccountListRow(_WireModel):
     updated_at: datetime
 
 
-class AccountListMeta(_WireModel):
+class AccountListMeta(WireModel):
     """Pagination metadata. ``total`` counts the whole filtered set, not the page."""
 
     total: int
     next_cursor: str | None = None
 
 
-class AccountListResponse(_WireModel):
+class AccountListResponse(WireModel):
     """``{data, meta}`` — the envelope `apps/frontend/docs/api-contracts/accounts.md` documents."""
 
     data: tuple[AccountListRow, ...]
@@ -343,30 +351,36 @@ def research_status_for(
     return AccountResearchStatusValue.IN_PROGRESS
 
 
-def _as_int(value: Any) -> int | None:
+def as_int(value: Any) -> int | None:
     """A JSON number that is genuinely an integer — ``bool`` is not one, whatever Python says."""
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
-def _as_float(value: Any) -> float | None:
+def as_float(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value)
 
 
-def _as_str(value: Any) -> str | None:
+def as_str(value: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
-async def _read_scores(
-    conn: AsyncConnection, *, workspace_id: str, entity_ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, tuple[AccountProjectScore, ...]]:
-    """Per-account, per-project, per-ICP scores — the lineage-attributed relative read.
+#: One ``account.scoring.*`` claim as :func:`group_score_claims` consumes it:
+#: ``(entity_id, project_id | None, field_key, decoded value_json, scored_at)``. ``project_id`` is
+#: ``None`` only for the account-detail endpoint's unattributed partition — this endpoint's own
+#: query inner-joins lineage, so it never produces one.
+ScoreClaimRow = tuple[uuid.UUID, str | None, str, Any, datetime]
 
-    Grouped by ``(project, icp_key, icp_version)``, not merely by project: an account may be scored
-    under several ICPs within one project (D5), and collapsing those to one row would have to pick
-    a winner — another representative-run guess. Within a group the latest claim of each field
-    wins, and ``scored_at`` is the newer of the two.
+
+def group_score_claims(
+    rows: Iterable[ScoreClaimRow],
+) -> dict[tuple[uuid.UUID, str | None], tuple[ProjectScore, ...]]:
+    """The one scoring-attribution rule, shared by the list row and the detail's project sections.
+
+    Grouped by ``(entity, project, icp_key, icp_version)``, not merely by project: an account may be
+    scored under several ICPs within one project (D5), and collapsing those to one score would have
+    to pick a winner — another representative-run guess.
 
     **Last-collected-wins, not the canonical merge.** ``current_values`` cannot serve this read: it
     collapses to one winner per ``(entity, field)`` with no project attribution, which is exactly
@@ -377,6 +391,52 @@ async def _read_scores(
     one live claim per field and the ordering never has to break a real tie. If a second writer ever
     produces ``account.scoring.*``, this needs the merge's ranking — see the FI-2 §6.4
     project-scoped-supersede work, which is the change that would create that possibility.
+
+    ``rows`` must arrive oldest-first within a group; a later row of the same field overwrites an
+    earlier one, so last-written is newest.
+    """
+    grouped: dict[tuple[uuid.UUID, str | None, str | None, int | None], dict[str, Any]] = {}
+    for entity_id, project_id, field_key, value, scored_at in rows:
+        payload = value if isinstance(value, dict) else {}
+        key = (
+            entity_id,
+            project_id,
+            as_str(payload.get("icp_key")),
+            as_int(payload.get("icp_version")),
+        )
+        accumulator = grouped.setdefault(key, {"fit": None, "intent": None, "scored_at": scored_at})
+        accumulator["fit" if field_key == FIT_FIELD_KEY else "intent"] = as_float(
+            payload.get("value")
+        )
+        if scored_at > accumulator["scored_at"]:
+            accumulator["scored_at"] = scored_at
+
+    by_group: dict[tuple[uuid.UUID, str | None], list[ProjectScore]] = defaultdict(list)
+    for (entity_id, project_id, icp_key, icp_version), accumulator in grouped.items():
+        by_group[(entity_id, project_id)].append(
+            ProjectScore(
+                fit=accumulator["fit"],
+                intent=accumulator["intent"],
+                icp_key=icp_key,
+                icp_version=icp_version,
+                scored_at=accumulator["scored_at"],
+            )
+        )
+    return {
+        group: tuple(sorted(scores, key=lambda s: (s.icp_key or "", s.icp_version or 0)))
+        for group, scores in by_group.items()
+    }
+
+
+async def _read_scores(
+    conn: AsyncConnection, *, workspace_id: str, entity_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, tuple[AccountProjectScore, ...]]:
+    """Per-account, per-project, per-ICP scores — the lineage-attributed relative read.
+
+    The SQL is this endpoint's (batched over a page of accounts, lineage **inner**-joined so an
+    unattributable score is never guessed onto a project); the grouping is
+    :func:`group_score_claims`, shared with the account-detail sections so the two surfaces cannot
+    report a different score for the same claims.
     """
     if not entity_ids:
         return {}
@@ -398,40 +458,23 @@ async def _read_scores(
         )
     ).all()
 
-    # (entity, project, icp_key, icp_version) -> mutable accumulator
-    grouped: dict[tuple[uuid.UUID, str, str | None, int | None], dict[str, Any]] = {}
-    for entity_id, field_key, raw_value, observed_at, collected_at, project_id in rows:
-        value = decode_jsonb_scalar(raw_value)
-        payload = value if isinstance(value, dict) else {}
-        key = (
+    grouped = group_score_claims(
+        (
             uuid.UUID(str(entity_id)),
             str(project_id),
-            _as_str(payload.get("icp_key")),
-            _as_int(payload.get("icp_version")),
+            str(field_key),
+            decode_jsonb_scalar(raw_value),
+            # The claim's own age, on the same rule the merge uses: the observation time when the
+            # source stated one, else when we collected it.
+            observed_at or collected_at,
         )
-        # The claim's own age, on the same rule the merge uses: the observation time when the
-        # source stated one, else when we collected it.
-        scored_at = observed_at or collected_at
-        accumulator = grouped.setdefault(key, {"fit": None, "intent": None, "scored_at": scored_at})
-        # Rows arrive oldest-first per (entity, project), so a later claim overwrites an earlier
-        # one of the same field — last write wins is newest wins.
-        accumulator["fit" if field_key == FIT_FIELD_KEY else "intent"] = _as_float(
-            payload.get("value")
-        )
-        if scored_at > accumulator["scored_at"]:
-            accumulator["scored_at"] = scored_at
-
+        for entity_id, field_key, raw_value, observed_at, collected_at, project_id in rows
+    )
     by_account: dict[uuid.UUID, list[AccountProjectScore]] = defaultdict(list)
-    for (entity_id, project_id, icp_key, icp_version), accumulator in grouped.items():
-        by_account[entity_id].append(
-            AccountProjectScore(
-                project_id=project_id,
-                fit=accumulator["fit"],
-                intent=accumulator["intent"],
-                icp_key=icp_key,
-                icp_version=icp_version,
-                scored_at=accumulator["scored_at"],
-            )
+    for (entity_id, project_id), scores in grouped.items():
+        by_account[entity_id].extend(
+            AccountProjectScore(project_id=str(project_id), **score.model_dump())
+            for score in scores
         )
     return {
         entity_id: tuple(
@@ -554,9 +597,9 @@ async def list_accounts(
                 name=str(canonical_name),
                 domain=primary_domain,
                 employee_count=(
-                    None if employee_count is None else _as_int(employee_count.value_json)
+                    None if employee_count is None else as_int(employee_count.value_json)
                 ),
-                revenue_band=None if revenue_band is None else _as_str(revenue_band.value_json),
+                revenue_band=None if revenue_band is None else as_str(revenue_band.value_json),
                 projects=tuple(
                     AccountProjectMembership(
                         project_id=membership.project_id,

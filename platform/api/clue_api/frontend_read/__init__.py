@@ -8,6 +8,13 @@ probe; the accounts list/detail/contacts endpoints land on top of it in Tasks 2â
 
 from __future__ import annotations
 
+from clue_api.frontend_read.account_detail import (
+    AccountDetail,
+    AccountNotFound,
+    AccountProjectSection,
+    latest_project_run_context,
+    read_account_detail,
+)
 from clue_api.frontend_read.accounts_list import (
     AccountListResponse,
     AccountListRow,
@@ -30,8 +37,11 @@ __all__ = [
     "CORS_ALLOW_METHODS",
     "FRONTEND_READ_PREFIX",
     "REQUEST_ID_HEADER",
+    "AccountDetail",
     "AccountListResponse",
     "AccountListRow",
+    "AccountNotFound",
+    "AccountProjectSection",
     "AccountResearchStatusValue",
     "InvalidCursorError",
     "WorkspaceDep",
@@ -39,5 +49,7 @@ __all__ = [
     "build_frontend_read_router",
     "frontend_read_workspace_resolver",
     "install_frontend_read_surface",
+    "latest_project_run_context",
     "list_accounts",
+    "read_account_detail",
 ]
