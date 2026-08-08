@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
@@ -9,8 +10,8 @@ from decimal import Decimal
 from typing import Annotated, Any, Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
-from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from langchain_core.tools import StructuredTool, ToolException
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -39,7 +40,10 @@ from clue_agents.entity_research_runtime import (
     EntityResearchGovernedToolRefusal,
     current_entity_research_tool_execution,
 )
-from clue_api.entity_research_tools import convert_engine_authority_rejections
+from clue_api.entity_research_tools import (
+    convert_engine_authority_rejections,
+    semantic_validation_error,
+)
 
 # The species read is the one in the FI-2 read layer, imported rather than restated: "is this
 # field project-relative?" must have exactly one answer for the economics here and for the lens
@@ -328,6 +332,17 @@ class AccountResearchStateStore:
             raise AccountResearchAuthorityError(
                 "account coverage observed forbidden contact research"
             )
+        # A zero-result close is legal exactly once (FI-2 §6.1): when the account was researched by
+        # spending nothing, i.e. every completed field is borrowed from a claim already on file.
+        # The set-equality above already refuses an agent that omits results it produced; this
+        # refuses the opposite mistake — closing empty over work that did complete a field.
+        if not state.result_refs:
+            borrowed = {item.field_key for item in state.existing_claims if item.born_complete}
+            if not set(state.completed_field_keys) <= borrowed:
+                raise AccountResearchAuthorityError(
+                    "coverage without results is admissible only when every completed field is "
+                    "answered by an existing claim"
+                )
         coverage_id = uuid4()
         unresolved_reasons: list[str] = []
         async with self._conn_factory() as conn:
@@ -360,12 +375,11 @@ class AccountResearchStateStore:
                 else:
                     reason = "existing_claim_missing_evidence"
                 unresolved_reasons.append(f"{field_key}:{reason}")
-            # "Skipped" means the money was never spent: a field this job *did* research reports
-            # its result, even if a fresh claim also happens to be on file for it.
+            # "Skipped" means the money was never spent, so *any* result row for the field
+            # disqualifies it — a failed or empty attempt cost just as much as a successful one,
+            # and reporting it as never-spent would misstate the spend trail.
             completed = set(state.completed_field_keys)
-            researched = {
-                key for key, row in latest_account.items() if str(row["outcome"]) == "found"
-            }
+            researched = set(latest_account)
             skipped_field_reasons = tuple(
                 f"{item.field_key}:existing_claim_fresh"
                 for item in state.existing_claims
@@ -1293,10 +1307,23 @@ def account_engine_tool_bindings(
     def repairable(
         coroutine: Callable[..., Awaitable[dict[str, JsonValue]]],
     ) -> Callable[..., Awaitable[dict[str, JsonValue]]]:
-        return convert_engine_authority_rejections(
+        governed = convert_engine_authority_rejections(
             coroutine,
             error_types=(AccountResearchAuthorityError,),
         )
+
+        @functools.wraps(governed)
+        async def guarded(*args: object, **kwargs: object) -> dict[str, JsonValue]:
+            try:
+                return await governed(*args, **kwargs)
+            except ValidationError as error:
+                # These tools validate their own arguments inside the body, so a malformed
+                # argument surfaces here rather than through LangChain's args_schema path (which
+                # is bound to the same handler below). Either way it is a model mistake the agent
+                # can repair — never an uncaught exception that kills a live research job.
+                raise ToolException(semantic_validation_error(error)) from error
+
+        return guarded
 
     async def read_state(include_result_index: bool = True) -> dict[str, JsonValue]:
         value = await store.state()
@@ -1324,6 +1351,7 @@ def account_engine_tool_bindings(
                 "Read exact persisted account results, gaps, committee, pending work, and spend."
             ),
             args_schema=ReadAccountResearchStateInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
         "inspect_account_evidence": StructuredTool.from_function(
@@ -1331,6 +1359,7 @@ def account_engine_tool_bindings(
             name="inspect_account_evidence",
             description="Inspect the complete evidence index for exact persisted account results.",
             args_schema=InspectAccountEvidenceInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
         "assess_account_coverage": StructuredTool.from_function(
@@ -1338,6 +1367,7 @@ def account_engine_tool_bindings(
             name="assess_account_coverage",
             description="Derive durable account-field and office-coherent committee coverage.",
             args_schema=AssessAccountCoverageInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
         "finalize_account_research": StructuredTool.from_function(
@@ -1349,6 +1379,7 @@ def account_engine_tool_bindings(
                 "ResearchFinalizationProposal response-format tool and stop."
             ),
             args_schema=FinalizeAccountResearchInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
     }

@@ -111,9 +111,17 @@ class InspectAccountEvidenceInput(_FrozenModel):
 
 
 class AssessAccountCoverageInput(_FrozenModel):
-    """Model explanation is advisory; the engine derives coverage from persisted results."""
+    """Model explanation is advisory; the engine derives coverage from persisted results.
 
-    result_refs: tuple[NonEmptyStr, ...] = Field(min_length=1, max_length=100)
+    ``result_refs`` may be **empty** (FI-2 §6.1): an account whose every admitted field was already
+    known — fresh, evidence-backed, conflict-free and ``project_neutral`` — is researched by
+    spending nothing, so there is no result to cite. The set is still authority-checked, just not
+    by a length: the engine requires it to equal the job's persisted result set exactly (so a job
+    that *did* research cannot zero-close), and it re-derives every completed field's evidence from
+    durable rows regardless of what the model says here.
+    """
+
+    result_refs: tuple[NonEmptyStr, ...] = Field(max_length=100)
     assessment_note: NonEmptyStr
 
     @model_validator(mode="after")

@@ -29,23 +29,30 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
+from langchain_core.tools import ToolException
 from pydantic import ConfigDict, PrivateAttr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_agents.account_entity_research import AccountResearchStateProjection
+from clue_agents.account_entity_research import (
+    AccountResearchStateProjection,
+    AssessAccountCoverageInput,
+)
 from clue_agents.contracts import ModelPolicy
 from clue_agents.entity_research_contracts import EntityResearchAgentResult, canonical_sha256
 from clue_agents.entity_research_runtime import (
+    _ACTIVE_TOOL_EXECUTION,
     ActiveEntityResearchToolExecution,
     EntityResearchAgentFactory,
     EntityResearchAgentRuntime,
     current_entity_research_tool_execution,
 )
 from clue_api.account_entity_research import (
+    AccountResearchAuthorityError,
     AccountResearchExecutionGuard,
     AccountResearchFinalizationEngine,
     AccountResearchStateStore,
+    account_engine_tool_bindings,
 )
 from clue_api.account_entity_research_composition import (
     AccountResearchDefinitionResolver,
@@ -62,6 +69,7 @@ from clue_api.entity_research_tools import (
     ProviderActionBinding,
     ProviderOperationReservation,
     ProviderResearchProjectionDraft,
+    semantic_validation_error,
 )
 from clue_core import (
     Claim,
@@ -754,11 +762,154 @@ def _committee_call(*, account_id: UUID, evidence_claim_id: UUID) -> dict[str, A
     }
 
 
+def test_fi2_61_a_job_that_calls_no_provider_at_all_finalizes_cleanly(
+    tmp_path: Path,
+    require_profiling_db: None,
+) -> None:
+    """The prompt-obedient all-known job: **zero** provider calls, zero results, a real receipt.
+
+    This is the shape a governed agent actually reaches when every admitted field is already
+    answered and it has no retained result to cite as committee-office evidence: it reads state,
+    sees nothing left to research, and closes. Coverage therefore carries an *empty* result set —
+    admissible only because every completed field is borrowed (the engine re-derives that, and
+    ``assess`` refuses an empty close over work that did complete a field). The committee is
+    honestly unresearched, so the outcome is ``NEEDS_REVIEW`` with the existing
+    ``committee_not_researched`` flag — a clean finalization, not a failed one.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_p1_research(conn, stale_culture=False)
+            admitted = (_PAIN, _MOVES, _HIRING)
+            outcome, model, providers, authorization = await _run_p2_agent(
+                conn,
+                fixture=fixture,
+                admitted=admitted,
+                plan=[],
+                tmp_path=tmp_path,
+            )
+
+            assert isinstance(outcome, EntityResearchAgentResult)
+            receipt = outcome.finalization_receipt
+            assert receipt is not None
+            assert receipt.proposal.outcome is ResearchFinalizationOutcome.NEEDS_REVIEW
+            assert receipt.verification.all_passed()
+            assert receipt.verification.evidence_complete
+            assert set(receipt.proposal.completed_field_keys) == set(admitted)
+            assert receipt.proposal.unresolved_field_keys == ()
+            assert receipt.proposal.result_refs == ()
+            assert providers.calls == []
+            coverage = model.observed_coverage
+            assert coverage["review_flags"] == ["committee_not_researched"]
+            assert set(coverage["claim_refs"]) == {
+                f"claim:{fixture.p1_claim_ids[key]}" for key in admitted
+            }
+            assert set(coverage["skipped_field_reasons"]) == {
+                f"{key}:existing_claim_fresh" for key in admitted
+            }
+            spent = (
+                await conn.execute(
+                    text("SELECT spent_cents FROM entity_research_job WHERE job_id=:job_id"),
+                    {"job_id": authorization.job_id},
+                )
+            ).scalar_one()
+            assert Decimal(spent) == Decimal("0")
+
+    run_async(scenario())
+
+
+def test_fi2_61_an_empty_close_is_refused_over_a_field_that_was_not_borrowed(
+    monkeypatch: pytest.MonkeyPatch,
+    require_profiling_db: None,
+) -> None:
+    """The zero-result close is not a free pass: it holds only for a wholly borrowed account.
+
+    Today the state read cannot produce a completed field that is neither researched nor borrowed,
+    so this forges exactly that state to prove the close path refuses it on its own — dropping the
+    input's ``min_length`` must not become "an empty citation closes anything".
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_p1_research(conn, stale_culture=False)
+            # Nothing is on file for `_FUNDING`, so no claim can stand in for researching it.
+            envelope, connection = await _launch_p2_job(
+                conn, fixture=fixture, admitted=(_PAIN, _FUNDING)
+            )
+            authorization = envelope.jobs[0].authorization
+            store = AccountResearchStateStore(conn_factory=connection)
+            honest = await store.state(_active(authorization))
+            assert set(honest.unresolved_field_keys) == {_FUNDING}
+            forged = honest.model_copy(
+                update={
+                    "completed_field_keys": (_PAIN, _FUNDING),
+                    "unresolved_field_keys": (),
+                }
+            )
+
+            async def _forged_state(
+                _self: AccountResearchStateStore,
+                active: ActiveEntityResearchToolExecution | None = None,
+            ) -> AccountResearchStateProjection:
+                del active
+                return forged
+
+            monkeypatch.setattr(AccountResearchStateStore, "state", _forged_state)
+            token = _ACTIVE_TOOL_EXECUTION.set(_active(authorization))
+            try:
+                with pytest.raises(
+                    AccountResearchAuthorityError, match="answered by an existing claim"
+                ):
+                    await store.assess(
+                        AssessAccountCoverageInput(
+                            result_refs=(), assessment_note="nothing left to research"
+                        )
+                    )
+            finally:
+                _ACTIVE_TOOL_EXECUTION.reset(token)
+
+    run_async(scenario())
+
+
+def test_fi2_61_engine_tools_degrade_a_malformed_argument_to_a_repairable_message() -> None:
+    """An argument-schema violation is model repair, never an uncaught exception mid-run.
+
+    Both layers are covered: LangChain's own ``args_schema`` validation is bound to the shared
+    handler, and the in-body ``model_validate`` (where these tools actually parse) raises a
+    ``ToolException`` carrying the same bounded, value-free feedback.
+    """
+
+    bindings = account_engine_tool_bindings(AccountResearchStateStore(conn_factory=cast(Any, None)))
+    for name in (
+        "read_account_research_state",
+        "inspect_account_evidence",
+        "assess_account_coverage",
+        "finalize_account_research",
+    ):
+        assert bindings[name].tool.handle_validation_error is semantic_validation_error
+
+    async def scenario() -> None:
+        coroutine = bindings["assess_account_coverage"].tool.coroutine
+        assert coroutine is not None
+        with pytest.raises(ToolException) as raised:
+            await coroutine(result_refs=["r"], assessment_note="")
+        assert "semantic_tool_input_validation_failed" in str(raised.value)
+
+    run_async(scenario())
+
+
 def test_fi2_61_an_all_born_complete_job_spends_nothing_and_finalizes_completed(
     tmp_path: Path,
     require_profiling_db: None,
 ) -> None:
-    """Every admitted account field already known ⇒ no account-axis provider call, clean receipt."""
+    """The same economics with a committee call: no account-axis spend, ``COMPLETED`` receipt.
+
+    The committee scope cites the account's own claim as its office evidence — production's Sumble
+    scope validation admits that (`sumble_entity_research_tools._persist_scope`), though the
+    governed prompt currently tells the agent to cite retained result refs only; sanctioning the
+    claim reference rides the next governed prompt bump. The zero-call test above covers the
+    prompt-obedient path; this one keeps the ``COMPLETED`` outcome under test.
+    """
 
     async def scenario() -> None:
         async with rollback_conn() as conn:

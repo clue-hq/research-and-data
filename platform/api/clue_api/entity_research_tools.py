@@ -464,8 +464,13 @@ def _json_contains_text(data: bytes, span: str) -> bool:
     return contains(decoded)
 
 
-def _semantic_validation_error(error: ValidationError) -> str:
-    """Return bounded actionable feedback without echoing model-authored values."""
+def semantic_validation_error(error: ValidationError) -> str:
+    """Return bounded actionable feedback without echoing model-authored values.
+
+    Public because every governed tool surface — provider tools here, the account/contact *engine*
+    tools at the composition root — must degrade an argument-schema violation to one repairable
+    message rather than an uncaught ``ValidationError`` that kills the run.
+    """
 
     details = [
         {
@@ -2727,7 +2732,7 @@ class GovernedEntityResearchToolFactory:
                 "lineage only after durable persistence."
             ),
             args_schema=args_schema,
-            handle_validation_error=_semantic_validation_error,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         )
 
@@ -2781,4 +2786,5 @@ __all__ = [
     "ProviderResultLineage",
     "ProviderResultLineageReader",
     "ResearchEvidenceReadPage",
+    "semantic_validation_error",
 ]
