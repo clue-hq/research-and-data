@@ -85,6 +85,7 @@ from clue_core import (
 )
 from clue_db import ConnFactory
 from clue_research.claimstore import (
+    FieldFilters,
     FieldRegistryScope,
     WorkspaceScope,
     claims_by_ids,
@@ -243,8 +244,14 @@ RELATIVE_CLAIMS_TEMPLATE = """
     ORDER BY c.collected_at, c.id
 """
 
-# Fields the M8D research surface asked for and could not answer. Indexed by
-# ``entity_research_result_subject_history (workspace_id, target_entity_id, …)``.
+# Fields the M8D research surface asked for and could not answer. The result *row* is reached
+# through ``entity_research_result_subject_history (workspace_id, target_entity_id, …)``, but the
+# subject filter that decides the answer is the **field row's own**: an account result carries the
+# fields of every contact it discovered (``entity_research_tools._flatten_result_fields`` persists
+# ``discovered_subjects``' fields under the account's result, stamping each row's own
+# ``subject_type``/``target_entity_id``). Filtering on the result alone would therefore report a
+# *contact's* unresolved field as the account's — and it could never clear, because answering it
+# writes a contact claim this account's held-key set never sees.
 _UNRESOLVED_FIELDS = text(
     """
     SELECT DISTINCT f.field_key
@@ -253,6 +260,8 @@ _UNRESOLVED_FIELDS = text(
     WHERE r.workspace_id = :workspace_id
       AND r.target_entity_id = :entity_id
       AND f.workspace_id = :workspace_id
+      AND f.subject_type = 'account'
+      AND f.target_entity_id = :entity_id
       AND f.outcome IN ('null', 'unsupported')
     """
 )
@@ -303,16 +312,29 @@ async def field_species(
 
     Always via :func:`~clue_core.resolve_research_scope`, never the raw
     ``field_definition.research_scope`` column: a global row may legitimately carry ``NULL`` and the
-    ratified key rule decides (FI-2 slice-0 handoff). A key with no registry row at all — only
-    reachable for a legacy claim whose definition was retired — falls back to the same ratified
-    default, which is what ``resolve_research_scope`` would have answered anyway.
+    ratified key rule decides (FI-2 slice-0 handoff).
+
+    **Deactivated and retired declarations are included on purpose** (``active=None`` +
+    ``include_retired``). Species is a property of the *declaration*, and a declaration outlives its
+    activation: a field's live claims do not change meaning the moment the field stops being
+    researched. The default active-only read would silently fold a deactivated
+    ``project_relative`` pack field back to ``project_neutral`` and migrate its existing claims from
+    a project section into ``neutralFacts`` — a bucket change with no data change, which is exactly
+    the kind of silent drift this endpoint must not produce.
+
+    A key with **no** registry row at all (its definition was deleted, not merely retired) falls
+    back to :func:`~clue_core.default_research_scope`, the same ratified key rule
+    ``resolve_research_scope`` applies to an undeclared field.
     """
     if not field_keys:
         return {}
     registry = {
         item.field_def.field_key: resolve_research_scope(item.field_def)
         for item in await list_effective_fields(
-            conn, scope=FieldRegistryScope.for_workspace(workspace_id)
+            conn,
+            scope=FieldRegistryScope.for_workspace(workspace_id),
+            filters=FieldFilters(active=None),
+            include_retired=True,
         )
     }
     return {

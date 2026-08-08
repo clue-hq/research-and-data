@@ -24,7 +24,9 @@ Every read is workspace-scoped: this suite shares a database with suites that co
 
 from __future__ import annotations
 
+import json
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -61,6 +63,16 @@ from clue_core import (
     new_project_run_id,
     new_run_id,
 )
+from clue_core.entity_research import (
+    EntityResearchJobAuthorization,
+    ResearchRunKind,
+    ResearchRunLifecycleContract,
+)
+from clue_fleet import (
+    EntityResearchJobEnvelope,
+    EntityResearchRunEnvelope,
+    launch_entity_research_run,
+)
 from clue_research.claimstore import insert_claim, record_run_lineage, register_field
 from clue_research.durable import (
     AccountRunStatus,
@@ -80,6 +92,7 @@ from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE, load_c
 from clue_spine import Project
 from tests._workspace import seed_project, seed_workspace
 from tests.db.conftest import run_async
+from tests.fleet.entity_research_r2_helpers import lifecycle_fixture
 from tests.profiling.conftest import conn_session_factory, rollback_conn
 
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
@@ -94,6 +107,12 @@ _BASE = f"{FRONTEND_READ_PREFIX}/accounts"
 #: ``project_neutral`` under the ratified §5.2 table, so a hardcoded "insight" list would be wrong.
 #: This field proves the split is read from the **registry**, not from a list in the read layer.
 _INSIGHT_FIELD = "fi2read.campaign_insight"
+
+#: The account-axis field the planted M8D result requests. The governed-request trigger refuses a
+#: field key whose namespace is not the subject's axis, so a coverage fixture cannot use an
+#: arbitrary key; ``account.recent_funding`` is a real registered (``project_neutral``) field, so
+#: the "unresolved until answered" test can answer it with a real claim.
+_REQUESTED_FIELD = "account.recent_funding"
 
 
 # --- harness --------------------------------------------------------------------------------
@@ -306,6 +325,240 @@ async def _committee_member(
         await insert_claim(conn, claim)
         claim_ids.append(uuid.UUID(str(claim.id)))
     return contact, tuple(claim_ids)
+
+
+async def _launch_research_job(
+    conn: AsyncConnection, *, project_id: str, account_id: EntityId
+) -> dict[str, Any]:
+    """Launch one real M8D account-research run/job through the production R2 entry point.
+
+    Only the run and job rows matter here — they are the FK anchors the R4 result chain hangs off.
+    """
+    lifecycle = lifecycle_fixture(ResearchRunKind.ACCOUNT_RESEARCH)
+    payload = lifecycle.model_dump(mode="json")
+    selection = payload["selection"]
+    selection["workspace_id"] = _WS
+    selection["project_id"] = project_id
+    selection["subjects"] = [{**selection["subjects"][0], "subject_entity_id": str(account_id)}]
+    lifecycle = ResearchRunLifecycleContract.model_validate(payload)
+    subject = lifecycle.selection.subjects[0]
+    authorization = EntityResearchJobAuthorization(
+        job_id=uuid.uuid4(),
+        research_run_id=lifecycle.run_id,
+        subject_type=lifecycle.selection.subject_type,
+        subject_entity_id=subject.subject_entity_id,
+        parent_account_id=lifecycle.selection.account_entity_id,
+        workspace_id=_WS,
+        project_id=project_id,
+        product_id=lifecycle.selection.product_id,
+        project_run_id=lifecycle.selection.project_run_id,
+        selection=lifecycle.selection,
+        agent_profile_ref="agent-profile:account:v1",
+        agent_profile_sha256="0" * 64,
+        checkpoint_thread_id=f"checkpoint:{lifecycle.run_id}:{subject.subject_entity_id}",
+        attempt_id=uuid.uuid4(),
+        lease_id=uuid.uuid4(),
+    )
+    await launch_entity_research_run(
+        conn,
+        EntityResearchRunEnvelope(
+            lifecycle=lifecycle,
+            jobs=(
+                EntityResearchJobEnvelope(
+                    authorization=authorization,
+                    priority=0,
+                    budget_envelope_ref=f"budget:job:{authorization.job_id}",
+                    budget_cap_cents=Decimal("4.00"),
+                ),
+            ),
+            budget_cap_cents=Decimal("10.00"),
+            concurrency_limit=1,
+        ),
+    )
+    return {
+        "research_run_id": lifecycle.run_id,
+        "job_id": authorization.job_id,
+        "project_run_id": lifecycle.selection.project_run_id,
+        "product_id": lifecycle.selection.product_id,
+        "project_id": project_id,
+    }
+
+
+async def _plant_research_result_fields(
+    conn: AsyncConnection,
+    *,
+    account_id: EntityId,
+    project_id: str,
+    fields: Sequence[tuple[str, str, EntityId]],
+) -> None:
+    """Persist one M8D ``entity_research_result`` for ``account_id`` carrying ``fields``.
+
+    ``fields`` is ``(field_key, subject_type, target_entity_id)`` — the shape
+    ``entity_research_tools._flatten_result_fields`` produces, where an **account** result also
+    carries every contact subject the account research discovered. Reproducing that mixed shape is
+    the whole point: the coverage read must report only the account's own unresolved fields.
+
+    The FK chain is written directly rather than driven through the governed tool invoker: what is
+    under test is a read predicate over these rows, and R4's own suite owns proving the writer.
+    """
+    launch = await _launch_research_job(conn, project_id=project_id, account_id=account_id)
+    ids = {name: uuid.uuid4() for name in ("turn", "execution", "event", "request", "observation")}
+    result_id = uuid.uuid4()
+    operation_ref = f"provider-op:{result_id}"
+    artifact_sha = f"{result_id.hex}{result_id.hex}".ljust(64, "0")[:64]
+    # ``artifact_key_encodes_scope``: the storage key IS ``{workspace}/{content_sha256}``.
+    artifact_key = f"{_WS}/{artifact_sha}"
+    context = {
+        "agent_execution_id": str(ids["execution"]),
+        "agent_turn_id": str(ids["turn"]),
+        "role": "account",
+        "subject_type": "account",
+        "subject_entity_id": str(account_id),
+        "job_id": str(launch["job_id"]),
+        "research_run_id": str(launch["research_run_id"]),
+        "workspace_id": _WS,
+        "project_id": launch["project_id"],
+        "product_id": launch["product_id"],
+        "project_run_id": str(launch["project_run_id"]),
+        "checkpoint_thread_id": f"checkpoint:{launch['research_run_id']}:{account_id}",
+        # The governed-request trigger checks every requested tool/field/source/question against
+        # what the turn admitted, so the admitted set is part of the fixture, not decoration.
+        "tool_names": ["research_entity"],
+        "admitted_field_keys": [_REQUESTED_FIELD],
+        "admitted_source_keys": ["seed_source"],
+        "field_source_authority": [{"field_key": _REQUESTED_FIELD, "source_keys": ["seed_source"]}],
+        "research_questions": ["what?"],
+    }
+    params = {
+        **{f"{name}_id": value for name, value in ids.items()},
+        "result_id": result_id,
+        "operation_ref": operation_ref,
+        "artifact_key": artifact_key,
+        "artifact_sha": artifact_sha,
+        "workspace_id": _WS,
+        "account_id": account_id,
+        "sha": "a" * 64,
+        "context": json.dumps(context),
+        "requested_field": _REQUESTED_FIELD,
+        "authority": json.dumps(context["field_source_authority"]),
+        **{key: value for key, value in launch.items() if key != "job_id"},
+        "job_id": launch["job_id"],
+    }
+    await conn.execute(
+        text(
+            "INSERT INTO artifact (storage_key, workspace_id, content_sha256, media_type, "
+            "size_bytes) VALUES (:artifact_key, :workspace_id, :artifact_sha, "
+            "'application/json', 1)"
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_agent_turn
+                (agent_turn_id, agent_execution_id, job_id, research_run_id, role, subject_type,
+                 target_entity_id, workspace_id, project_id, product_id, project_run_id,
+                 checkpoint_thread_id, context_json, context_sha256, resource_manifest_json,
+                 resource_manifest_sha256, tool_manifest_json, tool_manifest_sha256,
+                 system_prompt_sha256)
+            VALUES
+                (:turn_id, :execution_id, :job_id, :research_run_id, 'account', 'account',
+                 :account_id, :workspace_id, :project_id, :product_id, :project_run_id,
+                 :checkpoint_thread_id, CAST(:context AS jsonb), :sha, '{}'::jsonb, :sha,
+                 '[]'::jsonb, :sha, :sha)
+            """
+        ),
+        {**params, "checkpoint_thread_id": context["checkpoint_thread_id"]},
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_agent_event
+                (event_id, agent_turn_id, agent_execution_id, event_kind, tool_call_id, tool_name,
+                 tool_version, tool_input_sha256, payload_json)
+            VALUES (:event_id, :turn_id, :execution_id, 'tool_started', 'call-1', 'research_entity',
+                    1, :sha, '{}'::jsonb)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_tool_request
+                (tool_request_id, agent_turn_id, agent_execution_id, tool_event_id,
+                 raw_tool_call_id, research_run_id, job_id, subject_type, target_entity_id,
+                 workspace_id, project_id,
+                 product_id, project_run_id, tool_name, tool_version, tool_input_sha256,
+                 field_plan_ref, source_plan_ref, field_keys, source_keys, questions,
+                 budget_reservation_key, idempotency_key, field_source_authority)
+            VALUES
+                (:request_id, :turn_id, :execution_id, :event_id, 'call-1', :research_run_id,
+                 :job_id, 'account', :account_id, :workspace_id, :project_id, :product_id,
+                 :project_run_id, 'research_entity', 1, :sha, 'field-plan:1', 'source-plan:1',
+                 ARRAY[:requested_field], ARRAY['seed_source'], ARRAY['what?'],
+                 'budget:1', 'idem:1', CAST(:authority AS jsonb))
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_provider_operation
+                (operation_ref, provider_kind, workspace_id, project_id, project_run_id,
+                 subject_type, target_entity_id, source_key, request_artifact_ref, reserved_at)
+            VALUES (:operation_ref, 'seed', :workspace_id, :project_id, :project_run_id, 'account',
+                    :account_id, 'seed_source', :artifact_key, now())
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_provider_observation
+                (observation_id, tool_request_id, external_workspace_id, disposition,
+                 provider_operation_ref)
+            VALUES (:observation_id, :request_id, :workspace_id, 'caused', :operation_ref)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_result
+                (result_id, tool_request_id, provider_observation_id, workspace_id, subject_type,
+                 target_entity_id, result_artifact_key, result_sha256, delivery,
+                 requested_field_keys, provider_operation_ref, provider_snapshot_ref)
+            VALUES (:result_id, :request_id, :observation_id, :workspace_id, 'account',
+                    :account_id, :artifact_key, :sha, 'inline_complete',
+                    ARRAY[:requested_field], :operation_ref, 'snapshot:1')
+            """
+        ),
+        params,
+    )
+    for ordinal, (field_key, subject_type, target_entity_id) in enumerate(fields):
+        await conn.execute(
+            text(
+                """
+                INSERT INTO entity_research_result_field
+                    (result_id, ordinal, field_key, outcome, claim_delta, workspace_id,
+                     verification_status, subject_type, target_entity_id, parent_account_id)
+                VALUES (:result_id, :ordinal, :field_key, 'unsupported', 'none', :workspace_id,
+                        'unverified', :subject_type, :target_entity_id, :parent_account_id)
+                """
+            ),
+            {
+                **params,
+                "ordinal": ordinal,
+                "field_key": field_key,
+                "subject_type": subject_type,
+                "target_entity_id": target_entity_id,
+                "parent_account_id": None if subject_type == "account" else account_id,
+            },
+        )
 
 
 class _Fixture:
@@ -736,6 +989,100 @@ def test_coverage_counts_the_fields_the_account_actually_holds() -> None:
             # employee_count, revenue_band, scoring.fit, scoring.intent, value_narrative, insight
             assert coverage["researchedFieldCount"] == 6
             assert coverage["unresolvedFieldKeys"] == []
+
+    run_async(scenario())
+
+
+def test_coverage_reports_only_the_accounts_own_unresolved_fields() -> None:
+    """An **account** research result also carries the fields of every contact subject it
+    discovered (``_flatten_result_fields`` folds ``discovered_subjects`` into the account's result
+    row). A coverage read that filtered on the *result*'s subject alone would report a contact's
+    unsupported field as the account's — and it could never clear, because answering it writes a
+    contact claim that never enters this account's held-key set.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            subject = await _account(conn, name="Coverage", domain="coverage.test")
+            await ensure_project_account(
+                conn,
+                workspace_id=_WS,
+                project_id=fixture.project_a.project_id,
+                account_entity_id=subject,
+                added_via="manual",
+            )
+            contact = await insert_contact_entity(
+                conn,
+                account_entity_id=subject,
+                full_name="Discovered Person",
+                linkedin_url="https://linkedin.com/in/discovered-person",
+                status=AccountStatus.ACTIVE,
+            )
+            await _plant_research_result_fields(
+                conn,
+                account_id=subject,
+                project_id=fixture.project_a.project_id,
+                fields=(
+                    (_REQUESTED_FIELD, "account", subject),
+                    ("contact.current_title", "contact", contact),
+                ),
+            )
+
+            coverage = (await _get(conn, subject)).json()["coverage"]
+            assert coverage["unresolvedFieldKeys"] == [_REQUESTED_FIELD]
+            assert "contact.current_title" not in coverage["unresolvedFieldKeys"]
+
+    run_async(scenario())
+
+
+def test_an_unresolved_field_clears_once_the_account_holds_a_claim_for_it() -> None:
+    """``unresolvedFieldKeys`` is a live gap report, not a scar: a field research once failed on
+    is not unresolved after it is answered."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            subject = await _account(conn, name="Healed", domain="healed.test")
+            await _plant_research_result_fields(
+                conn,
+                account_id=subject,
+                project_id=fixture.project_a.project_id,
+                fields=((_REQUESTED_FIELD, "account", subject),),
+            )
+            assert (await _get(conn, subject)).json()["coverage"]["unresolvedFieldKeys"] == [
+                _REQUESTED_FIELD
+            ]
+
+            await _account_claim(
+                conn,
+                account_id=subject,
+                field_key=_REQUESTED_FIELD,
+                value={"round": "series_b", "amount_usd": 42000000},
+                run_id=await _run(conn, kind="enrichment", project_id=None),
+            )
+            assert (await _get(conn, subject)).json()["coverage"]["unresolvedFieldKeys"] == []
+
+    run_async(scenario())
+
+
+def test_a_deactivated_relative_field_keeps_its_species() -> None:
+    """Species is a property of the *declaration*, not of activation: deactivating a
+    ``project_relative`` pack field must not migrate its existing claims out of their project
+    section and into ``neutralFacts`` — a bucket change with no data change."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            await conn.execute(
+                text("UPDATE field_definition SET active = false WHERE field_key = :key"),
+                {"key": _INSIGHT_FIELD},
+            )
+            payload = (await _get(conn, fixture.acme)).json()
+
+            assert _INSIGHT_FIELD not in _facts(payload)
+            section_a = _sections(payload)[fixture.project_a.project_id]
+            assert _values(section_a["insights"]) == ["insight for A"]
 
     run_async(scenario())
 
