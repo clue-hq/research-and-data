@@ -11,7 +11,8 @@ What lives here (M2.1):
 
 * **writes** — :func:`insert_account_entity`, :func:`insert_contact_entity` (normalizing strong
   keys + building the normalized match-key index), :func:`update_account` (the canonicalization
-  write M2.2/M2.3 drive), :func:`set_status`, :func:`mark_merged`.
+  write M2.2/M2.3 drive), :func:`enrich_account` (its conservative, gap-filling half — what a *new
+  sighting* of an account that already exists may change), :func:`set_status`, :func:`mark_merged`.
 * **reads** — :func:`get_account`, :func:`get_contact`, :func:`get_entity`, and
   :func:`resolve_alias` (exact strong-key / normalized-alias lookup — *fuzzy is M2.2*).
 * **merge-chain** — :func:`surviving_id` follows a ``merged_into`` chain to the live survivor in one
@@ -29,6 +30,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from sqlalchemy import ARRAY, String, Text, bindparam, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -288,14 +290,21 @@ async def update_account(
     primary_domain: str | None = None,
     add_aliases: Sequence[str] = (),
     add_registry_ids: Mapping[str, str] | None = None,
+    hq_geo: Mapping[str, object] | None = None,
 ) -> None:
     """The canonicalization write (M2.2 chooses, M2.3 applies): union new aliases / registry ids and
-    optionally set a better canonical_name / primary_domain on the *survivor*.
+    optionally set a better canonical_name / primary_domain / hq_geo on the *survivor*.
 
     Aliases are unioned into the normalized match index; registry ids are canonicalized and merged
     (the survivor's existing values win on key collision — its already-resolved id is
     authoritative). ``updated_at`` is bumped. Entity rows are mutable (unlike append-only claims);
     this is the sanctioned mutation path.
+
+    Every column this writes participates in the ``account_entity_bump_canonical_version`` trigger,
+    so ``canonical_version`` advances **iff** one of them actually changes — a call whose values are
+    already stored touches only ``updated_at`` and leaves the durable revision alone. Callers that
+    care about not bumping (:func:`enrich_account`) therefore only have to avoid passing a no-op
+    ``add_aliases`` (the array is rewritten set-wise, and set order is not stable).
     """
     sets = ["updated_at = now()"]
     params: dict[str, object] = {"id": entity_id}
@@ -306,6 +315,9 @@ async def update_account(
     if primary_domain is not None:
         sets.append("primary_domain = :primary_domain")
         params["primary_domain"] = registrable_domain(primary_domain)
+    if hq_geo is not None:
+        sets.append("hq_geo = CAST(:hq_geo AS jsonb)")
+        params["hq_geo"] = serialize_value_json(dict(hq_geo))
     new_keys = _match_keys("", add_aliases) if add_aliases else []
     if new_keys:
         # Append only the keys not already present (array union, de-duplicated).
@@ -322,6 +334,113 @@ async def update_account(
         # text[] || text[] requires matching element types (varchar[] would not match the column).
         stmt = stmt.bindparams(bindparam("new_keys", type_=ARRAY(Text())))
     await conn.execute(stmt, params)
+
+
+async def _strong_key_is_free(
+    conn: AsyncConnection, sql: str, params: Mapping[str, object]
+) -> bool:
+    """Is a workspace-scoped strong key unheld by any *other* account? (the pre-check that lets an
+    enrichment skip a fill instead of raising into its caller's transaction)."""
+    return (await conn.execute(text(sql), dict(params))).first() is None
+
+
+_DOMAIN_HELD = (
+    "SELECT 1 FROM account_entity "
+    "WHERE workspace_id = :ws AND primary_domain = :domain AND id <> :id LIMIT 1"
+)
+_REGISTRY_HELD = (
+    "SELECT 1 FROM account_entity "
+    "WHERE workspace_id = :ws AND registry_ids->>:ns = :value AND id <> :id LIMIT 1"
+)
+
+
+async def enrich_account(
+    conn: AsyncConnection,
+    entity_id: EntityId,
+    *,
+    workspace_id: str,
+    primary_domain: str | None = None,
+    add_aliases: Sequence[str] = (),
+    add_registry_ids: Mapping[str, str] | None = None,
+    hq_geo: Mapping[str, object] | None = None,
+) -> bool:
+    """Fold a *new sighting's* identifiers into an account that already exists (FI-2 §8.2-H2).
+
+    The conservative half of :func:`update_account`: an observation that resolves onto an existing
+    account is evidence about that account, so its aliases and registry ids are absorbed and its
+    ``primary_domain`` / ``hq_geo`` fill a **gap** — but nothing the survivor already asserts is
+    overwritten, and ``canonical_name`` is never touched (renaming an account on a sighting is a
+    canonicalization decision, and canonicalization only happens on a confirmed merge).
+
+    Precisely: ``aliases`` ∪ new keys; ``registry_ids`` ∪ new namespaces (**survivor wins** on a
+    namespace it already holds); ``primary_domain`` / ``hq_geo`` set only when the survivor's is
+    ``NULL``. A strong key another account of this workspace already holds is **skipped**, not
+    written — the sighting is enriching, not re-keying, and a unique-index violation must never
+    abort the caller's ingest. The write runs in a ``SAVEPOINT`` so the race the pre-check cannot
+    close (a concurrent writer taking the key in between) degrades to the same skip.
+
+    Returns whether anything was written. Nothing to add → **no UPDATE at all**, so a repeated
+    sighting leaves ``canonical_version`` (C7 view identity) exactly where it was.
+    """
+    survivor = await get_account(conn, entity_id)
+    if survivor is None or survivor.merged_into is not None:
+        return False  # a merged loser is a redirect; enrich its survivor, not it
+    if survivor.workspace_id != workspace_id:
+        # Unreachable through resolution (every candidate query is workspace-scoped), so reaching
+        # it means a caller crossed tenancy by hand — refuse loudly rather than write.
+        raise CrossWorkspaceMergeError(
+            f"cannot enrich account {entity_id} of workspace {survivor.workspace_id!r} "
+            f"from an observation resolved in {workspace_id!r}"
+        )
+
+    aliases = tuple(alias for alias in add_aliases if alias and alias.strip())
+    # The stored column is the normalized match index, so "new" is measured in keys, not strings.
+    # Passing aliases that fold to keys already present would rewrite the array set-wise (order is
+    # not stable) and bump canonical_version for no identity change.
+    if not set(_match_keys("", aliases)) - set(survivor.aliases):
+        aliases = ()
+
+    registry: dict[str, str] = {}
+    for namespace, value in _registry_map(add_registry_ids).items():
+        if namespace in survivor.registry_ids:
+            continue  # survivor wins: its already-resolved id is authoritative
+        if await _strong_key_is_free(
+            conn,
+            _REGISTRY_HELD,
+            {"ws": workspace_id, "ns": namespace, "value": value, "id": entity_id},
+        ):
+            registry[namespace] = value
+
+    domain: str | None = None
+    if survivor.primary_domain is None and primary_domain:
+        folded = registrable_domain(primary_domain)
+        if folded and await _strong_key_is_free(
+            conn, _DOMAIN_HELD, {"ws": workspace_id, "domain": folded, "id": entity_id}
+        ):
+            domain = folded
+
+    geo = dict(hq_geo) if hq_geo is not None and survivor.hq_geo is None else None
+
+    if not (aliases or registry or domain or geo):
+        return False
+    try:
+        async with conn.begin_nested():
+            await update_account(
+                conn,
+                entity_id,
+                primary_domain=domain,
+                add_aliases=aliases,
+                add_registry_ids=registry,
+                hq_geo=geo,
+            )
+    except IntegrityError:
+        # A concurrent writer took a strong key between the pre-check and this write. The savepoint
+        # is rolled back; retry with only the fields no unique index guards.
+        if not (aliases or geo):
+            return False
+        async with conn.begin_nested():
+            await update_account(conn, entity_id, add_aliases=aliases, hq_geo=geo)
+    return True
 
 
 async def set_status(

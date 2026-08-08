@@ -55,6 +55,7 @@ from clue_research.claimstore import (
 from clue_research.identity.canonicalize import plan_merge
 from clue_research.identity.embedding import DEFAULT_EMBEDDER, Embedder, embed_account
 from clue_research.identity.entities import (
+    enrich_account,
     get_account,
     insert_account_entity,
     mark_merged,
@@ -356,6 +357,45 @@ async def auto_merge(
     return await _do()
 
 
+# --- enrichment on a strong-key match ---------------------------------------
+async def enrich_survivor(
+    conn: AsyncConnection,
+    *,
+    survivor_id: EntityId,
+    observation: Observation,
+    workspace_id: str,
+) -> bool:
+    """Fold what a new sighting knows into the account it auto-merged onto (FI-2 §8.2-H2).
+
+    An auto-merge with no ``subject_entity_id`` has no loser entity to canonicalize from — the
+    observation *is* the loser — so before this the whole sighting was thrown away: an import row
+    matching an existing account by domain contributed neither its alias nor a registry id the
+    account lacked, and the same row re-imported forever re-learned nothing.
+
+    This is the deliberately conservative counterpart to :func:`auto_merge`'s ``plan_merge``: the
+    survivor gains aliases / registry namespaces it lacks and fills an empty
+    ``primary_domain`` / ``hq_geo``, and never gives up a value it already asserts (including its
+    ``canonical_name`` — a merge may rename, an observation may not). Accounts only: a contact
+    sighting has no equivalent gap-fill contract yet (committee canonicalization is M8).
+
+    Returns whether the survivor changed. Runs in the caller's transaction, so the enrichment
+    commits with the disposition audit row that justifies it, or not at all.
+    """
+    if observation.entity_type is not EntityType.ACCOUNT:
+        return False
+    return await enrich_account(
+        conn,
+        survivor_id,
+        workspace_id=workspace_id,
+        primary_domain=observation.domain,
+        # The observation's own name is an alias of the account it resolved to — that is exactly
+        # what a future name-only sighting needs to hit (the ``alias_overlap`` arm, FI-2 §1.2-H1).
+        add_aliases=(observation.name, *observation.aliases),
+        add_registry_ids=observation.registry_ids,
+        hq_geo=observation.geo,
+    )
+
+
 # --- the disposition band policy --------------------------------------------
 async def disposition(
     conn: AsyncConnection,
@@ -374,7 +414,9 @@ async def disposition(
 
     * ``top_score ≥ auto_merge_threshold`` → **auto-merge**: the observation resolves to the top
       candidate; if a ``subject_entity_id`` was pre-admitted (e.g. an import row), it is merged into
-      the survivor. Returns the survivor id.
+      the survivor. With no pre-admitted subject the observation itself is the loser, so
+      :func:`enrich_survivor` folds its aliases / registry ids / gap-filling domain+geo into the
+      survivor (FI-2 §8.2-H2) — a sighting is evidence, not a discard. Returns the survivor id.
     * mid-band → **review**: exactly one ``open`` task is enqueued; **no entity is mutated**. The
       caller's ``project_id`` (FI-2 P1) rides the task, so the human resolution can join the
       resulting account to the project this admission was serving.
@@ -406,6 +448,16 @@ async def disposition(
                 workspace_id=workspace_id,
             )
         else:
+            # No loser entity exists (the observation is the loser), so ``auto_merge``'s
+            # canonicalization has nothing to run on — FI-2 §8.2-H2 folds the sighting's own
+            # identifiers into the survivor instead, in this same transaction. Conservative and
+            # gap-filling: see :func:`enrich_survivor`.
+            await enrich_survivor(
+                conn,
+                survivor_id=survivor,
+                observation=observation,
+                workspace_id=workspace_id,
+            )
             await record_disposition(
                 conn,
                 entity_type=entity_type,
