@@ -127,6 +127,12 @@ def frontend_read_workspace_resolver(
     return x_workspace_id
 
 
+#: How an endpoint *receives* the workspace the router already enforces. The router-level
+#: ``dependencies=[…]`` guarantees the header is present; FastAPI caches the resolver per request,
+#: so declaring it again here costs nothing and cannot diverge from the enforced value.
+WorkspaceDep = Annotated[str, Depends(frontend_read_workspace_resolver)]
+
+
 def request_id(request: Request) -> str:
     """The request's id — the middleware's value, or one generated on first read.
 
@@ -191,7 +197,7 @@ def build_frontend_read_router(*, settings: Settings, conn_factory: ConnFactory)
 
     Every slice-1 endpoint (Tasks 2–4) registers here and inherits the workspace dependency, so
     tenant scoping cannot be forgotten route-by-route. ``conn_factory`` is the connection seam those
-    readers bind to; Task 1 registers no scoped route yet.
+    readers bind to.
     """
 
     router = APIRouter(
@@ -201,7 +207,11 @@ def build_frontend_read_router(*, settings: Settings, conn_factory: ConnFactory)
     )
     if not settings.frontend_read_enabled:
         return router
-    _ = conn_factory
+    # Imported here, not at module scope: the endpoint modules import ``WorkspaceDep`` from this
+    # one, so a top-level import would be circular.
+    from clue_api.frontend_read.accounts_list import register_accounts_list_routes
+
+    register_accounts_list_routes(router, conn_factory=conn_factory)
     return router
 
 

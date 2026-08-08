@@ -9,9 +9,13 @@ junction's whole write/read surface:
   site calls inside its own transaction. **The first add wins for a given account**:
   ``added_via``/``added_at`` record the first channel and time that *this* account joined the
   project, so a later add through another channel is a no-op on the row.
-* :func:`projects_for_accounts` — the account-first read behind the frontend account row's
+* :func:`memberships_for_accounts` — the account-first read behind the frontend account row's
   ``projects[]``; ordered ``added_at`` ascending, so element 0 is the recorded ``primaryProjectId``
-  policy (earliest membership), not an ``ORDER BY created_at DESC`` guess.
+  policy (earliest membership), not an ``ORDER BY created_at DESC`` guess. It returns the whole
+  ``(project_id, added_via, added_at)`` triple, which is what the read layer renders.
+* :func:`projects_for_accounts` — the same read projected to project ids only, for the callers that
+  need nothing else. It *delegates* to :func:`memberships_for_accounts` rather than issuing its own
+  query, so the element-0-is-primary ordering policy lives in exactly one place.
 * :func:`accounts_for_project` — the project-first read behind a project's target-account list.
 * :func:`repoint_project_accounts` — moves a merge loser's memberships onto the survivor. Wired
   into ``identity.mark_merged`` so it runs in the merge's own transaction and no caller has to
@@ -41,6 +45,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -48,6 +53,22 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 # Mirrors the ``project_account_added_via_check`` CHECK in migration 61b00ee9c70a (text + CHECK,
 # not a DB enum) — the test suite asserts every channel here is accepted by the constraint.
 ADDED_VIA = ("discovered", "imported", "manual", "directive")
+
+
+class ProjectMembership(BaseModel):
+    """One ``project_account`` row as a reader sees it: which project, through which channel, when.
+
+    ``added_via`` stays the raw registered channel string (one of :data:`ADDED_VIA`) rather than an
+    enum, because the CHECK — not a DB enum — is the constraint, and a read must not crash on a
+    channel a later migration adds.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    project_id: str
+    added_via: str
+    added_at: datetime
+
 
 _ENSURE = text(
     """
@@ -60,7 +81,7 @@ _ENSURE = text(
 
 _BY_ACCOUNTS = text(
     """
-    SELECT account_entity_id, project_id
+    SELECT account_entity_id, project_id, added_via, added_at
     FROM project_account
     WHERE workspace_id = :workspace_id AND account_entity_id IN :account_ids
     ORDER BY account_entity_id, added_at, project_id
@@ -126,10 +147,10 @@ async def ensure_project_account(
     )
 
 
-async def projects_for_accounts(
+async def memberships_for_accounts(
     conn: AsyncConnection, *, workspace_id: str, account_ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, tuple[str, ...]]:
-    """Map each account to its projects, oldest membership first.
+) -> dict[uuid.UUID, tuple[ProjectMembership, ...]]:
+    """Map each account to its memberships — project, channel and time — oldest membership first.
 
     Element 0 of each tuple is the account's ``primaryProjectId`` (earliest ``added_at`` — the
     recorded FI-2 §2 policy). An account with no membership (a stage-0 seed, the client entity, a
@@ -143,10 +164,27 @@ async def projects_for_accounts(
             _BY_ACCOUNTS, {"workspace_id": workspace_id, "account_ids": list(account_ids)}
         )
     ).all()
-    grouped: dict[uuid.UUID, list[str]] = defaultdict(list)
-    for account_entity_id, project_id in rows:
-        grouped[account_entity_id].append(project_id)
-    return {account_id: tuple(projects) for account_id, projects in grouped.items()}
+    grouped: dict[uuid.UUID, list[ProjectMembership]] = defaultdict(list)
+    for account_entity_id, project_id, added_via, added_at in rows:
+        grouped[account_entity_id].append(
+            ProjectMembership(
+                project_id=str(project_id), added_via=str(added_via), added_at=added_at
+            )
+        )
+    return {account_id: tuple(memberships) for account_id, memberships in grouped.items()}
+
+
+async def projects_for_accounts(
+    conn: AsyncConnection, *, workspace_id: str, account_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, tuple[str, ...]]:
+    """:func:`memberships_for_accounts` projected to project ids — same order, same policy."""
+    grouped = await memberships_for_accounts(
+        conn, workspace_id=workspace_id, account_ids=account_ids
+    )
+    return {
+        account_id: tuple(membership.project_id for membership in memberships)
+        for account_id, memberships in grouped.items()
+    }
 
 
 async def accounts_for_project(

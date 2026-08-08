@@ -101,8 +101,8 @@ def test_neither_router_exposes_anything_by_default() -> None:
 def test_the_flag_mounts_the_probe_router() -> None:
     enabled = _settings(frontend_read_enabled=True)
     assert _probe_paths(enabled) == {("GET", f"{FRONTEND_READ_PREFIX}/health")}
-    # The scoped router is where Tasks 2-4 register; Task 1 adds no endpoint to it yet.
-    assert _scoped_paths(enabled) == set()
+    # The scoped router is where Tasks 2-4 register; Task 2 added the accounts list.
+    assert ("GET", f"{FRONTEND_READ_PREFIX}/accounts") in _scoped_paths(enabled)
 
 
 def test_flag_off_the_app_serves_no_frontend_routes() -> None:
