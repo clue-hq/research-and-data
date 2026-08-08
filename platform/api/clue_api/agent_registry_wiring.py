@@ -46,6 +46,14 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
 C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "approve_contact_research_selection": (),
     "adjust_budget": (),
+    # FI Lane D D0 / REQ-21 thread shell. Empty for now — the tools exist and are invocable by the
+    # authenticated chat surface, but no *model* surface has been given thread management yet.
+    # They are deliberately NOT in ``_HUMAN_ONLY_TOOLS``: REQ-21 anticipates an agent filing or
+    # splitting its own threads, so this is an ungranted capability, not a human-authority gate.
+    "archive_thread": (),
+    "create_thread": (),
+    "rename_thread": (),
+    "set_thread_pinned": (),
     "compose_handoff": (
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,

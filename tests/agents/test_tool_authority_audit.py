@@ -39,7 +39,13 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Every addition must have a reviewed role decision here. O2 added the account-deep launch
     # boundary; M8D R10 retires it from every active role (exact historical replay only) and
     # promotes the separately confirmed account/contact entity-research launch and read tools.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 48
+    # FI Lane D D0 added the four REQ-21 thread tools, all ungranted: they are invocable by the
+    # authenticated chat surface but sit on no model surface, and they are not human-only either.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 52
+    assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["archive_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)

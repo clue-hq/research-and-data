@@ -31,6 +31,7 @@ from pydantic import BaseModel, ValidationError
 
 import clue_obs
 from clue_agents import AgentProfileRegistry
+from clue_api.chat import PrincipalResolver, chat_workspace_resolver, install_chat_surface
 from clue_api.frontend_read import (
     frontend_read_workspace_resolver,
     install_frontend_read_surface,
@@ -733,6 +734,7 @@ def create_projections_app(
     research_view_owner_references: ProductionOwnerReferenceResolver | None = None,
     startup_check: Callable[[], Awaitable[None]] | None = None,
     discovery_webhook_router: APIRouter | None = None,
+    chat_principal_resolver: PrincipalResolver | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -740,6 +742,8 @@ def create_projections_app(
     C5.1 journaled invocation boundary. ``conn_factory`` is the connection seam every projection
     read + tool precondition + stream-token write uses (tests bind a savepoint-scoped factory).
     ``workspace_resolver`` / ``actor_resolver`` swap the auth seams via ``dependency_overrides``.
+    ``chat_principal_resolver`` injects Lane B's authenticated ``RequestPrincipal`` into the chat
+    surface; without one, the surface may only run under ``local_header`` auth mode.
     ``sse_live_tail=False`` makes the SSE stream replay-then-close (deterministic for tests);
     production leaves it ``True`` (an open live stream)."""
     resolved = settings if settings is not None else load_settings()
@@ -764,11 +768,23 @@ def create_projections_app(
     # unconfigured deployment is byte-identical to the pre-FI-2 app.
     install_frontend_read_surface(app, settings=resolved, conn_factory=conn_factory)
 
+    # FI Lane D D0: the `/api/v1` chat surface — REQ-21's thread shell. Default-off flag; enabled
+    # outside local_header auth mode it demands an injected Lane B principal resolver and refuses
+    # to start without one.
+    install_chat_surface(
+        app,
+        settings=resolved,
+        conn_factory=conn_factory,
+        tool_invoker=tool_invoker,
+        principal_resolver=chat_principal_resolver,
+    )
+
     if workspace_resolver is not None:
         app.dependency_overrides[header_workspace_resolver] = workspace_resolver
         app.dependency_overrides[ingestion_header_workspace_resolver] = workspace_resolver
         app.dependency_overrides[research_workspace_resolver] = workspace_resolver
         app.dependency_overrides[frontend_read_workspace_resolver] = workspace_resolver
+        app.dependency_overrides[chat_workspace_resolver] = workspace_resolver
     if actor_resolver is not None:
         app.dependency_overrides[header_actor_resolver] = actor_resolver
         app.dependency_overrides[ingestion_header_actor_resolver] = actor_resolver

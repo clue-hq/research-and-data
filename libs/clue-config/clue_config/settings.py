@@ -306,6 +306,24 @@ class Settings(BaseSettings):
     # Env: ``CLUE_FRONTEND_CORS_ALLOW_ORIGINS``.
     frontend_cors_allow_origins: Annotated[tuple[str, ...], NoDecode] = ()
 
+    # --- FI Lane D production chat surface --------------------------------------------------
+    # One default-off gate over the whole ``/api/v1`` chat router (REQ-21's thread shell today;
+    # turns, gates, and the token stream in later slices). Off means the routes are never
+    # registered and a request 404s exactly as it does today. Same posture as the two blocks
+    # above: activation is a deployment decision, rollback disables routes only — the durable
+    # ``agent_thread`` rows stay readable after reactivation.
+    # Env: ``CLUE_CHAT_ENABLED``.
+    chat_enabled: bool = False
+    # The internal ids the **development** principal carries while Lane B's real authentication
+    # (B2/B3) is in flight. They are Clue-owned placeholders — a ``platform_user.user_id`` and a
+    # ``workspace_membership.membership_id`` shape — never a provider (Clerk) value, and they are
+    # readable only when ``projections_auth_mode='local_header'``; a production process refuses
+    # the dev principal outright rather than trusting these. Point them at real B1 rows once the
+    # internal identity substrate lands.
+    # Env: ``CLUE_CHAT_DEV_PRINCIPAL_USER_ID`` / ``CLUE_CHAT_DEV_PRINCIPAL_MEMBERSHIP_ID``.
+    chat_dev_principal_user_id: str = "usr_local_dev"
+    chat_dev_principal_membership_id: str = "wsm_local_dev"
+
     # --- local Clue Trial canary ------------------------------------------------------------
     # The Sumble-only founder acceptance surface is never part of the default production app.
     # It must be enabled explicitly and binds to loopback by default. Env:

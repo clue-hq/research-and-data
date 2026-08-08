@@ -111,6 +111,7 @@ from clue_api.sumble_account_gaps import (
     SumbleAccountGapEligibilityError,
     SumbleAccountGapResult,
 )
+from clue_api.thread_wiring import register_thread_tools
 from clue_api.tool_outputs import (
     AccountDeepLaunchOutput,
     AccountGapEnrichmentOutput,
@@ -2774,6 +2775,10 @@ def build_toolbelt(
     )
     registry.register(SubmitIngestionTool(ingestion_engine), make_default=True)
     registry.register(RetryIngestionTool(ingestion_engine), make_default=True)
+    # FI Lane D D0 / REQ-21: thread CRUD is a governed tool set like everything else that mutates
+    # durable state (Doc A — the toolbelt is the only write path), registered from its own wiring
+    # module per the chokepoint protocol.
+    register_thread_tools(registry, conn_factory=conn_factory)
     for tool in stage0_tools(
         conn_factory=conn_factory,
         policy=DEFAULT_STAGE0_POLICY,
