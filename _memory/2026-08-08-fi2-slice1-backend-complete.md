@@ -110,3 +110,18 @@ three-item `public_appearances`; the "no facets at all" zero case moved to `mask
   C6 re-pin, hq_geo owner, workspace research_scope NOT NULL, logoPath carve-out confirmation.
 - Lane demarcation registry (127b626b) acknowledged: slices 2-3 + accounts frontend + accounts.md are this
   lane's reserved territory; other lanes alembic-merge against head `870fe4f2af87`.
+
+## SLICE 2 COMPLETE (C7 lineage convergence, 2026-08-08)
+
+Commits 8d491622..da1134d3 (4 mine + foreign Lane-D docs interleaved). (1) All four C7 `allowed_run_ids`
+supplier sites read ONE lineage-backed function (`runs_for_project_run` added to run_lineage.py); byte-identical
+view output where legacy supply was complete; DELIBERATE delta: M8D per-tool-call derived runs now visible to
+project_run_pinned sections (asserted two-directionally). Durable `account_run` writers self-register lineage
+at mint (ratified in-territory P2 gap closure). Sixth backfill source `committee_lineage` preserves pre-slice-0
+committee pinned claims (project-run-as-run-id leg). (2) Substrate lens-isolation proof
+(`tests/claimstore/test_lens_isolation.py`, 8 tests): project + run-level lenses split exactly; NULL-project/
+unregistered/DSAR-tombstone runs in NO lens (tombstone via the real `build_tombstone`); neutral fields serve in
+every lens with species from `resolve_research_scope`. No migration; head `870fe4f2af87`.
+C7-owner recommendations ledgered: harmonise empty-allowed_run_ids fail-open (derived) vs fail-closed (direct);
+`CurrentStatementGovernanceEvaluator` silent-empty default; `run_lineage (workspace_id, project_run_id)` index.
+No separate whole-slice review — recorded proportionality ruling (task reviews were whole-surface for this scope).
