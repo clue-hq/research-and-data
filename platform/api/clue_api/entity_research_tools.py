@@ -176,9 +176,7 @@ def convert_engine_authority_rejections[**P, R](
             return await coroutine(*args, **kwargs)
         except error_types as error:
             raise ToolException(
-                EntityResearchGovernedRejection(
-                    "engine_authority_rejection", str(error)
-                ).render()
+                EntityResearchGovernedRejection("engine_authority_rejection", str(error)).render()
             ) from error
 
     return converted

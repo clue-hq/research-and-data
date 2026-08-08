@@ -179,15 +179,12 @@ class DurableSumbleCommitteeInputResolver:
                     or job_authorization.project_run_id != project_run_id
                     or job_authorization.workspace_id != workspace_id
                     or job_authorization.selection.directive_ref != pin.directive_ref
-                    or job_authorization.selection.directive_sha256
-                    != pin.canonical_json_sha256
+                    or job_authorization.selection.directive_sha256 != pin.canonical_json_sha256
                 ):
                     raise SumbleCommitteePreparationError(
                         "R6 account job authorization differs from its pinned directive"
                     )
-                budget_authorization_ref = (
-                    f"entity-research-job:{entity_research_job_id}"
-                )
+                budget_authorization_ref = f"entity-research-job:{entity_research_job_id}"
             directive = await get_research_directive(
                 conn,
                 pin.directive_id,

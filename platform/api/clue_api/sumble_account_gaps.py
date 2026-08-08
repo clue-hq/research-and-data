@@ -21,6 +21,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
+
+# The species read is the FI-2 read layer's, imported rather than restated (it resolves through
+# ``core.resolve_research_scope`` over the effective registry) so the gap economics and the lens
+# that renders the resulting claims never disagree about what a field's species is.
+from clue_api.frontend_read.account_detail import field_species
 from clue_api.sumble_claim_materialization import (
     SumbleClaimMaterializer,
     SumbleFieldDisposition,
@@ -41,8 +46,10 @@ from clue_core import (
     ClaimId,
     EntityId,
     EntityType,
+    FreshnessState,
     ProjectPhase,
     ProjectRunId,
+    ResearchScope,
     new_account_gap_operation_id,
 )
 from clue_db import ConnFactory, transaction
@@ -346,6 +353,24 @@ async def compile_sumble_account_gap_preflight(
             icp_version=run.icp_version,
             policy=policy,
         )
+        # FI-2 §6.3 species check.  The fresh-skip below is only meaningful for a *project-neutral*
+        # field: a project-relative value is one project's answer and another project's fresh claim
+        # is never a substitute for it.  Every field in ``_SOURCE_BY_FIELD`` is a structured world
+        # fact and resolves neutral under the ratified §5.2 rule, so this is a verified invariant
+        # rather than an assumption — and it is *enforced*, not assumed, because a workspace-level
+        # registry override could declare one relative, and this preflight's economics would then
+        # silently mean the wrong thing.
+        species = await field_species(conn, workspace_id=workspace_id, field_keys=list(field_keys))
+        relative = sorted(
+            key
+            for key in field_keys
+            if species.get(key, ResearchScope.PROJECT_NEUTRAL) is not ResearchScope.PROJECT_NEUTRAL
+        )
+        if relative:
+            raise SumbleAccountGapEligibilityError(
+                "Sumble account-gap enrichment answers project-neutral world facts only; "
+                f"declared project-relative: {', '.join(relative)}"
+            )
         for field_key in field_keys:
             source_key = _SOURCE_BY_FIELD[field_key]
             definition = await get_effective_field(
@@ -378,9 +403,17 @@ async def compile_sumble_account_gap_preflight(
             elif merged.provenance.confidence < policy.low_confidence_threshold:
                 reason = AccountGapReason.LOW_CONFIDENCE
                 basis = (merged.provenance.claim_id,)
+            elif merged.freshness_state is not FreshnessState.FRESH:
+                # FI-2 §6.3(a): confidence is not currency.  A confidently-resolved fact that is
+                # past its field's TTL is exactly what a re-buy is *for* — the old code read only
+                # confidence and conflict, so it refused to refresh a fact everybody knew was
+                # expired.  The stale winner is the durable basis for the refresh.
+                reason = AccountGapReason.STALE
+                basis = (merged.provenance.claim_id,)
             else:
                 raise SumbleAccountGapEligibilityError(
-                    f"{field_key} is already confidently resolved without an open conflict"
+                    f"{field_key} is already confidently resolved, fresh, and without an open "
+                    "conflict"
                 )
             field_plans.append(
                 AccountGapFieldPlan(

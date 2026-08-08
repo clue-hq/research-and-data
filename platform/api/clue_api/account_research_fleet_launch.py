@@ -152,8 +152,7 @@ class AccountResearchFleetLauncher:
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
                 {
                     "scope": (
-                        f"account-research-launch:{request.workspace_id}:"
-                        f"{source_operation_id}"
+                        f"account-research-launch:{request.workspace_id}:{source_operation_id}"
                     )
                 },
             )
@@ -231,6 +230,27 @@ class AccountResearchFleetLauncher:
                     )
                 effective_by_account[account_id] = effective
                 pins_by_account[account_id] = effective.pin
+                # FI-2 §6.2 estimate netting — DELIBERATELY NOT DONE HERE, and the reasons are
+                # structural, not effort:
+                #
+                # 1. ``budget_cap_cents`` is a per-account *cap*, not a per-field price.  There is
+                #    no per-field decomposition to subtract a skipped field from, so "netting" it
+                #    would mean inventing a cost model the directive does not carry.
+                # 2. The same number becomes each job's ``budget_cap_cents`` below — the authority
+                #    ceiling.  A launch-time probe of ``current_values`` is a *prediction*: the
+                #    runtime re-reads the merge when the job actually plans (``state()``), and a
+                #    claim that expires in between legitimately flips back to researchable.  A
+                #    netted cap would then under-authorize a job that must research it.
+                # 3. This value is equality-checked against ``expected_estimated_cost_cents`` — the
+                #    figure a human already approved.  Any netting here must be reproduced bit-for-
+                #    bit by whatever proposed that figure, so it is a two-sided contract change,
+                #    not a local fix.
+                #
+                # The honest consequence: the estimate is a **gross ceiling**, and the fresh-skip
+                # materializes as under-spend (each job's real spend is reported on the job row and
+                # the coverage ledger explains, per field, why money was or was not spent — the
+                # ``…:existing_claim_fresh`` skip reasons).  Netting belongs with the estimate
+                # *proposal* surface when it lands, so both sides move together.
                 estimated_cost += effective.effort_policy.budget_cap_cents
             if estimated_cost != request.expected_estimated_cost_cents:
                 raise AccountResearchFleetLaunchError(
@@ -241,9 +261,7 @@ class AccountResearchFleetLauncher:
                     "approved account-fleet budget is below the reviewed estimate"
                 )
             if project_run.budget_cap_cents is not None:
-                remaining = max(
-                    Decimal(0), project_run.budget_cap_cents - project_run.spent_cents
-                )
+                remaining = max(Decimal(0), project_run.budget_cap_cents - project_run.spent_cents)
                 if request.approved_budget_cap_cents > remaining:
                     raise AccountResearchFleetLaunchError(
                         "approved account-fleet budget exceeds remaining project headroom"
@@ -350,9 +368,7 @@ class AccountResearchFleetLauncher:
 
             source_keys = tuple(
                 dict.fromkeys(
-                    source
-                    for authority in authorities
-                    for source in authority.source_keys
+                    source for authority in authorities for source in authority.source_keys
                 )
             )
             admitted_sources = (*source_keys, PEOPLE_SOURCE_KEY)
@@ -380,9 +396,7 @@ class AccountResearchFleetLauncher:
                     "approved_budget_cap_cents": request.approved_budget_cap_cents,
                     "expected_estimated_cost_cents": request.expected_estimated_cost_cents,
                     "concurrency_limit": request.concurrency_limit,
-                    "supervisor_policy_sha256": (
-                        request.supervisor_policy.policy_sha256
-                    ),
+                    "supervisor_policy_sha256": (request.supervisor_policy.policy_sha256),
                     "actor": actor,
                     "source_action_ref": source_action_ref,
                     "source_operation_id": str(source_operation_id),

@@ -80,6 +80,74 @@ class AccountResearchAuthorityError(EntityResearchGovernedToolRefusal):
     """Model-repairable account guard/engine refusal (returned to the agent, never fatal)."""
 
 
+async def existing_account_claims(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_entity_id: UUID,
+    field_keys: Sequence[str],
+) -> tuple[AccountExistingClaimProjection, ...]:
+    """What this workspace already knows about ``field_keys`` for one account (FI-2 §6.1).
+
+    One canonical-merge read (never a raw ``claim.workspace_id`` filter — the workspace scope is
+    the claimstore's own predicate) plus one species read, so the agent sees the account's current
+    truth before it plans, and every economics consumer decides "born complete?" from the same two
+    reads rather than from a private re-derivation of its own.
+    """
+
+    subject = EntityId(account_entity_id)
+    current = await current_values(
+        conn,
+        [subject],
+        field_keys,
+        scope=WorkspaceScope.for_workspace(workspace_id),
+    )
+    species = await field_species(conn, workspace_id=workspace_id, field_keys=list(field_keys))
+    return tuple(
+        AccountExistingClaimProjection(
+            field_key=key,
+            claim_ref=f"claim:{value.provenance.claim_id}",
+            value=value.value_json,
+            source_url=value.provenance.source_url,
+            source_tier=int(value.provenance.source_tier),
+            evidence_span=value.provenance.evidence_span,
+            confidence=float(value.provenance.confidence),
+            freshness_state=cast(Literal["fresh", "stale"], value.freshness_state.value),
+            conflict=value.conflict,
+            research_scope=species.get(key, ResearchScope.PROJECT_NEUTRAL).value,
+        )
+        for key in field_keys
+        if (value := current.get((subject, key))) is not None
+    )
+
+
+async def born_complete_account_field_keys(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_entity_id: UUID,
+    field_keys: Sequence[str],
+) -> frozenset[str]:
+    """The subset of ``field_keys`` no provider may be paid for (FI-2 §6.2).
+
+    The *one* borrowed-set derivation: the R5 guard (which refuses a call that would re-buy one of
+    these) and the Exa bundle compiler (which never puts one in a bundle) both read it here, so the
+    guard's "every primary Exa field" rule and the bundle's contents can never disagree about what
+    the workspace already knows.
+    """
+
+    return frozenset(
+        item.field_key
+        for item in await existing_account_claims(
+            conn,
+            workspace_id=workspace_id,
+            account_entity_id=account_entity_id,
+            field_keys=field_keys,
+        )
+        if item.born_complete
+    )
+
+
 async def read_account_committee_plan(
     conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
 ) -> AccountCommitteePlanProjection | None:
@@ -240,37 +308,13 @@ class AccountResearchStateStore:
         authorization: EntityResearchJobAuthorization,
         admitted: Sequence[str],
     ) -> tuple[AccountExistingClaimProjection, ...]:
-        """What this workspace already knows about the admitted fields (FI-2 §6.1).
+        """This job's view of :func:`existing_account_claims` over its admitted fields."""
 
-        One canonical-merge read (never a raw ``claim.workspace_id`` filter — the workspace scope
-        is the claimstore's own predicate) plus one species read, so the agent sees the account's
-        current truth before it plans, and the engine can decide which fields are born complete.
-        """
-
-        subject = EntityId(authorization.subject_entity_id)
-        workspace_id = str(authorization.workspace_id)
-        current = await current_values(
+        return await existing_account_claims(
             conn,
-            [subject],
-            admitted,
-            scope=WorkspaceScope.for_workspace(workspace_id),
-        )
-        species = await field_species(conn, workspace_id=workspace_id, field_keys=list(admitted))
-        return tuple(
-            AccountExistingClaimProjection(
-                field_key=key,
-                claim_ref=f"claim:{value.provenance.claim_id}",
-                value=value.value_json,
-                source_url=value.provenance.source_url,
-                source_tier=int(value.provenance.source_tier),
-                evidence_span=value.provenance.evidence_span,
-                confidence=float(value.provenance.confidence),
-                freshness_state=cast(Literal["fresh", "stale"], value.freshness_state.value),
-                conflict=value.conflict,
-                research_scope=species.get(key, ResearchScope.PROJECT_NEUTRAL).value,
-            )
-            for key in admitted
-            if (value := current.get((subject, key))) is not None
+            workspace_id=str(authorization.workspace_id),
+            account_entity_id=authorization.subject_entity_id,
+            field_keys=admitted,
         )
 
     async def evidence(self, inputs: InspectAccountEvidenceInput) -> dict[str, JsonValue]:
@@ -969,6 +1013,27 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
         if call.tool_name == "research_account_deep":
             if sources != {_QUALITATIVE_SOURCE}:
                 raise AccountResearchAuthorityError("qualitative account research uses Exa Deep")
+            # FI-2 §6.2: the borrowed set — admitted fields a fresh, evidence-backed,
+            # conflict-free *neutral* claim already answers.  The M8D Exa bundle is compiled
+            # straight from ``field_keys``, and Exa (unlike Sumble, whose own preflight refuses a
+            # fresh field under §6.3) has no provider-side freshness check, so this guard is the
+            # only layer that can keep the invariant "no provider is paid for a born-complete
+            # field" on the qualitative path.  It is also why the first-call rule below is stated
+            # *net* of the borrowed set: the agent sees exactly these fields as already complete
+            # in its state read, so a prompt-obedient omission must pass, not cost a turn.
+            async with self._conn_factory() as conn:
+                borrowed = await born_complete_account_field_keys(
+                    conn,
+                    workspace_id=str(context.authorization.workspace_id),
+                    account_entity_id=context.authorization.subject_entity_id,
+                    field_keys=context.authorization.selection.admitted_field_keys,
+                )
+            already_known = fields & borrowed
+            if already_known:
+                raise AccountResearchAuthorityError(
+                    "Exa account research cannot re-buy a field an existing fresh claim already "
+                    f"answers: {', '.join(sorted(already_known))}"
+                )
             exa_authority = {
                 item.field_key: item.source_keys
                 for item in context.authorization.selection.field_source_authority
@@ -978,7 +1043,7 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
                 field_key
                 for field_key, source_keys in exa_authority.items()
                 if source_keys[0] == _QUALITATIVE_SOURCE
-            }
+            } - borrowed
             async with self._conn_factory() as conn:
                 prior = int(
                     (
@@ -1392,5 +1457,7 @@ __all__ = [
     "AccountResearchFinalizationEngine",
     "AccountResearchStateStore",
     "account_engine_tool_bindings",
+    "born_complete_account_field_keys",
+    "existing_account_claims",
     "read_account_committee_plan",
 ]

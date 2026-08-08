@@ -486,9 +486,7 @@ class AccountResearchFleetService:
                     .all()
                 )
             }
-            expected_account_runs = {
-                job_id: bound_account_runs.get(job_id) for job_id in job_ids
-            }
+            expected_account_runs = {job_id: bound_account_runs.get(job_id) for job_id in job_ids}
             if observed_account_runs != expected_account_runs:
                 raise AccountResearchFleetError(
                     "account fleet replay changed exact account-run bindings"

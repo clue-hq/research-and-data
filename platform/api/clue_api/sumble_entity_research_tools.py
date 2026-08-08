@@ -34,6 +34,7 @@ from clue_api.entity_research_tools import (
     fold_rejected_operation_settlement,
 )
 from clue_api.sumble_account_gaps import (
+    SumbleAccountGapEligibilityError,
     SumbleAccountGapOutcome,
     SumbleAccountGapStarter,
 )
@@ -445,16 +446,29 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 and observation.disposition == ProviderObservationDisposition.CAUSED.value
             )
 
-        result = await self._starter.start(
-            workspace_id=self._workspace_id,
-            project_run_id=self._project_run_id,
-            account_id=self._account_id,
-            field_expected_value_credits={key: self._values[key] for key in request.field_keys},
-            provider_credit_cap=self._provider_credit_cap,
-            allow_unbounded_tech=self._allow_unbounded_tech,
-            before_dispatch=bind_sumble_before_dispatch,
-            entity_research_job_id=self._entity_research_job_id,
-        )
+        try:
+            result = await self._starter.start(
+                workspace_id=self._workspace_id,
+                project_run_id=self._project_run_id,
+                account_id=self._account_id,
+                field_expected_value_credits={key: self._values[key] for key in request.field_keys},
+                provider_credit_cap=self._provider_credit_cap,
+                allow_unbounded_tech=self._allow_unbounded_tech,
+                before_dispatch=bind_sumble_before_dispatch,
+                entity_research_job_id=self._entity_research_job_id,
+            )
+        except SumbleAccountGapEligibilityError as exc:
+            # FI-2 §6.3(b): the preflight refuses *before* any operation row or dispatch, so this
+            # is a zero-spend, zero-state refusal of the request the agent made — the model-
+            # repairable species (R10), not a job suspension.  Most often it is now the fresh-skip
+            # itself: the field the agent asked us to buy is already confidently and freshly
+            # answered.  The agent drops that field, picks another admitted source, or finalizes
+            # with an honest gap.  (The legacy toolbelt path keeps its own ``PreconditionFailed``
+            # conversion — a human-facing precondition, not an agent turn.)
+            raise EntityResearchGovernedRejection(
+                "account_gap_ineligible",
+                f"Sumble account enrichment is not eligible for this request: {exc}",
+            ) from exc
         if result.outcome is SumbleAccountGapOutcome.JOINED_IN_FLIGHT:
             raise EntityResearchProviderWait(
                 self._descriptor(
