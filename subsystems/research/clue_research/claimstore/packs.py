@@ -448,7 +448,8 @@ CORE_PACK: tuple[SeedField, ...] = (
     # resolver fact — so there is no tier_plan. `project_id` (FI-2 §6.4) is the project whose
     # checkpoint approved the tier: it rides value_json because the claim row has no project column,
     # and it is the project leg of the supersede key, so a second project's tier coexists with the
-    # first's instead of destroying it. Optional — absent on legacy (pre-§6.4) tier claims.
+    # first's instead of destroying it. Optional — absent on unstamped tier claims, an *open*
+    # class (any writer that omits it), not just pre-§6.4 history.
     _seed(
         "account.scoring.tier",
         "object",
