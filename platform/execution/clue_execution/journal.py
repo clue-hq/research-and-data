@@ -640,12 +640,6 @@ class DbInvocationJournal(InvocationJournal):
                 descriptor.version,
                 descriptor.input_schema_sha256,
                 descriptor.output_schema_sha256,
-                context.actor,
-                context.principal_kind,
-                context.workspace_id if context.principal_kind is not None else None,
-                context.actor_id,
-                context.membership_id,
-                context.action_ref,
             )
             actual_node = (
                 (
@@ -654,6 +648,16 @@ class DbInvocationJournal(InvocationJournal):
                     str(node["tool_version"]),
                     str(node["input_schema_sha256"]),
                     str(node["output_schema_sha256"]),
+                )
+                if node is not None
+                else None
+            )
+            authority_matches = node is not None and (
+                # Nodes that already had attempts when B4 landed deliberately received no
+                # authority backfill.  Their LEFT JOIN is all-NULL and is historical absence,
+                # not the string actor id ``"None"`` or a replay conflict.
+                node["invocation_actor"] is None
+                or (
                     str(node["invocation_actor"]),
                     (str(node["principal_kind"]) if node["principal_kind"] is not None else None),
                     (
@@ -662,14 +666,22 @@ class DbInvocationJournal(InvocationJournal):
                         else None
                     ),
                     str(node["actor_id"]) if node["actor_id"] is not None else None,
-                    (str(node["membership_id"]) if node["membership_id"] is not None else None),
+                    str(node["membership_id"]) if node["membership_id"] is not None else None,
                     str(node["action_ref"]) if node["action_ref"] is not None else None,
                 )
-                if node is not None
-                else None
+                == (
+                    context.actor,
+                    context.principal_kind,
+                    context.workspace_id if context.principal_kind is not None else None,
+                    context.actor_id,
+                    context.membership_id,
+                    context.action_ref,
+                )
             )
-            if actual_node != expected_node or (
-                node is not None and str(node["id"]) != str(node_id)
+            if (
+                actual_node != expected_node
+                or not authority_matches
+                or (node is not None and str(node["id"]) != str(node_id))
             ):
                 raise OperationConflict(
                     "operation id or node key was replayed with different "

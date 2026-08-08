@@ -600,6 +600,45 @@ def test_operation_conflict_and_snapshot_failure_create_no_orphan_invocation() -
     run_async(scenario())
 
 
+def test_pre_b4_node_without_authority_remains_replayable() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            workspace_id = await seed_workspace(conn, "ws-c5-pre-b4-replay")
+            tool = _JournalEcho()
+            invoker, _ = _invoker(conn, tool=tool)
+            context = _ctx(conn, workspace_id)
+            first = await invoker.invoke(tool.name, {"value": 7}, context)
+            execution_id = ExecutionId(context.operation_id)
+
+            # Reproduce a node that predates the B4 authority table: the completed operation and
+            # attempt exist, but the additive authority row does not.
+            await conn.execute(
+                text(
+                    "ALTER TABLE execution_node_authority "
+                    "DISABLE TRIGGER execution_node_authority_append_only"
+                )
+            )
+            try:
+                await conn.execute(
+                    text("DELETE FROM execution_node_authority WHERE execution_id = :execution_id"),
+                    {"execution_id": execution_id},
+                )
+            finally:
+                await conn.execute(
+                    text(
+                        "ALTER TABLE execution_node_authority "
+                        "ENABLE TRIGGER execution_node_authority_append_only"
+                    )
+                )
+            replay = await invoker.invoke(tool.name, {"value": 7}, context)
+
+            assert first.replayed is False
+            assert replay.replayed is True
+            assert tool.invocations == [7]
+
+    run_async(scenario())
+
+
 def test_cursor_rebuild_cas_rollback_and_append_only_guards() -> None:
     class _FailingTransport:
         async def append(self, conn, **kwargs) -> None:

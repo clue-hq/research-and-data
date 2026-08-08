@@ -21,14 +21,14 @@ AZP = "https://app.example.test"
 KID = "test-key"
 
 
-def _keys() -> tuple[Any, dict[str, Any]]:
+def _keys(kid: str = KID) -> tuple[Any, dict[str, Any]]:
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     jwk = jwt.algorithms.RSAAlgorithm.to_jwk(private.public_key(), as_dict=True)
-    jwk.update({"kid": KID, "alg": "RS256", "use": "sig"})
+    jwk.update({"kid": kid, "alg": "RS256", "use": "sig"})
     return private, jwk
 
 
-def _token(private: Any, **overrides: Any) -> str:
+def _token(private: Any, *, kid: str = KID, **overrides: Any) -> str:
     now = datetime.now(UTC)
     claims: dict[str, Any] = {
         "iss": ISSUER,
@@ -42,7 +42,7 @@ def _token(private: Any, **overrides: Any) -> str:
         "sts": "active",
     }
     claims.update(overrides)
-    return jwt.encode(claims, private, algorithm="RS256", headers={"kid": KID, "typ": "JWT"})
+    return jwt.encode(claims, private, algorithm="RS256", headers={"kid": kid, "typ": "JWT"})
 
 
 def _authenticator(private: Any, jwk: dict[str, Any]) -> tuple[ClerkAuthenticator, list[int]]:
@@ -140,5 +140,38 @@ def test_unknown_key_and_tampered_signature_fail_closed() -> None:
             )
 
         assert len(calls) == 1
+
+    run_async(scenario())
+
+
+def test_refresh_replaces_jwks_so_rotated_out_key_is_rejected() -> None:
+    async def scenario() -> None:
+        old_private, old_jwk = _keys("old-key")
+        _new_private, new_jwk = _keys("new-key")
+        responses = iter((old_jwk, new_jwk))
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"keys": [next(responses)]})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        authenticator = ClerkAuthenticator(
+            ClerkJwtConfig(
+                jwks_url=f"{ISSUER}/.well-known/jwks.json",
+                issuer=ISSUER,
+                audience=AUDIENCE,
+                authorized_parties=(AZP,),
+                jwks_cache_ttl_seconds=1,
+            ),
+            http_client=client,
+        )
+        token = _token(old_private, kid="old-key")
+        await authenticator.authenticate(AuthenticationRequest(authorization=f"Bearer {token}"))
+
+        # Expire the old entry without a wall-clock sleep, then make Clerk's next complete JWKS
+        # omit it. A merge cache would still accept this token after the refresh.
+        cached_at, key = authenticator._keys["old-key"]
+        authenticator._keys["old-key"] = (cached_at - 2, key)
+        with pytest.raises(SessionInvalid, match="unknown signing key"):
+            await authenticator.authenticate(AuthenticationRequest(authorization=f"Bearer {token}"))
 
     run_async(scenario())

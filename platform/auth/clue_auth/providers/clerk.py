@@ -82,11 +82,12 @@ class ClerkAuthenticator:
 
         now = asyncio.get_running_loop().time()
         self._last_refresh_at = now
-        for kid, key in loaded:
-            self._keys[kid] = (now, key)
-            self._keys.move_to_end(kid)
-        while len(self._keys) > self._config.jwks_cache_max_keys:
-            self._keys.popitem(last=False)
+        # A successful JWKS response is the provider's complete current keyset. Replacing the
+        # cache is what makes rotation-out/revocation effective; merging would retain a removed
+        # signing key forever.
+        self._keys = OrderedDict(
+            (kid, (now, key)) for kid, key in loaded[-self._config.jwks_cache_max_keys :]
+        )
 
     async def _key(self, kid: str) -> Any:
         now = asyncio.get_running_loop().time()
