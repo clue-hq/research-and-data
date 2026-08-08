@@ -41,6 +41,7 @@ from clue_core import OperationId, UtcDatetime
 
 __all__ = [
     "AgentThreadRow",
+    "ThreadOwnershipMismatch",
     "ThreadStatus",
     "create_thread",
     "ensure_platform_thread",
@@ -53,6 +54,22 @@ __all__ = [
 ]
 
 ThreadStatus = Literal["active", "archived"]
+
+
+class ThreadOwnershipMismatch(RuntimeError):
+    """A thread id resolves to a row owned by a different workspace/project than the caller's.
+
+    Typed (not a bare ``ValueError``) because callers must be able to distinguish "this turn cannot
+    be journaled — its thread belongs to somebody else" from any other write failure, and because
+    the ``reason_code`` is the stable string a surface maps to its refusal envelope. The message
+    deliberately names neither the surviving workspace nor the surviving project: a caller who
+    guessed an id must not learn whose it is.
+    """
+
+    def __init__(self, *, reason_code: str, message: str) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+
 
 _COLUMNS = (
     "id, workspace_id, project_id, created_by_user_id, created_via_membership_id, "
@@ -148,16 +165,61 @@ async def ensure_platform_thread(
     ``agent_turn (thread_id, workspace_id)`` foreign key enforceable for new writes instead of a
     constraint that would break every non-chat turn producer. These rows carry no creator: no human
     authored them, and Lane B ruling 8 forbids synthesising one.
+
+    ``ON CONFLICT (id) DO NOTHING`` alone would make a *pre-existing* thread id silently acceptable
+    no matter which project or workspace owns it, so the turn would attach itself to somebody
+    else's conversation. Hence the ``RETURNING`` + fallback read: the surviving row's
+    ``(workspace_id, project_id)`` must be the caller's, or this raises
+    :class:`ThreadOwnershipMismatch`. A cross-*workspace* collision would already fail on the turn's
+    own foreign key; a cross-*project* one inside a single workspace would not, which is precisely
+    the hole this closes.
+
+    Cost: one round trip in the common case (the insert wins and ``RETURNING`` yields the row), a
+    second only on conflict — where a read is exactly what correctness requires anyway.
     """
 
-    await conn.execute(
-        text(
-            "INSERT INTO agent_thread (id, workspace_id, project_id) "
-            "VALUES (:id, :workspace_id, :project_id) "
-            "ON CONFLICT (id) DO NOTHING"
-        ),
-        {"id": thread_id, "workspace_id": workspace_id, "project_id": project_id},
+    inserted = (
+        (
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_thread (id, workspace_id, project_id) "
+                    "VALUES (:id, :workspace_id, :project_id) "
+                    "ON CONFLICT (id) DO NOTHING "
+                    "RETURNING workspace_id, project_id"
+                ),
+                {"id": thread_id, "workspace_id": workspace_id, "project_id": project_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
     )
+    if inserted is not None:
+        return
+    surviving = (
+        (
+            await conn.execute(
+                text("SELECT workspace_id, project_id FROM agent_thread WHERE id = :id"),
+                {"id": thread_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if surviving is None:
+        # The conflicting row vanished between statements (a concurrent delete — no production
+        # path deletes threads). Nothing was written and nothing can be proved; refuse.
+        raise ThreadOwnershipMismatch(
+            reason_code="thread_owner_unresolved",
+            message=f"thread {thread_id!r} could not be provisioned or read back",
+        )
+    if surviving["workspace_id"] != workspace_id or surviving["project_id"] != project_id:
+        raise ThreadOwnershipMismatch(
+            reason_code="thread_project_mismatch",
+            message=(
+                f"thread {thread_id!r} already exists under a different owner; a turn may not "
+                "attach to a thread outside its own workspace and project"
+            ),
+        )
 
 
 async def get_thread(
