@@ -82,12 +82,18 @@ _LOCK_PREFIX = "clue:discovery-admit:"
 
 
 def membership_channel(matched_channel: str) -> str:
-    """The FI-2 ``project_account.added_via`` channel for a candidate's ``matched_channel``.
+    """The default FI-2 ``project_account.added_via`` channel for a ``matched_channel``.
 
     The gate is deliberately channel-agnostic — an imported row converges through the same path as
-    a discovered one (Doc B §4) — but membership is not: the row records *how* the account joined
-    the project, and the reserved ``import`` channel is the one entry scenario that is not
+    a discovered one (Doc B §4) — but membership is not: the row records *how the account joined
+    the project*, and the reserved ``import`` channel is the one entry scenario that is not
     discovery. One rule in one place, so every caller of :func:`admit` records the same thing.
+
+    ``matched_channel`` is the gate's **resolution-path** label, which is not always the join
+    provenance: a human typing a domain into a surface resolves through the ``import`` path (it is
+    client-supplied, tier-1 data) but joins the project as ``manual``. Such a caller passes
+    :func:`admit`'s ``added_via`` explicitly rather than bending its ``matched_channel``, which
+    would also change the claim's source tier and extraction method.
     """
     return "imported" if matched_channel == IMPORT_CHANNEL else "discovered"
 
@@ -227,6 +233,7 @@ async def _admit_resolved(
     *,
     workspace_id: str,
     project_id: str | None,
+    added_via: str | None,
     redis: Redis | None,
     resolution_policy: ResolutionPolicy,
     disposition_policy: DispositionPolicy,
@@ -245,6 +252,11 @@ async def _admit_resolved(
         policy=disposition_policy,
         redis=redis,
         workspace_id=workspace_id,
+        # FI-2 P1: a mid-band candidate admits nothing, so it cannot join the project here. The
+        # project rides the enqueued review task instead, so the human resolution can join the
+        # entity it creates or merges into — the admitting project and the membership can then
+        # never disagree, because they are the same value.
+        project_id=project_id,
         decided_by="discovery",
     )
     if decision.outcome is DispositionOutcome.ENQUEUED:
@@ -262,7 +274,7 @@ async def _admit_resolved(
             workspace_id=workspace_id,
             project_id=project_id,
             account_entity_id=entity_id,
-            added_via=membership_channel(candidate.matched_channel),
+            added_via=added_via or membership_channel(candidate.matched_channel),
         )
     return AdmissionResult(
         status=AdmissionStatus.ADMITTED,
@@ -278,6 +290,7 @@ async def admit(
     *,
     workspace_id: str,
     project_id: str | None = None,
+    added_via: str | None = None,
     redis: Redis | None = None,
     existence: ExistenceCheck = DEFAULT_EXISTENCE_CHECK,
     resolution_policy: ResolutionPolicy = DEFAULT_RESOLUTION_POLICY,
@@ -296,8 +309,15 @@ async def admit(
     joins that project's target list (``project_account``, FI-2 §2). Left ``None`` the admission is
     workspace-level and records no membership — the account is workspace-global either way (R1), so
     a projectless caller produces a real, usable account with no project claiming it. Only an
-    ``ADMITTED`` outcome joins: a ``NEEDS_REVIEW`` candidate has no entity yet, and the M2 review
-    that later resolves it carries no project context (a recorded FI-2 gap).
+    ``ADMITTED`` outcome joins here: a ``NEEDS_REVIEW`` candidate has no entity yet, so the project
+    is stamped on the enqueued review task and the human resolution joins the entity it creates or
+    merges into (``identity.resolve_merge_into`` / ``resolve_create_new_entity``).
+
+    ``added_via`` overrides the channel the membership records. It defaults to
+    :func:`membership_channel` over the candidate's ``matched_channel`` — pass it only when the
+    resolution path and the join provenance genuinely differ (a hand-typed account resolves through
+    the ``import`` path but joins as ``manual``). An unknown value is refused by
+    ``ensure_project_account`` before any statement is issued.
     """
     verdict = await existence.check(candidate)
     if not verdict.exists:
@@ -323,6 +343,7 @@ async def admit(
                 run_id,
                 workspace_id=workspace_id,
                 project_id=project_id,
+                added_via=added_via,
                 redis=redis,
                 resolution_policy=resolution_policy,
                 disposition_policy=disposition_policy,
@@ -335,6 +356,7 @@ async def admit(
         run_id,
         workspace_id=workspace_id,
         project_id=project_id,
+        added_via=added_via,
         redis=redis,
         resolution_policy=resolution_policy,
         disposition_policy=disposition_policy,

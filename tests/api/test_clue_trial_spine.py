@@ -257,8 +257,9 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
             ).scalar_one()
         assert unattributed == 0
         # FI-2 P1 (spec §2): the human-added trial account is a target of the trial's project, and
-        # the admission recorded it. The candidate declares the reserved ``import`` channel, so the
-        # membership channel is 'imported'.
+        # the admission recorded it. ``added_via`` records *how the account joined the project* — a
+        # human typing a domain is the 'manual' channel. The candidate's reserved ``import``
+        # matched_channel is the gate's resolution-path label, not join provenance.
         async with transaction() as conn:
             assert await accounts_for_project(
                 conn, workspace_id=state.workspace_id, project_id=state.project_id
@@ -278,7 +279,7 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
                         "account_id": account_id,
                     },
                 )
-            ).scalar_one() == "imported"
+            ).scalar_one() == "manual"
         # The paid organization attribute is written as a real, evidence-backed value — not an
         # empty account produced by a silently discarded match.
         headcount = by_field["core.employee_count"]

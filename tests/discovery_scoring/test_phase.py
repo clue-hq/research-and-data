@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    EntityId,
     ICPCreatedFrom,
     PhaseContext,
     PhaseStatus,
@@ -73,6 +74,15 @@ async def _count_accounts(conn: AsyncConnection) -> int:
     return int((await conn.execute(text("SELECT count(*) FROM account_entity"))).scalar_one())
 
 
+async def _admitted_account_ids(conn: AsyncConnection, workspace_id: str) -> set[EntityId]:
+    """Every account the workspace holds — the ids the phase's admissions created."""
+    rows = await conn.execute(
+        text("SELECT id FROM account_entity WHERE workspace_id = :workspace"),
+        {"workspace": workspace_id},
+    )
+    return {EntityId(value) for value in rows.scalars()}
+
+
 async def _count_provenance(conn: AsyncConnection) -> int:
     return int(
         (
@@ -107,14 +117,17 @@ def test_discovery_phase_discovers_admits_and_records_yield() -> None:
             assert result.payload["rejected"] == 0
             assert await _count_accounts(conn) == 2
             assert await _count_provenance(conn) == 2
-            # FI-2 P1 (spec §2): both admitted accounts joined the phase's project as targets.
+            # FI-2 P1 (spec §2): both admitted accounts — those exact ids, not merely that many —
+            # joined the phase's project as targets.
+            admitted = await _admitted_account_ids(conn, ctx.workspace_id)
+            assert len(admitted) == 2
             assert (
-                len(
+                set(
                     await accounts_for_project(
                         conn, workspace_id=ctx.workspace_id, project_id=ctx.project_id
                     )
                 )
-                == 2
+                == admitted
             )
             # per-channel discovery yield landed in the shared telemetry (counts in the jsonb hook)
             raw = (
@@ -150,14 +163,14 @@ def test_discovery_phase_replay_is_idempotent() -> None:
             assert second.payload["admitted"] == 1  # re-admits to the same entity
             assert await _count_accounts(conn) == 1  # no duplicate entity
             assert await _count_provenance(conn) == 1  # no duplicate provenance claim
-            assert (
-                len(
-                    await accounts_for_project(
-                        conn, workspace_id=ctx.workspace_id, project_id=ctx.project_id
-                    )
+            admitted = await _admitted_account_ids(conn, ctx.workspace_id)
+            assert len(admitted) == 1
+            # exactly the re-admitted entity, once — the replay adds no second membership
+            assert tuple(
+                await accounts_for_project(
+                    conn, workspace_id=ctx.workspace_id, project_id=ctx.project_id
                 )
-                == 1  # no duplicate membership on replay
-            )
+            ) == tuple(admitted)
 
     run_async(_run())
 

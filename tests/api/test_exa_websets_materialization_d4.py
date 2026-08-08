@@ -807,15 +807,24 @@ def test_d4_persists_identity_review_lineage_and_blocks_batch(tmp_path: Path) ->
             admitted_id = await resolve_create_new_entity(
                 conn, link.review_task_id, resolved_by="d4-test-reviewer"
             )
-            # The M2 review itself carries no project context (``identity_review_task`` has only a
-            # workspace), so resolving it writes no membership. The batch's resumed materialization
-            # is what re-joins the resolved entity to the project — asserted after the resume.
-            assert (
-                await projects_for_accounts(
-                    conn, workspace_id=workspace_id, account_ids=[admitted_id]
+            # The admission stamped the batch's project on the review task (FI-2 P1), so the human
+            # resolution joins the entity it created — membership lands here, before the resume.
+            assert await accounts_for_project(
+                conn, workspace_id=workspace_id, project_id=batch_project_id
+            ) == (admitted_id,)
+            membership_after_resolution = (
+                await conn.execute(
+                    text(
+                        "SELECT added_via, added_at FROM project_account WHERE workspace_id = :ws "
+                        "AND project_id = :project AND account_entity_id = :account"
+                    ),
+                    {
+                        "ws": workspace_id,
+                        "project": batch_project_id,
+                        "account": admitted_id,
+                    },
                 )
-                == {}
-            )
+            ).one()
             resumed = await ExaWebsetsD4Materializer(
                 storage=storage,
                 conn_factory=conn_session_factory(conn),
@@ -836,10 +845,25 @@ def test_d4_persists_identity_review_lineage_and_blocks_batch(tmp_path: Path) ->
             assert terminal_link.account_entity_id == admitted_id
             assert terminal_link.survivor_entity_id == admitted_id
             assert terminal_link.review_task_id == link.review_task_id
-            # The resumed materialization joins the review-resolved entity to the batch's project.
+            # The resumed materialization runs its own ensure over the same account. Two
+            # independent paths, one membership: first-add-wins makes the second a no-op, so the
+            # row keeps the resolution's channel and added_at rather than being re-added later.
             assert await accounts_for_project(
                 conn, workspace_id=workspace_id, project_id=batch_project_id
             ) == (admitted_id,)
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT added_via, added_at FROM project_account WHERE workspace_id = :ws "
+                        "AND project_id = :project AND account_entity_id = :account"
+                    ),
+                    {
+                        "ws": workspace_id,
+                        "project": batch_project_id,
+                        "account": admitted_id,
+                    },
+                )
+            ).one() == membership_after_resolution
             counts_before_terminal_replay = await _workspace_table_counts(conn, workspace_id)
             terminal_replay = await service.materialize(
                 workspace_id=workspace_id, batch_id=batch_id

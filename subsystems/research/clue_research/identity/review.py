@@ -63,6 +63,7 @@ from clue_research.identity.entities import (
 )
 from clue_research.identity.policy import DEFAULT_DISPOSITION_POLICY, DispositionPolicy
 from clue_research.identity.resolve import Observation, ResolutionResult
+from clue_research.membership import ensure_project_account
 
 
 class MergeConflictError(ValueError):
@@ -132,6 +133,9 @@ class ReviewTask(BaseModel):
     proposed_action: str
     subject_entity_id: EntityId | None
     workspace_id: str | None
+    # FI-2 P1: the project the admitting caller was discovering for. NULL = a projectless
+    # (workspace-level) admission, or a task enqueued before the column existed.
+    project_id: str | None = None
     status: ReviewStatus
     resolution: ReviewResolution | None
     resolved_by: str | None
@@ -360,6 +364,7 @@ async def disposition(
     policy: DispositionPolicy = DEFAULT_DISPOSITION_POLICY,
     redis: Redis | None = None,
     workspace_id: str,
+    project_id: str | None = None,
     decided_by: str = "auto",
     subject_entity_id: EntityId | None = None,
 ) -> Disposition:
@@ -368,7 +373,9 @@ async def disposition(
     * ``top_score ≥ auto_merge_threshold`` → **auto-merge**: the observation resolves to the top
       candidate; if a ``subject_entity_id`` was pre-admitted (e.g. an import row), it is merged into
       the survivor. Returns the survivor id.
-    * mid-band → **review**: exactly one ``open`` task is enqueued; **no entity is mutated**.
+    * mid-band → **review**: exactly one ``open`` task is enqueued; **no entity is mutated**. The
+      caller's ``project_id`` (FI-2 P1) rides the task, so the human resolution can join the
+      resulting account to the project this admission was serving.
     * below ``review_low_threshold`` (or no candidate) → **new entity**: a fresh ``candidate`` is
       admitted from the observation (or the pre-admitted ``subject`` is kept). Returns the new id.
     """
@@ -411,6 +418,7 @@ async def disposition(
             observation,
             result,
             workspace_id=workspace_id,
+            project_id=project_id,
             config_version=policy.version,
             subject_entity_id=subject_entity_id,
             proposed_action="merge_into",
@@ -461,20 +469,29 @@ async def enqueue_review_task(
     *,
     config_version: int,
     workspace_id: str | None = None,
+    project_id: str | None = None,
     subject_entity_id: EntityId | None = None,
     proposed_action: str = "merge_into",
 ) -> EntityId:
-    """Enqueue one ``open`` review task for an ambiguous match (mutates no entity)."""
+    """Enqueue one ``open`` review task for an ambiguous match (mutates no entity).
+
+    ``project_id`` (FI-2 P1) records which project the admitting caller was discovering for, so the
+    resolution can join the resulting account to it. It is the *same* value that caller would have
+    written the membership with had the candidate been admitted outright, which is why the two can
+    never disagree. Optional: a projectless admission leaves it ``NULL`` and its resolution writes
+    no membership. A named composite FK anchors ``(project_id, workspace_id)`` to one project, and
+    a named CHECK refuses a project without a workspace (migration ``9c8cbd79a0e7``).
+    """
     row = await conn.execute(
         text(
             """
             INSERT INTO identity_review_task (
                 entity_type, observation_json, candidates_json, proposed_action,
-                subject_entity_id, workspace_id, config_version
+                subject_entity_id, workspace_id, project_id, config_version
             ) VALUES (
                 CAST(:entity_type AS entity_type), CAST(:observation_json AS jsonb),
                 CAST(:candidates_json AS jsonb), :proposed_action, :subject_entity_id,
-                :workspace_id, :config_version
+                :workspace_id, :project_id, :config_version
             ) RETURNING id
             """
         ),
@@ -485,6 +502,7 @@ async def enqueue_review_task(
             "proposed_action": proposed_action,
             "subject_entity_id": subject_entity_id,
             "workspace_id": workspace_id,
+            "project_id": project_id,
             "config_version": config_version,
         },
     )
@@ -505,7 +523,7 @@ async def enqueue_review_task(
 
 _TASK_COLUMNS = (
     "id, entity_type, observation_json, candidates_json, proposed_action, subject_entity_id, "
-    "workspace_id, status, resolution, resolved_by, config_version"
+    "workspace_id, project_id, status, resolution, resolved_by, config_version"
 )
 
 
@@ -519,6 +537,7 @@ def _row_to_task(row: dict[str, object]) -> ReviewTask:
             "proposed_action": row["proposed_action"],
             "subject_entity_id": row["subject_entity_id"],
             "workspace_id": row["workspace_id"],
+            "project_id": row["project_id"],
             "status": row["status"],
             "resolution": row["resolution"],
             "resolved_by": row["resolved_by"],
@@ -629,6 +648,38 @@ async def _close_task(
     )
 
 
+async def _join_enqueuing_project(
+    conn: AsyncConnection, task: ReviewTask, entity_id: EntityId
+) -> None:
+    """Join a review-resolved account to the project whose admission enqueued the task (FI-2 P1).
+
+    The mid-band admission admitted nothing, so it could not record the membership itself; the
+    project rode the task instead, and this closes the loop in the resolution's own transaction.
+    Idempotent (first add wins), so a caller that *also* re-joins the account by another route —
+    the Exa D4 materializer re-runs its own ensure when it resumes a resolved batch — writes a
+    harmless no-op rather than a second, later add.
+
+    Degrades on a task with no project (a projectless admission, or one predating migration
+    ``9c8cbd79a0e7``): resolution then behaves exactly as it did before FI-2. Contact tasks are
+    skipped — ``project_account`` keys on accounts, and a contact resolves *under* one.
+
+    ``added_via='discovered'``: reaching the mid-band is the identity gate's discovery path. A
+    caller whose join provenance differs (``admit(added_via=...)``) does not survive into the task,
+    which records no channel — a known, deliberate narrowing, not an oversight.
+    """
+    if task.project_id is None or task.workspace_id is None:
+        return
+    if task.entity_type is not EntityType.ACCOUNT:
+        return
+    await ensure_project_account(
+        conn,
+        workspace_id=task.workspace_id,
+        project_id=task.project_id,
+        account_entity_id=entity_id,
+        added_via="discovered",
+    )
+
+
 # --- the review resolve API -------------------------------------------------
 async def resolve_merge_into(
     conn: AsyncConnection,
@@ -654,6 +705,7 @@ async def resolve_merge_into(
             config_version=task.config_version,
             workspace_id=task.workspace_id,
         )
+    await _join_enqueuing_project(conn, task, survivor_id)
     await _close_task(
         conn,
         task_id,
@@ -703,6 +755,7 @@ async def resolve_create_new_entity(
             "cannot admit a new contact entity without an account_entity_id — the task must carry "
             "a subject_entity_id (committee contact creation is M8)"
         )
+    await _join_enqueuing_project(conn, task, new_id)
     await _close_task(
         conn,
         task_id,

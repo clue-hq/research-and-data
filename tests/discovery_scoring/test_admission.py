@@ -30,6 +30,7 @@ from clue_research.identity import (
     DispositionPolicy,
     embed_account,
     get_account,
+    get_task,
     insert_account_entity,
     list_open_tasks,
 )
@@ -441,10 +442,11 @@ def test_admit_records_membership_on_the_survivor_of_an_auto_merge() -> None:
 
 
 def test_admit_writes_no_membership_for_a_review_band_candidate() -> None:
-    """A mid-band (``ENQUEUED``) admission admits no entity, so it joins no project either.
+    """A mid-band (``ENQUEUED``) admission admits no entity, so it joins no project *yet*.
 
-    Membership follows the *resolved* account; until the M2 review resolves the task there is no
-    account to attach (and the review-resolution path carries no project context — FI-2 gap).
+    Membership follows the *resolved* account. The project is not lost, though: the admission
+    stamps it on the review task (FI-2 P1), so the human resolution can join the account it
+    creates or merges into. Resolving one is asserted in ``tests/identity/test_review.py``.
     """
 
     async def _run() -> None:
@@ -467,6 +469,36 @@ def test_admit_writes_no_membership_for_a_review_band_candidate() -> None:
                 await accounts_for_project(conn, workspace_id=WS, project_id=project.project_id)
                 == ()
             )
+            assert result.review_task_id is not None
+            task = await get_task(conn, result.review_task_id)
+            # The admitting project rides the task, so the two can never disagree about which
+            # project claimed the account once a human resolves it.
+            assert task is not None and task.project_id == project.project_id
+
+    run_async(_run())
+
+
+def test_admit_can_override_the_membership_channel() -> None:
+    """``added_via`` records how the account *joined the project*, which is not always the gate's
+    resolution channel: a human-typed add resolves through the reserved ``import`` path but joins
+    as ``manual`` (the trial's case). The caller may say so explicitly."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            project = await seed_project(conn, WS, name="Manual add project")
+            result = await admit(
+                conn,
+                candidate(
+                    matched_channel=IMPORT_CHANNEL, domain="typed.example", name="Hand Typed Co"
+                ),
+                new_run_id(),
+                workspace_id=WS,
+                project_id=project.project_id,
+                added_via="manual",
+            )
+            assert result.status is AdmissionStatus.ADMITTED
+            assert result.account_entity_id is not None
+            assert await _added_via(conn, result.account_entity_id) == ["manual"]
 
     run_async(_run())
 

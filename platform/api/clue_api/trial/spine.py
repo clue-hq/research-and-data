@@ -346,15 +346,19 @@ class ClueTrialSpine:
                 project_id=state.project_id,
                 project_run_id=UUID(str(project_run.project_run_id)),
             )
-            # FI-2 P1 (spec §2): a human-added trial account joins the trial's project, in the same
-            # transaction as its admission. The candidate declares the reserved ``import`` channel,
-            # so the membership records ``added_via='imported'`` (see ``membership_channel``).
+            # FI-2 P1 (spec §2): a human-added trial account joins the trial's project, in the
+            # same transaction as its admission. ``added_via`` records *how the account joined the
+            # project*, which here is a human typing a domain — the 'manual' channel. The
+            # candidate's reserved ``import`` matched_channel is the gate's resolution-path label
+            # (client-supplied, tier-1 data), not join provenance, so it is overridden explicitly
+            # rather than by bending the candidate.
             result = await admit(
                 conn,
                 candidate,
                 run_id,
                 workspace_id=state.workspace_id,
                 project_id=state.project_id,
+                added_via="manual",
             )
         if result.status is not AdmissionStatus.ADMITTED or result.account_entity_id is None:
             raise TrialAccountNotAdmitted(

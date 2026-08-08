@@ -29,8 +29,9 @@ naming an account or a project from another workspace is therefore *unrepresenta
 validated in Python.
 
 Import direction: this module imports nothing from :mod:`clue_research.identity` — the dependency
-runs the other way (``identity.entities`` imports :func:`repoint_project_accounts`), so there is no
-cycle.
+runs the other way (``identity.entities`` imports :func:`repoint_project_accounts`, and
+``identity.review`` imports :func:`ensure_project_account` so a human review resolution joins the
+account to the project whose admission enqueued the task), so there is no cycle.
 """
 
 from __future__ import annotations
