@@ -346,11 +346,15 @@ class ClueTrialSpine:
                 project_id=state.project_id,
                 project_run_id=UUID(str(project_run.project_run_id)),
             )
+            # FI-2 P1 (spec §2): a human-added trial account joins the trial's project, in the same
+            # transaction as its admission. The candidate declares the reserved ``import`` channel,
+            # so the membership records ``added_via='imported'`` (see ``membership_channel``).
             result = await admit(
                 conn,
                 candidate,
                 run_id,
                 workspace_id=state.workspace_id,
+                project_id=state.project_id,
             )
         if result.status is not AdmissionStatus.ADMITTED or result.account_entity_id is None:
             raise TrialAccountNotAdmitted(

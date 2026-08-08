@@ -11,6 +11,9 @@
 3. For an admitted entity, writes exactly **one** *discovery-provenance* claim (the staged-flow §9
    flavor) recording where it was found, why it matched, and how confident — idempotently, so an
    M7 phase replay re-admitting the same candidate is a no-op.
+4. Records the admitted account's **``project_account`` membership** (FI-2 P1, spec §2) when the
+   caller supplies ``project_id`` — in the same transaction as the provenance claim, so "this
+   project targets that account" can never disagree with the admission that created it.
 
 Concurrency: two workers admitting the same company must not double-admit. With a Redis client the
 gate takes an in-flight lock keyed on the candidate's strong key (its registrable domain) so the
@@ -63,6 +66,7 @@ from clue_research.identity import (
     resolve,
     surviving_id,
 )
+from clue_research.membership import ensure_project_account
 from clue_research.sources import get_source
 
 # The registered field-key the discovery-provenance claim lands on. A discovery-flavored claim skips
@@ -75,6 +79,17 @@ DISCOVERY_PROVENANCE_FIELD = "core.discovery_provenance"
 IMPORT_CHANNEL = "import"
 
 _LOCK_PREFIX = "clue:discovery-admit:"
+
+
+def membership_channel(matched_channel: str) -> str:
+    """The FI-2 ``project_account.added_via`` channel for a candidate's ``matched_channel``.
+
+    The gate is deliberately channel-agnostic — an imported row converges through the same path as
+    a discovered one (Doc B §4) — but membership is not: the row records *how* the account joined
+    the project, and the reserved ``import`` channel is the one entry scenario that is not
+    discovery. One rule in one place, so every caller of :func:`admit` records the same thing.
+    """
+    return "imported" if matched_channel == IMPORT_CHANNEL else "discovered"
 
 
 def _domain_lock_id(workspace_id: str, domain: str) -> EntityId:
@@ -211,13 +226,15 @@ async def _admit_resolved(
     run_id: RunId,
     *,
     workspace_id: str,
+    project_id: str | None,
     redis: Redis | None,
     resolution_policy: ResolutionPolicy,
     disposition_policy: DispositionPolicy,
     embedder: Embedder,
 ) -> AdmissionResult:
     """Resolve the observation, route it through the M2 disposition band, and (if admitted) stamp
-    the discovery-provenance claim. Run under the in-flight lock when one is held."""
+    the discovery-provenance claim and the project membership. Run under the in-flight lock when
+    one is held."""
     result = await resolve(
         conn, observation, policy=resolution_policy, embedder=embedder, workspace_id=workspace_id
     )
@@ -236,6 +253,17 @@ async def _admit_resolved(
         raise RuntimeError(f"disposition {decision.outcome} returned no entity_id")
     entity_id = await surviving_id(conn, decision.entity_id, EntityType.ACCOUNT)
     claim_id = await ensure_discovery_provenance(conn, candidate, entity_id, run_id)
+    if project_id is not None:
+        # FI-2 P1 (spec §2): the admission *is* the join — record it here, on the survivor, in the
+        # admission's own transaction. Idempotent and first-add-wins, so an M7 replay (or a second
+        # project admitting the same workspace-global account) never rewrites the original add.
+        await ensure_project_account(
+            conn,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            account_entity_id=entity_id,
+            added_via=membership_channel(candidate.matched_channel),
+        )
     return AdmissionResult(
         status=AdmissionStatus.ADMITTED,
         account_entity_id=entity_id,
@@ -249,6 +277,7 @@ async def admit(
     run_id: RunId,
     *,
     workspace_id: str,
+    project_id: str | None = None,
     redis: Redis | None = None,
     existence: ExistenceCheck = DEFAULT_EXISTENCE_CHECK,
     resolution_policy: ResolutionPolicy = DEFAULT_RESOLUTION_POLICY,
@@ -261,7 +290,15 @@ async def admit(
     nothing to resolve to; ``NEEDS_REVIEW`` (with the M2 ``review_task_id``) for a mid-band match;
     ``ADMITTED`` (with the resolved ``account_entity_id`` + the discovery-provenance claim) else.
     Idempotent: re-admitting the same candidate for the same run reuses the existing provenance
-    claim. Pass a ``redis`` client to serialize concurrent same-company admits."""
+    claim. Pass a ``redis`` client to serialize concurrent same-company admits.
+
+    ``project_id`` is the project this admission is admitting *for*: supplied, the admitted account
+    joins that project's target list (``project_account``, FI-2 §2). Left ``None`` the admission is
+    workspace-level and records no membership — the account is workspace-global either way (R1), so
+    a projectless caller produces a real, usable account with no project claiming it. Only an
+    ``ADMITTED`` outcome joins: a ``NEEDS_REVIEW`` candidate has no entity yet, and the M2 review
+    that later resolves it carries no project context (a recorded FI-2 gap).
+    """
     verdict = await existence.check(candidate)
     if not verdict.exists:
         return AdmissionResult(status=AdmissionStatus.REJECTED, reason=verdict.reason)
@@ -285,6 +322,7 @@ async def admit(
                 observation,
                 run_id,
                 workspace_id=workspace_id,
+                project_id=project_id,
                 redis=redis,
                 resolution_policy=resolution_policy,
                 disposition_policy=disposition_policy,
@@ -296,6 +334,7 @@ async def admit(
         observation,
         run_id,
         workspace_id=workspace_id,
+        project_id=project_id,
         redis=redis,
         resolution_policy=resolution_policy,
         disposition_policy=disposition_policy,
@@ -306,6 +345,7 @@ async def admit(
 __all__ = [
     "admit",
     "ensure_discovery_provenance",
+    "membership_channel",
     "DISCOVERY_PROVENANCE_FIELD",
     "IMPORT_CHANNEL",
 ]

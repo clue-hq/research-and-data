@@ -72,6 +72,7 @@ from clue_research.discovery_scoring.gate import (
     AdmissionStatus,
     admit,
     ensure_discovery_provenance,
+    membership_channel,
 )
 from clue_research.durable import (
     DiscoveryNotFound,
@@ -99,6 +100,7 @@ from clue_research.identity import (
     registrable_domain,
     surviving_id,
 )
+from clue_research.membership import ensure_project_account
 from clue_research.sources import seed_source_manifests
 from clue_storage import StorageBackend, content_address
 
@@ -977,6 +979,7 @@ class ExaWebsetsD4Materializer:
                             ),
                             run_id,
                             workspace_id=workspace_id,
+                            project_id=batch.project_id,
                         )
                         if admission.status is AdmissionStatus.REJECTED:
                             await put_discovery_candidate_link(
@@ -1068,6 +1071,21 @@ class ExaWebsetsD4Materializer:
                         raise DiscoveryReplayConflict(
                             "D4 candidate survivor belongs to another workspace"
                         )
+
+                    # FI-2 P1 (spec §2): membership follows the *current* survivor, on every branch
+                    # that reaches here — the fresh admit (which already recorded it against the id
+                    # it resolved), a replay over an existing ADMITTED/MERGED link, an identity
+                    # review resolved to an entity, and a link rewritten to MERGED by a later merge.
+                    # Idempotent and first-add-wins, so re-materialising a sealed batch never
+                    # rewrites the original add, and a survivor that inherited the loser's
+                    # membership (``repoint_project_accounts``) keeps its own ``added_at``.
+                    await ensure_project_account(
+                        conn,
+                        workspace_id=workspace_id,
+                        project_id=batch.project_id,
+                        account_entity_id=survivor,
+                        added_via=membership_channel(EXA_WEBSETS_SOURCE_KEY),
+                    )
 
                     (
                         claims_by_field,

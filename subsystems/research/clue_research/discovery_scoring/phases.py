@@ -187,6 +187,10 @@ class DiscoveryPhaseHandler:
                         candidate,
                         run_id,
                         workspace_id=ctx.workspace_id,
+                        # FI-2 P1 (spec §2): an account discovered *for this project* joins its
+                        # target list in the admission's own savepoint — so a rolled-back candidate
+                        # leaves neither a provenance claim nor a membership.
+                        project_id=ctx.project_id,
                         redis=self._redis,
                         existence=self._existence,
                     )

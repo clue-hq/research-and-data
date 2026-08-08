@@ -53,6 +53,7 @@ from clue_research.claimstore.registry import get_field
 from clue_research.durable.scheduler import AccountSpec
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account
+from clue_research.membership import ensure_project_account
 from clue_research.sources.authority import load_effective_source_plan
 from clue_research.sources.registry import get_source
 from clue_research.sources.source_profile import resolve_allowed_set
@@ -828,6 +829,17 @@ async def draft_research_directive(
                 "scope_kind": scope_kind,
                 "selection_ref": body.account_scope.sealed_selection_ref,
             },
+        )
+        # FI-2 P1 (spec §2): scoping an account into a directive is a project claiming it as a
+        # target, so the membership lands in the directive's own transaction. Idempotent and
+        # first-add-wins: an account discovered for this project earlier keeps ``added_via
+        # ='discovered'``, and a successor directive re-scoping the same account is a no-op.
+        await ensure_project_account(
+            conn,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            account_entity_id=account_id,
+            added_via="directive",
         )
     await conn.execute(
         text(

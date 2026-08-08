@@ -63,6 +63,7 @@ from clue_research.durable import (
 )
 from clue_research.icp import get_icp_version
 from clue_research.identity import insert_account_entity
+from clue_research.membership import accounts_for_project, projects_for_accounts
 from clue_storage import FsStorage
 from clue_toolbelt import PreconditionFailed, ToolContext, ToolRegistry, invoke_tool
 from tests.api.test_account_deep_fixture_a1 import _pages
@@ -220,6 +221,29 @@ def test_sealed_scope_resolves_exact_membership_and_memory_disabled_is_truthful(
                 ).scalars()
             )
             assert membership == (UUID(str(fixture.selected_account_id)),)
+
+            # FI-2 P1 (spec §2): directive scoping is a project claiming the account as a target,
+            # so the same transaction records the project_account membership. Read it back through
+            # the real reader — this is what the frontend's project target list serves.
+            assert await accounts_for_project(
+                conn, workspace_id=WORKSPACE_ID, project_id=PROJECT_ID
+            ) == (EntityId(fixture.selected_account_id),)
+            assert await projects_for_accounts(
+                conn, workspace_id=WORKSPACE_ID, account_ids=[fixture.selected_account_id]
+            ) == {EntityId(fixture.selected_account_id): (PROJECT_ID,)}
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT added_via FROM project_account WHERE workspace_id=:w "
+                        "AND project_id=:p AND account_entity_id=:a"
+                    ),
+                    {
+                        "w": WORKSPACE_ID,
+                        "p": PROJECT_ID,
+                        "a": fixture.selected_account_id,
+                    },
+                )
+            ).scalar_one() == "directive"
 
             invalid_body = sealed_body.model_copy(
                 update={
@@ -382,6 +406,20 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
             ] == [DEEP_FIELD_KEYS[2], DEEP_FIELD_KEYS[4]]
             assert drafted.references["future_thread_memory_persisted"] is True
             directive_id = ResearchDirectiveId(draft_operation)
+
+            # FI-2 P1 (spec §2): scoping the account into the directive recorded its membership of
+            # the project, in the drafting transaction.
+            membership_sql = text(
+                "SELECT added_via, added_at FROM project_account WHERE workspace_id=:w "
+                "AND project_id=:p AND account_entity_id=:a"
+            )
+            membership_params = {
+                "w": WORKSPACE_ID,
+                "p": PROJECT_ID,
+                "a": fixture.selected_account_id,
+            }
+            first_membership = (await conn.execute(membership_sql, membership_params)).one()
+            assert first_membership.added_via == "directive"
 
             replay = await invoke_tool(
                 registry,
@@ -693,6 +731,12 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
             )
             assert original is not None and original.status is ResearchDirectiveStatus.SUPERSEDED
             assert successor is not None and successor.status is ResearchDirectiveStatus.CONFIRMED
+
+            # The successor re-scoped the same account: membership is first-add-wins, so the row is
+            # untouched — one row, the original channel, the original added_at (not a later re-add).
+            assert (await conn.execute(membership_sql, membership_params)).one() == (
+                first_membership
+            )
 
             unchanged_run = await get_account_run(conn, fixture.expected_account_run_id)
             assert unchanged_run is not None and unchanged_run.research_directive == original_pin

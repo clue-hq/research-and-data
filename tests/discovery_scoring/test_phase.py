@@ -25,6 +25,7 @@ from clue_core import (
 from clue_research.discovery_scoring import ChannelRegistry, DiscoveryPhaseHandler
 from clue_research.discovery_scoring.phases import discovery_run_id
 from clue_research.icp import create_icp_spec
+from clue_research.membership import accounts_for_project
 from tests._run_lineage import assert_written_claims_are_attributable
 from tests._workspace import seed_phase_run
 
@@ -106,6 +107,15 @@ def test_discovery_phase_discovers_admits_and_records_yield() -> None:
             assert result.payload["rejected"] == 0
             assert await _count_accounts(conn) == 2
             assert await _count_provenance(conn) == 2
+            # FI-2 P1 (spec §2): both admitted accounts joined the phase's project as targets.
+            assert (
+                len(
+                    await accounts_for_project(
+                        conn, workspace_id=ctx.workspace_id, project_id=ctx.project_id
+                    )
+                )
+                == 2
+            )
             # per-channel discovery yield landed in the shared telemetry (counts in the jsonb hook)
             raw = (
                 await conn.execute(
@@ -140,6 +150,14 @@ def test_discovery_phase_replay_is_idempotent() -> None:
             assert second.payload["admitted"] == 1  # re-admits to the same entity
             assert await _count_accounts(conn) == 1  # no duplicate entity
             assert await _count_provenance(conn) == 1  # no duplicate provenance claim
+            assert (
+                len(
+                    await accounts_for_project(
+                        conn, workspace_id=ctx.workspace_id, project_id=ctx.project_id
+                    )
+                )
+                == 1  # no duplicate membership on replay
+            )
 
     run_async(_run())
 
