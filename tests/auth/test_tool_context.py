@@ -99,6 +99,21 @@ def test_authenticated_service_action_ref_cannot_pass_a_human_only_gate() -> Non
     assert require_human_authority(human, action_ref_required=True) == ()
 
 
+def test_legacy_null_context_cannot_pass_a_human_only_gate() -> None:
+    legacy = ToolContext(
+        workspace_id="ws_internal",
+        actor="human",
+        conn_factory=transaction,
+        operation_id=new_operation_id(),
+        actor_id="free-text-user",
+        action_ref="free-text-action",
+    )
+
+    failure = require_human_authority(legacy, action_ref_required=True)
+
+    assert failure[0].reason_code == "human_authority_required"
+
+
 def test_human_and_service_principal_actor_classes_are_not_interchangeable() -> None:
     with pytest.raises(ValueError, match="human principal may only invoke"):
         ToolContext(

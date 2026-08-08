@@ -446,11 +446,7 @@ class Settings(BaseSettings):
             raise ValueError(
                 "production must use Clerk authentication; local fixture auth is forbidden"
             )
-        if (
-            self.auth_enabled
-            and self.auth_environment == "production"
-            and self.projections_auth_mode == "local_header"
-        ):
+        if self.auth_environment == "production" and self.projections_auth_mode == "local_header":
             raise ValueError(
                 "production authentication forbids the local-header projections resolver"
             )

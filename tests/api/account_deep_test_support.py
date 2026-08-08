@@ -119,7 +119,9 @@ async def confirmed_account_research_direction(
         ToolContext(
             workspace_id=workspace_id,
             actor="human",
+            principal_kind="human",
             actor_id="human:account-deep-test",
+            membership_id="wsm_account_deep_test",
             action_ref="turn:account-deep-test-confirm",
             conn_factory=conn_factory,
             operation_id=new_operation_id(),

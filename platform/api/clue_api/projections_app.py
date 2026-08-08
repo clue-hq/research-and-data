@@ -771,6 +771,8 @@ def create_projections_app(
     ``sse_live_tail=False`` makes the SSE stream replay-then-close (deterministic for tests);
     production leaves it ``True`` (an open live stream)."""
     resolved = settings if settings is not None else load_settings()
+    if resolved.auth_environment == "production" and auth_service is None:
+        raise RuntimeError("production projections require the authenticated principal service")
     app = FastAPI(
         title="Clue-HQ platform — projections + toolbelt + SSE",
         version=PROJECTIONS_SCHEMA_VERSION,

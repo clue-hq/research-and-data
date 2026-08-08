@@ -1226,6 +1226,9 @@ def test_human_and_safe_auto_tools_materialize_and_return_references_only() -> N
             human = ToolContext(
                 workspace_id=scope.workspace_id,
                 actor="human",
+                principal_kind="human",
+                actor_id="human:client-kb-test",
+                membership_id="wsm_client_kb_test",
                 conn_factory=factory,
                 operation_id=new_operation_id(),
             )

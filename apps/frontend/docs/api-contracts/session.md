@@ -1,6 +1,6 @@
 # Authenticated session and BFF contract
 
-Status: Lane B B3 as built, 2026-08-08.
+Status: Lane B B5 cutover-prepared, 2026-08-08; production flip waits for Lane D D5.
 
 ## Boundary
 
@@ -10,7 +10,7 @@ or authors a backend bearer token. Next.js obtains the current short-lived sessi
 server and forwards it to FastAPI; FastAPI verifies it independently and resolves it through
 `auth_identity` to a Clue `platform_user`.
 
-Authentication remains default-off until B5 with `CLUE_AUTH_ENABLED=false`. Enabling it requires
+Authentication remains deployment-default-off until D5 with `CLUE_AUTH_ENABLED=false`. Enabling it requires
 `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, server-only `CLUE_API_BASE_URL`, and a
 `CLUE_CLERK_JWT_TEMPLATE` whose `aud` claim equals backend `CLUE_AUTH_CLERK_AUDIENCE`; missing
 configuration fails loudly and never enters Clerk keyless mode or forwards a default token whose
@@ -48,3 +48,9 @@ ending the provider session.
 
 The backend remains authoritative. Every protected endpoint must still resolve and authorize a
 `RequestPrincipal`; BFF success is not authorization evidence.
+
+Production must declare `CLUE_AUTH_ENVIRONMENT=production` and use
+`CLUE_PROJECTIONS_AUTH_MODE=authenticated_principal`. Application construction refuses a
+production trusted-header resolver or an absent principal service. Local-header tenancy remains a
+seeded local/test fixture only. Operational enablement and rollback are documented in
+`docs/runbooks/authenticated-principal-cutover.md`.

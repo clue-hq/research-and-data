@@ -134,18 +134,27 @@ def require_human_authority(
     reason_code: str = "trusted_human_receipt_required",
     message: str = "this operation requires authenticated human authority",
 ) -> tuple[PreconditionFailure, ...]:
-    """Fail an authenticated service principal at every human-only tool boundary.
-
-    Legacy-null contexts remain temporarily accepted while auth is disabled; B5 removes that
-    branch. Once Lane B auth constructs a context, actor class alone is never sufficient.
-    """
+    """Require a closed authenticated human principal at every human-only tool boundary."""
 
     if ctx.principal_kind is None:
-        if ctx.actor != "human":
-            return (PreconditionFailure(reason_code="human_required", message=message),)
-        if action_ref_required and ctx.action_ref is None:
-            return (PreconditionFailure(reason_code=reason_code, message=message),)
-        return ()
+        if (
+            ctx.actor == "human"
+            and ctx.execution_id is not None
+            and ctx.execution_node_id is not None
+            and not action_ref_required
+        ):
+            # Pre-D1 compatibility is restricted to a node already declared in C5's durable
+            # journal. Lane D replaces this with the persisted turn principal before D5; receipt-
+            # bearing gates remain closed because they require the Lane-D action reference.
+            return ()
+        return (
+            PreconditionFailure(
+                reason_code=(
+                    "human_authority_required" if ctx.actor == "human" else "human_required"
+                ),
+                message=message,
+            ),
+        )
     if (
         ctx.principal_kind != "human"
         or ctx.actor != "human"

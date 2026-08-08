@@ -459,7 +459,9 @@ def test_out_of_order_matrix(require_profiling_db: None) -> None:  # noqa: F811
             ctx = ToolContext(
                 workspace_id=ws,
                 actor="human",
+                principal_kind="human",
                 actor_id="human:matrix",
+                membership_id="wsm_matrix",
                 action_ref="turn:matrix-confirm",
                 conn_factory=cf,
                 operation_id=new_operation_id(),

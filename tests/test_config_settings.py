@@ -168,6 +168,7 @@ def test_auth_clerk_authorized_parties_accept_shell_safe_list() -> None:
         _env_file=None,
         auth_environment="production",
         auth_mode="clerk",
+        projections_auth_mode="authenticated_principal",
         auth_clerk_authorized_parties="https://app.example, http://localhost:3000",
     )
     assert settings.auth_clerk_authorized_parties == (
@@ -186,6 +187,17 @@ def test_production_auth_refuses_local_header_workspace_authority() -> None:
         load_settings(
             _env_file=None,
             auth_enabled=True,
+            auth_environment="production",
+            auth_mode="clerk",
+            projections_auth_mode="local_header",
+        )
+
+
+def test_declared_production_refuses_local_header_even_before_auth_flip() -> None:
+    with pytest.raises(ValidationError, match="forbids the local-header"):
+        load_settings(
+            _env_file=None,
+            auth_enabled=False,
             auth_environment="production",
             auth_mode="clerk",
             projections_auth_mode="local_header",

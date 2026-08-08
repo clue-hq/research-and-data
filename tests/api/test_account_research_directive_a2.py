@@ -497,6 +497,9 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
                     ToolContext(
                         workspace_id=WORKSPACE_ID,
                         actor="human",
+                        principal_kind="human",
+                        actor_id="human:user-a2",
+                        membership_id="wsm_user_a2",
                         conn_factory=cf,
                         operation_id=new_operation_id(),
                     ),
@@ -508,9 +511,11 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
             confirm_ctx = ToolContext(
                 workspace_id=WORKSPACE_ID,
                 actor="human",
+                principal_kind="human",
                 conn_factory=cf,
                 operation_id=confirm_operation,
                 actor_id="human:user-a2",
+                membership_id="wsm_user_a2",
                 action_ref="human-turn:deep-direction-confirm-1",
             )
             confirmed = await invoke_tool(
@@ -543,9 +548,11 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
                     ToolContext(
                         workspace_id=WORKSPACE_ID,
                         actor="human",
+                        principal_kind="human",
                         conn_factory=cf,
                         operation_id=confirm_operation,
                         actor_id="human:user-a2",
+                        membership_id="wsm_user_a2",
                         action_ref="human-turn:different-confirmation",
                     ),
                     idempotency_ttl_s=TTL,
@@ -712,9 +719,11 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
                 ToolContext(
                     workspace_id=WORKSPACE_ID,
                     actor="human",
+                    principal_kind="human",
                     conn_factory=cf,
                     operation_id=new_operation_id(),
                     actor_id="human:user-a2",
+                    membership_id="wsm_user_a2",
                     action_ref="human-turn:deep-direction-confirm-2",
                 ),
                 idempotency_ttl_s=TTL,

@@ -323,7 +323,9 @@ def test_selection_requires_db_approval_and_successors_form_one_current_linear_h
                 ToolContext(
                     workspace_id=successor.body.workspace_id,
                     actor="human",
+                    principal_kind="human",
                     actor_id=successor_body.approved_by,
+                    membership_id="wsm_c6_successor",
                     action_ref="human-action:c6-successor",
                     conn_factory=conn_session_factory(conn),
                     operation_id=approval_operation_id,
