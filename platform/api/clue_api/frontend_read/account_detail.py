@@ -517,6 +517,12 @@ async def _read_committee(
     bound = request_bound_conn_factory(conn)
     by_contact: dict[EntityId, CommitteeMemberRow] = {}
     projects: dict[EntityId, list[str]] = defaultdict(list)
+    # Memberships only — deliberate, and an asymmetry worth naming against this same response:
+    # ``project_sections`` (and the list's ``researchStatus``) honestly surface a project that
+    # produced research on this account *without* a membership row, but this loop never visits such
+    # a project, so its committee members can surface nowhere. That state should not occur (it is an
+    # anomaly, not a mode); iterating research lineage instead would attribute one project's
+    # committee to an account it does not target, which is the worse failure.
     for membership in memberships:
         context = await latest_project_run_context(
             conn, workspace_id=workspace_id, project_id=membership.project_id

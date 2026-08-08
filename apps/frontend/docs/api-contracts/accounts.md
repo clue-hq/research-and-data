@@ -514,6 +514,14 @@ The error envelope is the one documented above. Codes in use:
 malformed identifier or out-of-range `limit`), `INTERNAL_ERROR` (500). Every
 response also carries an `X-Request-Id` header matching `error.requestId`.
 
+**`error.code` is an OPEN set — do not close the Zod enum.** Those six are the
+codes this surface raises deliberately, but the framework layer beneath it also
+emits generic ones: `NOT_FOUND` (an unknown route under the `/frontend/v1`
+prefix — a path typo, not a missing account) and `BAD_REQUEST`. Parse `code` as
+a string, branch on the known values, and fall back to the message for anything
+else; a closed `z.enum([...])` turns a new backend code into a client-side
+parse crash instead of a displayable error.
+
 Pagination is keyset over `(createdAt, id)` descending, newest account first.
 `limit` defaults to 50 and is capped at **200** (this supersedes the maximum of
 100 proposed above); a value outside `1..200` is a `422`. `cursor` is opaque and
@@ -549,6 +557,14 @@ empty page, not a `404`, and the rows it does return still carry their full
   list row and the detail section** — one project can score an account under
   several ICPs and versions, so a single `fitScore` would require guessing a
   winner. No representative run is chosen.
+- **The two score surfaces are not symmetric: the list is attributed-only, the
+  detail is not.** A list row's `scores[]` comes from a read that inner-joins
+  run lineage to a project, so a score whose run maps to no project cannot
+  appear there at all. The detail partitions the same claims into sections, so
+  such a score lands in the `projectId: null` unattributed section. Consequence:
+  the detail can show a score the list row does not, and the difference is
+  always exactly the unattributed section. Reconcile list↔detail on attributed
+  sections only; never compute a row-level "score count" from the detail.
 - **`narratives[]` is plural, one per persona** — value narratives are written
   per persona, and collapsing them would drop the persona structure.
 - **`researchStatus` is a per-project array, not a scalar**, with the
@@ -560,7 +576,12 @@ empty page, not a `404`, and the rows it does return still carry their full
   outcome, not the stronger "fully enriched". An entry may name a project the
   account has **no** membership row for (research was launched for a project that
   no longer targets it); that is reported rather than hidden, so do not assume
-  `researchStatus[].projectId` is always a member of `projects[]`.
+  `researchStatus[].projectId` is always a member of `projects[]`. The committee
+  and contacts union does **not** match that honesty: it iterates memberships
+  only, so a non-member project that researched the account is visible in
+  `researchStatus[]` / `projectSections[]` while its committee members surface
+  nowhere — deliberate (the alternative attributes one project's committee to an
+  account it does not target) and an anomaly state that should not occur.
 - **`titleRestricted` (row) and `restricted` (profile fact) mark withheld
   values** — a display-denied field is served absent with the marker and with no
   provenance, while a field the backend simply does not hold is absent and
@@ -610,6 +631,22 @@ empty page, not a `404`, and the rows it does return still carry their full
   membership row; that state should not occur, so it is reported rather than
   hidden. A project with a membership and no work still gets an empty section,
   because "targeted, nothing produced yet" is a real state.
+- **`coverage.researchedFieldCount` reads stronger than it is.** It counts the
+  distinct fields holding at least one live, non-rejected claim for the account
+  — from **any** writer, research or not: a stage-0 interview answer, a manual
+  or CRM import, and a scoring write all increment it. It is "how many fields do
+  we hold a value for", not "how many fields research completed", and it is not
+  a percentage of anything (there is no denominator — the field registry is open
+  by registration). Do not render it as research progress or drive a completion
+  meter from it; the honest research-side companion is `unresolvedFieldKeys`,
+  which names fields research *asked for* and could not answer.
+- **`updatedAt` is the `account_entity` row's update time, not research or claim
+  recency.** It moves when the entity record itself changes (identity
+  resolution, a merge, an alias or registry-id write) and does **not** move when
+  a new claim, score, or narrative lands on the account. A "last updated" or
+  "last researched" badge that wants research recency must not use it — read the
+  relevant `observedAt` (facts, narratives, insights) or `scoredAt` instead.
+  `updatedAt` is a correct cache/sort key for the entity row, nothing more.
 - **The detail carries no research status.** Status is a `(account, project)`
   fact served on the list row; a detail or preview badge must read it from the
   list response until a later slice adds it.

@@ -254,6 +254,12 @@ async def _resolve_union(
     # ``committee.request_bound_conn_factory``.
     bound = request_bound_conn_factory(conn)
     union = _CommitteeUnion()
+    # Memberships only — deliberate, and an asymmetry worth naming: the account detail's
+    # ``researchStatus``/``projectSections`` honestly surface a project that produced research on
+    # this account *without* a membership row, but this union never visits such a project, so its
+    # committee members can surface nowhere on this surface. That state should not occur (it is an
+    # anomaly, not a mode); iterating research lineage instead would attribute one project's
+    # committee to an account it does not target, which is the worse failure.
     for membership in memberships:
         context = await latest_project_run_context(
             conn, workspace_id=workspace_id, project_id=membership.project_id
@@ -436,7 +442,9 @@ async def read_contact_profile(
 
     The URL is account-scoped, so committee membership *of this account* is the addressability rule:
     a contact row that exists but sits on no committee here is a 404, exactly like an unknown id.
-    A merged loser follows ``surviving_id`` and is served with ``redirected_from`` set.
+    A merged **contact** follows ``surviving_id`` and is served with ``redirected_from`` set; a
+    merged *account* in the URL is followed silently (``redirected_from`` stays ``None``), so a
+    client correcting a stale account link must compare ``account_id`` with the id it asked for.
     """
     canonical_account, account_name = await _resolve_account(
         conn, workspace_id=workspace_id, account_id=account_id

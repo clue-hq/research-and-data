@@ -802,6 +802,10 @@ def test_every_list_row_agrees_with_the_detail_of_the_same_account() -> None:
 
                 # Scores: the list flattens ``(project, icp, version)`` onto the row, the detail
                 # nests them under their section. Same tuples, or one of the two is guessing.
+                # Scoped to attributed sections on purpose: the list is attributed-only (its score
+                # read inner-joins lineage), so an unattributed (``projectId: null``) score is a
+                # real product asymmetry, not a test failure — comparing it here would make a
+                # future fixture that seeds one fail the test instead of surfacing the product gap.
                 assert {
                     (score["projectId"], score["icpKey"], score["icpVersion"]): (
                         score["fit"],
@@ -816,6 +820,7 @@ def test_every_list_row_agrees_with_the_detail_of_the_same_account() -> None:
                         score["scoredAt"],
                     )
                     for section in detail["projectSections"]
+                    if section["projectId"] is not None
                     for score in section["scores"]
                 }
 
