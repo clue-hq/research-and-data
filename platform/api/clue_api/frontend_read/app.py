@@ -211,9 +211,11 @@ def build_frontend_read_router(*, settings: Settings, conn_factory: ConnFactory)
     # one, so a top-level import would be circular.
     from clue_api.frontend_read.account_detail import register_account_detail_routes
     from clue_api.frontend_read.accounts_list import register_accounts_list_routes
+    from clue_api.frontend_read.contacts import register_contact_routes
 
     register_accounts_list_routes(router, conn_factory=conn_factory)
     register_account_detail_routes(router, conn_factory=conn_factory)
+    register_contact_routes(router, conn_factory=conn_factory)
     return router
 
 

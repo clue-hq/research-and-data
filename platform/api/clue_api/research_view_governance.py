@@ -128,7 +128,18 @@ def _evidence_actions(
     return tuple(actions)
 
 
-def _display_allowed(claim: Claim, policy: WorkspacePolicy) -> bool:
+def display_allowed(claim: Claim, policy: WorkspacePolicy) -> bool:
+    """Whether ``claim`` may be *shown* to a workspace actor under ``policy``.
+
+    Public (it was ``_display_allowed`` until FI-2 slice 1) because it is THE display gate, and a
+    second read surface now needs it: the `/frontend/v1` contacts endpoints apply exactly this
+    predicate so a field C7 hides can never be visible on the accounts flow. Sharing the one
+    function is the point — a copy in the read layer would be free to drift from the policy C7
+    enforces. Behaviour is unchanged: account claims are always displayable (governance here is
+    personal-data governance); a contact claim needs a strong identity binding (by default) and a
+    use-class the workspace policy permits, with ``sensitive`` fail-closed.
+    """
+
     if claim.entity_type is EntityType.ACCOUNT:
         return True
     if (
@@ -347,8 +358,8 @@ class CurrentStatementGovernanceEvaluator:
                     reason=_dependency_reason(resolution),
                 )
                 continue
-            if not _display_allowed(claim, policy) or any(
-                not _display_allowed(item, policy) for item in required
+            if not display_allowed(claim, policy) or any(
+                not display_allowed(item, policy) for item in required
             ):
                 results[claim.id] = self._hidden(
                     claim,
@@ -617,4 +628,5 @@ __all__ = [
     "CurrentStatementGovernanceEvaluator",
     "ProductionStatementGovernanceReader",
     "ProductionEvidenceAccessAuthorizer",
+    "display_allowed",
 ]
