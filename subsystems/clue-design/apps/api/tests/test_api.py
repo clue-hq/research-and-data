@@ -4734,32 +4734,29 @@ def test_instance_batch_processes_chunks_with_resumable_cursor(
     ), "the overflow is surfaced, never silent"
 
     # Resume seam: simulate an interrupted batch (cursor persisted after
-    # chunk one, manifest truncated to the committed work).
-    import sqlite3 as _sqlite3
+    # chunk one, manifest truncated to the committed work). Batches live on
+    # Postgres since D2.4, so this rewinds through the store surface rather
+    # than the old direct SQLite UPDATE.
+    from lumen_api.database import connect as _connect
+    from lumen_api.design_store import HybridRepository as _HybridRepository
 
-    connection = _sqlite3.connect(str(client.app.state.database_path))
-    connection.execute(
-        """
-        UPDATE instance_batches
-        SET cursor = 1, status = 'running',
-            manifest_json = ?, counts_json = ?
-        WHERE batch_id = ?
-        """,
-        (
-            json.dumps([batch["manifest"][0]]),
-            json.dumps(
-                {
-                    "total": 3,
-                    "derived": 1,
-                    "failed": 0,
-                    "fit": {"fits": 1, "fits_with_policy": 0, "overflow": 0},
-                }
-            ),
+    store = _HybridRepository(_connect(client.app.state.database_path))
+    try:
+        store.update_batch_progress(
             batch["batch_id"],
-        ),
-    )
-    connection.commit()
-    connection.close()
+            1,
+            "running",
+            {
+                "total": 3,
+                "derived": 1,
+                "failed": 0,
+                "fit": {"fits": 1, "fits_with_policy": 0, "overflow": 0},
+            },
+            [batch["manifest"][0]],
+            store.require_batch(batch["batch_id"])["diagnostics"],
+        )
+    finally:
+        store.connection.close()
 
     resumed = client.post(f"/batches/{batch['batch_id']}/resume")
     assert resumed.status_code == 200, resumed.text

@@ -886,6 +886,7 @@ def build_publish_package(
     database_path: Any,
     slug: str,
     public_base: str,
+    workspace_id: str,
     node_bin: str = "node",
 ) -> PublishPackage:
     """Build one immutable publish package for same-origin delivery.
@@ -894,11 +895,19 @@ def build_publish_package(
     server first frames, and generated per-node bootstrap modules are all
     pinned by digest. Runtime asset URLs are immutable and never resolve
     ``latest`` registry state.
+
+    Every publish URL this package mints (canonical, og:url, the manifest link,
+    the per-asset runtime URLs) is workspace-scoped under ``/w/{workspace_id}``:
+    publish slugs became tenant-local at Part II D1 (O6), so a bare ``/p/{slug}``
+    is ambiguous. This is the interim O6b scheme — Part-IV item 5 replaces it.
+    The ``/asset-store`` URLs stay unprefixed: that route is not part of the
+    public publish surface and is unchanged by O6b.
     """
     web_doc = document["scene"]
     brand_kit = _resolve_brand_kit(web_doc, database_path)
     warnings: List[str] = []
     base = public_base.rstrip("/")
+    public_prefix = f"{base}/w/{workspace_id}"
     deterministic_seed = (
         f"publish:{document['id']}:{document['current_version']}:"
         f"{_sha256(_canonical_json(web_doc))}"
@@ -910,7 +919,7 @@ def build_publish_package(
         custom_component_store_root=Path(store_root) / "custom-components",
         asset_url_for=(
             lambda digest, extension: (
-                f"{base}/p-assets/{digest}.{extension}"
+                f"{public_prefix}/p-assets/{digest}.{extension}"
             )
         ),
         deterministic_seed=deterministic_seed,
@@ -949,8 +958,8 @@ def build_publish_package(
         title=document["title"],
         description=_seo_description(web_doc, document["title"]),
         og_image=og_image,
-        canonical=f"{base}/p/{slug}",
-        og_url=f"{base}/p/{slug}",
+        canonical=f"{public_prefix}/p/{slug}",
+        og_url=f"{public_prefix}/p/{slug}",
     )
     head += f'<style id="lumen-static-css">{site_css}</style>\n'
     publish_manifest = {
@@ -962,7 +971,7 @@ def build_publish_package(
             warnings=warnings,
         ),
         "slug": slug,
-        "canonical_url": f"{base}/p/{slug}",
+        "canonical_url": f"{public_prefix}/p/{slug}",
     }
     manifest_digest = _sha256(_canonical_json(publish_manifest))
     head += (
@@ -975,7 +984,7 @@ def build_publish_package(
     )
     head += (
         '<link rel="lumen-publish-manifest" href="'
-        f'{_escape_attr(f"{base}/p/{slug}/manifest.json")}">\n'
+        f'{_escape_attr(f"{public_prefix}/p/{slug}/manifest.json")}">\n'
     )
     html = _inject_before_head_close(html, head)
     html_digest = _sha256(html)
@@ -1009,6 +1018,7 @@ def build_publish_html(
     database_path: Any,
     slug: str,
     public_base: str,
+    workspace_id: str,
     node_bin: str = "node",
 ) -> Tuple[str, Optional[int], List[str]]:
     """Compatibility wrapper for callers that only need the publish HTML."""
@@ -1021,6 +1031,7 @@ def build_publish_html(
         database_path=database_path,
         slug=slug,
         public_base=public_base,
+        workspace_id=workspace_id,
         node_bin=node_bin,
     )
     return package.html, package.runtime_version, package.warnings

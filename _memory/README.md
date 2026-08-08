@@ -27,6 +27,12 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-08-part2-d24a-personalization-accounts.md` + `2026-08-08-part2-d24b-publishes-components.md`
+  — **Part II D2.4 done (two Opus rounds):** personalization/accounts/batches (A) and
+  publishes/components + O6b `/w/{ws}/p/…` public routes, bare routes deleted (B); document→
+  account FK re-added; last cross-domain validation seam closed; migration `cf7dd82cf683`
+  (account FK + workspace-local binding/instance/repair ids — founder nod pending); bridge
+  fixed to private-engine-per-call (concurrent calls); design suite 487/0. Remaining: D2.5.
 - `2026-08-08-part2-d23-brand-assets-ingestion.md` — **Part II D2.3 done:** brand kits/compat,
   asset registry/descriptions, ingestion jobs on Postgres; scene-asset promotion in-transaction
   (D2.2 seam closed); migration `cf4f80537c8e` (content-derived asset ids + client-supplied

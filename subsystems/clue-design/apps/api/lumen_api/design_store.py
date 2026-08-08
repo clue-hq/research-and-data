@@ -1,9 +1,11 @@
-"""The D2.2/D2.3 store switch: Postgres via ``clue_design``, behind the Repository seam.
+"""The D2.2/D2.3/D2.4 store switch: Postgres via ``clue_design``, behind the Repository seam.
 
-Three domains now: DOCUMENTS (documents / envelopes / op log / snapshots / template revisions /
-diagnostics — the D1a tables, D2.2) and, since D2.3, BRAND (kits + compatibility reports) and
-ASSETS (the registry). Everything else stays on the SQLite ``Repository`` until its own slice
-(personalization/web D2.4, runs D2.5).
+Seven domains now: DOCUMENTS (documents / envelopes / op log / snapshots / template revisions /
+diagnostics — the D1a tables, D2.2); BRAND (kits + compatibility reports) and ASSETS (the
+registry), D2.3; PERSONALIZATION (binding sets / instances / instance batches / the repair
+queue) and WEB ACCOUNTS + WEB BATCHES (D2.4A); and since D2.4B WEB PUBLISHES + PUBLISH REVISIONS
+and the CUSTOM-COMPONENT registry (components / source revisions / artifacts / compilations).
+Only agent runs + ingestion-adjacent leftovers stay on the SQLite ``Repository`` (D2.5/D5).
 
 **The O5 bridge** (:class:`DesignStoreBridge`) — DISPOSABLE scaffOLDING, deleted at D5 with the
 daemon threads. Each call is ``asyncio.run`` of exactly ONE ``clue_design`` DAL coroutine
@@ -15,17 +17,26 @@ awkward cancellation) are accepted; a restart still kills in-flight work until D
 **The hybrid store** (:class:`HybridRepository`) — a ``Repository`` subclass overriding ONLY
 the ported methods to call the bridge, so main.py's call sites switch at one seam. Python
 dispatch makes inherited SQLite methods that call ``self.require_document`` etc. hit Postgres
-automatically. ONE cross-domain seam is still sequenced here, documented at each site:
-custom-component reference VALIDATION (SQLite until D2.4) runs before the Postgres write. The
-scene-asset PROMOTION seam is CLOSED at D2.3 — ``register_scene_assets`` now runs inside the
-document write's own transaction (``clue_design.documents``), so promotion can no longer commit
-apart from the scene that carries it.
+automatically. **Every cross-domain seam is now CLOSED.** The scene-asset PROMOTION seam closed
+at D2.3 (``register_scene_assets`` runs inside the document write's own transaction). The LAST
+one — custom-component reference VALIDATION, which ran against the SQLite registry before the
+Postgres document write — closes at D2.4B: ``validate_custom_component_reference_changes`` is
+not forked, its two reads (``get_web_account``, ``get_custom_component_artifact``) are simply
+ported, so validation now reads the SAME store the writes land in. (It is still a *separate*
+transaction from the document write; the registry is append-only and immutable, so the only
+residual interleaving is an account deleted between validation and write, which the
+``design_custom_component`` CASCADE then makes structurally consistent anyway.)
 
 Workspace scoping (O4, staged): ``resolve_workspace_id`` takes ``X-Workspace-Id`` when the
 caller sends it, else the configured dev workspace (``LUMEN_DEV_WORKSPACE_ID``, default
-``ws_lumen_dev``). The strict 401-on-absent seam lands at D2.5 with the editor harness change.
-The dev workspace row is ensured lazily (once per process per workspace) — Part-IV auth
-deletes that scaffolding.
+``ws_lumen_dev``). Public publish serving cannot use a header at all — a visitor sends none —
+so O6b (ratified: option (a)) puts the workspace in the PATH: ``/w/{workspace_id}/p/{slug}``,
+served through main.py's ``public_repository`` dependency, which builds this store with
+``ensure_workspace=False`` (an anonymous GET must never write) and therefore 404s on an unknown
+tenant through the fail-closed workspace-scoped reads.
+The strict 401-on-absent header seam lands at D2.5 with the editor harness change. The dev
+workspace row is ensured lazily (once per process per workspace) — Part-IV auth deletes that
+scaffolding, and Part-IV item 5 deletes the interim ``/w/{workspace_id}/p/...`` route.
 """
 
 from __future__ import annotations
@@ -38,24 +49,37 @@ from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from clue_db import db_lifespan
+from clue_db import create_engine
+from clue_design import accounts as design_accounts
 from clue_design import assets as design_assets
 from clue_design import brand as design_brand
+from clue_design import components as design_components
 from clue_design import diagnostics as design_diagnostics
 from clue_design import documents as design_documents
 from clue_design import history as design_history
+from clue_design import personalization as design_personalization
+from clue_design import publishes as design_publishes
 from clue_design import snapshots as design_snapshots
-from clue_design.errors import DesignNotFoundError, DesignVersionConflictError
+from clue_design.errors import (
+    DesignArtifactConflictError,
+    DesignNotFoundError,
+    DesignSourceVersionConflictError,
+    DesignVersionConflictError,
+)
 from fastapi import Request
 from sqlalchemy import text
 from sqlalchemy.exc import DataError, DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from .database import (
+    CustomComponentArtifactConflict,
+    CustomComponentSourceVersionConflict,
     NotFoundError,
     Repository,
     WebDocumentVersionConflict,
+    custom_component_artifact_candidate,
     custom_component_nodes,
+    custom_component_source_candidate,
 )
 
 JsonObject = Dict[str, Any]
@@ -99,14 +123,29 @@ def _run_isolated[T](coro: "Awaitable[T]") -> T:
 class DesignStoreBridge:
     """Sync facade over the async ``clue_design`` DAL — one call, one loop, one transaction."""
 
-    def __init__(self, workspace_id: str) -> None:
+    def __init__(self, workspace_id: str, *, ensure_workspace: bool = True) -> None:
         self.workspace_id = workspace_id
+        # Public (unauthenticated) serving passes False: an anonymous GET must never create a
+        # workspace row, so an unknown tenant simply reads nothing and 404s (O6b).
+        self.ensure_workspace = ensure_workspace
 
     def _run[T](self, fn: Callable[[AsyncConnection], Awaitable[T]]) -> T:
         async def _one_transaction() -> T:
-            async with db_lifespan() as engine, engine.connect() as conn, conn.begin():
-                await _ensure_workspace(conn, self.workspace_id)
-                return await fn(conn)
+            # ``create_engine`` (a private engine) rather than ``db_lifespan``: the lifespan
+            # registers a PROCESS-GLOBAL engine and refuses re-entry, so two bridge calls on two
+            # threads collided with "db_lifespan is already active" (found at D2.4B by the
+            # component source-CAS race test, which drives two concurrent writers on purpose).
+            # Nothing under the bridge reads the global — every DAL coroutine is handed its
+            # connection — so owning the engine locally is both correct and what O5 already
+            # requires (one engine/connection/transaction per call, bound to THIS loop).
+            engine = create_engine()
+            try:
+                async with engine.connect() as conn, conn.begin():
+                    if self.ensure_workspace:
+                        await _ensure_workspace(conn, self.workspace_id)
+                    return await fn(conn)
+            finally:
+                await engine.dispose()
 
         try:
             return _run_isolated(_one_transaction())
@@ -115,6 +154,15 @@ class DesignStoreBridge:
         except DesignVersionConflictError as exc:
             raise WebDocumentVersionConflict(
                 exc.key, exc.expected_version, exc.current_version
+            ) from exc
+        except DesignArtifactConflictError as exc:
+            # D2.4B: the immutable custom-component registry's two conflict species keep the
+            # exact exception types main.py registers handlers for (409 DTOs), so the port is
+            # invisible above this seam.
+            raise CustomComponentArtifactConflict(exc.key) from exc
+        except DesignSourceVersionConflictError as exc:
+            raise CustomComponentSourceVersionConflict(
+                exc.slug, exc.expected_version, exc.current_version
             ) from exc
         except (IntegrityError, DataError) as exc:
             # Constraint parity for the still-SQLite call sites: a duplicate brand-kit
@@ -156,13 +204,21 @@ async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
 class HybridRepository(Repository):
     """The staged-port store: document domain on Postgres, everything else inherited SQLite."""
 
-    def __init__(self, connection: Any, workspace_id: str | None = None) -> None:
+    def __init__(
+        self,
+        connection: Any,
+        workspace_id: str | None = None,
+        *,
+        ensure_workspace: bool = True,
+    ) -> None:
         # None -> the configured dev workspace (request paths always pass explicitly; the
         # default serves direct constructions in scripts/tests, which read the same env the
         # per-test isolation fixture sets).
         super().__init__(connection)
         self.workspace_id = workspace_id or default_workspace_id()
-        self._bridge = DesignStoreBridge(self.workspace_id)
+        self._bridge = DesignStoreBridge(
+            self.workspace_id, ensure_workspace=ensure_workspace
+        )
 
     # --- documents ---------------------------------------------------------------------------
 
@@ -178,8 +234,8 @@ class HybridRepository(Repository):
         account_id: Optional[str] = None,
     ) -> JsonObject:
         if doc_kind == "web":
-            # Cross-domain seam (SQLite until D2.4): component references validate against
-            # the SQLite registry BEFORE the Postgres write — same fail-fast as before.
+            # D2.4B: component references now validate against the SAME Postgres registry the
+            # write lands in (the last cross-domain seam) — same fail-fast as before.
             self.validate_custom_component_reference_changes(
                 before_web_doc={}, after_web_doc=scene, account_id=account_id
             )
@@ -502,6 +558,471 @@ class HybridRepository(Repository):
                 conn, workspace_id=self.workspace_id, scene=scene
             )
         )
+
+    # --- scene-mode personalization (D2.4) ----------------------------------------------------
+
+    def upsert_binding_set(
+        self, binding: JsonObject, status: str, diagnostics: List[JsonObject]
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_personalization.upsert_binding_set(
+                conn,
+                workspace_id=self.workspace_id,
+                binding=binding,
+                status=status,
+                diagnostics=diagnostics,
+            )
+        )
+
+    def require_binding_set(self, binding_set_id: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_personalization.get_binding_set(
+                conn, workspace_id=self.workspace_id, binding_set_id=binding_set_id
+            )
+        )
+
+    def list_binding_sets(
+        self, template_revision_id: Optional[str] = None
+    ) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_personalization.list_binding_sets(
+                conn,
+                workspace_id=self.workspace_id,
+                template_revision_id=template_revision_id,
+            )
+        )
+
+    def delete_binding_set(self, binding_set_id: str) -> None:
+        self._bridge._run(
+            lambda conn: design_personalization.delete_binding_set(
+                conn, workspace_id=self.workspace_id, binding_set_id=binding_set_id
+            )
+        )
+
+    def upsert_instance(self, instance: JsonObject) -> JsonObject:
+        """The derived instance's revision/binding/batch references are REAL composite FKs
+        now (D1d), so a dangling reference surfaces as ``sqlite3.IntegrityError`` through the
+        bridge's constraint-parity translation rather than as a silent orphan row."""
+        return self._bridge._run(
+            lambda conn: design_personalization.upsert_instance(
+                conn, workspace_id=self.workspace_id, instance=instance
+            )
+        )
+
+    def require_instance(self, instance_id: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_personalization.get_instance(
+                conn, workspace_id=self.workspace_id, instance_id=instance_id
+            )
+        )
+
+    def list_instances(
+        self,
+        template_revision_id: Optional[str] = None,
+        batch_id: Optional[str] = None,
+    ) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_personalization.list_instances(
+                conn,
+                workspace_id=self.workspace_id,
+                template_revision_id=template_revision_id,
+                batch_id=batch_id,
+            )
+        )
+
+    def create_batch(self, batch: JsonObject) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_personalization.create_instance_batch(
+                conn, workspace_id=self.workspace_id, batch=batch
+            )
+        )
+
+    def update_batch_progress(
+        self,
+        batch_id: str,
+        cursor: int,
+        status: str,
+        counts: JsonObject,
+        manifest: List[JsonObject],
+        diagnostics: List[JsonObject],
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_personalization.update_instance_batch_progress(
+                conn,
+                workspace_id=self.workspace_id,
+                batch_id=batch_id,
+                cursor=cursor,
+                status=status,
+                counts=counts,
+                manifest=manifest,
+                diagnostics=diagnostics,
+            )
+        )
+
+    def require_batch(self, batch_id: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_personalization.get_instance_batch(
+                conn, workspace_id=self.workspace_id, batch_id=batch_id
+            )
+        )
+
+    def upsert_repair_request(self, repair: JsonObject) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_personalization.upsert_repair_request(
+                conn, workspace_id=self.workspace_id, repair=repair
+            )
+        )
+
+    def list_repair_queue(
+        self, template_revision_id: str, status: Optional[str] = None
+    ) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_personalization.list_repair_queue(
+                conn,
+                workspace_id=self.workspace_id,
+                template_revision_id=template_revision_id,
+                status=status,
+            )
+        )
+
+    # --- web accounts + web batches (D2.4) ----------------------------------------------------
+
+    def create_web_account(
+        self,
+        account_id: str,
+        name: str,
+        domain: Optional[str],
+        logo_asset_id: Optional[str],
+        data: JsonObject,
+        notes: Optional[str],
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_accounts.create_web_account(
+                conn,
+                workspace_id=self.workspace_id,
+                account_id=account_id,
+                name=name,
+                domain=domain,
+                logo_asset_id=logo_asset_id,
+                data=data,
+                notes=notes,
+            )
+        )
+
+    def get_web_account(self, account_id: str) -> Optional[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_accounts.get_web_account(
+                conn, workspace_id=self.workspace_id, account_id=account_id
+            )
+        )
+
+    def require_web_account(self, account_id: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_accounts.require_web_account(
+                conn, workspace_id=self.workspace_id, account_id=account_id
+            )
+        )
+
+    def list_web_accounts(self) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_accounts.list_web_accounts(
+                conn, workspace_id=self.workspace_id
+            )
+        )
+
+    def update_web_account(self, account_id: str, patch: JsonObject) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_accounts.update_web_account(
+                conn,
+                workspace_id=self.workspace_id,
+                account_id=account_id,
+                patch=patch,
+            )
+        )
+
+    def delete_web_account(self, account_id: str) -> None:
+        """Delete the Postgres account row.
+
+        Since D2.4B the account's CUSTOM COMPONENT families live on Postgres too, behind
+        ``design_custom_component_account_fk … ON DELETE CASCADE`` — so components, their source
+        revisions, artifacts and compilations now go WITH the account instead of being orphaned
+        (SQLite had no FK to ``web_accounts`` and left them behind forever).
+        """
+        self._bridge._run(
+            lambda conn: design_accounts.delete_web_account(
+                conn, workspace_id=self.workspace_id, account_id=account_id
+            )
+        )
+
+    def create_web_batch(self, batch: JsonObject) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_accounts.create_web_batch(
+                conn, workspace_id=self.workspace_id, batch=batch
+            )
+        )
+
+    def update_web_batch_progress(
+        self, batch_id: str, cursor: int, status: str, manifest: List[JsonObject]
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_accounts.update_web_batch_progress(
+                conn,
+                workspace_id=self.workspace_id,
+                batch_id=batch_id,
+                cursor=cursor,
+                status=status,
+                manifest=manifest,
+            )
+        )
+
+    def require_web_batch(self, batch_id: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_accounts.require_web_batch(
+                conn, workspace_id=self.workspace_id, batch_id=batch_id
+            )
+        )
+
+    # --- web publishes + publish revisions (D2.4B) --------------------------------------------
+
+    def register_web_publish_revision(self, revision: JsonObject) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_publishes.register_web_publish_revision(
+                conn, workspace_id=self.workspace_id, revision=revision
+            )
+        )
+
+    def require_web_publish_revision(self, publish_id: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_publishes.require_web_publish_revision(
+                conn, workspace_id=self.workspace_id, publish_id=publish_id
+            )
+        )
+
+    def upsert_web_publish(
+        self,
+        slug: str,
+        document_id: str,
+        doc_version: int,
+        html: str,
+        runtime_version: Optional[int],
+        publish_id: Optional[str] = None,
+    ) -> JsonObject:
+        """Slugs are WORKSPACE-LOCAL now (O6): the PK is ``(workspace_id, slug)``, so two
+        tenants publishing ``pricing`` no longer collide. The current→previous shift stays ONE
+        statement."""
+        return self._bridge._run(
+            lambda conn: design_publishes.upsert_web_publish(
+                conn,
+                workspace_id=self.workspace_id,
+                slug=slug,
+                document_id=document_id,
+                doc_version=doc_version,
+                html=html,
+                runtime_version=runtime_version,
+                publish_id=publish_id,
+            )
+        )
+
+    def require_web_publish(self, slug: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_publishes.require_web_publish(
+                conn, workspace_id=self.workspace_id, slug=slug
+            )
+        )
+
+    def get_web_publish(self, slug: str) -> Optional[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_publishes.get_web_publish(
+                conn, workspace_id=self.workspace_id, slug=slug
+            )
+        )
+
+    def get_web_publish_for_document(self, document_id: str) -> Optional[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_publishes.get_web_publish_for_document(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
+        )
+
+    def set_web_publish_status(self, slug: str, status: str) -> Optional[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_publishes.set_web_publish_status(
+                conn, workspace_id=self.workspace_id, slug=slug, status=status
+            )
+        )
+
+    def rollback_web_publish(self, slug: str) -> Any:
+        return self._bridge._run(
+            lambda conn: design_publishes.rollback_web_publish(
+                conn, workspace_id=self.workspace_id, slug=slug
+            )
+        )
+
+    # --- custom-component registry (D2.4B) ----------------------------------------------------
+
+    def register_custom_component_artifact(self, artifact: JsonObject) -> JsonObject:
+        """Contract validation (blob/slug/content-address) runs here against the SHARED
+        ``database.custom_component_artifact_candidate`` helper — same errors as the SQLite era —
+        and the DAL then stores + arbitrates the immutable id's equal-content rule."""
+        candidate = custom_component_artifact_candidate(artifact)
+        return self._bridge._run(
+            lambda conn: design_components.register_custom_component_artifact(
+                conn, workspace_id=self.workspace_id, candidate=candidate
+            )
+        )
+
+    def get_custom_component_artifact(self, artifact_id: str) -> Optional[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_components.get_custom_component_artifact(
+                conn, workspace_id=self.workspace_id, artifact_id=artifact_id
+            )
+        )
+
+    def get_custom_component_artifact_for_account(
+        self, account_id: str, artifact_id: str
+    ) -> Optional[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_components.get_custom_component_artifact_for_account(
+                conn,
+                workspace_id=self.workspace_id,
+                account_id=account_id,
+                artifact_id=artifact_id,
+            )
+        )
+
+    def require_custom_component_artifact(
+        self, account_id: str, artifact_id: str
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_components.require_custom_component_artifact(
+                conn,
+                workspace_id=self.workspace_id,
+                account_id=account_id,
+                artifact_id=artifact_id,
+            )
+        )
+
+    def list_custom_component_artifacts(
+        self, account_id: str, slug: Optional[str] = None
+    ) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_components.list_custom_component_artifacts(
+                conn, workspace_id=self.workspace_id, account_id=account_id, slug=slug
+            )
+        )
+
+    def list_custom_components(self, account_id: str) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_components.list_custom_components(
+                conn, workspace_id=self.workspace_id, account_id=account_id
+            )
+        )
+
+    def get_custom_component(self, account_id: str, slug: str) -> Optional[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_components.get_custom_component(
+                conn, workspace_id=self.workspace_id, account_id=account_id, slug=slug
+            )
+        )
+
+    def require_custom_component(self, account_id: str, slug: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_components.require_custom_component(
+                conn, workspace_id=self.workspace_id, account_id=account_id, slug=slug
+            )
+        )
+
+    def create_custom_component_source_revision(
+        self, source: JsonObject, *, expected_version: int
+    ) -> JsonObject:
+        """SQLite serialized the CAS with ``BEGIN IMMEDIATE``; the DAL takes the identity row's
+        ``FOR UPDATE`` lock inside the bridge's single transaction (the O5 atomicity rule)."""
+        candidate = custom_component_source_candidate(source, expected_version)
+        return self._bridge._run(
+            lambda conn: design_components.create_custom_component_source_revision(
+                conn,
+                workspace_id=self.workspace_id,
+                candidate=candidate,
+                expected_version=expected_version,
+            )
+        )
+
+    def get_custom_component_source_revision(
+        self, account_id: str, revision_id: str
+    ) -> Optional[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_components.get_custom_component_source_revision(
+                conn,
+                workspace_id=self.workspace_id,
+                account_id=account_id,
+                revision_id=revision_id,
+            )
+        )
+
+    def require_custom_component_source_revision(
+        self, account_id: str, revision_id: str
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_components.require_custom_component_source_revision(
+                conn,
+                workspace_id=self.workspace_id,
+                account_id=account_id,
+                revision_id=revision_id,
+            )
+        )
+
+    def get_current_custom_component_source(
+        self, account_id: str, slug: str
+    ) -> Optional[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_components.get_current_custom_component_source(
+                conn, workspace_id=self.workspace_id, account_id=account_id, slug=slug
+            )
+        )
+
+    def list_custom_component_source_revisions(
+        self, account_id: str, slug: str
+    ) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_components.list_custom_component_source_revisions(
+                conn, workspace_id=self.workspace_id, account_id=account_id, slug=slug
+            )
+        )
+
+    def record_custom_component_compilation(
+        self, compilation: JsonObject
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_components.record_custom_component_compilation(
+                conn, workspace_id=self.workspace_id, compilation=compilation
+            )
+        )
+
+    def require_custom_component_compilation(
+        self, account_id: str, compilation_id: str
+    ) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_components.require_custom_component_compilation(
+                conn,
+                workspace_id=self.workspace_id,
+                account_id=account_id,
+                compilation_id=compilation_id,
+            )
+        )
+
+    def list_custom_component_compilations(
+        self, account_id: str, slug: str
+    ) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_components.list_custom_component_compilations(
+                conn, workspace_id=self.workspace_id, account_id=account_id, slug=slug
+            )
+        )
+
+    # NOTE: ``validate_custom_component_reference_changes`` is deliberately NOT overridden. Its
+    # only two store reads are ``get_web_account`` and ``get_custom_component_artifact``, both
+    # overridden above, so Python dispatch already runs the inherited walk against Postgres —
+    # the LAST cross-domain seam, closed by porting its reads rather than by forking the method.
 
     # --- cross-domain reads over the Postgres document feed ----------------------------------
 

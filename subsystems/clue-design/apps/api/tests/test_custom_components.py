@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import copy
-import sqlite3
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text as sa_text
+from sqlalchemy.exc import DBAPIError
 
 from lumen_api.custom_components import (
     persist_compiled_custom_component_artifact,
@@ -168,16 +169,21 @@ def test_registry_is_content_addressed_immutable_and_account_scoped(
                 artifact_id=first["artifact_id"],
                 member="bundle",
             )
-        with pytest.raises(sqlite3.IntegrityError):
-            repository.connection.execute(
-                """
-                UPDATE custom_component_artifacts
-                SET slug = 'mutated'
-                WHERE artifact_id = ?
-                """,
-                (first["artifact_id"],),
+        # D2.4B: the registry lives on Postgres and stays immutable — enforced by the
+        # design_custom_component_artifact no-UPDATE TRIGGER instead of the old SQLite one.
+        # Reaching into `_bridge` is deliberate: the mutation must be attempted straight at the
+        # table, below the API boundary. `_run` is its own transaction, so the refusal rolls
+        # itself back.
+        with pytest.raises(DBAPIError, match="immutable"):
+            repository._bridge._run(
+                lambda conn: conn.execute(
+                    sa_text(
+                        "UPDATE design_custom_component_artifact SET slug = 'mutated'"
+                        " WHERE artifact_id = :i AND workspace_id = :w"
+                    ),
+                    {"i": first["artifact_id"], "w": repository.workspace_id},
+                )
             )
-        repository.connection.rollback()
     finally:
         repository.connection.close()
 
@@ -563,11 +569,24 @@ def test_leaf_reparent_rejected_and_missing_artifact_stays_editable_placeholder(
 
     repository = HybridRepository(connect(client.app.state.database_path))
     try:
-        repository.connection.execute(
-            "DELETE FROM custom_component_artifacts WHERE artifact_id = ?",
-            (artifact["artifact_id"],),
-        )
-        repository.connection.commit()
+        # D2.4B: the registry lives on Postgres; purge the row there to simulate the
+        # missing-artifact case the renderer must contain. The citing compilation rows go
+        # first: their artifact FK is ON DELETE SET NULL, and that SET NULL is itself an
+        # UPDATE, which the compilation table's immutability trigger rejects. (No production
+        # path deletes an artifact — the registry is INSERT-only — and the account CASCADE
+        # removes compilations outright, so this ordering is a test-only concern.)
+        for statement in (
+            "DELETE FROM design_custom_component_compilation"
+            " WHERE artifact_id = :i AND workspace_id = :w",
+            "DELETE FROM design_custom_component_artifact"
+            " WHERE artifact_id = :i AND workspace_id = :w",
+        ):
+            repository._bridge._run(
+                lambda conn, sql=statement: conn.execute(
+                    sa_text(sql),
+                    {"i": artifact["artifact_id"], "w": repository.workspace_id},
+                )
+            )
     finally:
         repository.connection.close()
 

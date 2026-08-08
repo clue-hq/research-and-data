@@ -119,6 +119,100 @@ def canonical_custom_component_blob(
     }
 
 
+def custom_component_artifact_candidate(artifact: JsonObject) -> JsonObject:
+    """Validate + canonicalize one artifact registration into its comparable candidate.
+
+    Extracted from ``Repository.register_custom_component_artifact`` at D2.4B: the P6 blob /
+    slug / content-address rules are the design API's CONTRACT, not storage rules, so the
+    Postgres path (``HybridRepository`` → ``clue_design.components``) runs these identical
+    checks — same error types, same messages — instead of re-implementing them in the DAL.
+    """
+    account_id = str(artifact["account_id"])
+    slug = str(artifact["slug"])
+    artifact_id = str(artifact["artifact_id"])
+    source_blob = canonical_custom_component_blob("source", artifact["source"])
+    bundle_blob = canonical_custom_component_blob("bundle", artifact["bundle"])
+    css_blob = (
+        canonical_custom_component_blob("css", artifact["css"], allow_empty=True)
+        if artifact.get("css") is not None
+        else None
+    )
+    first_frame_blob = (
+        canonical_custom_component_blob(
+            "first_frame", artifact["first_frame"], allow_empty=True
+        )
+        if artifact.get("first_frame") is not None
+        else None
+    )
+    if (css_blob is None) != (first_frame_blob is None):
+        raise ValueError("css and first_frame blob records must be supplied together")
+    manifest = artifact.get("manifest", {})
+    provenance = artifact.get("provenance", {})
+    if not custom_component_slug_is_valid(slug):
+        raise ValueError(
+            "custom component slug must be 1–64 lowercase kebab-case characters"
+        )
+    if not isinstance(manifest, dict) or not isinstance(provenance, dict):
+        raise ValueError("custom component manifest and provenance must be objects")
+    if (
+        not artifact_id.startswith("ccart_")
+        or len(artifact_id) != len("ccart_") + 64
+        or any(ch not in "0123456789abcdef" for ch in artifact_id[len("ccart_") :])
+    ):
+        raise ValueError("artifact_id must be ccart_<lowercase sha256>")
+    return {
+        "artifact_id": artifact_id,
+        "account_id": account_id,
+        "slug": slug,
+        "source": source_blob,
+        "bundle": bundle_blob,
+        "css": css_blob,
+        "first_frame": first_frame_blob,
+        "manifest": manifest,
+        "provenance": provenance,
+    }
+
+
+def custom_component_source_candidate(
+    source: JsonObject, expected_version: int
+) -> JsonObject:
+    """Validate + canonicalize one source-revision write (same extraction rationale)."""
+    account_id = str(source["account_id"])
+    slug = str(source["slug"])
+    revision_id = str(source["revision_id"])
+    entry_path = str(source["entry_path"])
+    snapshot = canonical_custom_component_blob("source snapshot", source["snapshot"])
+    files_manifest = source.get("files_manifest")
+    provenance = source.get("provenance", {})
+    if not custom_component_slug_is_valid(slug):
+        raise ValueError(
+            "custom component slug must be 1–64 lowercase kebab-case characters"
+        )
+    if (
+        not revision_id.startswith("ccsrc_")
+        or len(revision_id) != len("ccsrc_") + 64
+        or any(ch not in "0123456789abcdef" for ch in revision_id[len("ccsrc_") :])
+    ):
+        raise ValueError("revision_id must be ccsrc_<lowercase sha256>")
+    if (
+        not isinstance(expected_version, int)
+        or isinstance(expected_version, bool)
+        or expected_version < 0
+    ):
+        raise ValueError("expected_version must be a non-negative integer")
+    if not isinstance(files_manifest, dict) or not isinstance(provenance, dict):
+        raise ValueError("files_manifest and provenance must be objects")
+    return {
+        "revision_id": revision_id,
+        "account_id": account_id,
+        "slug": slug,
+        "entry_path": entry_path,
+        "snapshot": snapshot,
+        "files_manifest": files_manifest,
+        "provenance": provenance,
+    }
+
+
 # The ONE `assets`-table column list + row builder: create_asset_record
 # (canonical upsert) and register_scene_assets (scene promotion) both write
 # through these, so a schema addition cannot silently diverge between the
@@ -1942,62 +2036,18 @@ class Repository:
         seam, so every committed row points at durable content-addressed bytes.
         """
 
-        account_id = str(artifact["account_id"])
-        slug = str(artifact["slug"])
-        artifact_id = str(artifact["artifact_id"])
-        source_blob = canonical_custom_component_blob(
-            "source", artifact["source"]
-        )
-        bundle_blob = canonical_custom_component_blob(
-            "bundle", artifact["bundle"]
-        )
-        css_blob = (
-            canonical_custom_component_blob(
-                "css", artifact["css"], allow_empty=True
-            )
-            if artifact.get("css") is not None
-            else None
-        )
-        first_frame_blob = (
-            canonical_custom_component_blob(
-                "first_frame",
-                artifact["first_frame"],
-                allow_empty=True,
-            )
-            if artifact.get("first_frame") is not None
-            else None
-        )
-        if (css_blob is None) != (first_frame_blob is None):
-            raise ValueError(
-                "css and first_frame blob records must be supplied together"
-            )
-        manifest = artifact.get("manifest", {})
-        provenance = artifact.get("provenance", {})
+        candidate = custom_component_artifact_candidate(artifact)
+        account_id = candidate["account_id"]
+        slug = candidate["slug"]
+        artifact_id = candidate["artifact_id"]
+        source_blob = candidate["source"]
+        bundle_blob = candidate["bundle"]
+        css_blob = candidate["css"]
+        first_frame_blob = candidate["first_frame"]
+        manifest = candidate["manifest"]
+        provenance = candidate["provenance"]
         self.require_web_account(account_id)
-        if not custom_component_slug_is_valid(slug):
-            raise ValueError(
-                "custom component slug must be 1–64 lowercase kebab-case characters"
-            )
-        if not isinstance(manifest, dict) or not isinstance(provenance, dict):
-            raise ValueError("custom component manifest and provenance must be objects")
-        if (
-            not artifact_id.startswith("ccart_")
-            or len(artifact_id) != len("ccart_") + 64
-            or any(ch not in "0123456789abcdef" for ch in artifact_id[len("ccart_") :])
-        ):
-            raise ValueError("artifact_id must be ccart_<lowercase sha256>")
         now = utc_now()
-        candidate = {
-            "artifact_id": artifact_id,
-            "account_id": account_id,
-            "slug": slug,
-            "source": source_blob,
-            "bundle": bundle_blob,
-            "css": css_blob,
-            "first_frame": first_frame_blob,
-            "manifest": manifest,
-            "provenance": provenance,
-        }
         existing = self.get_custom_component_artifact(artifact_id)
         if existing is not None:
             comparable = {
@@ -2229,37 +2279,15 @@ class Repository:
     ) -> JsonObject:
         """Atomically append an immutable source revision with CAS versioning."""
 
-        account_id = str(source["account_id"])
-        slug = str(source["slug"])
-        revision_id = str(source["revision_id"])
-        entry_path = str(source["entry_path"])
-        snapshot = canonical_custom_component_blob(
-            "source snapshot", source["snapshot"]
-        )
-        files_manifest = source.get("files_manifest")
-        provenance = source.get("provenance", {})
+        candidate = custom_component_source_candidate(source, expected_version)
+        account_id = candidate["account_id"]
+        slug = candidate["slug"]
+        revision_id = candidate["revision_id"]
+        entry_path = candidate["entry_path"]
+        snapshot = candidate["snapshot"]
+        files_manifest = candidate["files_manifest"]
+        provenance = candidate["provenance"]
         self.require_web_account(account_id)
-        if not custom_component_slug_is_valid(slug):
-            raise ValueError(
-                "custom component slug must be 1–64 lowercase kebab-case characters"
-            )
-        if (
-            not revision_id.startswith("ccsrc_")
-            or len(revision_id) != len("ccsrc_") + 64
-            or any(
-                ch not in "0123456789abcdef"
-                for ch in revision_id[len("ccsrc_") :]
-            )
-        ):
-            raise ValueError("revision_id must be ccsrc_<lowercase sha256>")
-        if (
-            not isinstance(expected_version, int)
-            or isinstance(expected_version, bool)
-            or expected_version < 0
-        ):
-            raise ValueError("expected_version must be a non-negative integer")
-        if not isinstance(files_manifest, dict) or not isinstance(provenance, dict):
-            raise ValueError("files_manifest and provenance must be objects")
 
         now = utc_now()
         self.connection.execute("BEGIN IMMEDIATE")

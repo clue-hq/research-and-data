@@ -551,8 +551,12 @@ async def set_document_account(
     document_id: str,
     account_id: str | None,
 ) -> JsonObject:
-    """Stamp the ABM account a derived document personalizes for (the D2.4 derive path's
-    write; advisory string until D2.4 re-adds the account FK — see migration 7a9881f9717a)."""
+    """Stamp the ABM account a derived document personalizes for (the derive path's write).
+
+    Since D2.4 the stamp is FK-backed (``design_document_account_fk``, re-added by migration
+    ``cf7dd82cf683``): the account must exist in this workspace, and deleting it SET-NULLs
+    the stamp instead of leaving a dangling string.
+    """
     await get_document(conn, workspace_id=workspace_id, document_id=document_id, for_update=True)
     await conn.execute(
         text(

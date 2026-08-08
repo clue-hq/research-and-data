@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text as sa_text
+from sqlalchemy.exc import DBAPIError
 
 import lumen_api.main as main_module
 from lumen_api.custom_components import persist_custom_component_source_revision
@@ -277,39 +278,38 @@ def test_valid_source_versions_compile_into_immutable_complete_artifacts(
         assert response.status_code == 200, response.text
         assert expected in response.content
 
+    # D2.4B: the three content tables live on Postgres and stay immutable — enforced by the
+    # design_custom_component_reject_update TRIGGER on each, instead of the old SQLite ones.
+    # Reaching into `_bridge` is deliberate: the mutation must be attempted straight at the
+    # table, below the API boundary. Each `_run` is its own transaction, so a refusal rolls
+    # itself back.
     repository = HybridRepository(connect(client.app.state.database_path))
+    compilation_id = compiled.json()["compilation"]["compilation_id"]
     try:
-        with pytest.raises(sqlite3.IntegrityError):
-            repository.connection.execute(
-                """
-                UPDATE custom_component_artifacts
-                SET manifest_json = '{}'
-                WHERE artifact_id = ?
-                """,
-                (first["artifact_id"],),
-            )
-        repository.connection.rollback()
-        with pytest.raises(sqlite3.IntegrityError):
-            repository.connection.execute(
-                """
-                UPDATE custom_component_source_revisions
-                SET entry_path = 'changed.tsx'
-                WHERE revision_id = ?
-                """,
-                (first_source["revision_id"],),
-            )
-        repository.connection.rollback()
-        compilation_id = compiled.json()["compilation"]["compilation_id"]
-        with pytest.raises(sqlite3.IntegrityError):
-            repository.connection.execute(
-                """
-                UPDATE custom_component_compilations
-                SET status = 'failed'
-                WHERE compilation_id = ?
-                """,
-                (compilation_id,),
-            )
-        repository.connection.rollback()
+        for statement, key in (
+            (
+                "UPDATE design_custom_component_artifact SET manifest_json = '{}'::jsonb"
+                " WHERE artifact_id = :k AND workspace_id = :w",
+                first["artifact_id"],
+            ),
+            (
+                "UPDATE design_custom_component_source_revision"
+                " SET entry_path = 'changed.tsx'"
+                " WHERE revision_id = :k AND workspace_id = :w",
+                first_source["revision_id"],
+            ),
+            (
+                "UPDATE design_custom_component_compilation SET status = 'failed'"
+                " WHERE compilation_id = :k AND workspace_id = :w",
+                compilation_id,
+            ),
+        ):
+            with pytest.raises(DBAPIError, match="immutable"):
+                repository._bridge._run(
+                    lambda conn, sql=statement, k=key: conn.execute(
+                        sa_text(sql), {"k": k, "w": repository.workspace_id}
+                    )
+                )
     finally:
         repository.connection.close()
 

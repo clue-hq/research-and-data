@@ -70,7 +70,7 @@ from .database import (
     run_migrations,
     utc_now,
 )
-from .design_store import HybridRepository, resolve_workspace_id
+from .design_store import HybridRepository, default_workspace_id, resolve_workspace_id
 from .font_library import manifest as font_library_manifest
 from .dto import (
     brand_compatibility_dto,
@@ -504,6 +504,21 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         connection = connect(app.state.database_path)
         try:
             yield HybridRepository(connection, workspace_id=resolve_workspace_id(request))
+        finally:
+            connection.close()
+
+    def public_repository(workspace_id: str) -> Repository:
+        # O6b (RATIFIED 2026-08-08, option (a); PD-part2-design-substrate §6). The public
+        # publish routes serve anonymous visitors, who send no X-Workspace-Id header — so the
+        # tenant comes from the PATH instead. `ensure_workspace=False`: an anonymous GET must
+        # never create a workspace row, so an unknown tenant reads nothing and 404s through the
+        # fail-closed workspace-scoped reads. INTERIM AND DISPOSABLE: Part-IV item 5 owns real
+        # public routing and DELETES this whole surface.
+        connection = connect(app.state.database_path)
+        try:
+            yield HybridRepository(
+                connection, workspace_id=workspace_id, ensure_workspace=False
+            )
         finally:
             connection.close()
 
@@ -2867,6 +2882,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 database_path=app.state.database_path,
                 slug=slug,
                 public_base=public_base,
+                workspace_id=store_workspace_id(repo),
                 node_bin=app.state.web_export_node_bin,
             )
             web_export.persist_publish_assets(
@@ -2923,7 +2939,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         return {
             "schema_version": 1,
             "slug": slug,
-            "url": f"/p/{slug}",
+            "url": public_publish_path(repo, slug),
             "doc_version": publish["doc_version"],
             "runtime_version": publish["runtime_version"],
             "publish_id": publish["publish_id"],
@@ -2946,7 +2962,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "schema_version": 1,
             "published": True,
             "slug": publish["slug"],
-            "url": f"/p/{publish['slug']}",
+            "url": public_publish_path(repo, publish["slug"]),
             "doc_version": publish["doc_version"],
             "status": publish["status"],
             "publish_id": publish.get("publish_id"),
@@ -3522,6 +3538,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     database_path=app.state.database_path,
                     slug=slug,
                     public_base=public_base,
+                    workspace_id=store_workspace_id(repo),
                     node_bin=app.state.web_export_node_bin,
                 )
                 web_export.persist_publish_assets(
@@ -3554,7 +3571,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     publish_id,
                 )
                 row["slug"] = slug
-                row["url"] = f"/p/{slug}"
+                row["url"] = public_publish_path(repo, slug)
                 row["status"] = "published"
             return row
         except Exception as error:  # noqa: BLE001 — one account never kills a batch
@@ -3670,8 +3687,20 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     ) -> JsonObject:
         return web_batch_response(repo.require_web_batch(batch_id))
 
-    @app.get("/p-assets/{asset_name}")
-    def serve_publish_asset(asset_name: str) -> Response:
+    # --- O6b interim public serving surface ------------------------------- #
+    # RATIFIED 2026-08-08 (option (a)), docs/specs/PD-part2-design-substrate.md §6: publish
+    # slugs became workspace-LOCAL when design_web_publish gained PK (workspace_id, slug) — O6 —
+    # so a bare /p/{slug} is genuinely AMBIGUOUS across tenants and is DELETED (404), not kept
+    # as a fallback. The workspace comes from the PATH because a public visitor sends no header.
+    # Part-IV item 5 (design-integration-master-plan.md) owns the real public routing and
+    # DELETES these three routes when it ships.
+
+    @app.get("/w/{workspace_id}/p-assets/{asset_name}")
+    def serve_publish_asset(workspace_id: str, asset_name: str) -> Response:
+        # The blobs are content-addressed and still live in the API-local asset store, so this
+        # route reads no tenant state; the workspace segment keeps every URL a publish package
+        # mints under one prefix. Per-tenant asset custody arrives with D4 (clue_storage).
+        del workspace_id
         match = re.fullmatch(r"([0-9a-f]{64})\.(js|css|html)", asset_name)
         if match is None:
             return Response(status_code=404)
@@ -3693,9 +3722,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             },
         )
 
-    @app.get("/p/{slug}/manifest.json")
+    @app.get("/w/{workspace_id}/p/{slug}/manifest.json")
     def serve_publish_manifest(
-        slug: str, repo: Repository = Depends(repository)
+        workspace_id: str, slug: str, repo: Repository = Depends(public_repository)
     ) -> Response:
         publish = repo.get_web_publish(slug)
         if publish is None or publish["status"] != "active":
@@ -3718,11 +3747,12 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             },
         )
 
-    @app.get("/p/{slug}")
+    @app.get("/w/{workspace_id}/p/{slug}")
     def serve_published_page(
+        workspace_id: str,
         slug: str,
         request: Request,
-        repo: Repository = Depends(repository),
+        repo: Repository = Depends(public_repository),
     ) -> HTMLResponse:
         publish = repo.get_web_publish(slug)
         if publish is None or publish["status"] != "active":
@@ -5370,6 +5400,21 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
 
 app = create_app()
+
+
+def store_workspace_id(repo: Repository) -> str:
+    """The workspace the store is bound to (dev default for a bare SQLite ``Repository``)."""
+    return repo.workspace_id if isinstance(repo, HybridRepository) else default_workspace_id()
+
+
+def public_publish_path(repo: Repository, slug: str) -> str:
+    """The ONE builder for a publish's public path — O6b interim scheme.
+
+    Publish slugs are workspace-local (O6), so every minted link carries the tenant in the
+    path. The workspace comes from the STORE the publish row lives in, never from the request
+    URL. Part-IV item 5 (design-integration-master-plan.md) replaces this scheme wholesale.
+    """
+    return f"/w/{store_workspace_id(repo)}/p/{slug}"
 
 
 def require_document(repo: Repository, document_id: str) -> JsonObject:

@@ -70,7 +70,7 @@ def make_account(client: TestClient, name: str, tagline: str = "Better care") ->
 # --- happy path -------------------------------------------------------------
 
 
-def test_batch_publishes_all_accounts(client: TestClient) -> None:
+def test_batch_publishes_all_accounts(client: TestClient, workspace_id: str) -> None:
     document = create_web_document(client)
     seed_template(client, document["id"])
     accounts = [
@@ -95,7 +95,7 @@ def test_batch_publishes_all_accounts(client: TestClient) -> None:
     for row in manifest:
         assert row["status"] == "published"
         assert row["document_id"]
-        assert row["url"] == f"/p/{row['slug']}"
+        assert row["url"] == f"/w/{workspace_id}/p/{row['slug']}"
         assert row["error"] is None
         slugs.add(row["slug"])
         # Each published page actually serves.

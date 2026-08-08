@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text as sa_text
 
 from lumen_api.database import Repository, connect
 from lumen_api.design_store import HybridRepository
@@ -400,11 +401,24 @@ def test_missing_runtime_host_and_artifact_are_contained_without_losing_siblings
     client.app.state.custom_component_runtime_host = runtime_host
     repository = HybridRepository(connect(client.app.state.database_path))
     try:
-        repository.connection.execute(
-            "DELETE FROM custom_component_artifacts WHERE artifact_id = ?",
-            (artifact["artifact_id"],),
-        )
-        repository.connection.commit()
+        # D2.4B: the registry lives on Postgres; purge the row there to simulate the
+        # missing-artifact case the renderer must contain. The citing compilation rows go
+        # first: their artifact FK is ON DELETE SET NULL, and that SET NULL is itself an
+        # UPDATE, which the compilation table's immutability trigger rejects. (No production
+        # path deletes an artifact — the registry is INSERT-only — and the account CASCADE
+        # removes compilations outright, so this ordering is a test-only concern.)
+        for statement in (
+            "DELETE FROM design_custom_component_compilation"
+            " WHERE artifact_id = :i AND workspace_id = :w",
+            "DELETE FROM design_custom_component_artifact"
+            " WHERE artifact_id = :i AND workspace_id = :w",
+        ):
+            repository._bridge._run(
+                lambda conn, sql=statement: conn.execute(
+                    sa_text(sql),
+                    {"i": artifact["artifact_id"], "w": repository.workspace_id},
+                )
+            )
     finally:
         repository.connection.close()
     artifact_missing = client.get(f"/documents/{document['id']}/web/render")

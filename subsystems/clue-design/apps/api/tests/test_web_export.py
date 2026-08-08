@@ -372,19 +372,19 @@ def test_export_node_failure_is_502(client: TestClient) -> None:
 # --- (f) publish / serve / rollback -----------------------------------------
 
 
-def test_publish_serve_republish_rollback(client: TestClient) -> None:
+def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str) -> None:
     document = seed_document(client)
 
     published = client.post(f"/documents/{document['id']}/web/publish", json={})
     assert published.status_code == 200, published.text
     body = published.json()
     slug = body["slug"]
-    assert body["url"] == f"/p/{slug}"
+    assert body["url"] == f"/w/{workspace_id}/p/{slug}"
     assert body["doc_version"] == 1
     assert body["previous_available"] is False
 
     # Served page: inlined style + canonical, no external stylesheet link.
-    served = client.get(f"/p/{slug}")
+    served = client.get(f"/w/{workspace_id}/p/{slug}")
     assert served.status_code == 200, served.text
     assert 'id="lumen-static-css"' in served.text
     assert '<link rel="canonical"' in served.text
@@ -412,14 +412,14 @@ def test_publish_serve_republish_rollback(client: TestClient) -> None:
     assert republished.status_code == 200, republished.text
     assert republished.json()["doc_version"] == 2
     assert republished.json()["previous_available"] is True
-    assert "MARKER_TWO" in client.get(f"/p/{slug}").text
+    assert "MARKER_TWO" in client.get(f"/w/{workspace_id}/p/{slug}").text
 
     # Rollback → serves the previous publish, doc_version back to 1.
     rolled = client.post(f"/web/publishes/{slug}/rollback")
     assert rolled.status_code == 200, rolled.text
     assert rolled.json()["doc_version"] == 1
     assert rolled.json()["status"] == "active"
-    assert "MARKER_TWO" not in client.get(f"/p/{slug}").text
+    assert "MARKER_TWO" not in client.get(f"/w/{workspace_id}/p/{slug}").text
 
     # GET publish state reflects the document.
     state = client.get(f"/documents/{document['id']}/web/publish").json()
@@ -430,7 +430,7 @@ def test_publish_serve_republish_rollback(client: TestClient) -> None:
     unpub = client.delete(f"/web/publishes/{slug}")
     assert unpub.status_code == 200, unpub.text
     assert unpub.json()["status"] == "unpublished"
-    assert client.get(f"/p/{slug}").status_code == 404
+    assert client.get(f"/w/{workspace_id}/p/{slug}").status_code == 404
 
 
 def test_publish_slug_validation(client: TestClient) -> None:

@@ -25,5 +25,14 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _isolated_design_workspace(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LUMEN_DEV_WORKSPACE_ID", f"ws_test_{uuid.uuid4().hex[:16]}")
+def _isolated_design_workspace(monkeypatch: pytest.MonkeyPatch) -> str:
+    workspace_id = f"ws_test_{uuid.uuid4().hex[:16]}"
+    monkeypatch.setenv("LUMEN_DEV_WORKSPACE_ID", workspace_id)
+    return workspace_id
+
+
+@pytest.fixture()
+def workspace_id(_isolated_design_workspace: str) -> str:
+    """This test's workspace — needed by the O6b public publish routes, whose tenant comes from
+    the PATH (``/w/{workspace_id}/p/{slug}``) because a public visitor sends no header."""
+    return _isolated_design_workspace

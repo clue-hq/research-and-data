@@ -12,7 +12,14 @@ runs IN the document write's transaction — the D2.2 atomicity seam closed; mig
 `cf4f80537c8e` extends workspace-local PKs to content-derived asset ids and client-supplied
 snapshot ids; design-API suite green — the phase-B run's 2 failures were D2.2 test fixes
 clobbered by an agent-side branch reset, restored from `acd10f8e` and re-verified on a fresh
-DB). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
+DB). **D2.4 EXECUTED 2026-08-08** (personalization, web accounts + batches, web publishes +
+revisions, custom components on Postgres; the deferred `design_document_account_fk` re-added
+and the LAST cross-domain seam — component-reference validation — closed; the O6b interim
+public routes live at `/w/{workspace_id}/p/…` with the bare routes deleted; migration
+`cf7dd82cf683` also extends the workspace-local-id ruling to client-supplied binding-set ids
+and their derived instance/repair ids — flagged for the founder's nod like its predecessors;
+design-API suite 487 passed / 10 skipped / 0 failed). Remaining in D2: **D2.5** (strict
+`X-Workspace-Id` seam + editor harness, agent runs/events port, SQLite deletion). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
 by the founder 2026-08-07** (with refinements — see §6); **O6b RATIFIED 2026-08-08: option
 (a)**. **PENDING FOUNDER RATIFICATION (D2.2 field decision):** migration `7a9881f9717a`
 extended O6's workspace-locality to every design id namespace that is client-supplied

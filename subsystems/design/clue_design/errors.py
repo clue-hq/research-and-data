@@ -43,3 +43,35 @@ class DesignVersionConflictError(DesignStoreError):
         self.key = key
         self.expected_version = expected_version
         self.current_version = current_version
+
+
+class DesignArtifactConflictError(DesignStoreError):
+    """A content-addressed id was re-used with different stored content.
+
+    The custom-component registry is immutable and content-addressed (``ccart_<sha256>``,
+    ``webpub_<package digest>``): an exact retry is idempotent, but the same id carrying
+    *different* metadata is a hard conflict rather than an overwrite — the row cannot be updated
+    at all (the D1e no-UPDATE triggers), so surfacing the collision is the only honest outcome.
+    """
+
+    def __init__(self, kind: str, key: str) -> None:
+        super().__init__(f"{kind} {key} already exists with different content")
+        self.kind = kind
+        self.key = key
+
+
+class DesignSourceVersionConflictError(DesignStoreError):
+    """A component source write lost its compare-and-set race on ``source_version``.
+
+    Distinct from :class:`DesignVersionConflictError` (documents): this is the custom-component
+    source lineage's CAS, whose key is the component slug rather than a document id.
+    """
+
+    def __init__(self, slug: str, expected_version: int, current_version: int) -> None:
+        super().__init__(
+            f"custom component {slug} expected source version {expected_version}, "
+            f"current version is {current_version}"
+        )
+        self.slug = slug
+        self.expected_version = expected_version
+        self.current_version = current_version
