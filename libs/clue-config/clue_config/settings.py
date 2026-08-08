@@ -40,6 +40,11 @@ _CORS_WILDCARD_ERROR: Final = (
     "(https://app.example,http://localhost:3000)"
 )
 
+_AUTH_PARTIES_FORMAT_ERROR: Final = (
+    'CLUE_AUTH_CLERK_AUTHORIZED_PARTIES must be a JSON array (["https://app.example"]) or a '
+    "comma-separated list (https://app.example,http://localhost:3000)"
+)
+
 
 def _parse_string_list(value: Any, format_error: str) -> Any:
     """Accept a JSON array *or* a plain comma-separated list for a ``tuple[str, ...]`` setting.
@@ -306,6 +311,22 @@ class Settings(BaseSettings):
     # Env: ``CLUE_FRONTEND_CORS_ALLOW_ORIGINS``.
     frontend_cors_allow_origins: Annotated[tuple[str, ...], NoDecode] = ()
 
+    # --- Lane B authenticated principal ----------------------------------------------------
+    # Provider authentication is an adapter choice; Clue-owned users/memberships remain the
+    # authorization substrate in every mode. The local fixture adapter still resolves a real
+    # ``auth_identity`` row and is construction-time forbidden in production.
+    # Env: ``CLUE_AUTH_ENVIRONMENT`` / ``CLUE_AUTH_MODE``.
+    auth_enabled: bool = False
+    auth_environment: Literal["local", "test", "production"] = "local"
+    auth_mode: Literal["local_fixture", "clerk"] = "local_fixture"
+    # Clerk JWT verification metadata. No Clerk secret is required at the FastAPI edge: the
+    # short-lived session JWT is verified against the instance JWKS. All are deployment settings,
+    # not domain identity. Env: ``CLUE_AUTH_CLERK_*``.
+    auth_clerk_jwks_url: str | None = None
+    auth_clerk_issuer: str | None = None
+    auth_clerk_audience: str | None = None
+    auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
+
     # --- local Clue Trial canary ------------------------------------------------------------
     # The Sumble-only founder acceptance surface is never part of the default production app.
     # It must be enabled explicitly and binds to loopback by default. Env:
@@ -398,6 +419,20 @@ class Settings(BaseSettings):
         ):
             raise ValueError(_CORS_WILDCARD_ERROR)
         return parsed
+
+    @field_validator("auth_clerk_authorized_parties", mode="before")
+    @classmethod
+    def _parse_auth_clerk_authorized_parties(cls, value: Any) -> Any:
+        return _parse_string_list(value, _AUTH_PARTIES_FORMAT_ERROR)
+
+    @field_validator("auth_mode")
+    @classmethod
+    def _refuse_local_fixture_auth_in_production(cls, value: str, info: Any) -> str:
+        if info.data.get("auth_environment") == "production" and value == "local_fixture":
+            raise ValueError(
+                "production must use Clerk authentication; local fixture auth is forbidden"
+            )
+        return value
 
 
 def load_settings(**kwargs: Any) -> Settings:

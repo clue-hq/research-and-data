@@ -70,3 +70,21 @@ def test_b1_migration_uses_only_internal_foreign_key_targets() -> None:
     assert "references platform_user (user_id)" in sql
     assert "references workspace (workspace_id)" in sql
     assert "references workspace_membership (membership_id, workspace_id)" in sql
+
+
+def test_provider_jwt_interpretation_is_confined_to_authenticator_adapter() -> None:
+    adapter = REPO / "platform" / "auth" / "clue_auth" / "providers" / "clerk.py"
+    offenders: list[str] = []
+    for root in (REPO / "platform", REPO / "subsystems", REPO / "libs"):
+        for path in root.rglob("*.py"):
+            if path == adapter or "__pycache__" in path.parts:
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import) and any(
+                    alias.name == "jwt" for alias in node.names
+                ):
+                    offenders.append(str(path.relative_to(REPO)))
+                if isinstance(node, ast.ImportFrom) and node.module == "jwt":
+                    offenders.append(str(path.relative_to(REPO)))
+    assert not offenders, f"provider JWT interpretation escaped the authenticator: {offenders}"

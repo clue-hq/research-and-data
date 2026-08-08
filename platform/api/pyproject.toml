@@ -16,6 +16,7 @@ dependencies = [
     "clue-fleet",
     "clue-toolbelt",
     "clue-agents",
+    "clue-auth",
     # app-layer runtime
     "fastapi>=0.138.0",
     "uvicorn>=0.35.0",
@@ -39,3 +40,4 @@ clue-execution = { workspace = true }
 clue-fleet = { workspace = true }
 clue-toolbelt = { workspace = true }
 clue-agents = { workspace = true }
+clue-auth = { workspace = true }

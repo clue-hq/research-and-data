@@ -31,6 +31,7 @@ from pydantic import BaseModel, ValidationError
 
 import clue_obs
 from clue_agents import AgentProfileRegistry
+from clue_api.auth_wiring import install_auth_wiring
 from clue_api.frontend_read import (
     frontend_read_workspace_resolver,
     install_frontend_read_surface,
@@ -51,6 +52,7 @@ from clue_api.research_view_api import (
 )
 from clue_api.research_view_owner_refs import ProductionOwnerReferenceResolver
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
+from clue_auth import PrincipalService
 from clue_config import Settings, load_settings
 from clue_core import (
     EntityId,
@@ -698,7 +700,12 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
         startup_check = getattr(_app.state, "startup_check", None)
         if startup_check is not None:
             await startup_check()
-        yield
+        try:
+            yield
+        finally:
+            auth_closer = getattr(_app.state, "auth_closer", None)
+            if auth_closer is not None:
+                await auth_closer()
 
 
 def create_projections_app(
@@ -720,6 +727,8 @@ def create_projections_app(
     research_view_owner_references: ProductionOwnerReferenceResolver | None = None,
     startup_check: Callable[[], Awaitable[None]] | None = None,
     discovery_webhook_router: APIRouter | None = None,
+    auth_service: PrincipalService | None = None,
+    auth_closer: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -736,6 +745,7 @@ def create_projections_app(
         lifespan=_projections_lifespan if manage_db_lifespan else None,
     )
     app.state.startup_check = startup_check
+    app.state.auth_closer = auth_closer
 
     # Review F3: actually serve the declared schema header on EVERY response (JSON routes and the
     # SSE stream alike — response headers precede the streamed body), so a consumer can confirm the
@@ -750,6 +760,8 @@ def create_projections_app(
     # and the process's CORS policy. Both halves are default-off (flag / empty origins), so an
     # unconfigured deployment is byte-identical to the pre-FI-2 app.
     install_frontend_read_surface(app, settings=resolved, conn_factory=conn_factory)
+    if auth_service is not None:
+        install_auth_wiring(app, service=auth_service)
 
     if workspace_resolver is not None:
         app.dependency_overrides[header_workspace_resolver] = workspace_resolver

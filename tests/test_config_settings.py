@@ -152,3 +152,25 @@ def test_agent_workspace_allowlist_accepts_one_bare_workspace_id(
     monkeypatch.setenv("CLUE_AGENT_WORKSPACE_ALLOWLIST", "ws-a")
     settings = load_settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.agent_workspace_allowlist == ("ws-a",)
+
+
+def test_auth_local_fixture_mode_is_forbidden_in_production() -> None:
+    with pytest.raises(ValidationError, match="local fixture auth is forbidden"):
+        load_settings(
+            _env_file=None,
+            auth_environment="production",
+            auth_mode="local_fixture",
+        )
+
+
+def test_auth_clerk_authorized_parties_accept_shell_safe_list() -> None:
+    settings = load_settings(
+        _env_file=None,
+        auth_environment="production",
+        auth_mode="clerk",
+        auth_clerk_authorized_parties="https://app.example, http://localhost:3000",
+    )
+    assert settings.auth_clerk_authorized_parties == (
+        "https://app.example",
+        "http://localhost:3000",
+    )

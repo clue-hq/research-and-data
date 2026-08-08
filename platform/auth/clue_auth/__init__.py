@@ -1,12 +1,21 @@
 """Clue-owned authentication identity and workspace-authorization substrate."""
 
 from clue_auth.errors import (
+    AuthenticationRequired,
     AuthIdentityError,
     IdentityConflictError,
+    IdentityNotProvisioned,
     InvitationUnavailableError,
     LifecycleTransitionError,
     MembershipPermissionError,
+    MembershipStateChanged,
+    PermissionDenied,
+    PrincipalError,
+    SessionInvalid,
+    UserDisabled,
+    WorkspaceForbidden,
 )
+from clue_auth.local import LocalFixtureAuthenticator
 from clue_auth.models import (
     AuthIdentity,
     AuthIdentityStatus,
@@ -29,12 +38,28 @@ from clue_auth.policy import (
     role_can_assign,
     role_has_permission,
 )
+from clue_auth.principal import (
+    AuthenticatedSessionView,
+    AuthenticationRequest,
+    Authenticator,
+    Authorizer,
+    ExternalSession,
+    IdentityResolver,
+    InternalIdentity,
+    PrincipalService,
+    RequestPrincipal,
+)
 from clue_auth.provisioning import (
     ProvisionedIdentity,
     ProvisionedWorkspaceOwner,
     accept_workspace_invitation,
     hash_invitation_token,
     provision_workspace_owner,
+)
+from clue_auth.resolution import (
+    DatabaseAuthorizer,
+    DatabaseIdentityResolver,
+    DatabaseMembershipLoader,
 )
 from clue_auth.store import (
     create_platform_user,
@@ -69,25 +94,45 @@ from clue_auth.store import (
 )
 
 __all__ = [
+    "AuthenticatedSessionView",
+    "AuthenticationRequest",
+    "AuthenticationRequired",
+    "Authenticator",
     "AuthIdentity",
     "AuthIdentityError",
     "AuthIdentityStatus",
+    "Authorizer",
+    "DatabaseAuthorizer",
+    "DatabaseIdentityResolver",
+    "DatabaseMembershipLoader",
+    "ExternalSession",
     "IdentityBundle",
     "IdentityConflictError",
     "IdentityErasureResult",
+    "IdentityNotProvisioned",
+    "IdentityResolver",
+    "InternalIdentity",
     "InvitationStatus",
     "InvitationUnavailableError",
     "LifecycleTransitionError",
     "MembershipPermissionError",
+    "MembershipStateChanged",
     "MembershipStatus",
     "Permission",
+    "PermissionDenied",
     "PlatformUser",
+    "PrincipalError",
+    "PrincipalService",
     "ProvisionedIdentity",
     "ProvisionedWorkspaceOwner",
     "ROLE_PERMISSIONS",
     "ROLE_POLICY_VERSION",
     "RoleKey",
+    "RequestPrincipal",
+    "SessionInvalid",
     "UserStatus",
+    "UserDisabled",
+    "WorkspaceForbidden",
     "WorkspaceInvitation",
     "WorkspaceMembership",
     "accept_workspace_invitation",
@@ -106,6 +151,7 @@ __all__ = [
     "link_auth_identity",
     "list_auth_identities",
     "list_user_memberships",
+    "LocalFixtureAuthenticator",
     "new_auth_identity_id",
     "new_invitation_id",
     "new_membership_id",
