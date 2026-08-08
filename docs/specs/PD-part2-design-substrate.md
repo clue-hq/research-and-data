@@ -18,8 +18,12 @@ and the LAST cross-domain seam — component-reference validation — closed; th
 public routes live at `/w/{workspace_id}/p/…` with the bare routes deleted; migration
 `cf7dd82cf683` also extends the workspace-local-id ruling to client-supplied binding-set ids
 and their derived instance/repair ids — flagged for the founder's nod like its predecessors;
-design-API suite 487 passed / 10 skipped / 0 failed). Remaining in D2: **D2.5** (strict
-`X-Workspace-Id` seam + editor harness, agent runs/events port, SQLite deletion). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
+design-API suite 487 passed / 10 skipped / 0 failed). **D2.5 EXECUTED 2026-08-08** (A: agent runs/events on Postgres + STRICT `X-Workspace-Id`
+seam — 401 on absent, public `/w/{ws}/p/*` + `/asset-store` + `/build-info` exempt, SSE
+takes `?workspace_id=`; B: **SQLite DELETED** — Repository/connect/run_migrations/
+migrations gone, design suite 490/0 green). **The D2 arc is COMPLETE**: every design row
+tenant-scoped in Postgres behind one store seam. Next: D3 (concept joins), D4 (storage),
+D5 (durable execution), D6 (toolbelt), D7 (events). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
 by the founder 2026-08-07** (with refinements — see §6); **O6b RATIFIED 2026-08-08: option
 (a)**. **PENDING FOUNDER RATIFICATION (D2.2 field decision):** migration `7a9881f9717a`
 extended O6's workspace-locality to every design id namespace that is client-supplied
