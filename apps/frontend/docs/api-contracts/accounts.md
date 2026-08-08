@@ -693,7 +693,7 @@ empty page, not a `404`, and the rows it does return still carry their full
 ### Ratified 2026-08-08 (FI-1 D-4–D-7, plus the operational rulings)
 
 Founder-ratified; the record is `docs/specs/FI-accounts-contacts-contract-gap-review.md`
-§9 (top entry). These no longer gate anything — they are the decisions the
+§9, the D-4–D-7 entry. These no longer gate anything — they are the decisions the
 adapter flip (Task 6 of the slice-1 plan) implements. Most are frontend schema
 decisions over the shapes above; where one implies further backend work, that is
 called out rather than assumed.

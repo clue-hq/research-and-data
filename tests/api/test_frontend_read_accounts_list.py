@@ -596,6 +596,9 @@ def test_project_names_are_one_batched_read_not_one_query_per_membership() -> No
             widened, payload = await _count_statements(conn)
 
             assert len(_rows(payload)["Acme"]["projects"]) == 5, "the memberships really did grow"
+            # Without the lower bound the guard is vacuous: a harness change that stops the
+            # listener firing would compare 0 == 0 and pass an endpoint full of per-row lookups.
+            assert baseline > 0, "the listener really fired"
             assert widened == baseline
 
     run_async(scenario())

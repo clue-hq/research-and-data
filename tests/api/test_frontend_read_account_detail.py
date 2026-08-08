@@ -35,7 +35,7 @@ import httpx
 import pytest
 from httpx import ASGITransport
 from pydantic import JsonValue
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
@@ -142,6 +142,30 @@ async def _get(
 def _sections(payload: dict[str, Any]) -> dict[str | None, dict[str, Any]]:
     """The project sections keyed by ``projectId`` — ``None`` is the unattributed section."""
     return {section["projectId"]: section for section in payload["projectSections"]}
+
+
+async def _count_statements(
+    conn: AsyncConnection, account_id: uuid.UUID
+) -> tuple[int, dict[str, Any]]:
+    """``(statements issued, payload)`` for one detail request.
+
+    The endpoint composes a fixed number of batched reads per account, so this count is a
+    *constant* the tests can compare across fixtures of different shapes — which is how the N+1
+    guard proves a per-section lookup has not crept into the composition.
+    """
+    statements = 0
+
+    def count(*_args: object) -> None:
+        nonlocal statements
+        statements += 1
+
+    event.listen(conn.sync_connection, "before_cursor_execute", count)
+    try:
+        response = await _get(conn, account_id)
+    finally:
+        event.remove(conn.sync_connection, "before_cursor_execute", count)
+    assert response.status_code == 200
+    return statements, response.json()
 
 
 def _facts(payload: dict[str, Any]) -> dict[str, Any]:
@@ -915,6 +939,45 @@ def test_a_lineage_derived_section_with_no_project_row_is_named_null_not_guessed
                 "insight attributed to a project row this workspace does not hold"
             ]
             assert "Another tenant's project" not in str(sections)
+
+    run_async(scenario())
+
+
+def test_section_names_are_one_batched_read_not_one_query_per_section() -> None:
+    """The name join must not become a per-section lookup on the surface most likely to grow one.
+
+    Measured, not asserted in a comment: the endpoint's statement count is captured over the base
+    fixture and again after three more *lineage-derived* sections appear. Lineage ids are the
+    unbounded axis here — a project needs no membership row to attribute work to this account — so
+    a per-section name lookup would grow the count by three; a batched read costs the same either
+    way. Growth is deliberately seeded through lineage rather than membership, because the
+    committee composition already issues one documented ``latest_project_run_context`` query per
+    *membership* and would mask the signal this guard is watching for.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            baseline, before = await _count_statements(conn, fixture.acme)
+
+            for ordinal in range(3):
+                ghost = await seed_project(conn, _WS, name=f"Lineage-only project {ordinal}")
+                await _account_claim(
+                    conn,
+                    account_id=fixture.acme,
+                    field_key=_INSIGHT_FIELD,
+                    value=f"insight attributed only through lineage {ordinal}",
+                    run_id=await _run(conn, kind="entity_research", project_id=ghost.project_id),
+                    source_key="deep_research",
+                    private=True,
+                )
+            widened, after = await _count_statements(conn, fixture.acme)
+
+            assert len(_sections(after)) == len(_sections(before)) + 3, "sections really did grow"
+            # Without the lower bound the guard is vacuous: a harness change that stops the
+            # listener firing would compare 0 == 0 and pass an endpoint full of per-section reads.
+            assert baseline > 0, "the listener really fired"
+            assert widened == baseline
 
     run_async(scenario())
 
