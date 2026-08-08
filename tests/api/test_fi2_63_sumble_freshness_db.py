@@ -11,10 +11,13 @@ Two defects, one fix each:
     agent can act on. It is now :class:`EntityResearchGovernedRejection`. The legacy toolbelt path
     keeps its own ``PreconditionFailed`` conversion: a human-facing precondition, not an agent turn.
 
-Species (FI-2 §6.3, "the fresh-skip applies to NEUTRAL fields"): every field Sumble is approved for
-is a structured world fact and resolves ``project_neutral`` under the ratified §5.2 key rule — the
-test below verifies that rather than assuming it, and the preflight now *enforces* it, so a
-workspace registry override cannot silently give the fresh-skip a meaning it was never ratified for.
+Species (FI-2 §6.3, "the fresh-skip applies to NEUTRAL fields"): the ladder reads the
+workspace-merged current value, so "already answered" is only a correct thing to say about a
+``project_neutral`` field. Every field Sumble is approved for is a structured world fact and
+resolves neutral under the ratified §5.2 key rule — asserted below through the registry rather than
+assumed — and the preflight enforces it, so a *declaration* change (a new Sumble field, or a
+re-declared one, carrying ``project_relative``) fails loudly instead of quietly giving the skip a
+meaning it was never ratified for. That refusal is exercised too.
 """
 
 from __future__ import annotations
@@ -134,17 +137,67 @@ def _starter(
     )
 
 
-def test_fi2_63_every_sumble_approved_field_is_project_neutral(tmp_path: Path) -> None:
+def test_fi2_63_every_sumble_approved_field_is_project_neutral() -> None:
     """The verified premise of the fresh-skip, asserted through the registry, not assumed."""
 
     async def scenario() -> None:
-        storage = FsStorage(tmp_path / "artifacts")
-        del storage
         async with rollback_conn(seed_pack=True) as conn:
             species = await field_species(
                 conn, workspace_id="ws-fi2-63", field_keys=sorted(_SOURCE_BY_FIELD)
             )
             assert set(species.values()) == {ResearchScope.PROJECT_NEUTRAL}
+
+    run_async(scenario())
+
+
+def test_fi2_63_a_field_declared_project_relative_is_refused_loudly(tmp_path: Path) -> None:
+    """The enforcement behind that premise: a declaration change fails, it does not drift.
+
+    Simulated at the registry row, because that is the only reachable route — a workspace override
+    cannot do it (``register_workspace_field`` takes ``client.*`` keys only and forces neutral), so
+    the real-world version of this is someone editing the pack declaration or adding a new
+    Sumble-approved field with the wrong species.
+    """
+
+    async def scenario() -> None:
+        workspace_id = "ws-fi2-63e"
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            started, ready = await _seed_selected_high_tier_account(
+                conn, storage, workspace_id=workspace_id
+            )
+            run_id = ProjectRunId(started.project_run_id)
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            await conn.execute(
+                text(
+                    "UPDATE field_definition SET research_scope='project_relative' "
+                    "WHERE field_key=:field_key"
+                ),
+                {"field_key": _HIRING},
+            )
+            with pytest.raises(
+                SumbleAccountGapEligibilityError,
+                match=f"declared project-relative: {_HIRING}",
+            ):
+                await compile_sumble_account_gap_preflight(
+                    workspace_id=workspace_id,
+                    project_run_id=run_id,
+                    account_id=EntityId(ready.account_id),
+                    field_expected_value_credits={_HIRING: Decimal(5)},
+                    provider_credit_cap=5,
+                    allow_unbounded_tech=False,
+                    observation_window=f"project-run:{run_id}:fi2-63e",
+                    storage=storage,
+                    cents_per_credit=Decimal("0.5"),
+                    conn_factory=same_connection,
+                )
+            assert (
+                await conn.execute(text("SELECT count(*) FROM account_gap_operation"))
+            ).scalar_one() == 0
 
     run_async(scenario())
 

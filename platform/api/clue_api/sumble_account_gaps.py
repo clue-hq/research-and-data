@@ -353,13 +353,18 @@ async def compile_sumble_account_gap_preflight(
             icp_version=run.icp_version,
             policy=policy,
         )
-        # FI-2 §6.3 species check.  The fresh-skip below is only meaningful for a *project-neutral*
-        # field: a project-relative value is one project's answer and another project's fresh claim
-        # is never a substitute for it.  Every field in ``_SOURCE_BY_FIELD`` is a structured world
-        # fact and resolves neutral under the ratified §5.2 rule, so this is a verified invariant
-        # rather than an assumption — and it is *enforced*, not assumed, because a workspace-level
-        # registry override could declare one relative, and this preflight's economics would then
-        # silently mean the wrong thing.
+        # FI-2 §6.3 species check.  The freshness ladder below reads the *workspace-merged*
+        # current value, so "already answered, don't re-buy" is only a correct thing to say about
+        # a **project_neutral** field: a project-relative value is one project's answer, and
+        # refusing another project's enrichment because that answer exists would hand it the wrong
+        # project's fact.  Every field in ``_SOURCE_BY_FIELD`` is a structured world fact and
+        # resolves neutral today — the test asserts that through the registry rather than assuming
+        # it.  It is nonetheless *enforced* here, because the reachable way to break it is a
+        # declaration change (a new Sumble-approved field, or a re-declared existing one, carrying
+        # ``research_scope=project_relative``): the ladder would keep working and quietly mean the
+        # wrong thing.  A loud refusal at the boundary turns that into a visible failure.
+        # (Note: it cannot be broken by a *workspace* override — ``register_workspace_field``
+        # accepts only ``client.*`` keys and forces the neutral species.)
         species = await field_species(conn, workspace_id=workspace_id, field_keys=list(field_keys))
         relative = sorted(
             key
