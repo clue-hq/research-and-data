@@ -37,15 +37,13 @@ function ProfileRow({
 
 export function ContactProfileContent({
   contact,
-  compact = false,
 }: {
   contact: AccountContactDetail;
-  compact?: boolean;
 }) {
   const confidence = formatConfidence(contact.roleOnCommittee.confidence);
 
   return (
-    <div className={compact ? "px-16 py-14 max-md:px-6" : ""}>
+    <div>
       <div className="flex items-center gap-3">
         <ContactAvatar name={contact.name} priority size={48} />
       </div>

@@ -19,6 +19,7 @@ import { AccountsToolbar } from "./accounts-toolbar";
  */
 function AccountsFooter({
   filteredCount,
+  hasActiveFilter,
   hasMore,
   isLoadingMore,
   loadedCount,
@@ -27,6 +28,7 @@ function AccountsFooter({
   totalCount,
 }: {
   filteredCount: number;
+  hasActiveFilter: boolean;
   hasMore: boolean;
   isLoadingMore: boolean;
   loadedCount: number;
@@ -35,6 +37,11 @@ function AccountsFooter({
   totalCount: number;
 }) {
   const filtered = filteredCount !== loadedCount;
+  // The caveat is about unfetched rows, so it keys on an authored filter plus a
+  // page still pending — not on whether the filter excluded anything here. A
+  // filter that happens to match every loaded row is precisely the one whose
+  // result looks complete and is not.
+  const showTruncationCaveat = hasActiveFilter && hasMore;
 
   return (
     <div
@@ -44,7 +51,7 @@ function AccountsFooter({
         Showing {filtered ? `${filteredCount} of ` : ""}
         {loadedCount} loaded
         {totalCount > loadedCount ? ` of ${totalCount} accounts` : " accounts"}
-        {filtered ? " · filters apply to loaded rows only" : ""}
+        {showTruncationCaveat ? " · filters apply to loaded rows only" : ""}
       </span>
       {hasMore ? (
         <button
@@ -112,6 +119,7 @@ export function AccountsScreen({
         </div>
         <AccountsFooter
           filteredCount={controller.visibleAccounts.length}
+          hasActiveFilter={controller.hasActiveFilter}
           hasMore={controller.hasMore}
           isLoadingMore={controller.isLoadingMore}
           loadedCount={controller.loadedCount}

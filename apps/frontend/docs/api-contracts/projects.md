@@ -4,7 +4,11 @@ Status: frontend shell ready; proposed backend contract.
 
 Owner for backend integration: Aaryan.
 
-The frontend is fixture-backed until `CLUE_API_BASE_URL` is configured. The
+The frontend is fixture-backed, and **pinned** there until phase 2: no backend
+serves these endpoints yet, so the projects repositories deliberately read no
+environment variable at all (they used to flip on `CLUE_API_BASE_URL`, which
+meant configuring the accounts flow broke the home and project routes). When
+this contract is implemented, these repositories get their own variable. The
 fixture and HTTP adapters both validate responses with the schemas under
 `src/features/projects/model/project-workspace.ts`. Presentation components do
 not call the API directly.

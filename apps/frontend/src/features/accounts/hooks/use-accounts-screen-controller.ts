@@ -82,6 +82,15 @@ export function useAccountsScreenController(
     return sortAccounts(filterAccounts(searched, filters), sort);
   }, [accountRows, filters, search, sort]);
 
+  // Whether the user has narrowed the table at all. Keyed on the *authored*
+  // filters, not on whether they happened to exclude a row: a filter that
+  // excludes nothing on the loaded page still hides whatever sits on the pages
+  // that were never fetched, which is exactly when the caveat matters.
+  const hasActiveFilter = useMemo(
+    () => search.trim() !== "" || filters.some((rule) => rule.value.trim() !== ""),
+    [filters, search],
+  );
+
   const projectOptions = useMemo(() => {
     const projects = new Map<string, Account["projects"][number]>();
     for (const account of accountRows) {
@@ -217,6 +226,7 @@ export function useAccountsScreenController(
   return {
     createAccount,
     columnOrder,
+    hasActiveFilter,
     hasMore: nextCursor !== null,
     isLoadingMore,
     loadedCount: accountRows.length,

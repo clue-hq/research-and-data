@@ -88,7 +88,10 @@ Every backend-owned payload has:
 1. a Zod schema under `model`;
 2. a repository interface under `data`;
 3. a fixture adapter for frontend development;
-4. an HTTP adapter selected by `CLUE_API_BASE_URL`;
+4. an HTTP adapter selected by the base-URL variable of the flow it belongs to
+   (the accounts flow reads `CLUE_ACCOUNTS_API_BASE_URL`; a flow whose backend
+   does not exist yet is pinned to fixtures and reads none — the projects
+   repositories are pinned until phase 2);
 5. a written contract under `docs/api-contracts`.
 
 Aryan can replace or extend HTTP adapters without changing presentation

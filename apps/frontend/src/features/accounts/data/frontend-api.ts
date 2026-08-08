@@ -12,12 +12,12 @@ import { ApiErrorEnvelopeSchema } from "../model/vocabulary";
  * workspace header is tenancy):
  *
  * - `CLUE_ACCOUNTS_API_BASE_URL` — the backend origin serving `/frontend/v1`.
- *   Unset means fixtures. It is deliberately NOT the app-wide
- *   `CLUE_API_BASE_URL`: the projects repositories key off that one and call
+ *   Unset means fixtures. It is deliberately per-flow, not one app-wide switch:
+ *   the projects repositories used to read a shared variable while calling
  *   `api/v1/home` and `api/v1/projects/*`, which slice 1 serves nothing for, so
- *   one shared switch would flip the accounts flow live and break the home
- *   route in the same breath. The projects repositories stay pinned to fixtures
- *   until phase 2 gives them a real surface, and this flow owns its own switch.
+ *   configuring the accounts flow also broke the home route. Those repositories
+ *   are pinned to fixtures until phase 2 gives them a real surface, and each
+ *   flow owns its own switch.
  * - `CLUE_WORKSPACE_ID` — the workspace every request is scoped to. Required
  *   whenever the base URL is set; the backend answers `401 UNAUTHORIZED`
  *   without it, so we fail loudly at the seam instead of shipping the 401 to a

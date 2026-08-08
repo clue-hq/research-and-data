@@ -6,8 +6,9 @@ Owner for backend integration: Aaryan.
 
 The frontend currently uses `fixtureAccountsRepository` and
 `fixtureAccountDetailsRepository`, plus dedicated contact and account-workspace
-repositories. Setting `CLUE_API_BASE_URL` activates the corresponding HTTP
-repositories without changing page or component code.
+repositories. Setting `CLUE_ACCOUNTS_API_BASE_URL` activates the corresponding
+HTTP repositories without changing page or component code. (This flow reads its
+own variable — see the as-built section below for why.)
 
 ## Shared response conventions
 
@@ -337,7 +338,7 @@ authored filter rules. Project IDs must remain opaque stable identifiers.
 
 1. Implement both frontend read contracts exactly as the validated shapes
    above.
-2. Configure `CLUE_API_BASE_URL` only on the Next.js server.
+2. Configure `CLUE_ACCOUNTS_API_BASE_URL` only on the Next.js server.
 3. Confirm CORS/network topology if the Next server and API use different
    origins.
 4. Add the chosen authentication header or server session inside
@@ -788,19 +789,18 @@ implicit.
    `researchStatus`, `persona` and `freshness` — closed backend enums — are the
    only `z.enum`s on this surface, plus `not_launchable`, ratified forward.
 3. **The accounts flow owns its own base-URL variable,
-   `CLUE_ACCOUNTS_API_BASE_URL`.** It is deliberately not the app-wide
-   `CLUE_API_BASE_URL`: the projects repositories key off that one and call
+   `CLUE_ACCOUNTS_API_BASE_URL`.** It is deliberately not one app-wide switch.
+   The projects repositories used to key off `CLUE_API_BASE_URL` and call
    `api/v1/home` and `api/v1/projects/*`, which slice 1 serves nothing for and
-   which throw on any non-2xx, so a single shared switch would flip the accounts
-   flow live and break the home and project routes in the same breath. The
-   projects repositories are pinned to fixtures until phase 2 gives them a
-   backend surface, and each flow gets its own switch when it gets its own
-   backend.
+   which throw on any non-2xx — so configuring the accounts flow also broke the
+   home and project routes. Those repositories are now pinned to fixtures and
+   read no variable at all until phase 2 gives them a backend surface, and each
+   flow gets its own switch when it gets its own backend.
 4. **Tenancy is a build-time env for MVP: `CLUE_WORKSPACE_ID`.** Every
    `/frontend/v1` data request carries `X-Workspace-Id`, and the frontend has no
    session or tenant surface yet. The transport module reads the workspace from
-   the environment and throws at the seam when `CLUE_API_BASE_URL` is set
-   without it, instead of shipping a `401` to a screen. When a real session
+   the environment and throws at the seam when `CLUE_ACCOUNTS_API_BASE_URL` is
+   set without it, instead of shipping a `401` to a screen. When a real session
    layer exists, `data/frontend-api.ts::workspaceId` is the single function that
    changes. Both variables are server-only — never `NEXT_PUBLIC_*`, because the
    workspace *is* the tenancy boundary.
@@ -844,7 +844,7 @@ the frontend origin to the backend, so a browser-side caller makes no
 cross-origin request and needs no CORS grant at all. It is a transport
 passthrough — `X-Workspace-Id` is added by the repositories (which run
 server-side), never by the rewrite. Today every accounts read happens in a
-Server Component and therefore calls `CLUE_API_BASE_URL` directly, so the
+Server Component and therefore calls `CLUE_ACCOUNTS_API_BASE_URL` directly, so the
 rewrite matters only for browser-side callers and for hitting the API through
 the dev server. If you do call cross-origin instead, list the exact dev origin
 — `http://localhost:3000` (and `http://127.0.0.1:3000` if you use that host;
