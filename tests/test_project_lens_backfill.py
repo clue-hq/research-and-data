@@ -24,7 +24,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import EntityType, ProjectRunId
-from clue_research.claimstore import project_run_ids
+from clue_research.claimstore import project_run_ids, record_run_lineage
 from clue_research.discovery_scoring import project_discovery_run_id
 from clue_research.identity import insert_account_entity, mark_merged
 from clue_research.membership import accounts_for_project, ensure_project_account
@@ -767,5 +767,100 @@ def test_an_empty_store_reports_a_converged_zero() -> None:
             report = await backfill_project_lens(conn, workspace_id="ws_bf9")
             assert report == ProjectLensBackfillReport.from_sources({})
             assert report.written == 0 and report.scanned == 0
+
+    run_async(_run())
+
+
+def test_lineage_carries_the_originating_records_own_timestamp() -> None:
+    """A repaired row is stamped with when the run happened, not when the repair ran.
+
+    ``project_run_ids`` orders by ``created_at``, so stamping ``now()`` would shove every backfilled
+    run after every live-written one on a partially-repaired database.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws_bf10"
+            project = await seed_project(conn, ws)
+            project_run_id = uuid4()
+            await _seed_project_run(
+                conn, workspace_id=ws, project_id=project.project_id, project_run_id=project_run_id
+            )
+            account_run_id = uuid4()
+            started = _T0 + timedelta(days=2)
+            await _seed_account_run(
+                conn,
+                account_run_id=account_run_id,
+                project_run_id=project_run_id,
+                entity_id=uuid4(),
+                started_at=started,
+            )
+
+            await backfill_project_lens(conn, workspace_id=ws)
+
+            stamped = dict(
+                (
+                    await conn.execute(
+                        text("SELECT run_id, created_at FROM run_lineage WHERE workspace_id = :w"),
+                        {"w": ws},
+                    )
+                ).all()
+            )
+            derived = UUID(
+                str(
+                    project_discovery_run_id(
+                        project_run_id=ProjectRunId(project_run_id),
+                        icp_key="default",
+                        icp_version=1,
+                    )
+                )
+            )
+            # The discovery row takes the project run's creation time, the account-run row its own.
+            assert stamped == {derived: _T0, account_run_id: started}
+
+    run_async(_run())
+
+
+def test_a_run_already_registered_under_another_workspace_is_not_re_counted() -> None:
+    """``run_lineage``'s key is the run id alone, so the pre-check must span every workspace.
+
+    A workspace-scoped probe would miss the colliding row, the insert would silently no-op, and
+    ``written`` would claim a row it did not write — breaking "a second pass writes nothing".
+    """
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws_bf11"
+            project = await seed_project(conn, ws)
+            project_run_id = uuid4()
+            await _seed_project_run(
+                conn, workspace_id=ws, project_id=project.project_id, project_run_id=project_run_id
+            )
+            derived = UUID(
+                str(
+                    project_discovery_run_id(
+                        project_run_id=ProjectRunId(project_run_id),
+                        icp_key="default",
+                        icp_version=1,
+                    )
+                )
+            )
+            await seed_workspace(conn, "ws_bf11_other")
+            await record_run_lineage(
+                conn, run_id=derived, workspace_id="ws_bf11_other", kind="manual"
+            )
+
+            report = await backfill_project_lens(conn, workspace_id=ws)
+
+            assert report.by_source["discovery_lineage"].scanned == 1
+            assert report.by_source["discovery_lineage"].written == 0
+            assert report.by_workspace == {}
+            # The squatting row is left exactly as it was — the repair never rewrites.
+            assert (
+                await conn.execute(
+                    text("SELECT workspace_id, kind FROM run_lineage WHERE run_id = :r"),
+                    {"r": derived},
+                )
+            ).all() == [("ws_bf11_other", "manual")]
 
     run_async(_run())

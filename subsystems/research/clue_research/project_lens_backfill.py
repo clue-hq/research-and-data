@@ -246,9 +246,12 @@ _EXISTING_MEMBERSHIP = text(
     """
 )
 
-_EXISTING_LINEAGE = text(
-    "SELECT run_id FROM run_lineage WHERE (CAST(:ws AS text) IS NULL OR workspace_id = :ws)"
-)
+# Deliberately NOT workspace-filtered, unlike the membership probe above: ``project_account``'s
+# primary key *contains* the workspace, so scoping that read cannot hide a colliding row — but
+# ``run_lineage``'s key is the run id **alone**. A run already registered under another workspace
+# would be invisible to a scoped probe, the insert would silently no-op, ``written`` would
+# over-count, and the "a second pass writes nothing" invariant would lie about that row.
+_EXISTING_LINEAGE = text("SELECT run_id FROM run_lineage")
 
 
 async def backfill_project_lens(
@@ -293,6 +296,10 @@ async def backfill_project_lens(
                 kind=lineage.kind,
                 project_id=lineage.project_id,
                 project_run_id=lineage.project_run_id,
+                # The originating record's own time, not ``now()``: on a partially-backfilled
+                # database the repaired rows must interleave with the live-written ones, and
+                # ``project_run_ids`` orders its output by ``created_at``.
+                created_at=lineage.created_at,
             )
     return ProjectLensBackfillReport.from_sources(counts, dict(by_workspace))
 
@@ -436,16 +443,17 @@ async def _plan_lineage(
             )
         )
 
-    existing = {
-        row[0] for row in (await conn.execute(_EXISTING_LINEAGE, {"ws": workspace_id})).all()
-    }
+    existing = {row[0] for row in (await conn.execute(_EXISTING_LINEAGE)).all()}
     scanned: dict[str, set[uuid.UUID]] = defaultdict(set)
     written: dict[str, int] = defaultdict(int)
     planned: list[_Lineage] = []
     claimed = set(existing)
-    # ``run_lineage`` is keyed on the run id alone, so two sources naming the same run (the Sumble
-    # committee path deliberately reuses the project run id) must resolve deterministically: oldest
-    # first, then source, then run id.
+    # No two of these five sources can currently produce the same run id — the derived discovery
+    # id, a ``research_run_id`` and an ``account_run.id`` come from disjoint spaces — so this
+    # ordering is defensive, not a live collision resolver. It keeps the pass deterministic anyway:
+    # if a sixth source (or a run id reused by design, the way the Sumble committee path reuses the
+    # project run id) ever lands here, the row that wins is the oldest, then the source, then the id
+    # — never whatever order the database happened to return.
     for candidate in sorted(candidates, key=lambda r: (r.created_at, r.source, r.run_id)):
         scanned[candidate.source].add(candidate.run_id)
         if candidate.run_id in claimed:
