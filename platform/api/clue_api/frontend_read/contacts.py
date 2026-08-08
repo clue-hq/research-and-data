@@ -65,6 +65,11 @@ from clue_api.contact_eligibility import ContactEligibilityResolver, GovernedCom
 from clue_api.frontend_read.account_detail import AccountNotFound, latest_project_run_context
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
+from clue_api.frontend_read.committee import (
+    committee_member_displayable,
+    current_claims,
+    request_bound_conn_factory,
+)
 from clue_api.research_view_governance import display_allowed
 from clue_core import (
     CONTACT_PROFESSIONAL_FIELD_KEYS,
@@ -79,7 +84,7 @@ from clue_db import ConnFactory
 from clue_research.compliance import WorkspacePolicy, load_workspace_policy
 from clue_research.identity import get_account, get_contacts, surviving_id
 from clue_research.membership import ProjectMembership, memberships_for_accounts
-from clue_research.profiling.committee import CURRENT_TITLE, PERSONA, ROLE_ON_COMMITTEE
+from clue_research.profiling.committee import CURRENT_TITLE
 from clue_research.profiling.fields import FACET_PUBLIC_APPEARANCES
 
 #: ``contact.facet.recent_post`` is registered in ``claimstore.CORE_PACK`` (the two proof rows of
@@ -163,8 +168,12 @@ class ContactRow(WireModel):
     persona: Persona
     role_on_committee: RoleOnCommittee
     # The resolved identity strong key from ``contact_entity`` — not a claim, and the only social
-    # link on the wire (G2). It travels with the member's governed existence: DSAR erasure and
-    # identity review clear it at the source, and an erased contact never reaches this row.
+    # link on the wire (G2). It is protected by the member's governed *existence*, not by a column
+    # write: DSAR erasure tombstones the claims (role/persona included), and a member without a
+    # current strongly-bound role/persona claim never comes back from the resolver, so this row is
+    # never built for them. The column itself is NOT nulled by erasure (only ``verified_email`` is)
+    # — the identity spine survives so a re-encounter still resolves rather than re-creating the
+    # person the platform was asked to stop holding data about.
     linkedin_url: str | None = None
     project_ids: tuple[str, ...] = ()
     signals: ContactSignals
@@ -234,12 +243,16 @@ async def _resolve_account(
 
 async def _resolve_union(
     conn: AsyncConnection,
-    conn_factory: ConnFactory,
     *,
     account_id: EntityId,
     workspace_id: str,
     memberships: Sequence[ProjectMembership],
 ) -> _CommitteeUnion:
+    # The resolver reads through the request's OWN connection, never a second one from the pool: a
+    # request that already holds a pool connection and then asks for another (once per targeting
+    # project) can self-deadlock on an exhausted pool under load — see
+    # ``committee.request_bound_conn_factory``.
+    bound = request_bound_conn_factory(conn)
     union = _CommitteeUnion()
     for membership in memberships:
         context = await latest_project_run_context(
@@ -253,31 +266,13 @@ async def _resolve_union(
         resolver = ContactEligibilityResolver(
             project_run_id=context.project_run_id,
             product_id=context.product_id,
-            conn_factory=conn_factory,
+            conn_factory=bound,
         )
         for member in await resolver.resolve_account(
             account_entity_id=account_id, workspace_id=workspace_id
         ):
             union.add(member, project_id=membership.project_id)
     return union
-
-
-def _current_claims(member: GovernedCommitteeContact) -> dict[str, Claim]:
-    """The member's current claim per field (already merged and product-scoped by the resolver)."""
-    return {str(item.claim.field_key): item.claim for item in member.display_claims}
-
-
-def _identifiable(member: GovernedCommitteeContact, policy: WorkspacePolicy) -> bool:
-    """Whether this member may be shown *at all*.
-
-    Their role and persona are what makes them a committee member; if the workspace policy will not
-    display those claims, there is no honest way to list the person as one. Fail closed.
-    """
-    claims = _current_claims(member)
-    return all(
-        (claim := claims.get(field_key)) is not None and display_allowed(claim, policy)
-        for field_key in (ROLE_ON_COMMITTEE, PERSONA)
-    )
 
 
 def _role_confidence(member: GovernedCommitteeContact) -> float | None:
@@ -336,8 +331,11 @@ def _signal_count(claims: dict[str, Claim], policy: WorkspacePolicy) -> int:
 def _evidence(claims: dict[str, Claim], policy: WorkspacePolicy) -> tuple[EvidenceChip, ...]:
     """One chip per distinct source backing something we actually showed, newest statement wins.
 
-    Only display-eligible claims contribute: a withheld claim must not announce itself through its
-    provenance. One chip per provider (rather than per claim) because the chip answers "who told us
+    "Display-eligible" here means the workspace-policy sense — :func:`display_allowed` over the
+    resolver's current claims — not ``GovernedContactClaim.display_eligible``, which the resolver
+    sets ``True`` on everything it selects and which therefore gates nothing on its own. A
+    policy-withheld claim must not announce itself through its provenance, so it contributes no
+    chip. One chip per provider (rather than per claim) because the chip answers "who told us
     this?", and repeating a source once per field would be noise, not provenance.
     """
     latest: dict[str, datetime] = {}
@@ -393,7 +391,6 @@ async def read_account_contacts(
     *,
     workspace_id: str,
     account_id: uuid.UUID,
-    conn_factory: ConnFactory,
 ) -> ContactListResponse:
     """The governed committee union for one account (empty when nothing has been researched)."""
     canonical, _name = await _resolve_account(
@@ -406,7 +403,6 @@ async def read_account_contacts(
     ).get(uuid.UUID(str(canonical)), ())
     union = await _resolve_union(
         conn,
-        conn_factory,
         account_id=canonical,
         workspace_id=workspace_id,
         memberships=memberships,
@@ -419,11 +415,11 @@ async def read_account_contacts(
             member,
             entity=entities.get(contact_id),
             project_ids=union.project_ids[contact_id],
-            claims=_current_claims(member),
+            claims=current_claims(member),
             policy=policy,
         )
         for contact_id, member in union.members.items()
-        if _identifiable(member, policy)
+        if committee_member_displayable(member, policy)
     ]
     rows.sort(key=lambda row: (row.persona.value, str(row.id)))
     return ContactListResponse(data=tuple(rows), meta=ContactListMeta(total=len(rows)))
@@ -435,7 +431,6 @@ async def read_contact_profile(
     workspace_id: str,
     account_id: uuid.UUID,
     contact_id: uuid.UUID,
-    conn_factory: ConnFactory,
 ) -> ContactProfile:
     """One member's profile, or :class:`ContactNotFound`.
 
@@ -454,17 +449,16 @@ async def read_contact_profile(
     ).get(uuid.UUID(str(canonical_account)), ())
     union = await _resolve_union(
         conn,
-        conn_factory,
         account_id=canonical_account,
         workspace_id=workspace_id,
         memberships=memberships,
     )
     member = union.members.get(canonical_contact)
     policy = await load_workspace_policy(conn, workspace_id=workspace_id)
-    if member is None or not _identifiable(member, policy):
+    if member is None or not committee_member_displayable(member, policy):
         raise ContactNotFound(str(contact_id))
 
-    claims = _current_claims(member)
+    claims = current_claims(member)
     row = _build_row(
         member,
         entity=(await get_contacts(conn, (canonical_contact,))).get(canonical_contact),
@@ -505,7 +499,6 @@ def register_contact_routes(router: APIRouter, *, conn_factory: ConnFactory) -> 
                     conn,
                     workspace_id=workspace_id,
                     account_id=account_id,
-                    conn_factory=conn_factory,
                 )
             except AccountNotFound as exc:
                 raise _account_404() from exc
@@ -521,7 +514,6 @@ def register_contact_routes(router: APIRouter, *, conn_factory: ConnFactory) -> 
                     workspace_id=workspace_id,
                     account_id=account_id,
                     contact_id=contact_id,
-                    conn_factory=conn_factory,
                 )
             except AccountNotFound as exc:
                 raise _account_404() from exc

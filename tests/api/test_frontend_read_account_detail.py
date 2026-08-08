@@ -929,6 +929,38 @@ def test_the_committee_is_served_through_the_governed_reader_and_carries_its_pro
     run_async(scenario())
 
 
+def test_a_workspace_that_will_not_display_professional_facts_has_an_empty_committee() -> None:
+    """The detail view's ``committee[]`` and the contacts endpoints render the same people from the
+    same resolver, so they must agree on the workspace display policy. Until the shared
+    ``committee_member_displayable`` gate landed they did not: this block listed names, personas and
+    roles for members whose very role/persona claims the policy refuses to display, while
+    `/accounts/{id}/contacts` correctly served nothing. Same data, two answers — the leak was here.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            assert (await _get(conn, fixture.acme)).json()["committee"], (
+                "populated before the policy"
+            )
+
+            await conn.execute(
+                text(
+                    "INSERT INTO workspace_policy (policy_id, workspace_id, posture, "
+                    "display_professional_public, version) "
+                    "VALUES (:pid, :ws, 'conservative_default', false, 9)"
+                ),
+                {"pid": f"p-{uuid.uuid4()}", "ws": _WS},
+            )
+            payload = (await _get(conn, fixture.acme)).json()
+            assert payload["committee"] == []
+            # ...and the rest of the account is untouched: this is a contact-display policy, not a
+            # blackout.
+            assert _facts(payload)["core.employee_count"]["value"] == 1200
+
+    run_async(scenario())
+
+
 # --- redirect & 404 -------------------------------------------------------------------------
 
 

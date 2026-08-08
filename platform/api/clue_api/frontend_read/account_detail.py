@@ -23,8 +23,12 @@ untouched mechanism surfaces the list endpoint does, plus two more:
    redaction runs, pre-FI-2 rows) and hiding their claims would misreport the account;
 5. **committee** — the union of every targeting project's governed committee, through
    ``ContactEligibilityResolver`` (never ``identity.contact_ids_for_account``, per the FI-1 §4.5
-   ruling), each member carrying the projects that target them. Display governance is the reader's:
-   a member whose role/persona binding is not STRONG simply does not appear;
+   ruling), each member carrying the projects that target them. Two gates, both the resolver's or
+   C7's and neither re-derived here: *membership* eligibility is the resolver's (a member whose
+   role/persona binding is not STRONG does not come back), and *display* eligibility is
+   ``committee.committee_member_displayable`` over the workspace policy — the same gate the
+   `/contacts` endpoints apply, shared so the two surfaces cannot answer differently about the same
+   people;
 6. **coverage** — how many fields this account actually holds, and which fields research asked for
    and could not resolve.
 
@@ -71,6 +75,10 @@ from clue_api.frontend_read.accounts_list import (
     group_score_claims,
 )
 from clue_api.frontend_read.app import WorkspaceDep
+from clue_api.frontend_read.committee import (
+    committee_member_displayable,
+    request_bound_conn_factory,
+)
 from clue_core import (
     EntityId,
     EntityType,
@@ -81,6 +89,7 @@ from clue_core import (
     classify_field_key,
     decode_jsonb_scalar,
     default_research_scope,
+    reference_time,
     resolve_research_scope,
 )
 from clue_db import ConnFactory
@@ -92,6 +101,7 @@ from clue_research.claimstore import (
     current_values,
     list_effective_fields,
 )
+from clue_research.compliance import load_workspace_policy
 from clue_research.identity import get_account, get_contacts, surviving_id
 from clue_research.membership import ProjectMembership, memberships_for_accounts
 
@@ -344,8 +354,15 @@ async def field_species(
 
 
 def _reference_time(observed_at: datetime | None, collected_at: datetime) -> datetime:
-    """A claim's age, on the same rule the merge uses: when the source stated it, else when we
-    collected it."""
+    """:func:`~clue_core.reference_time`'s rule, over loose columns.
+
+    Where a whole :class:`~clue_core.Claim` is in hand, call ``core.reference_time(claim)``
+    directly — it is the M9.5 DRY consolidation the merge and the freshness engine share, and this
+    module does exactly that for the neutral-fact winners. The relative-claims read, though,
+    projects five columns out of SQL rather than hydrating claims, so it has an
+    ``(observed_at, collected_at)`` pair and no claim; this restates the same rule for that shape
+    instead of hydrating a claim purely to ask it a two-field question.
+    """
     return observed_at or collected_at
 
 
@@ -390,9 +407,7 @@ async def _read_neutral_facts(
                 value=value.value_json,
                 freshness=value.freshness_state,
                 observed_at=(
-                    _reference_time(winner.observed_at, winner.collected_at)
-                    if winner is not None
-                    else value.provenance.collected_at
+                    reference_time(winner) if winner is not None else value.provenance.collected_at
                 ),
                 provider=None if winner is None else winner.source_key,
             )
@@ -475,9 +490,8 @@ async def _read_relative_claims(
 
 
 async def _read_committee(
-    conn_factory: ConnFactory,
-    *,
     conn: AsyncConnection,
+    *,
     account_id: EntityId,
     workspace_id: str,
     memberships: Sequence[ProjectMembership],
@@ -485,11 +499,22 @@ async def _read_committee(
     """The union of every targeting project's governed committee.
 
     One ``ContactEligibilityResolver`` per project, each bound to that project's latest-run context
-    (:func:`latest_project_run_context`). The resolver owns display governance end to end — a
+    (:func:`latest_project_run_context`). The resolver owns *membership* eligibility end to end — a
     member whose role/persona binding is not STRONG, whose role is implausible, or whose contact row
-    is erased simply does not come back — so this function never re-derives eligibility, it only
-    unions and attaches the projects.
+    is erased simply does not come back — so this function never re-derives that.
+
+    It does, however, apply :func:`~clue_api.frontend_read.committee.committee_member_displayable`,
+    the workspace **display** policy over the member's role/persona claims. The resolver stops at
+    "is this person really on this committee?"; whether this workspace may *show* them is a separate
+    axis (C7's, applied per statement), and skipping it here was a real leak: the contacts endpoints
+    apply it, so a workspace with professional-public display off would have seen an empty contacts
+    table beside a fully populated committee block for the same account.
+
+    The connection is the request's own, lent to the resolver rather than letting it take a second
+    one from the pool — see ``committee.request_bound_conn_factory`` for the deadlock class.
     """
+    policy = await load_workspace_policy(conn, workspace_id=workspace_id)
+    bound = request_bound_conn_factory(conn)
     by_contact: dict[EntityId, CommitteeMemberRow] = {}
     projects: dict[EntityId, list[str]] = defaultdict(list)
     for membership in memberships:
@@ -501,11 +526,13 @@ async def _read_committee(
         resolver = ContactEligibilityResolver(
             project_run_id=context.project_run_id,
             product_id=context.product_id,
-            conn_factory=conn_factory,
+            conn_factory=bound,
         )
         for member in await resolver.resolve_account(
             account_entity_id=account_id, workspace_id=workspace_id
         ):
+            if not committee_member_displayable(member, policy):
+                continue
             projects[member.contact_entity_id].append(membership.project_id)
             by_contact.setdefault(
                 member.contact_entity_id,
@@ -599,7 +626,6 @@ async def read_account_detail(
     *,
     workspace_id: str,
     account_id: uuid.UUID,
-    conn_factory: ConnFactory,
 ) -> AccountDetail:
     """The union detail for one account, or :class:`AccountNotFound`.
 
@@ -638,8 +664,7 @@ async def read_account_detail(
         scope=scope,
     )
     committee = await _read_committee(
-        conn_factory,
-        conn=conn,
+        conn,
         account_id=canonical,
         workspace_id=workspace_id,
         memberships=memberships,
@@ -679,7 +704,6 @@ def register_account_detail_routes(router: APIRouter, *, conn_factory: ConnFacto
                     conn,
                     workspace_id=workspace_id,
                     account_id=account_id,
-                    conn_factory=conn_factory,
                 )
             except AccountNotFound as exc:
                 raise HTTPException(
