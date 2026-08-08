@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from lumen_api.database import connect, run_migrations
 from lumen_api.design_store import HybridRepository
 from lumen_ingestion.jobs import (
     IngestionJobStore,
@@ -13,29 +12,14 @@ from lumen_ingestion.jobs import (
     run_ingestion_job,
 )
 
-MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
-
-
-def _frozen_clock():
-    ticks = iter(f"2026-01-01T00:00:{s:02d}+00:00" for s in range(60))
-
-    def now_iso() -> str:
-        return next(ticks)
-
-    return now_iso
-
-
 def _store(tmp_path: Path) -> IngestionJobStore:
-    database_path = tmp_path / "api.sqlite3"
-    run_migrations(database_path)
-    connection = connect(database_path)
-    return IngestionJobStore(connection, now_iso=_frozen_clock())
+    return IngestionJobStore()
 
 
 def _seed_kit(tmp_path: Path, brand_kit_id: str, version: int = 1) -> None:
     """D2.3: the job's result pointer is a REAL composite FK to design_brand_kit now (SQLite
     only back-linked it by convention), so a completing job needs its kit to exist."""
-    repo = HybridRepository(connect(tmp_path / "api.sqlite3"))
+    repo = HybridRepository()
     repo.create_brand_kit(
         {
             "id": brand_kit_id,
@@ -149,9 +133,7 @@ def _minimal_kit_row(source: str) -> tuple[dict, dict, list, str]:
 
 
 def test_brand_kits_source_check_accepts_website(tmp_path: Path) -> None:
-    database_path = tmp_path / "api.sqlite3"
-    run_migrations(database_path)
-    repo = HybridRepository(connect(database_path))
+    repo = HybridRepository()
     for source in ("website", "pdf", "asset_upload"):
         brand_kit, brand_summary, diagnostics, src = _minimal_kit_row(source)
         row = repo.create_brand_kit(brand_kit, brand_summary, diagnostics, src)
@@ -167,97 +149,7 @@ def test_brand_kits_source_check_accepts_website(tmp_path: Path) -> None:
     with pytest.raises(sqlite3.IntegrityError):
         repo.create_brand_kit(brand_kit, brand_summary, diagnostics, "bogus")
 
-
-def test_migration_idempotent_fresh_and_reopen(tmp_path: Path) -> None:
-    database_path = tmp_path / "api.sqlite3"
-    # Fresh apply.
-    run_migrations(database_path)
-    repo = HybridRepository(connect(database_path))
-    repo.create_brand_kit(*_minimal_kit_row("website"))
-    repo.connection.close()
-
-    # Re-open: run_migrations runs again (re-runs 007's rebuild). Data must
-    # survive and the ingestion_jobs table stays usable.
-    run_migrations(database_path)
-    repo2 = HybridRepository(connect(database_path))
-    kept = repo2.require_brand_kit("kit_website", 1)
-    assert kept["source"] == "website"
-    store = IngestionJobStore(connect(database_path))
-    job = store.create("website", {"url": "https://x.example"})
-    assert job["status"] == "queued"
-
-
-def _apply_pre_007(database_path: Path) -> None:
-    """Apply migrations 001-006 only, to build a pre-007 database."""
-    database_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(str(database_path))
-    connection.execute("PRAGMA foreign_keys = ON")
-    for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
-        if migration.name >= "007":
-            continue
-        connection.executescript(migration.read_text())
-    connection.commit()
-    connection.close()
-
-
-def test_upgrade_from_pre_007_preserves_brand_kit_and_fk_rows(
-    tmp_path: Path,
-) -> None:
-    database_path = tmp_path / "api.sqlite3"
-    _apply_pre_007(database_path)
-
-    # Insert a kit + a compatibility report referencing it via FK, before 007.
-    connection = sqlite3.connect(str(database_path))
-    connection.execute("PRAGMA foreign_keys = ON")
-    connection.execute(
-        """
-        INSERT INTO brand_kits (
-          brand_kit_id, version, name, approval_status, product_ready,
-          source, brand_kit_json, brand_summary_json, diagnostics_json,
-          created_at, updated_at
-        )
-        VALUES ('kit_old', 1, 'Old Kit', 'draft', 0, 'manual', '{}', '{}',
-                '[]', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')
-        """
-    )
-    connection.execute(
-        """
-        INSERT INTO brand_compatibility_reports (
-          report_id, from_brand_kit_id, from_version, to_brand_kit_id,
-          to_version, report_json, diagnostics_json, created_at
-        )
-        VALUES ('rep_old', 'kit_old', 1, 'kit_old', 1, '{}', '[]',
-                '2026-01-01T00:00:00+00:00')
-        """
-    )
-    connection.commit()
-    connection.close()
-
-    # Now apply 007 (via run_migrations, exactly as create_app would).
-    run_migrations(database_path)
-
-    verify = connect(database_path)
-    kit = verify.execute(
-        "SELECT source FROM brand_kits WHERE brand_kit_id = 'kit_old'"
-    ).fetchone()
-    assert kit is not None and kit["source"] == "manual"
-    # FK row not orphaned / cascaded away by the rebuild.
-    report = verify.execute(
-        "SELECT report_id FROM brand_compatibility_reports WHERE report_id = 'rep_old'"
-    ).fetchone()
-    assert report is not None
-    assert verify.execute("PRAGMA foreign_key_check").fetchall() == []
-    # New CHECK now admits ingestion sources.
-    verify.execute(
-        """
-        INSERT INTO brand_kits (
-          brand_kit_id, version, name, approval_status, product_ready,
-          source, brand_kit_json, brand_summary_json, diagnostics_json,
-          created_at, updated_at
-        )
-        VALUES ('kit_new', 1, 'New', 'draft', 0, 'website', '{}', '{}', '[]',
-                '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')
-        """
-    )
-    verify.commit()
-    verify.close()
+# D2.5B DELETED the SQLite migration tests that lived here (migration idempotence on reopen,
+# the pre-007 upgrade/FK-preservation walk, and the 007 rebuild-on-boot check): their subject —
+# `run_migrations`, `apps/api/migrations/*.sql`, and the SQLite tables themselves — no longer
+# exists. Schema evolution is Alembic's, covered by `make db-smoke` and the platform suite.

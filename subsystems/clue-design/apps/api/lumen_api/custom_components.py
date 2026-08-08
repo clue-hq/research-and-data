@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Tuple
 
-from .database import Repository
+from .design_store import HybridRepository
 from .custom_component_contract import custom_component_slug_is_valid
 
 
@@ -176,7 +176,7 @@ def canonical_custom_component_source_snapshot(
 
 
 def persist_custom_component_source_revision(
-    repository: Repository,
+    repository: HybridRepository,
     store_root: Path,
     *,
     account_id: str,
@@ -218,7 +218,7 @@ def persist_custom_component_source_revision(
 
 
 def resolve_custom_component_source_snapshot(
-    repository: Repository,
+    repository: HybridRepository,
     store_root: Path,
     *,
     account_id: str,
@@ -257,7 +257,7 @@ def resolve_custom_component_source_snapshot(
 
 
 def persist_compiled_custom_component_artifact(
-    repository: Repository,
+    repository: HybridRepository,
     store_root: Path,
     *,
     account_id: str,
@@ -343,7 +343,7 @@ def persist_compiled_custom_component_artifact(
 
 
 def resolve_custom_component_artifact_blob(
-    repository: Repository,
+    repository: HybridRepository,
     store_root: Path,
     *,
     account_id: str,

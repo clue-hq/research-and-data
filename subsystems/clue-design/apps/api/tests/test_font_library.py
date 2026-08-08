@@ -536,7 +536,7 @@ def test_checked_in_manifest_matches_curation() -> None:
 
 
 class _FakeAssetRepo:
-    """Minimal Repository stand-in: brand_kit_font_spec only calls
+    """Minimal store stand-in: brand_kit_font_spec only calls
     require_asset_record, which we resolve from a preloaded digest map."""
 
     def __init__(self, records: dict) -> None:

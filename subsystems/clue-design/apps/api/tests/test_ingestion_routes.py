@@ -104,13 +104,8 @@ def _read_brand_kit_row(client: TestClient, brand_kit_id: str) -> dict:
     """Read the persisted brand_kits row (incl. raw brand_summary_json) directly
     from the app's sqlite DB — the kit-detail dto does not surface the full
     brand_summary."""
-    from lumen_api.database import Repository, connect
 
-    connection = connect(client.app.state.database_path)
-    try:
-        return HybridRepository(connection).require_brand_kit(brand_kit_id)
-    finally:
-        connection.close()
+    return HybridRepository().require_brand_kit(brand_kit_id)
 
 
 @pytest.fixture()

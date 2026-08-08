@@ -13,9 +13,10 @@ for _path in (API_ROOT, REPO_ROOT):
 
 
 # --- D2.2 (design-integration Part II): per-test workspace isolation --------------------------
-# The document domain lives on Postgres (clue_design) behind the request's workspace. Each test
-# keeps its fresh per-test SQLite file, but Postgres is shared — so every test gets its OWN
-# workspace id, making client-supplied fixture document ids collision-free across tests (doc
+# Every domain lives on Postgres (clue_design) behind the request's workspace — D2.5B deleted
+# SQLite outright, so the per-test `create_app(tmp_path / "api.sqlite3")` path now only anchors
+# the per-test asset store and no file is created. Postgres is shared, so every test gets its
+# OWN workspace id, making client-supplied fixture document ids collision-free across tests (doc
 # ids are workspace-local since migration 7a9881f9717a). Rows accumulate in the dev/throwaway
 # database; run this suite against a disposable CLUE_DATABASE_URL.
 import os

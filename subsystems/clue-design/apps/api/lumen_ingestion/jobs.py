@@ -5,15 +5,13 @@ BackgroundTasks workers keep calling. Every method routes through one
 :class:`~lumen_api.design_store.DesignStoreBridge` call — one coroutine, one loop, one
 transaction (the O5 rule) — and returns the same JSON shape as before.
 
-Two constructor arguments are now VESTIGIAL and kept only so the ~12 call sites (and the
-suites) need no churn: ``connection`` (the SQLite handle: accepted, never used) and ``now_iso``
-(timestamps are the database's ``now()`` since the port). Both die at D2.5 with the SQLite
-Repository.
+D2.5B deleted the two vestigial constructor arguments — ``connection`` (the SQLite handle) and
+``now_iso`` (timestamps have been the database's ``now()`` since the port) — along with the
+SQLite substrate itself.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, Protocol
 
 from clue_design import ingestion as design_ingestion
@@ -23,10 +21,6 @@ from lumen_api.design_store import DesignStoreBridge, default_workspace_id
 JsonObject = Dict[str, Any]
 
 
-def _default_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 class IngestionJobStore:
     """Durable store for brand-kit ingestion jobs (Postgres, workspace-scoped).
 
@@ -34,16 +28,7 @@ class IngestionJobStore:
     ``HybridRepository`` — request paths pass the resolved workspace explicitly.
     """
 
-    def __init__(
-        self,
-        connection: Any = None,
-        now_iso: Callable[[], str] = _default_now_iso,
-        *,
-        workspace_id: Optional[str] = None,
-    ) -> None:
-        # Vestigial (D2.5 deletes both): the SQLite handle and the caller-minted clock.
-        self.connection = connection
-        self.now_iso = now_iso
+    def __init__(self, *, workspace_id: Optional[str] = None) -> None:
         self.workspace_id = workspace_id or default_workspace_id()
         self._bridge = DesignStoreBridge(self.workspace_id)
 

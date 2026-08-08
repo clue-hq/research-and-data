@@ -12,7 +12,7 @@ consume:
   literal ``descriptions`` segment must not resolve as an unknown asset id),
 * ``GET /brand-kits/ingest`` most-recent-50 job list.
 
-Kits are seeded directly through ``Repository`` against the app's own sqlite DB
+Kits are seeded directly through ``HybridRepository`` against the shared Postgres store
 (the ingestion pipeline is exercised elsewhere); assets are uploaded through the
 real ``POST /assets`` route so a genuine record exists for the description path.
 """
@@ -26,7 +26,6 @@ from fastapi.testclient import TestClient
 
 from conftest import make_client
 
-from lumen_api.database import Repository, connect
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
@@ -58,21 +57,13 @@ def _seed_kit(
         "description": "Calm, clinical, trustworthy.",
     }
     summary = brand_summary if brand_summary is not None else {"product_ready": False}
-    connection = connect(client.app.state.database_path)
-    try:
-        return HybridRepository(connection).create_brand_kit(
-            brand_kit, summary, [], source
-        )
-    finally:
-        connection.close()
+    return HybridRepository().create_brand_kit(
+        brand_kit, summary, [], source
+    )
 
 
 def _read_kit_row(client: TestClient, brand_kit_id: str, version: int | None = None) -> dict:
-    connection = connect(client.app.state.database_path)
-    try:
-        return HybridRepository(connection).require_brand_kit(brand_kit_id, version)
-    finally:
-        connection.close()
+    return HybridRepository().require_brand_kit(brand_kit_id, version)
 
 
 def _upload_logo(client: TestClient) -> str:
@@ -275,11 +266,7 @@ def test_description_put_unknown_asset_is_404(client: TestClient) -> None:
 def _seed_job(client: TestClient, kind: str) -> dict:
     from lumen_ingestion.jobs import IngestionJobStore
 
-    connection = connect(client.app.state.database_path)
-    try:
-        return IngestionJobStore(connection).create(kind, {"url": "https://x.example"})
-    finally:
-        connection.close()
+    return IngestionJobStore().create(kind, {"url": "https://x.example"})
 
 
 def test_job_list_shape_and_recency_ordering(client: TestClient) -> None:

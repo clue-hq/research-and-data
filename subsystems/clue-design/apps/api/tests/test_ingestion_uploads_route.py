@@ -189,13 +189,8 @@ def _post_assets(client: TestClient, *, uploads=None, **form):
 
 
 def _read_brand_kit_row(client: TestClient, brand_kit_id: str) -> dict:
-    from lumen_api.database import Repository, connect
 
-    connection = connect(client.app.state.database_path)
-    try:
-        return HybridRepository(connection).require_brand_kit(brand_kit_id)
-    finally:
-        connection.close()
+    return HybridRepository().require_brand_kit(brand_kit_id)
 
 
 def _asset_entries(container: Any) -> list[dict]:
@@ -391,7 +386,7 @@ def test_ingest_assets_describer_hook_stamps_descriptions(
     seen: dict[str, Any] = {}
 
     def stub_apply_descriptions(
-        evidence, *, connection, describer, resolve_bytes, reporter, **_kwargs
+        evidence, *, describer, resolve_bytes, reporter, **_kwargs
     ):
         # **_kwargs absorbs the imagery-slice-1 seam extensions
         # (rasterize_svg, diagnostics) — this stub only asserts the hook fires.

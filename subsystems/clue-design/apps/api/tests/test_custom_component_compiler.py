@@ -15,12 +15,7 @@ from sqlalchemy.exc import DBAPIError
 import lumen_api.main as main_module
 from lumen_api.custom_components import persist_custom_component_source_revision
 from lumen_api.design_store import HybridRepository
-from lumen_api.database import (
-    CustomComponentSourceVersionConflict,
-    Repository,
-    connect,
-    run_migrations,
-)
+from lumen_api.database import CustomComponentSourceVersionConflict
 from lumen_api.main import create_app
 
 
@@ -285,35 +280,32 @@ def test_valid_source_versions_compile_into_immutable_complete_artifacts(
     # Reaching into `_bridge` is deliberate: the mutation must be attempted straight at the
     # table, below the API boundary. Each `_run` is its own transaction, so a refusal rolls
     # itself back.
-    repository = HybridRepository(connect(client.app.state.database_path))
+    repository = HybridRepository()
     compilation_id = compiled.json()["compilation"]["compilation_id"]
-    try:
-        for statement, key in (
-            (
-                "UPDATE design_custom_component_artifact SET manifest_json = '{}'::jsonb"
-                " WHERE artifact_id = :k AND workspace_id = :w",
-                first["artifact_id"],
-            ),
-            (
-                "UPDATE design_custom_component_source_revision"
-                " SET entry_path = 'changed.tsx'"
-                " WHERE revision_id = :k AND workspace_id = :w",
-                first_source["revision_id"],
-            ),
-            (
-                "UPDATE design_custom_component_compilation SET status = 'failed'"
-                " WHERE compilation_id = :k AND workspace_id = :w",
-                compilation_id,
-            ),
-        ):
-            with pytest.raises(DBAPIError, match="immutable"):
-                repository._bridge._run(
-                    lambda conn, sql=statement, k=key: conn.execute(
-                        sa_text(sql), {"k": k, "w": repository.workspace_id}
-                    )
+    for statement, key in (
+        (
+            "UPDATE design_custom_component_artifact SET manifest_json = '{}'::jsonb"
+            " WHERE artifact_id = :k AND workspace_id = :w",
+            first["artifact_id"],
+        ),
+        (
+            "UPDATE design_custom_component_source_revision"
+            " SET entry_path = 'changed.tsx'"
+            " WHERE revision_id = :k AND workspace_id = :w",
+            first_source["revision_id"],
+        ),
+        (
+            "UPDATE design_custom_component_compilation SET status = 'failed'"
+            " WHERE compilation_id = :k AND workspace_id = :w",
+            compilation_id,
+        ),
+    ):
+        with pytest.raises(DBAPIError, match="immutable"):
+            repository._bridge._run(
+                lambda conn, sql=statement, k=key: conn.execute(
+                    sa_text(sql), {"k": k, "w": repository.workspace_id}
                 )
-    finally:
-        repository.connection.close()
+            )
 
 
 def test_curated_libraries_compile_inside_the_constrained_worker(
@@ -599,11 +591,10 @@ def test_concurrent_source_compare_and_swap_has_exactly_one_winner(
     client: TestClient,
 ) -> None:
     create_account(client, "acc_alpha")
-    database_path = client.app.state.database_path
     store_root = client.app.state.custom_component_store_root
 
     def write(label: str) -> str:
-        repository = HybridRepository(connect(database_path))
+        repository = HybridRepository()
         try:
             persist_custom_component_source_revision(
                 repository,
@@ -622,8 +613,6 @@ def test_concurrent_source_compare_and_swap_has_exactly_one_winner(
             return "won"
         except CustomComponentSourceVersionConflict:
             return "conflict"
-        finally:
-            repository.connection.close()
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         outcomes = list(executor.map(write, ["alpha", "beta"]))
@@ -655,23 +644,20 @@ def test_compile_overtaken_by_source_write_cannot_publish_stale_artifact(
 
     def compile_then_advance_source(**kwargs):
         result = original_compile(**kwargs)
-        repository = HybridRepository(connect(client.app.state.database_path))
-        try:
-            persist_custom_component_source_revision(
-                repository,
-                client.app.state.custom_component_store_root,
-                account_id="acc_alpha",
-                slug="race-card",
-                expected_version=1,
-                files={
-                    "race-card.tsx": VALID_SOURCE.replace(
-                        "PricingCard", "RaceCard"
-                    ).replace("Pricing", "New source")
-                },
-                provenance={"kind": "compile_race_test"},
-            )
-        finally:
-            repository.connection.close()
+        repository = HybridRepository()
+        persist_custom_component_source_revision(
+            repository,
+            client.app.state.custom_component_store_root,
+            account_id="acc_alpha",
+            slug="race-card",
+            expected_version=1,
+            files={
+                "race-card.tsx": VALID_SOURCE.replace(
+                    "PricingCard", "RaceCard"
+                ).replace("Pricing", "New source")
+            },
+            provenance={"kind": "compile_race_test"},
+        )
         return result
 
     monkeypatch.setattr(
@@ -699,36 +685,6 @@ def test_compile_overtaken_by_source_write_cannot_publish_stale_artifact(
     )
 
 
-def test_compiler_migration_replay_does_not_invent_source_or_artifacts(
-    client: TestClient,
-) -> None:
-    create_account(client, "acc_alpha")
-    assert (
-        put_source(
-            client,
-            account_id="acc_alpha",
-            slug="source-only",
-            expected_version=0,
-            source=VALID_SOURCE.replace("PricingCard", "SourceOnly"),
-        ).status_code
-        == 200
-    )
-    before = client.get(
-        "/web/accounts/acc_alpha/custom-components/source-only/source"
-    ).json()
-    run_migrations(client.app.state.database_path)
-    after = client.get(
-        "/web/accounts/acc_alpha/custom-components/source-only/source"
-    ).json()
-    assert after == before
-    component = client.get(
-        "/web/accounts/acc_alpha/custom-components/source-only"
-    ).json()["component"]
-    assert component["source_version"] == 1
-    assert component["artifacts"] == []
-    assert (
-        client.get(
-            "/web/accounts/acc_alpha/custom-components/source-only/compilations"
-        ).json()["compilations"]
-        == []
-    )
+# D2.5B DELETED `test_compiler_migration_replay_does_not_invent_source_or_artifacts`: it
+# re-ran `run_migrations` mid-test to prove the SQLite migration replay invented no source or
+# artifact rows. `run_migrations` and `apps/api/migrations/*.sql` no longer exist.

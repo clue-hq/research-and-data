@@ -1312,7 +1312,6 @@ def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
     # row (terminal result + error event so SSE settles) and leave finished
     # runs untouched. Live failure 2026-07-29: two website turns sat
     # 'running' for hours after an API bounce.
-    from lumen_api.database import Repository, connect
 
     database_path = tmp_path / "api.sqlite3"
     first = make_client(create_app(database_path))
@@ -1321,8 +1320,7 @@ def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
     orphan_scene = unique_run_id("orphan_scene")
     finished_run = unique_run_id("finished")
 
-    connection = connect(database_path)
-    repo = HybridRepository(connection)
+    repo = HybridRepository()
     repo.create_document(
         {"id": "doc_web_orphan", "title": "Orphan site", "schema_version": 1, "pages": []},
         doc_kind="web",
@@ -1336,7 +1334,6 @@ def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
     repo.complete_run(
         finished_run, "succeeded", {"status": "applied"}, "result", {"status": "applied"}
     )
-    connection.close()
     del first
 
     # "Restart": a new app over the same database sweeps at construction.
@@ -1366,11 +1363,9 @@ def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
     # Drive the store directly to assert SSE framing deterministically (no
     # dependence on background-thread timing): a progress event replays, then
     # the terminal marker closes the stream with the stored result.
-    from lumen_api.database import Repository, connect
 
     run_id = unique_run_id("sse")
-    connection = connect(client.app.state.database_path)
-    repo = HybridRepository(connection)
+    repo = HybridRepository()
     repo.create_run(run_id, None)
     repo.append_run_event(run_id, "dsl_block_produced", {"iteration": 1})
     repo.complete_run(
@@ -1380,7 +1375,6 @@ def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
         "result",
         {"status": "proposed"},
     )
-    connection.close()
 
     body = client.get(f"/agent/runs/{run_id}/events").text
     assert "event: progress" in body
@@ -1402,11 +1396,9 @@ def test_run_event_enriched_with_operations_round_trips_and_streams(
     # handed (append_run_event → data_json) untouched, so an authoring event
     # enriched with its applied `operations` list round-trips through the
     # run_events row AND rides the SSE progress frame the editor consumes.
-    from lumen_api.database import Repository, connect
 
     run_id = unique_run_id("ops")
-    connection = connect(client.app.state.database_path)
-    repo = HybridRepository(connection)
+    repo = HybridRepository()
     repo.create_run(run_id, None)
     enriched = {
         "actor": "dsl-author",
@@ -1427,7 +1419,6 @@ def test_run_event_enriched_with_operations_round_trips_and_streams(
     repo.complete_run(
         run_id, "succeeded", {"status": "proposed"}, "result", {"status": "proposed"}
     )
-    connection.close()
 
     # (e-ii) the SSE progress frame carries the operations to the client.
     body = client.get(f"/agent/runs/{run_id}/events").text
@@ -3174,39 +3165,9 @@ def test_base_version_mismatch_rejects_edit_before_mutation(
     assert client.get(f"/documents/{document['id']}/history").json()["envelopes"] == []
 
 
-@pytest.mark.skip(
-    reason=(
-        "backfill_edit_envelopes is boot-time SQLite machinery the Part-II port "
-        "retires (PD contract §4: not ported; dev data resets); the SQLite "
-        "document tables it wraps are deleted at D2.5"
-    )
-)
-def test_backfill_wraps_pre_envelope_operation_rows(tmp_path: Path) -> None:
-    import sqlite3
-
-    database_path = tmp_path / "api.sqlite3"
-    app = create_app(database_path)
-    client = make_client(app)
-    document = create_document(client)
-    client.post(
-        f"/documents/{document['id']}/operations",
-        json={"operations": [title_operation("Legacy Title")]},
-    )
-
-    connection = sqlite3.connect(database_path)
-    connection.execute("UPDATE operation_log SET batch_id = NULL")
-    connection.execute("DELETE FROM edit_envelopes")
-    connection.commit()
-    connection.close()
-
-    restarted = make_client(create_app(database_path))
-    history = restarted.get(f"/documents/{document['id']}/history").json()
-    envelope = history["envelopes"][0]
-    assert envelope["envelope_version"] == 0
-    assert envelope["batch_id"].startswith("backfill_")
-    assert envelope["intent"] is None
-    assert envelope["inverse_operations"] is None
-    assert envelope["operations"][0]["kind"] == "update_document"
+# D2.5B DELETED `test_backfill_wraps_pre_envelope_operation_rows` (skipped since D1): it drove
+# `backfill_edit_envelopes` by hand-editing the SQLite `operation_log` / `edit_envelopes`
+# tables. The function, the migrations, and those tables are all deleted.
 
 
 def test_strict_scope_violation_rejects_edit_fail_closed(client: TestClient) -> None:
@@ -4753,26 +4714,22 @@ def test_instance_batch_processes_chunks_with_resumable_cursor(
     # chunk one, manifest truncated to the committed work). Batches live on
     # Postgres since D2.4, so this rewinds through the store surface rather
     # than the old direct SQLite UPDATE.
-    from lumen_api.database import connect as _connect
     from lumen_api.design_store import HybridRepository as _HybridRepository
 
-    store = _HybridRepository(_connect(client.app.state.database_path))
-    try:
-        store.update_batch_progress(
-            batch["batch_id"],
-            1,
-            "running",
-            {
-                "total": 3,
-                "derived": 1,
-                "failed": 0,
-                "fit": {"fits": 1, "fits_with_policy": 0, "overflow": 0},
-            },
-            [batch["manifest"][0]],
-            store.require_batch(batch["batch_id"])["diagnostics"],
-        )
-    finally:
-        store.connection.close()
+    store = _HybridRepository()
+    store.update_batch_progress(
+        batch["batch_id"],
+        1,
+        "running",
+        {
+            "total": 3,
+            "derived": 1,
+            "failed": 0,
+            "fit": {"fits": 1, "fits_with_policy": 0, "overflow": 0},
+        },
+        [batch["manifest"][0]],
+        store.require_batch(batch["batch_id"])["diagnostics"],
+    )
 
     resumed = client.post(f"/batches/{batch['batch_id']}/resume")
     assert resumed.status_code == 200, resumed.text

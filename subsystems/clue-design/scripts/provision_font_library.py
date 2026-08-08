@@ -35,7 +35,7 @@ sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
 
 from py_lumen_config import settings  # noqa: E402
 from lumen_api.core import CoreClient  # noqa: E402
-from lumen_api.database import Repository, connect, run_migrations  # noqa: E402
+from lumen_api.design_store import HybridRepository  # noqa: E402
 from lumen_ingestion.font_library import (  # noqa: E402
     CURATED_FAMILIES,
     FontLibraryError,
@@ -74,22 +74,19 @@ def check_environment(manifest_path: Path, store_root: Path, database_path: Path
     from lumen_api.database import NotFoundError
 
     manifest = json.loads(manifest_path.read_text())
-    connection = connect(database_path)
-    repo = Repository(connection)
+    # D2.5B: the store is Postgres via clue_design; `database_path` only anchors the asset store.
+    repo = HybridRepository()
     problems: list[str] = []
-    try:
-        for family in manifest["families"]:
-            for face in family["faces"]:
-                digest = face["digest"]
-                blob = store_root / "sha256" / digest[:2] / digest
-                if not blob.is_file():
-                    problems.append(f"{family['slug']} w{face['weight']}: store bytes missing ({blob})")
-                try:
-                    repo.require_asset_record(face["asset_id"])
-                except NotFoundError:
-                    problems.append(f"{family['slug']} w{face['weight']}: asset record missing ({face['asset_id']})")
-    finally:
-        connection.close()
+    for family in manifest["families"]:
+        for face in family["faces"]:
+            digest = face["digest"]
+            blob = store_root / "sha256" / digest[:2] / digest
+            if not blob.is_file():
+                problems.append(f"{family['slug']} w{face['weight']}: store bytes missing ({blob})")
+            try:
+                repo.require_asset_record(face["asset_id"])
+            except NotFoundError:
+                problems.append(f"{family['slug']} w{face['weight']}: asset record missing ({face['asset_id']})")
     if problems:
         print(f"FONT LIBRARY CHECK FAILED — {len(problems)} problem(s):")
         for problem in problems:
@@ -140,9 +137,7 @@ def main() -> int:
             return 1
         selected = [f for f in CURATED_FAMILIES if f.slug in wanted]
 
-    run_migrations(database_path)
-    connection = connect(database_path)
-    repo = Repository(connection)
+    repo = HybridRepository()
     core = CoreClient()
     entries = []
     try:
@@ -166,8 +161,6 @@ def main() -> int:
     except FontLibraryError as error:
         print(f"PROVISIONING FAILED: {error}")
         return 1
-    finally:
-        connection.close()
 
     if args.families:
         # Subset run: merge into the existing manifest instead of truncating it.

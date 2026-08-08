@@ -19,7 +19,6 @@ from fastapi.testclient import TestClient
 
 from conftest import make_client
 
-from lumen_api.database import Repository, connect
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
@@ -80,18 +79,15 @@ def seed_template(
     response = client.app.state.core.web_ingest_html(web_doc, "home", html, None, None)
     errors = [d for d in response.get("diagnostics", []) if d.get("severity") == "error"]
     assert not errors, response.get("diagnostics")
-    store = HybridRepository(connect(client.app.state.database_path))
-    try:
-        store.update_web_document(
-            document_id,
-            response["web_doc"],
-            intent="seed",
-            checkpoint_label="seed",
-            operations=[{"kind": "replace_web_doc"}],
-            inverse_operations=None,
-        )
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.update_web_document(
+        document_id,
+        response["web_doc"],
+        intent="seed",
+        checkpoint_label="seed",
+        operations=[{"kind": "replace_web_doc"}],
+        inverse_operations=None,
+    )
 
 
 def upload_asset_record(client: TestClient) -> tuple[str, dict]:
@@ -103,11 +99,8 @@ def upload_asset_record(client: TestClient) -> tuple[str, dict]:
     )
     assert response.status_code == 200, response.text
     asset_id = response.json()["asset"]["id"]
-    store = HybridRepository(connect(client.app.state.database_path))
-    try:
-        record = store.require_asset_record(asset_id)["asset"]
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    record = store.require_asset_record(asset_id)["asset"]
     return asset_id, record
 
 
@@ -255,20 +248,17 @@ def test_account_logo_cannot_dangle_and_detaches_when_the_asset_goes(
     )
     seed_template(client, document["id"], html=logo_html, inject_assets={asset_id: record})
 
-    store = HybridRepository(connect(client.app.state.database_path))
-    try:
-        # A logo that resolves to nothing is refused BY THE SCHEMA, not by convention.
-        with pytest.raises(sqlite3.IntegrityError):
-            store.create_web_account(
-                "acc_ghost", "Ghost Co", None, "asset_ghost_999", {}, None
-            )
-        # A real logo binds; deleting the asset SET-NULLs it instead of dangling.
-        store.create_web_account("acc_ghost", "Ghost Co", None, asset_id, {}, None)
-        assert store.require_web_account("acc_ghost")["logo_asset_id"] == asset_id
-        store.delete_asset_record(asset_id)
-        assert store.require_web_account("acc_ghost")["logo_asset_id"] is None
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    # A logo that resolves to nothing is refused BY THE SCHEMA, not by convention.
+    with pytest.raises(sqlite3.IntegrityError):
+        store.create_web_account(
+            "acc_ghost", "Ghost Co", None, "asset_ghost_999", {}, None
+        )
+    # A real logo binds; deleting the asset SET-NULLs it instead of dangling.
+    store.create_web_account("acc_ghost", "Ghost Co", None, asset_id, {}, None)
+    assert store.require_web_account("acc_ghost")["logo_asset_id"] == asset_id
+    store.delete_asset_record(asset_id)
+    assert store.require_web_account("acc_ghost")["logo_asset_id"] is None
 
     # The derive still runs (the account simply has no logo to bind) and coverage rides it.
     response = client.post(

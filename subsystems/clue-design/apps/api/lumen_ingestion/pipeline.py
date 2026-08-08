@@ -23,7 +23,6 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional, Protocol
 
-from lumen_api.database import Repository, connect
 from lumen_api.design_store import HybridRepository
 from py_lumen_config import settings
 
@@ -94,7 +93,7 @@ class _RecordingCore:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
 
-    def persist_records(self, repo: Repository) -> None:
+    def persist_records(self, repo: HybridRepository) -> None:
         seen: set[str] = set()
         for record in self.records:
             asset_id = str(record["id"])
@@ -134,7 +133,6 @@ class _ApplyDescriptionsCallable(Protocol):
         self,
         evidence: Any,
         *,
-        connection: Any,
         describer: Any,
         resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
         reporter: Callable[[str, float], None],
@@ -174,7 +172,6 @@ class _InlineNullDescriber:
 def _default_apply_descriptions(
     evidence: Any,
     *,
-    connection: Any,
     describer: Any,
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     reporter: Callable[[str, float], None],
@@ -195,7 +192,6 @@ def _default_apply_descriptions(
 
     return apply_descriptions(
         evidence,
-        connection=connection,
         describer=describer,
         resolve_bytes=resolve_bytes,
         reporter=reporter,
@@ -234,8 +230,7 @@ def _font_metrics_map(evidence: Any, resolve_bytes) -> dict:
 def _maybe_describe(
     evidence: Any,
     *,
-    connection: Any,
-    repo: Repository,
+    repo: HybridRepository,
     asset_store_root: str,
     reporter: Callable[[str, float], None],
     describer: Any | None = None,
@@ -263,7 +258,6 @@ def _maybe_describe(
     try:
         return apply(
             evidence,
-            connection=connection,
             describer=describer,
             resolve_bytes=resolve_bytes,
             reporter=reporter,
@@ -287,7 +281,7 @@ def _maybe_describe(
 
 
 def _make_rasterize_svg(
-    repo: Repository, asset_store_root: str
+    repo: HybridRepository, asset_store_root: str
 ) -> Callable[[str], "bytes | None"]:
     """Rasterize a stored SVG asset through the ENGINE renderer (imagery
     slice 1): wrap the asset in a minimal one-image scene and export a PNG —
@@ -347,11 +341,11 @@ def _make_rasterize_svg(
 
 # Public seam names for callers outside the pipeline (the /describe-assets
 # backfill route builds the same resolve/rasterize pair the ingest pass uses).
-def make_resolve_bytes(repo: Repository, asset_store_root: str):
+def make_resolve_bytes(repo: HybridRepository, asset_store_root: str):
     return _make_resolve_bytes(repo, asset_store_root)
 
 
-def make_rasterize_svg(repo: Repository, asset_store_root: str):
+def make_rasterize_svg(repo: HybridRepository, asset_store_root: str):
     return _make_rasterize_svg(repo, asset_store_root)
 
 
@@ -416,10 +410,10 @@ def _raster_image_node(asset_id: str) -> dict:
 
 
 def _make_resolve_bytes(
-    repo: Repository, asset_store_root: str
+    repo: HybridRepository, asset_store_root: str
 ) -> Callable[[str], "tuple[bytes, str] | None"]:
     """Build the ``resolve_bytes`` callable (§1): asset_id → (bytes, mime) via
-    ``Repository.require_asset_record`` → ``media.location.opaque_ref`` (provider
+    ``HybridRepository.require_asset_record`` → ``media.location.opaque_ref`` (provider
     ``local-store``) → store path. Mirrors main.py ``get_asset_bytes``. Returns
     ``None`` for ANY miss — never raises."""
     root = Path(asset_store_root).resolve()
@@ -463,47 +457,42 @@ def run_website_ingestion(
 ) -> None:
     """Run a website ingestion job to a terminal state. Never raises.
 
-    Safe for ``BackgroundTasks``: opens its own sqlite connection, builds an
-    ``IngestionJobStore``, and hands the work to ``run_ingestion_job`` (which
-    captures any exception onto the job row).
+    Safe for ``BackgroundTasks``: builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
+    SQLite connection to open or close) and hands the work to ``run_ingestion_job`` (which
+    captures any exception onto the job row). ``database_path`` is VESTIGIAL since D2.5B —
+    accepted so the dispatching call sites are untouched by the deletion; D5 removes it.
 
     ``workspace_id`` (D2.3) is threaded from the dispatching request so the job row, the brand
     kit it publishes, and the assets it registers all land in the SAME workspace — the job's
     composite result FK is enforced now, so a mismatch fails loudly instead of orphaning.
     ``None`` falls back to the configured dev workspace.
     """
-    connection = connect(Path(database_path))
-    try:
-        store = IngestionJobStore(connection, workspace_id=workspace_id)
-        repo = HybridRepository(connection, workspace_id=workspace_id)
-        core = _RecordingCore(_core_client())
+    store = IngestionJobStore(workspace_id=workspace_id)
+    repo = HybridRepository(workspace_id=workspace_id)
+    core = _RecordingCore(_core_client())
 
-        def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
-            return _ingest(
-                store=store,
-                repo=repo,
-                core=core,
-                connection=connection,
-                asset_store_root=asset_store_root,
-                job_id=job_id,
-                reporter=reporter,
-                capture=capture,
-                build_evidence=build_evidence,
-                describer=describer,
-                apply_descriptions=apply_descriptions,
-            )
+    def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
+        return _ingest(
+            store=store,
+            repo=repo,
+            core=core,
+            asset_store_root=asset_store_root,
+            job_id=job_id,
+            reporter=reporter,
+            capture=capture,
+            build_evidence=build_evidence,
+            describer=describer,
+            apply_descriptions=apply_descriptions,
+        )
 
-        run_ingestion_job(store, job_id, work)
-    finally:
-        connection.close()
+    run_ingestion_job(store, job_id, work)
 
 
 def _ingest(
     *,
     store: IngestionJobStore,
-    repo: Repository,
+    repo: HybridRepository,
     core: Any,
-    connection: Any,
     asset_store_root: str,
     job_id: str,
     reporter: StageReporter,
@@ -536,7 +525,6 @@ def _ingest(
     describe_diagnostics: list = []
     evidence = _maybe_describe(
         evidence,
-        connection=connection,
         repo=repo,
         asset_store_root=asset_store_root,
         reporter=reporter,
@@ -668,44 +656,39 @@ def run_pdf_ingestion(
 ) -> None:
     """Run a PDF ingestion job to a terminal state. Never raises.
 
-    Safe for ``BackgroundTasks``: opens its own sqlite connection, builds an
-    ``IngestionJobStore``, and hands the work to ``run_ingestion_job`` (which
-    captures any exception onto the job row). The uploaded PDF bytes are read
+    Safe for ``BackgroundTasks``: builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
+    SQLite connection to open or close) and hands the work to ``run_ingestion_job`` (which
+    captures any exception onto the job row). ``database_path`` is VESTIGIAL since D2.5B —
+    accepted so the dispatching call sites are untouched by the deletion; D5 removes it. The uploaded PDF bytes are read
     from ``request["tmp_path"]`` and that tmp file is always deleted before the
     job reaches a terminal state. ``workspace_id`` (D2.3) is threaded from the dispatching
     request; ``None`` falls back to the configured dev workspace.
     """
-    connection = connect(Path(database_path))
-    try:
-        store = IngestionJobStore(connection, workspace_id=workspace_id)
-        repo = HybridRepository(connection, workspace_id=workspace_id)
-        core = _RecordingCore(_core_client())
+    store = IngestionJobStore(workspace_id=workspace_id)
+    repo = HybridRepository(workspace_id=workspace_id)
+    core = _RecordingCore(_core_client())
 
-        def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
-            return _ingest_pdf(
-                store=store,
-                repo=repo,
-                core=core,
-                connection=connection,
-                asset_store_root=asset_store_root,
-                job_id=job_id,
-                reporter=reporter,
-                extract=extract,
-                describer=describer,
-                apply_descriptions=apply_descriptions,
-            )
+    def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
+        return _ingest_pdf(
+            store=store,
+            repo=repo,
+            core=core,
+            asset_store_root=asset_store_root,
+            job_id=job_id,
+            reporter=reporter,
+            extract=extract,
+            describer=describer,
+            apply_descriptions=apply_descriptions,
+        )
 
-        run_ingestion_job(store, job_id, work)
-    finally:
-        connection.close()
+    run_ingestion_job(store, job_id, work)
 
 
 def _ingest_pdf(
     *,
     store: IngestionJobStore,
-    repo: Repository,
+    repo: HybridRepository,
     core: Any,
-    connection: Any,
     asset_store_root: str,
     job_id: str,
     reporter: StageReporter,
@@ -755,7 +738,6 @@ def _ingest_pdf(
     describe_diagnostics: list = []
     evidence = _maybe_describe(
         evidence,
-        connection=connection,
         repo=repo,
         asset_store_root=asset_store_root,
         reporter=reporter,
@@ -899,44 +881,39 @@ def run_asset_ingestion(
 ) -> None:
     """Run an asset-upload ingestion job to a terminal state. Never raises.
 
-    Safe for ``BackgroundTasks``: opens its own sqlite connection, builds an
-    ``IngestionJobStore``, and hands the work to ``run_ingestion_job`` (which
-    captures any exception onto the job row). The uploaded files live in tmp
+    Safe for ``BackgroundTasks``: builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
+    SQLite connection to open or close) and hands the work to ``run_ingestion_job`` (which
+    captures any exception onto the job row). ``database_path`` is VESTIGIAL since D2.5B —
+    accepted so the dispatching call sites are untouched by the deletion; D5 removes it. The uploaded files live in tmp
     files listed in ``request["files"][*]["tmp_path"]`` and are always deleted
     before the job reaches a terminal state. ``workspace_id`` (D2.3) is threaded from the
     dispatching request; ``None`` falls back to the configured dev workspace.
     """
-    connection = connect(Path(database_path))
-    try:
-        store = IngestionJobStore(connection, workspace_id=workspace_id)
-        repo = HybridRepository(connection, workspace_id=workspace_id)
-        core = _RecordingCore(_core_client())
+    store = IngestionJobStore(workspace_id=workspace_id)
+    repo = HybridRepository(workspace_id=workspace_id)
+    core = _RecordingCore(_core_client())
 
-        def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
-            return _ingest_assets(
-                store=store,
-                repo=repo,
-                core=core,
-                connection=connection,
-                asset_store_root=asset_store_root,
-                job_id=job_id,
-                reporter=reporter,
-                analyze=analyze,
-                describer=describer,
-                apply_descriptions=apply_descriptions,
-            )
+    def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
+        return _ingest_assets(
+            store=store,
+            repo=repo,
+            core=core,
+            asset_store_root=asset_store_root,
+            job_id=job_id,
+            reporter=reporter,
+            analyze=analyze,
+            describer=describer,
+            apply_descriptions=apply_descriptions,
+        )
 
-        run_ingestion_job(store, job_id, work)
-    finally:
-        connection.close()
+    run_ingestion_job(store, job_id, work)
 
 
 def _ingest_assets(
     *,
     store: IngestionJobStore,
-    repo: Repository,
+    repo: HybridRepository,
     core: Any,
-    connection: Any,
     asset_store_root: str,
     job_id: str,
     reporter: StageReporter,
@@ -1001,7 +978,6 @@ def _ingest_assets(
     describe_diagnostics: list = []
     evidence = _maybe_describe(
         evidence,
-        connection=connection,
         repo=repo,
         asset_store_root=asset_store_root,
         reporter=reporter,

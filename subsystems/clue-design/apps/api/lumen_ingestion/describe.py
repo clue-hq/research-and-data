@@ -21,8 +21,7 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 from clue_design import descriptions as design_descriptions
 from lumen_api.design_store import DesignStoreBridge, default_workspace_id
@@ -36,10 +35,6 @@ PREVIEW_MAX_PX = 512
 #: diagnostic — loud enough to name the cause, bounded so a giant HTML error
 #: page never floods the report.
 FAILURE_EXCERPT_MAX = 300
-
-
-def _default_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 # --- contracts ------------------------------------------------------------------
@@ -91,21 +86,13 @@ class DescriptionStore:
     transaction — the O5 rule) and returns the same shapes as before. ``put_ai`` still never
     overwrites a human-authored row — the guard is the DAL's conditional ``ON CONFLICT``.
 
-    ``connection`` (the SQLite handle) and ``now_iso`` are VESTIGIAL: accepted so the call
-    sites and suites need no churn, unused since timestamps are the database's ``now()``.
-    Both die at D2.5. ``workspace_id`` defaults to the configured dev workspace, like
+    D2.5B deleted the vestigial ``connection`` (the SQLite handle) and ``now_iso`` (timestamps
+    have been the database's ``now()`` since the port) constructor arguments along with the
+    SQLite substrate itself. ``workspace_id`` defaults to the configured dev workspace, like
     ``HybridRepository``.
     """
 
-    def __init__(
-        self,
-        connection: Any = None,
-        now_iso: Callable[[], str] = _default_now_iso,
-        *,
-        workspace_id: str | None = None,
-    ) -> None:
-        self.connection = connection
-        self.now_iso = now_iso
+    def __init__(self, *, workspace_id: str | None = None) -> None:
         self.workspace_id = workspace_id or default_workspace_id()
         self._bridge = DesignStoreBridge(self.workspace_id)
 
@@ -157,7 +144,6 @@ class DescriptionStore:
 def apply_descriptions(
     evidence: BrandEvidence,
     *,
-    connection: Any = None,
     describer: AssetDescriber,
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     reporter: Callable[[str, float], None],
@@ -182,7 +168,7 @@ def apply_descriptions(
     """
     reporter("Describing your assets…", 0.80)
     sink = diagnostics if diagnostics is not None else []
-    store = DescriptionStore(connection, workspace_id=workspace_id)
+    store = DescriptionStore(workspace_id=workspace_id)
     model = settings.lumen_ingestion_describe_model
 
     # asset_id -> evidence entry (logos + images). Both stamp identically.
@@ -324,7 +310,6 @@ def _describe_failure_suffix(describer: "AssetDescriber") -> str:
 def describe_kit_assets(
     brand_kit: dict,
     *,
-    connection: Any = None,
     describer: AssetDescriber,
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     rasterize_svg: Callable[[str], bytes | None] | None = None,
@@ -340,7 +325,7 @@ def describe_kit_assets(
     frozen into the kit JSON at publish — healing the library alone never
     reaches the agent's brand card."""
     sink = diagnostics if diagnostics is not None else []
-    store = DescriptionStore(connection, workspace_id=workspace_id)
+    store = DescriptionStore(workspace_id=workspace_id)
     model = settings.lumen_ingestion_describe_model
     assets = brand_kit.get("assets") or {}
 

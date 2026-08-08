@@ -618,7 +618,7 @@ def provision_family(
 ) -> JsonObject:
     """Ingest each face into the asset store + SQLite, returning the family's
     manifest entry. `ingest` is CoreClient.ingest_asset (kwargs subset);
-    `create_record` is Repository.create_asset_record."""
+    `create_record` is HybridRepository.create_asset_record."""
     manifest_faces: List[JsonObject] = []
     for face in faces:
         asset_id = face_asset_id(curated.slug, face.weight, face.digest, face.style)

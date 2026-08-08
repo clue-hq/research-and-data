@@ -1,13 +1,17 @@
-"""The D2.2–D2.5 store switch: Postgres via ``clue_design``, behind the Repository seam.
+"""The design API's store: Postgres via ``clue_design``. **SQLite is gone (D2.5B).**
 
-Eight domains now: DOCUMENTS (documents / envelopes / op log / snapshots / template revisions /
+Eight domains: DOCUMENTS (documents / envelopes / op log / snapshots / template revisions /
 diagnostics — the D1a tables, D2.2); BRAND (kits + compatibility reports) and ASSETS (the
 registry), D2.3; PERSONALIZATION (binding sets / instances / instance batches / the repair
 queue) and WEB ACCOUNTS + WEB BATCHES (D2.4A); WEB PUBLISHES + PUBLISH REVISIONS and the
 CUSTOM-COMPONENT registry (D2.4B); and since D2.5A AGENT RUNS + RUN EVENTS. That was the LAST
 ``Repository`` domain still reading SQLite (ingestion jobs never went through this seam — they
-moved to ``clue_design.ingestion`` directly at D2.3), so every override below is now a Postgres
-call and the inherited SQLite bodies are dead weight the rest of Part II deletes.
+moved to ``clue_design.ingestion`` directly at D2.3), so **D2.5B deleted the SQLite substrate
+outright**: the ``Repository`` base class, ``connect``/``run_migrations``, and
+``apps/api/migrations/*.sql`` no longer exist. :class:`HybridRepository` is now a STANDALONE
+class — every method below is a Postgres call, and nothing is inherited. (The name is kept
+deliberately: renaming it is D5's job, alongside the bridge's deletion, so this slice is a pure
+subtraction with no call-site churn.)
 
 **The O5 bridge** (:class:`DesignStoreBridge`) — DISPOSABLE scaffOLDING, deleted at D5 with the
 daemon threads. Each call is ``asyncio.run`` of exactly ONE ``clue_design`` DAL coroutine
@@ -16,15 +20,14 @@ pool from another loop). Anything atomic (allocate-seq + insert; CAS + stack upd
 + asset promotion) is one coroutine — the founder's binding O5 rule. Costs (per-call engine,
 awkward cancellation) are accepted; a restart still kills in-flight work until D5.
 
-**The hybrid store** (:class:`HybridRepository`) — a ``Repository`` subclass overriding ONLY
-the ported methods to call the bridge, so main.py's call sites switch at one seam. Python
-dispatch makes inherited SQLite methods that call ``self.require_document`` etc. hit Postgres
-automatically. **Every cross-domain seam is now CLOSED.** The scene-asset PROMOTION seam closed
+**The store** (:class:`HybridRepository`) — every method is one bridge call; main.py's call
+sites are unchanged from the staged-port era. **Every cross-domain seam is CLOSED.** The
+scene-asset PROMOTION seam closed
 at D2.3 (``register_scene_assets`` runs inside the document write's own transaction). The LAST
 one — custom-component reference VALIDATION, which ran against the SQLite registry before the
-Postgres document write — closes at D2.4B: ``validate_custom_component_reference_changes`` is
-not forked, its two reads (``get_web_account``, ``get_custom_component_artifact``) are simply
-ported, so validation now reads the SAME store the writes land in. (It is still a *separate*
+Postgres document write — closed at D2.4B: ``validate_custom_component_reference_changes`` was
+not forked, its two reads (``get_web_account``, ``get_custom_component_artifact``) were simply
+ported, so validation reads the SAME store the writes land in. (It is still a *separate*
 transaction from the document write; the registry is append-only and immutable, so the only
 residual interleaving is an account deleted between validation and write, which the
 ``design_custom_component`` CASCADE then makes structurally consistent anyway.)
@@ -58,6 +61,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+
+# THE ONE SURVIVING sqlite3 REFERENCE IN THE DESIGN API (D2.5B deleted the substrate itself).
+# ``sqlite3.IntegrityError`` is kept as the API's *constraint-violation exception type*: main.py
+# and the route handlers catch it to raise the 409 duplicate-brand-kit / rejected-enum DTOs, and
+# a Postgres ``IntegrityError``/``DataError`` is translated INTO it below so those DTOs are
+# byte-identical to the SQLite era. Renaming it to a design-native error type is a deliberate
+# follow-up (it touches ~8 handler sites), not part of this deletion slice.
 import sqlite3
 import threading
 from collections.abc import Awaitable, Callable
@@ -89,12 +99,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from .database import (
     CustomComponentArtifactConflict,
+    CustomComponentReferenceError,
     CustomComponentSourceVersionConflict,
     NotFoundError,
-    Repository,
     WebDocumentVersionConflict,
     custom_component_artifact_candidate,
     custom_component_nodes,
+    custom_component_props_schema_issue,
+    custom_component_references,
     custom_component_source_candidate,
 )
 
@@ -220,7 +232,7 @@ class DesignStoreBridge:
                 exc.slug, exc.expected_version, exc.current_version
             ) from exc
         except (IntegrityError, DataError) as exc:
-            # Constraint parity for the still-SQLite call sites: a duplicate brand-kit
+            # Constraint parity for the API's route handlers: a duplicate brand-kit
             # version raised ``sqlite3.IntegrityError`` (→ the 409 duplicate DTO), and so did
             # a rejected ``source`` under the SQLite CHECK the ``design_brand_kit_source``
             # enum now replaces. Both stay one exception type to the API, exactly as before.
@@ -271,12 +283,16 @@ def list_orphaned_runs_across_workspaces() -> List[JsonObject]:
     return bridge._run(design_runs.list_running_runs_across_workspaces)
 
 
-class HybridRepository(Repository):
-    """The staged-port store: document domain on Postgres, everything else inherited SQLite."""
+class HybridRepository:
+    """The design API's store — every domain on Postgres via ``clue_design``.
+
+    Standalone since D2.5B (it subclassed the SQLite ``Repository`` through the staged port; that
+    base class is deleted). The name survives this slice on purpose: D5 owns the rename, and
+    keeping it here means the deletion touches no call site's *spelling*.
+    """
 
     def __init__(
         self,
-        connection: Any,
         workspace_id: str | None = None,
         *,
         ensure_workspace: bool = True,
@@ -284,7 +300,6 @@ class HybridRepository(Repository):
         # None -> the configured dev workspace (request paths always pass explicitly; the
         # default serves direct constructions in scripts/tests, which read the same env the
         # per-test isolation fixture sets).
-        super().__init__(connection)
         self.workspace_id = workspace_id or default_workspace_id()
         self._bridge = DesignStoreBridge(
             self.workspace_id, ensure_workspace=ensure_workspace
@@ -1089,10 +1104,128 @@ class HybridRepository(Repository):
             )
         )
 
-    # NOTE: ``validate_custom_component_reference_changes`` is deliberately NOT overridden. Its
-    # only two store reads are ``get_web_account`` and ``get_custom_component_artifact``, both
-    # overridden above, so Python dispatch already runs the inherited walk against Postgres —
-    # the LAST cross-domain seam, closed by porting its reads rather than by forking the method.
+    def validate_custom_component_reference_changes(
+        self,
+        *,
+        before_web_doc: JsonObject,
+        after_web_doc: JsonObject,
+        account_id: Optional[str],
+    ) -> None:
+        """Resolve every newly introduced/re-pinned artifact.
+
+        Existing missing pins remain loadable and render as placeholders; an
+        unrelated edit does not become impossible because old registry data is
+        unavailable. A new node, duplicate, or changed slug/artifact pair must
+        resolve in the document's exact account.
+
+        Relocated VERBATIM from the deleted SQLite ``Repository`` at D2.5B. It was the one
+        method the staged port never overrode: its only two store reads (``get_web_account``,
+        ``get_custom_component_artifact``) are Postgres calls on this class, so Python dispatch
+        already ran the inherited walk against Postgres. With the base class gone the walk simply
+        lives here; nothing about its behaviour changes.
+        """
+
+        before_nodes = custom_component_nodes(before_web_doc)
+        after_nodes = custom_component_nodes(after_web_doc)
+        before = custom_component_references(before_web_doc)
+        after = custom_component_references(after_web_doc)
+        resolved: Dict[Tuple[str, str], JsonObject] = {}
+
+        def resolve(
+            location: Tuple[str, str],
+            node_id: str,
+            slug: str,
+            artifact_id: str,
+        ) -> JsonObject:
+            cached = resolved.get(location)
+            if cached is not None:
+                return cached
+            if account_id is None:
+                raise CustomComponentReferenceError(
+                    "custom_component.account_required",
+                    "the website must belong to an account before attaching a custom component",
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+            if self.get_web_account(account_id) is None:
+                raise CustomComponentReferenceError(
+                    "custom_component.account_unresolved",
+                    f"website account {account_id!r} was not found",
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+            artifact = self.get_custom_component_artifact(artifact_id)
+            if artifact is None:
+                raise CustomComponentReferenceError(
+                    "custom_component.artifact_unresolved",
+                    f"custom component artifact {artifact_id!r} was not found",
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+            if artifact["account_id"] != account_id:
+                raise CustomComponentReferenceError(
+                    "custom_component.artifact_forbidden",
+                    "custom component artifact belongs to a different account",
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+            if artifact["slug"] != slug:
+                raise CustomComponentReferenceError(
+                    "custom_component.artifact_slug_mismatch",
+                    (
+                        f"artifact {artifact_id!r} belongs to slug "
+                        f"{artifact['slug']!r}, not {slug!r}"
+                    ),
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+            resolved[location] = artifact
+            return artifact
+
+        for location, (node_id, slug, artifact_id) in after.items():
+            previous = before.get(location)
+            if previous == (node_id, slug, artifact_id):
+                continue
+            resolve(location, node_id, slug, artifact_id)
+
+        # SetNodeProps carries the whole custom-component value. Validate every
+        # changed prop map against the exact pinned artifact's generated schema;
+        # unchanged legacy/missing nodes remain movable and resizable.
+        for location, node in after_nodes.items():
+            previous = before_nodes.get(location)
+            if (
+                previous is not None
+                and previous.get("slug") == node.get("slug")
+                and previous.get("artifact_id") == node.get("artifact_id")
+                and previous.get("props") == node.get("props")
+            ):
+                continue
+            node_id = str(node.get("id") or location[1])
+            slug = str(node.get("slug") or "")
+            artifact_id = str(node.get("artifact_id") or "")
+            artifact = resolve(location, node_id, slug, artifact_id)
+            issue = custom_component_props_schema_issue(
+                node.get("props"), artifact.get("manifest")
+            )
+            if issue is not None:
+                raise CustomComponentReferenceError(
+                    "custom_component.props_invalid",
+                    f"custom component props do not match the pinned artifact: {issue}",
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+
+    # --- retired surfaces ---------------------------------------------------------------------
+
+    def require_asset_metadata(self, asset_id: str) -> JsonObject:
+        """The legacy ``asset_metadata`` surface, retired by O3 (PD-part2-design-substrate §6).
+
+        Its only writer — ``POST /asset-metadata`` — has returned 410 since D1, so the table has
+        been unwritable for the whole port and was never given a Postgres home. D2.5B deleted the
+        SQLite table with the rest of the substrate; the surviving ``GET /asset-metadata/{id}``
+        therefore cannot find a row by construction, and 404s exactly as it did before.
+        """
+        raise NotFoundError("asset", asset_id)
 
     # --- agent runs + run events (D2.5A) ------------------------------------------------------
 

@@ -22,7 +22,8 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from .custom_components import resolve_custom_component_artifact_blob
-from .database import NotFoundError, Repository
+from .database import NotFoundError
+from .design_store import HybridRepository
 
 
 JsonObject = Dict[str, Any]
@@ -348,7 +349,7 @@ def _runtime_prelude(config: JsonObject) -> str:
 
 
 def _require_runtime_artifact(
-    repository: Repository,
+    repository: HybridRepository,
     *,
     account_id: str,
     artifact_id: str,
@@ -386,7 +387,7 @@ def _require_runtime_artifact(
 
 
 def _resolve_artifact_graph(
-    repository: Repository,
+    repository: HybridRepository,
     store_root: Path,
     *,
     account_id: str,
@@ -850,7 +851,7 @@ def _artifact_publish_record(
 
 
 def _assemble_custom_component_runtime(
-    repository: Repository,
+    repository: HybridRepository,
     store_root: Path,
     *,
     account_id: Optional[str],
@@ -1100,7 +1101,7 @@ def _assemble_custom_component_runtime(
 
 
 def build_custom_component_runtime_frames(
-    repository: Repository,
+    repository: HybridRepository,
     store_root: Path,
     *,
     account_id: Optional[str],
@@ -1125,7 +1126,7 @@ def build_custom_component_runtime_frames(
 
 
 def build_custom_component_delivery_package(
-    repository: Repository,
+    repository: HybridRepository,
     store_root: Path,
     *,
     account_id: Optional[str],

@@ -17,7 +17,6 @@ from fastapi.testclient import TestClient
 
 from conftest import make_client
 
-from lumen_api.database import Repository, connect
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app, new_id
 
@@ -49,18 +48,15 @@ def seed_template(client: TestClient, document_id: str) -> None:
     )
     errors = [d for d in response.get("diagnostics", []) if d.get("severity") == "error"]
     assert not errors, response.get("diagnostics")
-    store = HybridRepository(connect(client.app.state.database_path))
-    try:
-        store.update_web_document(
-            document_id,
-            response["web_doc"],
-            intent="seed",
-            checkpoint_label="seed",
-            operations=[{"kind": "replace_web_doc"}],
-            inverse_operations=None,
-        )
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.update_web_document(
+        document_id,
+        response["web_doc"],
+        intent="seed",
+        checkpoint_label="seed",
+        operations=[{"kind": "replace_web_doc"}],
+        inverse_operations=None,
+    )
 
 
 def make_account(client: TestClient, name: str, tagline: str = "Better care") -> str:
@@ -198,34 +194,31 @@ def test_resume_from_mid_cursor(client: TestClient) -> None:
     ]
     # Construct a batch left "partial" after its first account (cursor=1), as if
     # the process had been interrupted mid-run.
-    store = HybridRepository(connect(client.app.state.database_path))
-    try:
-        batch = store.create_web_batch(
-            {
-                "batch_id": new_id("wbatch"),
-                "template_document_id": document["id"],
-                "template_doc_version": document["current_version"],
-                "status": "partial",
-                "account_ids": accounts,
-                "publish": True,
-                "slug_base": "acme-site",
-                "cursor": 1,
-                "manifest": [
-                    {
-                        "account_id": accounts[0],
-                        "account_name": "Privia Health",
-                        "document_id": "doc_seeded",
-                        "slug": "acme-site-privia-health",
-                        "url": "/p/acme-site-privia-health",
-                        "status": "published",
-                        "unbound": [],
-                        "error": None,
-                    }
-                ],
-            }
-        )
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    batch = store.create_web_batch(
+        {
+            "batch_id": new_id("wbatch"),
+            "template_document_id": document["id"],
+            "template_doc_version": document["current_version"],
+            "status": "partial",
+            "account_ids": accounts,
+            "publish": True,
+            "slug_base": "acme-site",
+            "cursor": 1,
+            "manifest": [
+                {
+                    "account_id": accounts[0],
+                    "account_name": "Privia Health",
+                    "document_id": "doc_seeded",
+                    "slug": "acme-site-privia-health",
+                    "url": "/p/acme-site-privia-health",
+                    "status": "published",
+                    "unbound": [],
+                    "error": None,
+                }
+            ],
+        }
+    )
     batch_id = batch["batch_id"]
 
     # Before resume: the snapshot reports partial with cursor < total.

@@ -17,7 +17,6 @@ from conftest import make_client
 from sqlalchemy import text as sa_text
 from sqlalchemy.exc import DBAPIError
 
-from lumen_api.database import Repository, connect
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
@@ -175,15 +174,12 @@ def create_dialog_document(client: TestClient, document_id: str) -> dict:
         """,
     )
     assert ingested.get("web_doc"), ingested
-    repository = HybridRepository(connect(client.app.state.database_path))
-    try:
-        return repository.create_document(
-            ingested["web_doc"],
-            doc_kind="web",
-            account_id="acc_publish",
-        )
-    finally:
-        repository.connection.close()
+    repository = HybridRepository()
+    return repository.create_document(
+        ingested["web_doc"],
+        doc_kind="web",
+        account_id="acc_publish",
+    )
 
 
 def attach_component(
@@ -491,40 +487,37 @@ def test_publish_rejects_unresolved_tenant_pin_and_malicious_source(
         expected_version=0,
     )
     attach_component(client, document["id"], own)
-    repository = HybridRepository(connect(client.app.state.database_path))
-    try:
-        stored = repository.require_document(document["id"])
-        scene = stored["scene"]
-        scene["pages"][0]["nodes"]["cc_counter"]["slug"] = "foreign-card"
-        scene["pages"][0]["nodes"]["cc_counter"]["artifact_id"] = foreign[
-            "artifact_id"
-        ]
-        scene["pages"][0]["nodes"]["cc_counter"]["props"] = {}
-        # Simulate corrupted storage below the checked-operation boundary. The
-        # publish builder must still enforce tenant resolution. Reaching into
-        # `_bridge` is deliberate: the write must land BELOW the operation
-        # boundary, and documents now live on Postgres (not SQLite).
-        repository._bridge._run(
-            lambda conn: conn.execute(
-                sa_text(
-                    "UPDATE design_document SET current_scene_json = CAST(:s AS jsonb)"
-                    " WHERE id = :d AND workspace_id = :w"
-                ),
-                {
-                    "s": json.dumps(scene),
-                    "d": document["id"],
-                    "w": repository.workspace_id,
-                },
-            )
+    repository = HybridRepository()
+    stored = repository.require_document(document["id"])
+    scene = stored["scene"]
+    scene["pages"][0]["nodes"]["cc_counter"]["slug"] = "foreign-card"
+    scene["pages"][0]["nodes"]["cc_counter"]["artifact_id"] = foreign[
+        "artifact_id"
+    ]
+    scene["pages"][0]["nodes"]["cc_counter"]["props"] = {}
+    # Simulate corrupted storage below the checked-operation boundary. The
+    # publish builder must still enforce tenant resolution. Reaching into
+    # `_bridge` is deliberate: the write must land BELOW the operation
+    # boundary, and documents now live on Postgres (not SQLite).
+    repository._bridge._run(
+        lambda conn: conn.execute(
+            sa_text(
+                "UPDATE design_document SET current_scene_json = CAST(:s AS jsonb)"
+                " WHERE id = :d AND workspace_id = :w"
+            ),
+            {
+                "s": json.dumps(scene),
+                "d": document["id"],
+                "w": repository.workspace_id,
+            },
         )
-        # The corruption must actually be at rest — a zero-row UPDATE would
-        # silently turn this whole test into a no-op.
-        corrupted = repository.require_document(document["id"])
-        corrupted_node = corrupted["scene"]["pages"][0]["nodes"]["cc_counter"]
-        assert corrupted_node["slug"] == "foreign-card"
-        assert corrupted_node["artifact_id"] == foreign["artifact_id"]
-    finally:
-        repository.connection.close()
+    )
+    # The corruption must actually be at rest — a zero-row UPDATE would
+    # silently turn this whole test into a no-op.
+    corrupted = repository.require_document(document["id"])
+    corrupted_node = corrupted["scene"]["pages"][0]["nodes"]["cc_counter"]
+    assert corrupted_node["slug"] == "foreign-card"
+    assert corrupted_node["artifact_id"] == foreign["artifact_id"]
     rejected = client.post(
         f"/documents/{document['id']}/web/publish",
         json={"slug": "tenant-attack"},
@@ -575,23 +568,20 @@ def test_publish_revision_rows_are_immutable(client: TestClient) -> None:
     # Reaching into `_bridge` is deliberate: the mutation must be attempted straight at the
     # table, below the API boundary. Each `_run` is its own transaction, so the refusal rolls
     # itself back.
-    repository = HybridRepository(connect(client.app.state.database_path))
-    try:
-        for mutation in (
-            "UPDATE design_web_publish_revision SET html = 'tampered'"
-            " WHERE publish_id = :p AND workspace_id = :w",
-            "DELETE FROM design_web_publish_revision"
-            " WHERE publish_id = :p AND workspace_id = :w",
-        ):
-            with pytest.raises(DBAPIError, match="immutable|append-only"):
-                repository._bridge._run(
-                    lambda conn, sql=mutation: conn.execute(
-                        sa_text(sql),
-                        {
-                            "p": published["publish_id"],
-                            "w": repository.workspace_id,
-                        },
-                    )
+    repository = HybridRepository()
+    for mutation in (
+        "UPDATE design_web_publish_revision SET html = 'tampered'"
+        " WHERE publish_id = :p AND workspace_id = :w",
+        "DELETE FROM design_web_publish_revision"
+        " WHERE publish_id = :p AND workspace_id = :w",
+    ):
+        with pytest.raises(DBAPIError, match="immutable|append-only"):
+            repository._bridge._run(
+                lambda conn, sql=mutation: conn.execute(
+                    sa_text(sql),
+                    {
+                        "p": published["publish_id"],
+                        "w": repository.workspace_id,
+                    },
                 )
-    finally:
-        repository.connection.close()
+            )

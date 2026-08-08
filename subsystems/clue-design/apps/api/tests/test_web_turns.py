@@ -17,7 +17,6 @@ from fastapi.testclient import TestClient
 
 from conftest import make_client
 
-from lumen_api.database import Repository, connect
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app, workspace_asset_library_manifest
 from lumen_ingestion.describe import DescriptionStore
@@ -132,18 +131,15 @@ def install_operations(before: dict, after: dict) -> list[dict]:
 
 
 def seed_web_doc(client: TestClient, document_id: str, web_doc: dict) -> None:
-    store = HybridRepository(connect(client.app.state.database_path))
-    try:
-        store.update_web_document(
-            document_id,
-            web_doc,
-            intent="seed",
-            checkpoint_label="seed",
-            operations=[{"kind": "replace_web_doc"}],
-            inverse_operations=None,
-        )
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.update_web_document(
+        document_id,
+        web_doc,
+        intent="seed",
+        checkpoint_label="seed",
+        operations=[{"kind": "replace_web_doc"}],
+        inverse_operations=None,
+    )
 
 
 def wait_for_run(client: TestClient, run_id: str, timeout: float = 30.0) -> dict:
@@ -168,20 +164,16 @@ def test_workspace_asset_library_manifest_carries_descriptions_and_provenance(
             / "crates/lumen-core/fixtures/assets/uploaded_logo_asset.json"
         ).read_text()
     )
-    connection = connect(client.app.state.database_path)
-    repo = HybridRepository(connection)
-    try:
-        repo.create_asset_record(record)
-        DescriptionStore(connection).put_human(
-            record["id"],
-            "Acme primary logo",
-            "A navy Acme wordmark.",
-            "Use on light backgrounds.",
-            ["wordmark"],
-        )
-        manifest = workspace_asset_library_manifest(repo, connection)
-    finally:
-        connection.close()
+    repo = HybridRepository()
+    repo.create_asset_record(record)
+    DescriptionStore().put_human(
+        record["id"],
+        "Acme primary logo",
+        "A navy Acme wordmark.",
+        "Use on light backgrounds.",
+        ["wordmark"],
+    )
+    manifest = workspace_asset_library_manifest(repo)
 
     entry = manifest[record["id"]]
     assert entry["record"] == record
@@ -401,11 +393,8 @@ def test_web_turn_applied_replays_operations_and_writes_envelope(
 
     # The real operations and their checked inverses are persisted — no
     # replace_web_doc marker survives the agent handoff.
-    store = HybridRepository(connect(client.app.state.database_path))
-    try:
-        envelopes = store.list_envelopes(document["id"])
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    envelopes = store.list_envelopes(document["id"])
     assert len(envelopes) == 1
     envelope = envelopes[0]
     assert envelope["operations"]
@@ -525,11 +514,8 @@ def test_web_turn_unknown_account_404_before_run(client: TestClient) -> None:
     assert response.status_code == 404, response.text
     assert response.json()["detail"]["code"] == "web_account.not_found"
     # No run was created for the rejected turn.
-    store = HybridRepository(connect(client.app.state.database_path))
-    try:
-        assert store.list_running_runs() == []
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    assert store.list_running_runs() == []
 
 
 def test_web_turn_account_card_reaches_runner(client: TestClient) -> None:
@@ -565,11 +551,8 @@ def test_web_turn_uses_document_account_when_request_omits_it(client: TestClient
 
     # A derived doc carries its account_id on the row (the B2 derive path would
     # set this; here we set it directly since derive is out of B1 scope).
-    store = HybridRepository(connect(client.app.state.database_path))
-    try:
-        store.set_document_account(document["id"], account_id)
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.set_document_account(document["id"], account_id)
 
     received: dict = {}
     client.app.state.web_turn_runner = applied_stub_capturing_account(content_doc, received)
@@ -642,11 +625,8 @@ def test_web_turn_failed_leaves_document_unchanged(client: TestClient) -> None:
     after = client.get(f"/documents/{document['id']}").json()
     assert after["current_version"] == before["current_version"] == 0
 
-    store = HybridRepository(connect(client.app.state.database_path))
-    try:
-        assert store.list_envelopes(document["id"]) == []
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    assert store.list_envelopes(document["id"]) == []
 
 
 def test_web_turn_requires_base_version(client: TestClient) -> None:
@@ -724,10 +704,7 @@ def test_web_turn_conflict_preserves_edit_committed_while_agent_runs(
     stored = client.get(f"/documents/{document['id']}").json()
     assert stored["current_version"] == 1
     assert stored["scene"]["custom_css"] == human_css
-    store = HybridRepository(connect(client.app.state.database_path))
-    try:
-        envelopes = store.list_envelopes(document["id"])
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    envelopes = store.list_envelopes(document["id"])
     assert len(envelopes) == 1
     assert envelopes[0]["source"] == "editor"

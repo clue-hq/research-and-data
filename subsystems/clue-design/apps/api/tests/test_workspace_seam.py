@@ -102,17 +102,14 @@ def test_the_public_publish_group_is_exempt(bare: TestClient, workspace_id: str)
 def test_the_run_event_stream_accepts_a_query_workspace_because_eventsource_cannot_send_headers(
     client: TestClient, bare: TestClient, workspace_id: str
 ) -> None:
-    from lumen_api.database import connect
     from lumen_api.design_store import HybridRepository
 
     run_id = unique_run_id("seam")
-    connection = connect(client.app.state.database_path)
-    repo = HybridRepository(connection, workspace_id=workspace_id)
+    repo = HybridRepository(workspace_id=workspace_id)
     repo.create_run(run_id, None)
     repo.complete_run(
         run_id, "succeeded", {"status": "proposed"}, "result", {"status": "proposed"}
     )
-    connection.close()
 
     # No header at all is still a 401 — strictness is not relaxed, only the carrier changes.
     assert bare.get(f"/agent/runs/{run_id}/events").status_code == 401
@@ -126,14 +123,11 @@ def test_the_run_event_stream_accepts_a_query_workspace_because_eventsource_cann
 def test_the_stream_is_fail_closed_against_another_tenants_run(
     client: TestClient, bare: TestClient
 ) -> None:
-    from lumen_api.database import connect
     from lumen_api.design_store import HybridRepository
 
     run_id = unique_run_id("owned")
-    connection = connect(client.app.state.database_path)
-    repo = HybridRepository(connection, workspace_id="ws_seam_owner")
+    repo = HybridRepository(workspace_id="ws_seam_owner")
     repo.create_run(run_id, None)
-    connection.close()
 
     # Naming someone else's workspace in the query string buys nothing you did not already have:
     # the run is simply absent from the caller's own tenant.

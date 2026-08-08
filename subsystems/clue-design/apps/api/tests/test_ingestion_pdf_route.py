@@ -296,10 +296,5 @@ def test_ingest_pdf_rejects_oversize(
 
 
 def _read_brand_kit_row(client: TestClient, brand_kit_id: str) -> dict:
-    from lumen_api.database import Repository, connect
 
-    connection = connect(client.app.state.database_path)
-    try:
-        return HybridRepository(connection).require_brand_kit(brand_kit_id)
-    finally:
-        connection.close()
+    return HybridRepository().require_brand_kit(brand_kit_id)
