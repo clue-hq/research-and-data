@@ -383,7 +383,21 @@ class DbAgentTurnJournal:
         *,
         request: AgentTurnRequest,
         profile: AgentProfile,
+        submitted_by_user_id: str | None = None,
+        submitted_via_membership_id: str | None = None,
     ) -> AgentTurnReceipt:
+        """Insert (or replay) one durable turn.
+
+        ``submitted_by_user_id`` / ``submitted_via_membership_id`` are the Clue-owned internal ids
+        of the human who submitted this turn (Lane D D2). They default to ``None`` because most
+        turn producers have no human submitter at all — the stage-0 trial harness, an
+        entity-research fleet unit, a specialist delegation — and Lane B ruling 8 forbids inventing
+        one. A caller that *does* have a submitter must read it from a durable row (the
+        ``agent_turn_submission`` written before the turn was enqueued), never from a queue payload
+        or a request field: this pair is what makes D1's ``turn-action:<turn_id>`` receipt
+        resolvable, so a fabricated value would forge a human's authority.
+        """
+
         constitution = request.constitution
         if constitution.profile_ref.name != profile.name or (
             constitution.profile_ref.version != profile.version
@@ -409,16 +423,19 @@ class DbAgentTurnJournal:
                     " actor_id, role, workspace_root_id, profile_name, profile_version, "
                     " profile_sha256, resource_manifest_key, "
                     " resource_manifest_artifact_sha256, resource_manifest_sha256, "
-                    " retention_class, requested_at) "
+                    " retention_class, requested_at, submitted_by_user_id, "
+                    " submitted_via_membership_id) "
                     "SELECT :id, e.id, e.parent_execution_id, :workspace_id, :project_id, "
                     " :thread_id, :actor_id, :role, :root, :profile_name, :profile_version, "
                     " :profile_sha, :manifest_key, :manifest_artifact_sha, :manifest_sha, "
-                    " :retention, :requested_at FROM execution e "
+                    " :retention, :requested_at, :submitted_by, :submitted_via FROM execution e "
                     "WHERE e.id=:execution_id AND e.workspace_id=:workspace_id "
                     "ON CONFLICT (id) DO NOTHING RETURNING id"
                 ),
                 {
                     "id": request.turn_id,
+                    "submitted_by": submitted_by_user_id,
+                    "submitted_via": submitted_via_membership_id,
                     "execution_id": constitution.execution_id,
                     "workspace_id": constitution.workspace_id,
                     "project_id": constitution.project_id,
@@ -447,6 +464,30 @@ class DbAgentTurnJournal:
                     or existing.resource_manifest_sha256 != constitution.resource_manifest_sha256
                 ):
                     raise ValueError("turn id already exists with different immutable inputs")
+                # The submitter is not on ``AgentTurnReceipt`` (a frozen ``clue_agents`` contract),
+                # so it is compared directly: a replay that claims a *different* human than the one
+                # the durable row records is the forged-authority case, not a retry.
+                submitter = (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT submitted_by_user_id, submitted_via_membership_id "
+                                "FROM agent_turn WHERE id=:turn AND workspace_id=:workspace"
+                            ),
+                            {
+                                "turn": request.turn_id,
+                                "workspace": constitution.workspace_id,
+                            },
+                        )
+                    )
+                    .mappings()
+                    .one()
+                )
+                if submitted_by_user_id is not None and (
+                    submitter["submitted_by_user_id"] != submitted_by_user_id
+                    or submitter["submitted_via_membership_id"] != submitted_via_membership_id
+                ):
+                    raise ValueError("turn id already exists with a different submitter identity")
                 return existing
 
             await _append_turn_event(

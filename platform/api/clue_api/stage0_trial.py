@@ -30,41 +30,39 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents import (
     AgentConstitution,
     AgentExecutionStatus,
-    AgentFinalizeEnvelope,
     AgentRole,
     AgentTurnOutcome,
     AgentTurnRequest,
     ArtifactRef,
     ContextAssemblyPolicy,
     ContextLayer,
-    DelegationRequest,
-    DelegationResult,
     DomainObjectRef,
     FinalizeStatus,
     LayerBudget,
 )
-from clue_api.account_research_turn_wiring import DbCompiledContextCardReader
-from clue_api.agent_execution_wiring import (
-    DbAgentPlanJournal,
-    postgres_agent_checkpointer,
-)
 from clue_api.agent_platform_wiring import (
     AgentPlatformComponents,
-    build_agent_context_assembler,
     build_agent_platform_components,
 )
 from clue_api.agent_registry_wiring import STAGE0_CONVERSATION_TRIAL_SURFACE
 from clue_api.agent_runtime_wiring import ModelFinalizeRequest
 from clue_api.composition import load_research_packs
+from clue_api.conversation_capture import (
+    CONVERSATION_CONTEXT_BINDING_KIND,
+    CONVERSATION_USER_MESSAGE_BINDING_KIND,
+    persist_user_turn,
+)
+from clue_api.conversation_turns import (
+    CONVERSATION_RECIPE_KEY,
+    CONVERSATION_RECIPE_VERSION,
+    ConversationTurnEngine,
+    build_conversation_turn_engine,
+)
 from clue_api.execution_wiring import (
     ExecutionRunEventWriter,
     StorageExecutionParameterStore,
     StorageParameterArtifactStore,
     build_tool_invoker,
-)
-from clue_api.head_of_abm_wiring import (
-    HeadOfAbmStage0Runtime,
-    build_head_of_abm_stage0_execution,
 )
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
@@ -80,7 +78,6 @@ from clue_api.statement_evidence import (
 )
 from clue_api.storage_wiring import build_storage_backend
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_api.turn_binding import CapturedTurnBinder
 from clue_config import (
     DEFAULT_STAGE0_POLICY,
     Secrets,
@@ -96,7 +93,6 @@ from clue_core import (
     MemoryType,
     MemoryWriteSeam,
     OnboardingInputId,
-    OnboardingInputKind,
     ReadinessDecisionId,
     ReadinessGate,
     ReadinessSnapshotRef,
@@ -140,7 +136,6 @@ from clue_research.stage0 import (
     read_client_kb_claims,
     read_statements,
     reverse_profile,
-    submit_onboarding_input,
     synthesize_icps,
 )
 from clue_spine import (
@@ -153,7 +148,7 @@ from clue_spine import (
     get_workspace,
 )
 from clue_storage import StorageBackend
-from clue_toolbelt import DbIdempotencyStore, ToolInvoker, ToolRegistry
+from clue_toolbelt import DbIdempotencyStore
 
 _SESSION_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 # A pure surface command: one line, a leading slash-command token, and at most three arguments
@@ -163,15 +158,17 @@ _PURE_COMMAND = re.compile(r"^/\S+(?:[ \t]+\S+){0,3}$")
 _TURN_NAMESPACE_LABEL = "stage0-trial-turn@1"
 _EXECUTION_NAMESPACE_LABEL = "stage0-trial-execution@1"
 _WORKER_ID = "stage0-trial-cli"
-STAGE0_USER_MESSAGE_BINDING_KIND = "conversation"
-STAGE0_CONTEXT_BINDING_KIND = "context"
+#: Aliases of the one shared vocabulary (:mod:`clue_api.conversation_capture`) — both conversation
+#: surfaces bind the same two kinds, and two spellings of one binding kind would split DSAR reach.
+STAGE0_USER_MESSAGE_BINDING_KIND = CONVERSATION_USER_MESSAGE_BINDING_KIND
+STAGE0_CONTEXT_BINDING_KIND = CONVERSATION_CONTEXT_BINDING_KIND
 
-#: The exact promoted Recipe-#0 revision this trial runs. Named once because the trial checks it
-#: twice — the checked-in *definition* must be installed, and the *promoted* revision must be the
-#: same number — and because the C5 interaction slot's tool allowlist lives in that revision: a
-#: tool granted on the profile but absent from the pinned revision is rejected at plan validation
-#: (`c5_tool_not_allowed`), so moving the pin is how a new Stage-0 tool becomes callable at all.
-STAGE0_RECIPE_VERSION = 5
+#: The exact promoted Recipe-#0 revision this trial runs — the same pin the production project
+#: conversation runs (:data:`~clue_api.conversation_turns.CONVERSATION_RECIPE_VERSION`), because the
+#: C5 interaction slot's tool allowlist lives in that revision: a tool granted on the profile but
+#: absent from the pinned revision is rejected at plan validation (`c5_tool_not_allowed`), so two
+#: pins would mean two different callable tool sets for one role.
+STAGE0_RECIPE_VERSION = CONVERSATION_RECIPE_VERSION
 
 
 class Stage0ProductNotConfirmed(ValueError):
@@ -400,33 +397,6 @@ MemoryWriteFactoryBuilder = Callable[
 ]
 
 
-class _DelegationDisabled:
-    """Unreachable backstop: the trial surface withholds every delegable role (PC-C8 §8).
-
-    This used to be the *restriction* — the trial pinned a profile that still delegated to the
-    three specialists, still installed `delegate_specialist`, and still advertised all of it in the
-    generated capability map; only this runner's exception stood between the model and a research
-    specialist. That is restriction by crash, which ruling §2.4 rejects for exactly the reason the
-    withheld tools exist: a capability the model is shown and then denied is fake agency, and the
-    map contradicted the surface's own "no external research" framing while it lasted.
-
-    `C6_SURFACE_POLICIES` now withholds the delegation roles, so `delegation_roles` is empty here,
-    `delegate_specialist` is not in the middleware's allowed set, and nothing can construct a
-    delegation to hand this runner. It stays because `HeadOfAbmStage0Runtime` requires a child
-    runner and "there is no runner" is not expressible — but it is a backstop now, not the fence.
-    """
-
-    async def run(
-        self,
-        *,
-        request: DelegationRequest,
-        child_execution_id: ExecutionId,
-        resolved_profile: Any,
-    ) -> DelegationResult:
-        del request, child_execution_id, resolved_profile
-        raise RuntimeError("specialist_delegation_disabled_for_stage0_conversation_trial")
-
-
 def stage0_trial_context_policy() -> ContextAssemblyPolicy:
     """Conservative seven-layer budget with room for a long kickoff interview."""
 
@@ -460,7 +430,7 @@ def stage0_trial_recipe_definitions() -> tuple[RecipeDefinition, ...]:
     definitions = tuple(
         definition
         for definition in load_system_recipe_definitions()
-        if definition.recipe_key == "recipe0-stage0"
+        if definition.recipe_key == CONVERSATION_RECIPE_KEY
     )
     if not any(definition.version == STAGE0_RECIPE_VERSION for definition in definitions):
         raise RuntimeError(f"recipe0-stage0@{STAGE0_RECIPE_VERSION} definition is not installed")
@@ -555,17 +525,12 @@ class Stage0Trial:
         settings: Settings,
         storage: StorageBackend,
         gateway: LLMGateway,
-        tools: ToolRegistry,
-        tool_invoker: ToolInvoker,
         components: AgentPlatformComponents,
-        compatibility: CompatibilityLoader,
+        engine: ConversationTurnEngine,
         executor: RecipeExecutor,
         recipes: DbRecipeReader,
         starter: DbExecutionStarter,
         parameters: ExecutionParameterStore,
-        contexts: Any,
-        runtime: HeadOfAbmStage0Runtime,
-        captured_turns: CapturedTurnBinder | None = None,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self.state = state
@@ -573,18 +538,15 @@ class Stage0Trial:
         self._settings = settings
         self._storage = storage
         self._gateway = gateway
-        self._tools = tools
-        self._tool_invoker = tool_invoker
         self._components = components
-        self._compatibility = compatibility
+        # D2: the profile, context assembler, deepagent runtime and turn-execution path all live
+        # on the shared engine now — the trial and the production project conversation run the
+        # same twelve steps, and this harness is no longer a second copy of them.
+        self._engine = engine
         self._executor = executor
         self._recipes = recipes
         self._starter = starter
         self._parameters = parameters
-        self._contexts = contexts
-        self._runtime = runtime
-        self._captured_turns = captured_turns
-        self._plans = DbAgentPlanJournal(conn_factory=conn_factory)
         self._conn_factory = conn_factory
 
     @classmethod
@@ -676,42 +638,24 @@ class Stage0Trial:
         # installed here (`C6_SURFACE_POLICIES`), so the middleware allowed-set, the resource
         # manifest, and the generated capability map all describe the same narrower surface —
         # the restriction is a tool that is absent, not prose asking the model to abstain.
-        resolved_profile = components.profiles.resolve(
-            AgentRole.HEAD_OF_ABM,
+        #
+        # D2: composing that surface is now one shared call. This harness still runs it per
+        # request — it is a per-session CLI whose whole point is a fresh, inspectable stack, and
+        # its toolbelt is deliberately different (no scrape binder, Stage-0 recipes only) — while
+        # the production worker calls the identical builder once at startup.
+        engine = build_conversation_turn_engine(
             surface=STAGE0_CONVERSATION_TRIAL_SURFACE,
-        )
-        # PC-C8 §6: one binder per trial, shared by L7 (which *names* the captured turn) and the
-        # execution seam (which *injects* its bytes and ids). Both derive the same binding from
-        # durable state, so two instances could only agree — sharing costs nothing and saves the
-        # second read of every turn.
-        captured_turns = CapturedTurnBinder(
-            artifacts=components.artifacts,
-            conn_factory=conn_factory,
-        )
-        contexts = build_agent_context_assembler(
-            resolved_profile=resolved_profile,
-            artifacts=components.artifacts,
-            cards=DbCompiledContextCardReader(conn_factory=conn_factory),
+            components=components,
+            tools=tools,
+            tool_invoker=tool_invoker,
+            executor=executor,
+            compatibility=compatibility,
             memory=memory_assembly_factory(resolved_settings, conn_factory),
-            memory_recipe=f"recipe0-stage0@{STAGE0_RECIPE_VERSION}",
             requested_memory_types=(
                 MemoryType.PREFERENCE,
                 MemoryType.BEHAVIORAL_LEARNING,
             ),
-            policy=stage0_trial_context_policy(),
-            captured_turns=captured_turns,
-            conn_factory=conn_factory,
-        )
-        runtime = HeadOfAbmStage0Runtime(
-            profiles=components.profiles,
-            models=components.models,
-            turns=components.turns,
-            artifacts=components.artifacts,
-            tools=tools,
-            child_runner=_DelegationDisabled(),
-            max_runtime_s=resolved_profile.profile.turn_timeout_s,
-            max_rounds=resolved_profile.profile.max_model_rounds,
-            surface=STAGE0_CONVERSATION_TRIAL_SURFACE,
+            context_policy=stage0_trial_context_policy(),
             conn_factory=conn_factory,
         )
         return cls(
@@ -720,17 +664,12 @@ class Stage0Trial:
             settings=resolved_settings,
             storage=storage,
             gateway=gateway,
-            tools=tools,
-            tool_invoker=tool_invoker,
             components=components,
-            compatibility=compatibility,
+            engine=engine,
             executor=executor,
             recipes=recipes,
             starter=starter,
             parameters=parameters,
-            contexts=contexts,
-            runtime=runtime,
-            captured_turns=captured_turns,
             conn_factory=conn_factory,
         )
 
@@ -747,31 +686,22 @@ class Stage0Trial:
                 f"{_EXECUTION_NAMESPACE_LABEL}:{sequence}",
             )
         )
-        user_ref = await self._components.artifacts.persist_body(
-            workspace_id=self.state.workspace_id,
-            data=message.encode(),
-            media_type="text/plain",
-            subject_bindings=((self.state.client_entity_id, STAGE0_USER_MESSAGE_BINDING_KIND),),
-        )
+        # Capture before spend, through the one shared owner of that path (D2).
         async with self._conn_factory() as conn:
-            onboarding = await submit_onboarding_input(
+            captured = await persist_user_turn(
                 conn,
+                artifacts=self._components.artifacts,
                 workspace_id=self.state.workspace_id,
                 brand_id=self.state.brand_id,
                 product_id=self.state.product_id,
                 project_id=self.state.project_id,
                 client_entity_id=EntityId(self.state.client_entity_id),
-                kind=OnboardingInputKind.USER_TURN,
-                artifact_key=user_ref.artifact_key,
-                content_sha256=user_ref.sha256,
-                actor="human",
-                onboarding_input_id=OnboardingInputId(uuid5(turn_id, "onboarding-input")),
+                turn_id=turn_id,
+                message=message,
             )
+        user_ref = captured.artifact_ref
         requested_at = datetime.now(UTC)
-        resolved = self._components.profiles.resolve(
-            AgentRole.HEAD_OF_ABM,
-            surface=STAGE0_CONVERSATION_TRIAL_SURFACE,
-        )
+        resolved = self._engine.resolved
         card_ref = await self._project_card_ref()
         budget_limit = 1_000_000
         budget_ref = await self._artifact(
@@ -850,96 +780,45 @@ class Stage0Trial:
             focus_refs=(focus_ref,),
             requested_at=requested_at,
         )
-        prior_history = await self._components.history.load(
-            workspace_id=self.state.workspace_id,
-            thread_id=self.state.thread_id,
-        )
-        await self._components.turns.create(request=request, profile=resolved.profile)
-        await self._components.history.append(
-            message_id=uuid5(turn_id, "user"),
-            turn_id=turn_id,
-            workspace_id=self.state.workspace_id,
-            thread_id=self.state.thread_id,
-            role="user",
-            body_ref=user_ref,
-        )
         # Reserve the sequence before model spend. A crash leaves an explicit unfinalized turn and
         # cannot let a later, different message reuse its immutable turn/execution identity.
+        # (It now happens just *before* the shared execution path rather than inside it — strictly
+        # earlier than before, so the guarantee is unchanged.)
         self.state = self.state.model_copy(update={"next_turn": sequence + 1})
         self.paths.save_state(self.state)
-        committed = await self._components.turns.load_committed_outcome(
-            turn_id=turn_id,
-            workspace_id=self.state.workspace_id,
-        )
-        if committed is None:
-            context = await self._contexts.assemble(
-                request=request,
-                profile=resolved.profile,
-                history=prior_history,
-            )
-            execution = build_head_of_abm_stage0_execution(
-                request=request,
-                profiles=self._components.profiles,
-                tools=self._tools,
-                tool_invoker=self._tool_invoker,
-                executor=self._executor,
-                compatibility=self._compatibility,
-                artifacts=self._components.artifacts,
-                plans=self._plans,
-                checkpointer_factory=postgres_agent_checkpointer,
-                budget_limit_millicents=budget_limit,
-                captured_turns=self._captured_turns,
-                surface=STAGE0_CONVERSATION_TRIAL_SURFACE,
+        result = await self._engine.execute(
+            request=request,
+            lease=lease,
+            budget_limit_millicents=budget_limit,
+            completion_guard=Stage0RoutingReceiptGuard(
+                workspace_id=self.state.workspace_id,
+                onboarding_input_id=captured.onboarding_input_id,
+                user_message=message,
                 conn_factory=self._conn_factory,
+            ),
+        )
+        outcome = result.outcome
+        assistant_message = result.assistant_message
+        if (
+            outcome.finalization_ref is not None
+            and outcome.status is AgentExecutionStatus.COMPLETED
+        ):
+            await self._executor.decide_gate(
+                execution_id=execution_id,
+                node_key="stage0_interactions",
+                actor="agent",
+                decision="complete",
             )
-            outcome = await self._runtime.run(
-                request=request,
-                context=context,
-                lease=lease,
-                execution=execution,
-                completion_guard=Stage0RoutingReceiptGuard(
-                    workspace_id=self.state.workspace_id,
-                    onboarding_input_id=onboarding.onboarding_input_id,
-                    user_message=message,
-                    conn_factory=self._conn_factory,
-                ),
-            )
-        else:
-            outcome = committed
-        assistant_message: str | None = None
-        if outcome.finalization_ref is not None:
-            envelope = AgentFinalizeEnvelope.model_validate_json(
-                await self._components.artifacts.read(outcome.finalization_ref)
-            )
-            if envelope.user_message_artifact_ref is not None:
-                assistant_message = (
-                    await self._components.artifacts.read(envelope.user_message_artifact_ref)
-                ).decode()
-                await self._components.history.append(
-                    message_id=uuid5(turn_id, "assistant"),
-                    turn_id=turn_id,
-                    workspace_id=self.state.workspace_id,
-                    thread_id=self.state.thread_id,
-                    role="assistant",
-                    body_ref=envelope.user_message_artifact_ref,
-                )
-            if outcome.status is AgentExecutionStatus.COMPLETED:
-                await self._executor.decide_gate(
-                    execution_id=execution_id,
-                    node_key="stage0_interactions",
-                    actor="agent",
-                    decision="complete",
-                )
-                completed = await self._drive(execution_id)
-                if completed is not ExecutionStatus.COMPLETED:
-                    raise RuntimeError("completed Stage-0 turn did not complete Recipe 0")
+            completed = await self._drive(execution_id)
+            if completed is not ExecutionStatus.COMPLETED:
+                raise RuntimeError("completed Stage-0 turn did not complete Recipe 0")
         await self._refresh_client_kb_from_conversation()
         # Readiness is deterministic evidence, not a thing the agent may claim: recompute it from
         # durable state after any turn that actually routed material information, so the readiness
         # ledger reflects the conversation instead of staying empty for the whole trial.
         await self._recompute_readiness(
             turn_id=turn_id,
-            onboarding_input_id=onboarding.onboarding_input_id,
+            onboarding_input_id=captured.onboarding_input_id,
         )
         self.paths.save_state(self.state)
         await self.export_report()

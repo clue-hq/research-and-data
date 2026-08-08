@@ -26,12 +26,21 @@ class FleetTaskKind(StrEnum):
     * ``EXECUTE_GRAPH`` — one durable recipe execution in the shared top-level leased worker.
     * ``ENTITY_RESEARCH_JOB`` — one M8D account or contact research subject. Both types use this
       same mechanical kind; exact subject authority lives in the immutable job envelope.
+    * ``AGENT_TURN`` — one human-submitted platform-deepagent conversation turn (FI Lane D D2).
+      ``work_id`` is the *thread*, not the turn, which is what makes the driver lease a per-thread
+      single-flight fence; the turn itself is named by the payload and by the
+      ``agent-turn:<turn_id>`` dedup key. The queue never carries a session token — only internal
+      ids and durable turn refs (`FI-lane-B-authenticated-principal-contract.md` §7).
+
+    New members are appended, never inserted: the DB enum is grown with ``ALTER TYPE … ADD VALUE``
+    (which appends), and the parity test compares the two **in order**.
     """
 
     DRIVE_RUN = "drive_run"
     ACCOUNT_JOB = "account_job"
     EXECUTE_GRAPH = "execute_graph"
     ENTITY_RESEARCH_JOB = "entity_research_job"
+    AGENT_TURN = "agent_turn"
 
 
 class FleetTaskStatus(StrEnum):

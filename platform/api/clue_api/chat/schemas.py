@@ -33,10 +33,13 @@ __all__ = [
     "CreateThreadRequest",
     "MessageListResponse",
     "PageMeta",
+    "SubmitTurnRequest",
     "ThreadListResponse",
     "ThreadMessageWire",
     "ThreadResponse",
     "ThreadWire",
+    "TurnAcceptedResponse",
+    "TurnAcceptedWire",
     "UpdateThreadRequest",
     "message_list_response",
     "message_wire",
@@ -86,6 +89,23 @@ class UpdateThreadRequest(_Request):
         if self.title is None and self.pinned is None:
             raise ValueError("supply at least one of title or pinned")
         return self
+
+
+class SubmitTurnRequest(_Request):
+    """``POST /api/v1/projects/:projectId/threads/:threadId/turns`` — ``{"message": "..."}``.
+
+    Exactly one field today. Charter §3.5 gives this endpoint a second, **mutually exclusive** body
+    — ``gate_response={gate_id, decision, expected_subject_sha256, expected_estimated_cost_cents}``
+    — but that shape depends on the durable ``agent_gate`` substrate ratified in §6-D3, which is
+    D4's to build. Accepting a placeholder for it now would mean shipping a field the server cannot
+    honour, so the seam is named here and left unbuilt.
+
+    What this body will never carry, on any slice: ``actor_id`` or ``action_ref`` (§3.5). Authority
+    is ambient and server-derived — a client that could name its own actor could approve its own
+    spend.
+    """
+
+    message: str = Field(min_length=1, max_length=32_000)
 
 
 # --- responses ---------------------------------------------------------------------------------
@@ -158,6 +178,24 @@ class ThreadListResponse(_Wire):
 class MessageListResponse(_Wire):
     data: tuple[ThreadMessageWire, ...]
     meta: PageMeta
+
+
+class TurnAcceptedWire(_Wire):
+    """What a ``202`` says: the turn is durable and queued, not that it has run.
+
+    ``replayed`` is ``True`` when this exact idempotency identity had already been accepted — the
+    duplicate-submission case, which returns the *same* ``turn_id`` and enqueues nothing new. It is
+    reported rather than hidden so a client can tell "your retry landed" from "a second turn".
+    """
+
+    turn_id: str
+    thread_id: str
+    requested_at: str
+    replayed: bool
+
+
+class TurnAcceptedResponse(_Wire):
+    data: TurnAcceptedWire
 
 
 def thread_wire(view: ThreadView) -> ThreadWire:

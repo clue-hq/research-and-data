@@ -28,6 +28,7 @@ __all__ = [
     "C6_AGENT_TOOL_AUTHORITY",
     "C6_SURFACE_POLICIES",
     "ACCOUNT_RESEARCH_UNIT_SURFACE",
+    "PROJECT_CONVERSATION_SURFACE",
     "STAGE0_CONVERSATION_TRIAL_SURFACE",
     "c6_roles_for_tool",
     "ToolRegistryAgentCatalog",
@@ -123,6 +124,15 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
 #: every turn, and the agent's whole job is to converse and route what was said.
 STAGE0_CONVERSATION_TRIAL_SURFACE = "stage0_conversation_trial"
 
+#: The **production** project conversation (FI Lane D D2): the same Head-of-ABM role, on a real
+#: project thread, executed by the fleet worker instead of a local CLI. It is a separate surface
+#: from the trial rather than a reuse of it because the two are genuinely different deployments of
+#: one role — the trial is a dev harness with no launch authority *and* no production traffic, and
+#: collapsing them would make widening the production surface (D4's P5(e)) silently widen the trial
+#: too. D2 declares it with exactly the trial's tool subtraction: the launch tools stay
+#: structurally withheld until the D4 kickoff flow earns them.
+PROJECT_CONVERSATION_SURFACE = "project_conversation"
+
 #: The fleet-owned per-account unit executes the one-tool ``account-research-unit@1`` recipe.
 #: ``get_research_view`` belongs to the broader account-research role for conversational/read
 #: surfaces, but this bounded coverage unit has neither that tool nor its verification-policy pin
@@ -193,6 +203,38 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
             "This surface is a manual-conversation-only Stage-0 trial: it does no external "
             "research, and the platform captures every turn before you see it, so you never "
             "capture, fetch, delegate, or synthesize outside this conversation."
+        ),
+    ),
+    # D2's production conversation carries the *same* subtraction as the trial, for the same
+    # reasons plus one: `launch_account_research` / `launch_contact_research` are the tools D-9
+    # Option B eventually grants here, and they must stay withheld until the gate objects and the
+    # confirming-turn authority they depend on exist (D4). Withheld, not prompted against —
+    # a capability the model is shown and then denied is the fake agency ruling §2.4 rejects.
+    AgentSurfacePolicy(
+        surface=PROJECT_CONVERSATION_SURFACE,
+        role=AgentRole.HEAD_OF_ABM,
+        withheld_tools=frozenset(
+            {
+                "launch_account_research",
+                "launch_contact_research",
+                "start_recon",
+                "submit_onboarding_input",
+                "synthesize_icps",
+            }
+        ),
+        withheld_delegation_roles=frozenset(
+            {
+                AgentRole.RESEARCH,
+                AgentRole.CONTENT_DRAFTER,
+                AgentRole.REVIEWER,
+            }
+        ),
+        withheld_reason_code="project_conversation_pre_kickoff",
+        framing=(
+            "This surface is the project conversation: you converse with the client and record "
+            "what they tell you. You do not capture on their behalf, fetch external sources, "
+            "delegate to a specialist, or launch research — the research kickoff is a separate "
+            "confirmed flow that is not available to you yet."
         ),
     ),
 )

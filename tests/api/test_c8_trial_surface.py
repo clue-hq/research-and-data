@@ -32,6 +32,7 @@ from clue_api.agent_registry_wiring import (
     C6_ACTIVE_PROFILE_VERSIONS,
     C6_AGENT_TOOL_AUTHORITY,
     C6_SURFACE_POLICIES,
+    PROJECT_CONVERSATION_SURFACE,
     STAGE0_CONVERSATION_TRIAL_SURFACE,
     ToolRegistryAgentCatalog,
     build_agent_profile_registry,
@@ -364,8 +365,13 @@ def test_the_operator_projection_reports_the_narrowed_surface_not_just_the_full_
     head = entries[AgentRole.HEAD_OF_ABM]
 
     assert head.profile is not None
-    assert [item.surface for item in head.surfaces] == [STAGE0_CONVERSATION_TRIAL_SURFACE]
-    trial = head.surfaces[0]
+    # Every declared surface of the role is legible here, each with its own withheld set. Lane D
+    # D2 added `project_conversation` (the production conversation the fleet worker runs), so the
+    # projection now reports two — an operator must be able to tell them apart, which is exactly
+    # what this test guards; asserting a single surface would have made adding one a silent change.
+    by_surface = {item.surface: item for item in head.surfaces}
+    assert set(by_surface) == {STAGE0_CONVERSATION_TRIAL_SURFACE, PROJECT_CONVERSATION_SURFACE}
+    trial = by_surface[STAGE0_CONVERSATION_TRIAL_SURFACE]
 
     assert trial.reason_code == "trial_manual_conversation_only"
     assert set(trial.withheld_tool_names) == _WITHHELD
@@ -380,6 +386,12 @@ def test_the_operator_projection_reports_the_narrowed_surface_not_just_the_full_
             AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE
         ).resource_manifest.aggregate_sha256
     )
+    # The production conversation is reported with its own reason code and the same subtraction:
+    # the launch tools are structurally absent there too until D4 earns them.
+    production = by_surface[PROJECT_CONVERSATION_SURFACE]
+    assert production.reason_code == "project_conversation_pre_kickoff"
+    assert set(production.withheld_tool_names) == _WITHHELD
+    assert production.delegation_roles == ()
     # Roles with no declared surface report none rather than an empty-ish placeholder.
     assert entries[AgentRole.RESEARCH].surfaces == ()
 

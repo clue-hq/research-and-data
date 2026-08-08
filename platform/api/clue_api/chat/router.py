@@ -36,6 +36,14 @@ from fastapi.routing import APIRoute
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from clue_api.agent_turn_submission import (
+    SubmissionConflict,
+    dispatch_next_thread_turn,
+    get_submission,
+    insert_submission,
+    turn_id_for_submission,
+)
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat.principal import (
     PERMISSION_THREAD_READ,
     PERMISSION_THREAD_WRITE,
@@ -47,13 +55,18 @@ from clue_api.chat.schemas import (
     CreateThreadRequest,
     MessageListResponse,
     PageMeta,
+    SubmitTurnRequest,
     ThreadListResponse,
     ThreadResponse,
+    TurnAcceptedResponse,
+    TurnAcceptedWire,
     UpdateThreadRequest,
     message_list_response,
     thread_wire,
     thread_wire_from_references,
 )
+from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
+from clue_api.thread_store import get_thread
 from clue_config import Settings
 from clue_core import operation_id_from_key
 from clue_db import ConnFactory
@@ -67,6 +80,8 @@ from clue_projections import (
     thread_messages,
     threads_for_project,
 )
+from clue_spine import get_project
+from clue_storage import StorageBackend, content_address
 from clue_toolbelt import IdempotencyConflict, PreconditionFailed, ToolContext, ToolInvoker
 
 log = get_logger("clue_api.chat")
@@ -264,17 +279,30 @@ def build_chat_router(
     settings: Settings,
     conn_factory: ConnFactory,
     tool_invoker: ToolInvoker,
+    storage: StorageBackend | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped chat router. Empty unless ``settings.chat_enabled``.
 
     The principal arrives through the module-level :func:`chat_principal_resolver` dependency,
     which :func:`install_chat_surface` overrides — so a router built without one refuses every
     request 401 rather than serving anybody.
+
+    ``storage`` is the artifact backend the turn-submission route captures the user's bytes into.
+    Without it that one route is **not registered** (the thread shell still serves), because a
+    surface that accepted turns it could not durably capture would be accepting them into nothing.
+    Note what this parameter is *not*: nothing model-shaped. A gateway, a model provider, or a
+    toolbelt composed with either has no place in this process (§3-P3) — the turn is executed by
+    the fleet worker, and :mod:`tests.api.test_lane_d2_http_gateway_isolation` is the guard.
     """
 
     router = APIRouter(prefix=CHAT_PREFIX, tags=["chat"], route_class=_EnvelopeRoute)
     if not settings.chat_enabled:
         return router
+    artifacts = (
+        None
+        if storage is None
+        else DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
+    )
 
     def _require(who: RequestPrincipal, permission: str) -> None:
         if not who.allows(permission):
@@ -441,6 +469,155 @@ def build_chat_router(
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
         return message_list_response(page, thread_id=thread_id)
 
+    # --- turn submission (D2) -----------------------------------------------------------------
+
+    if artifacts is not None:
+
+        @router.post("/projects/{project_id}/threads/{thread_id}/turns", status_code=202)
+        async def submit_turn_route(
+            project_id: str,
+            thread_id: str,
+            body: SubmitTurnRequest,
+            who: PrincipalDep,
+            idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+        ) -> TurnAcceptedResponse:
+            """Accept one human turn: capture it durably, queue it, and answer ``202``.
+
+            This endpoint deliberately does **not** run the turn (ratified §6-D1). It writes what
+            it can prove — the user's exact bytes, their capture record, and who submitted them —
+            enqueues an ``AGENT_TURN`` task, and returns. The model never runs in this process, so
+            a slow generation cannot occupy an HTTP worker and the launch tools the conversation
+            will eventually reach stay composed only where they are governed.
+
+            The ordering inside the transaction is the contract: capture, then record the
+            submission, then offer the work. A crash anywhere before the enqueue leaves a captured
+            message and no execution — recoverable and honest; a crash after leaves a queued turn
+            whose identity is already durable.
+            """
+
+            _require(who, PERMISSION_THREAD_WRITE)
+            if not idempotency_key or not idempotency_key.strip():
+                raise _refuse(
+                    status_code=400,
+                    code="IDEMPOTENCY_KEY_REQUIRED",
+                    message="submitting a turn requires an Idempotency-Key header",
+                )
+            turn_id = turn_id_for_submission(
+                workspace_id=who.workspace_id,
+                thread_id=thread_id,
+                idempotency_key=idempotency_key,
+            )
+            digest = content_address(body.message.encode())
+            async with conn_factory() as conn:
+                thread = await get_thread(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    thread_id=thread_id,
+                )
+                # A thread in another project (or another workspace) is *not found*, not
+                # forbidden: a 403 would confirm it exists to somebody who cannot see it.
+                if thread is None or thread.project_id != project_id:
+                    raise _refuse(
+                        status_code=404,
+                        code="THREAD_NOT_FOUND",
+                        message="no such thread in this project",
+                    )
+                if thread.status != "active":
+                    raise _refuse(
+                        status_code=409,
+                        code="THREAD_ARCHIVED",
+                        message="an archived thread accepts no new turns",
+                    )
+                project = await get_project(conn, project_id)
+                if project is None or project.workspace_id != who.workspace_id:
+                    raise _refuse(
+                        status_code=404,
+                        code="PROJECT_NOT_FOUND",
+                        message="no such project in this workspace",
+                    )
+                # Replay is decided before anything is written: a retry must not persist a second
+                # artifact, and a *different* message under a used key must be refused rather than
+                # answered with the first one's turn.
+                existing = await get_submission(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    turn_id=turn_id,
+                )
+                if existing is not None:
+                    if existing.message_sha256 != digest:
+                        raise _refuse(
+                            status_code=409,
+                            code="IDEMPOTENCY_CONFLICT",
+                            message=(
+                                "this idempotency key was already used for a different message"
+                            ),
+                        )
+                    # Still offer the thread's next turn: this heals the rare case where the
+                    # first attempt committed the submission and then failed to enqueue.
+                    await dispatch_next_thread_turn(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        thread_id=thread_id,
+                    )
+                    return TurnAcceptedResponse(
+                        data=TurnAcceptedWire(
+                            turn_id=str(existing.turn_id),
+                            thread_id=thread_id,
+                            requested_at=existing.requested_at.isoformat(),
+                            replayed=True,
+                        )
+                    )
+                captured = await persist_user_turn(
+                    conn,
+                    artifacts=artifacts,
+                    workspace_id=who.workspace_id,
+                    brand_id=project.brand_id,
+                    product_id=project.product_id,
+                    project_id=project_id,
+                    turn_id=turn_id,
+                    message=body.message,
+                    client_entity_id=await project_client_entity_id(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        project_id=project_id,
+                    ),
+                )
+                try:
+                    submission, _created = await insert_submission(
+                        conn,
+                        turn_id=turn_id,
+                        workspace_id=who.workspace_id,
+                        project_id=project_id,
+                        thread_id=thread_id,
+                        # Ambient authority, never a request field: the principal Lane B
+                        # authorized is the only thing that may claim to have submitted a turn.
+                        submitted_by_user_id=who.user_id,
+                        submitted_via_membership_id=who.membership_id,
+                        onboarding_input_id=captured.onboarding_input_id,
+                        message_artifact_key=captured.artifact_ref.artifact_key,
+                        message_sha256=captured.artifact_ref.sha256,
+                        idempotency_key=idempotency_key,
+                    )
+                except SubmissionConflict as exc:
+                    raise _refuse(
+                        status_code=409,
+                        code="IDEMPOTENCY_CONFLICT",
+                        message=str(exc),
+                    ) from exc
+                await dispatch_next_thread_turn(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    thread_id=thread_id,
+                )
+            return TurnAcceptedResponse(
+                data=TurnAcceptedWire(
+                    turn_id=str(submission.turn_id),
+                    thread_id=thread_id,
+                    requested_at=submission.requested_at.isoformat(),
+                    replayed=False,
+                )
+            )
+
     return router
 
 
@@ -451,6 +628,7 @@ def install_chat_surface(
     conn_factory: ConnFactory,
     tool_invoker: ToolInvoker,
     principal_resolver: PrincipalResolver | None = None,
+    storage: StorageBackend | None = None,
 ) -> None:
     """Mount the chat router when ``settings.chat_enabled``; otherwise do nothing at all.
 
@@ -472,5 +650,6 @@ def install_chat_surface(
             settings=settings,
             conn_factory=conn_factory,
             tool_invoker=tool_invoker,
+            storage=storage,
         )
     )

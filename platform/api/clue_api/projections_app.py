@@ -777,6 +777,9 @@ def create_projections_app(
         conn_factory=conn_factory,
         tool_invoker=tool_invoker,
         principal_resolver=chat_principal_resolver,
+        # D2's turn submission captures the user's bytes as a durable artifact before enqueueing.
+        # The same backend the ingestion surface already uses; nothing model-shaped is added here.
+        storage=ingestion_storage,
     )
 
     if workspace_resolver is not None:

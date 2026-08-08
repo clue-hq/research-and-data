@@ -46,6 +46,8 @@ from collections.abc import Awaitable, Callable
 
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
 from clue_api.agent_model_wiring import build_agent_model_provider
+from clue_api.agent_platform_wiring import build_agent_platform_components
+from clue_api.agent_turn_fleet_wiring import build_agent_turn_work_handler
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
@@ -80,7 +82,7 @@ from clue_api.external_research_wake import (
     registered_external_research_wake_sources,
 )
 from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, register_boot_handlers
-from clue_api.memory_wiring import memory_write_factory_builder
+from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
@@ -573,6 +575,31 @@ async def _serve() -> None:
                 queue=work_queue,
             )
         )
+        # FI Lane D D2: the production conversation turn executor, composed ONCE here (§3-P3) and
+        # reused by every turn. Only when chat is enabled — nothing enqueues ``agent_turn`` tasks
+        # otherwise, and an unused composition would still resolve a profile and a manifest at boot.
+        agent_turn_handler = (
+            build_agent_turn_work_handler(
+                components=build_agent_platform_components(
+                    settings=settings,
+                    secrets=secrets,
+                    gateway_config=gateway_config,
+                    storage=storage,
+                    tools=registry,
+                ),
+                tools=registry,
+                tool_invoker=tool_invoker,
+                executor=executor,
+                compatibility=compatibility,
+                recipes=recipe_reader,
+                starter=starter,
+                parameters=execution_parameters,
+                memory=memory_assembly_factory(settings, transaction),
+                queue=work_queue,
+            )
+            if settings.chat_enabled
+            else None
+        )
         worker = build_multi_work_worker(
             settings,
             driver=driver,
@@ -580,6 +607,7 @@ async def _serve() -> None:
             entity_research_handler=(
                 entity_research.handler if entity_research is not None else None
             ),
+            agent_turn_handler=agent_turn_handler,
             queue=work_queue,
         )
         sweep = _start_orphan_sweep(settings, storage)

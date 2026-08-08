@@ -117,7 +117,13 @@ def test_stage0_turn_and_context_use_frozen_subject_binding_kinds(
         onboarding_call.update(kwargs)
         return SimpleNamespace(onboarding_input_id=uuid4())
 
-    monkeypatch.setattr("clue_api.stage0_trial.submit_onboarding_input", capture_onboarding)
+    # Lane D D2 moved the capture path itself to `clue_api.conversation_capture.persist_user_turn`
+    # (one owner for the trial and the production turn route), so the seam this patches moved with
+    # it. What the test asserts is unchanged, and that is the point: the trial still binds the same
+    # two subject kinds and still captures `actor='human'` before the model is woken.
+    monkeypatch.setattr(
+        "clue_api.conversation_capture.submit_onboarding_input", capture_onboarding
+    )
 
     # The turn's first act after capturing the user message is compiling the L3 project card
     # (PC-C8 §10 replaced the stage/readiness snapshot pair with it), so that is where this test
@@ -127,15 +133,11 @@ def test_stage0_turn_and_context_use_frozen_subject_binding_kinds(
         raise _StopAfterUserMessage
 
     monkeypatch.setattr(Stage0Trial, "_project_card_ref", stop_after_user_message)
-    monkeypatch.setattr(
-        trial,
-        "_components",
-        SimpleNamespace(
-            artifacts=artifacts,
-            # PC-C8 §8: the trial resolves its Head-of-ABM profile on a named capability surface.
-            profiles=SimpleNamespace(resolve=lambda role, *, surface=None: None),
-        ),
-    )
+    monkeypatch.setattr(trial, "_components", SimpleNamespace(artifacts=artifacts))
+    # PC-C8 §8: the trial runs its Head-of-ABM profile on a named capability surface. Since D2 that
+    # resolution happens once, when the shared conversation engine is built, so the turn reads the
+    # already-resolved profile off the engine instead of resolving one per turn.
+    trial._engine = SimpleNamespace(resolved=None)  # type: ignore[assignment]
 
     with pytest.raises(_StopAfterUserMessage):
         run_async(trial.run_turn("We want to target neurosurgery practices."))
