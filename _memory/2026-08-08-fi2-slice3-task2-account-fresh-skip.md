@@ -29,3 +29,24 @@ Commit `6eba0cab` on `platform/frontend-integration` (base `6626edf3`). No migra
   (b) `AssessAccountCoverageInput.result_refs` is `min_length=1`, so a job with literally zero results
   cannot close coverage — an all-born-complete job still relies on the committee call producing one
   (production's Sumble scope accepts a `claim:` office reference; the R5 test fixture is stricter).
+
+## Fix round 1 (commit `bf1ef028`)
+
+Review Critical: the governed prompt (`account/v1/prompt.md:28-30`) allows only retained result refs
+as buying-unit evidence, so an all-known account had no legal path to coverage — the earlier test's
+`claim:` ref is not what a prompt-obedient agent does.
+
+- `AssessAccountCoverageInput.result_refs` lost `min_length=1`; the engine's set-equality against the
+  persisted result set remains the authority. `assess` refuses an empty close unless every completed
+  field is borrowed (guard proven by a forged-state test).
+- `semantic_validation_error` made public in `entity_research_tools`; bound as
+  `handle_validation_error` on all four account engine tools, and the `repairable` wrapper converts
+  an in-body `ValidationError` into the same bounded `ToolException`.
+- Skip reasons: any result row (not just `outcome='found'`) disqualifies a field from
+  `existing_claim_fresh`.
+- Tests 6 → 9, incl. the required zero-provider-call job (0 results, 0 spend, `NEEDS_REVIEW` +
+  `committee_not_researched`, `all_passed()`), the refused empty close, and the tool-degradation case.
+- Gate re-run green (same throwaway DB); only the pre-existing `test_agent_registry_wiring::…c61_backend`
+  environmental failure remains.
+- Still open elsewhere: prompt amendment (next governed C6 bump), Exa first-call guard (Task 3),
+  `field_species` relocation to `claimstore.registry` (Task-4 close-out), R5 committee fixture.
