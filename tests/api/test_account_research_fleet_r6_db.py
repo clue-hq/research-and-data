@@ -166,9 +166,7 @@ def test_exact_set_launch_admits_only_canary_and_replay_is_immutable() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             envelope = _account_envelope()
-            service = AccountResearchFleetService(
-                conn_factory=lambda: _same_connection(conn)
-            )
+            service = AccountResearchFleetService(conn_factory=lambda: _same_connection(conn))
             policy = AccountResearchFleetPolicy(canary_size=1)
             projection = await service.launch(
                 envelope,
@@ -212,10 +210,13 @@ def test_exact_set_launch_admits_only_canary_and_replay_is_immutable() -> None:
                 source_action_ref="agent-action:launch-account-research:1",
             )
             assert replay == projection
-            assert await service.read(
-                envelope.lifecycle.run_id,
-                workspace_id="foreign-workspace",
-            ) is None
+            assert (
+                await service.read(
+                    envelope.lifecycle.run_id,
+                    workspace_id="foreign-workspace",
+                )
+                is None
+            )
             with pytest.raises(AccountResearchFleetError, match="changed canary, policy"):
                 await service.launch(
                     envelope,
@@ -232,9 +233,7 @@ def test_canary_releases_remainder_and_terminal_return_exposes_results_and_revie
     async def scenario() -> None:
         async with rollback_conn() as conn:
             envelope = _account_envelope()
-            service = AccountResearchFleetService(
-                conn_factory=lambda: _same_connection(conn)
-            )
+            service = AccountResearchFleetService(conn_factory=lambda: _same_connection(conn))
             launched = await service.launch(
                 envelope,
                 policy=AccountResearchFleetPolicy(canary_size=1),
@@ -249,8 +248,7 @@ def test_canary_releases_remainder_and_terminal_return_exposes_results_and_revie
             assert opened.fleet_state is AccountResearchFleetState.OPEN
             remainder = [job for job in opened.jobs if job.cohort.value == "remainder"]
             assert all(
-                job.admission_state is AccountResearchAdmissionState.RELEASED
-                for job in remainder
+                job.admission_state is AccountResearchAdmissionState.RELEASED for job in remainder
             )
             for job in remainder:
                 task_rows = await list_tasks(
@@ -341,10 +339,13 @@ def test_canary_releases_remainder_and_terminal_return_exposes_results_and_revie
             assert returned is not None
             assert returned.return_kind == "terminal"
             assert returned.projection == terminal
-            assert await service.latest_return(
-                envelope.lifecycle.run_id,
-                workspace_id="foreign-workspace",
-            ) is None
+            assert (
+                await service.latest_return(
+                    envelope.lifecycle.run_id,
+                    workspace_id="foreign-workspace",
+                )
+                is None
+            )
 
     run_async(scenario())
 
@@ -353,9 +354,7 @@ def test_failed_canary_suspends_remainder_without_admitting_it() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             envelope = _account_envelope()
-            service = AccountResearchFleetService(
-                conn_factory=lambda: _same_connection(conn)
-            )
+            service = AccountResearchFleetService(conn_factory=lambda: _same_connection(conn))
             launched = await service.launch(
                 envelope,
                 policy=AccountResearchFleetPolicy(canary_size=1),
@@ -374,9 +373,7 @@ def test_failed_canary_suspends_remainder_without_admitting_it() -> None:
             assert suspended.fleet_state is AccountResearchFleetState.SUSPENDED
             assert suspended.diagnosis["reason_code"] == "canary_health_gate_failed"
             held = [job for job in suspended.jobs if job.cohort.value == "remainder"]
-            assert all(
-                job.admission_state is AccountResearchAdmissionState.PAUSED for job in held
-            )
+            assert all(job.admission_state is AccountResearchAdmissionState.PAUSED for job in held)
             for job in held:
                 tasks = await list_tasks(
                     conn,
@@ -397,9 +394,7 @@ def test_pause_resume_and_reprioritize_are_scoped_and_journaled() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             envelope = _account_envelope()
-            service = AccountResearchFleetService(
-                conn_factory=lambda: _same_connection(conn)
-            )
+            service = AccountResearchFleetService(conn_factory=lambda: _same_connection(conn))
             launched = await service.launch(
                 envelope,
                 policy=AccountResearchFleetPolicy(canary_size=1),
@@ -746,9 +741,7 @@ def test_worker_failure_becomes_honest_resumable_suspension() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             envelope = _account_envelope(count=1)
-            service = AccountResearchFleetService(
-                conn_factory=lambda: _same_connection(conn)
-            )
+            service = AccountResearchFleetService(conn_factory=lambda: _same_connection(conn))
             launched = await service.launch(
                 envelope,
                 policy=AccountResearchFleetPolicy(canary_size=1),
@@ -801,6 +794,27 @@ def test_worker_failure_becomes_honest_resumable_suspension() -> None:
             assert projection.fleet_state is AccountResearchFleetState.SUSPENDED
             assert projection.jobs[0].job_state is ResearchJobState.QUEUED
             assert projection.jobs[0].admission_state is AccountResearchAdmissionState.PAUSED
+            job_event = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT event_kind, from_state, to_state, actor, references_json "
+                            "FROM entity_research_job_event WHERE job_id=:job_id "
+                            "ORDER BY event_seq DESC LIMIT 1"
+                        ),
+                        {"job_id": job_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert job_event["event_kind"] == "queued"
+            assert job_event["from_state"] == "running"
+            assert job_event["to_state"] == "queued"
+            assert job_event["actor"] == "engine:account-fleet-supervisor"
+            assert job_event["references_json"]["reason_code"] == "worker_error:RuntimeError"
+            assert job_event["references_json"]["task_id"] == str(task.task_id)
+            assert job_event["references_json"]["lease_generation"] == lease.generation
             task_after = await get_task(conn, task.task_id)
             assert task_after is not None
             assert task_after.status is FleetTaskStatus.DONE
