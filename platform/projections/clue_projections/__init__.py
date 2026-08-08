@@ -28,10 +28,13 @@ from clue_projections.account_deep_steering import (
     AccountDeepSteeringLaunch,
 )
 from clue_projections.agents import (
+    DEFAULT_TURN_PAGE_SIZE,
+    MAX_TURN_PAGE_SIZE,
     AgentArtifactView,
     AgentProgressView,
     AgentRouteView,
     AgentTelemetryView,
+    AgentTurnPage,
     AgentTurnSummary,
     AgentTurnView,
     agent_progress,
@@ -39,6 +42,7 @@ from clue_projections.agents import (
     agent_telemetry,
     agent_turn,
     agent_turns_for_project,
+    agent_turns_for_thread,
 )
 from clue_projections.dtos import (
     PROJECTIONS_SCHEMA_VERSION,
@@ -58,6 +62,7 @@ from clue_projections.manifest import (
     run_manifest,
     validate_manifest_op,
 )
+from clue_projections.pagination import InvalidCursorError
 from clue_projections.proposals import (
     FieldProposalCard,
     ProposalScopeCard,
@@ -106,6 +111,26 @@ from clue_projections.stage0 import (
     stage0_progress,
     stage0_readiness,
 )
+from clue_projections.thread_refs import (
+    ARTIFACT_OBJECT_TYPE,
+    ASSISTANT_MESSAGE_FLAVORS,
+    USER_MESSAGE_FLAVORS,
+    MessageObjectRef,
+    MessageRefFlavor,
+    flavors_for_message_role,
+)
+from clue_projections.threads import (
+    DEFAULT_THREAD_MESSAGE_PAGE_SIZE,
+    DEFAULT_THREAD_PAGE_SIZE,
+    MAX_THREAD_MESSAGE_PAGE_SIZE,
+    MAX_THREAD_PAGE_SIZE,
+    ThreadMessagePage,
+    ThreadMessageSummary,
+    ThreadPage,
+    ThreadView,
+    thread_messages,
+    threads_for_project,
+)
 
 __all__ = [
     # schema version
@@ -115,13 +140,35 @@ __all__ = [
     "AgentProgressView",
     "AgentRouteView",
     "AgentTelemetryView",
+    "AgentTurnPage",
     "AgentTurnSummary",
     "AgentTurnView",
+    "DEFAULT_TURN_PAGE_SIZE",
+    "MAX_TURN_PAGE_SIZE",
     "agent_progress",
     "agent_route",
     "agent_telemetry",
     "agent_turn",
     "agent_turns_for_project",
+    "agent_turns_for_thread",
+    # REQ-21 thread shell (FI Lane D D0)
+    "ARTIFACT_OBJECT_TYPE",
+    "ASSISTANT_MESSAGE_FLAVORS",
+    "DEFAULT_THREAD_MESSAGE_PAGE_SIZE",
+    "DEFAULT_THREAD_PAGE_SIZE",
+    "InvalidCursorError",
+    "MAX_THREAD_MESSAGE_PAGE_SIZE",
+    "MAX_THREAD_PAGE_SIZE",
+    "MessageObjectRef",
+    "MessageRefFlavor",
+    "ThreadMessagePage",
+    "ThreadMessageSummary",
+    "ThreadPage",
+    "ThreadView",
+    "USER_MESSAGE_FLAVORS",
+    "flavors_for_message_role",
+    "thread_messages",
+    "threads_for_project",
     # M8B O3 main-agent account-deep steering context
     "ACCOUNT_DEEP_STEERING_CARD_MEDIA_TYPE",
     "AccountDeepSteeringAccount",

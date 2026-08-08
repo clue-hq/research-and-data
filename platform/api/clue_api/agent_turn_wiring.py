@@ -51,6 +51,7 @@ from clue_agents.turns import (
     PrivacyEraseResult,
     ReplayArtifactRef,
 )
+from clue_api.thread_store import ensure_platform_thread
 from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
 from clue_storage import StorageBackend, artifact_key, content_address
@@ -389,6 +390,18 @@ class DbAgentTurnJournal:
         ):
             raise ValueError("turn constitution does not pin the supplied profile")
         async with self._conn_factory() as conn:
+            # D0/REQ-21: every turn names a thread that durably exists, so the grandfathered
+            # ``agent_turn_thread_fk`` is enforceable for new writes. A turn reaching this journal
+            # from the trial harness, an entity-research fleet unit, or a specialist delegation has
+            # no authenticated human creator, so the provisioned shell row carries none — the
+            # alternative (a synthesised creator) is the fabricated identity Lane B ruling 8
+            # forbids. A thread the chat surface already created is left exactly as it is.
+            await ensure_platform_thread(
+                conn,
+                thread_id=request.thread_id,
+                workspace_id=constitution.workspace_id,
+                project_id=constitution.project_id,
+            )
             inserted = await conn.execute(
                 text(
                     "INSERT INTO agent_turn "

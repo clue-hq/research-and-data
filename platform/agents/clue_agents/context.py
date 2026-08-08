@@ -58,6 +58,17 @@ __all__ = [
 
 _ORDER = tuple(ContextLayer)
 
+#: Layers whose budget retains the **newest** candidates rather than the first ones in canonical
+#: (``stable_key``) order — FI Lane D D0, charter §1.1.
+#:
+#: Every other layer is a set of independent compiled cards where "which one was dropped" is a
+#: matter of ordering convention. L6 is not: it is one ordered conversation, its ``stable_key`` is
+#: the message sequence, and a long thread that keeps its *oldest* messages hands the model a
+#: transcript that stops before the thing the user just said. Retention is therefore newest-first
+#: for L6; **emission stays chronological** for every layer, so the model still reads the retained
+#: window in order and each candidate's ``stable_key``/receipt ordinal is unchanged.
+_RETAIN_NEWEST_LAYERS: frozenset[ContextLayer] = frozenset({ContextLayer.L6_CONVERSATION})
+
 
 class ContextValue(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
@@ -598,6 +609,38 @@ class DeterministicAgentContextAssembler:
             raise ValueError("token counter version differs from context policy")
         self._clock = clock
 
+    def _retain(
+        self,
+        *,
+        layer: ContextLayer,
+        candidates: Sequence[ContextCandidate],
+        budget: int,
+    ) -> dict[str, int]:
+        """Decide which candidates fit ``budget``; return ``{stable_key: token_count}``.
+
+        The greedy rule is unchanged — a candidate that does not fit is *skipped*, not a stop, so a
+        small later item still fits behind a large refused one — and so is the hard failure when a
+        ``required`` candidate cannot fit. The only thing this method adds is the **direction** in
+        which the budget is spent: canonical order for every layer, reverse (newest-first) for the
+        conversation layer, where dropping the newest messages would silently truncate the turn the
+        user just took (:data:`_RETAIN_NEWEST_LAYERS`).
+        """
+
+        order = tuple(reversed(candidates)) if layer in _RETAIN_NEWEST_LAYERS else tuple(candidates)
+        retained: dict[str, int] = {}
+        used = 0
+        for candidate in order:
+            count = self._counter.count(candidate.body)
+            if used + count > budget:
+                if candidate.required:
+                    raise ValueError(
+                        f"required {layer.value} context exceeds its hard layer budget"
+                    )
+                continue
+            retained[candidate.stable_key] = count
+            used += count
+        return retained
+
     async def assemble(
         self,
         *,
@@ -622,21 +665,21 @@ class DeterministicAgentContextAssembler:
             )
             if len({item.stable_key for item in candidates}) != len(candidates):
                 raise ValueError(f"{layer.value} emitted duplicate stable context keys")
+            for candidate in candidates:
+                if candidate.ref.workspace_id != request.constitution.workspace_id:
+                    raise ValueError(f"{layer.value} emitted a cross-workspace context ref")
             budget = self._policy.budget_for(layer)
+            retained = self._retain(layer=layer, candidates=candidates, budget=budget)
             used = 0
             included: list[ContextCandidate] = []
             excluded: list[ContextCandidate] = []
             hashes: list[str] = []
             paths: list[str] = []
+            # Emission stays in canonical ``stable_key`` order for every layer — only *which*
+            # candidates survive the budget depends on the layer's retention direction.
             for candidate in candidates:
-                if candidate.ref.workspace_id != request.constitution.workspace_id:
-                    raise ValueError(f"{layer.value} emitted a cross-workspace context ref")
-                count = self._counter.count(candidate.body)
-                if used + count > budget:
-                    if candidate.required:
-                        raise ValueError(
-                            f"required {layer.value} context exceeds its hard layer budget"
-                        )
+                count = retained.get(candidate.stable_key)
+                if count is None:
                     excluded.append(candidate)
                     receipt_refs.append(
                         ContextReceiptRef(

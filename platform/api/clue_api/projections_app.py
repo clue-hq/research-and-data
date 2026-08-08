@@ -68,8 +68,11 @@ from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import OperationConflict
 from clue_projections import (
+    DEFAULT_TURN_PAGE_SIZE,
     MANIFEST_OP_TOOLS,
+    MAX_TURN_PAGE_SIZE,
     PROJECTIONS_SCHEMA_VERSION,
+    InvalidCursorError,
     account_progress,
     agent_progress,
     agent_route,
@@ -209,15 +212,25 @@ def create_projections_router(
     async def get_agent_project_turns(
         project_id: str,
         workspace_id: WorkspaceDep,
+        limit: Annotated[int, Query(ge=1, le=MAX_TURN_PAGE_SIZE)] = DEFAULT_TURN_PAGE_SIZE,
+        cursor: Annotated[str | None, Query()] = None,
     ) -> dict[str, Any]:
-        turns = await agent_turns_for_project(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            conn_factory=conn_factory,
-        )
+        # FI-1 defect L6: this listing had no LIMIT/cursor. ``turns`` keeps its element shape; the
+        # page now stops, and ``next_cursor`` (``null`` on the last page) carries the keyset.
+        try:
+            page = await agent_turns_for_project(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                limit=limit,
+                cursor=cursor,
+                conn_factory=conn_factory,
+            )
+        except InvalidCursorError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {
             "schema_version": PROJECTIONS_SCHEMA_VERSION,
-            "turns": [item.model_dump(mode="json") for item in turns],
+            "turns": [item.model_dump(mode="json") for item in page.items],
+            "next_cursor": page.next_cursor,
         }
 
     @router.get("/agent/turns/{turn_id}")
