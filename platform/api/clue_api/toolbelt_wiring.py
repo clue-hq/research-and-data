@@ -12,7 +12,7 @@ The registered set (spec §2 slice 2) with each tool's precondition reason codes
 
 * setup / stage-0 — ``reverse_profile`` (none), ``synthesize_icps`` (``no_client_kb``),
   ``confirm_icp`` (``no_client_kb``), ``import_accounts`` (``no_active_icp``, ``invalid_entity_id``,
-  ``no_client_kb``);
+  ``no_client_kb``, ``project_not_found``);
 * discovery / scoring — ``discover_accounts`` (``run_not_found``, ``icp_version_missing``),
   ``score_accounts`` (``run_not_found``, ``discovery_not_run``), ``submit_tier_checkpoint``
   (``run_not_found``, ``checkpoint_not_awaiting``);
@@ -316,6 +316,11 @@ class ImportAccountsInput(ToolInput):
     client_entity_id: str
     icp_key: str
     rows: list[ImportRow]
+    # FI-2 H3 (spec §8.3): the project this list is being imported *into*. ``ToolContext`` carries
+    # workspace + actor + operation but no project, and import is not run-scoped, so the project
+    # cannot be derived from context — it has to be an input. Optional: omitted, the import is
+    # workspace-level and the accounts join no project's target list (today's behaviour).
+    project_id: str | None = None
 
 
 class DiscoverAccountsInput(ToolInput):
@@ -759,7 +764,9 @@ class ImportAccountsTool(_CapabilityTool):
         external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
     )
     effect_class = ToolEffectClass.SPEND
-    parameter_policy = JournalParameterPolicy(safe_display_fields=("client_entity_id", "icp_key"))
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("client_entity_id", "icp_key", "project_id")
+    )
     pin_requirements = ("client_kb", "icp", "source_registry")
 
     async def preconditions(
@@ -779,11 +786,18 @@ class ImportAccountsTool(_CapabilityTool):
             return _fail("invalid_entity_id", "client_entity_id is not a valid entity id")
         async with ctx.conn_factory() as conn:
             version = await current_kb_version(conn, entity, workspace_id=ctx.workspace_id)
-        if version is None:
-            return _fail(
-                "no_client_kb",
-                "no Client Knowledge Base for this client — run reverse_profile first",
-            )
+            if version is None:
+                return _fail(
+                    "no_client_kb",
+                    "no Client Knowledge Base for this client — run reverse_profile first",
+                )
+            # The capability refuses an unowned project with ImportProjectNotFound; checking it
+            # here keeps the refusal typed and machine-readable rather than a raised traceback, and
+            # fails closed on another workspace's project exactly like _load_run / _load_account.
+            if inputs.project_id is not None:
+                project = await get_project(conn, inputs.project_id)
+                if project is None or project.workspace_id != ctx.workspace_id:
+                    return _fail("project_not_found", "no such project")
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
@@ -803,6 +817,7 @@ class ImportAccountsTool(_CapabilityTool):
                 workspace_id=ctx.workspace_id,
                 client_entity_id=entity,
                 import_batch_id=f"operation-{ctx.operation_id}",
+                project_id=inputs.project_id,
                 pre_spend_gate=self._pre_spend_gate,
             )
         return ToolResult(
