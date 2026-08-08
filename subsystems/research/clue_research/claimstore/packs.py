@@ -443,9 +443,12 @@ CORE_PACK: tuple[SeedField, ...] = (
     # intent (so the reuse policy classifies it private — a tier is a per-client/ICP scoring
     # decision, never amortized) with the same fail-closed write boundary. M6.4 writes value_json=
     # {"tier": <str>, "cutoff_version": <str>, "fit_score": <0..1>, "intent_score": <0..1>,
-    # "icp_key": …, "icp_version": …, …} and stamps the run's workspace_id; the value is the human-
-    # approved decision at the checkpoint (extraction_method=human), not a resolver fact — so there
-    # is no tier_plan.
+    # "icp_key": …, "icp_version": …, "project_id": …, …} and stamps the run's workspace_id; the
+    # value is the human-approved decision at the checkpoint (extraction_method=human), not a
+    # resolver fact — so there is no tier_plan. `project_id` (FI-2 §6.4) is the project whose
+    # checkpoint approved the tier: it rides value_json because the claim row has no project column,
+    # and it is the project leg of the supersede key, so a second project's tier coexists with the
+    # first's instead of destroying it. Optional — absent on legacy (pre-§6.4) tier claims.
     _seed(
         "account.scoring.tier",
         "object",
@@ -459,6 +462,7 @@ CORE_PACK: tuple[SeedField, ...] = (
             "properties": {
                 "tier": {"type": "string"},
                 "cutoff_version": {"type": "string"},
+                "project_id": {"type": "string"},
             },
         },
         description="Approved tier assignment + cutoff version (Output 1 tiering; M6.4). "

@@ -49,6 +49,8 @@ from clue_research.claimstore import (
     WorkspaceScope,
     claims_for,
     insert_claim,
+    project_run_ids,
+    record_run_lineage,
     record_verification,
 )
 from clue_research.identity import (
@@ -880,6 +882,158 @@ def test_multi_icp_produces_separate_claims() -> None:
             assert len(live) == 2  # one per ICP — neither superseded the other (D5)
             assert {c.value_json["icp_spec_version"] for c in live} == {1, 2}  # type: ignore[index]
             assert all(c.superseded_by is None for c in live)
+
+    run_async(_run())
+
+
+# --- FI-2 §6.4: the project dimension of the narrative supersede predicate ---
+async def _narrative_fixture(conn: AsyncConnection) -> tuple[str, EntityId, EntityId]:
+    """A workspace + an account with one verified fact + a client entity — the minimum a persona
+    narrative needs to ground."""
+    workspace_id = "tenant-a"
+    account = await _account(conn)
+    client_entity = new_entity_id()
+    await _write_fact(
+        conn,
+        account,
+        ACCOUNT_OPERATIONAL_PAIN,
+        "manual scaling toil",
+        workspace_id=workspace_id,
+        run_id=new_run_id(),
+    )
+    return workspace_id, account, client_entity
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_second_project_narrative_coexists() -> None:
+    """FI-2 §6.4: P2 regenerating the narrative for the SAME (product, ICP, persona) no longer
+    supersedes P1's — both stay live and each lens serves its own via the lineage predicate."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            workspace_id, account, client_entity = await _narrative_fixture(conn)
+            retriever = _retriever(client_entity, ("our platform autoscales",))
+            committee = InMemoryCommitteeReader({account: (_member(Persona.ECONOMIC_BUYER),)})
+            positioner, _ = _positioner(conn, retriever=retriever, committee=committee)
+
+            for project_id in ("proj-one", "proj-two"):
+                run_id = new_run_id()
+                await record_run_lineage(
+                    conn,
+                    run_id=run_id,
+                    workspace_id=workspace_id,
+                    kind="narrative",
+                    project_id=project_id,
+                )
+                await positioner.position(
+                    account,
+                    icp_spec_version=1,
+                    workspace_id=workspace_id,
+                    client_entity_id=client_entity,
+                    run_id=run_id,
+                    project_id=project_id,
+                )
+
+            scope = WorkspaceScope.for_workspace(workspace_id)
+            live = await claims_for(conn, account, VALUE_NARRATIVE, scope=scope)
+            assert len(live) == 2  # P2 did NOT destroy P1's lens
+            assert all(c.superseded_by is None for c in live)
+            for project_id in ("proj-one", "proj-two"):
+                runs = set(
+                    await project_run_ids(conn, workspace_id=workspace_id, project_id=project_id)
+                )
+                mine = [c for c in live if c.run_id in runs]
+                assert len(mine) == 1
+                assert mine[0].value_json["project_id"] == project_id  # type: ignore[index]
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_same_project_rerun_still_supersedes() -> None:
+    """Within ONE project a re-run supersedes exactly as it does today (AC7 unchanged) — §6.4 only
+    stops cross-project destruction."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            workspace_id, account, client_entity = await _narrative_fixture(conn)
+            retriever = _retriever(client_entity, ("our platform autoscales",))
+            committee = InMemoryCommitteeReader({account: (_member(Persona.ECONOMIC_BUYER),)})
+            positioner, _ = _positioner(conn, retriever=retriever, committee=committee)
+
+            for _ in range(2):
+                await positioner.position(
+                    account,
+                    icp_spec_version=1,
+                    workspace_id=workspace_id,
+                    client_entity_id=client_entity,
+                    run_id=new_run_id(),
+                    project_id="proj-one",
+                )
+
+            scope = WorkspaceScope.for_workspace(workspace_id)
+            live = await claims_for(conn, account, VALUE_NARRATIVE, scope=scope)
+            assert len(live) == 1
+            allc = await claims_for(
+                conn, account, VALUE_NARRATIVE, include_superseded=True, scope=scope
+            )
+            assert len(allc) == 2  # the prior is retained, superseded (append-only)
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_unstamped_legacy_narrative_absorbed_by_the_first_project() -> None:
+    """The migration-free legacy rule: a narrative with no ``project_id`` in its payload is absorbed
+    by the FIRST project that regenerates it; a later project then coexists with that claim."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            workspace_id, account, client_entity = await _narrative_fixture(conn)
+            retriever = _retriever(client_entity, ("our platform autoscales",))
+            committee = InMemoryCommitteeReader({account: (_member(Persona.ECONOMIC_BUYER),)})
+            positioner, _ = _positioner(conn, retriever=retriever, committee=committee)
+            scope = WorkspaceScope.for_workspace(workspace_id)
+
+            await positioner.position(  # the legacy (projectless) shape
+                account,
+                icp_spec_version=1,
+                workspace_id=workspace_id,
+                client_entity_id=client_entity,
+                run_id=new_run_id(),
+            )
+            legacy = (await claims_for(conn, account, VALUE_NARRATIVE, scope=scope))[0]
+
+            await positioner.position(
+                account,
+                icp_spec_version=1,
+                workspace_id=workspace_id,
+                client_entity_id=client_entity,
+                run_id=new_run_id(),
+                project_id="proj-one",
+            )
+            live = await claims_for(conn, account, VALUE_NARRATIVE, scope=scope)
+            assert len(live) == 1  # absorbed, not left live as a zombie
+            assert live[0].value_json["project_id"] == "proj-one"  # type: ignore[index]
+            allc = await claims_for(
+                conn, account, VALUE_NARRATIVE, include_superseded=True, scope=scope
+            )
+            assert {c.id for c in allc if c.superseded_by is not None} == {legacy.id}
+
+            await positioner.position(  # a second project coexists with P1's
+                account,
+                icp_spec_version=1,
+                workspace_id=workspace_id,
+                client_entity_id=client_entity,
+                run_id=new_run_id(),
+                project_id="proj-two",
+            )
+            live = await claims_for(conn, account, VALUE_NARRATIVE, scope=scope)
+            assert len(live) == 2
+            assert {c.value_json["project_id"] for c in live} == {  # type: ignore[index]
+                "proj-one",
+                "proj-two",
+            }
 
     run_async(_run())
 

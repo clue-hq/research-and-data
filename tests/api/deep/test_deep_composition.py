@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
+from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.deep import (
@@ -12,8 +13,10 @@ from clue_api.deep import (
     build_high_tier_resolver,
     register_deep_phase_handler,
 )
+from clue_api.deep.composition import _live_tier_for_project
 from clue_api.entity_research_quarantine import EntityResearchAgentNotComposed
 from clue_core import (
+    Claim,
     ExtractionMethod,
     ICPCreatedFrom,
     ICPSpec,
@@ -21,6 +24,7 @@ from clue_core import (
     ProjectPhase,
     ResearchMode,
     account_claim,
+    new_entity_id,
     new_project_run_id,
     new_run_id,
 )
@@ -240,3 +244,42 @@ def test_high_tier_resolver_selects_only_current_run_human_approved_criteria_acc
             assert specs == ()
 
     run_async(scenario())
+
+
+# --- FI-2 §6.4: the resolver reads ITS OWN project's live tier ---------------
+def test_live_tier_for_project_picks_this_projects_tier() -> None:
+    """Since §6.4 stopped cross-project supersession, one account can carry several live tier
+    claims — one per project. The resolver must read its own (not whichever landed last), skip
+    another project's entirely, and still honour an unstamped legacy tier."""
+    account_id = new_entity_id()
+
+    def _claim(**extra: JsonValue) -> Claim:
+        value_json: dict[str, JsonValue] = {
+            "tier": "high",
+            "cutoff_version": "v-a",
+            "icp_key": _ICP,
+        }
+        value_json.update(extra)
+        return account_claim(
+            entity_id=account_id,
+            field_key=TIER_FIELD,
+            value_json=value_json,
+            source_tier=1,
+            extraction_method=ExtractionMethod.HUMAN,
+            confidence=1.0,
+            run_id=new_run_id(),
+            research_mode=ResearchMode.ACCOUNT_PROFILING,
+        )
+
+    p2 = _claim(project_id="prj-two", tier="low")
+    p1 = _claim(project_id="prj-one")
+    legacy = _claim()
+
+    # P2's claim is the most recent, but P1's phase must read P1's tier.
+    mine = _live_tier_for_project([p2, p1], project_id="prj-one")
+    assert mine is not None and mine["tier"] == "high"
+    # Only another project's tier is live → this project selects nothing (never P2's).
+    assert _live_tier_for_project([p2], project_id="prj-one") is None
+    # An unstamped legacy tier belongs to no project's lens, so any project may read it.
+    fallback = _live_tier_for_project([p2, legacy], project_id="prj-one")
+    assert fallback is not None and fallback["tier"] == "high"

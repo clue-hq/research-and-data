@@ -67,6 +67,14 @@ _PERSONA_VALUES: list[str] = [p.value for p in Persona]
 #   when present it disambiguates which segment's narrative this is (M12.2 reads it; supersession
 #   keys on it too). Optional so a single-segment account omits it. ``additionalProperties`` is left
 #   open so the shape can grow additively without a migration.
+# - ``project_id``: the project whose lens this narrative belongs to (FI-2 §6.4). Carried here for
+#   exactly the reason ``icp_spec_version`` is — the claim row has no project column — and it is the
+#   *project* dimension of the supersede key: P2 regenerating the narrative for the same
+#   ``(product, ICP, persona)`` now coexists with P1's instead of destroying it. Optional, and a
+#   claim without it is the legacy (pre-§6.4) shape: it is absorbed by the FIRST project that
+#   regenerates that ``(persona, icp, product)``, so no permanent unattributable zombie is left
+#   live. Which project a claim's *run* served is recorded independently in ``run_lineage`` (the
+#   read-side lens); this stamp is the write-side supersede discriminator.
 _VALUE_NARRATIVE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "required": ["persona", "argument", "icp_spec_version"],
@@ -76,6 +84,7 @@ _VALUE_NARRATIVE_SCHEMA: dict[str, Any] = {
         "angle_label": {"type": "string"},
         "icp_spec_version": {"type": "integer"},
         "icp_key": {"type": "string"},
+        "project_id": {"type": "string"},
     },
 }
 

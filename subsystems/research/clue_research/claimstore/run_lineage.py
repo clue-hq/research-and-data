@@ -114,6 +114,39 @@ async def record_run_lineage(
     )
 
 
+def project_supersedable(prior_project_id: object, writing_project_id: str | None) -> bool:
+    """Whether a live claim stamped ``prior_project_id`` may be superseded by a write made for
+    ``writing_project_id`` — the **write-side** half of the project dimension (FI-2 §6.4).
+
+    :func:`project_run_ids` answers "which claims does this project's lens *read*"; this answers
+    "which claims may this project's write *destroy*". Both are needed because the claim row has no
+    project column: the lens joins through ``run_lineage``, while a supersede predicate runs over
+    the ``value_json`` project stamp its own writer put there (the same reason ``icp_key`` rides
+    ``value_json`` — ``narrative/fields.py``).
+
+    The rule:
+
+    * **Same project → supersedable.** Within one project, supersession behaves exactly as it did
+      before §6.4; only cross-project destruction stops.
+    * **Different project → never.** P2 regenerating a narrative/tier for the same key coexists
+      with P1's; each lens keeps serving its own.
+    * **Unstamped prior (``None``) → supersedable, by whichever project touches it first.** This is
+      the deliberate migration-free rule for legacy (pre-§6.4) claims. The alternative — never
+      supersede an unstamped claim — leaves a permanently live, unattributable zombie competing in
+      every project's ``current_value`` forever. Absorbing it on first touch instead keeps the
+      "one live winner" invariant, preserves today's exact behaviour for a workspace that has only
+      one project, and costs at most one legacy claim its liveness (its row is retained, superseded
+      — append-only history is never broken). Deployed databases hold synthetic development data
+      only (the B3 ruling), so no real lens can be harmed by the choice.
+
+    ``prior_project_id`` is typed ``object`` because it comes straight out of a ``value_json`` dict:
+    a non-string stamp is not a project and is treated as unstamped.
+    """
+    if not isinstance(prior_project_id, str):
+        return True
+    return prior_project_id == writing_project_id
+
+
 async def project_run_ids(
     conn: AsyncConnection, *, workspace_id: str, project_id: str
 ) -> tuple[RunId, ...]:

@@ -479,7 +479,17 @@ class HandoffAssembler:
         ``rejected`` by the M9.3 judge and must not appear. Each line carries its two-sided
         ``claim_support`` (account evidence × client knowledge) and, in the wrapper's
         ``narrative_citations``, the answering judge model ([M9.3×M12]). Ordered by ``(persona,
-        claim_id)`` for a byte-stable handoff (AC5)."""
+        claim_id)`` for a byte-stable handoff (AC5).
+
+        **Known gap — no project filter (FI-2 §6.4).** Since §6.4 stopped cross-project supersession
+        of ``account.value_narrative``, an account targeted by two projects can carry *two* live,
+        verified narratives for the same ``(persona, icp, product)`` — one per project, each
+        stamped ``value_json["project_id"]`` — and this read would include both. Unreachable today
+        (the M12.1 positioner is uncomposed and HANDOFF is parked fail-closed), so no filter is
+        imposed here rather than guessing the contract: the sibling ``_read_score`` filters on
+        ``project_run_id``, but the narrative pins the coarser ``project_id``, so closing this needs
+        a deliberate decision about which project key the handoff is assembled for. Do it when the
+        positioner is composed / handoff is unparked."""
         claims = await claims_for(conn, account_entity_id, VALUE_NARRATIVE, scope=scope)
         items: list[ValueNarrativeItem] = []
         citation_claims = []

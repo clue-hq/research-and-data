@@ -44,7 +44,7 @@ definitions a deep run reads are registered.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Final
@@ -65,6 +65,7 @@ from clue_api.deep.orchestrator import AccountDeepOrchestrator
 from clue_api.entity_research_quarantine import EntityResearchAgentNotComposed
 from clue_config import OverlayStore
 from clue_core import (
+    Claim,
     ICPSpec,
     LLMGateway,
     PhaseContext,
@@ -241,11 +242,17 @@ def build_high_tier_resolver(
                 directed = directed_specs.get(entity_id)
                 if directed is None or directed.research_directive is None:
                     continue
-                live = await claims_for(conn, entity_id, TIER_FIELD, scope=scope)
-                if not live:
-                    continue
-                value = live[0].value_json  # most-recent live tier claim for this account
-                if not isinstance(value, dict):
+                # FI-2 §6.4: an account shared by two projects now carries **two** live tier
+                # claims (P2's tier no longer supersedes P1's), so "the most recent live claim"
+                # is no longer this project's by construction. Take the most recent live tier
+                # THIS project wrote; an unstamped legacy tier is still honoured (it belongs to
+                # no project's lens, so any project may read it — the read-side mirror of the
+                # legacy absorb rule).
+                value = _live_tier_for_project(
+                    await claims_for(conn, entity_id, TIER_FIELD, scope=scope),
+                    project_id=ctx.project_id,
+                )
+                if value is None:
                     continue
                 if selection_mode:
                     if (
@@ -275,6 +282,29 @@ def build_high_tier_resolver(
         return tuple(specs)
 
     return _resolve
+
+
+def _live_tier_for_project(
+    live: Sequence[Claim], *, project_id: str
+) -> Mapping[str, JsonValue] | None:
+    """The most-recent live ``account.scoring.tier`` payload belonging to ``project_id`` (FI-2
+    §6.4), or ``None``.
+
+    ``claims_for`` returns live claims most-recent-first. Since §6.4 stopped cross-project
+    supersession, several may be live at once — one per project that tiered the account — so this
+    picks the caller's own rather than whichever landed last. A payload with **no** ``project_id``
+    is a legacy (pre-§6.4) tier attributed to no project and is accepted by any project; a payload
+    stamped for a *different* project is skipped.
+    """
+    for claim in live:
+        value = claim.value_json
+        if not isinstance(value, dict):
+            continue
+        stamped = value.get("project_id")
+        if isinstance(stamped, str) and stamped != project_id:
+            continue
+        return value
+    return None
 
 
 def _tier_cutoffs(raw: JsonValue | None) -> TierCutoffs | None:

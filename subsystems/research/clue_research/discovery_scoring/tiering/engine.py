@@ -28,6 +28,7 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from decimal import Decimal
 
+from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -226,6 +227,7 @@ async def persist_tier(
     workspace_id: str,
     icp_key: str,
     icp_version: int,
+    project_id: str | None = None,
 ) -> tuple[ClaimId, bool]:
     """Write one account's approved tier decision idempotently, returning ``(claim_id, written)``.
 
@@ -237,26 +239,38 @@ async def persist_tier(
     is the human-approved decision at the checkpoint (``extraction_method=human``, no resolver URL)
     and tenant-private (``stamp_reuse`` — fail-closed on the reserved ``account.scoring.*`` set).
 
+    ``project_id`` (FI-2 §6.4) is the project whose checkpoint approved this tier. Stamped into
+    ``value_json`` — the claim row has no project column (FI-2 §1.3) — it becomes the *project* leg
+    of the supersede key, so a second project tiering the same account under the same ICP now
+    **coexists** with the first's tier instead of destroying it (the discovery-selection tier path
+    below already pinned; this aligns the M6.4 path). Within one project, successive cutoffs
+    supersede exactly as before. ``None`` is the legacy shape — such a tier is absorbed by the first
+    project that re-tiers the account (see
+    :func:`~clue_research.claimstore.project_supersedable`).
+
     The read/replay/supersede-by-ICP sequence is the shared :func:`write_icp_scoped_claim` protocol
     (the same M6.3's score write uses); this builds only the tier claim's shape + value."""
+    value_json: dict[str, JsonValue] = {
+        "tier": tier,
+        "cutoff_version": cutoff_version,
+        "fit_score": view.fit,
+        "intent_score": view.intent,
+        "non_fit_flag": view.non_fit_flag,
+        "fit_claim_id": str(view.fit_claim_id) if view.fit_claim_id is not None else None,
+        "intent_claim_id": (
+            str(view.intent_claim_id) if view.intent_claim_id is not None else None
+        ),
+        "rubric_version": view.rubric_version,
+        "icp_key": icp_key,
+        "icp_version": icp_version,
+    }
+    if project_id is not None:
+        value_json["project_id"] = project_id
     tier_claim = stamp_reuse(
         account_claim(
             entity_id=view.account_id,
             field_key=TIER_FIELD,
-            value_json={
-                "tier": tier,
-                "cutoff_version": cutoff_version,
-                "fit_score": view.fit,
-                "intent_score": view.intent,
-                "non_fit_flag": view.non_fit_flag,
-                "fit_claim_id": str(view.fit_claim_id) if view.fit_claim_id is not None else None,
-                "intent_claim_id": (
-                    str(view.intent_claim_id) if view.intent_claim_id is not None else None
-                ),
-                "rubric_version": view.rubric_version,
-                "icp_key": icp_key,
-                "icp_version": icp_version,
-            },
+            value_json=value_json,
             source_tier=1,
             extraction_method=ExtractionMethod.HUMAN,
             confidence=1.0,

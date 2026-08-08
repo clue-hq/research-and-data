@@ -125,6 +125,7 @@ from clue_research.claimstore.research_view_routes import (
 from clue_research.claimstore.run_lineage import (
     RUN_LINEAGE_KINDS,
     project_run_ids,
+    project_supersedable,
     record_run_lineage,
     runs_for_project_run,
 )
@@ -230,4 +231,5 @@ __all__ = [
     "record_run_lineage",
     "project_run_ids",
     "runs_for_project_run",
+    "project_supersedable",
 ]
