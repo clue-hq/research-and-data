@@ -4,7 +4,8 @@
 
 Date: 2026-08-08. Branch: `platform/frontend-integration`.
 Parent ruling: FI-1 §9, 2026-08-08 — **D-10 RESOLVED**: `summaryParagraphs` / contact `overviewParagraphs` render an honest empty state until the entity's deep research completes; on completion a genuine synthesis composes prose **claims** from the completed research's claims, reusing M12 machinery where it fits, never fabricated in an adapter.
-Siblings: FI-2 (`docs/specs/FI-2-workspace-account-layer.md`) supplies `run_lineage`, `research_scope`, and the read layer this lane's outputs ride. Lane B owns D-4/CORS/error-envelope; Lane C owns the BFF; this lane must not build read endpoints.
+Siblings: FI-2 (`docs/specs/FI-2-workspace-account-layer.md`) supplies `run_lineage`, `research_scope`, and the read layer this lane's outputs ride; this lane must not build read endpoints.
+Scope boundary: bound by **`docs/specs/FI-lane-demarcation.md` §2.5** — never edits `narrative/positioner.py`/`narrative/fields.py` supersede predicates (FI-2 slice-3 §6.4), `account_entity_research.py`, `current_values`/merge, `frontend_read/**`, or lineage registration; the prose pack lives in its own module, not `narrative/fields.py`; a read-surface field addition is a request to the FI-2 agent, not a Lane E edit.
 
 ---
 

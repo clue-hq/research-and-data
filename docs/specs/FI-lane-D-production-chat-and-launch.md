@@ -5,6 +5,7 @@
 Date: 2026-08-08. Branch: `platform/frontend-integration`.
 Parent rulings: FI-1 §9 — **D-9 RESOLVED Option B** (research launch is a deepagent tool call inside the project conversation, authorized by the user's confirming turn; the production chat surface **S6 enters MVP scope**). Doc A (`clue-hq-platform-agent-runtime.md`) is the binding vocabulary; the harness doc's REQ-18–22 define the agent-workspace surface and the project/thread/tab shell.
 Method: two read-only Opus code studies (2026-08-08: agent-turn substrate + launch authority chain; frontend chat contract). Every baseline fact carries a file:line citation from them.
+Scope boundary: this lane is bound by **`docs/specs/FI-lane-demarcation.md` §2.4** — it never touches `frontend_read/**`, `apps/frontend/src/features/accounts/**`, `api-contracts/accounts.md`, or any FI-2 slice-2/3 file; its frontend territory is `features/projects/**` + `api-contracts/projects.md` only.
 
 ---
 
