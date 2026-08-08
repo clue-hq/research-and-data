@@ -32,6 +32,7 @@ from clue_api.agent_execution_wiring import (
     C5AgentExecutionAdapter,
     _trusted_tool_arguments,
 )
+from clue_api.turn_action import derive_turn_action_ref
 from clue_core import ExecutionId
 from clue_execution import InteractionAppend, InteractionSlotView, PinRequest
 from clue_toolbelt import (
@@ -165,6 +166,7 @@ class _Executor:
         self.allowed = allowed
         self.dynamic_pin_kinds = dynamic_pin_kinds
         self.appended: list[dict[str, Any]] = []
+        self.invoked: list[dict[str, Any]] = []
         self.effect_count = 0
 
     async def inspect_interaction_slot(self, **kwargs: Any) -> InteractionSlotView:
@@ -196,7 +198,8 @@ class _Executor:
         append: InteractionAppend,
         **kwargs: Any,
     ) -> ToolResult:
-        del append, kwargs
+        del append
+        self.invoked.append(kwargs)
         replayed = self.effect_count > 0
         if not replayed:
             self.effect_count += 1
@@ -232,8 +235,12 @@ class _RefusingExecutor(_Executor):
 
 
 class _PinProvider:
+    def __init__(self) -> None:
+        self.contexts: list[ToolContext] = []
+
     async def pins_for(self, step: object, *, ctx: ToolContext) -> tuple[PinRequest, ...]:
-        del step, ctx
+        del step
+        self.contexts.append(ctx)
         return (
             PinRequest(
                 kind="project",
@@ -708,3 +715,37 @@ def test_authority_the_constitution_does_not_carry_is_not_synthesized() -> None:
     )
 
     assert merged == {"query": "x"}
+
+
+def test_every_agent_tool_context_carries_the_turns_actor_and_derived_receipt() -> None:
+    """Lane D D1 §3-P2: ambient identity is derived from the bound turn, at both C5 seams.
+
+    ``actor_id`` comes from the trusted constitution and ``action_ref`` from this turn's canonical
+    ``turn-action:<turn_id>``; neither is a plan argument, a model-visible field, or a caller
+    parameter. Deriving the ref here (rather than accepting one) is what makes a human gate's
+    receipt un-forgeable: the only ref that can reach a tool is the one for the turn actually
+    executing.
+    """
+
+    pins = _PinProvider()
+    adapter, trusted, pin, executor, _ = _adapter(
+        allowed=("read_project@1",),
+        pin_provider=pins,
+        dynamic_pin_kinds=("project",),
+    )
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+    assert progress[-1].status == "completed"
+
+    expected_ref = derive_turn_action_ref(UUID("00000000-0000-0000-0000-000000000645"))
+    assert executor.invoked == [
+        {
+            "inputs": {"query": "current project"},
+            "actor": "agent",
+            "actor_id": trusted.actor_id,
+            "action_ref": expected_ref,
+        }
+    ]
+    assert [(ctx.actor_id, ctx.action_ref) for ctx in pins.contexts] == [
+        (trusted.actor_id, expected_ref)
+    ]

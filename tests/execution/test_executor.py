@@ -119,11 +119,16 @@ class _CertifiedEcho(Tool):
     def __init__(self) -> None:
         self.calls = 0
         self.values: list[int] = []
+        # The ambient invocation identity each call actually saw (Lane D D1): a human gate reads
+        # exactly these two values, so a test that only checks the executor's arguments proves
+        # nothing about what a tool body receives.
+        self.identities: list[tuple[str | None, str | None]] = []
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, _Input)
         self.calls += 1
         self.values.append(inputs.value)
+        self.identities.append((ctx.actor_id, ctx.action_ref))
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -1157,5 +1162,80 @@ def test_tightened_runtime_envelope_blocks_future_map_expansion() -> None:
                     {"id": execution_id},
                 )
             ).scalar_one() == 0
+
+    run_async(scenario())
+
+
+def test_ambient_invocation_identity_reaches_the_tool_or_stays_absent() -> None:
+    """Lane D D1 §3-P2: the drive threads the acting principal and the human action receipt.
+
+    Both values arrive as *data* on the call that knows the turn — never a global, never a tool
+    argument. A drive that belongs to no turn passes neither, and the tool sees ``None`` on both:
+    an absent receipt refuses a human gate, while an invented one would forge consent.
+    """
+
+    action_ref = "turn-action:00000000-0000-4000-8000-0000000000d1"
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            execution_id, executor, tool, generation = await _runtime(conn)
+            result = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+                actor_id="usr_lane_d1_principal",
+                action_ref=action_ref,
+            )
+            assert result.status is ExecutionStatus.COMPLETED
+            assert tool.identities == [("usr_lane_d1_principal", action_ref)]
+
+            unattributed_id, unattributed, off_turn_tool, unattributed_generation = await _runtime(
+                conn
+            )
+            assert (
+                await unattributed.execute(
+                    unattributed_id,
+                    worker_id="worker",
+                    lease_generation=unattributed_generation,
+                )
+            ).status is ExecutionStatus.COMPLETED
+            assert off_turn_tool.identities == [(None, None)]
+
+    run_async(scenario())
+
+
+def test_an_interaction_child_carries_the_turns_identity_into_its_tool_context() -> None:
+    """The agent seam's path: a governed tool appended by a plan runs under that turn's receipt."""
+
+    action_ref = "turn-action:00000000-0000-4000-8000-0000000000d2"
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            execution_id, executor, tool, generation = await _runtime(conn, interaction=True)
+            opened = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+            )
+            assert opened.status is ExecutionStatus.AWAITING_INPUT
+
+            appended = await executor.append_interaction_tool(
+                execution_id=execution_id,
+                workspace_id="ws-c5-executor",
+                slot_key="interactions",
+                node_key="answer-001",
+                tool_name=tool.name,
+                tool_version=tool.version,
+                inputs={"value": 17},
+                actor="human",
+            )
+            await executor.invoke_interaction_tool(
+                appended,
+                inputs={"value": 17},
+                actor="human",
+                actor_id="usr_lane_d1_principal",
+                action_ref=action_ref,
+            )
+            assert tool.identities == [("usr_lane_d1_principal", action_ref)]
 
     run_async(scenario())
