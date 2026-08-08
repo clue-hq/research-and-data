@@ -20,9 +20,11 @@ The fixture is the spec §10 canonical shape narrowed to one account: workspace 
   exemption classes (redaction/tombstone runs, pre-FI-2 historical rows).
 
 What is asserted: each project's lens returns exactly its own relative claim and never the other's;
-the NULL-project and unregistered claims are in **neither** lens (not silently attributed to one);
-a redaction-shaped tombstone written on a fresh, deliberately unregistered run reaches no lens and
-never wins the merge; and the canonical merge keeps serving the neutral claims regardless of lens —
+the narrower per-execution lens (:func:`~clue_research.claimstore.runs_for_project_run`) splits two
+runs of the same project where the project lens holds both; the NULL-project and unregistered
+claims are in **neither** lens (not silently attributed to one); a tombstone built by the shipped
+DSAR primitive on a fresh, deliberately unregistered run reaches no lens and leaves the field
+reading as absent; and the canonical merge keeps serving the neutral claims regardless of lens —
 with the neutral/relative split *derived* from the registry via
 :func:`~clue_core.resolve_research_scope`, never hardcoded here, so a §5.2 re-ratification moves
 this test with it instead of leaving it asserting a stale species table.
@@ -33,6 +35,7 @@ inside the rolled-back claim-store transaction.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 
 import pytest
@@ -44,27 +47,34 @@ from clue_core import (
     Confidence,
     EntityId,
     ExtractionMethod,
+    ProjectRunId,
     ResearchMode,
     ResearchScope,
     ReuseScope,
     RunId,
-    VerificationStatus,
     account_claim,
+    new_project_run_id,
     new_run_id,
     resolve_research_scope,
 )
 from clue_research.claimstore import (
     WorkspaceScope,
+    claims_by_ids,
     current_value,
     current_values,
     get_field,
     insert_claim,
     project_run_ids,
     record_run_lineage,
+    runs_for_project_run,
     supersede_claim,
 )
+
+# The redaction doctrine is asserted against the **shipped** DSAR primitive, never a copy of its
+# shape: a test that hand-rolls the tombstone can drift from the erasure path it claims to pin.
+from clue_research.compliance.dsar import build_tombstone
 from clue_research.identity import insert_account_entity
-from tests._workspace import seed_project, seed_workspace
+from tests._workspace import seed_project, seed_run, seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -77,6 +87,11 @@ _WS = "ws-lens-isolation"
 _RELATIVE_FIELD = "account.scoring.fit"
 _NEUTRAL_FIELD = "account.recent_funding"
 _NEUTRAL_WORKSPACE_FIELD = "core.employee_count"
+
+# The neutral fact project A's run paid for. Named because the species test asserts this exact
+# value comes back when reading the account through project B's lens — "serves in every lens
+# regardless of which project paid" is only meaningful if the *value* is the one A produced.
+_NEUTRAL_VALUE_FROM_A = {"amount_usd": 25_000_000, "round": "series_b"}
 
 
 # --- the predicate under test ----------------------------------------------------------------
@@ -229,7 +244,7 @@ async def _seed(conn: AsyncConnection) -> _Fixture:
             conn,
             account=account,
             field_key=_NEUTRAL_FIELD,
-            value={"amount_usd": 25_000_000, "round": "series_b"},
+            value=dict(_NEUTRAL_VALUE_FROM_A),
             run_id=run_a,
             private=False,
         ),
@@ -356,17 +371,14 @@ def test_a_redaction_run_reaches_no_lens_and_never_wins_the_merge() -> None:
         async with rollback_conn() as conn:
             fx = await _seed(conn)
             redaction_run = new_run_id()  # never registered — that is the doctrine
-            tombstone = account_claim(
-                entity_id=fx.account,
-                field_key=_NEUTRAL_FIELD,
-                value_json={"__erased__": True},
-                source_tier=1,
-                extraction_method=ExtractionMethod.HUMAN,
-                confidence=Confidence(0.0),
-                run_id=redaction_run,
-                research_mode=ResearchMode.ACCOUNT_PROFILING,
-                evidence_span="redacted",
-            ).model_copy(update={"verification_status": VerificationStatus.REJECTED})
+            # The tombstone is the **shipped** DSAR primitive, not a copy of its shape: if the
+            # erasure path's claim ever changes, this doctrine test moves with it.
+            target = (
+                await claims_by_ids(
+                    conn, [fx.neutral_on_project_run], scope=WorkspaceScope.for_workspace(_WS)
+                )
+            )[fx.neutral_on_project_run]
+            tombstone = build_tombstone(target, run_id=redaction_run)
             tombstone_id = await supersede_claim(
                 conn, fx.neutral_on_project_run, tombstone, validate_field=False
             )
@@ -375,14 +387,74 @@ def test_a_redaction_run_reaches_no_lens_and_never_wins_the_merge() -> None:
                 assert tombstone_id not in await _lens(
                     conn, entity_id=fx.account, project_id=project_id
                 )
-            # And it is merge-excluded, so the redacted value cannot be served as current truth.
+            # And it is merge-excluded. The outcome is deterministic, not merely "not the redacted
+            # value": the tombstone superseded the only live claim on that field and is itself
+            # REJECTED, so the current truth is *nothing* — an erased fact reads as absent.
             merged = await current_value(
                 conn,
                 fx.account,
                 _NEUTRAL_FIELD,
                 scope=WorkspaceScope.for_workspace(_WS),
             )
-            assert merged is None or merged.value_json != {"__erased__": True}
+            assert merged is None
+
+    run_async(_run())
+
+
+def test_the_run_level_lens_splits_where_the_project_level_lens_does_not() -> None:
+    """``runs_for_project_run`` is the narrower lens: one *execution* of a project, not the project.
+
+    Two runs of project A, each writing its own relative claim: the project lens holds both (they
+    are both A's work), while each project-run lens holds only its own — the isolation a
+    ``context_scope='project_run_pinned'`` read depends on.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            fx = await _seed(conn)
+            claims: dict[uuid.UUID, ClaimId] = {}
+            for icp_version in (1, 2):
+                project_run_id = uuid.UUID(str(new_project_run_id()))
+                await seed_run(
+                    conn,
+                    project_run_id=ProjectRunId(project_run_id),
+                    workspace_id=_WS,
+                    project_id=fx.project_a,
+                    icp_version=icp_version,
+                )
+                run_id = new_run_id()
+                await record_run_lineage(
+                    conn,
+                    run_id=run_id,
+                    workspace_id=_WS,
+                    kind="scoring",
+                    project_id=fx.project_a,
+                    project_run_id=project_run_id,
+                )
+                claims[project_run_id] = await _write_claim(
+                    conn,
+                    account=fx.account,
+                    field_key=_RELATIVE_FIELD,
+                    value={
+                        "value": 0.4 + icp_version / 10,
+                        "components": [],
+                        "icp_key": "icp-a",
+                        "icp_version": icp_version,
+                    },
+                    run_id=run_id,
+                    private=True,
+                )
+
+            project_lens = await _lens(conn, entity_id=fx.account, project_id=fx.project_a)
+            assert set(claims.values()) <= project_lens  # both executions are A's work
+            for project_run_id, claim_id in claims.items():
+                run_ids = await runs_for_project_run(
+                    conn, workspace_id=_WS, project_run_id=project_run_id
+                )
+                rows = await conn.execute(
+                    _LENS_IN_LIST, {"entity_id": fx.account, "run_ids": list(run_ids)}
+                )
+                assert {ClaimId(row) for row in rows.scalars()} == {claim_id}
 
     run_async(_run())
 
@@ -429,6 +501,13 @@ def test_the_canonical_merge_serves_neutral_fields_in_every_lens() -> None:
             )
             # Every neutral field answers — the merge is lens-blind, and that is correct for them.
             assert {field_key for (_, field_key) in merged} == neutral
+
+            # And the *value* served is the one project A's run produced, even though this read is
+            # the account seen through B: neutral facts are workspace truth, not A's property.
+            assert fx.neutral_on_project_run not in await _lens(
+                conn, entity_id=fx.account, project_id=fx.project_b
+            )
+            assert merged[(fx.account, _NEUTRAL_FIELD)].value_json == _NEUTRAL_VALUE_FROM_A
 
     run_async(_run())
 
