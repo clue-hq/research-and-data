@@ -114,7 +114,21 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # The two proposal v1 addresses remain installed only for historical recipe replay. They add
     # inventory entries but cannot enter the current model surface; only propose_field@2 carries
     # the dynamic Client-KB authority.
-    assert len(by_address) == 55
+    #
+    # FI Lane D D0 added four more inventory-only entries — the REQ-21 thread tools. They are
+    # disclosed and refused for exactly the reason every other ungranted tool is: the inventory is
+    # honest about what the platform can do and what *this role* may not, and a capability the
+    # model can see it lacks is what stops it inventing a workaround. Withholding them through a
+    # surface policy is not an option either — a policy may only narrow tools the role's profile
+    # pins, and no profile pins these.
+    assert len(by_address) == 59
+    for address in (
+        "create_thread@1",
+        "rename_thread@1",
+        "set_thread_pinned@1",
+        "archive_thread@1",
+    ):
+        assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {

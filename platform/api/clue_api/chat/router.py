@@ -30,6 +30,7 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import ValidationError
@@ -73,7 +74,9 @@ log = get_logger("clue_api.chat")
 __all__ = [
     "CHAT_PREFIX",
     "REQUEST_ID_HEADER",
+    "bind_principal_resolver",
     "build_chat_router",
+    "chat_principal_resolver",
     "chat_workspace_resolver",
     "install_chat_surface",
 ]
@@ -112,6 +115,49 @@ def chat_workspace_resolver(
 WorkspaceDep = Annotated[str, Depends(chat_workspace_resolver)]
 
 
+def chat_principal_resolver(workspace_id: WorkspaceDep) -> RequestPrincipal:
+    """The principal seam — **module-level on purpose**, and deny-by-default.
+
+    Module-level because FastAPI resolves this file's stringified annotations against module
+    globals: a closure-local ``Annotated`` alias is silently mistaken for a query parameter (the
+    same trap ``projections_app`` documents at its own dependency aliases). Deny-by-default because
+    an unconfigured surface must refuse rather than invent an identity; :func:`install_chat_surface`
+    replaces it via ``dependency_overrides`` with either Lane B's authorizer or — under the
+    local/test guard only — the development resolver.
+    """
+
+    del workspace_id
+    raise _refuse(
+        status_code=401,
+        code="AUTHENTICATION_REQUIRED",
+        message="the chat surface has no principal resolver installed",
+    )
+
+
+PrincipalDep = Annotated[RequestPrincipal, Depends(chat_principal_resolver)]
+
+
+def bind_principal_resolver(resolver: PrincipalResolver) -> Callable[..., RequestPrincipal]:
+    """Adapt an injected resolver into the FastAPI dependency the routes declare.
+
+    The workspace re-check is structural rather than trusting: an authorizer that answered about a
+    *different* workspace than the request selected must never have its answer applied here
+    (Lane B ruling 6 — selection is not authority).
+    """
+
+    def resolve(workspace_id: WorkspaceDep) -> RequestPrincipal:
+        principal = resolver(workspace_id)
+        if principal.workspace_id != workspace_id:
+            raise _refuse(
+                status_code=403,
+                code="WORKSPACE_FORBIDDEN",
+                message="the authorized workspace differs from the requested workspace",
+            )
+        return principal
+
+    return resolve
+
+
 def _request_id(request: Request) -> str:
     existing = getattr(request.state, "request_id", None)
     if isinstance(existing, str):
@@ -130,7 +176,7 @@ def _envelope(request: Request, *, status_code: int, code: str, message: str) ->
     )
 
 
-def _validation_message(exc: ValidationError) -> str:
+def _validation_message(exc: ValidationError | RequestValidationError) -> str:
     """A compact, non-leaking summary: locations and reasons, never submitted values."""
 
     parts: list[str] = []
@@ -168,7 +214,10 @@ class _EnvelopeRoute(APIRoute):
                     else (str(detail) if isinstance(detail, str) else code.lower())
                 )
                 return _envelope(request, status_code=exc.status_code, code=code, message=message)
-            except ValidationError as exc:
+            except (RequestValidationError, ValidationError) as exc:
+                # ``RequestValidationError`` is the request-body/query failure (an unknown field,
+                # a bad type); the pydantic one is a response-model failure. Both are 422 with a
+                # location-and-reason summary that never echoes the submitted value back.
                 return _envelope(
                     request,
                     status_code=422,
@@ -215,27 +264,17 @@ def build_chat_router(
     settings: Settings,
     conn_factory: ConnFactory,
     tool_invoker: ToolInvoker,
-    principal_resolver: PrincipalResolver,
 ) -> APIRouter:
-    """Build the workspace-scoped chat router. Empty unless ``settings.chat_enabled``."""
+    """Build the workspace-scoped chat router. Empty unless ``settings.chat_enabled``.
+
+    The principal arrives through the module-level :func:`chat_principal_resolver` dependency,
+    which :func:`install_chat_surface` overrides — so a router built without one refuses every
+    request 401 rather than serving anybody.
+    """
 
     router = APIRouter(prefix=CHAT_PREFIX, tags=["chat"], route_class=_EnvelopeRoute)
     if not settings.chat_enabled:
         return router
-
-    def principal(workspace_id: WorkspaceDep) -> RequestPrincipal:
-        resolved = principal_resolver(workspace_id)
-        if resolved.workspace_id != workspace_id:
-            # Structural: a resolver that authorized a different workspace than the request
-            # selected must never have its answer applied to this request.
-            raise _refuse(
-                status_code=403,
-                code="WORKSPACE_FORBIDDEN",
-                message="the authorized workspace differs from the requested workspace",
-            )
-        return resolved
-
-    PrincipalDep = Annotated[RequestPrincipal, Depends(principal)]
 
     def _require(who: RequestPrincipal, permission: str) -> None:
         if not who.allows(permission):
@@ -427,11 +466,11 @@ def install_chat_surface(
         if principal_resolver is not None
         else build_dev_principal_resolver(settings)
     )
+    app.dependency_overrides[chat_principal_resolver] = bind_principal_resolver(resolver)
     app.include_router(
         build_chat_router(
             settings=settings,
             conn_factory=conn_factory,
             tool_invoker=tool_invoker,
-            principal_resolver=resolver,
         )
     )
