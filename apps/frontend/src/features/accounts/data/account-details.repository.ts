@@ -28,7 +28,9 @@ export const fixtureAccountDetailsRepository: AccountDetailsRepository = {
 export function createHttpAccountDetailsRepository(): AccountDetailsRepository {
   return {
     async get(accountId) {
-      const body = await fetchRead(`/accounts/${encodeURIComponent(accountId)}`);
+      const body = await fetchRead(`/accounts/${encodeURIComponent(accountId)}`, {
+        recordNotFoundAllowed: true,
+      });
       return body === null ? null : AccountDetailSchema.parse(body);
     },
   };

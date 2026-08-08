@@ -54,11 +54,19 @@ export function createHttpProjectWorkspaceRepository(
   };
 }
 
+/**
+ * Pinned to fixtures until phase 2.
+ *
+ * The HTTP adapter above calls `api/v1/home` and `api/v1/projects/*`, which no
+ * backend serves yet — slice 1 ships the accounts read layer only. It used to
+ * flip on `CLUE_API_BASE_URL`, the same variable the accounts flow read, so
+ * pointing the app at a real backend to see accounts also threw the home route
+ * on the first non-2xx. The accounts flow now owns
+ * `CLUE_ACCOUNTS_API_BASE_URL`, and this one stays on fixtures until the
+ * project surface exists and gets its own variable.
+ */
 function getRepository() {
-  const apiBaseUrl = process.env.CLUE_API_BASE_URL;
-  return apiBaseUrl
-    ? createHttpProjectWorkspaceRepository(apiBaseUrl)
-    : fixtureProjectWorkspaceRepository;
+  return fixtureProjectWorkspaceRepository;
 }
 
 export function getProjectHome() {

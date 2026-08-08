@@ -10,7 +10,6 @@ export function useAccountContactsController(
   contacts: AccountContactSummary[],
 ) {
   const [search, setSearch] = useState("");
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
   const [density, setDensity] =
     useState<AccountTableDensity>("spacious");
@@ -73,12 +72,9 @@ export function useAccountContactsController(
 
   return [
     {
-      closePreview: () => setPreviewOpen(false),
       columnWidths,
       density,
       displayOpen,
-      openPreview: () => setPreviewOpen(true),
-      previewOpen,
       resetColumnWidth,
       search,
       setDensity,

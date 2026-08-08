@@ -11,5 +11,5 @@ export const dynamic = "force-dynamic";
 export default async function AccountsPage() {
   const response = await getAccounts();
 
-  return <AccountsScreen accounts={response.data} />;
+  return <AccountsScreen accounts={response.data} meta={response.meta} />;
 }

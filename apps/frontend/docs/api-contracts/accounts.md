@@ -787,7 +787,16 @@ implicit.
    sentence-cased through a generic prettifier with no lookup table to drift.
    `researchStatus`, `persona` and `freshness` — closed backend enums — are the
    only `z.enum`s on this surface, plus `not_launchable`, ratified forward.
-3. **Tenancy is a build-time env for MVP: `CLUE_WORKSPACE_ID`.** Every
+3. **The accounts flow owns its own base-URL variable,
+   `CLUE_ACCOUNTS_API_BASE_URL`.** It is deliberately not the app-wide
+   `CLUE_API_BASE_URL`: the projects repositories key off that one and call
+   `api/v1/home` and `api/v1/projects/*`, which slice 1 serves nothing for and
+   which throw on any non-2xx, so a single shared switch would flip the accounts
+   flow live and break the home and project routes in the same breath. The
+   projects repositories are pinned to fixtures until phase 2 gives them a
+   backend surface, and each flow gets its own switch when it gets its own
+   backend.
+4. **Tenancy is a build-time env for MVP: `CLUE_WORKSPACE_ID`.** Every
    `/frontend/v1` data request carries `X-Workspace-Id`, and the frontend has no
    session or tenant surface yet. The transport module reads the workspace from
    the environment and throws at the seam when `CLUE_API_BASE_URL` is set
@@ -795,23 +804,42 @@ implicit.
    layer exists, `data/frontend-api.ts::workspaceId` is the single function that
    changes. Both variables are server-only — never `NEXT_PUBLIC_*`, because the
    workspace *is* the tenancy boundary.
-4. **`error.code` is carried, never switched on.** A failed read raises
+5. **`error.code` is carried, never switched on — and a `404` is not
+   automatically an empty workspace.** A failed read raises
    `ClueApiError { code, status, requestId }` with `code` typed as a plain
-   string; `404` resolves to `null` instead of raising, so "unknown account" and
-   "read surface flag-gated off" both render an empty screen rather than an
-   error. Errors are parsed leniently: a non-envelope body (a proxy error page)
-   degrades to a status-only message.
-5. **No workspace endpoint exists, so the Insights / Artifacts / Activity tabs
+   string. A `404` resolves to `null` only when the envelope names a
+   record-level code — `ACCOUNT_NOT_FOUND` or `CONTACT_NOT_FOUND` — on an
+   endpoint that has one. Every other `404` throws: a wrong base URL, a wrong
+   prefix, or the read flag being off all produce the framework's generic
+   `NOT_FOUND`, and rendering those as "this workspace has no accounts" hides a
+   misconfiguration behind a plausible empty state. The list endpoint has no
+   domain `404` by contract (an unknown project is an empty page), so a `404`
+   there always throws. Errors are parsed leniently: a non-envelope body (a
+   proxy error page) degrades to a status-only message that names the three
+   things worth checking.
+6. **The list is paginated, visibly.** The table renders one keyset page and a
+   "Showing X loaded of Y accounts" footer with a Load-more control that appends
+   through `meta.nextCursor` (a server action, so the workspace header and base
+   URL never reach the browser). The authored filters and search run over the
+   rows already loaded, and the footer says so when a filter is active —
+   truncation is stated, not silent.
+7. **Every contacts row links to its own contact route.** The row's name cell is
+   the link and the route param drives which profile is fetched, so rows 2..n
+   are not dead clicks. The gated preview drawer — which could only ever open
+   for one hard-coded contact — was removed rather than left as an affordance
+   that works on one row.
+8. **No workspace endpoint exists, so the Insights / Artifacts / Activity tabs
    stay on fixtures.** Slice 1 serves no activity feed or artifact index, and
    account insights arrive on the detail's `projectSections[].insights` instead.
    `account-workspace.repository.ts` is therefore fixture-only and resolves an
    uncovered account to an *empty* workspace rather than `null` — with a live
    backend the account plainly exists, so 404-ing one of its tabs would be a
-   lie. It grows an HTTP adapter when that endpoint is specified.
+   lie. Each tab renders an explicit "not served yet" empty state instead of a
+   blank page. It grows an HTTP adapter when that endpoint is specified.
 
 **Dev setup (CORS / proxy).** The preferred and default path is the Next.js
 rewrite, which matches the production same-origin posture: with
-`CLUE_API_BASE_URL` set, `next.config.ts` forwards `/frontend/v1/:path*` from
+`CLUE_ACCOUNTS_API_BASE_URL` set, `next.config.ts` forwards `/frontend/v1/:path*` from
 the frontend origin to the backend, so a browser-side caller makes no
 cross-origin request and needs no CORS grant at all. It is a transport
 passthrough — `X-Workspace-Id` is added by the repositories (which run
@@ -826,8 +854,8 @@ structurally, because Starlette echoes the origin when a wildcard is combined
 with credentials, which under trusted-header tenancy is a cross-tenant
 exposure.
 
-**Fixture mode is unchanged and still the default.** With `CLUE_API_BASE_URL`
-unset every screen renders from `src/features/accounts/data/*.fixture.ts`,
+**Fixture mode is unchanged and still the default.** With
+`CLUE_ACCOUNTS_API_BASE_URL` unset every screen renders from `src/features/accounts/data/*.fixture.ts`,
 which were regenerated to the wire shapes above — including the states a live
 workspace produces and a fixture set is normally too tidy to have: an account
 scored by two projects under different ICPs, a membership whose project has no
@@ -849,6 +877,26 @@ laid out generically off `fieldKey` through a key→label prettifier, so an
 industry pack's custom field appears with no schema change and no adapter
 change. `logoUrl` is bound but always null, and the existing initials mark is
 the rendering until `core.company_logo_url` exists.
+
+**Verified live, 2026-08-08.** A throwaway database was migrated to head, seeded
+with the canonical slice-1 workspace (the same fixture
+`tests/integration/test_fi2_slice1_read_layer.py` builds: two projects, three
+accounts, a governed committee, mixed statuses), and served by the real app with
+`CLUE_FRONTEND_READ_ENABLED=true`; the frontend ran against it through
+`next dev`. All four endpoints returned payloads the schemas parsed unchanged,
+both directly and through the same-origin rewrite. The screens rendered live:
+two ICP versions inside one project section, a fit-without-intent score shown as
+`Intent —`, the unattributed bucket labelled as such, a withheld title rendering
+`Withheld` beside a real one, `1 signal type`, and the null-heavy
+membership-less row showing five honest absences. The full error matrix behaved
+as specified — `ACCOUNT_NOT_FOUND` (404) resolved to the not-found page while a
+wrong base URL produced a loud `500` naming the base, the mount and the flag;
+`UNAUTHORIZED` (401), `INVALID_CURSOR` (400) and `VALIDATION_ERROR` (422) all
+returned the documented envelope. CORS answered the exact listed dev origin and
+refused an unlisted one. One live finding is recorded for whoever runs
+`next dev` next: Next.js blocks cross-origin dev resources, so browse the dev
+server on the SAME host string it prints (`localhost`), not `127.0.0.1`, or
+server actions are refused.
 
 **Prose renders an honest empty state (D-10).** The account summary, the
 business description and the contact overview have no wire field; each shows

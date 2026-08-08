@@ -33,13 +33,11 @@ export function ContactRow({
   contact,
   density,
   gridTemplateColumns,
-  onPreview,
 }: {
   accountId: string;
   contact: AccountContactSummary;
   density: AccountTableDensity;
   gridTemplateColumns: string;
-  onPreview: () => void;
 }) {
   const confidence = formatConfidence(contact.roleOnCommittee.confidence);
 
@@ -56,10 +54,12 @@ export function ContactRow({
           type="checkbox"
         />
       </div>
-      <button
+      {/* Every row opens its own contact page. The route is what drives which
+          profile is fetched, so the affordance is real on row 1 and row n
+          alike — it used to be a button wired to a single featured contact. */}
+      <Link
         className="sticky left-14 z-20 flex min-w-0 items-center gap-2 overflow-hidden border-r-[0.5px] border-[var(--clue-border-table)] bg-white px-4 text-left outline-none group-hover:bg-[var(--clue-background-page)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#cdd5c4]"
-        onClick={onPreview}
-        type="button"
+        href={`/accounts/${accountId}/contacts/${contact.id}`}
       >
         <ContactAvatar name={contact.name} size={24} />
         <span className={`${readability.uiMedium} truncate`}>
@@ -68,7 +68,7 @@ export function ContactRow({
         <span className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
           <DesignIcon name="arrow-up-right" size={12} />
         </span>
-      </button>
+      </Link>
       <div className="flex items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4">
         {/* A withheld title is absent WITH a marker; a title we simply do not
             hold is absent and unmarked. The wire says which. */}
@@ -131,12 +131,6 @@ export function ContactRow({
           <Absent label="No LinkedIn profile" />
         )}
       </div>
-      <Link
-        className="sr-only"
-        href={`/accounts/${accountId}/contacts/${contact.id}`}
-      >
-        Open {contact.name ?? "contact"}
-      </Link>
     </div>
   );
 }

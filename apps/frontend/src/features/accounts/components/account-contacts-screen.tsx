@@ -6,13 +6,9 @@ import {
   AccountDetailsRail,
   AccountWorkspaceShell,
 } from "./account-workspace-shell";
-import { ContactPreview } from "../contacts/components/contact-preview";
 import { ContactRow } from "../contacts/components/contact-row";
 import { useAccountContactsController } from "../contacts/hooks/use-account-contacts-controller";
-import type {
-  AccountContactDetail,
-  AccountContactSummary,
-} from "../model/account-contact";
+import type { AccountContactSummary } from "../model/account-contact";
 import type { AccountDetail } from "../model/account-detail";
 import readability from "./account-readability.module.css";
 import { TableDensitySelector } from "./table-density-selector";
@@ -62,16 +58,9 @@ function contactTableMinWidth(columnWidths: ContactColumnWidths) {
 export function AccountContactsScreen({
   account,
   contacts,
-  featuredContact,
 }: {
   account: AccountDetail;
   contacts: AccountContactSummary[];
-  /**
-   * The profile shown in the preview drawer. Null whenever the account has no
-   * resolved committee — an empty committee is a legitimate `200`, so the
-   * screen renders its empty state instead of 404-ing the whole page.
-   */
-  featuredContact: AccountContactDetail | null;
 }) {
   const [controller, displayControlsRef] =
     useAccountContactsController(contacts);
@@ -189,10 +178,6 @@ export function AccountContactsScreen({
                       controller.columnWidths,
                     )}
                     key={contact.id}
-                    onPreview={() =>
-                      contact.id === featuredContact?.id &&
-                      controller.openPreview()
-                    }
                   />
                 ))
               ) : (
@@ -216,13 +201,6 @@ export function AccountContactsScreen({
           </section>
         </AccountDetailsRail>
       </div>
-      {controller.previewOpen && featuredContact ? (
-        <ContactPreview
-          accountId={account.id}
-          contact={featuredContact}
-          onClose={controller.closePreview}
-        />
-      ) : null}
     </AccountWorkspaceShell>
   );
 }

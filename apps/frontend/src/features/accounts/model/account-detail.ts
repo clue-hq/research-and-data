@@ -96,7 +96,9 @@ export const AccountDetailSchema = z.object({
   name: z.string(),
   domain: z.string().nullable().default(null),
   aliases: z.array(z.string()).default([]),
-  registryIds: z.record(z.string(), z.string()).default({}),
+  // Opaque backend payload like the other pass-through blobs: the values are
+  // whatever the identity writer recorded, so they are not narrowed to strings.
+  registryIds: z.record(z.string(), JsonValueSchema).default({}),
   hqGeo: z.record(z.string(), JsonValueSchema).nullable().default(null),
   /** Set when a merged loser's id was requested and this survivor was served. */
   redirectedFrom: z.string().nullable().default(null),

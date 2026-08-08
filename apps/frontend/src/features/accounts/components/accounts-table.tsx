@@ -150,17 +150,17 @@ function ResearchStatusCell({ account }: { account: Account }) {
 
   const byStatus = new Map<string, string[]>();
   for (const entry of account.researchStatus) {
-    const projectName =
-      account.projects.find(
-        (project) => project.projectId === entry.projectId,
-      )?.name ?? null;
-    const existing = byStatus.get(entry.status) ?? [];
-    // A status can name a project this account is no longer a member of; the
-    // wire reports it, so the chip counts it without claiming a project name.
-    byStatus.set(
-      entry.status,
-      projectName ? [...existing, projectName] : existing,
+    const membership = account.projects.find(
+      (project) => project.projectId === entry.projectId,
     );
+    // A status entry can name a project this account has no membership row
+    // for — research was launched for a project that no longer targets it. The
+    // wire reports that rather than hiding it, so the tooltip says exactly
+    // that instead of implying the status covers every project.
+    const label = membership
+      ? membership.name ?? "Unnamed project"
+      : "A project that no longer targets this account";
+    byStatus.set(entry.status, [...(byStatus.get(entry.status) ?? []), label]);
   }
 
   return (
@@ -169,9 +169,7 @@ function ResearchStatusCell({ account }: { account: Account }) {
         <span
           className={`${readability.pillMedium} flex h-6 w-fit shrink-0 items-center gap-2 rounded-xl bg-[var(--clue-background-pressed)] px-2 shadow-[var(--clue-shadow-low)]`}
           key={status}
-          title={
-            projectNames.length ? projectNames.join(", ") : "Across all projects"
-          }
+          title={projectNames.join(", ")}
         >
           {status === "in_progress" ? (
             <DesignIcon name="spinner" size={12} />

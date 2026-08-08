@@ -1,17 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getAccountPreviewRows, getAccounts } from "./accounts.repository";
+import { getAccounts } from "./accounts.repository";
 
-test("account preview reuses the same rows as the accounts table", async () => {
-  const [accountsResponse, previewRows] = await Promise.all([
-    getAccounts(),
-    getAccountPreviewRows(),
-  ]);
+test("the list reports the whole filtered set, not just the page it returned", async () => {
+  const page = await getAccounts({ limit: 3 });
 
-  assert.deepEqual(
-    previewRows.map(({ id, name }) => ({ id, name })),
-    accountsResponse.data.map(({ id, name }) => ({ id, name })),
-  );
+  assert.equal(page.data.length, 3);
+  // `meta.total` counts every matching account, which is what the footer
+  // renders next to the loaded count.
+  assert.ok(page.meta.total > page.data.length);
 });
 
 test("projectId filters by membership, and rows keep their full projects array", async () => {

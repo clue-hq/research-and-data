@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { deniseDresserFixture } from "./account-contacts.fixture";
 import {
   getAccountContact,
   getAccountContacts,
@@ -68,8 +69,14 @@ test("the contact profile carries governed facts and URL-free evidence", async (
   // A withheld fact carries no value and no provenance — only the marker.
   assert.equal(withheld.value, null);
   assert.equal(withheld.provider, null);
-  for (const evidence of contact.evidence) {
-    assert.equal("url" in evidence, false);
+});
+
+test("evidence chips carry provenance only — no URLs on this wire (G4)", () => {
+  // Asserted against the raw fixture, not the parsed object: a parsed value
+  // has already dropped unknown keys, so `"url" in evidence` on it would pass
+  // even if the fixture (and a backend payload shaped like it) carried one.
+  for (const evidence of deniseDresserFixture.evidence) {
+    assert.deepEqual(Object.keys(evidence).sort(), ["observedAt", "provider"]);
   }
 });
 

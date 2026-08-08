@@ -1,21 +1,80 @@
 "use client";
 
 import { ApplicationShell } from "@/components/shell/application-shell";
-import type { Account } from "../model/account";
+import type { Account, AccountsResponse } from "../model/account";
 import type { AccountDetail } from "../model/account-detail";
 import { useAccountsScreenController } from "../hooks/use-accounts-screen-controller";
+import readability from "./account-readability.module.css";
 import { AccountPreviewDrawer } from "./account-preview-drawer";
 import { AccountsTable } from "./accounts-table";
 import { AccountsToolbar } from "./accounts-toolbar";
 
+/**
+ * The loaded-vs-total footer.
+ *
+ * The table holds one keyset page until more is asked for, and the authored
+ * filters and search run over the rows it holds — so a filtered count is a
+ * count of *loaded* rows, never of the workspace. Saying so is the point: the
+ * truncation has to be visible, not silent.
+ */
+function AccountsFooter({
+  filteredCount,
+  hasMore,
+  isLoadingMore,
+  loadedCount,
+  loadError,
+  onLoadMore,
+  totalCount,
+}: {
+  filteredCount: number;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  loadedCount: number;
+  loadError: string | null;
+  onLoadMore: () => void;
+  totalCount: number;
+}) {
+  const filtered = filteredCount !== loadedCount;
+
+  return (
+    <div
+      className={`${readability.uiRegular} flex shrink-0 flex-wrap items-center gap-3 border-t-[0.5px] border-[var(--clue-border-table)] px-6 py-2.5`}
+    >
+      <span className="text-[var(--clue-content-subtle)]">
+        Showing {filtered ? `${filteredCount} of ` : ""}
+        {loadedCount} loaded
+        {totalCount > loadedCount ? ` of ${totalCount} accounts` : " accounts"}
+        {filtered ? " · filters apply to loaded rows only" : ""}
+      </span>
+      {hasMore ? (
+        <button
+          className={`${readability.actionMedium} flex h-7 items-center rounded-md border-[0.5px] border-[var(--clue-border-neutral)] px-2.5 hover:bg-[var(--clue-background-hover)] disabled:opacity-60`}
+          disabled={isLoadingMore}
+          onClick={onLoadMore}
+          type="button"
+        >
+          {isLoadingMore ? "Loading…" : "Load more"}
+        </button>
+      ) : null}
+      {loadError ? (
+        <span role="alert" className="text-[var(--clue-content-subtle)]">
+          {loadError}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export function AccountsScreen({
   accounts,
+  meta,
   previewAccount,
 }: {
   accounts: Account[];
+  meta: AccountsResponse["meta"];
   previewAccount?: AccountDetail;
 }) {
-  const controller = useAccountsScreenController(accounts);
+  const controller = useAccountsScreenController(accounts, meta);
 
   return (
     <ApplicationShell activeHref="/accounts">
@@ -51,6 +110,15 @@ export function AccountsScreen({
             visibleColumns={controller.visibleColumns}
           />
         </div>
+        <AccountsFooter
+          filteredCount={controller.visibleAccounts.length}
+          hasMore={controller.hasMore}
+          isLoadingMore={controller.isLoadingMore}
+          loadedCount={controller.loadedCount}
+          loadError={controller.loadError}
+          onLoadMore={controller.loadMore}
+          totalCount={controller.totalCount}
+        />
       </main>
       {previewAccount ? (
         <AccountPreviewDrawer account={previewAccount} />

@@ -44,8 +44,12 @@ export const fixtureAccountContactsRepository: AccountContactsRepository = {
 export function createHttpAccountContactsRepository(): AccountContactsRepository {
   return {
     async list(accountId) {
+      // The contacts list has no domain 404 either: an account with no
+      // committee is a 200 with an empty list. An unknown account id is the one
+      // record-level case, so it is allowed to resolve to an empty table.
       const body = await fetchRead(
         `/accounts/${encodeURIComponent(accountId)}/contacts`,
+        { recordNotFoundAllowed: true },
       );
       if (body === null) return [];
       return AccountContactsResponseSchema.parse(body).data;
@@ -53,6 +57,7 @@ export function createHttpAccountContactsRepository(): AccountContactsRepository
     async get(accountId, contactId) {
       const body = await fetchRead(
         `/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`,
+        { recordNotFoundAllowed: true },
       );
       // A single resource: the profile object itself, no `data` wrapper.
       return body === null ? null : AccountContactDetailSchema.parse(body);

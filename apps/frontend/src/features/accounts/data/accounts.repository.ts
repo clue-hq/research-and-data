@@ -1,6 +1,5 @@
 import {
   AccountsResponseSchema,
-  type Account,
   type AccountsResponse,
 } from "../model/account";
 import { accountFixtures } from "./accounts.fixture";
@@ -53,14 +52,18 @@ export const fixtureAccountsRepository: AccountsRepository = {
 export function createHttpAccountsRepository(): AccountsRepository {
   return {
     async list(query = {}) {
+      // No `recordNotFoundAllowed`: this endpoint has no domain 404 by
+      // contract — an unknown project is an empty page — so any 404 here is a
+      // misconfiguration and must surface as one.
       const body = await fetchRead("/accounts", {
-        cursor: query.cursor,
-        limit: query.limit,
-        projectId: query.projectId,
+        searchParams: {
+          cursor: query.cursor,
+          limit: query.limit,
+          projectId: query.projectId,
+        },
       });
 
-      // The list endpoint has no 404: an unknown project is an empty page.
-      return AccountsResponseSchema.parse(body ?? { data: [], meta: { total: 0 } });
+      return AccountsResponseSchema.parse(body);
     },
   };
 }
@@ -73,8 +76,4 @@ export async function getAccounts(
   query?: AccountsQuery,
 ): Promise<AccountsResponse> {
   return repository().list(query);
-}
-
-export async function getAccountPreviewRows(): Promise<Account[]> {
-  return (await getAccounts()).data;
 }

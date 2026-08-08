@@ -14,7 +14,7 @@ import { openAiWorkspaceFixture } from "./account-workspace.fixture";
  * pointing at a URL nobody serves.
  *
  * An account the fixture does not cover resolves to an empty workspace, not to
- * `null`: with `CLUE_API_BASE_URL` set the account itself is real, and an empty
+ * `null`: with `CLUE_ACCOUNTS_API_BASE_URL` set the account is real, and an empty
  * tab is the honest rendering of "nothing here yet" — a 404 on a tab of an
  * account that plainly exists is not.
  */

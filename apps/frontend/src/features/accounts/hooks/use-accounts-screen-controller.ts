@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import type { Account } from "../model/account";
+import { useMemo, useState, useTransition } from "react";
+import type { Account, AccountsResponse } from "../model/account";
+import { loadMoreAccounts } from "../data/accounts.actions";
 import {
   defaultAccountColumnOrder,
   defaultAccountColumnWidths,
@@ -43,9 +44,19 @@ function createLocalAccount(name: string, domain: string): Account {
   };
 }
 
-export function useAccountsScreenController(initialAccounts: Account[]) {
+export function useAccountsScreenController(
+  initialAccounts: Account[],
+  initialMeta: AccountsResponse["meta"],
+) {
   const [search, setSearch] = useState("");
   const [accountRows, setAccountRows] = useState(initialAccounts);
+  // Pagination is keyset: the page holds only what has been fetched so far,
+  // and `total` is the size of the whole filtered set on the backend. The two
+  // are reported separately because they are different numbers.
+  const [nextCursor, setNextCursor] = useState(initialMeta.nextCursor);
+  const [totalCount, setTotalCount] = useState(initialMeta.total);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoadingMore, startLoadingMore] = useTransition();
   const [filters, setFilters] = useState(createDefaultAccountFilterRules);
   const [sort, setSort] = useState<AccountSort>("default");
   const [density, setDensity] =
@@ -151,6 +162,33 @@ export function useAccountsScreenController(initialAccounts: Account[]) {
     ]);
   }
 
+  function loadMore() {
+    const cursor = nextCursor;
+    if (!cursor || isLoadingMore) return;
+
+    startLoadingMore(async () => {
+      try {
+        const response = await loadMoreAccounts(cursor);
+        setAccountRows((current) => {
+          // The backend can only append here, but a retried action must not
+          // duplicate rows the table already holds.
+          const seen = new Set(current.map((account) => account.id));
+          return [
+            ...current,
+            ...response.data.filter((account) => !seen.has(account.id)),
+          ];
+        });
+        setNextCursor(response.meta.nextCursor);
+        setTotalCount(response.meta.total);
+        setLoadError(null);
+      } catch (error) {
+        setLoadError(
+          error instanceof Error ? error.message : "Could not load more accounts.",
+        );
+      }
+    });
+  }
+
   function toggleAccount(accountId: string) {
     setSelectedAccountIds((current) => {
       const next = new Set(current);
@@ -179,6 +217,12 @@ export function useAccountsScreenController(initialAccounts: Account[]) {
   return {
     createAccount,
     columnOrder,
+    hasMore: nextCursor !== null,
+    isLoadingMore,
+    loadedCount: accountRows.length,
+    loadError,
+    loadMore,
+    totalCount,
     columnWidths,
     density,
     filters,

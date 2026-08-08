@@ -11,9 +11,15 @@ import { ApiErrorEnvelopeSchema } from "../model/vocabulary";
  * Configuration (server-side only — never `NEXT_PUBLIC_*`, because the
  * workspace header is tenancy):
  *
- * - `CLUE_API_BASE_URL` — the backend origin. Unset means fixtures.
+ * - `CLUE_ACCOUNTS_API_BASE_URL` — the backend origin serving `/frontend/v1`.
+ *   Unset means fixtures. It is deliberately NOT the app-wide
+ *   `CLUE_API_BASE_URL`: the projects repositories key off that one and call
+ *   `api/v1/home` and `api/v1/projects/*`, which slice 1 serves nothing for, so
+ *   one shared switch would flip the accounts flow live and break the home
+ *   route in the same breath. The projects repositories stay pinned to fixtures
+ *   until phase 2 gives them a real surface, and this flow owns its own switch.
  * - `CLUE_WORKSPACE_ID` — the workspace every request is scoped to. Required
- *   whenever `CLUE_API_BASE_URL` is set; the backend answers `401 UNAUTHORIZED`
+ *   whenever the base URL is set; the backend answers `401 UNAUTHORIZED`
  *   without it, so we fail loudly at the seam instead of shipping the 401 to a
  *   screen. This is the MVP stand-in for a real session/tenant surface: when
  *   one exists, this is the single function that changes.
@@ -21,6 +27,17 @@ import { ApiErrorEnvelopeSchema } from "../model/vocabulary";
 
 /** Every data route on this surface is mounted under one prefix. */
 const READ_PREFIX = "/frontend/v1";
+
+/**
+ * The two `404` codes that mean "no such record".
+ *
+ * Every other `404` is a misconfiguration, not an empty workspace: a wrong
+ * base URL, a wrong prefix, or the read surface flag being off all produce the
+ * framework's generic `NOT_FOUND`, and silently rendering those as "this
+ * account has nothing yet" is the difference between a bug you see in five
+ * minutes and one you ship.
+ */
+const RECORD_NOT_FOUND_CODES = new Set(["ACCOUNT_NOT_FOUND", "CONTACT_NOT_FOUND"]);
 
 export class ClueApiError extends Error {
   /**
@@ -43,9 +60,9 @@ export class ClueApiError extends Error {
   }
 }
 
-/** The configured backend origin, or `null` when the app runs on fixtures. */
+/** The configured backend origin, or `null` when the accounts flow runs on fixtures. */
 export function apiBaseUrl(): string | null {
-  const configured = process.env.CLUE_API_BASE_URL?.trim();
+  const configured = process.env.CLUE_ACCOUNTS_API_BASE_URL?.trim();
   return configured ? configured.replace(/\/+$/, "") : null;
 }
 
@@ -53,8 +70,8 @@ function workspaceId(): string {
   const configured = process.env.CLUE_WORKSPACE_ID?.trim();
   if (!configured) {
     throw new Error(
-      "CLUE_WORKSPACE_ID must be set whenever CLUE_API_BASE_URL is set: every " +
-        "/frontend/v1 data request is workspace-scoped through the X-Workspace-Id header.",
+      "CLUE_WORKSPACE_ID must be set whenever CLUE_ACCOUNTS_API_BASE_URL is set: " +
+        "every /frontend/v1 data request is workspace-scoped through the X-Workspace-Id header.",
     );
   }
   return configured;
@@ -95,17 +112,27 @@ async function readErrorEnvelope(response: Response) {
 /**
  * Fetches one read endpoint and returns its parsed JSON body.
  *
- * `404` resolves to `null` so a repository can answer "no such record" without
- * an exception; every other failure raises {@link ClueApiError}, carrying the
- * backend's code and `requestId` for support.
+ * A `404` resolves to `null` ONLY when the envelope names a record-level code
+ * and the caller says this endpoint has one (`recordNotFoundAllowed`). The list
+ * endpoint has no domain `404` by contract — an unknown project is an empty
+ * page — so a `404` there always throws. Every other failure raises
+ * {@link ClueApiError} carrying the backend's code and `requestId`.
  */
 export async function fetchRead(
   path: string,
-  searchParams: Record<string, string | number | undefined> = {},
+  {
+    recordNotFoundAllowed = false,
+    searchParams = {},
+  }: {
+    recordNotFoundAllowed?: boolean;
+    searchParams?: Record<string, string | number | undefined>;
+  } = {},
 ): Promise<unknown | null> {
   const baseUrl = apiBaseUrl();
   if (!baseUrl) {
-    throw new Error("fetchRead called without CLUE_API_BASE_URL configured");
+    throw new Error(
+      "fetchRead called without CLUE_ACCOUNTS_API_BASE_URL configured",
+    );
   }
 
   const response = await fetch(readUrl(baseUrl, path, searchParams), {
@@ -116,18 +143,24 @@ export async function fetchRead(
     },
   });
 
-  if (response.status === 404) {
-    // Either the record is unknown (ACCOUNT_NOT_FOUND / CONTACT_NOT_FOUND) or
-    // the read surface is flag-gated off, whose routes are absent. Both mean
-    // "nothing to render here" to a screen.
-    return null;
-  }
-
   if (!response.ok) {
     const envelope = await readErrorEnvelope(response);
+
+    if (
+      response.status === 404 &&
+      recordNotFoundAllowed &&
+      envelope !== null &&
+      RECORD_NOT_FOUND_CODES.has(envelope.code)
+    ) {
+      return null;
+    }
+
     throw new ClueApiError(
       envelope?.message ??
-        `Clue read API returned ${response.status} ${response.statusText}`,
+        `Clue read API returned ${response.status} ${response.statusText} for ${path}` +
+          (response.status === 404
+            ? " — check CLUE_ACCOUNTS_API_BASE_URL, the /frontend/v1 mount, and that the read surface flag is on"
+            : ""),
       {
         code: envelope?.code ?? "HTTP_ERROR",
         requestId:

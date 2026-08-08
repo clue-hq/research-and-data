@@ -39,11 +39,12 @@ export function createHttpSidebarProjectsRepository(
   };
 }
 
+/**
+ * Pinned to fixtures until phase 2 — see the note in
+ * `project-workspace.repository.ts`. `GET /api/v1/projects/sidebar` is not
+ * served by slice 1, and this repository must not flip on the accounts flow's
+ * variable.
+ */
 export async function getSidebarProjects() {
-  const apiBaseUrl = process.env.CLUE_API_BASE_URL;
-  const repository = apiBaseUrl
-    ? createHttpSidebarProjectsRepository(apiBaseUrl)
-    : fixtureSidebarProjectsRepository;
-
-  return repository.list();
+  return fixtureSidebarProjectsRepository.list();
 }

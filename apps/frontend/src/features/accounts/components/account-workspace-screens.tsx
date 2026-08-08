@@ -11,6 +11,21 @@ import type {
 import readability from "./account-readability.module.css";
 import { AccountWorkspaceShell } from "./account-workspace-shell";
 
+/**
+ * These three tabs have no backend endpoint in slice 1, so against a live
+ * workspace they are legitimately empty. Each says so plainly instead of
+ * rendering a blank page that reads like a broken screen.
+ */
+function WorkspaceTabEmptyState({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className={`${readability.uiRegular} mt-6 text-[var(--clue-content-subtle)]`}
+    >
+      {children}
+    </p>
+  );
+}
+
 function InsightIcon({ source }: { source: WorkspaceInsight["source"] }) {
   const path =
     source === "linkedin"
@@ -36,6 +51,13 @@ export function AccountInsightsScreen({
       <div className="clue-scrollbar-hidden h-full overflow-y-auto">
         <article className="mx-auto w-full max-w-[720px] px-8 pt-12 pb-16">
           <h1 className={readability.detailTitle}>Insights</h1>
+          {workspace.insights.length ? null : (
+            <WorkspaceTabEmptyState>
+              No insights are served for this account yet. Account research
+              insights currently arrive on the Overview tab, grouped by the
+              project that produced them.
+            </WorkspaceTabEmptyState>
+          )}
           <div className="mt-6 space-y-7">
             {workspace.insights.map((insight) => (
               <a
@@ -157,6 +179,11 @@ export function AccountArtifactsScreen({
               </div>
             </div>
           </div>
+          {workspace.artifacts.length ? null : (
+            <WorkspaceTabEmptyState>
+              No artifacts are served for this account yet.
+            </WorkspaceTabEmptyState>
+          )}
           <div className="mt-7 grid grid-cols-1 gap-x-7 gap-y-9 sm:grid-cols-2 md:grid-cols-3">
             {controller.visibleArtifacts.map((artifact) => (
               <ArtifactCard
@@ -228,6 +255,11 @@ export function AccountActivityScreen({
       <div className="clue-scrollbar-hidden h-full overflow-y-auto">
         <section className="mx-auto w-full max-w-[720px] px-8 pt-12">
           <h1 className={readability.detailTitle}>Activity</h1>
+          {workspace.activity.length ? null : (
+            <WorkspaceTabEmptyState>
+              No activity feed is served for this account yet.
+            </WorkspaceTabEmptyState>
+          )}
           <div className="relative mt-7 space-y-5 before:absolute before:top-2 before:bottom-2 before:left-[7.5px] before:w-px before:bg-[var(--clue-border-neutral)]">
             {workspace.activity.map((item) => (
               <div

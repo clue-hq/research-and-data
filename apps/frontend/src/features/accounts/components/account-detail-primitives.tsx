@@ -5,7 +5,7 @@ import { contactPersonaLabel } from "../model/account-contact";
 import { formatToken } from "../model/formatting";
 import readability from "./account-readability.module.css";
 import { AccountAvatar } from "./account-avatar";
-import { Absent, FactList } from "./account-facts";
+import { Absent, FactList, FactValue } from "./account-facts";
 import { ContactAvatar } from "./contact-avatar";
 
 /** A neutral pill for a semantic token the frontend has already formatted. */
@@ -181,7 +181,7 @@ export function AccountDetailsList({
                 <span className="text-[var(--clue-content-subtle)]">
                   {formatToken(registry)}:
                 </span>{" "}
-                {value}
+                <FactValue value={value} />
               </span>
             ))}
           </span>

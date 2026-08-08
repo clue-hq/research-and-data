@@ -44,10 +44,13 @@ export const PersonaSchema = z.enum([
 /**
  * The merge's freshness disposition for the claim that won.
  *
- * Exactly two values reach this wire: the backend's third disposition
- * (`expired`) is a retention age-out that can never win a merge.
+ * The backend documents that only `fresh` and `stale` can reach this wire —
+ * `expired` is a retention age-out that can never win a merge — but the type it
+ * serializes is the three-member `FreshnessState` enum. The third member is
+ * accepted here rather than trusted not to appear: a documented invariant is
+ * not a parser guarantee, and the cost of being wrong is a crashed page.
  */
-export const FreshnessSchema = z.enum(["fresh", "stale"]);
+export const FreshnessSchema = z.enum(["fresh", "stale", "expired"]);
 
 /**
  * How a project acquired an account.
