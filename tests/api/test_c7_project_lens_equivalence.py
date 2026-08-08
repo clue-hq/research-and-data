@@ -7,17 +7,35 @@ incomplete: an M8D research run stamps every claim with a **per-tool-call derive
 ``clue_api.exa_entity_research_tools``), which is registered in ``run_lineage`` under its project
 run but appears in neither leg of that tuple. Those claims were invisible to the pinned sections.
 
+The change has exactly two delta classes against that tuple, and they move in opposite directions:
+
+* **Gained — M8D per-tool-call derived runs.** They are registered in ``run_lineage`` under their
+  project run and were in neither leg of the tuple, so they now appear in the pinned sections.
+  A fix; proved exactly below.
+* **Preserved, not lost — the two legs the tuple carried.** ``account_run.id`` (leg 2) is now
+  registered at its own mint site (``durable.account_run``), and the project run's *own* id (leg 1
+  — the shape the committee and enrichment writers stamp) is registered by those live writers and,
+  for rows written before FI-2, by ``project_lens_backfill``'s ``committee_lineage`` source. On a
+  pre-FI-2 database the backfill is what makes ``legacy − lineage == ∅`` true; without it the
+  committee professional pack, the one production CONTACT ``project_run_pinned`` family, would
+  drop out of the lens.
+
 This module is the equivalence proof the migration is gated on:
 
 * :func:`test_lineage_supply_is_byte_identical_to_the_legacy_tuple_supply` — where the legacy supply
-  was complete (a claim keyed on the account run, a foreign-project-run claim that must stay out),
-  the composed view is **byte-identical** under both supplies.
-* :func:`test_lineage_supply_adds_exactly_the_m8d_derived_run_claims` — the documented delta: add an
-  M8D-shaped derived-run claim and the lineage supply gains **exactly** that statement while the
-  legacy supply still cannot see it. A fix, deliberately tested, not a silent behaviour change.
+  was complete (a direct claim and a derived root keyed on the account run, plus a
+  foreign-project-run pair that must stay out of both reader paths), the composed view is
+  **byte-identical** under both supplies.
+* :func:`test_lineage_supply_adds_exactly_the_m8d_derived_run_claims` — the documented delta: add
+  M8D-shaped derived-run claims and the lineage supply gains **exactly** those statements while the
+  legacy supply still cannot see them. A fix, deliberately tested, not a silent behaviour change.
 * :func:`test_a_resolvable_scope_always_supplies_its_account_run` — the non-emptiness invariant the
   migration rests on: a C7 scope resolves only when its ``account_run`` row exists, and that row's
   mint site registers lineage, so the supply is never empty for a view that can be served.
+
+Both C7 reader paths are driven: the direct-claim reader *and* the derived-claim reader, whose
+pinned filters are written differently in ``claimstore.research_view_queries`` (an empty supply
+drops everything on the first and nothing on the second — see the residual in the task report).
 """
 
 from __future__ import annotations
@@ -35,6 +53,9 @@ from clue_api.research_view_readers import (
 from clue_api.research_view_runtime import ProductionResearchViewComposer
 from clue_core import (
     AccountStatus,
+    Claim,
+    ClaimFlavor,
+    ClaimId,
     EntityId,
     EntityType,
     ExtractionMethod,
@@ -45,18 +66,24 @@ from clue_core import (
     ResearchMode,
     ResearchSectionKind,
     ResearchStatement,
+    ResearchSubjectRef,
+    ResearchSupportRef,
+    ResearchSupportRole,
     ResearchView,
     ResearchViewReadRequest,
     ReuseScope,
     RunId,
     VerificationStatus,
     account_claim,
+    new_operation_id,
     new_project_run_id,
     new_run_id,
 )
 from clue_research.claimstore import (
+    DerivationStore,
     ResearchViewFieldRoute,
     SeedField,
+    WorkspaceScope,
     insert_claim,
     load_pack,
     record_run_lineage,
@@ -81,6 +108,7 @@ _PRODUCT = "prd-c7-lens"
 _ICP_KEY = "enterprise"
 _PINNED_LEGACY = "account.resonance.lens_probe_legacy"
 _PINNED_DERIVED = "account.resonance.lens_probe_derived"
+_PINNED_ROOT = "account.resonance.lens_probe_root"
 # Mirrors ``clue_api.exa_entity_research_tools``' per-tool-call run derivation: the id every M8D
 # claim actually carries, which the legacy ``(project_run_id, account_run.id)`` tuple never held.
 _TOOL_CALL_NAMESPACE = uuid5(NAMESPACE_URL, "clue-hq:test:c7-lens:tool-call")
@@ -122,7 +150,12 @@ class _Fixture:
 
 
 async def _seed(conn: AsyncConnection) -> _Fixture:
-    """One project run, one account, one account run, and two ``project_run_pinned`` routes."""
+    """One project run, one account, one account run, and three ``project_run_pinned`` routes.
+
+    Two direct routes and one **derived** route: the migrated supply feeds both readers, and their
+    pinned filters are written differently in ``research_view_queries.py`` (the direct one drops a
+    non-matching claim, the derived one skips it), so the byte-equivalence proof has to drive both.
+    """
 
     await seed_workspace(conn, _WORKSPACE)
     brand = await create_brand(conn, workspace_id=_WORKSPACE, name="C7 lens brand")
@@ -185,7 +218,7 @@ async def _seed(conn: AsyncConnection) -> _Fixture:
                     context_scope="project_run_pinned",
                 ),
             )
-            for index, field_key in enumerate((_PINNED_LEGACY, _PINNED_DERIVED))
+            for index, field_key in enumerate((_PINNED_LEGACY, _PINNED_DERIVED, _PINNED_ROOT))
         ),
     )
     request = ResearchViewReadRequest(
@@ -226,6 +259,53 @@ async def _write_claim(
     claim_id = await insert_claim(conn, stamp_reuse(claim, workspace_id=_WORKSPACE))
     await record_verification(conn, claim_id, status=VerificationStatus.VERIFIED)
     return UUID(str(claim_id))
+
+
+async def _write_derived_root(
+    conn: AsyncConnection,
+    fixture: _Fixture,
+    *,
+    value: str,
+    run_id: RunId,
+    support_claim_id: UUID,
+) -> UUID:
+    """A derived root on the pinned derived route — the ``DbDerivedClaimReader``'s input."""
+
+    derived = Claim(
+        entity_id=fixture.account_id,
+        entity_type=EntityType.ACCOUNT,
+        field_key=_PINNED_ROOT,
+        value_json=value,
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        confidence=0.8,
+        run_id=run_id,
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        claim_flavor=ClaimFlavor.DERIVED,
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        workspace_id=_WORKSPACE,
+        verification_status=VerificationStatus.VERIFIED,
+    )
+    await DerivationStore().create(
+        conn,
+        derived,
+        ResearchSubjectRef(
+            entity_id=fixture.account_id,
+            entity_type=EntityType.ACCOUNT,
+            canonical_entity_version=1,
+        ),
+        (
+            ResearchSupportRef(
+                claim_id=ClaimId(support_claim_id),
+                role=ResearchSupportRole.DIRECT_EVIDENCE,
+                ordinal=0,
+            ),
+        ),
+        workspace_id=_WORKSPACE,
+        operation_id=new_operation_id(),
+        scope=WorkspaceScope.for_workspace(_WORKSPACE),
+    )
+    return UUID(str(derived.id))
 
 
 async def _foreign_project_run(conn: AsyncConnection, fixture: _Fixture) -> RunId:
@@ -291,27 +371,43 @@ def test_lineage_supply_is_byte_identical_to_the_legacy_tuple_supply() -> None:
         async with rollback_conn() as conn:
             fixture = await _seed(conn)
             foreign_run_id = await _foreign_project_run(conn, fixture)
-            await _write_claim(
+            support_id = await _write_claim(
                 conn,
                 fixture,
                 field_key=_PINNED_LEGACY,
                 value="Pinned to this project run's account run.",
                 run_id=fixture.account_run_id,
             )
-            await _write_claim(
+            foreign_support_id = await _write_claim(
                 conn,
                 fixture,
                 field_key=_PINNED_DERIVED,
                 value="Belongs to another project run of the same project.",
                 run_id=foreign_run_id,
             )
+            # The derived reader's pinned filter, driven both ways: one root this project run may
+            # see, one it may not.
+            await _write_derived_root(
+                conn,
+                fixture,
+                value="Derived under this project run's account run.",
+                run_id=fixture.account_run_id,
+                support_claim_id=support_id,
+            )
+            await _write_derived_root(
+                conn,
+                fixture,
+                value="Derived under another project run of the same project.",
+                run_id=foreign_run_id,
+                support_claim_id=foreign_support_id,
+            )
 
             legacy, lineage = await _compose_both(conn, fixture.request)
 
             assert _payload(legacy) == _payload(lineage)
             assert legacy.source_state_sha256 == lineage.source_state_sha256
-            # The account-run claim is served (not a vacuously empty comparison), and the other
-            # project run's claim is served by neither supply.
+            # The account-run claims are served on BOTH reader paths (not a vacuously empty
+            # comparison), and the other project run's claims are served by neither supply.
             values = {
                 item.value_json
                 for section in lineage.sections
@@ -319,7 +415,9 @@ def test_lineage_supply_is_byte_identical_to_the_legacy_tuple_supply() -> None:
                 if isinstance(item, ResearchStatement)
             }
             assert "Pinned to this project run's account run." in values
+            assert "Derived under this project run's account run." in values
             assert "Belongs to another project run of the same project." not in values
+            assert "Derived under another project run of the same project." not in values
 
     run_async(scenario())
 
@@ -329,8 +427,9 @@ def test_lineage_supply_adds_exactly_the_m8d_derived_run_claims() -> None:
 
     The legacy tuple held only ``(project_run_id, account_run.id)``, so a claim stamped with an
     M8D per-tool-call derived run id — registered in ``run_lineage`` under this very project run —
-    was invisible to the pinned sections. Lineage sees it. The assertion is exact in both
-    directions: the lineage view gains that one statement and loses none.
+    was invisible to the pinned sections. Lineage sees it, on both reader paths (a direct claim and
+    a derived root). The assertion is exact in both directions: the lineage view gains exactly those
+    statements and loses none.
     """
 
     async def scenario() -> None:
@@ -359,20 +458,32 @@ def test_lineage_supply_adds_exactly_the_m8d_derived_run_claims() -> None:
                 project_id=fixture.project_id,
                 project_run_id=UUID(str(fixture.request.project_run_id)),
             )
-            derived_claim_id = await _write_claim(
+            tool_call_claim_id = await _write_claim(
                 conn,
                 fixture,
                 field_key=_PINNED_DERIVED,
                 value="Written by an M8D per-tool-call research run.",
                 run_id=derived_run_id,
             )
+            tool_call_root_id = await _write_derived_root(
+                conn,
+                fixture,
+                value="Synthesized by an M8D per-tool-call research run.",
+                run_id=derived_run_id,
+                support_claim_id=tool_call_claim_id,
+            )
 
             legacy, lineage = await _compose_both(conn, fixture.request)
 
             assert _statement_claim_ids(legacy) == {legacy_claim_id}
-            assert _statement_claim_ids(lineage) == {legacy_claim_id, derived_claim_id}
+            assert _statement_claim_ids(lineage) == {
+                legacy_claim_id,
+                tool_call_claim_id,
+                tool_call_root_id,
+            }
             assert _statement_claim_ids(lineage) - _statement_claim_ids(legacy) == {
-                derived_claim_id
+                tool_call_claim_id,
+                tool_call_root_id,
             }
             assert _statement_claim_ids(legacy) - _statement_claim_ids(lineage) == set()
             # The legacy payload is unchanged by the derived claim — it truly could not see it.

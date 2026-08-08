@@ -7,7 +7,7 @@ lens resolves no runs — the frontend's ``/accounts`` table would render a work
 no project chips, and a project-scoped claim read would return nothing. This module reconstructs
 both spines from the durable execution records that *do* exist.
 
-Five sources, all reconstructions of what the live writer would have written:
+Six sources, all reconstructions of what the live writer would have written:
 
 ===========================  ===========================================================
 ``discovery_membership``     ``discovery_candidate_link`` (admitted/merged) → the batch's
@@ -20,6 +20,8 @@ Five sources, all reconstructions of what the live writer would have written:
                              subjects) / ``'contact_research'`` (contact subjects)
 ``account_run_lineage``      ``account_run`` (``id`` *is* the claim's ``run_id``) ⇒
                              ``kind='entity_research'``
+``committee_lineage``        a ``project_run`` whose **own id** is stamped on claims (the
+                             committee path reuses it as ``run_id``) ⇒ ``kind='committee'``
 ===========================  ===========================================================
 
 Properties this repair holds to, because a script anyone may re-run is only safe if it does:
@@ -78,6 +80,7 @@ BACKFILL_SOURCES = (
     "discovery_lineage",
     "entity_research_lineage",
     "account_run_lineage",
+    "committee_lineage",
 )
 
 # Mirrors the two M8D fleet launch sites: ``account_research_fleet_launch`` registers its
@@ -235,6 +238,33 @@ _ACCOUNT_RUN_LINEAGE = text(
            account_run.started_at AS created_at
     FROM account_run
     LEFT JOIN project_run ON project_run.id = account_run.project_run_id
+    WHERE (CAST(:ws AS text) IS NULL OR project_run.workspace_id = :ws)
+    """
+)
+
+# The one run-id class no other source can reach: a run whose id **is** the project run's. The
+# committee path stamps it deliberately (the M8C C1 lineage trigger refuses a Sumble professional
+# claim whose run differs from its ready operation's ``project_run_id``), and the enrichment
+# materializers stamp the same shape — so on a pre-FI-2 database the committee professional pack,
+# the one production CONTACT ``project_run_pinned`` family, has claims whose ``run_id`` back-joins
+# to nothing. This source repairs exactly those.
+#
+# Driven from ``project_run`` (the FK-backed truth) inner-joined to the claims that actually cite
+# it, so: no orphan is possible (the driver *is* the project-run row — unlike the two sources
+# above, which read tables carrying no FK to it), and a project run that never wrote a claim under
+# its own id registers nothing rather than being invented. ``kind`` is advisory and first-writer-
+# wins, so labelling the shared committee/enrichment run id ``committee`` costs nothing: the
+# project attribution — the only thing a lens read dispatches on — is identical either way.
+_COMMITTEE_LINEAGE = text(
+    """
+    SELECT DISTINCT
+           project_run.id AS run_id,
+           project_run.workspace_id,
+           project_run.project_id,
+           project_run.id AS project_run_id,
+           project_run.created_at
+    FROM project_run
+    JOIN claim ON claim.run_id = project_run.id
     WHERE (CAST(:ws AS text) IS NULL OR project_run.workspace_id = :ws)
     """
 )
@@ -443,17 +473,30 @@ async def _plan_lineage(
             )
         )
 
+    for row in (await conn.execute(_COMMITTEE_LINEAGE, {"ws": workspace_id})).mappings().all():
+        candidates.append(
+            _Lineage(
+                run_id=row["run_id"],
+                workspace_id=row["workspace_id"],
+                project_id=row["project_id"],
+                project_run_id=row["project_run_id"],
+                kind="committee",
+                created_at=row["created_at"],
+                source="committee_lineage",
+            )
+        )
+
     existing = {row[0] for row in (await conn.execute(_EXISTING_LINEAGE)).all()}
     scanned: dict[str, set[uuid.UUID]] = defaultdict(set)
     written: dict[str, int] = defaultdict(int)
     planned: list[_Lineage] = []
     claimed = set(existing)
-    # No two of these five sources can currently produce the same run id — the derived discovery
-    # id, a ``research_run_id`` and an ``account_run.id`` come from disjoint spaces — so this
-    # ordering is defensive, not a live collision resolver. It keeps the pass deterministic anyway:
-    # if a sixth source (or a run id reused by design, the way the Sumble committee path reuses the
-    # project run id) ever lands here, the row that wins is the oldest, then the source, then the id
-    # — never whatever order the database happened to return.
+    # The derived discovery id, a ``research_run_id`` and an ``account_run.id`` come from disjoint
+    # spaces, so those three cannot collide; ``committee_lineage`` deliberately does not — it emits
+    # the project run's *own* id, the one run id reused by design (the Sumble committee path and the
+    # enrichment materializers both stamp it). This ordering is what makes that safe and
+    # deterministic: the row that wins is the oldest, then the source, then the id — never whatever
+    # order the database happened to return.
     for candidate in sorted(candidates, key=lambda r: (r.created_at, r.source, r.run_id)):
         scanned[candidate.source].add(candidate.run_id)
         if candidate.run_id in claimed:
@@ -462,7 +505,12 @@ async def _plan_lineage(
         written[candidate.source] += 1
         planned.append(candidate)
 
-    for source in ("discovery_lineage", "entity_research_lineage", "account_run_lineage"):
+    for source in (
+        "discovery_lineage",
+        "entity_research_lineage",
+        "account_run_lineage",
+        "committee_lineage",
+    ):
         counts[source] = SourceCounts(
             scanned=len(scanned[source]),
             written=written[source],

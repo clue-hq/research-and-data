@@ -3,7 +3,7 @@
 Tasks 1-8 taught every *live* write site to record ``project_account`` membership and
 ``run_lineage`` attribution. Rows already at rest predate those writers, so a project's account
 list and its claim lens are both blind to everything the dev database already holds. This suite
-exercises the repair over the real Postgres tables: the five backfill sources, the merge-survivor
+exercises the repair over the real Postgres tables: the six backfill sources, the merge-survivor
 redirect, orphan skipping, first-add-wins across sources, the uuid5 discovery-run cross-check
 against the production formula, workspace scoping, and — the property that matters most for a
 script anyone may re-run — byte-identical idempotency on a second pass.
@@ -23,11 +23,26 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import EntityType, ProjectRunId
-from clue_research.claimstore import project_run_ids, record_run_lineage
+from clue_core import (
+    EntityType,
+    ExtractionMethod,
+    IdentityBinding,
+    ProjectRunId,
+    ResearchMode,
+    RunId,
+    UseClass,
+    contact_claim,
+)
+from clue_research.claimstore import insert_claim, project_run_ids, record_run_lineage
 from clue_research.discovery_scoring import project_discovery_run_id
-from clue_research.identity import insert_account_entity, mark_merged
+from clue_research.identity import (
+    insert_account_entity,
+    insert_contact_entity,
+    mark_merged,
+    stamp_reuse,
+)
 from clue_research.membership import accounts_for_project, ensure_project_account
+from clue_research.profiling.committee import CURRENT_TITLE, load_committee_pack
 from clue_research.project_lens_backfill import (
     BACKFILL_SOURCES,
     ProjectLensBackfillReport,
@@ -323,6 +338,43 @@ async def _seed_account_run(
     )
 
 
+async def _seed_committee_claim(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_entity_id: UUID,
+    project_run_id: UUID,
+) -> None:
+    """A committee professional claim — stamped with the **project run itself** as its ``run_id``.
+
+    The M8C C1 lineage trigger requires that shape, and the committee professional pack is the one
+    production CONTACT ``project_run_pinned`` route family, so on a pre-FI-2 database these are the
+    claims a project-run lens read would drop for want of a lineage row.
+    """
+    await load_committee_pack(conn)
+    contact = await insert_contact_entity(
+        conn,
+        account_entity_id=account_entity_id,
+        full_name="Committee Member",
+        linkedin_url=f"https://linkedin.com/in/committee-{project_run_id}",
+    )
+    claim = contact_claim(
+        entity_id=contact,
+        field_key=CURRENT_TITLE,
+        value_json="VP Revenue Operations",
+        source_tier=1,
+        extraction_method=ExtractionMethod.API,
+        confidence=0.95,
+        run_id=RunId(project_run_id),
+        research_mode=ResearchMode.COMMITTEE_DISCOVERY,
+        identity_binding=IdentityBinding.STRONG,
+        use_class=UseClass.PROFESSIONAL_PUBLIC,
+        source_url="https://example.com/committee",
+        evidence_span="Committee member is VP Revenue Operations.",
+    )
+    await insert_claim(conn, stamp_reuse(claim, workspace_id=workspace_id))
+
+
 async def _dump(conn: AsyncConnection) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
     """Every membership + lineage row, ordered — the byte-identical idempotency probe."""
     memberships = [
@@ -350,8 +402,8 @@ async def _dump(conn: AsyncConnection) -> tuple[list[tuple[object, ...]], list[t
     return memberships, lineage
 
 
-def test_backfill_writes_all_five_sources_and_is_idempotent() -> None:
-    """One pass repairs discovery/directive membership + all three lineage sources; a second
+def test_backfill_writes_all_six_sources_and_is_idempotent() -> None:
+    """One pass repairs discovery/directive membership + all four lineage sources; a second
     pass writes nothing and leaves every row byte-identical."""
 
     async def _run() -> None:
@@ -397,6 +449,12 @@ def test_backfill_writes_all_five_sources_and_is_idempotent() -> None:
                 project_run_id=project_run_id,
                 entity_id=discovered,
             )
+            await _seed_committee_claim(
+                conn,
+                workspace_id=ws,
+                account_entity_id=discovered,
+                project_run_id=project_run_id,
+            )
 
             first = await backfill_project_lens(conn, workspace_id=ws)
 
@@ -407,10 +465,11 @@ def test_backfill_writes_all_five_sources_and_is_idempotent() -> None:
                 "discovery_lineage": 1,
                 "entity_research_lineage": 1,
                 "account_run_lineage": 1,
+                "committee_lineage": 1,
             }
-            assert first.written == 5
+            assert first.written == 6
             assert first.skipped_orphan == 0
-            assert first.by_workspace == {ws: 5}
+            assert first.by_workspace == {ws: 6}
 
             # Membership: both accounts, each stamped with the channel that added it.
             assert await accounts_for_project(
@@ -429,13 +488,19 @@ def test_backfill_writes_all_five_sources_and_is_idempotent() -> None:
             )
             assert channels == {discovered: "discovered", scoped: "directive"}
 
-            # Lineage: the derived discovery run, the M8D research run, the M7 account run.
+            # Lineage: the derived discovery run, the M8D research run, the M7 account run, and
+            # the project run's own id (the committee/enrichment writers stamp it as a run id).
             expected_discovery_run = project_discovery_run_id(
                 project_run_id=ProjectRunId(project_run_id), icp_key="default", icp_version=1
             )
             assert set(
                 await project_run_ids(conn, workspace_id=ws, project_id=project.project_id)
-            ) == {UUID(str(expected_discovery_run)), research_run_id, account_run_id}
+            ) == {
+                UUID(str(expected_discovery_run)),
+                research_run_id,
+                account_run_id,
+                project_run_id,
+            }
             kinds = dict(
                 (
                     await conn.execute(
@@ -448,6 +513,7 @@ def test_backfill_writes_all_five_sources_and_is_idempotent() -> None:
                 UUID(str(expected_discovery_run)): "discovery",
                 research_run_id: "entity_research",
                 account_run_id: "entity_research",
+                project_run_id: "committee",
             }
 
             before = await _dump(conn)
