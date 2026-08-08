@@ -23,8 +23,6 @@ import argparse
 import asyncio
 import json
 
-from sqlalchemy import text
-
 from clue_db import db_lifespan, transaction
 from clue_research.identity import backfill_account_embeddings
 
@@ -38,10 +36,11 @@ def _args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--database-url",
-        default=None,
+        required=True,
         help=(
-            "SQLAlchemy async Postgres URL. Defaults to the CLUE_DATABASE_URL seam every other "
-            "command reads."
+            "SQLAlchemy async Postgres URL for the database to repair. Required — this command "
+            "writes, so it must never fall through to whatever CLUE_DATABASE_URL happens to point "
+            "at (same rule as scripts/08_seed_discovery_fixture.py)."
         ),
     )
     parser.add_argument(
@@ -63,29 +62,17 @@ def _args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-_COUNT_MISSING = text(
-    """
-    SELECT count(*)
-    FROM account_entity a
-    LEFT JOIN account_entity_embedding e ON e.entity_id = a.id
-    WHERE e.entity_id IS NULL
-      AND a.status <> 'merged'
-      AND (CAST(:ws AS text) IS NULL OR a.workspace_id = :ws)
-    """
-)
-
-
 async def _run(args: argparse.Namespace) -> dict[str, object]:
+    # No SQL here on purpose: the dry run is the *same* function under ``dry_run=True``, so the
+    # preview and the real pass share one predicate and the preview cannot under-report.
     async with db_lifespan(args.database_url), transaction() as conn:
-        if args.dry_run:
-            missing = int(
-                (await conn.execute(_COUNT_MISSING, {"ws": args.workspace_id})).scalar_one()
-            )
-            return {"dry_run": True, "missing": missing, "embedded": 0}
         report = await backfill_account_embeddings(
-            conn, workspace_id=args.workspace_id, batch_size=args.batch_size
+            conn,
+            workspace_id=args.workspace_id,
+            batch_size=args.batch_size,
+            dry_run=args.dry_run,
         )
-        return {"dry_run": False, **report.model_dump()}
+        return {"dry_run": args.dry_run, **report.model_dump()}
 
 
 def main() -> None:

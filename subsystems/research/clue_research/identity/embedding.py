@@ -171,21 +171,24 @@ class BackfillReport(BaseModel):
     embedded: int = 0
 
 
-# Only *live* accounts are worth embedding: a merged loser is a pure redirect (``surviving_id``
-# resolves through it) and the probabilistic candidate query already filters ``status <> 'merged'``,
-# so embedding one would cost a row and buy nothing.
-_UNEMBEDDED_ACCOUNTS = text(
-    """
-    SELECT a.id, a.canonical_name
+# The "needs an embedding" predicate, written **once** so the counting pass and the writing pass can
+# never disagree (a dry run that under-reports is worse than no dry run). Only *live* accounts are
+# worth embedding: a merged loser is a pure redirect (``surviving_id`` resolves through it) and the
+# probabilistic candidate query already filters ``status <> 'merged'``, so embedding one would
+# cost a row and buy nothing.
+_UNEMBEDDED_FROM_WHERE = """
     FROM account_entity a
     LEFT JOIN account_entity_embedding e ON e.entity_id = a.id
     WHERE e.entity_id IS NULL
       AND a.status <> 'merged'
       AND (CAST(:ws AS text) IS NULL OR a.workspace_id = :ws)
-    ORDER BY a.id
-    LIMIT :limit
-    """
+"""
+
+_UNEMBEDDED_ACCOUNTS = text(
+    f"SELECT a.id, a.canonical_name {_UNEMBEDDED_FROM_WHERE} ORDER BY a.id LIMIT :limit"
 )
+
+_COUNT_UNEMBEDDED = text(f"SELECT count(*) {_UNEMBEDDED_FROM_WHERE}")
 
 
 async def backfill_account_embeddings(
@@ -194,6 +197,7 @@ async def backfill_account_embeddings(
     embedder: Embedder = DEFAULT_EMBEDDER,
     workspace_id: str | None = None,
     batch_size: int = 500,
+    dry_run: bool = False,
 ) -> BackfillReport:
     """Embed every live ``account_entity`` that has no ``account_entity_embedding`` row.
 
@@ -206,7 +210,13 @@ async def backfill_account_embeddings(
     Batches by ``batch_size`` (each batch re-queries, so rows written are naturally excluded from
     the next one) and is scopeable to a single ``workspace_id``. Runs inside the caller's
     transaction — the CLI (``scripts/backfill_account_embeddings.py``) supplies one.
+
+    ``dry_run`` counts what a real pass would write and writes nothing (``scanned`` set,
+    ``embedded=0``). It runs the *same* predicate as the writing pass, so the preview cannot lie.
     """
+    if dry_run:
+        missing = int((await conn.execute(_COUNT_UNEMBEDDED, {"ws": workspace_id})).scalar_one())
+        return BackfillReport(scanned=missing, embedded=0)
     scanned = embedded = 0
     while True:
         rows = (
@@ -218,6 +228,9 @@ async def backfill_account_embeddings(
             return BackfillReport(scanned=scanned, embedded=embedded)
         for row in rows:
             scanned += 1
+            # Deliberately the raw upsert, not :func:`embed_account`: the batch query already
+            # carries ``canonical_name``, so routing through it would re-SELECT each row one at a
+            # time. **If what gets embedded ever changes (e.g. name + aliases), change both.**
             await conn.execute(
                 _UPSERT_EMBEDDING,
                 {

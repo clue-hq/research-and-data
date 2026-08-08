@@ -3,8 +3,8 @@
 The defect this pins (spec ``docs/specs/FI-2-workspace-account-layer.md`` §1.2-H1):
 ``embed_account`` had exactly three call sites (import, seeds, client-KB), so the
 admission/disposition *new-entity* path minted an account with **no**
-``account_entity_embedding`` row. A later name-only encounter of
-the same company then scored with the cosine arm zeroed — below the 0.70 review floor — and silently
+``account_entity_embedding`` row. A later name-only encounter of the same company then scored
+with the cosine arm zeroed — below the 0.70 review floor — and silently
 minted a **duplicate** instead of routing to human review. The M2.3 mid-band test
 (``test_review.py``) hid the hole because its ``_seed`` helper embeds by hand.
 
@@ -34,6 +34,7 @@ from clue_research.identity import (
     insert_account_entity,
     list_open_tasks,
     resolve,
+    resolve_create_new_entity,
 )
 from tests._workspace import seed_workspace
 
@@ -136,6 +137,78 @@ def test_name_only_re_encounter_clears_the_review_floor_on_both_arms() -> None:
     run_async(_run())
 
 
+def test_same_name_different_domain_lands_in_the_review_band() -> None:
+    """**Band pin.** A candidate whose folded name matches an existing account but whose domain
+    does *not* now scores 0.775 — the review band. Before the alias arm fired it scored 0.675 and
+    silently minted a second entity; the new behavior is the conservative direction (a human
+    decides whether ``apex.io`` and ``apex-corp.com`` are one company), but it is a real band
+    move, so it is pinned
+    here: a future weight change cannot flip it back to a silent NEW_ENTITY — nor forward into
+    auto-merge — without this failing. The scoring itself is deliberately unchanged; whether a
+    *conflicting* strong key should veto the name arms is parked for a spec follow-up."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
+            first = await admit(
+                conn,
+                _candidate(name="Apex Corp", domain="apex-corp.com"),
+                new_run_id(),
+                workspace_id=ws,
+            )
+            assert first.status is AdmissionStatus.ADMITTED
+
+            observation = _to_observation(_candidate(name="Apex Corp", domain="apex.io"))
+            result = await resolve(conn, observation, workspace_id=ws)
+            assert result.top is not None
+            assert result.top.entity_id == first.account_entity_id
+            assert result.top.features["domain_agreement"] == 0.0  # the domains genuinely differ
+            assert 0.70 <= result.top_score < 0.95  # review — never auto-merged on a name alone
+
+            before = await _count_accounts(conn)
+            second = await admit(
+                conn,
+                _candidate(name="Apex Corp", domain="apex.io", record_ref="rec:h1-apex"),
+                new_run_id(),
+                workspace_id=ws,
+            )
+            assert second.status is AdmissionStatus.NEEDS_REVIEW
+            assert second.account_entity_id is None  # admits nothing; the human decides
+            assert await _count_accounts(conn) == before
+
+    run_async(_run())
+
+
+def test_review_resolved_new_entity_is_embedded() -> None:
+    """The human path mints accounts too, and has no caller that embeds on its behalf — so
+    ``resolve_create_new_entity`` embeds by default, or H1 reopens the moment M2.4 composes it."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
+            await admit(
+                conn,
+                _candidate(name="Apex Corp", domain="apex-corp.com"),
+                new_run_id(),
+                workspace_id=ws,
+            )
+            enqueued = await admit(
+                conn,
+                _candidate(name="Apex Corp", domain="apex.io", record_ref="rec:h1-apex"),
+                new_run_id(),
+                workspace_id=ws,
+            )
+            assert enqueued.status is AdmissionStatus.NEEDS_REVIEW
+            assert enqueued.review_task_id is not None
+
+            minted = await resolve_create_new_entity(
+                conn, enqueued.review_task_id, resolved_by="reviewer-h1"
+            )
+            assert await _has_embedding(conn, minted)
+
+    run_async(_run())
+
+
 def test_admission_observation_carries_the_candidate_name_as_an_alias() -> None:
     """``_to_observation`` populates ``aliases`` (normalized downstream by ``name_key``), so the
     alias-overlap arm can fire; a nameless candidate carries none."""
@@ -200,7 +273,9 @@ def test_backfill_embeds_only_the_missing_rows_and_is_idempotent() -> None:
                 )
             ).scalar_one()
 
-            report = await backfill_account_embeddings(conn, batch_size=1)
+            # Scoped to this test's workspace: the predicate is a whole-table scan, so an unscoped
+            # pass would also pick up rows a *committing* suite left behind in a shared DB.
+            report = await backfill_account_embeddings(conn, workspace_id=ws, batch_size=1)
             assert report.embedded == 2
             assert report.scanned == 2
             assert await _has_embedding(conn, missing_a)
@@ -213,8 +288,31 @@ def test_backfill_embeds_only_the_missing_rows_and_is_idempotent() -> None:
                 )
             ).scalar_one() == stamp
 
-            again = await backfill_account_embeddings(conn)
+            again = await backfill_account_embeddings(conn, workspace_id=ws)
             assert again.embedded == 0 and again.scanned == 0
+
+    run_async(_run())
+
+
+def test_backfill_dry_run_counts_what_a_real_pass_would_write() -> None:
+    """The preview shares the writing pass's predicate, so it can neither lie nor write."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
+            missing = await insert_account_entity(
+                conn, canonical_name="Unembedded", workspace_id=ws
+            )
+            embedded = await insert_account_entity(conn, canonical_name="Embedded", workspace_id=ws)
+            await embed_account(conn, embedded)
+
+            preview = await backfill_account_embeddings(conn, workspace_id=ws, dry_run=True)
+            assert preview.scanned == 1 and preview.embedded == 0
+            assert not await _has_embedding(conn, missing)  # a dry run writes nothing
+
+            real = await backfill_account_embeddings(conn, workspace_id=ws)
+            assert real.scanned == preview.scanned  # the preview did not under-report
+            assert real.embedded == 1
 
     run_async(_run())
 
