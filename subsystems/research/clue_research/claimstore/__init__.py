@@ -126,6 +126,7 @@ from clue_research.claimstore.run_lineage import (
     RUN_LINEAGE_KINDS,
     project_run_ids,
     record_run_lineage,
+    runs_for_project_run,
 )
 from clue_research.claimstore.tenancy import ALL_WORKSPACES, PUBLIC_ONLY, WorkspaceScope
 
@@ -228,4 +229,5 @@ __all__ = [
     "RUN_LINEAGE_KINDS",
     "record_run_lineage",
     "project_run_ids",
+    "runs_for_project_run",
 ]

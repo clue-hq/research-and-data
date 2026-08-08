@@ -585,10 +585,7 @@ class ProductionEvidenceAccessAuthorizer:
             evaluator = CurrentStatementGovernanceEvaluator(
                 conn,
                 member_entity_ids=resolved.canonical_member_entity_ids,
-                allowed_run_ids=(
-                    str(read_request.project_run_id),
-                    str(resolved.account_run.id),
-                ),
+                allowed_run_ids=resolved.allowed_run_ids,
             )
             result = (
                 await evaluator.evaluate(

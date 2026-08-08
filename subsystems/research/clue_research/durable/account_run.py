@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import cast
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
@@ -34,7 +35,9 @@ from clue_core import (
     decode_jsonb,
     serialize_value_json,
 )
+from clue_research.claimstore import record_run_lineage
 from clue_research.durable.enums import AccountRunStatus, AccountRunSubPhase
+from clue_research.durable.project_run import get_project_run
 
 # Claim-id references grouped by aspect — the orchestrator's context-bounding artifact (substrate
 # §5b): the lead holds ids, never claim bodies.
@@ -93,6 +96,42 @@ _SELECT_COLUMNS = (
 _GET_SQL = text(f"SELECT {_SELECT_COLUMNS} FROM account_run WHERE id = :id")
 
 
+async def _register_account_run_lineage(
+    conn: AsyncConnection,
+    *,
+    account_run_id: RunId,
+    project_run_id: ProjectRunId,
+) -> None:
+    """Attribute the account run to its project (FI-2 P2, spec §3) — at its own mint site.
+
+    ``account_run.id`` *is* the ``claim.run_id`` every worker of the run stamps, so it is a
+    claim-writing run like any other and must back-join to a project. Registered here, in the
+    caller's transaction (the same one the row commits in), and idempotent — a resume that
+    re-ensures the same run re-registers harmlessly. ``entity_research`` matches the kind the
+    one-shot repair (``clue_research.project_lens_backfill``'s ``account_run_lineage`` source)
+    reconstructs for rows that predate this writer.
+
+    The workspace and project come from the ``project_run`` row rather than the caller: the two
+    mint sites here take no workspace argument, and deriving it keeps the attribution identical to
+    the run's own context by construction. ``account_run.project_run_id`` carries no FK, so a row
+    naming a project run that does not exist is possible; such a run is left unattributed (the
+    backfill's ``skipped_orphan`` disposition) rather than failing the insert — an orphan account
+    run belongs to no project's lens, and an execution write must never be blocked by a lineage
+    lookup.
+    """
+    project_run = await get_project_run(conn, project_run_id)
+    if project_run is None:
+        return
+    await record_run_lineage(
+        conn,
+        run_id=UUID(str(account_run_id)),
+        workspace_id=project_run.workspace_id,
+        kind="entity_research",
+        project_id=project_run.project_id,
+        project_run_id=UUID(str(project_run_id)),
+    )
+
+
 async def insert_account_run(
     conn: AsyncConnection,
     *,
@@ -116,6 +155,9 @@ async def insert_account_run(
             "tier": tier,
             "status": status.value,
         },
+    )
+    await _register_account_run_lineage(
+        conn, account_run_id=account_run_id, project_run_id=project_run_id
     )
     return RunId(result.scalar_one())
 
@@ -146,6 +188,9 @@ async def ensure_account_run(
             "status": status.value,
             "budget": budget_cap_cents,
         },
+    )
+    await _register_account_run_lineage(
+        conn, account_run_id=account_run_id, project_run_id=project_run_id
     )
 
 

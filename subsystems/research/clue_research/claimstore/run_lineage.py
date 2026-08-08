@@ -70,6 +70,14 @@ _BY_PROJECT = text(
     """
 )
 
+_BY_PROJECT_RUN = text(
+    """
+    SELECT run_id FROM run_lineage
+    WHERE workspace_id = :workspace_id AND project_run_id = :project_run_id
+    ORDER BY created_at, run_id
+    """
+)
+
 
 async def record_run_lineage(
     conn: AsyncConnection,
@@ -111,4 +119,28 @@ async def project_run_ids(
 ) -> tuple[RunId, ...]:
     """Every run id attributed to the project — the project-lens read predicate's input."""
     rows = await conn.execute(_BY_PROJECT, {"workspace_id": workspace_id, "project_id": project_id})
+    return tuple(RunId(run_id) for run_id in rows.scalars())
+
+
+async def runs_for_project_run(
+    conn: AsyncConnection, *, workspace_id: str, project_run_id: uuid.UUID
+) -> tuple[RunId, ...]:
+    """Every run id attributed to **one execution** of a project — the narrower lens.
+
+    :func:`project_run_ids` answers "which runs served this project"; this answers "which runs
+    served this *run of* the project". It is what a project-run-pinned read needs (the C7 research
+    view's ``context_scope='project_run_pinned'`` routes): a later run of the same project is a
+    different execution and its claims must not leak into an earlier run's pinned sections.
+
+    Workspace-level runs (``project_run_id IS NULL`` — stage 0, seeds, client-KB) and the known
+    exemption classes in this module's docstring are excluded by construction: no lineage row, or
+    no project run, means no membership in any project run's set.
+
+    The read is by ``(workspace_id, project_run_id)``; the ``run_lineage_by_project`` index covers
+    only the ``workspace_id`` prefix of it, which is sufficient at the row counts this table holds
+    (one row per run) — a dedicated index would need a migration and has no measured need yet.
+    """
+    rows = await conn.execute(
+        _BY_PROJECT_RUN, {"workspace_id": workspace_id, "project_run_id": project_run_id}
+    )
     return tuple(RunId(run_id) for run_id in rows.scalars())

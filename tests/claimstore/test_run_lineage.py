@@ -6,18 +6,21 @@ produced it, and :func:`project_run_ids` is the project-lens read predicate's in
 
 from __future__ import annotations
 
+import uuid
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from clue_core import new_run_id
+from clue_core import new_project_run_id, new_run_id
 from clue_research.claimstore import (
     RUN_LINEAGE_KINDS,
     project_run_ids,
     record_run_lineage,
+    runs_for_project_run,
 )
+from tests._workspace import seed_run
 
 from .conftest import rollback_conn, run_async
 
@@ -202,5 +205,61 @@ def test_every_declared_kind_is_accepted_by_the_check_constraint() -> None:
             assert len(
                 await project_run_ids(conn, workspace_id="ws-1", project_id="proj-1")
             ) == len(RUN_LINEAGE_KINDS)
+
+    run_async(_run())
+
+
+def test_runs_for_project_run_is_the_narrower_per_execution_lens() -> None:
+    """One *run of* a project, not the project: a later run's claims stay out of an earlier one.
+
+    Also excludes what has no place in any project run's set — a workspace-level run (stage 0,
+    seeds, client-KB) and another workspace's run of the same id space.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            first_run = new_project_run_id()
+            second_run = new_project_run_id()
+            project_id = await seed_run(conn, project_run_id=first_run, workspace_id="ws-lens")
+            await seed_run(
+                conn, project_run_id=second_run, workspace_id="ws-lens", project_id=project_id
+            )
+            mine, sibling, workspace_level = new_run_id(), new_run_id(), new_run_id()
+            await record_run_lineage(
+                conn,
+                run_id=mine,
+                workspace_id="ws-lens",
+                kind="entity_research",
+                project_id=project_id,
+                project_run_id=uuid.UUID(str(first_run)),
+            )
+            await record_run_lineage(
+                conn,
+                run_id=sibling,
+                workspace_id="ws-lens",
+                kind="entity_research",
+                project_id=project_id,
+                project_run_id=uuid.UUID(str(second_run)),
+            )
+            await record_run_lineage(
+                conn, run_id=workspace_level, workspace_id="ws-lens", kind="stage0"
+            )
+
+            assert await runs_for_project_run(
+                conn, workspace_id="ws-lens", project_run_id=uuid.UUID(str(first_run))
+            ) == (mine,)
+            assert (
+                await runs_for_project_run(
+                    conn, workspace_id="other-ws", project_run_id=uuid.UUID(str(first_run))
+                )
+                == ()
+            )
+            # Both executions are still one project's lineage — the wider lens keeps both.
+            assert set(
+                await project_run_ids(conn, workspace_id="ws-lens", project_id=project_id)
+            ) == {
+                mine,
+                sibling,
+            }
 
     run_async(_run())
