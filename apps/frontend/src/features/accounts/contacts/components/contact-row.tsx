@@ -1,8 +1,14 @@
 import Link from "next/link";
 import { DesignIcon } from "@/components/ui/design-icon";
 import { ContactAvatar } from "../../components/contact-avatar";
-import type { AccountContactSummary } from "../../model/account-contact";
+import { Absent, Restricted } from "../../components/account-facts";
+import {
+  contactPersonaLabel,
+  contactPersonaTone,
+  type AccountContactSummary,
+} from "../../model/account-contact";
 import type { AccountTableDensity } from "../../model/account-table-view";
+import { formatConfidence, formatToken } from "../../model/formatting";
 import readability from "../../components/account-readability.module.css";
 import { LookupEmailButton } from "./lookup-email-button";
 
@@ -14,14 +20,6 @@ const personaColors = {
   orange: "bg-[#fff0e3] text-[#a95700]",
   pink: "bg-[#fde6f7] text-[#c10087]",
   red: "bg-[#ffdeda] text-[#dd1c12]",
-} as const;
-
-const socialPaths = {
-  facebook: "/logos/facebook.svg",
-  instagram: "/logos/instagram.svg",
-  linkedin: "/logos/linkedin.svg",
-  whatsapp: "/logos/whatsapp.svg",
-  x: "/logos/x.svg",
 } as const;
 
 const densityHeightClasses: Record<AccountTableDensity, string> = {
@@ -43,6 +41,8 @@ export function ContactRow({
   gridTemplateColumns: string;
   onPreview: () => void;
 }) {
+  const confidence = formatConfidence(contact.roleOnCommittee.confidence);
+
   return (
     <div
       className={`${readability.uiRegular} ${readability.densityTransition} ${densityHeightClasses[density]} group isolate grid border-b-[0.5px] border-[var(--clue-border-table)] hover:bg-[var(--clue-background-page)]`}
@@ -51,7 +51,7 @@ export function ContactRow({
     >
       <div className="sticky left-0 z-30 flex items-center justify-center border-r-[0.5px] border-[var(--clue-border-table)] bg-white group-hover:bg-[var(--clue-background-page)]">
         <input
-          aria-label={`Select ${contact.name}`}
+          aria-label={`Select ${contact.name ?? "unnamed contact"}`}
           className="size-4 appearance-none rounded border-[0.5px] border-[#b5bcc6] checked:border-[#567644] checked:bg-[#567644]"
           type="checkbox"
         />
@@ -61,61 +61,82 @@ export function ContactRow({
         onClick={onPreview}
         type="button"
       >
-        <ContactAvatar
-          name={contact.name}
-          size={24}
-          src={contact.avatarUrl}
-        />
-        <span className={`${readability.uiMedium} truncate`}>{contact.name}</span>
-        {contact.id === "denise-dresser" ? (
-          <span className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
-            <DesignIcon name="arrow-up-right" size={12} />
-          </span>
-        ) : null}
+        <ContactAvatar name={contact.name} size={24} />
+        <span className={`${readability.uiMedium} truncate`}>
+          {contact.name ?? "Unnamed contact"}
+        </span>
+        <span className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
+          <DesignIcon name="arrow-up-right" size={12} />
+        </span>
       </button>
       <div className="flex items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4">
-        <span className="truncate">{contact.title}</span>
+        {/* A withheld title is absent WITH a marker; a title we simply do not
+            hold is absent and unmarked. The wire says which. */}
+        {contact.titleRestricted ? (
+          <Restricted />
+        ) : contact.title ? (
+          <span className="truncate">{contact.title}</span>
+        ) : (
+          <Absent />
+        )}
       </div>
       <div className="flex items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4">
         <span
-          className={`${readability.pillMedium} rounded-xl px-2 py-1 shadow-[var(--clue-shadow-low)] ${personaColors[contact.personaTone]}`}
+          className={`${readability.pillMedium} rounded-xl px-2 py-1 shadow-[var(--clue-shadow-low)] ${personaColors[contactPersonaTone(contact.persona)]}`}
         >
-          {contact.persona}
+          {contactPersonaLabel(contact.persona)}
         </span>
       </div>
-      <div className="flex items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4">
-        <span
-          className={`${readability.pillMedium} rounded-xl px-2 py-1 shadow-[var(--clue-shadow-low)] ${
-            contact.influence === "High"
-              ? "bg-[var(--clue-fit-high-background)] text-[var(--clue-fit-high-content)]"
-              : "bg-[#eef1e9] text-[#567644]"
-          }`}
-        >
-          {contact.influence}
+      <div className="flex items-center gap-1.5 border-r-[0.5px] border-[var(--clue-border-table)] px-4">
+        <span className="truncate">
+          {formatToken(contact.roleOnCommittee.value)}
         </span>
+        {confidence ? (
+          <span className="shrink-0 text-[var(--clue-content-subtle)]">
+            {confidence}
+          </span>
+        ) : null}
+      </div>
+      <div className="flex items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4">
+        {/* Signal TYPES, not items: a list-valued facet counts once. */}
+        {contact.signals.typeCount > 0 ? (
+          <span>
+            {contact.signals.typeCount} signal
+            {contact.signals.typeCount === 1 ? " type" : " types"}
+          </span>
+        ) : (
+          <Absent label="No signal types" />
+        )}
       </div>
       <div className="flex items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4 text-[var(--clue-content-subtle)]">
         <LookupEmailButton />
       </div>
       <div className="flex items-center gap-2 px-4">
-        {contact.socials.map((social) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            alt={social}
-            className="size-3 object-contain opacity-80"
-            key={social}
-            src={socialPaths[social]}
-          />
-        ))}
+        {/* LinkedIn is the only social this surface serves (G2). */}
+        {contact.linkedinUrl ? (
+          <a
+            aria-label={`Open ${contact.name ?? "contact"} on LinkedIn`}
+            href={contact.linkedinUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              alt="LinkedIn"
+              className="size-3 object-contain opacity-80"
+              src="/logos/linkedin.svg"
+            />
+          </a>
+        ) : (
+          <Absent label="No LinkedIn profile" />
+        )}
       </div>
-      {contact.id === "denise-dresser" ? (
-        <Link
-          className="sr-only"
-          href={`/accounts/${accountId}/contacts/${contact.id}`}
-        >
-          Open {contact.name}
-        </Link>
-      ) : null}
+      <Link
+        className="sr-only"
+        href={`/accounts/${accountId}/contacts/${contact.id}`}
+      >
+        Open {contact.name ?? "contact"}
+      </Link>
     </div>
   );
 }

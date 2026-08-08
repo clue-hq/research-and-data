@@ -1,49 +1,120 @@
 import type {
   AccountContactDetail,
   AccountContactSummary,
-  ContactPersonaTone,
-  ContactSocial,
 } from "../model/account-contact";
+import type { Persona } from "../model/vocabulary";
+import { accountProjectFixtures } from "./account-projects.fixture";
 
+const revenueCampaign = accountProjectFixtures.revenueCampaign.projectId;
+const conference2026 = accountProjectFixtures.conference2026.projectId;
+
+/**
+ * Development committee rows, shaped like the governed contacts wire.
+ *
+ * What is gone, and why: no `avatarUrl` (G1 — no avatar pipeline and the
+ * browser does not scrape), no `influence` band (D-7 — `roleOnCommittee`
+ * carries the real confidence), no non-LinkedIn socials (G2), no email address
+ * (G3), and no evidence URLs (G4 — provenance chips only).
+ *
+ * `titleRestricted` is exercised on purpose: a weakly-bound contact's title is
+ * served absent WITH the marker, which is a different answer from a title the
+ * backend simply does not hold.
+ */
 function contact(
   id: string,
-  name: string,
-  title: string,
-  persona: string,
-  personaTone: ContactPersonaTone,
-  influence: "High" | "Medium" | "Low",
-  avatarUrl: string,
-  emailStatus: "available" | "lookup",
-  socials: ContactSocial[],
+  name: string | null,
+  title: string | null,
+  persona: Persona,
+  role: string,
+  confidence: number | null,
+  linkedinUrl: string | null,
+  projectIds: string[],
+  typeCount: number,
+  titleRestricted = false,
 ): AccountContactSummary {
   return {
     id,
     name,
     title,
+    titleRestricted,
     persona,
-    personaTone,
-    influence,
-    avatarUrl,
-    emailStatus,
-    socials,
+    roleOnCommittee: { value: role, confidence },
+    linkedinUrl,
+    projectIds,
+    signals: { typeCount },
   };
 }
 
 export const openAiContactsFixture: AccountContactSummary[] = [
-  contact("sam-altman", "Sam Altman", "CEO and Co-founder", "Executive Sponsor", "olive", "High", "/avatars/sam-altman.png", "available", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
-  contact("fidji-simo", "Fidji Simo", "CEO of Applications", "Decision Maker", "orange", "High", "/avatars/fidji-simo.png", "lookup", ["linkedin", "x"]),
-  contact("brad-lightcap", "Brad Lightcap", "Chief Operating Officer", "Decision Maker", "blue", "High", "/avatars/brad-lightcap.png", "available", ["linkedin", "x", "whatsapp"]),
-  contact("denise-dresser", "Denise Dresser", "Chief Revenue Officer", "Economic Buyer", "orange", "High", "/avatars/denise-dresser.png", "lookup", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
-  contact("sarah-friar", "Sarah Friar", "Chief Financial Officer", "Financial Buyer", "blue", "High", "/avatars/sarah-friar.png", "lookup", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
-  contact("kevin-weil", "Kevin Weil", "Chief Product Officer", "Product Champion", "cyan", "High", "/avatars/kevin-weil.png", "available", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
-  contact("mark-chen", "Mark Chen", "Chief Research Officer", "Technical Champion", "green", "High", "/avatars/mark-chen.png", "lookup", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
-  contact("jakub-pachocki", "Jakub Pachocki", "Chief Scientist", "Technical Buyer", "pink", "High", "/avatars/jakub-pachocki.png", "available", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
-  contact("arvind-kc", "Arvind KC", "Chief People Officer", "Operational Leader", "blue", "Medium", "/avatars/arvind-kc.png", "available", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
-  contact("vijaye-raji", "Vijaye Raji", "CTO of Applications", "Technical Buyer", "olive", "High", "/avatars/vijaye-raji.png", "available", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
-  contact("jason-kwon", "Jason Kwon", "Chief Strategy Officer", "Strategic Influencer", "blue", "High", "/avatars/jason-kwon.png", "available", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
-  contact("ronnie-chatterji", "Aaron “Ronnie” Chatterji", "Chief Economist", "Strategic Influencer", "red", "Medium", "/avatars/ronnie-chatterji.png", "lookup", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
-  contact("chris-lehane", "Chris Lehane", "Chief Global Affairs Officer", "External Stakeholder", "olive", "Medium", "/avatars/chris-lehane.png", "lookup", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
-  contact("greg-brockman", "Greg Brockman", "President and Co-founder", "Executive Sponsor", "cyan", "High", "/avatars/greg-brockman.png", "lookup", ["linkedin", "x", "facebook", "instagram", "whatsapp"]),
+  contact(
+    "denise-dresser",
+    "Denise Dresser",
+    "Chief Revenue Officer",
+    "economic_buyer",
+    "economic_buyer",
+    0.87,
+    "https://www.linkedin.com/in/denise-dresser/",
+    [revenueCampaign, conference2026],
+    2,
+  ),
+  contact(
+    "brad-lightcap",
+    "Brad Lightcap",
+    "Chief Operating Officer",
+    "champion",
+    "champion",
+    0.74,
+    "https://www.linkedin.com/in/bradlightcap/",
+    [revenueCampaign],
+    1,
+  ),
+  contact(
+    "sarah-friar",
+    "Sarah Friar",
+    "Chief Financial Officer",
+    "economic_buyer",
+    "economic_buyer",
+    0.66,
+    null,
+    [revenueCampaign],
+    0,
+  ),
+  contact(
+    "jakub-pachocki",
+    "Jakub Pachocki",
+    "Chief Scientist",
+    "technical_evaluator",
+    "technical_evaluator",
+    0.58,
+    "https://www.linkedin.com/in/jakub-pachocki/",
+    [revenueCampaign],
+    1,
+  ),
+  contact(
+    // Display governance withheld the title: absent, and marked as withheld.
+    "unresolved-procurement-lead",
+    "Procurement lead",
+    null,
+    "blocker",
+    "blocker",
+    0.31,
+    null,
+    [conference2026],
+    0,
+    true,
+  ),
+  contact(
+    // No name resolved at all — absent and unmarked, which is the other answer.
+    "unnamed-committee-member",
+    null,
+    "VP Platform Engineering",
+    "technical_evaluator",
+    "technical_evaluator",
+    null,
+    null,
+    [conference2026],
+    0,
+  ),
 ];
 
 const deniseSummary = openAiContactsFixture.find(
@@ -54,38 +125,42 @@ export const deniseDresserFixture: AccountContactDetail = {
   ...deniseSummary,
   accountId: "openai",
   accountName: "OpenAI",
-  accountLogoPath: "/logos/openai-detail.svg",
-  recentSignalsLabel: "5 in the last 180 days",
-  linkedinLabel: "linkedin.com/in/denise",
-  linkedinUrl: "https://www.linkedin.com/in/denise-dresser/",
-  xLabel: "x.com/in/denise",
-  xUrl: "https://x.com/",
-  overviewParagraphs: [
-    "Denise Dresser is OpenAI’s Chief Revenue Officer, responsible for the company’s global revenue strategy across enterprise and customer success.",
-    "Before joining OpenAI, she served as CEO of Slack and led the company through its integration with Salesforce. Earlier in her career, she spent more than a decade at Salesforce building and leading global sales organizations that served some of the company’s largest and most complex customers.",
-    "At OpenAI, her mandate is to help more organizations move from isolated AI experiments to dependable, company-wide deployment. Her responsibilities make her a highly relevant executive stakeholder for platforms that improve enterprise account prioritization, customer intelligence, and coordinated go-to-market execution.",
+  redirectedFrom: null,
+  professionalFacts: [
+    {
+      fieldKey: "contact.title",
+      value: "Chief Revenue Officer",
+      observedAt: "2026-07-18T09:00:00Z",
+      provider: "sumble",
+      restricted: false,
+    },
+    {
+      fieldKey: "contact.seniority",
+      value: "c_level",
+      observedAt: "2026-07-18T09:00:00Z",
+      provider: "sumble",
+      restricted: false,
+    },
+    {
+      fieldKey: "contact.facet.recent_post",
+      value:
+        "Posted about moving enterprises from isolated AI pilots to company-wide deployment.",
+      observedAt: "2026-07-26T14:30:00Z",
+      provider: "exa_deep",
+      restricted: false,
+    },
+    {
+      // Withheld by policy: no value and no provenance, only the marker.
+      fieldKey: "contact.facet.public_appearances",
+      value: null,
+      observedAt: null,
+      provider: null,
+      restricted: true,
+    },
   ],
   evidence: [
-    {
-      id: "cro-appointment",
-      source: "link",
-      title: "Appointed Chief Revenue Officer at OpenAI",
-      dateLabel: "December 9, 2025",
-      url: "https://openai.com/",
-    },
-    {
-      id: "million-customers",
-      source: "link",
-      title: "OpenAI surpassed one million business customers",
-      dateLabel: "November 5, 2025",
-      url: "https://openai.com/",
-    },
-    {
-      id: "enterprise-revenue",
-      source: "linkedin",
-      title: "Enterprise became more than 40% of OpenAI revenue",
-      dateLabel: "April 8, 2026",
-      url: "https://www.linkedin.com/company/openai/",
-    },
+    { provider: "sumble", observedAt: "2026-07-18T09:00:00Z" },
+    { provider: "exa_deep", observedAt: "2026-07-26T14:30:00Z" },
+    { provider: "committee_inference", observedAt: "2026-08-01T12:00:00Z" },
   ],
 };

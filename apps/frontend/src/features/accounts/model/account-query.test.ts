@@ -23,7 +23,10 @@ test("project filters match every project associated with an account", () => {
 test("project sort uses the primary project and account name as a stable tie-breaker", () => {
   const sorted = sortAccounts(accountFixtures, "project-asc");
 
-  assert.deepEqual(sorted.slice(0, 5).map((account) => account.name), [
+  // Neuralink has no membership at all, so it has no project name to sort by
+  // and leads the ascending order rather than being hidden.
+  assert.deepEqual(sorted.slice(0, 6).map((account) => account.name), [
+    "Neuralink",
     "Anthropic",
     "Cohere",
     "Google DeepMind",
@@ -56,4 +59,52 @@ test("filters preserve the authored and-or sequence", () => {
   ]);
 
   assert.deepEqual(filtered.map((account) => account.id), ["openai"]);
+});
+
+test("research status filters against the backend vocabulary, across every project", () => {
+  const filtered = filterAccounts(accountFixtures, [
+    {
+      field: "researchStatus",
+      id: "status-filter",
+      join: "and",
+      operator: "is",
+      value: "needs_review",
+    },
+  ]);
+
+  assert.deepEqual(filtered.map((account) => account.id), ["openai", "airtable"]);
+});
+
+test("a numeric filter over per-project scores matches on any scored project", () => {
+  const filtered = filterAccounts(accountFixtures, [
+    {
+      field: "fitScore",
+      id: "score-filter",
+      join: "and",
+      operator: "greater-than",
+      value: "75",
+    },
+  ]);
+
+  assert.deepEqual(filtered.map((account) => account.id), [
+    "anthropic",
+    "openai",
+  ]);
+});
+
+test("an account with no value for the filtered field never matches it", () => {
+  const filtered = filterAccounts(accountFixtures, [
+    {
+      field: "employeeCount",
+      id: "size-filter",
+      join: "and",
+      operator: "greater-than",
+      value: "0",
+    },
+  ]);
+
+  assert.equal(
+    filtered.some((account) => account.id === "neuralink"),
+    false,
+  );
 });

@@ -1,11 +1,19 @@
+/**
+ * Accounts-table view configuration (presentation only — no wire meaning).
+ *
+ * The column set tracks the as-built list row: the fixture-era `fit`
+ * (`overallFit`, never a backend concept — D-6) and `locations`
+ * (`locationCount`, an industry-pack placeholder — D-7) columns are gone;
+ * `projects` replaces them, because project membership now carries a resolved
+ * name and is the axis the table filters and sorts on.
+ */
 export type AccountColumnKey =
   | "company"
   | "research"
-  | "fit"
   | "score"
   | "revenue"
   | "size"
-  | "locations";
+  | "projects";
 
 export type AccountSort =
   | "default"
@@ -19,21 +27,19 @@ export type AccountColumnWidths = Record<AccountColumnKey, number>;
 export const defaultAccountColumnOrder: AccountColumnKey[] = [
   "company",
   "research",
-  "fit",
   "score",
   "revenue",
   "size",
-  "locations",
+  "projects",
 ];
 
 export const defaultAccountColumns: Record<AccountColumnKey, boolean> = {
   company: true,
   research: true,
-  fit: true,
   score: true,
   revenue: true,
   size: true,
-  locations: true,
+  projects: true,
 };
 
 export function getFirstScrollableAccountColumn(
@@ -47,12 +53,11 @@ export function getFirstScrollableAccountColumn(
 
 export const defaultAccountColumnWidths: AccountColumnWidths = {
   company: 280,
-  research: 160,
-  fit: 140,
+  research: 180,
   score: 140,
-  revenue: 140,
+  revenue: 160,
   size: 140,
-  locations: 140,
+  projects: 220,
 };
 
 export const accountColumnWidthConstraints: Record<
@@ -61,9 +66,8 @@ export const accountColumnWidthConstraints: Record<
 > = {
   company: { max: 640, min: 180 },
   research: { max: 480, min: 136 },
-  fit: { max: 400, min: 120 },
   score: { max: 400, min: 120 },
   revenue: { max: 480, min: 120 },
   size: { max: 400, min: 112 },
-  locations: { max: 400, min: 112 },
+  projects: { max: 520, min: 140 },
 };

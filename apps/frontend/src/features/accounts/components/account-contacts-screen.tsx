@@ -31,7 +31,8 @@ const headers: Array<{
   { key: "name", label: "Contact name" },
   { key: "title", label: "Title" },
   { key: "persona", label: "Persona" },
-  { key: "influence", label: "Influence" },
+  { key: "role", label: "Committee role" },
+  { key: "signals", label: "Signals" },
   { key: "email", label: "Email" },
   { key: "social", label: "Social" },
 ];
@@ -65,7 +66,12 @@ export function AccountContactsScreen({
 }: {
   account: AccountDetail;
   contacts: AccountContactSummary[];
-  featuredContact: AccountContactDetail;
+  /**
+   * The profile shown in the preview drawer. Null whenever the account has no
+   * resolved committee — an empty committee is a legitimate `200`, so the
+   * screen renders its empty state instead of 404-ing the whole page.
+   */
+  featuredContact: AccountContactDetail | null;
 }) {
   const [controller, displayControlsRef] =
     useAccountContactsController(contacts);
@@ -173,21 +179,29 @@ export function AccountContactsScreen({
                   );
                 })}
               </div>
-              {controller.visibleContacts.map((contact) => (
-                <ContactRow
-                  accountId={account.id}
-                  contact={contact}
-                  density={controller.density}
-                  gridTemplateColumns={contactGridTemplate(
-                    controller.columnWidths,
-                  )}
-                  key={contact.id}
-                  onPreview={() =>
-                    contact.id === featuredContact.id &&
-                    controller.openPreview()
-                  }
-                />
-              ))}
+              {controller.visibleContacts.length ? (
+                controller.visibleContacts.map((contact) => (
+                  <ContactRow
+                    accountId={account.id}
+                    contact={contact}
+                    density={controller.density}
+                    gridTemplateColumns={contactGridTemplate(
+                      controller.columnWidths,
+                    )}
+                    key={contact.id}
+                    onPreview={() =>
+                      contact.id === featuredContact?.id &&
+                      controller.openPreview()
+                    }
+                  />
+                ))
+              ) : (
+                <p
+                  className={`${readability.uiRegular} px-6 py-6 text-[var(--clue-content-subtle)]`}
+                >
+                  No committee members have been resolved for this account yet.
+                </p>
+              )}
             </div>
           </div>
         </section>
@@ -202,7 +216,7 @@ export function AccountContactsScreen({
           </section>
         </AccountDetailsRail>
       </div>
-      {controller.previewOpen ? (
+      {controller.previewOpen && featuredContact ? (
         <ContactPreview
           accountId={account.id}
           contact={featuredContact}

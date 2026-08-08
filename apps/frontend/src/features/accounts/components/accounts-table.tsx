@@ -1,9 +1,14 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { DesignIcon } from "@/components/ui/design-icon";
-import type { Account, ResearchStatus } from "../model/account";
+import type { Account } from "../model/account";
+import {
+  formatEmployeeCount,
+  formatResearchStatus,
+  formatRevenueBand,
+  formatScore,
+} from "../model/formatting";
 import {
   accountColumnWidthConstraints,
   defaultAccountColumnWidths,
@@ -14,7 +19,9 @@ import {
   type AccountTableDensity,
 } from "../model/account-table-view";
 import readability from "./account-readability.module.css";
+import { AccountAvatar } from "./account-avatar";
 import { AccountCheckbox } from "./account-checkbox";
+import { Absent } from "./account-facts";
 import { ColumnResizeHandle } from "./column-resize-handle";
 
 const densityHeightClasses: Record<AccountTableDensity, string> = {
@@ -71,17 +78,17 @@ const headerBorder =
 const pinnedHeaderBorder =
   "border-[0.5px] border-[var(--clue-border-table)]";
 
-const researchStatusLabels: Record<ResearchStatus, string> = {
-  not_started: "Not started",
-  in_progress: "In progress...",
-  fully_enriched: "Fully enriched",
-  failed: "Failed",
+const columnLabels: Record<AccountColumnKey, { icon: string; label: string }> = {
+  company: { icon: "building", label: "Company name" },
+  research: { icon: "research", label: "Research status" },
+  score: { icon: "hash", label: "Fit score" },
+  revenue: { icon: "hash", label: "Revenue" },
+  size: { icon: "circle-chevron-down", label: "Employees" },
+  projects: { icon: "circle-chevron-down", label: "Projects" },
 };
 
 function HeaderCell({
   column,
-  icon,
-  label,
   onResize,
   onReset,
   order,
@@ -90,8 +97,6 @@ function HeaderCell({
   width,
 }: {
   column: AccountColumnKey;
-  icon: string;
-  label: string;
   onResize: (column: AccountColumnKey, width: number) => void;
   onReset: (column: AccountColumnKey) => void;
   order: number;
@@ -100,6 +105,7 @@ function HeaderCell({
   width: number;
 }) {
   const constraints = accountColumnWidthConstraints[column];
+  const { icon, label } = columnLabels[column];
 
   return (
     <div
@@ -133,16 +139,101 @@ function HeaderCell({
   );
 }
 
-function ResearchBadge({ account }: { account: Account }) {
-  const showSpinner =
-    account.researchStatus === "in_progress" || account.researchIsRefreshing;
+/**
+ * Research status is a per-project fact, so a global-lens row can legitimately
+ * carry several. Distinct statuses render as chips, each naming the projects it
+ * came from; an account no project has researched renders an honest absence
+ * rather than an invented "Not started".
+ */
+function ResearchStatusCell({ account }: { account: Account }) {
+  if (!account.researchStatus.length) return <Absent label="Not researched" />;
+
+  const byStatus = new Map<string, string[]>();
+  for (const entry of account.researchStatus) {
+    const projectName =
+      account.projects.find(
+        (project) => project.projectId === entry.projectId,
+      )?.name ?? null;
+    const existing = byStatus.get(entry.status) ?? [];
+    // A status can name a project this account is no longer a member of; the
+    // wire reports it, so the chip counts it without claiming a project name.
+    byStatus.set(
+      entry.status,
+      projectName ? [...existing, projectName] : existing,
+    );
+  }
 
   return (
-    <span className={`${readability.pillMedium} flex h-6 w-fit items-center gap-2 rounded-xl bg-[var(--clue-background-pressed)] px-2 shadow-[var(--clue-shadow-low)]`}>
-      {showSpinner ? <DesignIcon name="spinner" size={12} /> : null}
-      <span className="whitespace-nowrap">
-        {researchStatusLabels[account.researchStatus]}
-      </span>
+    <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+      {[...byStatus.entries()].map(([status, projectNames]) => (
+        <span
+          className={`${readability.pillMedium} flex h-6 w-fit shrink-0 items-center gap-2 rounded-xl bg-[var(--clue-background-pressed)] px-2 shadow-[var(--clue-shadow-low)]`}
+          key={status}
+          title={
+            projectNames.length ? projectNames.join(", ") : "Across all projects"
+          }
+        >
+          {status === "in_progress" ? (
+            <DesignIcon name="spinner" size={12} />
+          ) : null}
+          <span className="whitespace-nowrap">
+            {formatResearchStatus(
+              status as Account["researchStatus"][number]["status"],
+            )}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * A row can hold several scores — one project can score an account under
+ * several ICPs and versions, and no representative run is chosen. Each score
+ * is shown with the ICP behind it rather than collapsed into one number.
+ */
+function FitScoreCell({ account }: { account: Account }) {
+  const scored = account.scores.filter((score) => score.fit !== null);
+  if (!scored.length) return <Absent label="Not scored" />;
+
+  return (
+    <span className="flex min-w-0 items-center gap-2 overflow-hidden">
+      {scored.map((score) => {
+        const projectName =
+          account.projects.find(
+            (project) => project.projectId === score.projectId,
+          )?.name ?? null;
+        return (
+          <span
+            className="flex shrink-0 items-center gap-1"
+            key={`${score.projectId}-${score.icpKey}-${score.icpVersion}`}
+            title={[
+              projectName,
+              score.icpKey
+                ? `ICP ${score.icpKey} v${score.icpVersion ?? 1}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          >
+            <DesignIcon name="progress-75" size={13} />
+            <span>{formatScore(score.fit)}</span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+/** Never renders a project id: an unnamed project is shown as unnamed. */
+function ProjectsCell({ account }: { account: Account }) {
+  if (!account.projects.length) return <Absent label="No projects" />;
+
+  return (
+    <span className="min-w-0 truncate">
+      {account.projects
+        .map((project) => project.name ?? "Unnamed project")
+        .join(", ")}
     </span>
   );
 }
@@ -173,6 +264,8 @@ function AccountRow({
   const borderForColumn = (column: AccountColumnKey) =>
     column === firstScrollableColumn ? leadingCellBorder : cellBorder;
   const rowHeightClass = densityHeightClasses[density];
+  const revenue = formatRevenueBand(account.revenueBand);
+  const employees = formatEmployeeCount(account.employeeCount);
 
   return (
     <div
@@ -216,13 +309,10 @@ function AccountRow({
             href={`/accounts/${account.id}/preview`}
             prefetch={false}
           >
-            <Image
-              alt=""
-              aria-hidden="true"
-              className="size-3 shrink-0 object-contain"
-              height={12}
-              src={account.logoPath}
-              width={12}
+            <AccountAvatar
+              logoUrl={account.logoUrl}
+              name={account.name}
+              size={16}
             />
             <span className={`${readability.uiMedium} truncate`}>{account.name}</span>
             <span className="ml-auto flex size-5 items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
@@ -238,18 +328,7 @@ function AccountRow({
           role="gridcell"
           style={{ order: columnOrderIndex("research") }}
         >
-          <ResearchBadge account={account} />
-        </div>
-      ) : null}
-      {visibleColumns.fit ? (
-        <div
-          className={`flex h-full items-center px-4 ${borderForColumn("fit")}`}
-          role="gridcell"
-          style={{ order: columnOrderIndex("fit") }}
-        >
-          <span className={`${readability.pillMedium} rounded-xl bg-[var(--clue-fit-high-background)] px-2 py-1 text-[var(--clue-fit-high-content)]`}>
-            {account.overallFit}
-          </span>
+          <ResearchStatusCell account={account} />
         </div>
       ) : null}
       {visibleColumns.score ? (
@@ -258,8 +337,7 @@ function AccountRow({
           role="gridcell"
           style={{ order: columnOrderIndex("score") }}
         >
-          <DesignIcon name="progress-75" size={13} />
-          <span>{account.fitScore}</span>
+          <FitScoreCell account={account} />
         </div>
       ) : null}
       {visibleColumns.revenue ? (
@@ -268,7 +346,7 @@ function AccountRow({
           role="gridcell"
           style={{ order: columnOrderIndex("revenue") }}
         >
-          {account.revenueBand}
+          {revenue ?? <Absent />}
         </div>
       ) : null}
       {visibleColumns.size ? (
@@ -277,16 +355,16 @@ function AccountRow({
           role="gridcell"
           style={{ order: columnOrderIndex("size") }}
         >
-          {account.employeeBand}
+          {employees ?? <Absent />}
         </div>
       ) : null}
-      {visibleColumns.locations ? (
+      {visibleColumns.projects ? (
         <div
-          className={`flex h-full items-center px-4 ${borderForColumn("locations")}`}
+          className={`flex h-full items-center overflow-hidden px-4 ${borderForColumn("projects")}`}
           role="gridcell"
-          style={{ order: columnOrderIndex("locations") }}
+          style={{ order: columnOrderIndex("projects") }}
         >
-          {account.locationCount}
+          <ProjectsCell account={account} />
         </div>
       ) : null}
     </div>
@@ -361,8 +439,6 @@ export function AccountsTable({
         {visibleColumns.company ? (
           <HeaderCell
             column="company"
-            icon="building"
-            label="Company name"
             onResize={onColumnResize}
             onReset={onColumnResizeReset}
             order={columnOrderIndex("company")}
@@ -370,78 +446,20 @@ export function AccountsTable({
             width={columnWidths.company}
           />
         ) : null}
-        {visibleColumns.research ? (
-          <HeaderCell
-            column="research"
-            icon="research"
-            label="Research status"
-            onResize={onColumnResize}
-            onReset={onColumnResizeReset}
-            order={columnOrderIndex("research")}
-            showLeadingDivider={firstScrollableColumn !== "research"}
-            width={columnWidths.research}
-          />
-        ) : null}
-        {visibleColumns.fit ? (
-          <HeaderCell
-            column="fit"
-            icon="circle-chevron-down"
-            label="Overall fit"
-            onResize={onColumnResize}
-            onReset={onColumnResizeReset}
-            order={columnOrderIndex("fit")}
-            showLeadingDivider={firstScrollableColumn !== "fit"}
-            width={columnWidths.fit}
-          />
-        ) : null}
-        {visibleColumns.score ? (
-          <HeaderCell
-            column="score"
-            icon="hash"
-            label="Fit score"
-            onResize={onColumnResize}
-            onReset={onColumnResizeReset}
-            order={columnOrderIndex("score")}
-            showLeadingDivider={firstScrollableColumn !== "score"}
-            width={columnWidths.score}
-          />
-        ) : null}
-        {visibleColumns.revenue ? (
-          <HeaderCell
-            column="revenue"
-            icon="hash"
-            label="Revenue"
-            onResize={onColumnResize}
-            onReset={onColumnResizeReset}
-            order={columnOrderIndex("revenue")}
-            showLeadingDivider={firstScrollableColumn !== "revenue"}
-            width={columnWidths.revenue}
-          />
-        ) : null}
-        {visibleColumns.size ? (
-          <HeaderCell
-            column="size"
-            icon="circle-chevron-down"
-            label="Size"
-            onResize={onColumnResize}
-            onReset={onColumnResizeReset}
-            order={columnOrderIndex("size")}
-            showLeadingDivider={firstScrollableColumn !== "size"}
-            width={columnWidths.size}
-          />
-        ) : null}
-        {visibleColumns.locations ? (
-          <HeaderCell
-            column="locations"
-            icon="hash"
-            label="Locations"
-            onResize={onColumnResize}
-            onReset={onColumnResizeReset}
-            order={columnOrderIndex("locations")}
-            showLeadingDivider={firstScrollableColumn !== "locations"}
-            width={columnWidths.locations}
-          />
-        ) : null}
+        {(["research", "score", "revenue", "size", "projects"] as const).map(
+          (column) =>
+            visibleColumns[column] ? (
+              <HeaderCell
+                column={column}
+                key={column}
+                onResize={onColumnResize}
+                onReset={onColumnResizeReset}
+                order={columnOrderIndex(column)}
+                showLeadingDivider={firstScrollableColumn !== column}
+                width={columnWidths[column]}
+              />
+            ) : null,
+        )}
       </div>
 
       {accounts.length > 0 ? (

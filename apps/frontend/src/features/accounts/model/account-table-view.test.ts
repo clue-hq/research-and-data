@@ -20,7 +20,6 @@ test("the first visible scrolling column owns no divider beside the pinned compa
       {
         ...defaultAccountColumns,
         research: false,
-        fit: false,
       },
       defaultAccountColumnOrder,
     ),
@@ -28,18 +27,14 @@ test("the first visible scrolling column owns no divider beside the pinned compa
   );
 
   assert.equal(
-    getFirstScrollableAccountColumn(
-      defaultAccountColumns,
-      [
-        "company",
-        "revenue",
-        "research",
-        "fit",
-        "score",
-        "size",
-        "locations",
-      ],
-    ),
+    getFirstScrollableAccountColumn(defaultAccountColumns, [
+      "company",
+      "revenue",
+      "research",
+      "score",
+      "size",
+      "projects",
+    ]),
     "revenue",
   );
 });

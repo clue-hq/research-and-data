@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import {
   createContext,
@@ -12,6 +11,7 @@ import {
   useAccountWorkspaceHeaderController,
 } from "../hooks/use-account-workspace-controller";
 import type { AccountDetail } from "../model/account-detail";
+import { AccountAvatar } from "./account-avatar";
 import { AccountFlowIcon } from "./account-flow-icon";
 import readability from "./account-readability.module.css";
 
@@ -117,14 +117,7 @@ function AccountWorkspaceHeader({
             <BreadcrumbSlash />
           </span>
           <span className={`${readability.uiMedium} flex items-center gap-1 rounded px-2 py-1`}>
-            <Image
-              alt=""
-              aria-hidden="true"
-              className="size-3"
-              height={12}
-              src={account.logoPath}
-              width={12}
-            />
+            <AccountAvatar name={account.name} size={12} />
             {account.name}
           </span>
         </div>
@@ -178,13 +171,17 @@ function AccountWorkspaceHeader({
           </button>
           {controller.menuOpen ? (
             <div className="absolute top-9 right-0 w-44 rounded-lg border-[0.5px] border-[var(--clue-border-neutral)] bg-white p-1 shadow-[0_10px_30px_rgba(0,24,62,0.12)]">
-              <Link
-                className="flex h-8 items-center rounded-md px-3 hover:bg-[var(--clue-background-hover)]"
-                href={account.websiteUrl}
-                target="_blank"
-              >
-                Open company website
-              </Link>
+              {/* `domain` replaced `websiteUrl`; without one there is no link
+                  to offer, so the action is absent rather than dead. */}
+              {account.domain ? (
+                <Link
+                  className="flex h-8 items-center rounded-md px-3 hover:bg-[var(--clue-background-hover)]"
+                  href={`https://${account.domain}`}
+                  target="_blank"
+                >
+                  Open company website
+                </Link>
+              ) : null}
               <button
                 className="flex h-8 w-full items-center rounded-md px-3 hover:bg-[var(--clue-background-hover)]"
                 onClick={controller.closeMenu}

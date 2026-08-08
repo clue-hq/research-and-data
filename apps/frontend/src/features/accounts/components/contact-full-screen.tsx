@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { ApplicationShell } from "@/components/shell/application-shell";
 import { useCopyFeedback } from "@/hooks/use-copy-feedback";
 import type { AccountContactDetail } from "../model/account-contact";
+import { AccountAvatar } from "./account-avatar";
 import readability from "./account-readability.module.css";
 import { ContactProfileContent } from "./contact-profile-content";
 
@@ -37,24 +37,17 @@ export function ContactFullScreen({
               className="flex h-7 items-center gap-1.5 rounded-md px-2 hover:bg-[var(--clue-background-hover)]"
               href={`/accounts/${contact.accountId}`}
             >
-              <Image
-                alt=""
-                aria-hidden="true"
-                height={12}
-                src={contact.accountLogoPath}
-                width={12}
-              />
-              {contact.accountName}
+              <AccountAvatar name={contact.accountName ?? "?"} size={12} />
+              {contact.accountName ?? "Account"}
             </Link>
             <span className="text-[var(--clue-content-subtle)]">/</span>
             <span className={`${readability.uiMedium} flex h-7 items-center whitespace-nowrap px-2`}>
-              {contact.name}
+              {contact.name ?? "Unnamed contact"}
             </span>
           </nav>
           <div className="ml-4 flex shrink-0 items-center gap-2.5">
-            <span className={`${readability.fieldLabel} hidden text-[var(--clue-content-subtle)] sm:inline`}>
-              Last updated&nbsp;&nbsp; yesterday
-            </span>
+            {/* The hard-coded "Last updated yesterday" is gone: this surface
+                serves no such timestamp, and inventing one is a fabrication. */}
             <button
               aria-label={copy.label}
               className="flex size-6 items-center justify-center rounded-md hover:bg-[var(--clue-background-hover)]"

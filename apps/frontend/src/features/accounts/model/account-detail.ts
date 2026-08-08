@@ -1,64 +1,117 @@
 import { z } from "zod";
-import { AccountFitSchema, ResearchStatusSchema } from "./account";
+import {
+  AddedViaSchema,
+  FreshnessSchema,
+  IsoTimestampSchema,
+  JsonValueSchema,
+  PersonaSchema,
+} from "./vocabulary";
 
-export const AccountContactSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  avatarUrl: z.string().refine(
-    (value) => value.startsWith("/") || URL.canParse(value),
-    "Expected an absolute URL or a public asset path",
-  ),
+/**
+ * A project-neutral fact about the account: whatever the merge currently holds.
+ *
+ * `fieldKey` is the field registry's key (`core.employee_count`, a pack's
+ * `<pack>.*`, …) and `value` is the writer's opaque JSON. The frontend renders
+ * these generically off `fieldKey`, so a new industry-pack field appears with
+ * no schema change and no adapter change (FI-1 D-7).
+ */
+export const NeutralFactSchema = z.object({
+  fieldKey: z.string(),
+  value: JsonValueSchema,
+  freshness: FreshnessSchema.nullable().default(null),
+  /** The claim's observed time, falling back to its collection time. */
+  observedAt: IsoTimestampSchema.nullable().default(null),
+  /** The raw backend source key (`clearbit`, `sumble`, …) — no display-name surface exists yet. */
+  provider: z.string().nullable().default(null),
 });
 
-export const AccountFitCriterionSchema = z.object({
-  id: z.string().min(1),
-  matched: z.boolean(),
-  title: z.string().min(1),
-  evidence: z.string().min(1),
+/** A project-relative fact: an insight or a value narrative inside one project section. */
+export const RelativeFactSchema = z.object({
+  fieldKey: z.string(),
+  value: JsonValueSchema,
+  observedAt: IsoTimestampSchema.nullable().default(null),
+  provider: z.string().nullable().default(null),
 });
 
-export const AccountInsightSchema = z.object({
-  id: z.string().min(1),
-  source: z.enum(["link", "linkedin", "x"]),
-  title: z.string().min(1),
-  dateLabel: z.string().min(1),
-  url: z.string().url(),
+/** A score inside a project section — the project is the section, so it is not repeated. */
+export const ProjectSectionScoreSchema = z.object({
+  fit: z.number().nullable().default(null),
+  intent: z.number().nullable().default(null),
+  icpKey: z.string().nullable().default(null),
+  icpVersion: z.number().int().nullable().default(null),
+  scoredAt: IsoTimestampSchema.nullable().default(null),
 });
 
-export const AccountActivitySchema = z.object({
-  id: z.string().min(1),
-  kind: z.enum(["contacts", "summary", "created"]),
-  text: z.string().min(1),
-  timeLabel: z.string().min(1),
+/**
+ * One project's slice of the account's research.
+ *
+ * `projectId: null` is the unattributed bucket (claims whose run maps to no
+ * project), always served last. `addedVia`/`addedAt`/`name` are independently
+ * nullable — a project that produced research without a membership row is
+ * reported rather than hidden. A project with a membership and no work still
+ * gets an empty section, because "targeted, nothing produced yet" is real.
+ */
+export const AccountProjectSectionSchema = z.object({
+  projectId: z.string().nullable().default(null),
+  name: z.string().nullable().default(null),
+  addedVia: AddedViaSchema.nullable().default(null),
+  addedAt: IsoTimestampSchema.nullable().default(null),
+  scores: z.array(ProjectSectionScoreSchema).default([]),
+  /** Plural: value narratives are written one per persona. */
+  narratives: z.array(RelativeFactSchema).default([]),
+  insights: z.array(RelativeFactSchema).default([]),
 });
 
+export const CommitteeMemberSchema = z.object({
+  contactId: z.string(),
+  name: z.string().nullable().default(null),
+  persona: PersonaSchema,
+  /** An open string on the wire, not the persona enum. */
+  roleOnCommittee: z.string().nullable().default(null),
+  projectIds: z.array(z.string()).default([]),
+});
+
+/**
+ * Coverage counters.
+ *
+ * `researchedFieldCount` counts the distinct fields holding at least one live,
+ * non-rejected claim from ANY writer — it is "how many fields do we hold a
+ * value for", not research progress, and it has no denominator. The honest
+ * research-side companion is `unresolvedFieldKeys`: fields research asked for
+ * and could not answer.
+ */
+export const AccountCoverageSchema = z.object({
+  researchedFieldCount: z.number().int().nonnegative().default(0),
+  unresolvedFieldKeys: z.array(z.string()).default([]),
+});
+
+/**
+ * `GET /frontend/v1/accounts/{accountId}` — the object itself, no `data` wrapper.
+ *
+ * The detail carries NO research status: status is an `(account, project)` fact
+ * served on the list row.
+ */
 export const AccountDetailSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  previewTitle: z.string().min(1),
-  logoPath: z.string().startsWith("/"),
-  websiteUrl: z.string().url(),
-  websiteLabel: z.string().min(1),
-  researchStatus: ResearchStatusSchema,
-  sizeLabel: z.string().min(1),
-  locationsLabel: z.string().min(1),
-  revenueLabel: z.string().min(1),
-  referralFit: AccountFitSchema,
-  directAccessFit: AccountFitSchema,
-  recallFit: AccountFitSchema,
-  overallFit: AccountFitSchema,
-  summaryParagraphs: z.array(z.string().min(1)).min(1),
-  businessParagraphs: z.array(z.string().min(1)).min(1),
-  fitCriteria: z.array(AccountFitCriterionSchema),
-  contacts: z.array(AccountContactSchema),
-  insights: z.array(AccountInsightSchema),
-  activity: z.array(AccountActivitySchema),
+  id: z.string(),
+  name: z.string(),
+  domain: z.string().nullable().default(null),
+  aliases: z.array(z.string()).default([]),
+  registryIds: z.record(z.string(), z.string()).default({}),
+  hqGeo: z.record(z.string(), JsonValueSchema).nullable().default(null),
+  /** Set when a merged loser's id was requested and this survivor was served. */
+  redirectedFrom: z.string().nullable().default(null),
+  neutralFacts: z.array(NeutralFactSchema).default([]),
+  projectSections: z.array(AccountProjectSectionSchema).default([]),
+  committee: z.array(CommitteeMemberSchema).default([]),
+  coverage: AccountCoverageSchema.default({
+    researchedFieldCount: 0,
+    unresolvedFieldKeys: [],
+  }),
 });
 
-export const AccountDetailResponseSchema = z.object({
-  data: AccountDetailSchema,
-});
-
-export type AccountContact = z.infer<typeof AccountContactSchema>;
+export type AccountCoverage = z.infer<typeof AccountCoverageSchema>;
 export type AccountDetail = z.infer<typeof AccountDetailSchema>;
-export type AccountInsight = z.infer<typeof AccountInsightSchema>;
+export type AccountProjectSection = z.infer<typeof AccountProjectSectionSchema>;
+export type CommitteeMember = z.infer<typeof CommitteeMemberSchema>;
+export type NeutralFact = z.infer<typeof NeutralFactSchema>;
+export type RelativeFact = z.infer<typeof RelativeFactSchema>;

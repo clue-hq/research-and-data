@@ -1,5 +1,6 @@
 import type { AccountDetail } from "../model/account-detail";
 import {
+  AccountCoveragePanel,
   AccountDetailsList,
   AccountIdentity,
   AccountTextSection,
@@ -22,19 +23,16 @@ export function AccountPreviewDrawer({
           <AccountIdentity account={account} />
         </div>
         <div className="mt-9">
-          <AccountDetailsList account={account} showContacts />
+          <AccountDetailsList account={account} showCommittee />
         </div>
         <div className="mt-9">
           <AccountTextSection
-            paragraphs={account.summaryParagraphs}
+            emptyNote="A written account summary is composed once this account's deep research completes."
             title="Account summary"
           />
         </div>
         <div className="mt-9">
-          <AccountTextSection
-            paragraphs={account.businessParagraphs}
-            title="About their business"
-          />
+          <AccountCoveragePanel account={account} />
         </div>
       </div>
     </aside>

@@ -141,7 +141,7 @@ export function useAccountsFilterController(
 }
 
 export function useAccountsToolbarController(
-  onCreateAccount: (name: string, websiteUrl: string) => void,
+  onCreateAccount: (name: string, domain: string) => void,
 ) {
   const [openPanel, setOpenPanel] = useState<OpenAccountsPanel>(null);
   const [newAccountName, setNewAccountName] = useState("");
@@ -189,11 +189,14 @@ export function useAccountsToolbarController(
     const rawWebsite = newAccountWebsite.trim();
     if (!name || !rawWebsite) return;
 
-    const websiteUrl = /^https?:\/\//i.test(rawWebsite)
-      ? rawWebsite
-      : `https://${rawWebsite}`;
+    // The wire carries a bare `domain`, not a website URL, so whatever the
+    // user pastes is reduced to one.
+    const domain = rawWebsite
+      .replace(/^https?:\/\//i, "")
+      .replace(/^www\./i, "")
+      .replace(/\/.*$/, "");
 
-    onCreateAccount(name, websiteUrl);
+    onCreateAccount(name, domain);
     setNewAccountName("");
     setNewAccountWebsite("");
     closePanel();

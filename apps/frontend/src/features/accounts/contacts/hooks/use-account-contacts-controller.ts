@@ -46,8 +46,12 @@ export function useAccountContactsController(
     const query = search.trim().toLowerCase();
     if (!query) return contacts;
 
+    // Name and title are both nullable on the wire; an absent field simply
+    // contributes nothing to the haystack.
     return contacts.filter((contact) =>
-      `${contact.name} ${contact.title} ${contact.persona}`
+      [contact.name, contact.title, contact.persona, contact.roleOnCommittee.value]
+        .filter(Boolean)
+        .join(" ")
         .toLowerCase()
         .includes(query),
     );

@@ -27,7 +27,7 @@ interface AccountsToolbarProps {
     target: AccountColumnKey,
   ) => void;
   onColumnToggle: (column: AccountColumnKey) => void;
-  onCreateAccount: (name: string, websiteUrl: string) => void;
+  onCreateAccount: (name: string, domain: string) => void;
   onDensityChange: (density: AccountTableDensity) => void;
   onFiltersChange: (filters: AccountFilterRule[]) => void;
   onSearchChange: (value: string) => void;
@@ -45,11 +45,10 @@ const columnOptions: Array<{
 }> = [
   { icon: "building", key: "company", label: "Company name" },
   { icon: "research", key: "research", label: "Research status" },
-  { icon: "circle-chevron-down", key: "fit", label: "Overall fit" },
   { icon: "hash", key: "score", label: "Fit score" },
   { icon: "hash", key: "revenue", label: "Revenue" },
-  { icon: "circle-chevron-down", key: "size", label: "Size" },
-  { icon: "hash", key: "locations", label: "Locations" },
+  { icon: "circle-chevron-down", key: "size", label: "Employees" },
+  { icon: "circle-chevron-down", key: "projects", label: "Projects" },
 ];
 
 function SmallIcon({

@@ -14,26 +14,32 @@ import {
   sortAccounts,
 } from "../model/account-query";
 
-function createLocalAccount(name: string, websiteUrl: string): Account {
+/**
+ * An optimistic, client-only row for an account the user just typed in.
+ *
+ * No create endpoint exists on this read surface, so the row exists only in
+ * this session. Every enrichment field is left genuinely empty — a
+ * placeholder score or an "Unknown" band here would be indistinguishable from
+ * a real backend answer.
+ */
+function createLocalAccount(name: string, domain: string): Account {
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 
   return {
-    employeeBand: "Unknown",
-    fitScore: 0,
     id: `${slug}-${crypto.randomUUID()}`,
-    locationCount: 0,
-    logoPath: "/icons/building.svg",
     name,
-    overallFit: "Medium",
-    primaryProjectId: null,
+    domain,
+    employeeCount: null,
+    revenueBand: null,
+    logoUrl: null,
     projects: [],
-    researchIsRefreshing: false,
-    researchStatus: "not_started",
-    revenueBand: "Unknown",
-    websiteUrl,
+    primaryProjectId: null,
+    scores: [],
+    researchStatus: [],
+    updatedAt: null,
   };
 }
 
@@ -68,10 +74,12 @@ export function useAccountsScreenController(initialAccounts: Account[]) {
   const projectOptions = useMemo(() => {
     const projects = new Map<string, Account["projects"][number]>();
     for (const account of accountRows) {
-      for (const project of account.projects) projects.set(project.id, project);
+      for (const project of account.projects) {
+        projects.set(project.projectId, project);
+      }
     }
     return [...projects.values()].sort((first, second) =>
-      first.name.localeCompare(second.name),
+      (first.name ?? "").localeCompare(second.name ?? ""),
     );
   }, [accountRows]);
 
@@ -136,9 +144,9 @@ export function useAccountsScreenController(initialAccounts: Account[]) {
     }));
   }
 
-  function createAccount(name: string, websiteUrl: string) {
+  function createAccount(name: string, domain: string) {
     setAccountRows((current) => [
-      createLocalAccount(name, websiteUrl),
+      createLocalAccount(name, domain),
       ...current,
     ]);
   }

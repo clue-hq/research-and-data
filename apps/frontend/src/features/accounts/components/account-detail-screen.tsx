@@ -1,133 +1,215 @@
 import Link from "next/link";
-import { DesignIcon } from "@/components/ui/design-icon";
-import { SidebarIcon } from "@/components/shell/sidebar-icon";
-import type { AccountDetail, AccountInsight } from "../model/account-detail";
+import type {
+  AccountDetail,
+  AccountProjectSection,
+} from "../model/account-detail";
+import { contactPersonaLabel } from "../model/account-contact";
+import {
+  formatFieldKeyLabel,
+  formatIsoDate,
+  formatScore,
+  formatToken,
+} from "../model/formatting";
 import readability from "./account-readability.module.css";
 import {
+  AccountCoveragePanel,
   AccountDetailsList,
   AccountIdentity,
   AccountTextSection,
-  FitBadge,
+  TokenBadge,
 } from "./account-detail-primitives";
+import { Absent, FactValue, Provenance } from "./account-facts";
 import {
   AccountDetailsRail,
   AccountWorkspaceShell,
 } from "./account-workspace-shell";
 import { ContactAvatar } from "./contact-avatar";
 
-function FitCriteria({ account }: { account: AccountDetail }) {
+function sectionTitle(section: AccountProjectSection) {
+  if (section.projectId === null) return "Not attributed to a project";
+  return section.name ?? "Unnamed project";
+}
+
+function sectionSubtitle(section: AccountProjectSection) {
+  if (section.projectId === null) {
+    return "Claims whose run maps to no project — manual ingestion and the documented lineage exemptions.";
+  }
+  const addedAt = formatIsoDate(section.addedAt);
+  if (section.addedVia && addedAt) {
+    return `Added ${formatToken(section.addedVia).toLocaleLowerCase()} · ${addedAt}`;
+  }
+  if (addedAt) return `Added ${addedAt}`;
+  // No membership row: this project produced research without targeting the
+  // account. Reported rather than hidden.
+  return "This project produced research without a membership record.";
+}
+
+/**
+ * One project's slice of the research.
+ *
+ * Scores, value narratives (plural — one per persona) and insights are shown
+ * inside the project that produced them: a score from one project is never
+ * attributed to another, and the unattributed bucket is labelled as such
+ * instead of being folded into a project.
+ */
+function ProjectSection({ section }: { section: AccountProjectSection }) {
+  const empty =
+    !section.scores.length &&
+    !section.narratives.length &&
+    !section.insights.length;
+
   return (
-    <section className="mt-9">
-      <div className="flex h-6 items-center gap-2">
-        <span className={`${readability.fieldLabel} text-[var(--clue-content-subtle)]`}>
-          Overall fit:
+    <section className="mt-8">
+      <div className="flex flex-wrap items-baseline gap-2">
+        <h3 className={readability.uiMedium}>{sectionTitle(section)}</h3>
+        <span
+          className={`${readability.fieldLabel} text-[var(--clue-content-subtle)]`}
+        >
+          {sectionSubtitle(section)}
         </span>
-        <FitBadge compact fit={account.overallFit} />
       </div>
-      <div className="mt-2">
-        {account.fitCriteria.map((criterion) => (
-          <div className="flex min-h-[82px] items-start" key={criterion.id}>
-            <span className="mt-2 flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--clue-background-page)]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                alt=""
-                className="max-h-3 max-w-3 object-contain"
-                src={
-                  criterion.matched
-                    ? "/icons/detail/criteria-pass.svg"
-                    : "/icons/detail/criteria-fail.svg"
-                }
-              />
-            </span>
-            <div className={`${readability.uiRegular} ml-2 mt-2 min-w-0`}>
-              <h3>{criterion.title}</h3>
-              <p className="text-[var(--clue-content-subtle)]">
-                {criterion.evidence}
-              </p>
+
+      {empty ? (
+        <p
+          className={`${readability.uiRegular} mt-2 text-[var(--clue-content-subtle)]`}
+        >
+          Targeted, nothing produced yet.
+        </p>
+      ) : null}
+
+      {section.scores.length ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {section.scores.map((score) => (
+            <TokenBadge
+              compact
+              key={`${score.icpKey}-${score.icpVersion}-${score.scoredAt}`}
+            >
+              Fit {formatScore(score.fit) ?? "—"} · Intent{" "}
+              {formatScore(score.intent) ?? "—"}
+              {score.icpKey
+                ? ` · ICP ${score.icpKey} v${score.icpVersion ?? 1}`
+                : ""}
+            </TokenBadge>
+          ))}
+        </div>
+      ) : null}
+
+      {section.narratives.length ? (
+        <div className="mt-4 space-y-3">
+          {section.narratives.map((narrative, index) => (
+            <article
+              className="rounded-lg border-[0.5px] border-[var(--clue-border-neutral)] p-3"
+              key={`${narrative.fieldKey}-${index}`}
+            >
+              <h4
+                className={`${readability.fieldLabel} text-[var(--clue-content-subtle)]`}
+                title={narrative.fieldKey}
+              >
+                {formatFieldKeyLabel(narrative.fieldKey)}
+              </h4>
+              <div className={`${readability.uiRegular} mt-1.5`}>
+                <FactValue value={narrative.value} />
+              </div>
+              <div className={`${readability.fieldLabel} mt-2`}>
+                <Provenance
+                  observedAt={narrative.observedAt}
+                  provider={narrative.provider}
+                />
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
+
+      {section.insights.length ? (
+        <div className="mt-4 space-y-3">
+          {section.insights.map((insight, index) => (
+            <div
+              className={`${readability.uiRegular} flex flex-col gap-1`}
+              key={`${insight.fieldKey}-${index}`}
+            >
+              <span
+                className={`${readability.fieldLabel} text-[var(--clue-content-subtle)]`}
+                title={insight.fieldKey}
+              >
+                {formatFieldKeyLabel(insight.fieldKey)}
+              </span>
+              <FactValue value={insight.value} />
+              <span className={readability.fieldLabel}>
+                <Provenance
+                  observedAt={insight.observedAt}
+                  provider={insight.provider}
+                />
+              </span>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
 
-function InsightSourceIcon({ source }: { source: AccountInsight["source"] }) {
-  const path =
-    source === "linkedin"
-      ? "/logos/linkedin.svg"
-      : source === "x"
-        ? "/logos/x.svg"
-        : "/icons/detail/source.svg";
-
-  return (
-    <span className="flex size-4 shrink-0 items-center justify-center">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img alt="" className="max-h-4 max-w-4 object-contain" src={path} />
-    </span>
-  );
-}
-
-function Insights({ account }: { account: AccountDetail }) {
+function ProjectSections({ account }: { account: AccountDetail }) {
   return (
     <section className="mt-9 pb-12">
-      <div className="flex h-5 items-center justify-between">
-        <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
-          Insights &amp; evidence
-        </h2>
-        <Link
-          className={readability.actionMedium}
-          href={`/accounts/${account.id}/insights`}
+      <h2
+        className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}
+      >
+        Research by project
+      </h2>
+      {account.projectSections.length ? (
+        account.projectSections.map((section) => (
+          <ProjectSection
+            key={section.projectId ?? "unattributed"}
+            section={section}
+          />
+        ))
+      ) : (
+        <p
+          className={`${readability.uiRegular} mt-3 text-[var(--clue-content-subtle)]`}
         >
-          See all
-        </Link>
-      </div>
-      <div className="mt-3">
-        {account.insights.map((insight) => (
-          <a
-            className={`${readability.uiRegular} flex h-8 items-center gap-2`}
-            href={insight.url}
-            key={insight.id}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <InsightSourceIcon source={insight.source} />
-            <span className={`${readability.uiMedium} min-w-0 flex-1 truncate`}>
-              {insight.title}
-            </span>
-            <time className="w-36 shrink-0 text-right text-[var(--clue-content-subtle)]">
-              {insight.dateLabel}
-            </time>
-          </a>
-        ))}
-      </div>
+          No project has produced research on this account yet.
+        </p>
+      )}
     </section>
   );
 }
 
-function ContactsPanel({ account }: { account: AccountDetail }) {
+/**
+ * The buying committee.
+ *
+ * Empty is a legitimate answer today: the governed committee reads M8D
+ * research references whose production writer is still quarantined, so the
+ * endpoint returns an empty list rather than a 404.
+ */
+function CommitteePanel({ account }: { account: AccountDetail }) {
   return (
     <section className="border-b-[0.5px] border-[var(--clue-border-neutral)] px-4 pb-3 pt-[23px]">
-      <h2 className={readability.sectionHeading}>Contacts</h2>
+      <h2 className={readability.sectionHeading}>Buying committee</h2>
       <div className="mt-6 space-y-4">
-        {account.contacts.map((contact) => (
-          <Link
-            className="flex h-6 items-center gap-2 rounded-md hover:bg-[var(--clue-background-hover)]"
-            href={
-              contact.id === "denise-dresser"
-                ? `/accounts/${account.id}/contacts/${contact.id}`
-                : `/accounts/${account.id}/contacts`
-            }
-            key={contact.id}
-          >
-            <ContactAvatar
-              name={contact.name}
-              size={24}
-              src={contact.avatarUrl}
-            />
-            <span className={readability.uiRegular}>{contact.name}</span>
-          </Link>
-        ))}
+        {account.committee.length ? (
+          account.committee.map((member) => (
+            <Link
+              className="flex min-h-6 items-center gap-2 rounded-md hover:bg-[var(--clue-background-hover)]"
+              href={`/accounts/${account.id}/contacts/${member.contactId}`}
+              key={member.contactId}
+            >
+              <ContactAvatar name={member.name} size={24} />
+              <span className={readability.uiRegular}>
+                {member.name ?? "Unnamed contact"}
+              </span>
+              <span
+                className={`${readability.fieldLabel} text-[var(--clue-content-subtle)]`}
+              >
+                {contactPersonaLabel(member.persona)}
+              </span>
+            </Link>
+          ))
+        ) : (
+          <p className={readability.uiRegular}>
+            <Absent label="No committee resolved yet" />
+          </p>
+        )}
       </div>
       <Link
         className={`${readability.actionMedium} mt-4 inline-block`}
@@ -135,43 +217,6 @@ function ContactsPanel({ account }: { account: AccountDetail }) {
       >
         See all
       </Link>
-    </section>
-  );
-}
-
-function ActivityIcon({
-  kind,
-}: {
-  kind: AccountDetail["activity"][number]["kind"];
-}) {
-  if (kind === "contacts") {
-    return <SidebarIcon name="account" />;
-  }
-  return (
-    <DesignIcon
-      name={kind === "summary" ? "artifacts" : "progress-75"}
-      size={16}
-    />
-  );
-}
-
-function ActivityPanel({ account }: { account: AccountDetail }) {
-  return (
-    <section className="border-b-[0.5px] border-[var(--clue-border-neutral)] px-4 pb-4 pt-5">
-      <h2 className={readability.sectionHeading}>Activity</h2>
-      <div className="mt-4 space-y-4">
-        {account.activity.map((item) => (
-          <div className="flex h-5 items-center gap-3" key={item.id}>
-            <ActivityIcon kind={item.kind} />
-            <p className={readability.uiRegular}>
-              {item.text}{" "}
-              <span className="text-[var(--clue-content-subtle)]">
-                {item.timeLabel}
-              </span>
-            </p>
-          </div>
-        ))}
-      </div>
     </section>
   );
 }
@@ -185,8 +230,10 @@ function DetailsPanel({ account }: { account: AccountDetail }) {
           <AccountDetailsList account={account} />
         </div>
       </section>
-      <ContactsPanel account={account} />
-      <ActivityPanel account={account} />
+      <CommitteePanel account={account} />
+      <section className="border-b-[0.5px] border-[var(--clue-border-neutral)] px-4 pb-4 pt-5">
+        <AccountCoveragePanel account={account} />
+      </section>
     </AccountDetailsRail>
   );
 }
@@ -201,21 +248,14 @@ export function AccountDetailScreen({
       <div className="flex h-full min-h-0 min-w-0">
         <section className="clue-scrollbar-hidden min-w-0 flex-1 overflow-y-auto">
           <article className="mx-auto w-full max-w-[720px] px-8 pt-12">
-              <AccountIdentity account={account} />
-              <div className="mt-9">
-                <AccountTextSection
-                  paragraphs={account.summaryParagraphs}
-                  title="Account summary"
-                />
-              </div>
-              <div className="mt-9">
-                <AccountTextSection
-                  paragraphs={account.businessParagraphs}
-                  title="About their business"
-                />
-              </div>
-              <FitCriteria account={account} />
-              <Insights account={account} />
+            <AccountIdentity account={account} />
+            <div className="mt-9">
+              <AccountTextSection
+                emptyNote="A written account summary is composed once this account's deep research completes."
+                title="Account summary"
+              />
+            </div>
+            <ProjectSections account={account} />
           </article>
         </section>
         <DetailsPanel account={account} />

@@ -1,8 +1,9 @@
 import {
-  AccountDetailResponseSchema,
+  AccountDetailSchema,
   type AccountDetail,
 } from "../model/account-detail";
 import { openAiAccountDetailFixture } from "./account-detail.fixture";
+import { apiBaseUrl, fetchRead } from "./frontend-api";
 
 export interface AccountDetailsRepository {
   get(accountId: string): Promise<AccountDetail | null>;
@@ -14,36 +15,21 @@ export const fixtureAccountDetailsRepository: AccountDetailsRepository = {
       return null;
     }
 
-    return AccountDetailResponseSchema.parse({
-      data: openAiAccountDetailFixture,
-    }).data;
+    return AccountDetailSchema.parse(openAiAccountDetailFixture);
   },
 };
 
-export function createHttpAccountDetailsRepository(
-  apiBaseUrl: string,
-): AccountDetailsRepository {
+/**
+ * The detail is a single resource: the backend returns the object itself, with
+ * no `{data}` wrapper (only the two list endpoints use one). A merged loser's
+ * id is followed to its survivor, with `redirectedFrom` naming what was asked
+ * for; an unknown id is a `404`, which the transport turns into `null`.
+ */
+export function createHttpAccountDetailsRepository(): AccountDetailsRepository {
   return {
     async get(accountId) {
-      const url = new URL(
-        `/api/v1/accounts/${encodeURIComponent(accountId)}`,
-        `${apiBaseUrl.replace(/\/$/, "")}/`,
-      );
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      });
-
-      if (response.status === 404) {
-        return null;
-      }
-      if (!response.ok) {
-        throw new Error(
-          `Account details API returned ${response.status} ${response.statusText}`,
-        );
-      }
-
-      return AccountDetailResponseSchema.parse(await response.json()).data;
+      const body = await fetchRead(`/accounts/${encodeURIComponent(accountId)}`);
+      return body === null ? null : AccountDetailSchema.parse(body);
     },
   };
 }
@@ -51,9 +37,8 @@ export function createHttpAccountDetailsRepository(
 export async function getAccountDetails(
   accountId: string,
 ): Promise<AccountDetail | null> {
-  const apiBaseUrl = process.env.CLUE_API_BASE_URL;
-  const repository = apiBaseUrl
-    ? createHttpAccountDetailsRepository(apiBaseUrl)
+  const repository = apiBaseUrl()
+    ? createHttpAccountDetailsRepository()
     : fixtureAccountDetailsRepository;
 
   return repository.get(accountId);

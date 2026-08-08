@@ -767,3 +767,90 @@ called out rather than assumed.
 7. **`projects[].name` is served by the read layer** (the plan-owner addendum to
    the same ruling) — see the `projects[]` entry in the ratified deviations
    above. The former Task-6 blocker is closed.
+
+### Frontend seam as flipped (Task 6, 2026-08-08)
+
+The Zod schemas (`src/features/accounts/model/`) and HTTP adapters
+(`src/features/accounts/data/`) are now written against the wire above. Five
+decisions were taken at the adapter and are recorded here rather than left
+implicit.
+
+1. **The adapters unwrap on the list side only.** `GET /accounts` and
+   `GET /accounts/{id}/contacts` parse `{data, meta}`; the account detail and
+   the contact profile parse the bare object. This closes the "decide at the
+   adapter flip" note in the single-resource deviation above — the backend
+   keeps its shapes and no wrapper is added.
+2. **`addedVia` is parsed as `z.string()`, not an enum.** The backend stores the
+   raw registered channel behind a CHECK constraint (`discovered` / `imported` /
+   `manual` / `directive` today) *specifically* so a read does not crash on a
+   channel a later migration adds, so the frontend keeps the same posture:
+   sentence-cased through a generic prettifier with no lookup table to drift.
+   `researchStatus`, `persona` and `freshness` — closed backend enums — are the
+   only `z.enum`s on this surface, plus `not_launchable`, ratified forward.
+3. **Tenancy is a build-time env for MVP: `CLUE_WORKSPACE_ID`.** Every
+   `/frontend/v1` data request carries `X-Workspace-Id`, and the frontend has no
+   session or tenant surface yet. The transport module reads the workspace from
+   the environment and throws at the seam when `CLUE_API_BASE_URL` is set
+   without it, instead of shipping a `401` to a screen. When a real session
+   layer exists, `data/frontend-api.ts::workspaceId` is the single function that
+   changes. Both variables are server-only — never `NEXT_PUBLIC_*`, because the
+   workspace *is* the tenancy boundary.
+4. **`error.code` is carried, never switched on.** A failed read raises
+   `ClueApiError { code, status, requestId }` with `code` typed as a plain
+   string; `404` resolves to `null` instead of raising, so "unknown account" and
+   "read surface flag-gated off" both render an empty screen rather than an
+   error. Errors are parsed leniently: a non-envelope body (a proxy error page)
+   degrades to a status-only message.
+5. **No workspace endpoint exists, so the Insights / Artifacts / Activity tabs
+   stay on fixtures.** Slice 1 serves no activity feed or artifact index, and
+   account insights arrive on the detail's `projectSections[].insights` instead.
+   `account-workspace.repository.ts` is therefore fixture-only and resolves an
+   uncovered account to an *empty* workspace rather than `null` — with a live
+   backend the account plainly exists, so 404-ing one of its tabs would be a
+   lie. It grows an HTTP adapter when that endpoint is specified.
+
+**Dev setup (CORS / proxy).** The preferred and default path is the Next.js
+rewrite, which matches the production same-origin posture: with
+`CLUE_API_BASE_URL` set, `next.config.ts` forwards `/frontend/v1/:path*` from
+the frontend origin to the backend, so a browser-side caller makes no
+cross-origin request and needs no CORS grant at all. It is a transport
+passthrough — `X-Workspace-Id` is added by the repositories (which run
+server-side), never by the rewrite. Today every accounts read happens in a
+Server Component and therefore calls `CLUE_API_BASE_URL` directly, so the
+rewrite matters only for browser-side callers and for hitting the API through
+the dev server. If you do call cross-origin instead, list the exact dev origin
+— `http://localhost:3000` (and `http://127.0.0.1:3000` if you use that host;
+they are distinct origins) — in the backend's
+`CLUE_FRONTEND_CORS_ALLOW_ORIGINS`. Never `"*"`: the backend refuses it
+structurally, because Starlette echoes the origin when a wildcard is combined
+with credentials, which under trusted-header tenancy is a cross-tenant
+exposure.
+
+**Fixture mode is unchanged and still the default.** With `CLUE_API_BASE_URL`
+unset every screen renders from `src/features/accounts/data/*.fixture.ts`,
+which were regenerated to the wire shapes above — including the states a live
+workspace produces and a fixture set is normally too tidy to have: an account
+scored by two projects under different ICPs, a membership whose project has no
+resolvable name, a `researchStatus` entry for a project the account is no
+longer a member of, a committee member whose title is withheld by policy
+(`titleRestricted`) beside one whose name is simply absent, and a
+membership-less account with every enrichment field null.
+
+**Fields dropped from the frontend schemas (D-7).** `referralFit`,
+`directAccessFit`, `recallFit`, `overallFit`, `locationCount`, `employeeBand`,
+`influence`, `researchIsRefreshing`, `avatarUrl`, `previewTitle`, non-LinkedIn
+`socials`, and every `*Label` display string are gone from the models, the
+fixtures and the components. The "Overall fit" and "Locations" table columns
+went with them and a "Projects" column took their place; the contacts table's
+"Influence" column became "Committee role" (with its confidence) plus
+"Signals". What those placeholders stood in for now renders dynamically: the
+detail's registry-driven `neutralFacts` and `projectSections[].insights` are
+laid out generically off `fieldKey` through a key→label prettifier, so an
+industry pack's custom field appears with no schema change and no adapter
+change. `logoUrl` is bound but always null, and the existing initials mark is
+the rendering until `core.company_logo_url` exists.
+
+**Prose renders an honest empty state (D-10).** The account summary, the
+business description and the contact overview have no wire field; each shows
+"composed once this research completes" rather than a fabricated paragraph. The
+contact page's hard-coded "Last updated yesterday" is gone for the same reason.

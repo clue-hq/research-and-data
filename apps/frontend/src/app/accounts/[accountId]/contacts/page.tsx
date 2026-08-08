@@ -17,13 +17,19 @@ export default async function AccountContactsPage({
   params,
 }: PageProps<"/accounts/[accountId]/contacts">) {
   const { accountId } = await params;
-  const [account, contacts, featuredContact] = await Promise.all([
+  const [account, contacts] = await Promise.all([
     getAccountDetails(accountId),
     getAccountContacts(accountId),
-    getAccountContact(accountId, "denise-dresser"),
   ]);
 
-  if (!account || !featuredContact) notFound();
+  if (!account) notFound();
+
+  // The preview drawer needs one full profile. It is the first resolved
+  // committee member, not a hard-coded id: an account with an empty committee
+  // is a legitimate 200 and must still render its table.
+  const featuredContact = contacts.length
+    ? await getAccountContact(accountId, contacts[0].id)
+    : null;
 
   return (
     <AccountContactsScreen

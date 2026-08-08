@@ -1,5 +1,5 @@
 import {
-  AccountContactDetailResponseSchema,
+  AccountContactDetailSchema,
   AccountContactsResponseSchema,
   type AccountContactDetail,
   type AccountContactSummary,
@@ -8,6 +8,7 @@ import {
   deniseDresserFixture,
   openAiContactsFixture,
 } from "./account-contacts.fixture";
+import { apiBaseUrl, fetchRead } from "./frontend-api";
 
 export interface AccountContactsRepository {
   list(accountId: string): Promise<AccountContactSummary[]>;
@@ -22,60 +23,46 @@ export const fixtureAccountContactsRepository: AccountContactsRepository = {
     if (accountId !== "openai") return [];
     return AccountContactsResponseSchema.parse({
       data: openAiContactsFixture,
+      meta: { total: openAiContactsFixture.length },
     }).data;
   },
   async get(accountId, contactId) {
     if (accountId !== "openai" || contactId !== deniseDresserFixture.id) {
       return null;
     }
-    return AccountContactDetailResponseSchema.parse({
-      data: deniseDresserFixture,
-    }).data;
+    return AccountContactDetailSchema.parse(deniseDresserFixture);
   },
 };
 
-export function createHttpAccountContactsRepository(
-  apiBaseUrl: string,
-): AccountContactsRepository {
-  const base = `${apiBaseUrl.replace(/\/$/, "")}/`;
+/**
+ * Both contact endpoints follow a merged account silently and serve the
+ * survivor's committee. An empty committee is a `200` with an empty list, not a
+ * `404` — the governed committee reads M8D research references whose production
+ * writer is still behind the R1 quarantine, so live data is empty today and the
+ * seam is proven by fixtures.
+ */
+export function createHttpAccountContactsRepository(): AccountContactsRepository {
   return {
     async list(accountId) {
-      const url = new URL(
-        `/api/v1/accounts/${encodeURIComponent(accountId)}/contacts`,
-        base,
+      const body = await fetchRead(
+        `/accounts/${encodeURIComponent(accountId)}/contacts`,
       );
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      });
-      if (!response.ok) {
-        throw new Error(`Account contacts API returned ${response.status}`);
-      }
-      return AccountContactsResponseSchema.parse(await response.json()).data;
+      if (body === null) return [];
+      return AccountContactsResponseSchema.parse(body).data;
     },
     async get(accountId, contactId) {
-      const url = new URL(
-        `/api/v1/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`,
-        base,
+      const body = await fetchRead(
+        `/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`,
       );
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      });
-      if (response.status === 404) return null;
-      if (!response.ok) {
-        throw new Error(`Contact details API returned ${response.status}`);
-      }
-      return AccountContactDetailResponseSchema.parse(await response.json())
-        .data;
+      // A single resource: the profile object itself, no `data` wrapper.
+      return body === null ? null : AccountContactDetailSchema.parse(body);
     },
   };
 }
 
 function repository(): AccountContactsRepository {
-  const apiBaseUrl = process.env.CLUE_API_BASE_URL;
-  return apiBaseUrl
-    ? createHttpAccountContactsRepository(apiBaseUrl)
+  return apiBaseUrl()
+    ? createHttpAccountContactsRepository()
     : fixtureAccountContactsRepository;
 }
 

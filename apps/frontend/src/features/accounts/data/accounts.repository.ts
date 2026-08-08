@@ -2,24 +2,22 @@ import {
   AccountsResponseSchema,
   type Account,
   type AccountsResponse,
-  type ResearchStatus,
 } from "../model/account";
 import { accountFixtures } from "./accounts.fixture";
+import { apiBaseUrl, fetchRead } from "./frontend-api";
 
+/**
+ * The only query parameters the as-built list endpoint accepts.
+ *
+ * No `search`, no `sort`, no filter-rule POST: those surfaces do not exist yet,
+ * and the authored filter/sort shell runs client-side over the loaded page
+ * (`model/account-query.ts`). `limit` defaults to 50 and is capped at 200 —
+ * a value outside `1..200` is a `422`.
+ */
 export interface AccountsQuery {
   cursor?: string;
   limit?: number;
-  overallFit?: Account["overallFit"];
   projectId?: string;
-  researchStatus?: ResearchStatus;
-  search?: string;
-  sort?:
-    | "name_asc"
-    | "name_desc"
-    | "project_asc"
-    | "project_desc"
-    | "fit_score_desc"
-    | "fit_score_asc";
 }
 
 export interface AccountsRepository {
@@ -27,103 +25,54 @@ export interface AccountsRepository {
 }
 
 /**
- * Development adapter for the frontend-only phase.
- * Replace this implementation with an HTTP adapter when the backend is ready;
- * account components do not import fixtures or know how records are fetched.
+ * Development adapter. Mirrors the endpoint's own semantics: `projectId`
+ * filters by membership, an unknown project yields an empty page rather than
+ * an error, and rows keep their full `projects` array either way.
  */
 export const fixtureAccountsRepository: AccountsRepository = {
   async list(query = {}) {
-    const normalizedSearch = query.search?.trim().toLocaleLowerCase();
-    const searched = normalizedSearch
+    const filtered = query.projectId
       ? accountFixtures.filter((account) =>
-          account.name.toLocaleLowerCase().includes(normalizedSearch),
+          account.projects.some(
+            (project) => project.projectId === query.projectId,
+          ),
         )
       : accountFixtures;
-    const filtered = query.projectId
-      ? searched.filter((account) =>
-          account.projects.some((project) => project.id === query.projectId),
-        )
-      : searched;
-    const data = query.sort
-      ? [...filtered].sort((first, second) => {
-          if (query.sort === "name_asc" || query.sort === "name_desc") {
-            const nameComparison = first.name.localeCompare(second.name);
-            return query.sort === "name_desc" ? -nameComparison : nameComparison;
-          }
-          if (
-            query.sort === "fit_score_asc" ||
-            query.sort === "fit_score_desc"
-          ) {
-            const scoreComparison = first.fitScore - second.fitScore;
-            return query.sort === "fit_score_desc"
-              ? -scoreComparison
-              : scoreComparison;
-          }
-          const firstProject =
-            first.projects.find(
-              (project) => project.id === first.primaryProjectId,
-            )?.name ?? "";
-          const secondProject =
-            second.projects.find(
-              (project) => project.id === second.primaryProjectId,
-            )?.name ?? "";
-          const comparison =
-            firstProject.localeCompare(secondProject) ||
-            first.name.localeCompare(second.name);
-          return query.sort === "project_desc" ? -comparison : comparison;
-        })
-      : filtered;
+    const data = query.limit ? filtered.slice(0, query.limit) : filtered;
 
     return AccountsResponseSchema.parse({
       data,
       meta: {
-        total: data.length,
+        total: filtered.length,
         nextCursor: null,
       },
     });
   },
 };
 
-export function createHttpAccountsRepository(
-  apiBaseUrl: string,
-): AccountsRepository {
+export function createHttpAccountsRepository(): AccountsRepository {
   return {
     async list(query = {}) {
-      const url = new URL("/api/v1/accounts", `${apiBaseUrl.replace(/\/$/, "")}/`);
-
-      for (const [key, value] of Object.entries(query)) {
-        if (value !== undefined && value !== "") {
-          url.searchParams.set(key, String(value));
-        }
-      }
-
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: {
-          Accept: "application/json",
-        },
+      const body = await fetchRead("/accounts", {
+        cursor: query.cursor,
+        limit: query.limit,
+        projectId: query.projectId,
       });
 
-      if (!response.ok) {
-        throw new Error(
-          `Accounts API returned ${response.status} ${response.statusText}`,
-        );
-      }
-
-      return AccountsResponseSchema.parse(await response.json());
+      // The list endpoint has no 404: an unknown project is an empty page.
+      return AccountsResponseSchema.parse(body ?? { data: [], meta: { total: 0 } });
     },
   };
+}
+
+function repository(): AccountsRepository {
+  return apiBaseUrl() ? createHttpAccountsRepository() : fixtureAccountsRepository;
 }
 
 export async function getAccounts(
   query?: AccountsQuery,
 ): Promise<AccountsResponse> {
-  const apiBaseUrl = process.env.CLUE_API_BASE_URL;
-  const repository = apiBaseUrl
-    ? createHttpAccountsRepository(apiBaseUrl)
-    : fixtureAccountsRepository;
-
-  return repository.list(query);
+  return repository().list(query);
 }
 
 export async function getAccountPreviewRows(): Promise<Account[]> {
