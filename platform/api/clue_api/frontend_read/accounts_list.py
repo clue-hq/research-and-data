@@ -92,16 +92,28 @@ class AccountResearchStatusValue(StrEnum):
     rows), applied to the **latest** job for that pair — multiple concurrent runs per account are
     legal, so a per-account status needs a latest-run-wins rule and this is it:
 
-    ==================================================  ==================
-    backend condition                                   status
-    ==================================================  ==================
-    no ``entity_research_job`` for the (account, run)   ``not_started``
-    fleet ``suspended`` **or** admission ``paused``     ``suspended``
-    job state non-terminal                              ``in_progress``
-    terminal + outcome ``needs_review``                 ``needs_review``
-    terminal + outcome ``completed``                    ``completed``
-    terminal + any other outcome                        ``suspended``
-    ==================================================  ==================
+    ==========================================================  ==================
+    backend condition (first match wins, in this order)         status
+    ==========================================================  ==================
+    no ``entity_research_job`` for the (account, project)       ``not_started``
+    terminal + outcome ``needs_review``                         ``needs_review``
+    terminal + outcome ``completed``                            ``completed``
+    terminal + any other outcome                                ``suspended``
+    non-terminal + admission ``paused`` or fleet ``suspended``  ``suspended``
+    non-terminal, otherwise                                     ``in_progress``
+    ==========================================================  ==================
+
+    **Why the terminal arm is tested first.** The run-level fleet state is *not* per-account: the
+    R6 supervisor drives the whole fleet to ``suspended`` when **any** job in the run pauses.
+    Consulting it before this account's own terminal row would let a sibling account's pause mask
+    this account's finished result — and ``needs_review``, the most actionable state on the
+    screen, is exactly the one that would disappear. A job that has reached ``terminal`` has an
+    accepted engine receipt: its outcome is a fact about *this* account and nothing at the run
+    level can revise it. The fleet/admission arms therefore apply only to a job that is still in
+    flight, where "is this actually progressing?" is a real question; the per-job
+    ``admission_state = 'paused'`` arm is the genuinely per-account halt (FI-1 §5.2's explicit
+    carve-out from ``in_progress``), and the fleet arm covers the run-wide stop holding this
+    unfinished job back.
 
     **Why there is no ``failed``.** The backend has no failure terminal to report. A worker crash
     does not fail the job — it *re-queues* it, pauses admission and drives the fleet to
@@ -317,15 +329,18 @@ def research_status_for(
     fleet_state: str | None,
 ) -> AccountResearchStatusValue:
     """The FI-1 §5.2 mapping, as a pure function (see :class:`AccountResearchStatusValue`)."""
-    if fleet_state == "suspended" or admission_state == "paused":
+    # This account's own terminal outcome wins over any run-level state: ``fleet_state`` is a
+    # property of the whole fleet (one paused sibling suspends it), so testing it first would let
+    # another account's pause erase this one's finished result.
+    if job_state == "terminal":
+        if finalization_outcome == "needs_review":
+            return AccountResearchStatusValue.NEEDS_REVIEW
+        if finalization_outcome == "completed":
+            return AccountResearchStatusValue.COMPLETED
         return AccountResearchStatusValue.SUSPENDED
-    if job_state != "terminal":
-        return AccountResearchStatusValue.IN_PROGRESS
-    if finalization_outcome == "needs_review":
-        return AccountResearchStatusValue.NEEDS_REVIEW
-    if finalization_outcome == "completed":
-        return AccountResearchStatusValue.COMPLETED
-    return AccountResearchStatusValue.SUSPENDED
+    if admission_state == "paused" or fleet_state == "suspended":
+        return AccountResearchStatusValue.SUSPENDED
+    return AccountResearchStatusValue.IN_PROGRESS
 
 
 def _as_int(value: Any) -> int | None:
@@ -352,6 +367,16 @@ async def _read_scores(
     under several ICPs within one project (D5), and collapsing those to one row would have to pick
     a winner — another representative-run guess. Within a group the latest claim of each field
     wins, and ``scored_at`` is the newer of the two.
+
+    **Last-collected-wins, not the canonical merge.** ``current_values`` cannot serve this read: it
+    collapses to one winner per ``(entity, field)`` with no project attribution, which is exactly
+    the representative-run fiction FI-2 §7 removes. So the tie-break inside a group is recency
+    alone, not the merge's tier → corroborations → confidence ordering. That is sound *here* because
+    a score is a derived, single-writer value (M6.3 writes it at tier 1 with a deterministic
+    per-ICP run id and supersedes its own earlier rubric version), so a group normally holds exactly
+    one live claim per field and the ordering never has to break a real tie. If a second writer ever
+    produces ``account.scoring.*``, this needs the merge's ranking — see the FI-2 §6.4
+    project-scoped-supersede work, which is the change that would create that possibility.
     """
     if not entity_ids:
         return {}

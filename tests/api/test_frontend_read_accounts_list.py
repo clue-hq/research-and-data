@@ -13,9 +13,21 @@ Covered, per the plan's ACs: both projects on the two-project account's row; the
 account renders; ``?projectId=`` returns exactly the membership set (and an unknown project is an
 empty *filter*, not a 404); per-project score attribution (project B's ICP score is never served as
 project A's); zero research → ``not_started`` for every membership project; keyset pagination over
-two pages with no duplicate and no skip; and a shape-level assertion that no display string reaches
-the wire. The research-status mapping's non-trivial arms (in-progress, needs-review, completed,
-admission-paused → suspended) are exercised against real ``entity_research_job`` rows.
+two pages with no duplicate and no skip, including *within* a ``?projectId=`` filter; and a
+shape-level assertion that no display string reaches the wire.
+
+Two structural properties get their own behavioural fixtures, because a comment cannot prove them:
+
+* **species-conditional lineage** — a ``project_neutral`` fact written on a run attributed to
+  project A still appears on the row served under ``?projectId=B`` (neutral fields come from the
+  canonical merge in every lens), while the relative half of the same row stays lineage-bound;
+* **run-level vs per-account status** — one research run with two account jobs, one paused and one
+  terminal, proves the fleet-wide ``suspended`` state cannot mask the finished account's
+  ``needs_review``.
+
+The rest of the research-status mapping (in-progress, the four terminal outcomes, admission-paused
+→ suspended) is exercised against real ``entity_research_job`` rows launched through the production
+R2 entry point.
 
 Every read and every count is workspace-scoped: this suite shares a database with suites that
 commit, so an unscoped assertion would fail for reasons unrelated to FI-2.
@@ -24,6 +36,7 @@ commit, so an unscoped assertion would fail for reasons unrelated to FI-2.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -137,12 +150,27 @@ async def _account(
 
 
 async def _neutral_claim(
-    conn: AsyncConnection, *, account_id: EntityId, field_key: str, value: Any
+    conn: AsyncConnection,
+    *,
+    account_id: EntityId,
+    field_key: str,
+    value: Any,
+    project_id: str | None = None,
 ) -> None:
-    """A public-footprint neutral fact — no lineage needed; neutral fields serve in every lens."""
+    """A public-footprint neutral fact.
+
+    ``project_id`` sets the *lineage* of the run that wrote it. It must make no difference to what
+    this endpoint serves — a neutral field comes from the canonical merge in every lens — which is
+    exactly what ``test_a_neutral_fact_written_on_one_projects_run_still_shows_under_another``
+    pins.
+    """
     run_id = new_run_id()
     await record_run_lineage(
-        conn, run_id=run_id, workspace_id=_WS, kind="enrichment", project_id=None
+        conn,
+        run_id=run_id,
+        workspace_id=_WS,
+        kind="enrichment" if project_id is None else "scoring",
+        project_id=project_id,
     )
     await insert_claim(
         conn,
@@ -209,52 +237,75 @@ async def _score(
 
 
 async def _launch_account_research(
-    conn: AsyncConnection, *, workspace_id: str, project_id: str, account_id: EntityId
-) -> uuid.UUID:
-    """Launch one real account-research run through the production R2 entry point, returning the
-    job id. Only the *scope* ids are overridden on the frozen R0 fixture lifecycle."""
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, account_ids: Sequence[EntityId]
+) -> dict[EntityId, uuid.UUID]:
+    """Launch ONE real account-research run over ``account_ids`` through the production R2 entry
+    point, returning ``{account_id: job_id}``.
+
+    Multiple subjects in one run is the normal shape — that is what a fleet *is* — and it is what
+    makes the run-level/per-account distinction testable. Only the *scope* ids and the subject list
+    are overridden on the frozen R0 fixture lifecycle.
+    """
     lifecycle = lifecycle_fixture(ResearchRunKind.ACCOUNT_RESEARCH)
     payload = lifecycle.model_dump(mode="json")
     selection = payload["selection"]
     selection["workspace_id"] = workspace_id
     selection["project_id"] = project_id
-    selection["subjects"][0]["subject_entity_id"] = str(account_id)
+    template = selection["subjects"][0]
+    selection["subjects"] = [
+        {**template, "subject_entity_id": str(account_id)} for account_id in account_ids
+    ]
     lifecycle = ResearchRunLifecycleContract.model_validate(payload)
-    subject = lifecycle.selection.subjects[0]
-    authorization = EntityResearchJobAuthorization(
-        job_id=uuid.uuid4(),
-        research_run_id=lifecycle.run_id,
-        subject_type=lifecycle.selection.subject_type,
-        subject_entity_id=subject.subject_entity_id,
-        parent_account_id=lifecycle.selection.account_entity_id,
-        workspace_id=lifecycle.selection.workspace_id,
-        project_id=lifecycle.selection.project_id,
-        product_id=lifecycle.selection.product_id,
-        project_run_id=lifecycle.selection.project_run_id,
-        selection=lifecycle.selection,
-        agent_profile_ref="agent-profile:account:v1",
-        agent_profile_sha256="a" * 64,
-        checkpoint_thread_id=f"checkpoint:{lifecycle.run_id}:{subject.subject_entity_id}",
-        attempt_id=uuid.uuid4(),
-        lease_id=uuid.uuid4(),
-    )
+
+    jobs: list[EntityResearchJobEnvelope] = []
+    by_account: dict[EntityId, uuid.UUID] = {}
+    for priority, subject in enumerate(lifecycle.selection.subjects):
+        authorization = EntityResearchJobAuthorization(
+            job_id=uuid.uuid4(),
+            research_run_id=lifecycle.run_id,
+            subject_type=lifecycle.selection.subject_type,
+            subject_entity_id=subject.subject_entity_id,
+            parent_account_id=lifecycle.selection.account_entity_id,
+            workspace_id=lifecycle.selection.workspace_id,
+            project_id=lifecycle.selection.project_id,
+            product_id=lifecycle.selection.product_id,
+            project_run_id=lifecycle.selection.project_run_id,
+            selection=lifecycle.selection,
+            agent_profile_ref="agent-profile:account:v1",
+            agent_profile_sha256=f"{priority:064d}",
+            checkpoint_thread_id=f"checkpoint:{lifecycle.run_id}:{subject.subject_entity_id}",
+            attempt_id=uuid.uuid4(),
+            lease_id=uuid.uuid4(),
+        )
+        jobs.append(
+            EntityResearchJobEnvelope(
+                authorization=authorization,
+                priority=priority,
+                budget_envelope_ref=f"budget:job:{authorization.job_id}",
+                budget_cap_cents=Decimal("4.00"),
+            )
+        )
+        by_account[EntityId(subject.subject_entity_id)] = authorization.job_id
     await launch_entity_research_run(
         conn,
         EntityResearchRunEnvelope(
             lifecycle=lifecycle,
-            jobs=(
-                EntityResearchJobEnvelope(
-                    authorization=authorization,
-                    priority=0,
-                    budget_envelope_ref=f"budget:job:{authorization.job_id}",
-                    budget_cap_cents=Decimal("4.00"),
-                ),
-            ),
+            jobs=tuple(jobs),
             budget_cap_cents=Decimal("10.00"),
             concurrency_limit=1,
         ),
     )
-    return authorization.job_id
+    return by_account
+
+
+async def _launch_one(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, account_id: EntityId
+) -> uuid.UUID:
+    """The single-subject case of :func:`_launch_account_research`."""
+    launched = await _launch_account_research(
+        conn, workspace_id=workspace_id, project_id=project_id, account_ids=[account_id]
+    )
+    return launched[account_id]
 
 
 async def _finalize_job(conn: AsyncConnection, job_id: uuid.UUID, *, outcome: str) -> None:
@@ -279,10 +330,19 @@ async def _finalize_job(conn: AsyncConnection, job_id: uuid.UUID, *, outcome: st
     )
 
 
-async def _pause_admission(
-    conn: AsyncConnection, job_id: uuid.UUID, *, workspace_id: str, project_id: str
-) -> None:
-    """Put the R6 account-fleet control rows behind a launched job, with admission ``paused``."""
+async def _seed_account_fleet(
+    conn: AsyncConnection,
+    *,
+    job_id: uuid.UUID,
+    workspace_id: str,
+    project_id: str,
+    state: str = "open",
+) -> uuid.UUID:
+    """Create the R6 account-fleet row over the run that owns ``job_id``, returning the run id.
+
+    The fleet row is **run-level** — one per research run, not per account. That is the whole point
+    of the mixed-fleet test: its ``state`` says nothing about any particular subject.
+    """
     research_run_id, product_id, project_run_id = (
         await conn.execute(
             text(
@@ -299,11 +359,12 @@ async def _pause_admission(
                 (research_run_id, workspace_id, project_id, product_id, project_run_id,
                  canary_job_ids, supervisor_policy_ref, supervisor_policy_json,
                  supervisor_policy_sha256, state, created_by, source_operation_id,
-                 source_action_ref)
+                 source_action_ref, suspended_at)
             VALUES
                 (:run, :ws, :project, :product, :project_run, ARRAY[:job]::uuid[],
-                 'account-fleet-supervisor:test', '{}'::jsonb, :sha, 'open', 'tester',
-                 :operation, :action)
+                 'account-fleet-supervisor:test', '{}'::jsonb, :sha, :state, 'tester',
+                 :operation, :action,
+                 CASE WHEN :state = 'suspended' THEN now() END)
             """
         ),
         {
@@ -314,20 +375,49 @@ async def _pause_admission(
             "project_run": project_run_id,
             "job": job_id,
             "sha": "b" * 64,
+            "state": state,
             "operation": uuid.uuid4(),
             "action": f"action:{job_id}",
         },
     )
+    return uuid.UUID(str(research_run_id))
+
+
+async def _set_admission(
+    conn: AsyncConnection,
+    *,
+    job_id: uuid.UUID,
+    research_run_id: uuid.UUID,
+    admission_state: str,
+) -> None:
+    """Give one job its per-job R6 admission-control row (the genuinely per-account signal)."""
     await conn.execute(
         text(
             """
             INSERT INTO entity_research_account_fleet_job_control
                 (job_id, research_run_id, cohort, admission_state, effective_priority,
                  pause_reason)
-            VALUES (:job, :run, 'canary', 'paused', 0, 'awaiting_human')
+            VALUES (:job, :run, 'canary', :admission, 0, :reason)
             """
         ),
-        {"job": job_id, "run": research_run_id},
+        {
+            "job": job_id,
+            "run": research_run_id,
+            "admission": admission_state,
+            "reason": "awaiting_human" if admission_state == "paused" else None,
+        },
+    )
+
+
+async def _pause_admission(
+    conn: AsyncConnection, job_id: uuid.UUID, *, workspace_id: str, project_id: str
+) -> None:
+    """The common case: an open fleet whose one job is held at ``paused`` admission."""
+    research_run_id = await _seed_account_fleet(
+        conn, job_id=job_id, workspace_id=workspace_id, project_id=project_id
+    )
+    await _set_admission(
+        conn, job_id=job_id, research_run_id=research_run_id, admission_state="paused"
     )
 
 
@@ -554,6 +644,38 @@ def test_the_project_filter_returns_exactly_that_projects_membership() -> None:
     run_async(scenario())
 
 
+def test_a_neutral_fact_written_on_one_projects_run_still_shows_under_another() -> None:
+    """Species-conditional lineage, behaviourally: a ``project_neutral`` field is served from the
+    canonical merge in **every** lens, so a fact whose run is attributed to project A must still
+    appear on the row returned under ``?projectId=B``. Lineage-filtering it would make a shared
+    firmographic fact vanish for every project that did not happen to fetch it."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            # Zephyr belongs only to B; its headcount is discovered on a run attributed to A.
+            await _neutral_claim(
+                conn,
+                account_id=fixture.zephyr,
+                field_key="core.employee_count",
+                value=340,
+                project_id=fixture.project_a.project_id,
+            )
+
+            unfiltered = _rows((await _get(conn)).json())["Zephyr"]
+            assert unfiltered["employeeCount"] == 340
+
+            under_b = _rows((await _get(conn, projectId=fixture.project_b.project_id)).json())[
+                "Zephyr"
+            ]
+            assert under_b["employeeCount"] == 340
+            # And the *relative* half of the same row is still lineage-bound: A's run wrote no
+            # score for Zephyr, so no score is attributed to anyone.
+            assert under_b["scores"] == []
+
+    run_async(scenario())
+
+
 def test_an_unknown_project_is_an_empty_filter_not_a_404() -> None:
     """This endpoint has no authority to say a project does not exist — it lists accounts."""
 
@@ -605,13 +727,13 @@ def test_research_status_tracks_the_job_lifecycle_per_project() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture = await _build(conn)
-            await _launch_account_research(
+            await _launch_one(
                 conn,
                 workspace_id=_WS,
                 project_id=fixture.project_a.project_id,
                 account_id=fixture.acme,
             )
-            b_job = await _launch_account_research(
+            b_job = await _launch_one(
                 conn,
                 workspace_id=_WS,
                 project_id=fixture.project_b.project_id,
@@ -647,7 +769,7 @@ def test_a_terminal_outcome_maps_to_the_honest_status(
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture = await _build(conn)
-            job_id = await _launch_account_research(
+            job_id = await _launch_one(
                 conn,
                 workspace_id=_WS,
                 project_id=fixture.project_a.project_id,
@@ -671,7 +793,7 @@ def test_a_paused_admission_reads_as_suspended_not_in_progress() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture = await _build(conn)
-            job_id = await _launch_account_research(
+            job_id = await _launch_one(
                 conn,
                 workspace_id=_WS,
                 project_id=fixture.project_a.project_id,
@@ -686,6 +808,62 @@ def test_a_paused_admission_reads_as_suspended_not_in_progress() -> None:
                 for entry in _rows((await _get(conn)).json())["Acme"]["researchStatus"]
             }
             assert statuses[fixture.project_a.project_id] == "suspended"
+
+    run_async(scenario())
+
+
+def test_a_run_level_suspension_never_masks_an_accounts_own_terminal_outcome() -> None:
+    """The R6 fleet state is **run-level**: the supervisor suspends the whole fleet when *any* job
+    pauses. One run, two accounts — the paused sibling must not erase the other's finished
+    ``needs_review``, which is the most actionable state the screen shows.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            await ensure_project_account(
+                conn,
+                workspace_id=_WS,
+                project_id=fixture.project_a.project_id,
+                account_entity_id=fixture.zephyr,
+                added_via="manual",
+            )
+            launched = await _launch_account_research(
+                conn,
+                workspace_id=_WS,
+                project_id=fixture.project_a.project_id,
+                account_ids=[fixture.acme, fixture.zephyr],
+            )
+            finished, stuck = launched[fixture.acme], launched[fixture.zephyr]
+
+            # Zephyr's job pauses, which drives the shared fleet to `suspended`; Acme's own job has
+            # already finished with an accepted receipt.
+            research_run_id = await _seed_account_fleet(
+                conn,
+                job_id=stuck,
+                workspace_id=_WS,
+                project_id=fixture.project_a.project_id,
+                state="suspended",
+            )
+            await _set_admission(
+                conn, job_id=stuck, research_run_id=research_run_id, admission_state="paused"
+            )
+            await _set_admission(
+                conn, job_id=finished, research_run_id=research_run_id, admission_state="terminal"
+            )
+            await _finalize_job(conn, finished, outcome="needs_review")
+
+            rows = _rows((await _get(conn)).json())
+
+            def status(row: dict[str, Any]) -> str:
+                return next(
+                    entry["status"]
+                    for entry in row["researchStatus"]
+                    if entry["projectId"] == fixture.project_a.project_id
+                )
+
+            assert status(rows["Acme"]) == "needs_review"
+            assert status(rows["Zephyr"]) == "suspended"
 
     run_async(scenario())
 
@@ -715,11 +893,55 @@ def test_two_pages_cover_the_workspace_with_no_duplicate_and_no_skip() -> None:
     run_async(scenario())
 
 
-def test_the_cursor_survives_a_round_trip_and_stays_opaque() -> None:
+def test_the_project_filter_and_the_cursor_compose() -> None:
+    """Paging *within* a filter must page the filtered set — the cursor predicate and the
+    membership predicate are ANDed, so a filtered walk can neither leak a non-member nor skip a
+    member."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            # A third member of B, so the filtered set is big enough to need two pages.
+            base = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+            nimbus = await _account(
+                conn, name="Nimbus", domain="nimbus.test", created_at=base + timedelta(hours=3)
+            )
+            await ensure_project_account(
+                conn,
+                workspace_id=_WS,
+                project_id=fixture.project_b.project_id,
+                account_entity_id=nimbus,
+                added_via="manual",
+            )
+
+            first = (await _get(conn, projectId=fixture.project_b.project_id, limit=2)).json()
+            assert first["meta"]["total"] == 3
+            assert [row["name"] for row in first["data"]] == ["Nimbus", "Zephyr"]
+            cursor = first["meta"]["nextCursor"]
+            assert isinstance(cursor, str) and cursor
+
+            second = (
+                await _get(conn, projectId=fixture.project_b.project_id, limit=2, cursor=cursor)
+            ).json()
+            assert [row["name"] for row in second["data"]] == ["Acme"]
+            assert second["meta"]["nextCursor"] is None
+
+            walked = [row["name"] for row in first["data"] + second["data"]]
+            # `Seedling` belongs to no project and must never appear inside a filtered walk.
+            assert sorted(walked) == ["Acme", "Nimbus", "Zephyr"]
+            assert len(walked) == len(set(walked))
+
+    run_async(scenario())
+
+
+def test_the_cursor_survives_a_round_trip() -> None:
+    """Opaque *by contract*, not by cryptography: base64url is decodable, and that is fine — the
+    cursor names only a keyset position, and what actually bounds a forged one is the
+    ``X-Workspace-Id`` scoping every query applies regardless of where paging resumes."""
     created_at = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
     account_id = uuid.uuid4()
     cursor = encode_cursor(created_at, account_id)
-    assert str(account_id) not in cursor  # opaque: not a readable key the client can forge
+    assert str(account_id) not in cursor  # not a plaintext key an integration should parse
     assert decode_cursor(cursor) == (created_at, account_id)
 
 
