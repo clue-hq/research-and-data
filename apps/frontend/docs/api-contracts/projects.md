@@ -245,3 +245,54 @@ Preview transition timing and progress milestones live in the fixture-backed
 `previewTimeline` field rather than presentation components. They demonstrate
 interaction and motion only; replace them with the generation-run resource when
 the backend is connected.
+
+---
+
+## As-built thread-shell contract — founder-ratified 2026-08-08 (Lane D D0–D2)
+
+**This section is authoritative where it conflicts with the proposal above.** It records the
+founder's ratification of the nine as-built deviations from Lane D slice D0 (the durable thread
+shell) plus the D2 turn-submission contract. Owner: Lane D
+(`docs/specs/FI-lane-D-production-chat-and-launch.md`); implementation in
+`platform/api/clue_api/chat/` behind `CLUE_CHAT_ENABLED` (default off).
+
+1. **Rename/pin are per-thread.** `PATCH /api/v1/projects/:projectId/threads/:threadId`
+   `{title?, pinned?}` → `200` with the updated thread. The proposal's
+   `PATCH /projects/:projectId` (project rename/pin) mutates the project table, which is outside
+   the chat shell's ownership; it stays unimplemented here.
+2. **Archive is per-thread.** `POST …/threads/:threadId/archive` → `200` with the updated
+   thread. Archive is a reversible status flip, so the response says what happened; the
+   proposal's bulk archive-all endpoint does not exist.
+3. **`GET /api/v1/projects/:projectId/threads`** — first-class paginated thread list
+   (the embedded sidebar payloads remain for composite views).
+4. **Cursor pagination everywhere.** List endpoints take `?limit`/`?cursor`; responses carry
+   `meta.next_cursor`. Cursors are keyset (stable under concurrent inserts), backed by
+   composite indexes.
+5. **Thread `status` is `idle | archived` today.** The proposal's richer vocabulary
+   (`running | review | approval | needs-input`) is *derived* state — latest turn status + open
+   gates — and lights up with slices D3/D4. Single change point:
+   `platform/api/clue_api/chat/schemas.py::thread_status`.
+6. **Create returns `201` with a superset:** `{id, title, href, status, pinned, project_id,
+   created_at, updated_at}`.
+7. **`title` is optional on create** (an unnamed thread is `title: null`); a blank/whitespace
+   title is refused.
+8. **Message reads are body-free.** The paginated message list returns role, sequence,
+   `body_artifact_key`, `body_sha256`, and typed `refs[]` (closed flavor vocabulary:
+   `attachment, output, open_gate, next_action, assumption, workspace_output`). Bodies hydrate
+   through the D3 rehydration read and stream live via SSE — never inline in list responses.
+9. **Not implemented in the thread shell (deliberate):** `POST /projects`,
+   `DELETE /projects/:projectId` (project lifecycle — phase-2 / separate owner), the proposal's
+   `POST …/threads/:threadId/messages` (**superseded** by the turn endpoint below), and the
+   runs/artifacts endpoints (phase-2, gated on the design-integration branch merge).
+
+**The turn endpoint (D2, replaces `POST …/messages`):**
+`POST /api/v1/projects/:projectId/threads/:threadId/turns` accepts exactly one of an ordinary
+`{message}` or (from D4) a structured `gate_response`; plus idempotency identity. It persists the
+user message + an immutable `agent_turn_submission` receipt (real authenticated principal
+identity; never client-supplied `actor_id`/`action_ref`) **before** enqueueing detached
+execution, and returns `202 {data:{turn_id}}`. Duplicate submission under one idempotency
+identity returns the same turn. A queued-not-yet-executing turn is visible as a submission;
+read surfaces union submissions with turn events (founder-acked two-phase turn identity,
+2026-08-08). Streaming/live transcript arrives via the D3 SSE contract
+(charter §§3.1–3.6); `GET …/runs/:runId` polling in the proposal is superseded by that stream
+for chat-visible progress.
