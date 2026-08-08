@@ -16,7 +16,7 @@ Scope boundary: bound by **`docs/specs/FI-lane-demarcation.md` §2.5** — never
 3. **The L1 fix** (`VALUE_NARRATIVE` missing from `ACCOUNT_SECTION_ORDER`) — not a dependency of the two tenants (they route to `SUMMARY`, see §1.3), but owned here because it lives in the same package and must land before *any* production narrative claim is written.
 4. **Optional third tenant** (§7-D3): composing the M12.1 `Positioner` into production through the same seam.
 
-Non-goals: read endpoints (Lane C), the D-4 absence vocabulary (Lane B — but it is a **shipping prerequisite**, §4.4), the R11 DEEP-phase bridge (fast-follow per the 2026-08-08 lifecycle ruling), any un-quarantining, scheduled/cadence refresh (M9.5 backlog item; refresh here is on-completion only).
+Non-goals: read endpoints (Lane C), the D-4 absence vocabulary (FI-2 slice 1 Task 6 — ratified 2026-08-08; still a **shipping prerequisite**, §4.4), the R11 DEEP-phase bridge (fast-follow per the 2026-08-08 lifecycle ruling), any un-quarantining, scheduled/cadence refresh (M9.5 backlog item; refresh here is on-completion only).
 
 ---
 
@@ -115,7 +115,7 @@ Add `ResearchSectionKind.VALUE_NARRATIVE` to `ACCOUNT_SECTION_ORDER` (`research_
 1. **G6 — sensitive facets never enter the prompt.** The contact input set excludes SENSITIVE-use-class fields (`contact.facet.causes`, …) and any claim not display-eligible under the fail-closed gates; facet inclusion requires the M10 use-gate cleared (the positioner's `is_outreach_promotable` discipline, `positioner.py:346-351`, applied with display-eligibility semantics).
 2. **Identity binding on `contact.overview`:** stamped STRONG only when *every* cited contact claim is STRONG-bound; otherwise WEAK — and the merge then correctly refuses to serve it (`merge.py:141-146`). Weakly-evidenced prose degrades to the empty state, never to unattributable prose.
 3. **G7:** nothing in this lane counts signals; noted for the adjacent `recentSignalsLabel` mapping only.
-4. **D-4 is a shipping prerequisite** (Lane B): the current Zod floors (`z.array(z.string().min(1)).min(1)` — `account-detail.ts:50`, `account-contact.ts:53`) cannot express the empty state this whole design produces. Lane E's backend slices can land first; the *frontend* rendering of either state waits on D-4.
+4. **D-4 is a shipping prerequisite** (FI-2 slice 1 Task 6; ratified — the frontend flip carries it): the current Zod floors (`z.array(z.string().min(1)).min(1)` — `account-detail.ts:50`, `account-contact.ts:53`) cannot express the empty state this whole design produces. Lane E's backend slices can land first; the *frontend* rendering of either state waits on D-4.
 
 ---
 
