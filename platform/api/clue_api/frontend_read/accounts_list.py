@@ -11,7 +11,9 @@ untouched mechanism surfaces and owns no research logic of its own:
    deliberately **not** lineage-filtered (FI-2 slice-0 handoff: lineage filtering is
    species-conditional);
 3. **membership** — :func:`~clue_research.membership.memberships_for_accounts`, whose element 0 is
-   the recorded ``primaryProjectId`` policy;
+   the recorded ``primaryProjectId`` policy, with each project's display name resolved by ONE
+   batched :func:`project_names` read over the whole page (the FI-1 §9 plan-owner addendum; a
+   per-membership lookup would be an N+1 over a 200-row page);
 4. **per-project attributed scores** — the live ``account.scoring.fit`` / ``.intent`` claims joined
    to their project through ``run_lineage``. These fields *are* ``project_relative``, so the join
    is the whole point: every project's score is served **attributed to that project**, and no
@@ -144,9 +146,18 @@ class WireModel(BaseModel):
 
 
 class AccountProjectMembership(WireModel):
-    """One project that targets this account, and how/when it joined."""
+    """One project that targets this account, and how/when it joined.
+
+    ``name`` is the ``project`` row's own name, resolved by :func:`project_names` in one batched
+    read per response (the FI-1 §9 plan-owner addendum: the accounts table searches and sorts on the
+    project name, and no other slice-1 surface serves it). It is the project *entity's* name, not a
+    formatted label — Band-2 still holds. ``null`` when this workspace has no ``project`` row for
+    the id, which membership's composite FK makes unreachable here but which the detail's
+    lineage-derived sections can genuinely hit.
+    """
 
     project_id: str
+    name: str | None = None
     added_via: str
     added_at: datetime
 
@@ -301,6 +312,19 @@ _SCORE_CLAIMS_TEMPLATE = """
     WHERE l.workspace_id = :lineage_workspace_id AND l.project_id IS NOT NULL
     ORDER BY c.entity_id, l.project_id, c.collected_at, c.id
 """
+
+# The project display names for a page's project ids — one batched read, never one query per row.
+# Workspace-scoped on purpose: membership's composite FK already pins a project to this workspace,
+# but the account detail derives section ids from ``run_lineage.project_id``, which has **no** FK to
+# ``project`` at all, so an id there can be unknown or (in principle) another tenant's. A foreign or
+# missing id resolves to no row and the name is served ``null``, never another workspace's label.
+_PROJECT_NAMES = text(
+    """
+    SELECT project_id, name
+    FROM project
+    WHERE workspace_id = :workspace_id AND project_id IN :project_ids
+    """
+).bindparams(bindparam("project_ids", expanding=True))
 
 # The latest job per (account, project) plus the two control rows that can hold it: the R6 account
 # fleet (whose ``suspended`` state is the backend's real failure mode) and its per-job admission
@@ -484,6 +508,27 @@ async def _read_scores(
     }
 
 
+async def project_names(
+    conn: AsyncConnection, *, workspace_id: str, project_ids: Iterable[str | None]
+) -> dict[str, str]:
+    """``{project_id: name}`` for the ids this workspace actually has a ``project`` row for.
+
+    THE project-name read, shared by the list row's ``projects[]`` and the detail's
+    ``projectSections[]`` so the two surfaces cannot name the same project differently. One batched
+    statement per response — a per-membership lookup would be an N+1 over a 200-row page — and ids
+    with no row are simply absent from the mapping, so every caller renders ``null`` by
+    ``.get(project_id)`` rather than inventing a placeholder.
+
+    ``None`` entries (the detail's unattributed section) are dropped before the query: there is no
+    project to name.
+    """
+    wanted = sorted({project_id for project_id in project_ids if project_id is not None})
+    if not wanted:
+        return {}
+    rows = await conn.execute(_PROJECT_NAMES, {"workspace_id": workspace_id, "project_ids": wanted})
+    return {str(project_id): str(name) for project_id, name in rows}
+
+
 async def _read_research_status(
     conn: AsyncConnection, *, workspace_id: str, entity_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, dict[str, AccountResearchStatusValue]]:
@@ -582,6 +627,15 @@ async def list_accounts(
     )
     scores = await _read_scores(conn, workspace_id=workspace_id, entity_ids=account_ids)
     statuses = await _read_research_status(conn, workspace_id=workspace_id, entity_ids=account_ids)
+    names = await project_names(
+        conn,
+        workspace_id=workspace_id,
+        project_ids=(
+            membership.project_id
+            for account_memberships in memberships.values()
+            for membership in account_memberships
+        ),
+    )
 
     data: list[AccountListRow] = []
     for account_id, (_id, canonical_name, primary_domain, _created_at, updated_at) in zip(
@@ -603,6 +657,7 @@ async def list_accounts(
                 projects=tuple(
                     AccountProjectMembership(
                         project_id=membership.project_id,
+                        name=names.get(membership.project_id),
                         added_via=membership.added_via,
                         added_at=membership.added_at,
                     )

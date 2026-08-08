@@ -44,7 +44,7 @@ from typing import Any
 import httpx
 import pytest
 from httpx import ASGITransport
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.frontend_read import FRONTEND_READ_PREFIX, AccountResearchStatusValue
@@ -119,6 +119,28 @@ async def _get(conn: AsyncConnection, *, workspace_id: str = _WS, **params: Any)
 def _rows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """The page keyed by account name — the assertions read better than by uuid."""
     return {row["name"]: row for row in payload["data"]}
+
+
+async def _count_statements(conn: AsyncConnection) -> tuple[int, dict[str, Any]]:
+    """``(statements issued, payload)`` for one default list request.
+
+    The endpoint composes a fixed number of batched reads per page, so this count is a *constant*
+    the tests can compare across fixtures of different shapes — which is how the N+1 guard proves a
+    per-row lookup has not crept into the composition.
+    """
+    statements = 0
+
+    def count(*_args: object) -> None:
+        nonlocal statements
+        statements += 1
+
+    event.listen(conn.sync_connection, "before_cursor_execute", count)
+    try:
+        response = await _get(conn)
+    finally:
+        event.remove(conn.sync_connection, "before_cursor_execute", count)
+    assert response.status_code == 200
+    return statements, response.json()
 
 
 # --- seeding --------------------------------------------------------------------------------
@@ -535,8 +557,46 @@ def test_the_shared_account_carries_both_projects_and_the_earliest_is_primary() 
                 "discovered",
                 "imported",
             ]
+            # The FI-1 §9 plan-owner addendum: the membership row carries the project's own name,
+            # resolved by a join, so the table can search and sort on it without a second endpoint.
+            assert [project["name"] for project in acme["projects"]] == [
+                "Project A",
+                "Project B",
+            ]
             # Element 0 of the membership read IS the recorded primary-project policy.
             assert acme["primaryProjectId"] == fixture.project_a.project_id
+
+    run_async(scenario())
+
+
+def test_project_names_are_one_batched_read_not_one_query_per_membership() -> None:
+    """The name join must not reintroduce an N+1 over a 200-row page.
+
+    Measured, not asserted in a comment: the endpoint's statement count is captured over the base
+    fixture and again after three more projects each acquire the same account. A per-membership
+    lookup would grow by three; a batched read costs the same either way.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            baseline, _ = await _count_statements(conn)
+
+            base = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+            for ordinal in range(3):
+                extra = await seed_project(conn, _WS, name=f"Extra project {ordinal}")
+                await ensure_project_account(
+                    conn,
+                    workspace_id=_WS,
+                    project_id=extra.project_id,
+                    account_entity_id=fixture.acme,
+                    added_via="manual",
+                    added_at=base + timedelta(hours=3, minutes=ordinal),
+                )
+            widened, payload = await _count_statements(conn)
+
+            assert len(_rows(payload)["Acme"]["projects"]) == 5, "the memberships really did grow"
+            assert widened == baseline
 
     run_async(scenario())
 
@@ -1001,7 +1061,7 @@ def test_no_display_string_reaches_the_wire() -> None:
                 assert set(row) == _ALLOWED_ROW_KEYS
                 assert not any(key.lower().endswith("label") for key in row)
                 for membership in row["projects"]:
-                    assert set(membership) == {"projectId", "addedVia", "addedAt"}
+                    assert set(membership) == {"projectId", "name", "addedVia", "addedAt"}
                     datetime.fromisoformat(membership["addedAt"])
                 for score in row["scores"]:
                     assert set(score) == {

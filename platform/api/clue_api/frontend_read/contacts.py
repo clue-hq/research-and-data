@@ -43,6 +43,12 @@ evidence URLs (G4 v1 — provenance chips are non-link). ``provider`` is the raw
 no source display-name surface exists anywhere in the platform, and inventing a label map here
 would be exactly the presentation mapping Band-2 forbids.
 
+**``signals`` counts signal TYPES.** The chip is ``{"typeCount": n}`` — one per signal *field* that
+currently holds a display-eligible statement, never one per item inside a list-valued facet (the
+founder's 2026-08-08 unit ruling, FI-1 §9). The field is named for the unit it carries so a
+frontend reading ``signals.count`` cannot quietly assume "five recent posts" where the backend
+means "one signal type is present"; ``n`` is bounded by ``len(CONTACT_SIGNAL_FIELD_KEYS)``.
+
 **Live-data reality.** ``resolve_account`` reads ``account_run.references_index``, whose only
 production writer sits behind the M8D R1 quarantine, so on live data every committee is empty until
 the R11 DEEP-phase bridge lands. An empty committee is therefore a 200 with an empty list — the
@@ -92,9 +98,10 @@ from clue_research.profiling.fields import FACET_PUBLIC_APPEARANCES
 #: key is named here; ``contact.facet.public_appearances`` does, and is imported.
 FACET_RECENT_POST = "contact.facet.recent_post"
 
-#: The facet families the row's ``signals`` chip counts (FI-1 G7). This is a **display selection**
-#: over registered facet fields, not a registry attribute — no field declares "I am a signal" — so
-#: it is enumerated here, at the one place that renders it, rather than pretending to be derived.
+#: The facet families the row's ``signals`` chip counts (FI-1 G7) — the signal **types**, and the
+#: ceiling on ``signals.typeCount``. This is a **display selection** over registered facet fields,
+#: not a registry attribute — no field declares "I am a signal" — so it is enumerated here, at the
+#: one place that renders it, rather than pretending to be derived.
 #: Widening it is a one-tuple change; ``tests/api/test_frontend_read_contacts.py`` asserts both keys
 #: still resolve to registered ``contact.facet.*`` fields, so a pack rename fails loudly instead of
 #: silently counting zero forever.
@@ -122,7 +129,13 @@ class RoleOnCommittee(WireModel):
 
 
 class ContactSignals(WireModel):
-    """How many display-eligible signal statements this member currently has.
+    """How many signal **types** this member currently has a display-eligible statement for.
+
+    ``typeCount``, not ``count``, because that is literally what it measures and the founder's
+    2026-08-08 ruling fixed the unit: one display-eligible *field* counts once, whatever its value
+    holds. A list-valued facet with five public appearances therefore contributes **1**, not 5 —
+    ``5`` would need a per-item unit the ruling did not adopt. The ceiling is
+    ``len(CONTACT_SIGNAL_FIELD_KEYS)``.
 
     A *statement* is the current value of a signal field — the same unit C7 governs — so the count
     is bounded by :data:`CONTACT_SIGNAL_FIELD_KEYS`, not by claim history. Counting superseded
@@ -130,7 +143,7 @@ class ContactSignals(WireModel):
     would leak the existence of exactly the data the policy withholds.
     """
 
-    count: int
+    type_count: int
 
 
 class GovernedFact(WireModel):
@@ -326,7 +339,8 @@ def _professional_facts(
     return tuple(facts)
 
 
-def _signal_count(claims: dict[str, Claim], policy: WorkspacePolicy) -> int:
+def _signal_type_count(claims: dict[str, Claim], policy: WorkspacePolicy) -> int:
+    """How many of the signal *fields* currently hold a display-eligible statement (one each)."""
     return sum(
         1
         for field_key in CONTACT_SIGNAL_FIELD_KEYS
@@ -385,7 +399,7 @@ def _build_row(
         ),
         linkedin_url=None if entity is None else entity.linkedin_url,
         project_ids=tuple(project_ids),
-        signals=ContactSignals(count=_signal_count(claims, policy)),
+        signals=ContactSignals(type_count=_signal_type_count(claims, policy)),
     )
 
 

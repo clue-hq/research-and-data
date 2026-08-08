@@ -94,6 +94,15 @@ _RECENT_POST = "contact.facet.recent_post"
 _PUBLIC_APPEARANCES = "contact.facet.public_appearances"
 _STATED_INTERESTS = "contact.facet.stated_interests"
 
+#: The ``solo`` member's single signal family, deliberately **list-valued with more than one item**:
+#: it is what makes ``signals.typeCount`` falsifiable (a per-item unit would report 3, the ratified
+#: per-field unit reports 1). Named here so the assertion reads the same data the fixture seeds.
+_SOLO_APPEARANCES: tuple[dict[str, str], ...] = (
+    {"title": "keynote at DevCon"},
+    {"title": "panel at SaaStr"},
+    {"title": "podcast on Ops Weekly"},
+)
+
 
 # --- harness --------------------------------------------------------------------------------
 
@@ -378,6 +387,9 @@ async def _build(conn: AsyncConnection) -> _Fixture:
             ),
         ),
     )
+    # The one-project member, carrying exactly ONE signal family whose value is a three-item list —
+    # the fixture behind the ratified unit: `signals.typeCount` counts the *field*, so this member
+    # reports 1, and a per-item unit would report 3.
     solo, solo_refs = await _member(
         conn,
         account_id=acme,
@@ -386,6 +398,14 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         suffix="sam-technical",
         persona=Persona.TECHNICAL_EVALUATOR,
         role_confidence=0.62,
+        extra=(
+            (
+                _PUBLIC_APPEARANCES,
+                list(_SOLO_APPEARANCES),
+                UseClass.PROFESSIONAL_PUBLIC,
+                IdentityBinding.STRONG,
+            ),
+        ),
     )
     # Two honest absences on one member: a special-category title (held, display-denied →
     # `restricted`) and a weakly-bound job level (the merge itself refuses to promote it, so it is
@@ -549,15 +569,39 @@ def test_a_weakly_bound_professional_fact_is_simply_absent_not_marked_restricted
 
 def test_signal_counts_count_display_eligible_signal_families_only() -> None:
     """Three facets on one member: an eligible signal, a use-class-denied signal, and an eligible
-    facet outside the signal families. Exactly one is counted."""
+    facet outside the signal families. Exactly one is counted.
+
+    The wire key is ``typeCount``, not ``count``: the founder's 2026-08-08 unit ruling (FI-1 §9) is
+    that the chip reports how many signal **types** are present, and the field is named for the unit
+    it carries. The exact-dict comparison pins the key, so a silent rename back to ``count`` — or an
+    extra sibling key — fails here.
+    """
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture = await _build(conn)
             rows = _rows((await _list(conn, fixture.acme)).json())
-            assert rows[str(fixture.shared)]["signals"] == {"count": 1}
+            assert rows[str(fixture.shared)]["signals"] == {"typeCount": 1}
             # A member with no facets at all counts zero rather than omitting the slot.
-            assert rows[str(fixture.solo)]["signals"] == {"count": 0}
+            assert rows[str(fixture.masked)]["signals"] == {"typeCount": 0}
+
+    run_async(scenario())
+
+
+def test_a_list_valued_signal_facet_counts_as_one_type_not_one_per_item() -> None:
+    """The ratified unit, proven rather than asserted in a comment.
+
+    ``solo`` holds exactly one display-eligible signal family whose value is a three-item list. A
+    per-item unit would report 3; ``typeCount`` reports **1** — one per signal *field* that holds a
+    display-eligible statement, which is the whole reason the key is not called ``count``.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            assert len(_SOLO_APPEARANCES) > 1, "the fixture really is multi-item"
+            rows = _rows((await _list(conn, fixture.acme)).json())
+            assert rows[str(fixture.solo)]["signals"] == {"typeCount": 1}
 
     run_async(scenario())
 

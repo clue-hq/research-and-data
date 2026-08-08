@@ -20,7 +20,9 @@ untouched mechanism surfaces the list endpoint does, plus two more:
    A claim whose run has no lineage row, or a lineage row with a NULL project, goes to the
    **unattributed** section (``projectId: null``) rather than being dropped or guessed onto a
    project: the exemption classes are real (``run_lineage``'s module docstring lists them —
-   redaction runs, pre-FI-2 rows) and hiding their claims would misreport the account;
+   redaction runs, pre-FI-2 rows) and hiding their claims would misreport the account. Each
+   section's project ``name`` comes from ONE batched
+   :func:`~clue_api.frontend_read.accounts_list.project_names` read shared with the list row;
 5. **committee** — the union of every targeting project's governed committee, through
    ``ContactEligibilityResolver`` (never ``identity.contact_ids_for_account``, per the FI-1 §4.5
    ruling), each member carrying the projects that target them. Two gates, both the resolver's or
@@ -73,6 +75,7 @@ from clue_api.frontend_read.accounts_list import (
     ProjectScore,
     WireModel,
     group_score_claims,
+    project_names,
 )
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.committee import (
@@ -157,9 +160,17 @@ class AccountProjectSection(WireModel):
     cases: the unattributed section (no membership exists to describe), and a project that produced
     research on this account without a membership row — which should not happen, and is therefore
     reported rather than hidden.
+
+    ``name`` is the ``project`` row's own name, from the same batched
+    :func:`~clue_api.frontend_read.accounts_list.project_names` read the list row uses, so the two
+    surfaces cannot name one project differently. It is ``null`` for the unattributed section (there
+    is no project to name) and for a lineage-derived project id this workspace holds no ``project``
+    row for — ``run_lineage.project_id`` carries no FK to ``project``, so that is reachable, and an
+    unnamed section is the honest rendering of it.
     """
 
     project_id: str | None = None
+    name: str | None = None
     added_via: str | None = None
     added_at: datetime | None = None
     scores: tuple[ProjectScore, ...] = ()
@@ -588,7 +599,9 @@ async def _read_coverage(
 
 
 def _sections(
-    memberships: Sequence[ProjectMembership], relative: _RelativeClaims
+    memberships: Sequence[ProjectMembership],
+    relative: _RelativeClaims,
+    names: dict[str, str],
 ) -> tuple[AccountProjectSection, ...]:
     """One section per targeting project, plus any project that produced relative work without a
     membership row, plus the unattributed bucket when (and only when) it has something in it.
@@ -614,6 +627,7 @@ def _sections(
         sections.append(
             AccountProjectSection(
                 project_id=project,
+                name=None if project is None else names.get(project),
                 added_via=None if membership is None else membership.added_via,
                 added_at=None if membership is None else membership.added_at,
                 scores=relative.scores.get(project, ()),
@@ -678,6 +692,13 @@ async def read_account_detail(
     coverage = await _read_coverage(
         conn, entity_id=canonical, workspace_id=workspace_id, held_field_keys=field_keys
     )
+    # One batched read over every project this response will show a section for — the membership
+    # projects plus the lineage-derived ones — so section names cost one statement, not one each.
+    names = await project_names(
+        conn,
+        workspace_id=workspace_id,
+        project_ids=[membership.project_id for membership in memberships] + list(relative.projects),
+    )
 
     return AccountDetail(
         id=uuid.UUID(str(canonical)),
@@ -688,7 +709,7 @@ async def read_account_detail(
         hq_geo=account.hq_geo,
         redirected_from=None if canonical == requested else account_id,
         neutral_facts=neutral_facts,
-        project_sections=_sections(memberships, relative),
+        project_sections=_sections(memberships, relative, names),
         committee=committee,
         coverage=coverage,
     )

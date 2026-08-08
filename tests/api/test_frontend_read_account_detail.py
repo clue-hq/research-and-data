@@ -829,6 +829,10 @@ def test_each_projects_relative_claims_stay_inside_its_own_section() -> None:
 
             assert section_a["addedVia"] == "discovered"
             assert section_b["addedVia"] == "imported"
+            # Each section names its own project (FI-1 §9 plan-owner addendum), from the same
+            # batched read the list row uses — so the two surfaces cannot disagree on a name.
+            assert section_a["name"] == "Detail project A"
+            assert section_b["name"] == "Detail project B"
 
             assert _values(section_a["insights"]) == ["insight for A"]
             assert _values(section_b["insights"]) == ["insight for B"]
@@ -865,6 +869,9 @@ def test_claims_whose_run_maps_to_no_project_land_in_the_unattributed_section() 
             unattributed = sections[None]
             assert unattributed["addedVia"] is None
             assert unattributed["addedAt"] is None
+            # There is no project to name, so the slot is null — not the empty string, and not the
+            # id echoed back as a pseudo-name.
+            assert unattributed["name"] is None
             assert sorted(_values(unattributed["insights"])) == [
                 "insight from a manual ingestion",
                 "insight from an unregistered run",
@@ -874,6 +881,40 @@ def test_claims_whose_run_maps_to_no_project_land_in_the_unattributed_section() 
                 assert _values(sections[project_id]["insights"]) == [
                     f"insight for {'A' if project_id == fixture.project_a.project_id else 'B'}"
                 ]
+
+    run_async(scenario())
+
+
+def test_a_lineage_derived_section_with_no_project_row_is_named_null_not_guessed() -> None:
+    """``run_lineage.project_id`` carries **no** FK to ``project``, so a section id can name a
+    project this workspace holds no row for — a stale id, or (the case this seeds) another
+    workspace's project. The section is still served, with its id, and its ``name`` is ``null``:
+    dropping it would hide the account's work, and resolving the name across the workspace boundary
+    would leak another tenant's label onto this response."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            await seed_workspace(conn, _OTHER_WS)
+            foreign = await seed_project(conn, _OTHER_WS, name="Another tenant's project")
+            await _account_claim(
+                conn,
+                account_id=fixture.acme,
+                field_key=_INSIGHT_FIELD,
+                value="insight attributed to a project row this workspace does not hold",
+                run_id=await _run(conn, kind="entity_research", project_id=foreign.project_id),
+                source_key="deep_research",
+                private=True,
+            )
+
+            sections = _sections((await _get(conn, fixture.acme)).json())
+            section = sections[foreign.project_id]
+            assert section["name"] is None
+            assert section["addedVia"] is None, "no membership either — it is not our project"
+            assert _values(section["insights"]) == [
+                "insight attributed to a project row this workspace does not hold"
+            ]
+            assert "Another tenant's project" not in str(sections)
 
     run_async(scenario())
 

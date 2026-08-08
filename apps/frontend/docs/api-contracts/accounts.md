@@ -351,7 +351,7 @@ authored filter rules. Project IDs must remain opaque stable identifiers.
 9. Apply filtering before sorting and cursor pagination, with account name as
    the project-sort tie-breaker.
 
-## As-built backend read API (FI-2 slice 1, 2026-08-08) — ratified deviations & pending items
+## As-built backend read API (FI-2 slice 1, 2026-08-08) — ratified deviations
 
 The proposal above is unchanged and stays the frontend's authored view. This
 section records what the backend actually serves after FI-2 slice 1, so the Zod
@@ -390,8 +390,18 @@ List row:
       "revenueBand": "100m_500m",
       "logoUrl": null,
       "projects": [
-        { "projectId": "prj_a", "addedVia": "discovered", "addedAt": "2026-08-01T12:00:00Z" },
-        { "projectId": "prj_b", "addedVia": "imported", "addedAt": "2026-08-01T12:05:00Z" }
+        {
+          "projectId": "prj_a",
+          "name": "Project A",
+          "addedVia": "discovered",
+          "addedAt": "2026-08-01T12:00:00Z"
+        },
+        {
+          "projectId": "prj_b",
+          "name": "Project B",
+          "addedVia": "imported",
+          "addedAt": "2026-08-01T12:05:00Z"
+        }
       ],
       "primaryProjectId": "prj_a",
       "scores": [
@@ -446,6 +456,7 @@ Account detail:
   "projectSections": [
     {
       "projectId": "prj_a",
+      "name": "Project A",
       "addedVia": "discovered",
       "addedAt": "2026-08-01T12:00:00Z",
       "scores": [
@@ -468,7 +479,15 @@ Account detail:
         }
       ]
     },
-    { "projectId": null, "addedVia": null, "addedAt": null, "scores": [], "narratives": [], "insights": [] }
+    {
+      "projectId": null,
+      "name": null,
+      "addedVia": null,
+      "addedAt": null,
+      "scores": [],
+      "narratives": [],
+      "insights": []
+    }
   ],
   "committee": [
     {
@@ -497,7 +516,7 @@ Contacts row and profile:
       "roleOnCommittee": { "value": "economic_buyer", "confidence": 0.87 },
       "linkedinUrl": "https://linkedin.com/in/dana-buyer",
       "projectIds": ["prj_a", "prj_b"],
-      "signals": { "count": 1 }
+      "signals": { "typeCount": 1 }
     }
   ],
   "meta": { "total": 1 }
@@ -532,17 +551,25 @@ empty page, not a `404`, and the rows it does return still carry their full
 
 ### Ratified deviations from the proposal
 
-- **`projects[]` is `{ projectId, addedVia, addedAt }`; the proposed
-  `{ id, name }` is gone, and no slice-1 endpoint resolves a project name.** The
-  membership row carries how and when the project acquired the account, which the
-  proposal had no slot for; the display name lives on the project record, which
-  this surface does not read. This is an **open decision and a Task-6 blocker**,
-  not a silent narrowing: the accounts table sorts and filters by project, and
-  `src/features/accounts/model/account-query.ts` (lines 80-91) searches on
-  `project.name`, which no response here can satisfy. Either add `name` to the
-  membership row, or resolve names client-side from the project catalog
-  (`GET /api/v1/projects/sidebar` in `projects.md`) and key everything else on
-  `projectId`. Decide before the adapter flip.
+- **`projects[]` is `{ projectId, name, addedVia, addedAt }` — the proposed
+  `{ id, name }` widened, not narrowed** (ratified 2026-08-08; was the Task-6
+  blocker). `projectId` replaces `id`, `name` is the project record's own name
+  resolved by a read-layer join, and `addedVia` / `addedAt` are new: they carry
+  how and when the project acquired the account, which the proposal had no slot
+  for. The accounts table can therefore search and sort on `project.name`
+  (`src/features/accounts/model/account-query.ts`, lines 80-91) with no second
+  endpoint and no client-side catalog join. The same `name` is on the detail's
+  `projectSections[]`, resolved by the **same** batched read, so the table and
+  the detail cannot disagree about a project's name.
+  `name` is `string | null`: it is `null` for the unattributed section
+  (`projectId: null` — there is no project to name) and for any section whose
+  project id this workspace holds no `project` row for. That second case is
+  reachable only on the detail, whose section ids can come from run lineage
+  (which carries no foreign key to `project`); a membership row's project always
+  resolves. Never render the id as a fallback name — an unnamed section is the
+  honest rendering. Name resolution is workspace-scoped, so a foreign project id
+  resolves to `null` rather than leaking another tenant's label. Cost: one
+  batched statement per response, not one per membership.
 - **`employeeBand: "100-200"` becomes `employeeCount: 1200`, an integer.** The
   backend holds a headcount claim, not a band; banding is a display decision the
   frontend owns.
@@ -591,10 +618,13 @@ empty page, not a `404`, and the rows it does return still carry their full
   label belongs in a future source-registry column, not in an adapter map.
 - **`observedAt` is the claim's observed time, falling back to its collection
   time** — the same reference-time rule the merge uses.
-- **`signals.count` counts current display-eligible statements** over a
-  two-family whitelist (`contact.facet.recent_post`,
-  `contact.facet.public_appearances`). A list-valued field counts as **1**;
-  whether a richer unit (per item) is wanted is an open founder question.
+- **`signals` is `{ typeCount }`, not `{ count }` — it counts signal TYPES**
+  (ratified 2026-08-08; the per-field unit was kept and the wire field renamed to
+  say so). `typeCount` is how many of a two-family whitelist
+  (`contact.facet.recent_post`, `contact.facet.public_appearances`) currently
+  hold a display-eligible statement, so it is bounded by that whitelist's size
+  and a list-valued field with five items still counts **1**. Label it as signal
+  types ("2 signal types"), never as a count of items or posts.
 - **Merged accounts redirect on the detail only.** `GET /accounts/{id}` follows a
   merged loser to its survivor and sets `redirectedFrom` to the requested account
   id. Account lists carry no redirect vocabulary at all — a merged loser simply
@@ -630,7 +660,8 @@ empty page, not a `404`, and the rows it does return still carry their full
   `null` for a project that produced research on the account **without** a
   membership row; that state should not occur, so it is reported rather than
   hidden. A project with a membership and no work still gets an empty section,
-  because "targeted, nothing produced yet" is a real state.
+  because "targeted, nothing produced yet" is a real state. `name` is nullable on
+  the same axis — see the `projects[]` entry above.
 - **`coverage.researchedFieldCount` reads stronger than it is.** It counts the
   distinct fields holding at least one live, non-rejected claim for the account
   — from **any** writer, research or not: a stage-0 interview answer, a manual
@@ -659,49 +690,80 @@ empty page, not a `404`, and the rows it does return still carry their full
   is a retention age-out that can never win a merge and so never reaches this
   wire.
 
-### Pending founder ratification (FI-1 D-4–D-7)
+### Ratified 2026-08-08 (FI-1 D-4–D-7, plus the operational rulings)
 
-These gate the adapter flip (Task 6 of the slice-1 plan). Most are frontend
-schema decisions over the shapes above; where one implies further backend work,
-that is called out rather than assumed.
+Founder-ratified; the record is `docs/specs/FI-accounts-contacts-contract-gap-review.md`
+§9 (top entry). These no longer gate anything — they are the decisions the
+adapter flip (Task 6 of the slice-1 plan) implements. Most are frontend schema
+decisions over the shapes above; where one implies further backend work, that is
+called out rather than assumed.
 
-1. **D-4 — nullable/optional everywhere the backend can be correctly empty, plus
-   a per-field `availability` / `reasonCodes` redaction vocabulary** (mirroring
-   the backend's `ResearchItemState`), so the UI can tell **"not researched"**
-   from **"researched, not found"** from "withheld by policy". That capability is
-   the ask and it is unchanged. Slice 1 ships a deliberately narrower form —
+1. **D-4 RATIFIED — nullable/optional everywhere the backend can be correctly
+   empty, plus the honest availability/redaction vocabulary** (mirroring the
+   backend's `ResearchItemState`), so the UI can tell **"not researched"** from
+   **"researched, not found"** from "withheld by policy". No fabricated
+   placeholders anywhere. Slice 1 ships a deliberately narrower form —
    nullability everywhere plus a boolean `restricted` / `titleRestricted` for the
    policy-withheld case — because this read layer serves the merge's current
    value and holds no per-field research-attempt state on the contact path; the
    account-level approximation is `coverage.unresolvedFieldKeys`, which names
    fields research asked for and could not answer. Adopt the full vocabulary in
    the schemas, and expect the backend to widen the wire when the per-field state
-   exists. Nullability alone is still required before any HTTP repository is
-   enabled — the current schemas crash on it.
-2. **D-5 — display strings leave the wire.** `timeLabel`, `dateLabel`,
+   exists. Nullability alone is required before any HTTP repository is enabled —
+   the current schemas crash on it.
+2. **D-5 RATIFIED — display strings leave the wire; the frontend owns all display
+   formatting.** The backend sends semantic values. `timeLabel`, `dateLabel`,
    `editedLabel`, `sizeLabel`, `revenueLabel`, and `locationsLabel` become ISO
    timestamps and semantic values that the frontend formats; `personaTone` stays
    frontend-side.
-3. **D-6 — enum reconciliation.** `researchStatus` widens to the honest backend
-   set; slice 1 serves `not_started | in_progress | needs_review | completed |
-   suspended` and does **not** yet serve `not_launchable`, which depends on the
-   launch surface owned by Lane D (FI-1 D-9) — ratify it in the vocabulary now so
-   the schema does not need a second widening when Lane D lands. `persona` and
-   `roleOnCommittee` adopt the four backend personas. `emailStatus` widens
+3. **D-6 RATIFIED — the frontend adopts the backend vocabularies as-built,
+   including `not_launchable` NOW.** `researchStatus` widens to the honest
+   backend set; slice 1 serves `not_started | in_progress | needs_review |
+   completed | suspended` and does **not** yet serve `not_launchable`, which
+   depends on the launch surface owned by Lane D (FI-1 D-9) — it is ratified into
+   the vocabulary ahead of Lane D so the schema is not widened twice. `persona`
+   and `roleOnCommittee` adopt the four backend personas. `emailStatus` widens
    (`available | lookup | pending | unavailable` at least), which is moot on this
-   surface because slice 1 serves no email data at all (G3). `overallFit` needs a
-   ruling — a two-value tier badge or a versioned-policy three-band cut over
-   `scores[].fit`, never a hardcoded adapter constant — since the backend serves
-   raw scores only. `activity.kind` widens to the backend event kinds with a
-   projection-layer label map (no activity endpoint exists in slice 1). `freshness`
-   and `addedVia` are new enums this slice introduces.
-4. **D-7 — drop or respec the pure no-datas.** `referralFit` /
-   `directAccessFit` / `recallFit` (or spec them as new rubric dimensions — note
-   the backend already serves an `intent` score the frontend does not use),
-   `locationCount`, `xUrl` requiredness, non-LinkedIn `socials`, `influence` (or
-   define it as a recorded derivation — slice 1 does serve
-   `roleOnCommittee.confidence`), `researchIsRefreshing` (or add real schema),
-   `avatarUrl` (G1: no avatar pipeline, and the browser does not scrape), and
-   `logoPath` (cheapest real fix: a `core.company_logo_url` field plus a
-   materializer, which is what `logoUrl: null` is waiting for). None is served in
-   slice 1; each is either dropped from the schemas or specified as backend work.
+   surface because slice 1 serves no email data at all (G3). **`overallFit` is
+   NOT invented** — the backend serves raw `scores[].fit`, and no tier badge,
+   band cut, or adapter constant is introduced on this slice. `activity.kind`
+   widens to the backend event kinds with a projection-layer label map (no
+   activity endpoint exists in slice 1). `freshness` and `addedVia` are new enums
+   this slice introduces.
+4. **D-7 RATIFIED — the fixture-only fields are DROPPED for MVP, because they
+   were placeholders for industry-pack custom fields.** That is the founder's
+   clarification and it changes what "dropped" means: the hardcoded fixture
+   fields — `referralFit` / `directAccessFit` / `recallFit`, `locationCount`,
+   `xUrl` requiredness, non-LinkedIn `socials`, `influence`,
+   `researchIsRefreshing`, `avatarUrl` (G1: no avatar pipeline, and the browser
+   does not scrape) — are removed from the schemas outright, **not** preserved,
+   respecced, or reproduced as constants. What they were standing in for is
+   already served: when an account's industry carries an associated pack, that
+   pack's custom fields arrive **dynamically** through the detail's
+   registry-driven `neutralFacts` / `projectSections[].insights`, which are split
+   by the field registry's declared species and enumerate nothing. So the
+   frontend renders pack custom fields generically off `fieldKey` — a new pack
+   field appears with no schema change and no adapter change — instead of binding
+   named slots. Two notes carried over unchanged: the backend already serves an
+   `intent` score the frontend does not use, and slice 1 does serve
+   `roleOnCommittee.confidence` (the real signal behind `influence`).
+   `logoPath` stays specified as backend work, not dropped: the cheapest real fix
+   is a `core.company_logo_url` field plus a materializer, which is what
+   `logoUrl: null` is waiting for.
+5. **`signals` is a count of signal TYPES — the per-field unit is kept, the wire
+   field is renamed `typeCount`.** See the `signals` entry in the ratified
+   deviations above: a list-valued facet contributes 1, and the chip must be
+   labelled as signal types, never as items.
+6. **CORS posture: a same-origin proxy in production, an exact `localhost` origin
+   in development, wildcard never.** Production serves the frontend and this API
+   same-origin — the frontend proxies `/frontend/v1` rather than calling it
+   cross-origin — so no cross-origin credentialed request is made at all (the
+   proxy route is the adapter flip's to build); development allows the exact
+   localhost origin, listed explicitly. `"*"` is refused structurally — the app
+   raises at startup rather than allowing it, because Starlette echoes the origin
+   when a wildcard is combined with credentials, which under trusted-header
+   tenancy is a real cross-tenant exposure. A phase-2 cross-origin POST surface
+   needs a deliberate widening decision, not a config tweak.
+7. **`projects[].name` is served by the read layer** (the plan-owner addendum to
+   the same ruling) — see the `projects[]` entry in the ratified deviations
+   above. The former Task-6 blocker is closed.

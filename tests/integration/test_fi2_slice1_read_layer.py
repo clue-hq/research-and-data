@@ -789,11 +789,24 @@ def test_every_list_row_agrees_with_the_detail_of_the_same_account() -> None:
                     for section in detail["projectSections"]
                     if section["projectId"] is not None and section["addedVia"] is not None
                 ]
+                # ``name`` is in the tuple deliberately: both surfaces resolve it through the same
+                # batched read, so the one thing the frontend searches and sorts on cannot say
+                # "Project A" on the table and something else on the detail.
                 assert [
-                    (section["projectId"], section["addedVia"], section["addedAt"])
+                    (
+                        section["projectId"],
+                        section["name"],
+                        section["addedVia"],
+                        section["addedAt"],
+                    )
                     for section in membership_sections
                 ] == [
-                    (project["projectId"], project["addedVia"], project["addedAt"])
+                    (
+                        project["projectId"],
+                        project["name"],
+                        project["addedVia"],
+                        project["addedAt"],
+                    )
                     for project in row["projects"]
                 ]
                 assert row["primaryProjectId"] == (
@@ -1001,7 +1014,7 @@ def test_a_display_denied_field_is_withheld_identically_on_the_row_and_the_profi
             assert shared_row["titleRestricted"] is False
             # One facet seeded, from the endpoint's own signal whitelist.
             assert FACET_RECENT_POST in CONTACT_SIGNAL_FIELD_KEYS
-            assert shared_row["signals"] == {"count": 1}
+            assert shared_row["signals"] == {"typeCount": 1}
             shared_profile = (await _profile(conn, fixture.acme, fixture.shared)).json()
             assert _facts(shared_profile)[CURRENT_TITLE]["value"] == "VP Finance"
             # The profile is the row plus account identity — the shared half cannot drift.
