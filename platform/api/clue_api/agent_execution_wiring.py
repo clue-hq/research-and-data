@@ -52,6 +52,7 @@ from clue_agents.contracts import (
 from clue_agents.ports import ExecutionProgress, OperationFailure
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
+from clue_api.turn_action import derive_turn_action_ref
 from clue_api.turn_binding import (
     CapturedTurn,
     CapturedTurnSource,
@@ -1219,6 +1220,12 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self._turn_id = turn_id
+        # The canonical receipt for the human act this turn *is* — derived once, from the turn id
+        # the adapter was constructed with, and stamped as the ambient ``action_ref`` on every
+        # ToolContext this adapter builds. Derived, never passed: the same PC-C8 security model as
+        # the captured-turn binding, so no caller and no model authors which action approved an
+        # effect. Its server-side verification lives in ``clue_api.turn_action``.
+        self._action_ref = derive_turn_action_ref(turn_id)
         self._constitution = constitution
         self._resolved_profile = resolved_profile
         self._policy = policy
@@ -1420,6 +1427,8 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                             actor="agent",
                             conn_factory=self._conn_factory,
                             operation_id=operation_id,
+                            actor_id=constitution.actor_id,
+                            action_ref=self._action_ref,
                             execution_id=constitution.execution_id,
                             execution_node_key=step.node_key,
                         ),
@@ -1737,6 +1746,12 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             append,
             inputs=cast(dict[str, JsonValue], inputs_value),
             actor="agent",
+            # Ambient identity (Lane D §3-P2), threaded as data from the turn this adapter is bound
+            # to: the constitution's authenticated principal, and the canonical receipt for the
+            # user act that woke the agent. A human gate reads exactly these two values; nothing a
+            # model or a caller writes can reach them.
+            actor_id=self._constitution.actor_id,
+            action_ref=self._action_ref,
         )
         descriptor = self._tools.descriptor(step.tool.name, step.tool.version)
         validated_output = descriptor.output_model.model_validate(result.references)

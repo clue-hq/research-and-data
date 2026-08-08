@@ -823,7 +823,19 @@ class RecipeExecutor:
         worker_id: str,
         lease_generation: int,
         stop_requested: asyncio.Event | None = None,
+        actor_id: str | None = None,
+        action_ref: str | None = None,
     ) -> ExecutionRunResult:
+        """Drive one execution to its next durable resting point.
+
+        ``actor_id``/``action_ref`` carry the same ambient invocation identity as
+        :meth:`invoke_interaction_tool` — the authenticated principal and the durable human act
+        (``turn-action:<turn_id>``) this drive runs under — down to every node's
+        :class:`~clue_toolbelt.ToolContext`. A drive that belongs to no turn (a scheduled fleet
+        run, a recipe seeded outside a conversation) passes neither and every node sees ``None``:
+        an absent receipt refuses a human gate, an invented one would forge consent.
+        """
+
         runtime = await self._load_runtime(execution_id)
         root_parameters = await self._parameters.resolve(
             workspace_id=runtime.workspace_id,
@@ -948,6 +960,8 @@ class RecipeExecutor:
                         root_parameters=root_parameters,
                         worker_id=worker_id,
                         lease_generation=lease_generation,
+                        actor_id=actor_id,
+                        action_ref=action_ref,
                     )
                     for node in batch
                 )
@@ -1356,8 +1370,17 @@ class RecipeExecutor:
         *,
         inputs: dict[str, JsonValue],
         actor: str,
+        actor_id: str | None = None,
+        action_ref: str | None = None,
     ) -> ToolResult:
-        """Execute/replay one appended child through the mandatory tool journal."""
+        """Execute/replay one appended child through the mandatory tool journal.
+
+        ``actor_id``/``action_ref`` are the *ambient* invocation identity (Lane D §3-P2): the
+        authenticated principal this execution acts for, and the durable human act that authorized
+        it (``turn-action:<turn_id>``). They are threaded as data by the caller that knows the turn
+        — never read from a global — and stay ``None`` on a path that runs outside any turn, because
+        a human gate must refuse rather than be handed a fabricated receipt.
+        """
         runtime = await self._load_runtime(append.execution_id)
         nodes = {node.spec.node_key: node for node in await self._load_nodes(append.execution_id)}
         node = nodes.get(append.node_key)
@@ -1387,6 +1410,8 @@ class RecipeExecutor:
                 actor="human" if node.actor == "human" else "agent",
                 conn_factory=self._conn_factory,
                 operation_id=node.operation_id,
+                actor_id=actor_id,
+                action_ref=action_ref,
                 execution_id=runtime.execution_id,
                 execution_node_id=node.node_id,
                 execution_node_key=node.spec.node_key,
@@ -1611,6 +1636,8 @@ class RecipeExecutor:
         root_parameters: dict[str, JsonValue],
         worker_id: str,
         lease_generation: int,
+        actor_id: str | None = None,
+        action_ref: str | None = None,
     ) -> None:
         compatibility_context = CompatibilityContext(
             workspace_id=runtime.workspace_id,
@@ -1674,6 +1701,8 @@ class RecipeExecutor:
                         actor="human" if node.actor == "human" else "agent",
                         conn_factory=self._conn_factory,
                         operation_id=node.operation_id,
+                        actor_id=actor_id,
+                        action_ref=action_ref,
                         execution_id=runtime.execution_id,
                         execution_node_id=node.node_id,
                         execution_node_key=node.spec.node_key,
@@ -1725,6 +1754,8 @@ class RecipeExecutor:
                         actor="human" if node.actor == "human" else "agent",
                         conn_factory=self._conn_factory,
                         operation_id=node.operation_id,
+                        actor_id=actor_id,
+                        action_ref=action_ref,
                         execution_id=runtime.execution_id,
                         execution_node_id=node.node_id,
                         execution_node_key=node.spec.node_key,

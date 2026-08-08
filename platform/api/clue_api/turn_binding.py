@@ -28,17 +28,20 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.contracts import AgentTurnRequest
 from clue_agents.ports import AgentArtifactReader
+from clue_api.turn_action import derive_turn_action_ref
 from clue_core import OnboardingInputKind
 from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
-from clue_research.stage0 import get_onboarding_input_for_artifact
+from clue_research.stage0 import OnboardingInputRow, get_onboarding_input_for_artifact
 
 log = get_logger(__name__)
 
 __all__ = [
+    "CAPTURE_DIGEST_MISMATCH",
     "CAPTURE_NOT_FOUND",
     "TRUSTED_TURN_FIELD",
     "CapturedTurn",
@@ -46,6 +49,7 @@ __all__ = [
     "CapturedTurnSource",
     "CapturedTurnUnavailable",
     "RequestCapturedTurn",
+    "load_human_capture",
     "trusted_turn_fields",
 ]
 
@@ -61,6 +65,9 @@ TRUSTED_TURN_FIELD = "clue_trusted_turn_field"
 #: input. Every other reason is a disagreement between things that should agree, and is logged.
 CAPTURE_NOT_FOUND = "capture_not_found"
 
+#: The capture record and the turn's own artifact disagree about the bytes — an integrity alarm.
+CAPTURE_DIGEST_MISMATCH = "capture_digest_mismatch"
+
 
 class CapturedTurnUnavailable(ValueError):
     """No trustworthy binding exists for this turn, so nothing may be injected from it.
@@ -75,6 +82,47 @@ class CapturedTurnUnavailable(ValueError):
         self.reason_code = reason_code
 
 
+async def load_human_capture(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    artifact_key: str,
+    digest: str,
+    kind: OnboardingInputKind = OnboardingInputKind.USER_TURN,
+    actor: str = "human",
+) -> OnboardingInputRow:
+    """The one human-capture integrity join, fail-closed, shared by every consumer of a turn.
+
+    "This artifact really is a human capture of this project, and the two records agree about the
+    bytes" is asserted in exactly one place: here. :class:`CapturedTurnBinder` calls it while
+    compiling a turn's binding (after it has re-hashed the body), and
+    :func:`clue_api.turn_action.resolve_turn_action` calls it while verifying an action receipt
+    (where the digest comes from the turn's durable artifact ref, and there are no bytes to load).
+    Two copies of this join would be two chances for one of them to relax.
+    """
+
+    captured = await get_onboarding_input_for_artifact(
+        conn,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        artifact_key=artifact_key,
+        actor=actor,
+        kind=kind,
+    )
+    if captured is None:
+        raise CapturedTurnUnavailable(
+            "this turn's message is not a captured onboarding input of this project",
+            reason_code=CAPTURE_NOT_FOUND,
+        )
+    if captured.content_sha256 != digest:
+        raise CapturedTurnUnavailable(
+            "the captured onboarding input records a different digest than the turn artifact",
+            reason_code=CAPTURE_DIGEST_MISMATCH,
+        )
+    return captured
+
+
 def trusted_turn_fields(model: type[BaseModel]) -> tuple[str, ...]:
     """Field names this input model declares as served from the captured turn."""
 
@@ -87,7 +135,23 @@ def trusted_turn_fields(model: type[BaseModel]) -> tuple[str, ...]:
 
 
 class CapturedTurn(BaseModel):
-    """The trusted identity and exact bytes of the user turn the model is answering."""
+    """The trusted identity and exact bytes of the user turn the model is answering.
+
+    Three of these fields exist so a *tool* can name what it needs in its own vocabulary; none of
+    them is a second source of truth:
+
+    * ``turn_id`` — the turn's durable identity, so a tool (or a receipt) can cite the act itself
+      rather than only its captured bytes.
+    * ``user_instruction`` — byte-identical to ``answer``. A binding never invents a value, so a
+      tool that declares ``user_instruction`` (the research-directive tools do — the field carries
+      the user's own words into the drafted directive) can only be served if the *field name* it
+      declares is servable. Renaming either field on the tools would rewrite frozen tool input
+      schemas and their pinned profile digests; carrying the same bytes under both names does not.
+    * ``source_turn_ref`` — the canonical :func:`~clue_api.turn_action.derive_turn_action_ref`
+      value for this turn. It is derived here, at the same fail-closed seam that proved the turn,
+      so a tool receiving it is receiving a ref the engine has already verified — not a string a
+      caller or the model chose.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -96,6 +160,9 @@ class CapturedTurn(BaseModel):
     sha256: str
     byte_count: int
     answer: str
+    turn_id: str
+    user_instruction: str
+    source_turn_ref: str
 
     def value_for(self, field: str) -> str | int:
         """Serve one declared field, or refuse: a binding never invents an authority value."""
@@ -174,23 +241,14 @@ class CapturedTurnBinder:
                 reason_code="artifact_digest_mismatch",
             )
         async with self._conn_factory() as conn:
-            captured = await get_onboarding_input_for_artifact(
+            captured = await load_human_capture(
                 conn,
                 workspace_id=ref.workspace_id,
                 project_id=project_id,
                 artifact_key=ref.artifact_key,
-                actor=self._actor,
+                digest=digest,
                 kind=self._kind,
-            )
-        if captured is None:
-            raise CapturedTurnUnavailable(
-                "this turn's message is not a captured onboarding input of this project",
-                reason_code=CAPTURE_NOT_FOUND,
-            )
-        if captured.content_sha256 != digest:
-            raise CapturedTurnUnavailable(
-                "the captured onboarding input records a different digest than the turn artifact",
-                reason_code="capture_digest_mismatch",
+                actor=self._actor,
             )
         try:
             answer = body.decode("utf-8")
@@ -205,6 +263,12 @@ class CapturedTurnBinder:
             sha256=digest,
             byte_count=len(body),
             answer=answer,
+            turn_id=str(request.turn_id),
+            # The same decoded bytes under the name a tool declares, and the canonical action ref
+            # for this turn — both derived here, from the request the binder just proved, so no
+            # caller and no model ever authors either.
+            user_instruction=answer,
+            source_turn_ref=derive_turn_action_ref(request.turn_id),
         )
         self._cache[cache_key] = binding
         return binding
