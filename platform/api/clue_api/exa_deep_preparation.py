@@ -272,7 +272,7 @@ class ExaDeepAccountResolverProvider:
                     reason_code="exa_deep_acquisition_in_progress",
                     operation_ref=str(acquired.operation.operation_id),
                     retry_after=acquired.retry_after or datetime.now(UTC) + timedelta(seconds=30),
-                    audit_refs=tuple(operation_refs),
+                    audit_refs=(*skipped, *operation_refs),
                 )
             if acquired.outcome in {
                 ExaDeepAcquisitionOutcome.FAILED_TERMINAL,
@@ -283,7 +283,7 @@ class ExaDeepAccountResolverProvider:
                     bindings={},
                     reason_code=f"exa_deep_{acquired.outcome.value}",
                     operation_ref=str(acquired.operation.operation_id),
-                    audit_refs=tuple(operation_refs),
+                    audit_refs=(*skipped, *operation_refs),
                 )
 
         resolved = await self._snapshots.resolver_bindings(

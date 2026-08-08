@@ -1021,6 +1021,10 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
             # field" on the qualitative path.  It is also why the first-call rule below is stated
             # *net* of the borrowed set: the agent sees exactly these fields as already complete
             # in its state read, so a prompt-obedient omission must pass, not cost a turn.
+            #
+            # Every fact the three rules below weigh is read in **one** snapshot: the borrowed set
+            # and the prior-call history decide the same question ("what is left to buy?") and two
+            # separate reads could straddle a concurrent write and answer it inconsistently.
             async with self._conn_factory() as conn:
                 borrowed = await born_complete_account_field_keys(
                     conn,
@@ -1028,23 +1032,6 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
                     account_entity_id=context.authorization.subject_entity_id,
                     field_keys=context.authorization.selection.admitted_field_keys,
                 )
-            already_known = fields & borrowed
-            if already_known:
-                raise AccountResearchAuthorityError(
-                    "Exa account research cannot re-buy a field an existing fresh claim already "
-                    f"answers: {', '.join(sorted(already_known))}"
-                )
-            exa_authority = {
-                item.field_key: item.source_keys
-                for item in context.authorization.selection.field_source_authority
-                if _QUALITATIVE_SOURCE in item.source_keys
-            }
-            primary = {
-                field_key
-                for field_key, source_keys in exa_authority.items()
-                if source_keys[0] == _QUALITATIVE_SOURCE
-            } - borrowed
-            async with self._conn_factory() as conn:
                 prior = int(
                     (
                         await conn.execute(
@@ -1071,6 +1058,24 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
                         )
                     ).scalars()
                 )
+            already_known = fields & borrowed
+            if already_known:
+                raise AccountResearchAuthorityError(
+                    "Exa account research cannot re-buy a field an existing fresh claim already "
+                    f"answers: {', '.join(sorted(already_known))}"
+                )
+            exa_authority = {
+                item.field_key: item.source_keys
+                for item in context.authorization.selection.field_source_authority
+                if _QUALITATIVE_SOURCE in item.source_keys
+            }
+            primary = {
+                field_key
+                for field_key, source_keys in exa_authority.items()
+                if source_keys[0] == _QUALITATIVE_SOURCE
+            } - borrowed
+            # A borrowed Exa-primary field would fall out of ``primary`` and land here as if it
+            # were a fallback; it cannot, because ``already_known`` refused the call above.
             fallback = fields - primary
             if fallback - prior_structured_fields:
                 raise AccountResearchAuthorityError(

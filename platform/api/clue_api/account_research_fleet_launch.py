@@ -230,28 +230,33 @@ class AccountResearchFleetLauncher:
                     )
                 effective_by_account[account_id] = effective
                 pins_by_account[account_id] = effective.pin
-                # FI-2 §6.2 estimate netting — DELIBERATELY NOT DONE HERE, and the reasons are
-                # structural, not effort:
-                #
-                # 1. ``budget_cap_cents`` is a per-account *cap*, not a per-field price.  There is
-                #    no per-field decomposition to subtract a skipped field from, so "netting" it
-                #    would mean inventing a cost model the directive does not carry.
-                # 2. The same number becomes each job's ``budget_cap_cents`` below — the authority
-                #    ceiling.  A launch-time probe of ``current_values`` is a *prediction*: the
-                #    runtime re-reads the merge when the job actually plans (``state()``), and a
-                #    claim that expires in between legitimately flips back to researchable.  A
-                #    netted cap would then under-authorize a job that must research it.
-                # 3. This value is equality-checked against ``expected_estimated_cost_cents`` — the
-                #    figure a human already approved.  Any netting here must be reproduced bit-for-
-                #    bit by whatever proposed that figure, so it is a two-sided contract change,
-                #    not a local fix.
-                #
-                # The honest consequence: the estimate is a **gross ceiling**, and the fresh-skip
-                # materializes as under-spend (each job's real spend is reported on the job row and
-                # the coverage ledger explains, per field, why money was or was not spent — the
-                # ``…:existing_claim_fresh`` skip reasons).  Netting belongs with the estimate
-                # *proposal* surface when it lands, so both sides move together.
                 estimated_cost += effective.effort_policy.budget_cap_cents
+            # FI-2 §6.2 estimate netting (spec §11 open item 3, a "should-have"): the estimate is
+            # deliberately **gross** — it is not reduced by the fields the fresh-skip will make
+            # free.  Four verified reasons, recorded so this is a decision and not an oversight:
+            #
+            # 1. ``effort_policy.budget_cap_cents`` is a per-account *cap*, not a per-field price.
+            #    Nothing decomposes it per field, so "netting" it means inventing a cost model the
+            #    directive does not carry.
+            # 2. The same number is each job's ``budget_cap_cents`` below (and this sum is what
+            #    ``approved_budget_cap_cents`` must cover).  Netting the sum without netting the
+            #    per-job caps would let a launch be approved for less than the authority it hands
+            #    out — the dangerous direction.
+            # 3. ``expected_estimated_cost_cents`` is a *caller-supplied* input, equality-checked
+            #    here; there is no server-side estimate-proposal surface for this launch at all
+            #    (``LaunchAccountResearchTool.estimate`` just echoes the input back).  So netting
+            #    would break every existing caller and has no producer to move in step — the
+            #    opposite of "minimal".
+            # 4. A launch-time freshness probe is a *prediction* that the runtime re-takes when the
+            #    job plans, and it would enter the durably-replayed launch identity: a claim that
+            #    expires between launch and replay would change the number and turn a legitimate
+            #    idempotent replay into a conflict.
+            #
+            # The honest consequence, stated rather than hidden: the estimate is a **ceiling**, and
+            # the fresh-skip materialises as under-spend.  Where the money actually went is already
+            # answerable from data — per-job spend on the job row, and the coverage ledger's
+            # per-field ``…:existing_claim_fresh`` skip reasons.  Netting belongs with an estimate
+            # *proposal* surface, so both sides of the equality can move together.
             if estimated_cost != request.expected_estimated_cost_cents:
                 raise AccountResearchFleetLaunchError(
                     "approved estimate differs from the current effective directives"
