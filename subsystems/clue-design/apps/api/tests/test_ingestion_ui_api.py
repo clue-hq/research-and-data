@@ -24,6 +24,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_client
+
 from lumen_api.database import Repository, connect
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
@@ -35,7 +37,7 @@ LOGO_PNG_PATH = REPO_ROOT / "crates/lumen-export/fixtures/assets/acme-logo-8x8-r
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
     app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    return make_client(app)
 
 
 def _seed_kit(

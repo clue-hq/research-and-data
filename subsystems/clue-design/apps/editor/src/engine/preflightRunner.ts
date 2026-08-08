@@ -1,5 +1,6 @@
 import type { Diagnostic, Scene } from "./contracts";
 import { diagnosticSeverity, diagnosticSubject, isRecord } from "./brandDiagnostics";
+import { lumenFetch } from "./editorConfig";
 
 export interface EditorPreflightRequest {
   scene: Scene;
@@ -33,7 +34,7 @@ export interface ApiPreflightRunnerOptions {
 
 export function createApiPreflightRunner({ apiBaseUrl }: ApiPreflightRunnerOptions): EditorPreflightRunner {
   return async ({ scene }) => {
-    const response = await fetch(new URL("/preflight-preview", apiBaseUrl), {
+    const response = await lumenFetch(new URL("/preflight-preview", apiBaseUrl), {
       method: "POST",
       headers: {
         "content-type": "application/json"

@@ -1,5 +1,6 @@
 import type { Diagnostic, NodeId, Operation, PageId, Scene } from "./contracts";
 import { diagnosticSeverity, diagnosticSubject, isRecord } from "./brandDiagnostics";
+import { lumenFetch, runEventsUrl } from "./editorConfig";
 
 /** One progress event streamed from an async agent run (2b show-work). The
  * server persists these to a durable store; the editor renders a curated
@@ -109,7 +110,7 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
     model,
     diagnostics
   }) => {
-    const response = await fetch(new URL("/agent/turn-preview", apiBaseUrl), {
+    const response = await lumenFetch(new URL("/agent/turn-preview", apiBaseUrl), {
       method: "POST",
       headers: {
         "content-type": "application/json"
@@ -163,7 +164,7 @@ export function createStreamingAgentRunner({
     diagnostics,
     onEvent
   }) => {
-    const response = await fetch(new URL("/agent/turns", apiBaseUrl), {
+    const response = await lumenFetch(new URL("/agent/turns", apiBaseUrl), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -217,7 +218,9 @@ export function subscribeToAgentRun({
   return new Promise((resolve, reject) => {
     let source: EventSourceLike;
     try {
-      source = eventSourceFactory(new URL(`/agent/runs/${runId}/events`, apiBaseUrl).toString());
+      // EventSource cannot set request headers, so the workspace rides the query string —
+      // the API resolves it just as strictly as X-Workspace-Id (401 when neither is present).
+      source = eventSourceFactory(runEventsUrl(apiBaseUrl, runId));
     } catch (error) {
       reject(error instanceof Error ? error : new Error(String(error)));
       return;

@@ -21,6 +21,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_client
+
 from lumen_api.main import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -75,7 +77,7 @@ SHRINK_EVERY = 7
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
     app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    return make_client(app)
 
 
 def seeded_binding_sets(count: int, logo_asset_id: str) -> list[dict]:

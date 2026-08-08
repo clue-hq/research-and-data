@@ -18,6 +18,8 @@ from typing import Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_client
+
 from lumen_api.main import create_app
 
 
@@ -39,7 +41,7 @@ TINY_PNG = bytes.fromhex(
 def client(tmp_path: Path) -> TestClient:
     app = create_app(tmp_path / "api.sqlite3")
     app.state.asset_store_root = str(tmp_path / "asset-store")
-    return TestClient(app)
+    return make_client(app)
 
 
 def store_bytes(client: TestClient, data: bytes) -> str:

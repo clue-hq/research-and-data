@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { editorApiBaseUrl } from "@/engine/editorConfig";
+import { editorApiBaseUrl, runEventsUrl } from "@/engine/editorConfig";
 import { fetchWebRunSnapshot, startWebTurn } from "@/engine/webDocuments";
 
 /**
@@ -206,9 +206,8 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
           }
           let source: WebEventSourceLike;
           try {
-            source = eventSourceFactory(
-              new URL(`/agent/runs/${encodeURIComponent(runId)}/events`, base).toString()
-            );
+            // Workspace in the query string: EventSource cannot send X-Workspace-Id.
+            source = eventSourceFactory(runEventsUrl(base, runId));
           } catch (cause) {
             settleError(
               cause instanceof Error ? cause.message : "Could not open the event stream."

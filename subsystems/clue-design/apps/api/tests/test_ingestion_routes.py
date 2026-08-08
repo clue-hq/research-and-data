@@ -22,6 +22,8 @@ from typing import Any, Callable, Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_client
+
 from lumen_api import main as main_module
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
@@ -114,7 +116,7 @@ def _read_brand_kit_row(client: TestClient, brand_kit_id: str) -> dict:
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
     app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    return make_client(app)
 
 
 def test_ingest_website_happy_path_persists_kit_and_report(

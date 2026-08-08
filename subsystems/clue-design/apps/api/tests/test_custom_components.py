@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+from conftest import make_client
 from sqlalchemy import text as sa_text
 from sqlalchemy.exc import DBAPIError
 
@@ -29,7 +31,7 @@ COMPONENT_HTML = """
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    return TestClient(create_app(tmp_path / "api.sqlite3"))
+    return make_client(create_app(tmp_path / "api.sqlite3"))
 
 
 def create_account(client: TestClient, account_id: str) -> dict:

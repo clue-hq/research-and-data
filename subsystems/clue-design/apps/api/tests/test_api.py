@@ -11,6 +11,8 @@ from typing import Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_client, unique_run_id
+
 from lumen_api import image_provider
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import agent_response_from_trace, create_app
@@ -32,7 +34,7 @@ VALID_STYLES_PATH = (
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
     app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    return make_client(app)
 
 
 def minimal_scene() -> dict:
@@ -1313,7 +1315,11 @@ def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
     from lumen_api.database import Repository, connect
 
     database_path = tmp_path / "api.sqlite3"
-    first = TestClient(create_app(database_path))
+    first = make_client(create_app(database_path))
+
+    orphan_web = unique_run_id("orphan_web")
+    orphan_scene = unique_run_id("orphan_scene")
+    finished_run = unique_run_id("finished")
 
     connection = connect(database_path)
     repo = HybridRepository(connection)
@@ -1321,33 +1327,37 @@ def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
         {"id": "doc_web_orphan", "title": "Orphan site", "schema_version": 1, "pages": []},
         doc_kind="web",
     )
-    repo.create_run("run_orphan_web", "doc_web_orphan")
-    repo.create_run("run_orphan_scene", "doc_untracked")
-    repo.create_run("run_finished", "doc_untracked")
-    repo.set_run_result("run_finished", "succeeded", {"status": "applied"})
-    repo.append_run_event("run_finished", "result", {"status": "applied"})
+    repo.create_run(orphan_web, "doc_web_orphan")
+    # D2.5A: design_agent_run.document_id is a real FK, so the "run whose document was never
+    # tracked" case is now expressed as a run with NO document — which is what the old dangling
+    # id resolved to anyway (the LEFT JOIN yielded a NULL doc_kind either way).
+    repo.create_run(orphan_scene, None)
+    repo.create_run(finished_run, None)
+    repo.complete_run(
+        finished_run, "succeeded", {"status": "applied"}, "result", {"status": "applied"}
+    )
     connection.close()
     del first
 
     # "Restart": a new app over the same database sweeps at construction.
-    restarted = TestClient(create_app(database_path))
+    restarted = make_client(create_app(database_path))
 
-    web_snapshot = restarted.get("/agent/runs/run_orphan_web").json()
+    web_snapshot = restarted.get(f"/agent/runs/{orphan_web}").json()
     assert web_snapshot["status"] == "failed"
     assert web_snapshot["result"]["doc_kind"] == "web"
     assert web_snapshot["result"]["diagnostics"][0]["code"] == "agent_runtime.orphaned"
     assert any(event["type"] == "error" for event in web_snapshot["events"])
 
-    scene_snapshot = restarted.get("/agent/runs/run_orphan_scene").json()
+    scene_snapshot = restarted.get(f"/agent/runs/{orphan_scene}").json()
     assert scene_snapshot["status"] == "failed"
     assert "doc_kind" not in scene_snapshot["result"]
 
-    finished = restarted.get("/agent/runs/run_finished").json()
+    finished = restarted.get(f"/agent/runs/{finished_run}").json()
     assert finished["status"] == "succeeded"
     assert finished["result"] == {"status": "applied"}
 
     # The SSE stream for an orphan closes with `done` immediately.
-    stream = restarted.get("/agent/runs/run_orphan_web/events").text
+    stream = restarted.get(f"/agent/runs/{orphan_web}/events").text
     assert "event: done" in stream
     assert "agent_runtime.orphaned" in stream
 
@@ -1358,24 +1368,28 @@ def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
     # the terminal marker closes the stream with the stored result.
     from lumen_api.database import Repository, connect
 
+    run_id = unique_run_id("sse")
     connection = connect(client.app.state.database_path)
     repo = HybridRepository(connection)
-    repo.create_run("run_sse", "doc_sse")
-    repo.append_run_event("run_sse", "dsl_block_produced", {"iteration": 1})
-    repo.set_run_result(
-        "run_sse", "succeeded", {"status": "proposed", "summary": "done"}
+    repo.create_run(run_id, None)
+    repo.append_run_event(run_id, "dsl_block_produced", {"iteration": 1})
+    repo.complete_run(
+        run_id,
+        "succeeded",
+        {"status": "proposed", "summary": "done"},
+        "result",
+        {"status": "proposed"},
     )
-    repo.append_run_event("run_sse", "result", {"status": "proposed"})
     connection.close()
 
-    body = client.get("/agent/runs/run_sse/events").text
+    body = client.get(f"/agent/runs/{run_id}/events").text
     assert "event: progress" in body
     assert "dsl_block_produced" in body
     assert "event: done" in body
     assert '"summary":"done"' in body or '"summary": "done"' in body
     # Last-Event-ID replay: subscribing after seq 1 skips the progress event.
     resumed = client.get(
-        "/agent/runs/run_sse/events", headers={"Last-Event-ID": "1"}
+        f"/agent/runs/{run_id}/events", headers={"Last-Event-ID": "1"}
     ).text
     assert "event: progress" not in resumed
     assert "event: done" in resumed
@@ -1390,9 +1404,10 @@ def test_run_event_enriched_with_operations_round_trips_and_streams(
     # run_events row AND rides the SSE progress frame the editor consumes.
     from lumen_api.database import Repository, connect
 
+    run_id = unique_run_id("ops")
     connection = connect(client.app.state.database_path)
     repo = HybridRepository(connection)
-    repo.create_run("run_ops", "doc_ops")
+    repo.create_run(run_id, None)
     enriched = {
         "actor": "dsl-author",
         "iteration": 1,
@@ -1404,17 +1419,18 @@ def test_run_event_enriched_with_operations_round_trips_and_streams(
             {"kind": "insert_node", "node_id": "headline", "parent_id": "page_hero"},
         ],
     }
-    repo.append_run_event("run_ops", "dsl_compiled", enriched)
+    repo.append_run_event(run_id, "dsl_compiled", enriched)
 
     # (e-i) the durable row round-trips the enriched dict verbatim.
-    rows = repo.list_run_events("run_ops", after_seq=0)
+    rows = repo.list_run_events(run_id, after_seq=0)
     assert rows[-1]["data"] == enriched
-    repo.set_run_result("run_ops", "succeeded", {"status": "proposed"})
-    repo.append_run_event("run_ops", "result", {"status": "proposed"})
+    repo.complete_run(
+        run_id, "succeeded", {"status": "proposed"}, "result", {"status": "proposed"}
+    )
     connection.close()
 
     # (e-ii) the SSE progress frame carries the operations to the client.
-    body = client.get("/agent/runs/run_ops/events").text
+    body = client.get(f"/agent/runs/{run_id}/events").text
     assert "event: progress" in body
     assert "dsl_compiled" in body
     assert "add_page" in body and "page_hero" in body
@@ -3170,7 +3186,7 @@ def test_backfill_wraps_pre_envelope_operation_rows(tmp_path: Path) -> None:
 
     database_path = tmp_path / "api.sqlite3"
     app = create_app(database_path)
-    client = TestClient(app)
+    client = make_client(app)
     document = create_document(client)
     client.post(
         f"/documents/{document['id']}/operations",
@@ -3183,7 +3199,7 @@ def test_backfill_wraps_pre_envelope_operation_rows(tmp_path: Path) -> None:
     connection.commit()
     connection.close()
 
-    restarted = TestClient(create_app(database_path))
+    restarted = make_client(create_app(database_path))
     history = restarted.get(f"/documents/{document['id']}/history").json()
     envelope = history["envelopes"][0]
     assert envelope["envelope_version"] == 0

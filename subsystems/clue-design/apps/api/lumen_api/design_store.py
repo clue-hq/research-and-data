@@ -1,11 +1,13 @@
-"""The D2.2/D2.3/D2.4 store switch: Postgres via ``clue_design``, behind the Repository seam.
+"""The D2.2–D2.5 store switch: Postgres via ``clue_design``, behind the Repository seam.
 
-Seven domains now: DOCUMENTS (documents / envelopes / op log / snapshots / template revisions /
+Eight domains now: DOCUMENTS (documents / envelopes / op log / snapshots / template revisions /
 diagnostics — the D1a tables, D2.2); BRAND (kits + compatibility reports) and ASSETS (the
 registry), D2.3; PERSONALIZATION (binding sets / instances / instance batches / the repair
-queue) and WEB ACCOUNTS + WEB BATCHES (D2.4A); and since D2.4B WEB PUBLISHES + PUBLISH REVISIONS
-and the CUSTOM-COMPONENT registry (components / source revisions / artifacts / compilations).
-Only agent runs + ingestion-adjacent leftovers stay on the SQLite ``Repository`` (D2.5/D5).
+queue) and WEB ACCOUNTS + WEB BATCHES (D2.4A); WEB PUBLISHES + PUBLISH REVISIONS and the
+CUSTOM-COMPONENT registry (D2.4B); and since D2.5A AGENT RUNS + RUN EVENTS. That was the LAST
+``Repository`` domain still reading SQLite (ingestion jobs never went through this seam — they
+moved to ``clue_design.ingestion`` directly at D2.3), so every override below is now a Postgres
+call and the inherited SQLite bodies are dead weight the rest of Part II deletes.
 
 **The O5 bridge** (:class:`DesignStoreBridge`) — DISPOSABLE scaffOLDING, deleted at D5 with the
 daemon threads. Each call is ``asyncio.run`` of exactly ONE ``clue_design`` DAL coroutine
@@ -27,16 +29,29 @@ transaction from the document write; the registry is append-only and immutable, 
 residual interleaving is an account deleted between validation and write, which the
 ``design_custom_component`` CASCADE then makes structurally consistent anyway.)
 
-Workspace scoping (O4, staged): ``resolve_workspace_id`` takes ``X-Workspace-Id`` when the
-caller sends it, else the configured dev workspace (``LUMEN_DEV_WORKSPACE_ID``, default
-``ws_lumen_dev``). Public publish serving cannot use a header at all — a visitor sends none —
-so O6b (ratified: option (a)) puts the workspace in the PATH: ``/w/{workspace_id}/p/{slug}``,
-served through main.py's ``public_repository`` dependency, which builds this store with
-``ensure_workspace=False`` (an anonymous GET must never write) and therefore 404s on an unknown
-tenant through the fail-closed workspace-scoped reads.
-The strict 401-on-absent header seam lands at D2.5 with the editor harness change. The dev
-workspace row is ensured lazily (once per process per workspace) — Part-IV auth deletes that
-scaffolding, and Part-IV item 5 deletes the interim ``/w/{workspace_id}/p/...`` route.
+**Workspace scoping (O4) is STRICT as of D2.5A.** ``resolve_workspace_id`` reads
+``X-Workspace-Id`` and raises ``401 workspace.header_required`` when it is absent — there is no
+longer an env fallback on the request path. The silent fallback was the dangerous part of the
+staged seam: a caller that forgot the header did not fail, it quietly read and wrote *the dev
+tenant's* data, and every request-path bug of that shape is invisible until it is a cross-tenant
+incident. ``default_workspace_id()`` survives only for DIRECT store constructions (scripts, the
+startup sweep, tests) that have no request to read a header from.
+
+Two surfaces genuinely cannot send a header, and both name their tenant in the URL instead:
+
+* **Public publish serving** — an anonymous visitor sends no headers at all. O6b (ratified:
+  option (a)) puts the workspace in the PATH (``/w/{workspace_id}/p/{slug}``), served through
+  main.py's ``public_repository`` dependency, which builds this store with
+  ``ensure_workspace=False`` (an anonymous GET must never write) and therefore 404s on an
+  unknown tenant through the fail-closed workspace-scoped reads.
+* **The run-event SSE stream** — the browser's ``EventSource`` API cannot set request headers
+  (by specification), so ``GET /agent/runs/{id}/events`` takes ``?workspace_id=`` and resolves it
+  with :func:`resolve_stream_workspace_id`, which is equally strict (same 401, same code). Same
+  reasoning as O6b, same disposability: D7 moves design events onto the platform run-event
+  stream and this special case goes with it.
+
+The dev workspace row is ensured lazily (once per process per workspace) — Part-IV auth deletes
+that scaffolding, and Part-IV item 5 deletes the interim ``/w/{workspace_id}/p/...`` route.
 """
 
 from __future__ import annotations
@@ -59,6 +74,7 @@ from clue_design import documents as design_documents
 from clue_design import history as design_history
 from clue_design import personalization as design_personalization
 from clue_design import publishes as design_publishes
+from clue_design import runs as design_runs
 from clue_design import snapshots as design_snapshots
 from clue_design.errors import (
     DesignArtifactConflictError,
@@ -66,7 +82,7 @@ from clue_design.errors import (
     DesignSourceVersionConflictError,
     DesignVersionConflictError,
 )
-from fastapi import Request
+from fastapi import HTTPException, Request
 from sqlalchemy import text
 from sqlalchemy.exc import DataError, DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -93,12 +109,51 @@ _ensure_lock = threading.Lock()
 
 
 def default_workspace_id() -> str:
+    """The dev workspace for DIRECT store constructions only — scripts, the startup orphan
+    sweep, and tests. It is deliberately NOT a request-path fallback (see below)."""
     return os.environ.get(_DEV_WORKSPACE_ENV, _DEV_WORKSPACE_DEFAULT)
 
 
+def _workspace_required() -> HTTPException:
+    return HTTPException(
+        status_code=401,
+        detail={
+            "code": "workspace.header_required",
+            "message": f"{_WORKSPACE_HEADER} is required.",
+            "header": _WORKSPACE_HEADER,
+        },
+    )
+
+
 def resolve_workspace_id(request: Request) -> str:
-    """Header wins; else the configured dev workspace. Strict 401-on-absent arrives at D2.5."""
-    return request.headers.get(_WORKSPACE_HEADER) or default_workspace_id()
+    """The strict O4 seam (D2.5A): ``X-Workspace-Id`` or 401 — no fallback.
+
+    An absent header used to silently resolve to the dev workspace, which meant a miswired
+    caller read and wrote another tenant's rows and looked healthy doing it. Refusing is the
+    only answer that keeps the fail-closed DAL honest at the edge.
+    """
+    workspace_id = request.headers.get(_WORKSPACE_HEADER)
+    if not workspace_id:
+        raise _workspace_required()
+    return workspace_id
+
+
+def resolve_stream_workspace_id(request: Request) -> str:
+    """The SSE analogue of :func:`resolve_workspace_id`: header **or** ``?workspace_id=``.
+
+    ``EventSource`` cannot send custom headers (by specification), so the run-event stream also
+    accepts its tenant in the query string — the same "no header possible, put it in the URL"
+    move O6b makes for the public publish routes, and just as disposable (D7 retires this
+    stream). The header still wins when a non-browser client sends one; what is NOT relaxed is
+    the strictness — neither source present is the same 401 as everywhere else, never a silent
+    dev-workspace fall-back.
+    """
+    workspace_id = request.headers.get(_WORKSPACE_HEADER) or request.query_params.get(
+        "workspace_id"
+    )
+    if not workspace_id:
+        raise _workspace_required()
+    return workspace_id
 
 
 def _run_isolated[T](coro: "Awaitable[T]") -> T:
@@ -199,6 +254,21 @@ async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
     )
     with _ensure_lock:
         _ensured_workspaces.add(workspace_id)
+
+
+def list_orphaned_runs_across_workspaces() -> List[JsonObject]:
+    """Every ``running`` run in the database, with its ``workspace_id`` — the startup sweep's
+    ONE unscoped read.
+
+    Unscoped on purpose: a process restart orphans the in-flight turns of *every* workspace that
+    process was serving (turns run on daemon threads inside it), and the sweep runs at app
+    construction, before any request exists to name a tenant. Scoping it to the dev workspace
+    would leave every other tenant's runs stuck ``running`` forever — the exact failure the
+    sweep exists to prevent. The caller fails each row through a workspace-CORRECT store; this
+    read itself returns no run payload and writes nothing.
+    """
+    bridge = DesignStoreBridge(default_workspace_id(), ensure_workspace=False)
+    return bridge._run(design_runs.list_running_runs_across_workspaces)
 
 
 class HybridRepository(Repository):
@@ -1024,42 +1094,104 @@ class HybridRepository(Repository):
     # overridden above, so Python dispatch already runs the inherited walk against Postgres —
     # the LAST cross-domain seam, closed by porting its reads rather than by forking the method.
 
-    # --- cross-domain reads over the Postgres document feed ----------------------------------
+    # --- agent runs + run events (D2.5A) ------------------------------------------------------
+
+    def create_run(self, run_id: str, document_id: Optional[str]) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_runs.create_run(
+                conn,
+                workspace_id=self.workspace_id,
+                run_id=run_id,
+                document_id=document_id,
+            )
+        )
+
+    def get_run(self, run_id: str) -> Optional[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_runs.get_run(
+                conn, workspace_id=self.workspace_id, run_id=run_id
+            )
+        )
+
+    def require_run(self, run_id: str) -> JsonObject:
+        return self._bridge._run(
+            lambda conn: design_runs.require_run(
+                conn, workspace_id=self.workspace_id, run_id=run_id
+            )
+        )
+
+    def set_run_result(
+        self, run_id: str, status: str, result: Optional[JsonObject]
+    ) -> None:
+        self._bridge._run(
+            lambda conn: design_runs.set_run_result(
+                conn,
+                workspace_id=self.workspace_id,
+                run_id=run_id,
+                status=status,
+                result=result,
+            )
+        )
+
+    def complete_run(
+        self,
+        run_id: str,
+        status: str,
+        result: Optional[JsonObject],
+        event_type: str,
+        event_data: Optional[JsonObject] = None,
+    ) -> int:
+        """One bridge call, hence ONE transaction, for "this run is over" — the terminal result
+        and its marker event land together or not at all (see ``clue_design.runs.complete_run``
+        for the race this closes)."""
+        return self._bridge._run(
+            lambda conn: design_runs.complete_run(
+                conn,
+                workspace_id=self.workspace_id,
+                run_id=run_id,
+                status=status,
+                result=result,
+                event_type=event_type,
+                event_data=event_data,
+            )
+        )
+
+    def append_run_event(self, run_id: str, event_type: str, data: JsonObject) -> int:
+        """The seq allocation and the insert are ONE DAL coroutine — hence one transaction with
+        the parent run's ``FOR UPDATE`` lock still held (the O5 rule). ``next_run_event_seq`` is
+        therefore deliberately NOT overridden: exposing the allocation as its own bridge call
+        would be exactly the split O5 forbids, and nothing outside this method uses it."""
+        return self._bridge._run(
+            lambda conn: design_runs.append_run_event(
+                conn,
+                workspace_id=self.workspace_id,
+                run_id=run_id,
+                event_type=event_type,
+                data=data,
+            )
+        )
+
+    def list_run_events(self, run_id: str, after_seq: int = 0) -> List[JsonObject]:
+        return self._bridge._run(
+            lambda conn: design_runs.list_run_events(
+                conn,
+                workspace_id=self.workspace_id,
+                run_id=run_id,
+                after_seq=after_seq,
+            )
+        )
 
     def list_running_runs(self) -> List[JsonObject]:
-        """The startup-sweep read: runs are SQLite until D5, doc_kind lives on Postgres.
-
-        The SQLite original joined ``agent_runs`` to ``documents``; that join is impossible
-        now, so the run rows come from SQLite and each distinct document's ``doc_kind`` is
-        resolved (and cached) through the Postgres document store.
-        """
-        rows = self.connection.execute(
-            """
-            SELECT run_id, document_id FROM agent_runs
-            WHERE status = 'running'
-            ORDER BY created_at ASC
-            """
-        ).fetchall()
-        doc_kinds: Dict[str, Optional[str]] = {}
-        running: List[JsonObject] = []
-        for row in rows:
-            document_id = row["document_id"]
-            doc_kind: Optional[str] = None
-            if document_id is not None:
-                if document_id not in doc_kinds:
-                    try:
-                        doc_kinds[document_id] = self.require_document(document_id)["doc_kind"]
-                    except NotFoundError:
-                        doc_kinds[document_id] = None
-                doc_kind = doc_kinds[document_id]
-            running.append(
-                {
-                    "run_id": row["run_id"],
-                    "document_id": document_id,
-                    "doc_kind": doc_kind,
-                }
+        """This workspace's still-'running' runs, joined to their document's ``doc_kind`` —
+        one Postgres query again (the D2.2-era version stitched SQLite rows to Postgres
+        documents because only half the join had been ported)."""
+        return self._bridge._run(
+            lambda conn: design_runs.list_running_runs(
+                conn, workspace_id=self.workspace_id
             )
-        return running
+        )
+
+    # --- cross-domain reads over the Postgres document feed ----------------------------------
 
     def list_custom_component_usages(self, account_id: str, slug: str) -> List[JsonObject]:
         """Exact document/node pins for one account-local component (ported walk).

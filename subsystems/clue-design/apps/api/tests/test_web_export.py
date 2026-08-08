@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+from conftest import make_client
 from PIL import Image
 
 from lumen_api.database import Repository, connect
@@ -53,7 +55,7 @@ SAMPLE_HTML = """
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
     app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    return make_client(app)
 
 
 def create_web_document(client: TestClient, **extra) -> dict:

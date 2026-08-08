@@ -22,6 +22,8 @@ from typing import Any, Callable, Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_client
+
 from lumen_api import main as main_module
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
@@ -172,7 +174,7 @@ def _install_stub_pipeline(
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
     app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    return make_client(app)
 
 
 def _post_assets(client: TestClient, *, uploads=None, **form):

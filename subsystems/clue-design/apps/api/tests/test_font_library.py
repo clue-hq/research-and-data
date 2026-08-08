@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_client
+
 from lumen_api import font_library as runtime_library
 from lumen_api.core import CoreClient
 from lumen_api.main import (
@@ -483,7 +485,7 @@ def test_font_library_endpoint_serves_manifest(
         manifest_file,
         [{"family": "DM Sans", "slug": "dm-sans", "faces": [], "tone": ["geometric"]}],
     )
-    client = TestClient(create_app(tmp_path / "api.sqlite3"))
+    client = make_client(create_app(tmp_path / "api.sqlite3"))
     payload = client.get("/font-library").json()
     assert payload["families"][0]["family"] == "DM Sans"
 
@@ -491,7 +493,7 @@ def test_font_library_endpoint_serves_manifest(
 def test_font_library_endpoint_empty_when_unprovisioned(
     tmp_path: Path, manifest_file: Path
 ) -> None:
-    client = TestClient(create_app(tmp_path / "api.sqlite3"))
+    client = make_client(create_app(tmp_path / "api.sqlite3"))
     assert client.get("/font-library").json() == {"version": 1, "families": []}
 
 

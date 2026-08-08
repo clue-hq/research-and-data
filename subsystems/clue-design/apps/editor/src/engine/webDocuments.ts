@@ -13,6 +13,7 @@
 import type { AssetRecord } from "./contracts";
 import { setElementSizePixels } from "./webClassFacets";
 import { webBindingKeyIsAllowed } from "./webRichText";
+import { lumenFetch } from "./editorConfig";
 
 export interface WebDocumentOptions {
   apiBaseUrl: string;
@@ -297,7 +298,7 @@ async function readErrorMessage(response: Response, fallback: string): Promise<s
  * server mints the id and seeds an empty WebDoc; the gate stashes the brief and
  * routes to /web/{id}. */
 export async function createWebDocument(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   input: CreateWebDocumentInput
 ): Promise<CreatedWebDocument> {
   const body: Record<string, unknown> = {
@@ -332,7 +333,7 @@ export async function createWebDocument(
  * WebDoc JSON for web documents; `docKind` lets the shell reject a scene
  * document opened at a /web URL. */
 export async function fetchWebDocument(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   documentId: string
 ): Promise<LoadedWebDocument> {
   const response = await fetchImpl(
@@ -383,7 +384,7 @@ export interface StartedWebTurn {
  * to `GET /agent/runs/{runId}/events` for progress. A 409 (wrong doc kind)
  * surfaces its `detail.code` through the shared error reader. */
 export async function startWebTurn(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   documentId: string,
   prompt: string,
   baseVersion: number,
@@ -428,7 +429,7 @@ export interface WebRunSnapshot {
  * connection blip (status still `running` — let EventSource reconnect) from a
  * run that actually settled or was failed by the server's orphan sweep. */
 export async function fetchWebRunSnapshot(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   runId: string
 ): Promise<WebRunSnapshot> {
   const response = await fetchImpl(
@@ -470,7 +471,7 @@ export interface WebRenderResult {
  * selection bridge into the document — it draws hover/selection outlines,
  * blocks navigation, and posts nonce-tagged selection events to the parent. */
 export async function fetchWebRenderHtml(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   documentId: string,
   runtimeSrc: string,
   bridge?: { nonce?: string }
@@ -1591,7 +1592,7 @@ function readErrorDetail(body: unknown): {
  * the caller can react to each distinctly; any other non-2xx throws it as
  * `kind: "other"`. */
 export async function applyWebOperations(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   documentId: string,
   operations: WebOperation[],
   options?: { baseVersion?: number | null; intent?: string }
@@ -1669,7 +1670,7 @@ export interface WebHistoryResult {
 }
 
 async function postWebHistory(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   documentId: string,
   path: "undo" | "redo"
 ): Promise<WebHistoryResult> {
@@ -1735,7 +1736,7 @@ export interface WebTheme {
 /** Fetch the document's resolved theme (`GET /documents/{id}/web/theme`) — the
  * inspector's color swatch grid + type family labels. */
 export async function fetchWebTheme(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   documentId: string
 ): Promise<WebTheme> {
   const response = await fetchImpl(
@@ -1819,7 +1820,7 @@ export interface WebPublishState {
 /** Read the document's publish state. Throws (with the server message) on any
  * non-2xx so the dialog surfaces it inline. */
 export async function fetchWebPublishInfo(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   documentId: string
 ): Promise<WebPublishState> {
   const response = await fetchImpl(
@@ -1877,7 +1878,7 @@ export interface WebPublishResult {
  * slug) or 409 (slug taken by another document) throws with the server's
  * message so the dialog can surface it inline. */
 export async function publishWebDocument(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   documentId: string,
   slug?: string
 ): Promise<WebPublishResult> {
@@ -1935,7 +1936,7 @@ export interface WebUnpublishResult {
 
 /** Take a published site offline (`DELETE /web/publishes/{slug}`). */
 export async function unpublishWebSite(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   slug: string
 ): Promise<WebUnpublishResult> {
   const response = await fetchImpl(
@@ -1963,7 +1964,7 @@ export interface WebRollbackResult {
  * (`POST /web/publishes/{slug}/rollback`). A 409 (no previous version) throws
  * with the server message. */
 export async function rollbackWebPublish(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   slug: string
 ): Promise<WebRollbackResult> {
   const response = await fetchImpl(
@@ -2137,7 +2138,7 @@ function accountRequestBody(input: WebAccountInput): Record<string, unknown> {
 /** List every account (`GET /web/accounts`, name-sorted). */
 export async function listWebAccounts({
   apiBaseUrl,
-  fetchImpl = (input, init) => fetch(input, init)
+  fetchImpl = lumenFetch
 }: WebDocumentOptions): Promise<WebAccount[]> {
   const response = await fetchImpl(new URL("/web/accounts", apiBaseUrl));
   if (!response.ok) {
@@ -2286,7 +2287,7 @@ function readCustomComponentArtifact(value: unknown): CustomComponentArtifact | 
  * editor picker. Families whose newest artifact predates runtime contract 1
  * remain inspectable through the API but are not offered as executable UI. */
 export async function listCustomComponents(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   accountId: string
 ): Promise<CustomComponentCatalogItem[]> {
   const response = await fetchImpl(
@@ -2332,7 +2333,7 @@ export async function listCustomComponents(
 }
 
 export async function fetchCustomComponentArtifact(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   accountId: string,
   artifactId: string
 ): Promise<CustomComponentArtifact> {
@@ -2361,7 +2362,7 @@ export async function fetchCustomComponentArtifact(
 /** Create an account (`POST /web/accounts`). A 409 (duplicate id) or 422
  * (unresolvable logo) throws with the server message. */
 export async function createWebAccount(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   input: WebAccountInput
 ): Promise<WebAccount> {
   const response = await fetchImpl(new URL("/web/accounts", apiBaseUrl), {
@@ -2379,7 +2380,7 @@ export async function createWebAccount(
 
 /** Update an account (`PATCH /web/accounts/{id}` — partial). */
 export async function updateWebAccount(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   accountId: string,
   patch: WebAccountInput
 ): Promise<WebAccount> {
@@ -2402,7 +2403,7 @@ export async function updateWebAccount(
 /** Delete an account (`DELETE /web/accounts/{id}`). Derived docs keep their
  * `account_id` string (no FK). */
 export async function deleteWebAccount(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   accountId: string
 ): Promise<{ deleted: boolean }> {
   const response = await fetchImpl(
@@ -2428,7 +2429,7 @@ export interface SavedWebTemplate {
 /** Clone the current doc into a fresh template document. Response carries the
  * new `document_id` + title; the topbar links to `/web/{document_id}`. */
 export async function saveWebTemplate(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   documentId: string,
   title?: string
 ): Promise<SavedWebTemplate> {
@@ -2469,7 +2470,7 @@ export interface WebTemplateSummary {
 /** List every template document (`GET /web/templates`). */
 export async function listWebTemplates({
   apiBaseUrl,
-  fetchImpl = (input, init) => fetch(input, init)
+  fetchImpl = lumenFetch
 }: WebDocumentOptions): Promise<WebTemplateSummary[]> {
   const response = await fetchImpl(new URL("/web/templates", apiBaseUrl));
   if (!response.ok) {
@@ -2555,7 +2556,7 @@ export interface DerivedWebDocument {
  * `accountId` is optional per the /new gate contract (a template chosen without
  * an account). A 422 (`web_derive.rejected`) or 404 throws the server message. */
 export async function deriveWebDocument(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   templateId: string,
   params: { accountId?: string | null; title?: string }
 ): Promise<DerivedWebDocument> {
@@ -2685,7 +2686,7 @@ function readWebBatch(payload: Record<string, unknown>): WebBatchResult {
  * server derives (and optionally publishes) each account synchronously in
  * chunks, persisting a resumable cursor. Returns the manifest snapshot. */
 export async function startWebBatch(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   documentId: string,
   params: { accountIds: string[]; publish: boolean; slugBase?: string }
 ): Promise<WebBatchResult> {
@@ -2713,7 +2714,7 @@ export async function startWebBatch(
 /** Resume an interrupted batch from its cursor
  * (`POST /web/batches/{batch_id}/resume`). */
 export async function resumeWebBatch(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   batchId: string
 ): Promise<WebBatchResult> {
   const response = await fetchImpl(
@@ -2734,7 +2735,7 @@ export async function resumeWebBatch(
 
 /** Fetch a batch snapshot (`GET /web/batches/{batch_id}`). */
 export async function fetchWebBatch(
-  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   batchId: string
 ): Promise<WebBatchResult> {
   const response = await fetchImpl(

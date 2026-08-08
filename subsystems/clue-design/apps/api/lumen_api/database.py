@@ -1242,6 +1242,24 @@ class Repository:
         )
         self.connection.commit()
 
+    def complete_run(
+        self,
+        run_id: str,
+        status: str,
+        result: Optional[JsonObject],
+        event_type: str,
+        event_data: Optional[JsonObject] = None,
+    ) -> int:
+        """Terminal result + terminal marker event as ONE unit of work.
+
+        Every finishing path (worker success, worker failure, the restart sweep) does both, and
+        a reader that catches only the first sees a run that is terminal with no marker — which
+        is exactly what an SSE poller does. Doing them together is one transaction on Postgres
+        (see clue_design.runs.complete_run); here it is one commit for the same reason.
+        """
+        self.set_run_result(run_id, status, result)
+        return self.append_run_event(run_id, event_type, event_data or {})
+
     def get_run(self, run_id: str) -> Optional[JsonObject]:
         row = self.connection.execute(
             "SELECT * FROM agent_runs WHERE run_id = ?",

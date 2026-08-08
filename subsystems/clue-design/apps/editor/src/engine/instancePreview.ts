@@ -1,4 +1,5 @@
 import type { Scene, Slot } from "./contracts";
+import { lumenFetch } from "./editorConfig";
 
 /**
  * Worst-case instance preview (Phase G slice G9).
@@ -164,7 +165,7 @@ export async function fetchInstancePreview(
   bindingSet: WorstCaseBindingSet,
   format: "svg" | "png" = "svg"
 ): Promise<InstancePreviewResult> {
-  const response = await fetch(new URL("/instances/preview", apiBaseUrl), {
+  const response = await lumenFetch(new URL("/instances/preview", apiBaseUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ scene, binding_set: bindingSet, format }),

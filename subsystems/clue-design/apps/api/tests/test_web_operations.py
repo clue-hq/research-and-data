@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_client
+
 from lumen_api.database import Repository, connect
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
@@ -70,7 +72,7 @@ SET_TEXT_ON_CONTAINER = {
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
     app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    return make_client(app)
 
 
 def minimal_scene() -> dict:

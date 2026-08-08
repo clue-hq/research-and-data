@@ -70,7 +70,13 @@ from .database import (
     run_migrations,
     utc_now,
 )
-from .design_store import HybridRepository, default_workspace_id, resolve_workspace_id
+from .design_store import (
+    HybridRepository,
+    default_workspace_id,
+    list_orphaned_runs_across_workspaces,
+    resolve_stream_workspace_id,
+    resolve_workspace_id,
+)
 from .font_library import manifest as font_library_manifest
 from .dto import (
     brand_compatibility_dto,
@@ -287,12 +293,23 @@ def _fail_orphaned_runs(database_path: Path) -> None:
     saw only a dead stream). Each orphan gets a terminal result plus an
     `error` run-event so open SSE pollers settle to `done` immediately.
     """
-    # The sweep enriches orphaned web runs with the document's doc_kind, which
-    # lives on Postgres; dev-default workspace until D5 reshapes runs.
-    store = HybridRepository(connect(database_path))
+    # D2.5A: runs live on Postgres. The sweep runs at app CONSTRUCTION, before any request
+    # exists to name a tenant — and a restart orphans every workspace's runs, not just the dev
+    # one — so the listing is the DAL's one deliberately unscoped read
+    # (design_store.list_orphaned_runs_across_workspaces). Each orphan is then failed through a
+    # store built for ITS OWN workspace, so no write ever crosses a tenant boundary.
+    orphans = list_orphaned_runs_across_workspaces()
+    connection = connect(database_path)
+    stores: Dict[str, Repository] = {}
     try:
-        orphans = store.list_running_runs()
         for run in orphans:
+            workspace_id = run["workspace_id"]
+            if workspace_id not in stores:
+                # ensure_workspace=False: the row demonstrably exists (its run references it).
+                stores[workspace_id] = HybridRepository(
+                    connection, workspace_id=workspace_id, ensure_workspace=False
+                )
+            store = stores[workspace_id]
             failed = failed_agent_turn_response(
                 "agent_runtime.orphaned",
                 "The turn was interrupted by an API server restart and did not finish.",
@@ -301,9 +318,12 @@ def _fail_orphaned_runs(database_path: Path) -> None:
             )
             if run["doc_kind"] == "web":
                 failed["doc_kind"] = "web"
-            store.set_run_result(run["run_id"], "failed", failed)
-            store.append_run_event(
-                run["run_id"], "error", {"message": "orphaned by server restart"}
+            store.complete_run(
+                run["run_id"],
+                "failed",
+                failed,
+                "error",
+                {"message": "orphaned by server restart"},
             )
         if orphans:
             log_event(
@@ -313,7 +333,7 @@ def _fail_orphaned_runs(database_path: Path) -> None:
                 run_ids=[run["run_id"] for run in orphans],
             )
     finally:
-        store.connection.close()
+        connection.close()
 
 
 def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> FastAPI:
@@ -498,9 +518,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         return str(app.state.asset_store_root)
 
     def repository(request: Request) -> Repository:
-        # D2.2: the document domain lives on Postgres via clue_design; everything else stays
-        # SQLite until its own slice. Workspace comes from X-Workspace-Id or the dev default
-        # (design_store.resolve_workspace_id; strict 401-on-absent lands at D2.5).
+        # D2.5A: every Repository domain is on Postgres via clue_design, and the O4 seam is
+        # STRICT — resolve_workspace_id 401s when X-Workspace-Id is absent instead of falling
+        # back to the dev workspace. Three routes are exempt because they cannot receive a
+        # header and take no tenant state: /build-info (engine handshake), /asset-store/{digest}
+        # (content-addressed public bytes the PUBLISHED page and the origin-"null" preview
+        # iframe load — a custom header there would fail CORS preflight), and the
+        # /w/{workspace_id}/... public serving group, which names its tenant in the path (O6b).
+        # The run-event SSE stream names its tenant in the query string (EventSource cannot send
+        # headers) and is equally strict.
         connection = connect(app.state.database_path)
         try:
             yield HybridRepository(connection, workspace_id=resolve_workspace_id(request))
@@ -522,6 +548,8 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         finally:
             connection.close()
 
+    # O4-exempt (no X-Workspace-Id): a process-wide engine stamp with no tenant state, read by
+    # the editor's version handshake before any workspace context exists.
     @app.get("/build-info")
     def build_info() -> JsonObject:
         """Engine build info for the Track E version handshake.
@@ -541,7 +569,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "build_info": app.state.build_info,
         }
 
-    @app.get("/font-library")
+    # Tenant-free payload, but an editor-only route: it carries the header like every other
+    # authenticated call so the strict O4 seam has exactly three exemptions, not four.
+    @app.get("/font-library", dependencies=[Depends(resolve_workspace_id)])
     def font_library() -> JsonObject:
         """The curated font-library manifest (Track B): always-present
         families with per-weight faces in the asset store, measured metrics,
@@ -1898,7 +1928,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "export": compact_export_result(export),
         }
 
-    @app.post("/agent/turn-preview")
+    # Synchronous turn preview: stores nothing, but it is an editor call like any other, so it
+    # sits inside the strict seam rather than becoming a headerless hole beside /agent/turns.
+    @app.post("/agent/turn-preview", dependencies=[Depends(resolve_workspace_id)])
     def agent_turn_preview(payload: AgentTurnPreviewRequest) -> JsonObject:
         runner = app.state.agent_turn_runner or run_agent_turn_preview
         result = runner(payload, repo_root())
@@ -1976,9 +2008,14 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         if response.get("status") in ("failed", "error")
                         else "succeeded"
                     )
-                    store.set_run_result(run_id, status, response)
-                    store.append_run_event(
-                        run_id, "result", {"status": response.get("status")}
+                    # Result + terminal marker in one write: a snapshot poller must never catch
+                    # a run that is terminal but has no marker event (D2.5A).
+                    store.complete_run(
+                        run_id,
+                        status,
+                        response,
+                        "result",
+                        {"status": response.get("status")},
                     )
                 except Exception as error:  # pragma: no cover - defensive
                     failed = failed_agent_turn_response(
@@ -1986,8 +2023,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         "Agent turn crashed before returning a proposal.",
                         str(error),
                     )
-                    store.set_run_result(run_id, "failed", failed)
-                    store.append_run_event(run_id, "error", {"message": str(error)})
+                    store.complete_run(
+                        run_id, "failed", failed, "error", {"message": str(error)}
+                    )
             finally:
                 store.connection.close()
 
@@ -2025,9 +2063,14 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.get("/agent/runs/{run_id}/events")
     async def stream_agent_run_events(run_id: str, request: Request):
         database_path = app.state.database_path
+        # The one route whose tenant cannot come from X-Workspace-Id: EventSource cannot set
+        # request headers, so the workspace rides the query string and is resolved just as
+        # strictly (same 401, same `workspace.header_required` code). Same shape as O6b's
+        # path-scoped public routes; dies with the polled stream at D7.
+        workspace_id = resolve_stream_workspace_id(request)
 
         def read_run() -> Optional[JsonObject]:
-            store = Repository(connect(database_path))
+            store = HybridRepository(connect(database_path), workspace_id=workspace_id)
             try:
                 return store.get_run(run_id)
             finally:
@@ -2036,13 +2079,18 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         def poll_once(
             after_seq: int,
         ) -> tuple[List[JsonObject], Optional[JsonObject]]:
-            # One SQLite connection per poll iteration: read the new events and,
-            # only when the caller needs it (an idle poll, or a terminal event
-            # just arrived), the run row — reusing the SAME Repository instead of
-            # opening a second connection for a separate read_run. Replay
-            # semantics are unchanged: events still drive `last_seq`, and the run
-            # row supplies the terminal result exactly as before.
-            store = Repository(connect(database_path))
+            # One store per poll iteration: read the new events and, only when the caller needs
+            # it (an idle poll, or a terminal event just arrived), the run row — reusing the SAME
+            # Repository instead of opening a second connection for a separate read_run. Replay
+            # semantics are unchanged: events still drive `last_seq`, and the run row supplies
+            # the terminal result exactly as before.
+            #
+            # POLL COST (accepted, interim): runs are Postgres now, and the O5 bridge builds a
+            # private engine per call — so a 4 Hz stream pays two engine setups per second per
+            # subscriber. Accepted for the bridge's lifetime; it dies at D5 with the bridge (and
+            # the whole polling loop dies at D7, when design events move onto the platform
+            # run-event stream and this becomes a subscription rather than a poll).
+            store = HybridRepository(connect(database_path), workspace_id=workspace_id)
             try:
                 events = store.list_run_events(run_id, after_seq=after_seq)
                 needs_run = (not events) or any(
@@ -2311,11 +2359,12 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         if response.get("status") == "applied"
                         else "failed"
                     )
-                    store.set_run_result(
-                        run_id, status, {**response, "doc_kind": "web"}
-                    )
-                    store.append_run_event(
-                        run_id, "result", {"status": response.get("status")}
+                    store.complete_run(
+                        run_id,
+                        status,
+                        {**response, "doc_kind": "web"},
+                        "result",
+                        {"status": response.get("status")},
                     )
                 except Exception as error:  # pragma: no cover - defensive
                     failed = failed_agent_turn_response(
@@ -2323,10 +2372,13 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         "Website turn crashed before returning a result.",
                         str(error),
                     )
-                    store.set_run_result(
-                        run_id, "failed", {**failed, "doc_kind": "web"}
+                    store.complete_run(
+                        run_id,
+                        "failed",
+                        {**failed, "doc_kind": "web"},
+                        "error",
+                        {"message": str(error)},
                     )
-                    store.append_run_event(run_id, "error", {"message": str(error)})
             finally:
                 store.connection.close()
 
@@ -5238,6 +5290,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         media_type = media.get("mime_type") or "application/octet-stream"
         return Response(content=path.read_bytes(), media_type=media_type)
 
+    # O4-exempt (no X-Workspace-Id), RULED at D2.5A: the PUBLISHED page loads its images and
+    # @font-face bytes from here (lumen-web's delivery render emits /asset-store/{digest} URLs),
+    # and so does the editor's origin-"null" srcdoc preview iframe — neither can send a header,
+    # and a custom header would turn these into preflighted requests the wildcard CORS response
+    # cannot satisfy. The bytes are content-addressed and immutable, so serving them without a
+    # tenant leaks nothing an unguessable sha256 did not already gate.
+    # RESIDUAL (matches the platform's [B2×presign] follow-up): content addressing is not
+    # authorization. Real per-tenant asset custody arrives with D4 (clue_storage) and Part-IV
+    # auth, which must decide the serving policy for workspace-scoped blobs.
     @app.get("/asset-store/{digest}")
     def get_asset_store_bytes(digest: str) -> Response:
         """Content-addressed byte serving. The editor canvas resolves image

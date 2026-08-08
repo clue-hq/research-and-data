@@ -22,6 +22,8 @@ from lumen_ingestion.normalizer.required import (
 
 from fastapi.testclient import TestClient
 
+from conftest import make_client
+
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "ingestion"
 EXPECTED_DIR = FIXTURE_DIR / "expected"
 
@@ -241,7 +243,7 @@ def test_engine_round_trip_validates(name: str) -> None:
 def test_post_brand_kit_persists(tmp_path: Path, name: str) -> None:
     result = _normalize(name)
     app = create_app(tmp_path / f"api_{name}.sqlite3")
-    client = TestClient(app)
+    client = make_client(app)
     response = client.post(
         "/brand-kits",
         json={"brand_kit": result.brand_kit, "source": "api", "product_ready": False},

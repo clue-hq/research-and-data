@@ -1,4 +1,5 @@
 import type { Diagnostic, Operation, Scene } from "./contracts";
+import { lumenFetch } from "./editorConfig";
 
 /**
  * Track E W3: the optimistic pipeline's server leg.
@@ -71,7 +72,7 @@ class ApiEditQueue implements EditQueuePort {
     // `this.fetchImpl(...)` rebinds `this` to the queue instance, and browser
     // fetch throws "Illegal invocation" off its Window. Unit tests always
     // inject fetchImpl, so only the real browser ever hit this.
-    this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
+    this.fetchImpl = options.fetchImpl ?? lumenFetch;
   }
 
   enqueueOperations(operations: Operation[], options?: EnqueueOptions): void {
