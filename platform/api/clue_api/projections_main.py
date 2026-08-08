@@ -6,6 +6,7 @@ import uvicorn
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from clue_api.chat import StartupDevPrincipalResolver
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import load_research_packs
 from clue_api.exa_targeted_enrichment import build_production_exa_targeted_starter
@@ -85,11 +86,25 @@ def build_application(
         if resolved.c7_recheck_enabled and not research_views.deferred_requester.is_bound:
             raise RuntimeError("C7 recheck is enabled but its governed requester is unbound")
     budget = BudgetEngine(store=DbBudgetStore())
+    # FI Lane D (B1 join): the chat surface's development principal must name **real** Lane B rows
+    # (contract §4). The rows can only be provisioned once the process has a database, so the
+    # resolver is handed over now and bound from the startup check below; a process that cannot
+    # provision its identity fails to start rather than serving chat under a fictional one.
+    chat_principal = StartupDevPrincipalResolver() if resolved.chat_enabled else None
 
     async def startup_check() -> None:
         if resolved.projections_auth_mode != "local_header":
             raise RuntimeError(
                 "service authentication mode is selected but no service-auth resolver is wired"
+            )
+        if chat_principal is not None:
+            ids = await chat_principal.bind(resolved)
+            log.info(
+                "chat.dev_principal.provisioned",
+                user_id=ids.user_id,
+                membership_id=ids.membership_id,
+                workspace_id=ids.workspace_id,
+                role_key=ids.role_key,
             )
         async with transaction() as conn:
             await conn.execute(text("SELECT 1"))
@@ -154,6 +169,7 @@ def build_application(
             research_views.owner_references if research_views is not None else None
         ),
         startup_check=startup_check,
+        chat_principal_resolver=chat_principal,
         discovery_webhook_router=(
             build_exa_webhook_router(
                 ExaWebhookIngestor(

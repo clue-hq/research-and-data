@@ -315,14 +315,24 @@ class Settings(BaseSettings):
     # Env: ``CLUE_CHAT_ENABLED``.
     chat_enabled: bool = False
     # The internal ids the **development** principal carries while Lane B's real authentication
-    # (B2/B3) is in flight. They are Clue-owned placeholders — a ``platform_user.user_id`` and a
-    # ``workspace_membership.membership_id`` shape — never a provider (Clerk) value, and they are
+    # (B2/B3) is in flight. They are Clue-owned — a ``platform_user.user_id`` and a
+    # ``workspace_membership.membership_id`` — never a provider (Clerk) value, and they are
     # readable only when ``projections_auth_mode='local_header'``; a production process refuses
-    # the dev principal outright rather than trusting these. Point them at real B1 rows once the
-    # internal identity substrate lands.
+    # the dev principal outright rather than trusting these. Since the B1 join they name **real
+    # rows**: ``clue_api.chat.dev_fixture.provision_dev_principal`` idempotently provisions them
+    # through Lane B's own CRUD at startup and fails the process loudly when it cannot (contract
+    # §4 — even a dev adapter resolves a real user/membership fixture from Postgres).
     # Env: ``CLUE_CHAT_DEV_PRINCIPAL_USER_ID`` / ``CLUE_CHAT_DEV_PRINCIPAL_MEMBERSHIP_ID``.
     chat_dev_principal_user_id: str = "usr_local_dev"
     chat_dev_principal_membership_id: str = "wsm_local_dev"
+    # The one workspace the development principal is a member of. A membership grants access to a
+    # single workspace (contract §3.3), so this cannot be derived from the request's tenant
+    # selector: it is named up front and every other requested workspace is refused 403
+    # ``WORKSPACE_FORBIDDEN`` by the router's existing principal/workspace re-check. Empty (the
+    # default) means "no development principal is provisionable" — enabling the chat surface
+    # without it fails at startup rather than serving an identity that owns no membership.
+    # Env: ``CLUE_CHAT_DEV_PRINCIPAL_WORKSPACE_ID``.
+    chat_dev_principal_workspace_id: str = ""
 
     # --- local Clue Trial canary ------------------------------------------------------------
     # The Sumble-only founder acceptance surface is never part of the default production app.

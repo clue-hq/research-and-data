@@ -8,6 +8,15 @@ here are what they attach to.
 
 from __future__ import annotations
 
+from clue_api.chat.dev_fixture import (
+    DEV_PROVIDER_KEY,
+    DevPrincipalIds,
+    DevPrincipalUnavailable,
+    StartupDevPrincipalResolver,
+    build_provisioned_dev_principal_resolver,
+    dev_provider_subject,
+    provision_dev_principal,
+)
 from clue_api.chat.principal import (
     CHAT_PERMISSIONS,
     PERMISSION_GATE_RESPOND,
@@ -32,6 +41,9 @@ from clue_api.chat.router import (
 __all__ = [
     "CHAT_PERMISSIONS",
     "CHAT_PREFIX",
+    "DEV_PROVIDER_KEY",
+    "DevPrincipalIds",
+    "DevPrincipalUnavailable",
     "PERMISSION_GATE_RESPOND",
     "PERMISSION_PROJECT_READ",
     "PERMISSION_THREAD_READ",
@@ -40,10 +52,14 @@ __all__ = [
     "PrincipalResolver",
     "ProductionPrincipalRequired",
     "RequestPrincipal",
+    "StartupDevPrincipalResolver",
     "bind_principal_resolver",
     "build_chat_router",
     "build_dev_principal_resolver",
+    "build_provisioned_dev_principal_resolver",
     "chat_principal_resolver",
+    "dev_provider_subject",
+    "provision_dev_principal",
     "chat_workspace_resolver",
     "install_chat_surface",
 ]

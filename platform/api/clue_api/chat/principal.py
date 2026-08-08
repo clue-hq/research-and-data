@@ -19,6 +19,16 @@ So there are exactly two ways a principal reaches a route:
    :func:`install_chat_surface` refuses at *startup* rather than waiting for a request, which is
    contract §5.6's "production startup fails if the local-header resolver is selected".
 
+   :func:`build_dev_principal_resolver` here is the **unprovisioned** form: pure, sync, and
+   DB-free, which is what a unit test or an in-process fixture wants. Anything that will actually
+   write durable rows must instead use
+   :func:`clue_api.chat.dev_fixture.build_provisioned_dev_principal_resolver`, which does the async
+   provisioning up front and closes this same sync resolver shape over ids read back from
+   Postgres — contract §4's "must still resolve a real internal user/membership fixture from
+   Postgres", and, since the B1 join migration, a hard requirement of the ownership foreign keys.
+   The async factory lives in that module rather than here so this one keeps no database
+   dependency at all.
+
 No provider (Clerk) value appears anywhere in this module, and no route ever reads a user-identity
 header: the two dev ids are deployment configuration, not client input, so a browser cannot claim
 to be somebody by sending a header.
@@ -107,9 +117,10 @@ def build_dev_principal_resolver(settings: Settings) -> PrincipalResolver:
     """The guarded development resolver — valid only in ``local_header`` auth mode.
 
     It fabricates no *authorization*: it hands back the deployment-configured internal ids for the
-    workspace the surface's tenant seam already resolved. When Lane B B1's tables exist, pointing
-    the two settings at real rows makes this resolver honest end to end; when B2 lands, the
-    resolver is replaced outright.
+    workspace the surface's tenant seam already resolved. It also touches no database, so the ids
+    it carries are only as real as the configuration — use
+    :func:`clue_api.chat.dev_fixture.build_provisioned_dev_principal_resolver` for anything that
+    writes durable rows. When B2 lands, both are replaced outright.
     """
 
     if settings.projections_auth_mode != "local_header":
