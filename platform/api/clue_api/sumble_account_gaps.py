@@ -139,7 +139,21 @@ class SumbleAccountGapError(RuntimeError):
 
 
 class SumbleAccountGapEligibilityError(SumbleAccountGapError):
-    pass
+    """Any reason this exact request may not be compiled into a provider dispatch."""
+
+
+class SumbleAccountGapNotEligible(SumbleAccountGapEligibilityError):
+    """The narrow member of that family FI-2 §6.3(b) governs: the field is already answered.
+
+    Split out because the two halves of the family want opposite handling on the M8D path. This
+    one is a statement about the *request*: the workspace already holds a confident, fresh,
+    conflict-free answer, so there is nothing to buy — a zero-spend, zero-state refusal the agent
+    repairs by dropping the field, choosing another admitted source, or finalizing with an honest
+    gap (the model-repairable R10 species). Every other ``SumbleAccountGapEligibilityError`` is a
+    statement about the *world* — job authority lost, discovery seal conflicted, account not the
+    canonical survivor, a field mis-declared — which no choice of the agent's can repair, and
+    which therefore keeps propagating and suspending the job.
+    """
 
 
 class SumbleAccountGapOutcome(StrEnum):
@@ -362,14 +376,20 @@ async def compile_sumble_account_gap_preflight(
         # it.  It is nonetheless *enforced* here, because the reachable way to break it is a
         # declaration change (a new Sumble-approved field, or a re-declared existing one, carrying
         # ``research_scope=project_relative``): the ladder would keep working and quietly mean the
-        # wrong thing.  A loud refusal at the boundary turns that into a visible failure.
+        # wrong thing.  This refusal turns that into a visible failure — deliberately the *base*
+        # ``SumbleAccountGapEligibilityError``, so on the M8D path it propagates and suspends the
+        # job rather than becoming a governed turn: a mis-declared field is a broken declaration,
+        # not a request the agent can repair by choosing another field.
         # (Note: it cannot be broken by a *workspace* override — ``register_workspace_field``
         # accepts only ``client.*`` keys and forces the neutral species.)
         species = await field_species(conn, workspace_id=workspace_id, field_keys=list(field_keys))
         relative = sorted(
             key
             for key in field_keys
-            if species.get(key, ResearchScope.PROJECT_NEUTRAL) is not ResearchScope.PROJECT_NEUTRAL
+            # Fail closed on an unresolvable species: not-neutral is the refusing answer, and
+            # "we cannot tell" must not buy the fresh-skip.  Unreachable today (``field_species``
+            # answers for every declared field, and every Sumble field is declared).
+            if species.get(key, ResearchScope.PROJECT_RELATIVE) is not ResearchScope.PROJECT_NEUTRAL
         )
         if relative:
             raise SumbleAccountGapEligibilityError(
@@ -416,7 +436,10 @@ async def compile_sumble_account_gap_preflight(
                 reason = AccountGapReason.STALE
                 basis = (merged.provenance.claim_id,)
             else:
-                raise SumbleAccountGapEligibilityError(
+                # The one refusal §6.3(b) converts into a governed agent turn: the ladder found
+                # the field already answered.  Everything else in this function stays the base
+                # class and keeps suspending.
+                raise SumbleAccountGapNotEligible(
                     f"{field_key} is already confidently resolved, fresh, and without an open "
                     "conflict"
                 )
@@ -1490,6 +1513,7 @@ __all__ = [
     "SumbleAccountGapCoordinator",
     "SumbleAccountGapEligibilityError",
     "SumbleAccountGapError",
+    "SumbleAccountGapNotEligible",
     "SumbleAccountGapOutcome",
     "SumbleAccountGapPolicy",
     "SumbleAccountGapPreflight",

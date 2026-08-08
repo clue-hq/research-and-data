@@ -6,10 +6,14 @@ Two defects, one fix each:
     expired ("confidently resolved" at 400 days against a 30-day TTL) was refused as if it were
     current truth. A stale, confident, conflict-free field is now an ordinary gap
     (``AccountGapReason.STALE``) and gets refreshed.
-(b) an ineligible field raised :class:`SumbleAccountGapEligibilityError` straight out of the M8D
-    provider action — an uncaught exception where the R10 contract wants a *governed* refusal the
-    agent can act on. It is now :class:`EntityResearchGovernedRejection`. The legacy toolbelt path
-    keeps its own ``PreconditionFailed`` conversion: a human-facing precondition, not an agent turn.
+(b) an *already-answered* field raised out of the M8D provider action as an uncaught exception,
+    where the R10 contract wants a *governed* refusal the agent can act on. That one refusal — the
+    fresh-skip, now its own :class:`SumbleAccountGapNotEligible` — becomes
+    :class:`EntityResearchGovernedRejection`. Every other preflight refusal keeps propagating: an
+    authority, discovery-seal, canonical-survivor or mis-declaration failure is not something the
+    agent can repair by choosing differently, so it still suspends the job. The legacy toolbelt
+    path keeps its own ``PreconditionFailed`` conversion (over the whole family): a human-facing
+    precondition, not an agent turn.
 
 Species (FI-2 §6.3, "the fresh-skip applies to NEUTRAL fields"): the ladder reads the
 workspace-merged current value, so "already answered" is only a correct thing to say about a
@@ -40,6 +44,7 @@ from clue_api.sumble_account_gaps import (
     _SOURCE_BY_FIELD,
     SumbleAccountGapCoordinator,
     SumbleAccountGapEligibilityError,
+    SumbleAccountGapNotEligible,
     SumbleAccountGapStarter,
     compile_sumble_account_gap_preflight,
 )
@@ -134,6 +139,33 @@ def _starter(
             conn_factory=same_connection,
         ),
         http,
+    )
+
+
+def _request(account_id: EntityId, *, label: str = "fi2-63") -> GovernedResearchToolRequest:
+    """One exact single-field structured request, the shape the M8D action authorizes."""
+
+    return GovernedResearchToolRequest(
+        research_run_id=uuid4(),
+        job_id=uuid4(),
+        subject_type=ResearchSubjectType.ACCOUNT,
+        target_entity_id=account_id,
+        agent_turn_id=uuid4(),
+        agent_execution_id=uuid4(),
+        tool_call_id=uuid4(),
+        tool_name="enrich_account",
+        tool_version=1,
+        tool_input_sha256=_SHA,
+        field_plan_ref=f"account-field-plan:{label}",
+        source_plan_ref=f"effective-source-plans:{label}",
+        field_keys=(_HIRING,),
+        source_keys=(JOBS_SOURCE_KEY,),
+        field_source_authority=(
+            FieldSourceAuthority(field_key=_HIRING, source_keys=(JOBS_SOURCE_KEY,)),
+        ),
+        questions=("How fast is the engineering org hiring?",),
+        budget_reservation_key=f"{label}-budget",
+        idempotency_key=f"{label}-idempotency",
     )
 
 
@@ -275,9 +307,7 @@ def test_fi2_63a_a_fresh_confident_field_is_still_refused(tmp_path: Path) -> Non
                 project_run_id=run_id,
                 age=timedelta(days=1),
             )
-            with pytest.raises(
-                SumbleAccountGapEligibilityError, match="confidently resolved, fresh"
-            ):
+            with pytest.raises(SumbleAccountGapNotEligible, match="confidently resolved, fresh"):
                 await compile_sumble_account_gap_preflight(
                     workspace_id=workspace_id,
                     project_run_id=run_id,
@@ -332,38 +362,131 @@ def test_fi2_63b_the_m8d_path_converts_ineligibility_into_a_governed_skip(
                 field_expected_value_credits={_HIRING: Decimal(5)},
                 provider_credit_cap=5,
             )
-            request = GovernedResearchToolRequest(
-                research_run_id=uuid4(),
-                job_id=uuid4(),
-                subject_type=ResearchSubjectType.ACCOUNT,
-                target_entity_id=account_id,
-                agent_turn_id=uuid4(),
-                agent_execution_id=uuid4(),
-                tool_call_id=uuid4(),
-                tool_name="enrich_account",
-                tool_version=1,
-                tool_input_sha256=_SHA,
-                field_plan_ref="account-field-plan:fi2-63c",
-                source_plan_ref="effective-source-plans:fi2-63c",
-                field_keys=(_HIRING,),
-                source_keys=(JOBS_SOURCE_KEY,),
-                field_source_authority=(
-                    FieldSourceAuthority(field_key=_HIRING, source_keys=(JOBS_SOURCE_KEY,)),
-                ),
-                questions=("How fast is the engineering org hiring?",),
-                budget_reservation_key="fi2-63c-budget",
-                idempotency_key="fi2-63c-idempotency",
-            )
 
             async def never_dispatched(reservation: object) -> object:
                 raise AssertionError("an ineligible request must never reserve an operation")
 
             with pytest.raises(EntityResearchGovernedRejection) as refusal:
-                await action.execute(request, before_dispatch=never_dispatched)  # type: ignore[arg-type]
+                await action.execute(  # type: ignore[arg-type]
+                    _request(account_id, label="fi2-63c"), before_dispatch=never_dispatched
+                )
 
             assert refusal.value.code == "account_gap_ineligible"
             assert "confidently resolved, fresh" in refusal.value.detail
             assert '"recoverable":true' in refusal.value.render()
+            assert http.calls == []
+            assert (
+                await conn.execute(text("SELECT count(*) FROM account_gap_operation"))
+            ).scalar_one() == 0
+
+    run_async(scenario())
+
+
+def test_fi2_63b_a_job_authority_loss_is_not_a_governed_skip(tmp_path: Path) -> None:
+    """The §6.3(b) conversion is the fresh-skip's alone; losing job authority still suspends.
+
+    ``compile_sumble_account_gap_preflight`` raises ``SumbleAccountGapEligibilityError`` at ~20
+    sites, most of which say "this job may not spend here" (authority, discovery seal, canonical
+    survivor) rather than "this field is already answered". Those were suspending before §6.3(b)
+    and must stay suspending: an agent cannot repair a lost job authority by picking another
+    field, and converting it would let a fenced-out job keep taking turns. Only the narrower
+    ``SumbleAccountGapNotEligible`` crosses into the governed-refusal path.
+    """
+
+    async def scenario() -> None:
+        workspace_id = "ws-fi2-63f"
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            started, ready = await _seed_selected_high_tier_account(
+                conn, storage, workspace_id=workspace_id
+            )
+            account_id = EntityId(ready.account_id)
+            run_id = ProjectRunId(started.project_run_id)
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            starter, http = _starter(conn, storage=storage, domain="insighthealth.ai")
+            action = SumbleAccountSemanticEnrichmentAction(
+                starter=starter,
+                storage=storage,
+                conn_factory=same_connection,
+                workspace_id=workspace_id,
+                project_id=started.project_id,
+                project_run_id=run_id,
+                account_id=account_id,
+                field_expected_value_credits={_HIRING: Decimal(5)},
+                provider_credit_cap=5,
+                # No such live R6 job: the preflight's spend-capacity proof fails.
+                entity_research_job_id=uuid4(),
+            )
+
+            async def never_dispatched(reservation: object) -> object:
+                raise AssertionError("an unauthorized request must never reserve an operation")
+
+            with pytest.raises(SumbleAccountGapEligibilityError, match="job authority"):
+                await action.execute(_request(account_id), before_dispatch=never_dispatched)  # type: ignore[arg-type]
+
+            assert http.calls == []
+            assert (
+                await conn.execute(text("SELECT count(*) FROM account_gap_operation"))
+            ).scalar_one() == 0
+
+    run_async(scenario())
+
+
+def test_fi2_63b_a_project_relative_declaration_is_not_a_governed_skip(tmp_path: Path) -> None:
+    """The species guard is a loud failure, not a turn the agent can spend its way out of.
+
+    A Sumble field declared ``project_relative`` means the fresh-skip ladder below it is reading
+    another project's answer — a mis-declaration, not a request defect. Handing the agent a
+    recoverable refusal would let it keep going against a broken declaration; propagating suspends
+    the job for a human.
+    """
+
+    async def scenario() -> None:
+        workspace_id = "ws-fi2-63g"
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            started, ready = await _seed_selected_high_tier_account(
+                conn, storage, workspace_id=workspace_id
+            )
+            account_id = EntityId(ready.account_id)
+            run_id = ProjectRunId(started.project_run_id)
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            await conn.execute(
+                text(
+                    "UPDATE field_definition SET research_scope='project_relative' "
+                    "WHERE field_key=:field_key"
+                ),
+                {"field_key": _HIRING},
+            )
+            starter, http = _starter(conn, storage=storage, domain="insighthealth.ai")
+            action = SumbleAccountSemanticEnrichmentAction(
+                starter=starter,
+                storage=storage,
+                conn_factory=same_connection,
+                workspace_id=workspace_id,
+                project_id=started.project_id,
+                project_run_id=run_id,
+                account_id=account_id,
+                field_expected_value_credits={_HIRING: Decimal(5)},
+                provider_credit_cap=5,
+            )
+
+            async def never_dispatched(reservation: object) -> object:
+                raise AssertionError("a mis-declared field must never reserve an operation")
+
+            with pytest.raises(
+                SumbleAccountGapEligibilityError, match=f"declared project-relative: {_HIRING}"
+            ):
+                await action.execute(_request(account_id), before_dispatch=never_dispatched)  # type: ignore[arg-type]
+
             assert http.calls == []
             assert (
                 await conn.execute(text("SELECT count(*) FROM account_gap_operation"))
@@ -379,10 +502,13 @@ def test_fi2_63b_the_legacy_toolbelt_path_keeps_its_precondition_failure(
 
     ``enrich_account_gaps@1`` is in ``QUARANTINED_ENTITY_RESEARCH_TOOL_ADDRESSES``, so a *registry*
     invocation never reaches eligibility at all — asserted first, so the quarantine cannot quietly
-    lapse. The tool object itself is still the live implementation the human path would run (and
-    the one an exact replay resolves), so ``invoke`` is exercised directly: §6.3(b) must convert
-    ineligibility to :class:`EntityResearchGovernedRejection` on the M8D action *only*, and leave
-    this one raising ``PreconditionFailed('sumble_account_gap_ineligible')``.
+    lapse. (``ReplayOnlyEntityResearchTool.invoke`` raises unconditionally and never delegates to
+    the wrapped tool; an exact replay is served from the idempotency cache, above the tool, so the
+    quarantine wrapper is not the replay path either.) The tool object underneath is nonetheless
+    still the live implementation — what the address resolves to when the quarantine lifts, and
+    what any non-registry caller holds — so ``invoke`` is exercised directly to pin its contract:
+    §6.3(b) converts the fresh-skip to :class:`EntityResearchGovernedRejection` on the M8D action
+    *only*, and leaves this one raising ``PreconditionFailed('sumble_account_gap_ineligible')``.
     """
 
     async def scenario() -> None:
