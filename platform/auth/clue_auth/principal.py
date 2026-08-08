@@ -69,6 +69,24 @@ class RequestPrincipal(BaseModel):
             raise PermissionDenied(f"permission {permission!r} is required")
 
 
+class ServicePrincipal(BaseModel):
+    """Closed machine authority for detached work; never a human or provider subject."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    principal_kind: Literal["service"] = "service"
+    service_id: str
+    workspace_id: str
+    permissions: frozenset[Permission]
+    authenticated_at: UtcDatetime
+
+    def require(self, permission: Permission) -> None:
+        from clue_auth.errors import PermissionDenied
+
+        if permission not in self.permissions:
+            raise PermissionDenied(f"permission {permission!r} is required")
+
+
 class AuthenticatedSessionView(BaseModel):
     """Provider-free session data safe for the Next.js server DAL."""
 

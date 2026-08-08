@@ -48,6 +48,7 @@ from clue_auth.principal import (
     InternalIdentity,
     PrincipalService,
     RequestPrincipal,
+    ServicePrincipal,
 )
 from clue_auth.provisioning import (
     ProvisionedIdentity,
@@ -129,6 +130,7 @@ __all__ = [
     "ROLE_POLICY_VERSION",
     "RoleKey",
     "RequestPrincipal",
+    "ServicePrincipal",
     "SessionInvalid",
     "UserStatus",
     "UserDisabled",
