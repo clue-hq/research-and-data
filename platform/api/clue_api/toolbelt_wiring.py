@@ -767,6 +767,12 @@ class ImportAccountsTool(_CapabilityTool):
     parameter_policy = JournalParameterPolicy(
         safe_display_fields=("client_entity_id", "icp_key", "project_id")
     )
+    # FI-2 H3: ``project`` is deliberately NOT pinned even though ``project_id`` is now an input.
+    # The parameter is *optional* — a workspace-level import with no project is a supported, tested
+    # shape — and ``pin_requirements`` is an all-or-nothing availability check (Recipe 1 refuses the
+    # tool when a required pin has no value), so declaring it would make every legitimately
+    # projectless import unavailable. The project is instead validated per call in ``preconditions``
+    # (typed ``project_not_found``, workspace-scoped) and journalled via ``safe_display_fields``.
     pin_requirements = ("client_kb", "icp", "source_registry")
 
     async def preconditions(

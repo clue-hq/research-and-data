@@ -15,7 +15,14 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import AccountStatus, EntityId, IdentityBinding, ReuseScope, UseClass
+from clue_core import (
+    AccountStatus,
+    EntityId,
+    EntityType,
+    IdentityBinding,
+    ReuseScope,
+    UseClass,
+)
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.icp import assign_tier, get_rubric_version, score_entity
 from clue_research.identity import (
@@ -24,6 +31,7 @@ from clue_research.identity import (
     get_account,
     get_task,
     insert_account_entity,
+    mark_merged,
     resolve_create_new_entity,
 )
 from clue_research.membership import accounts_for_project, projects_for_accounts
@@ -524,6 +532,63 @@ def test_import_into_a_project_joins_every_account_the_batch_lands_on() -> None:
             # the channel is how the account joined the project, and this one joined by import
             assert await _added_via(conn, by_row[1].account_entity_id) == ["imported"]
             assert await _added_via(conn, existing) == ["imported"]
+
+    run_async(_run())
+
+
+def test_import_row_landing_on_a_merged_loser_joins_the_survivor() -> None:
+    """FI-2 H3 (spec §8.3), the merge-chain leg: a row whose strong key still points at an account
+    that has since been merged away joins the *survivor* to the project, never the loser.
+
+    Membership rides the ``surviving_id`` redirect the import applies before it writes, so the join
+    can never be orphaned on a merged-away entity — the same guarantee ``mark_merged`` gives
+    memberships that already existed, here for one created after the merge."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            client = await _client_entity(conn, "merged")
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
+            project = await seed_project(conn, _CLIENT, name="Survivor project")
+            loser = await insert_account_entity(
+                conn,
+                canonical_name="Old Name Ltd",
+                primary_domain="mergedloser.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id=_CLIENT,
+            )
+            survivor = await insert_account_entity(
+                conn,
+                canonical_name="Survivor Corp",
+                primary_domain="survivor-merged.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id=_CLIENT,
+            )
+            await embed_account(conn, loser)
+            await embed_account(conn, survivor)
+            await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)
+
+            result = await import_accounts(
+                conn,
+                [ImportRow(row_index=1, name="Old Name", domain="mergedloser.example")],
+                icp,
+                workspace_id=_CLIENT,
+                client_entity_id=client,
+                project_id=project.project_id,
+            )
+
+            (resolved,) = result.resolved
+            # the row's domain is the *loser*'s strong key, so this is a deterministic hit on the
+            # merged-away entity — the survivor id below is the redirect's doing, not a fresh admit
+            assert resolved.resolution_method == "deterministic"
+            assert resolved.account_entity_id == survivor  # redirected off the loser
+            assert await accounts_for_project(
+                conn, workspace_id=_CLIENT, project_id=project.project_id
+            ) == (survivor,)
+            assert await projects_for_accounts(
+                conn, workspace_id=_CLIENT, account_ids=[loser, survivor]
+            ) == {survivor: (project.project_id,)}
+            assert await _added_via(conn, survivor) == ["imported"]
+            assert await _added_via(conn, loser) == []
 
     run_async(_run())
 

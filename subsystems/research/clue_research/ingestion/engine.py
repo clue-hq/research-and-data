@@ -43,7 +43,7 @@ from clue_core.ingestion import (
 from clue_db import ConnFactory, transaction
 from clue_research.adapters.documents import DocumentSegment
 from clue_research.adapters.seams import AdaptError, ClaimExtractor
-from clue_research.claimstore import get_field, insert_claim
+from clue_research.claimstore import get_field, insert_claim, record_run_lineage
 from clue_research.identity import get_entity
 from clue_research.ingestion.adapters import (
     DocumentAdapterRegistry,
@@ -539,6 +539,24 @@ class IngestionEngine:
                         continue
                     claim = governed_claim
                 pending_claims.append(claim)
+
+        if pending_claims:
+            # FI-2 P2 (spec §3): register the extraction run before the claims that cite it, in
+            # this same transaction — so every ingested claim's ``run_id`` back-joins to a lineage
+            # row. Idempotent, and only written when the job actually produced claims, so a
+            # preference/unmapped-only job registers no run that never wrote.
+            #
+            # Kind and project: ingestion is human-supplied *document evidence* uploaded into the
+            # workspace, so it registers as ``manual`` with ``project_id=None``. Account and contact
+            # targets share the one kind deliberately — the project lens dispatches on
+            # ``project_id`` and ``kind`` is advisory, so splitting it per entity type would buy
+            # nothing and only invite two names for one path. The declared context does carry a
+            # ``project_id``, but uploaded material is workspace-scoped truth about the
+            # account/contact itself (it stays true whichever project reads it), so it is
+            # deliberately *not* pinned into one project's lens.
+            await record_run_lineage(
+                conn, run_id=run_id, workspace_id=job.workspace_id, kind="manual"
+            )
 
         claim_ids = []
         try:

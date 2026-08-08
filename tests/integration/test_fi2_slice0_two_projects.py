@@ -246,6 +246,13 @@ async def _claim_runs_by_project(
     A ``None`` key means the claim's ``run_id`` has no ``run_lineage`` row *or* has one with no
     project — i.e. an unattributable claim, which is exactly what P2 exists to prevent.
 
+    The sweep is total over *this fixture* because every path it exercises is a registering one.
+    It is deliberately not a repo-wide invariant: ``clue_research.claimstore.run_lineage``'s
+    "known exemption classes" note lists the runs that carry no lineage row on purpose —
+    redaction/tombstone runs (DSAR and workspace erasure; a redaction belongs to no project's
+    lens and its tombstones are merge-excluded) and pre-FI-2 historical rows the backfill cannot
+    reach. Widening this sweep to a whole workspace would have to admit those two classes.
+
     The scope is the workspace's *entities*, not ``claim.workspace_id``: that column is the M2.5
     reuse-class tenant binding, and a DB CHECK forces it ``NULL`` on every ``public_footprint``
     claim (``core.claim``'s "Reuse-class ⟺ tenant binding" invariant). Filtering on it would

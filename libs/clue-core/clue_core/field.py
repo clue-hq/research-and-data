@@ -282,6 +282,17 @@ def resolve_research_scope(field: FieldDef) -> ResearchScope:
 
     The single place "is this field's value project-relative?" is decided, so the read lens, the
     fresh-skip economics, and the supersede predicates never re-derive it differently.
+
+    **Asymmetry with** :func:`resolve_reuse_scope`, deliberate: that one returns ``None`` for an
+    undeclared ``PACK`` field and every caller fails closed, while this one always answers, folding
+    an undeclared field into the safe ``PROJECT_NEUTRAL`` species. There is no fail-closed branch
+    here because a field cannot *reach* this function undeclared once it is DB-resident: both
+    registration gates — ``clue_research.claimstore.registry.register_field`` and the pack-catalog
+    loader — reject a ``<pack>.*`` field that declares no ``research_scope`` (``client.*``
+    excepted, and legacy rows predate the column). So the neutral answer only ever serves those two
+    already-vetted cases, and neutral is the safe direction anyway: a wrong neutral costs a skipped
+    re-spend, never a leaked or mis-attributed claim. Slice-3 economics callers therefore read this
+    result directly and do **not** need an undeclared-field guard of their own.
     """
     return (
         field.research_scope

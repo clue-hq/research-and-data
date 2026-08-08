@@ -7,6 +7,25 @@ project-lens predicate ``claim.run_id IN project_run_ids(...)``.
 Registration is idempotent (``ON CONFLICT (run_id) DO NOTHING``) so a replayed or resumed run
 re-registers harmlessly; the first write wins. A run with no ``project_id`` is workspace-level
 (stage 0, seeds, client-KB) and belongs to no project's lens.
+
+Known exemption classes — runs that deliberately carry **no** lineage row
+=========================================================================
+"Every claim-writing run registers" is the rule, not a universal. Two classes are exempt by
+design; an audit that finds a ``claim.run_id`` with no ``run_lineage`` row should check these
+before filing a bug:
+
+* **Redaction / tombstone runs.** The DSAR and erasure paths (``compliance/dsar.py``,
+  ``compliance/workspace_erasure.py``, and the Phase-C erasure wiring) mint a run id to supersede
+  a claim with a redacted, ``REJECTED`` tombstone. Those runs are *not* registered, and must not
+  be: a redaction belongs to no project's lens — it is an act of removal, not of research — and
+  the tombstones it writes are merge-excluded anyway, so no project read can ever surface them.
+  Registering them would attribute an erasure to a project that never asked for it.
+* **Pre-FI-2 historical rows.** Claims written before the FI-2 P2 mint sites landed have no
+  lineage row. ``clue_research.project_lens_backfill`` reconstructs the *launch-level* runs from
+  the durable execution records; anything it cannot reach stays unattributed by construction.
+
+Everything else that writes a claim registers its run at the mint site, in the same transaction
+as the first durable write that uses it.
 """
 
 from __future__ import annotations

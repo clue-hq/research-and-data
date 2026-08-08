@@ -37,6 +37,7 @@ from clue_research.ingestion import (
 from clue_research.ingestion.adapters import paid_ocr_manifest
 from clue_research.ingestion.models import IngestionFailureCode
 from clue_storage import FsStorage, SnapshotSink, flush_snapshots
+from tests._run_lineage import assert_written_claims_are_attributable
 from tests._workspace import seed_project, seed_workspace
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
@@ -188,6 +189,14 @@ def test_identical_upload_dedupes_job_segments_and_claims(tmp_path: Path) -> Non
             assert claim.artifact_key is not None
             segment = next(iter(await _segments(conn, job)))
             assert claim.source_url == f"ingestion://{job.id}/{segment.id}"
+            # FI-2 P2 (spec §3): an ingested claim back-joins to the run that wrote it. Ingestion
+            # is workspace-level human-supplied material, so the run carries no ``project_id``.
+            await assert_written_claims_are_attributable(
+                conn,
+                claim.run_id,
+                kind="manual",
+                workspace_id=project.workspace_id,
+            )
 
     run_async(scenario())
 
