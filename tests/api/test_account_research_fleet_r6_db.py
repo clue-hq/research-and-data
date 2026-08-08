@@ -278,7 +278,8 @@ def test_canary_releases_remainder_and_terminal_return_exposes_results_and_revie
                          coverage_json, coverage_sha256)
                     VALUES
                         (:coverage_id, :run_id, :job_id, :workspace_id, :account_id,
-                         :result_refs, ARRAY['account.operational_pain'], ARRAY[]::text[],
+                         :result_refs, ARRAY['account.operational_pain'],
+                         ARRAY['account.resonance.culture'],
                          ARRAY[]::text[], :committee_refs, :committee_ids, 'needs_review',
                          ARRAY['committee_partial'], :claim_refs, :evidence_refs,
                          '{}'::jsonb, :coverage_sha)
@@ -326,6 +327,8 @@ def test_canary_releases_remainder_and_terminal_return_exposes_results_and_revie
             assert terminal.review_queue == (f"account-review:{review_id}",)
             projected = next(job for job in terminal.jobs if job.job_id == review_job.job_id)
             assert projected.result_refs
+            assert projected.unresolved_field_keys == ("account.resonance.culture",)
+            assert projected.committee_status == "needs_review"
             assert len(projected.committee_member_ids) == 2
             assert projected.review_item_refs == (f"account-review:{review_id}",)
             assert terminal.contact_research_started is False
