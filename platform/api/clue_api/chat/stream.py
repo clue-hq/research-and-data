@@ -78,6 +78,7 @@ from clue_api.chat.schemas import (
 )
 from clue_api.chat.turn_controls import get_control_request, insert_control_request
 from clue_api.chat.turn_events import (
+    TERMINAL_TURN_EVENTS,
     TURN_STREAM_SCHEMA_VERSION,
     TurnEventRow,
     list_turn_events,
@@ -132,6 +133,12 @@ def _sse_frame(*, event: str, data: dict[str, JsonValue], event_id: int | None =
 
 def _event_frame(row: TurnEventRow) -> str:
     return _sse_frame(event=row.event_type, data=row.envelope(), event_id=row.event_id)
+
+
+def _is_terminal_event(row: TurnEventRow) -> bool:
+    """Whether ``row`` is the last frame a turn stream may serve."""
+
+    return row.event_type in TERMINAL_TURN_EVENTS
 
 
 def build_chat_stream_router(
@@ -317,6 +324,7 @@ def build_chat_stream_router(
                 event="stream.hello",
                 data={
                     "schema_version": TURN_STREAM_SCHEMA_VERSION,
+                    "type": "stream.hello",
                     "turn_id": str(turn_id),
                     "thread_id": thread_id,
                     "project_id": project_id,
@@ -335,8 +343,13 @@ def build_chat_stream_router(
                 yield _sse_frame(
                     event="stream.reset",
                     data={
+                        "schema_version": TURN_STREAM_SCHEMA_VERSION,
+                        "type": "stream.reset",
+                        "turn_id": str(turn_id),
+                        "thread_id": thread_id,
+                        "project_id": project_id,
                         "reason": "cursor_older_than_horizon",
-                        "rehydrate": "message",
+                        "rehydrate": "transcript",
                     },
                 )
             # The tail floor is the plan's *effective* cursor: on reset that is 0, never the
@@ -345,6 +358,8 @@ def build_chat_stream_router(
             for row in plan.backlog:
                 yield _event_frame(row)
                 last_seen = row.event_id
+                if _is_terminal_event(row):
+                    return
             if not live_tail:
                 return
             # The outbox is the buffer (§3.3(7)): this loop reads it, and a slow or vanished
@@ -362,6 +377,8 @@ def build_chat_stream_router(
                 for row in fresh:
                     yield _event_frame(row)
                     last_seen = row.event_id
+                    if _is_terminal_event(row):
+                        return
 
         return StreamingResponse(_stream(), media_type="text/event-stream")
 

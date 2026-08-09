@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { GateDecisionSchema } from "./chat-parts";
+import type { ChatStreamEventType } from "./chat-events";
 
 /**
  * Turn submission and the submissions-union read (charter §3.5, as-built D2).
@@ -105,6 +106,29 @@ export type ChatTurnPage = z.infer<typeof ChatTurnListResponseSchema>;
 
 export function isTurnLive(turn: ChatTurn): boolean {
   return LIVE_TURN_STATES.has(turn.state as TurnState);
+}
+
+/** The durable stream transitions that immediately refine the submissions read. */
+export function turnStateForStreamEvent(
+  type: ChatStreamEventType,
+): TurnState | null {
+  switch (type) {
+    case "turn.accepted":
+      return "queued";
+    case "turn.started":
+    case "turn.retrying":
+      return "running";
+    case "turn.completed":
+      return "completed";
+    case "turn.failed":
+      return "failed";
+    case "turn.cancelled":
+      return "cancelled";
+    case "turn.awaiting_input":
+      return "awaiting_input";
+    default:
+      return null;
+  }
 }
 
 /**

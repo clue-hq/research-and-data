@@ -16,7 +16,6 @@ import {
   applyChatStreamEvent,
   composeTranscript,
   emptyTranscriptState,
-  turnsAwaitingRehydration,
   type OptimisticTurn,
   type TranscriptMessage,
   type TranscriptState,
@@ -26,7 +25,11 @@ import {
   type ChatThread,
   type ThreadStatus,
 } from "../model/chat-thread";
-import { isTurnLive, type ChatTurn } from "../model/chat-turn";
+import {
+  isTurnLive,
+  turnStateForStreamEvent,
+  type ChatTurn,
+} from "../model/chat-turn";
 
 /**
  * The projects chat controller: repositories in, a renderable conversation out.
@@ -57,7 +60,6 @@ export interface ProjectChatController {
   loading: boolean;
   /** A stream or repository failure that did not change any durable outcome. */
   error: string | null;
-  warnings: readonly string[];
   /** True while a same-thread turn is queued or executing. */
   busy: boolean;
   /** The turn a Stop control acts on, if any. */
@@ -104,6 +106,7 @@ export function useProjectChatController({
   const [submitting, setSubmitting] = useState(false);
 
   const attachments = useRef(new Map<string, ChatStreamHandle>());
+  const resetReattach = useRef(new Set<string>());
   //: Turns this thread has already been attached to, kept **after** the handle
   //: closes. A turn's backlog is replayed exactly once per thread visit: the
   //: durable read that follows a close changes `turns` by identity, so without
@@ -215,22 +218,52 @@ export function useProjectChatController({
         onEvent(event) {
           if (!mounted.current) return;
           setStream((current) => applyChatStreamEvent(current, event));
+          const streamedState = turnStateForStreamEvent(event.type);
+          if (streamedState !== null) {
+            // Turn events are already durable authority. Reflect running and
+            // terminal transitions on this render cycle so Stop appears for
+            // the real attempt and cannot linger after it finishes.
+            setTurns((current) =>
+              current.map((turn) =>
+                turn.turnId === event.turnId
+                  ? { ...turn, state: streamedState }
+                  : turn,
+              ),
+            );
+          }
         },
         onWarning(reason) {
-          if (!mounted.current) return;
-          setStream((current) =>
-            current.warnings.includes(reason)
-              ? current
-              : { ...current, warnings: [...current.warnings, reason] },
-          );
+          // Parser diagnostics belong in telemetry, never in the transcript.
+          globalThis.console.warn("Dropped unreadable chat-stream frame", {
+            projectId,
+            threadId,
+            turnId,
+            reason,
+          });
         },
         onError(failure) {
           attachments.current.delete(turnId);
-          if (mounted.current) report(failure);
+          if (!mounted.current) return;
+          if (isAccessError(failure)) {
+            report(failure);
+            return;
+          }
+          globalThis.console.error("Chat stream stopped; rehydrating", failure);
+          setError("Connection interrupted; refreshing the conversation.");
+          void loadConversation(threadId).catch(report);
         },
-        onClosed() {
+        onClosed(reason) {
           attachments.current.delete(turnId);
           if (!mounted.current) return;
+          if (reason === "reset") {
+            // The repository stopped before accepting any post-reset backlog.
+            // Re-read durable state first, then the turns effect below resumes
+            // only if this turn is still queued/running.
+            attached.current.delete(turnId);
+            resetReattach.current.add(turnId);
+            void loadConversation(threadId).catch(report);
+            return;
+          }
           // The turn is finished as far as the stream is concerned; the durable
           // read is what proves it, so go and get it.
           void loadConversation(threadId).catch(report);
@@ -243,23 +276,21 @@ export function useProjectChatController({
 
   useEffect(() => {
     if (!activeThreadId) return;
-    const live = turns.filter(isTurnLive).map((turn) => turn.turnId);
-    const recent = turns.slice(-REHYDRATED_TURNS).map((turn) => turn.turnId);
-    for (const turnId of new Set([...recent, ...live])) {
-      attach(activeThreadId, turnId);
+    const candidates = new Map<string, ChatTurn>();
+    for (const turn of turns.slice(-REHYDRATED_TURNS)) {
+      candidates.set(turn.turnId, turn);
+    }
+    for (const turn of turns.filter(isTurnLive)) {
+      candidates.set(turn.turnId, turn);
+    }
+    for (const turn of candidates.values()) {
+      if (resetReattach.current.delete(turn.turnId)) {
+        if (isTurnLive(turn)) attach(activeThreadId, turn.turnId);
+        continue;
+      }
+      attach(activeThreadId, turn.turnId);
     }
   }, [activeThreadId, attach, turns]);
-
-  // A projection that disowned itself (`stream.reset`, or a replayed turn that
-  // streamed nothing) is repaired from the durable message — never rewritten.
-  const rehydrating = useRef<string>("");
-  useEffect(() => {
-    if (!activeThreadId) return;
-    const pending = turnsAwaitingRehydration(stream).join(",");
-    if (!pending || pending === rehydrating.current) return;
-    rehydrating.current = pending;
-    void loadConversation(activeThreadId).catch(report);
-  }, [activeThreadId, loadConversation, report, stream]);
 
   // --- writes ------------------------------------------------------------
 
@@ -340,9 +371,10 @@ export function useProjectChatController({
   );
 
   const activeTurn = useMemo(
-    () => turns.filter(isTurnLive).at(-1) ?? null,
+    () => turns.find((turn) => turn.state === "running") ?? null,
     [turns],
   );
+  const threadBusy = useMemo(() => turns.some(isTurnLive), [turns]);
 
   const stopActiveTurn = useCallback(async () => {
     if (!activeThreadId || !activeTurn) return;
@@ -472,8 +504,7 @@ export function useProjectChatController({
     access,
     loading,
     error,
-    warnings: stream.warnings,
-    busy: activeTurn !== null,
+    busy: threadBusy,
     activeTurnId: activeTurn?.turnId ?? null,
     submitting,
     gateFor,
@@ -486,6 +517,7 @@ export function useProjectChatController({
       for (const handle of attachments.current.values()) handle.close();
       attachments.current.clear();
       attached.current.clear();
+      resetReattach.current.clear();
       // Switching threads is a real switch: the previous conversation's
       // projections do not belong to the next one.
       setStream(emptyTranscriptState());

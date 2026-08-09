@@ -7,6 +7,7 @@ import {
   resolveChatTransport,
 } from "./chat-api";
 import { createChatRepositories } from "./chat-repositories";
+import { createHttpChatStreamRepository } from "./chat-stream.repository";
 import { FIXTURE_PROJECT_ID, FIXTURE_THREAD_ID } from "./chat.fixture";
 import { createSidebarProjectsRepository } from "./sidebar-projects.repository";
 
@@ -152,10 +153,79 @@ test("the fixture stream delivers the scripted turn in order", async () => {
       onEvent(event) {
         types.push(event.type);
       },
-      onClosed: resolve,
+      onClosed() {
+        resolve();
+      },
     });
   });
   assert.equal(types[0], "turn.accepted");
   assert.equal(types.at(-1), "turn.awaiting_input");
   assert.ok(types.filter((type) => type === "text.delta").length > 1);
+});
+
+test("the HTTP stream cancels its reader and closes immediately on terminal", async () => {
+  const originalFetch = globalThis.fetch;
+  const types: string[] = [];
+  let requestCount = 0;
+  let readerCancelled = false;
+  const encoder = new TextEncoder();
+
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    if (requestCount === 1) {
+      return new Response(
+        JSON.stringify({
+          data: { schema_version: "1", stream_token: "token-1", turn_id: "turn-1" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              'event: stream.hello\ndata: {"schema_version":"1","project_id":"p1","thread_id":"th1","turn_id":"turn-1","type":"stream.hello"}\n\n' +
+                'id: 7\nevent: turn.completed\ndata: {"schema_version":"1","event_id":7,"sequence":2,"occurred_at":"2026-08-10T00:00:00Z","project_id":"p1","thread_id":"th1","turn_id":"turn-1","type":"turn.completed","status":"completed"}\n\n',
+            ),
+          );
+        },
+        cancel() {
+          readerCancelled = true;
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+  };
+
+  try {
+    const repository = createHttpChatStreamRepository({
+      mode: "http",
+      prefix: "/api/clue",
+    });
+    const closeReason = await Promise.race([
+      new Promise<string>((resolve, reject) => {
+        repository.attach({
+          projectId: "p1",
+          threadId: "th1",
+          turnId: "turn-1",
+          lastEventId: null,
+          onEvent(event) {
+            types.push(event.type);
+          },
+          onError: reject,
+          onClosed: resolve,
+        });
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("terminal stream did not close")), 1000),
+      ),
+    ]);
+    assert.equal(closeReason, "terminal");
+    assert.deepEqual(types, ["stream.hello", "turn.completed"]);
+    assert.equal(readerCancelled, true);
+    assert.equal(requestCount, 2, "terminal must not mint a reconnect token");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

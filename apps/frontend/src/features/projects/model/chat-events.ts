@@ -65,9 +65,9 @@ const EnvelopeSchema = z.looseObject({
   event_id: z.number().int().optional(),
   sequence: z.number().int().optional(),
   occurred_at: z.string().optional(),
-  project_id: z.string().optional(),
-  thread_id: z.string().optional(),
-  turn_id: z.string(),
+  project_id: z.string().min(1),
+  thread_id: z.string().min(1),
+  turn_id: z.string().min(1),
   generation_attempt_id: z.string().optional(),
   message_id: z.string().optional(),
   part_id: z.string().optional(),
@@ -77,14 +77,20 @@ const EnvelopeSchema = z.looseObject({
   type: ChatStreamEventTypeSchema,
 });
 
+const CommonIdentitySchema = z.object({
+  project_id: z.string().min(1),
+  thread_id: z.string().min(1),
+  turn_id: z.string().min(1),
+});
+
 export interface ChatStreamEvent {
   schemaVersion: string;
   /** Absent on the two connect-generated frames; never invented. */
   eventId: number | null;
   sequence: number | null;
   occurredAt: string | null;
-  projectId: string | null;
-  threadId: string | null;
+  projectId: string;
+  threadId: string;
   turnId: string;
   generationAttemptId: string | null;
   messageId: string | null;
@@ -114,7 +120,8 @@ function optionalString(value: unknown): string | null {
 }
 
 /**
- * Parse one SSE `data:` payload into a typed event.
+ * Parse one SSE `data:` payload into a typed event, cross-checking its SSE
+ * ``event:`` discriminator when the wire name is supplied.
  *
  * Failure modes are deliberately split (charter §3.2: "unknown event/part
  * versions fail at the repository boundary … rather than rendering guessed
@@ -122,11 +129,16 @@ function optionalString(value: unknown): string | null {
  *
  * - a `schema_version` this build does not know is **fatal**: every field
  *   meaning is now in doubt, so the stream stops and the surface says so;
+ * - a recognized frame without common project/thread/turn identity is
+ *   **fatal**: the repository cannot prove it belongs to this attachment;
  * - a malformed or unknown-typed frame is **non-fatal**: the frame is dropped
  *   and reported, the cursor still advances, and the rest of the turn renders.
  *   Rendering an invented card would be worse than a missing one.
  */
-export function parseChatStreamEvent(payload: unknown): ChatStreamEventParse {
+export function parseChatStreamEvent(
+  payload: unknown,
+  wireEventName?: string | null,
+): ChatStreamEventParse {
   const version = (payload as { schema_version?: unknown } | null)
     ?.schema_version;
   if (typeof version === "string" && version !== CHAT_STREAM_SCHEMA_VERSION) {
@@ -136,9 +148,31 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEventParse {
       reason: `unsupported turn-stream schema version ${version}`,
     };
   }
+  const rawPayload =
+    payload !== null && typeof payload === "object"
+      ? (payload as Record<string, unknown>)
+      : null;
+  if (
+    version === CHAT_STREAM_SCHEMA_VERSION &&
+    ChatStreamEventTypeSchema.safeParse(rawPayload?.type).success &&
+    !CommonIdentitySchema.safeParse(payload).success
+  ) {
+    return {
+      ok: false,
+      fatal: true,
+      reason: "turn-stream frame identity missing",
+    };
+  }
   const envelope = EnvelopeSchema.safeParse(payload);
   if (!envelope.success) {
     return { ok: false, fatal: false, reason: "malformed turn-stream frame" };
+  }
+  if (wireEventName !== undefined && wireEventName !== envelope.data.type) {
+    return {
+      ok: false,
+      fatal: true,
+      reason: "turn-stream event name/type mismatch",
+    };
   }
   const raw = envelope.data as Record<string, unknown>;
 
@@ -162,8 +196,8 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEventParse {
       eventId: envelope.data.event_id ?? null,
       sequence: envelope.data.sequence ?? null,
       occurredAt: envelope.data.occurred_at ?? null,
-      projectId: envelope.data.project_id ?? null,
-      threadId: envelope.data.thread_id ?? null,
+      projectId: envelope.data.project_id,
+      threadId: envelope.data.thread_id,
       turnId: envelope.data.turn_id,
       generationAttemptId: envelope.data.generation_attempt_id ?? null,
       messageId: envelope.data.message_id ?? null,

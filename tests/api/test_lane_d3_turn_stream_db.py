@@ -65,6 +65,7 @@ from clue_api.chat.schemas import thread_status
 from clue_api.chat.turn_controls import get_control_request, stop_requested
 from clue_api.chat.turn_events import (
     TURN_EVENT_TYPES,
+    TurnEventRow,
     TurnEventType,
     list_turn_events,
     prune_turn_events,
@@ -228,7 +229,9 @@ async def _submit_turn(
     return turn_id
 
 
-def _app(conn: Any, *, settings: Settings, storage: Any) -> Any:
+def _app(
+    conn: Any, *, settings: Settings, storage: Any, live_tail: bool = False
+) -> Any:
     from clue_api.thread_wiring import register_thread_tools
 
     cf = conn_session_factory(conn)
@@ -248,7 +251,7 @@ def _app(conn: Any, *, settings: Settings, storage: Any) -> Any:
         manage_db_lifespan=False,
         ingestion_storage=storage,
         chat_principal_resolver=_principal,
-        chat_stream_live_tail=False,
+        chat_stream_live_tail=live_tail,
     )
 
 
@@ -1020,6 +1023,14 @@ def test_a_disconnect_at_every_event_boundary_replays_the_same_stream_exactly_on
                 )
                 # frame 0 is stream.hello (no id); the rest carry cursors.
                 assert whole[0][1] == "stream.hello"
+                assert whole[0][2] == {
+                    "schema_version": "1",
+                    "type": "stream.hello",
+                    "turn_id": str(turn_id),
+                    "thread_id": thread_id,
+                    "project_id": project.project_id,
+                }
+                assert all(event == data["type"] for _, event, data in whole)
                 persisted = whole[1:]
                 assert [row[0] for row in persisted] == sorted(
                     row[0] for row in persisted if row[0] is not None
@@ -1126,7 +1137,15 @@ def test_a_cursor_beyond_the_replay_horizon_resets_and_restarts_from_zero(
                 )
             assert frames[0][1] == "stream.hello"
             assert frames[1][1] == "stream.reset"
-            assert frames[1][2]["reason"] == "cursor_older_than_horizon"
+            assert frames[1][2] == {
+                "schema_version": "1",
+                "type": "stream.reset",
+                "turn_id": str(turn_id),
+                "thread_id": thread_id,
+                "project_id": project.project_id,
+                "reason": "cursor_older_than_horizon",
+                "rehydrate": "transcript",
+            }
             # The tail floor drops to zero: the backlog restarts from the first frame, never from
             # the unusable cursor (which as a floor would match nothing forever).
             assert frames[2][1] == "turn.accepted"
@@ -1143,6 +1162,117 @@ def test_a_cursor_beyond_the_replay_horizon_resets_and_restarts_from_zero(
                     last_event_id=99_999_999,
                 )
             assert frames[1][1] == "stream.reset"
+
+    run_async(scenario())
+
+
+def test_a_terminal_backlog_closes_even_when_live_tailing_is_enabled(tmp_path: Path) -> None:
+    """A completed turn is a finite response, not a socket kept alive until proxy timeout."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d3-finite", name="D3 finite")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="finite",
+            )
+            storage = FsStorage(tmp_path / "artifacts")
+            turn_id = await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="finish",
+                key="k-finite",
+                storage=storage,
+            )
+            emitter = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_id)
+            await emitter.turn_started()
+            await emitter.turn_finished(status="completed")
+
+            app = _app(conn, settings=_settings(), storage=storage, live_tail=True)
+            async with _client(app) as client:
+                frames = await asyncio.wait_for(
+                    _open_stream(
+                        client,
+                        workspace_id=project.workspace_id,
+                        project_id=project.project_id,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                    ),
+                    timeout=2.0,
+                )
+
+            assert frames[-1][1] == "turn.completed"
+            assert all(event == data["type"] for _, event, data in frames)
+
+    run_async(scenario())
+
+
+def test_a_terminal_live_batch_is_emitted_through_and_then_closes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The polling path has the same finite-terminal boundary as replay."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d3-live-finite", name="D3 live finite")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="live-finite",
+            )
+            storage = FsStorage(tmp_path / "artifacts")
+            turn_id = await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="finish live",
+                key="k-live-finite",
+                storage=storage,
+            )
+            emitter = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_id)
+            await emitter.turn_started()
+
+            terminal = TurnEventRow(
+                event_id=9_999_999,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                thread_id=thread_id,
+                turn_id=turn_id,
+                sequence=3,
+                event_type=TurnEventType.TURN_COMPLETED.value,
+                payload={"status": "completed", "replayed": False},
+                occurred_at=datetime.now(UTC),
+            )
+
+            async def terminal_batch(*_: Any, **__: Any) -> tuple[TurnEventRow, ...]:
+                return (terminal,)
+
+            monkeypatch.setattr("clue_api.chat.stream.list_turn_events", terminal_batch)
+            app = _app(
+                conn,
+                settings=_settings(chat_stream_poll_interval_s=0.001),
+                storage=storage,
+                live_tail=True,
+            )
+            async with _client(app) as client:
+                frames = await asyncio.wait_for(
+                    _open_stream(
+                        client,
+                        workspace_id=project.workspace_id,
+                        project_id=project.project_id,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                    ),
+                    timeout=2.0,
+                )
+
+            assert frames[-1][1] == "turn.completed"
+            assert frames[-1][0] == terminal.event_id
+            assert all(event == data["type"] for _, event, data in frames)
 
     run_async(scenario())
 

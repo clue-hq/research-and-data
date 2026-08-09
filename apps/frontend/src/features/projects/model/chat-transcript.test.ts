@@ -226,6 +226,8 @@ test("an unknown schema version is fatal; an unreadable part is not", () => {
 
   const badPart = parseChatStreamEvent({
     schema_version: "1",
+    project_id: "p1",
+    thread_id: "t1",
     turn_id: TURN,
     type: "part.created",
     part_id: "tool:x",
@@ -234,6 +236,54 @@ test("an unknown schema version is fatal; an unreadable part is not", () => {
   });
   assert.equal(badPart.ok, false);
   assert.equal(badPart.ok === false && badPart.fatal, false);
+});
+
+test("connect control frames carry common identity and remain cursorless", () => {
+  for (const type of ["stream.hello", "stream.reset"] as const) {
+    const parsed = parseChatStreamEvent(
+      {
+        schema_version: "1",
+        project_id: "p1",
+        thread_id: "t1",
+        turn_id: TURN,
+        type,
+        ...(type === "stream.reset"
+          ? { reason: "cursor_older_than_horizon", rehydrate: "transcript" }
+          : {}),
+      },
+      type,
+    );
+    assert.ok(parsed.ok);
+    assert.equal(parsed.event.eventId, null);
+    assert.equal(parsed.event.sequence, null);
+    assert.equal(parsed.event.projectId, "p1");
+    assert.equal(parsed.event.threadId, "t1");
+  }
+});
+
+test("an SSE event name that disagrees with data.type is fatal", () => {
+  const parsed = parseChatStreamEvent(
+    {
+      schema_version: "1",
+      project_id: "p1",
+      thread_id: "t1",
+      turn_id: TURN,
+      type: "turn.completed",
+    },
+    "turn.started",
+  );
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.ok === false && parsed.fatal, true);
+});
+
+test("a typed frame without common project/thread/turn identity is fatal", () => {
+  const parsed = parseChatStreamEvent({
+    schema_version: "1",
+    turn_id: TURN,
+    type: "turn.started",
+  });
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.ok === false && parsed.fatal, true);
 });
 
 test("the SSE reader reassembles frames split across chunk boundaries", () => {

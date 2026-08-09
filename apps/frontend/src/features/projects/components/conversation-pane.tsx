@@ -184,12 +184,6 @@ export function ConversationPane({
           {chat.error}
         </p>
       ) : null}
-      {chat.warnings.map((warning) => (
-        <p className={styles.messageText} key={warning} role="note">
-          {warning}
-        </p>
-      ))}
-
       <div className={styles.transcriptScroll} ref={transcriptScrollRef}>
         <ChatTranscript
           actions={partActions}
@@ -202,10 +196,16 @@ export function ConversationPane({
       <div className={styles.workspaceComposer}>
         {chat.busy ? (
           <div className={styles.planApprovalActions}>
-            <span role="status">Working — new messages will queue behind this turn.</span>
-            <button onClick={() => void chat.stopActiveTurn()} type="button">
-              Stop
-            </button>
+            <span role="status">
+              {chat.activeTurnId
+                ? "Working — new messages will queue behind this turn."
+                : "Queued — waiting for the current turn to start."}
+            </span>
+            {chat.activeTurnId ? (
+              <button onClick={() => void chat.stopActiveTurn()} type="button">
+                Stop
+              </button>
+            ) : null}
           </div>
         ) : null}
         <ProjectComposer

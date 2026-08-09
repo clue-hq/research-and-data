@@ -41,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import UtcDatetime, decode_jsonb, serialize_value_json
 
 __all__ = [
+    "TERMINAL_TURN_EVENTS",
     "TURN_EVENT_TYPES",
     "TurnEventRow",
     "TurnEventType",

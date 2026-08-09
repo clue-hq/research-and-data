@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   SseFrameReader,
+  TERMINAL_TURN_EVENTS,
   parseChatStreamEvent,
   type ChatStreamEvent,
 } from "../model/chat-events";
@@ -57,6 +58,8 @@ export interface ChatStreamHandle {
   close(): void;
 }
 
+export type ChatStreamCloseReason = "terminal" | "reset";
+
 export interface ChatStreamAttachment {
   projectId: string;
   threadId: string;
@@ -68,8 +71,8 @@ export interface ChatStreamAttachment {
   onWarning?(reason: string): void;
   /** The stream stopped and will not resume by itself. */
   onError?(error: unknown): void;
-  /** The turn reached a terminal event, or the server closed a finished stream. */
-  onClosed?(): void;
+  /** The turn reached a terminal event, or reset requires durable rehydration. */
+  onClosed?(reason: ChatStreamCloseReason): void;
 }
 
 export interface ChatStreamRepository {
@@ -78,6 +81,13 @@ export interface ChatStreamRepository {
 
 const MAX_RECONNECT_ATTEMPTS = 6;
 const BACKOFF_MS = [250, 500, 1000, 2000, 4000, 8000];
+
+class ChatStreamProtocolError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChatStreamProtocolError";
+  }
+}
 
 function turnPath(
   projectId: string,
@@ -101,6 +111,7 @@ export function createHttpChatStreamRepository(
       // delivered to the consumer, not the highest the server mentioned.
       let cursor = attachment.lastEventId;
       let terminal = false;
+      let reset = false;
 
       const close = () => {
         if (closed) return;
@@ -144,21 +155,36 @@ export function createHttpChatStreamRepository(
             if (!response.ok) throw await refusalOf(response);
             if (!response.body) throw new Error("the turn stream returned no body");
 
-            attempt = -1; // a successful attach resets the backoff budget
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             const frames = new SseFrameReader();
-            for (;;) {
+            readLoop: for (;;) {
               const chunk = await reader.read();
               if (chunk.done) break;
               for (const frame of frames.push(
                 decoder.decode(chunk.value, { stream: true }),
               )) {
-                const parsed = parseChatStreamEvent(safeJson(frame.data));
+                const parsed = parseChatStreamEvent(
+                  safeJson(frame.data),
+                  frame.event,
+                );
                 if (!parsed.ok) {
-                  if (parsed.fatal) throw new Error(parsed.reason);
+                  if (parsed.fatal) {
+                    await reader.cancel().catch(() => undefined);
+                    throw new ChatStreamProtocolError(parsed.reason);
+                  }
                   attachment.onWarning?.(parsed.reason);
                   continue;
+                }
+                if (
+                  parsed.event.projectId !== attachment.projectId ||
+                  parsed.event.threadId !== attachment.threadId ||
+                  parsed.event.turnId !== attachment.turnId
+                ) {
+                  await reader.cancel().catch(() => undefined);
+                  throw new ChatStreamProtocolError(
+                    "turn-stream frame identity mismatch",
+                  );
                 }
                 if (parsed.event.eventId !== null) {
                   cursor = Math.max(cursor ?? 0, parsed.event.eventId);
@@ -171,14 +197,25 @@ export function createHttpChatStreamRepository(
                   parsed.event.eventId === null
                 ) {
                   cursor = 0;
+                  reset = true;
                 }
                 if (isTerminal(parsed.event)) terminal = true;
                 attachment.onEvent(parsed.event);
+                if (terminal || reset) {
+                  // Terminal state is known from the frame itself. Do not wait
+                  // for a proxy or TCP timeout before finalizing the UI.
+                  await reader.cancel().catch(() => undefined);
+                  break readLoop;
+                }
               }
             }
-            if (terminal || closed) break;
+            if (terminal || reset || closed) break;
           } catch (error) {
             if (closed || isAbort(error)) break;
+            if (error instanceof ChatStreamProtocolError) {
+              attachment.onError?.(error);
+              return;
+            }
             if (
               error instanceof ClueChatApiError &&
               (error.status === 401 || error.status === 403 || error.status === 404)
@@ -193,7 +230,9 @@ export function createHttpChatStreamRepository(
             await delay(BACKOFF_MS[Math.max(0, attempt)] ?? 8000);
           }
         }
-        if (!closed) attachment.onClosed?.();
+        if (!closed && (terminal || reset)) {
+          attachment.onClosed?.(terminal ? "terminal" : "reset");
+        }
       })();
 
       return { close };
@@ -202,12 +241,7 @@ export function createHttpChatStreamRepository(
 }
 
 function isTerminal(event: ChatStreamEvent): boolean {
-  return (
-    event.type === "turn.completed" ||
-    event.type === "turn.failed" ||
-    event.type === "turn.cancelled" ||
-    event.type === "turn.awaiting_input"
-  );
+  return TERMINAL_TURN_EVENTS.has(event.type);
 }
 
 function isAbort(error: unknown): boolean {
@@ -270,7 +304,7 @@ export function createFixtureChatStreamRepository(
           }
           attachment.onEvent(parsed.event);
         }
-        if (!closed) attachment.onClosed?.();
+        if (!closed) attachment.onClosed?.("terminal");
       })();
 
       return {

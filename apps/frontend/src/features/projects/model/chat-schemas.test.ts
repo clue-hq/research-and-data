@@ -16,6 +16,7 @@ import {
 import {
   AcceptedTurnResponseSchema,
   ChatTurnListResponseSchema,
+  turnStateForStreamEvent,
   turnRequestBody,
 } from "./chat-turn";
 import { ChatGateListResponseSchema, formatCents, isGateOpen } from "./chat-gate";
@@ -122,6 +123,14 @@ test("the submissions-union keeps queued turns and their attach cursor", () => {
   assert.equal(page.threadRunning, true);
   assert.equal(page.turns[0].lastEventId, 24);
   assert.equal(page.turns[1].state, "queued");
+});
+
+test("durable stream events immediately refine queued/running/terminal turn state", () => {
+  assert.equal(turnStateForStreamEvent("turn.accepted"), "queued");
+  assert.equal(turnStateForStreamEvent("turn.started"), "running");
+  assert.equal(turnStateForStreamEvent("turn.completed"), "completed");
+  assert.equal(turnStateForStreamEvent("turn.awaiting_input"), "awaiting_input");
+  assert.equal(turnStateForStreamEvent("text.delta"), null);
 });
 
 test("a 202 reports whether it replayed an already-accepted identity", () => {
