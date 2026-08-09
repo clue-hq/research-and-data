@@ -334,6 +334,41 @@ class Settings(BaseSettings):
     # Env: ``CLUE_CHAT_DEV_PRINCIPAL_WORKSPACE_ID``.
     chat_dev_principal_workspace_id: str = ""
 
+    # --- FI Lane D D3 turn streaming (charter §§3.2-3.6) -------------------------------------
+    # Whether a production conversation turn streams. On by default *within* the chat surface,
+    # which is itself default-off, so an unconfigured deployment is unchanged; switching it off
+    # leaves turns fully functional and merely unobserved (the durable outcome never depends on
+    # the stream). Env: ``CLUE_CHAT_TURN_STREAMING_ENABLED``.
+    chat_turn_streaming_enabled: bool = True
+    # The bounded micro-batching of §3.3(3). A batch may reduce frame count but may never wait for
+    # model completion: the first delta of a part is always flushed immediately, and thereafter a
+    # batch closes at whichever of these two bounds is reached first. Env:
+    # ``CLUE_CHAT_TURN_STREAM_BATCH_MAX_CHARS`` / ``CLUE_CHAT_TURN_STREAM_BATCH_INTERVAL_S``.
+    chat_turn_stream_batch_max_chars: int = Field(default=256, ge=1)
+    chat_turn_stream_batch_interval_s: float = Field(default=0.05, ge=0.0)
+    # How often the worker observes the durable stop-request table while a generation is running
+    # (§3.5). This is the cancellation latency bound; ``0`` disables stop observation entirely.
+    # Env: ``CLUE_CHAT_TURN_STOP_POLL_INTERVAL_S``.
+    chat_turn_stop_poll_interval_s: float = 0.25
+    # The explicit replay-retention policy of §3.3(7): how long a *terminal* turn's frames stay in
+    # the outbox before the worker's sweep deletes them. Should be >= CLUE_SSE_REPLAY_HORIZON_S —
+    # pruning inside the replay horizon promises a replay the table can no longer serve (still
+    # correct, because the cursor then resets and the client re-fetches, just needlessly often).
+    # A live turn is never pruned at any age. Env: ``CLUE_CHAT_TURN_EVENT_RETENTION_S``.
+    chat_turn_event_retention_s: float = 86400.0  # 24h
+    # Cadence of the worker's two chat sweeps: the turn-outbox retention prune, and the
+    # stranded-dispatch self-heal (a thread whose queued submission lost its dispatch to a process
+    # death between task-finalize and dispatch-next). ``0`` disables both.
+    # Env: ``CLUE_CHAT_SWEEP_INTERVAL_S``.
+    chat_sweep_interval_s: float = 60.0
+    # How long a single-use *turn* stream token is valid for. Separate from the B4 run-stream TTL
+    # because a turn stream is opened by a browser the instant a 202 lands, while a run stream may
+    # be opened long after. Env: ``CLUE_CHAT_STREAM_TOKEN_TTL_S``.
+    chat_stream_token_ttl_s: float = 300.0  # 5m
+    # SSE poll cadence of the turn stream's live tail. The outbox is the buffer (§3.3(7)); a slow
+    # or absent consumer never touches model execution. Env: ``CLUE_CHAT_STREAM_POLL_INTERVAL_S``.
+    chat_stream_poll_interval_s: float = 0.25
+
     # --- local Clue Trial canary ------------------------------------------------------------
     # The Sumble-only founder acceptance surface is never part of the default production app.
     # It must be enabled explicitly and binds to loopback by default. Env:
