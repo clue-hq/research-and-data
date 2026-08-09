@@ -3,7 +3,6 @@ import "server-only";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import {
-  clerkJwtTemplate,
   isAuthenticationEnabled,
   requireAuthenticationConfiguration,
 } from "./config";
@@ -13,7 +12,9 @@ export async function providerSessionToken(): Promise<string | null> {
   requireAuthenticationConfiguration();
   const session = await auth({ acceptsToken: "session_token" });
   if (!session.isAuthenticated) return null;
-  return session.getToken({ template: clerkJwtTemplate() });
+  // Default session token, no JWT template: it carries the session-bound `sid`/`azp` claims
+  // the backend requires; template tokens cannot (and `aud` no longer participates).
+  return session.getToken();
 }
 
 export async function requireProviderSessionToken(): Promise<string> {

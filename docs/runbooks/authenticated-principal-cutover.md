@@ -12,8 +12,11 @@ identity. Never copy provider tokens, subjects, or credentials into domain rows,
 1. Apply migrations and confirm `alembic heads` reports exactly one head.
 2. Provision each intended human as a `platform_user`, active `auth_identity`, and active
    `workspace_membership`. A valid Clerk session without these rows is correctly refused.
-3. Configure one Clerk JWT template for the API. Its `aud` value must exactly match
-   `CLUE_AUTH_CLERK_AUDIENCE`.
+3. No Clerk JWT template is used. The frontend forwards Clerk's default session token, which
+   carries the session-bound `sid`/`azp` claims the backend requires (template tokens cannot;
+   ratified 2026-08-09 — see `apps/frontend/docs/api-contracts/session.md`). Verify
+   `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES` lists the exact application origins: the `azp` check is
+   the origin binding.
 4. Set the backend values below through the deployment secret/config store. Do not commit values:
 
    ```text
@@ -22,7 +25,6 @@ identity. Never copy provider tokens, subjects, or credentials into domain rows,
    CLUE_AUTH_MODE=clerk
    CLUE_AUTH_CLERK_JWKS_URL=<instance JWKS URL>
    CLUE_AUTH_CLERK_ISSUER=<expected issuer>
-   CLUE_AUTH_CLERK_AUDIENCE=<Clue API audience>
    CLUE_AUTH_CLERK_AUTHORIZED_PARTIES=<exact application origins>
    CLUE_PROJECTIONS_AUTH_MODE=authenticated_principal
    ```
@@ -32,7 +34,6 @@ identity. Never copy provider tokens, subjects, or credentials into domain rows,
    ```text
    CLUE_AUTH_ENABLED=true
    CLUE_API_BASE_URL=<FastAPI origin>
-   CLUE_CLERK_JWT_TEMPLATE=<template name>
    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<publishable key>
    CLERK_SECRET_KEY=<secret value>
    ```
@@ -64,7 +65,7 @@ The first command covers the isolation-safe Lane B matrix:
 | 3, 10 | Cross-workspace tool, launch, and stream selectors return `WORKSPACE_FORBIDDEN` before writes |
 | 5 | Membership revocation blocks the next request without a new authority write |
 | 6 | A disabled internal user is refused independently of provider-session validity |
-| 7 | Issuer, audience, authorized party, time, token shape, signature, JWKS outage, and rotation tests |
+| 7 | Issuer, authorized party, session id, time, token shape, signature, JWKS outage, and rotation tests (audience deliberately not verified — session-token-native contract) |
 | 8 | Human gates reject legacy-null/service authority; browser/model fields cannot author authority |
 | 11 | Frontend session schemas, workspace fallback/repair, BFF header replacement, and recursive tests |
 

@@ -417,11 +417,11 @@ class Settings(BaseSettings):
     auth_environment: Literal["local", "test", "production"] | None = None
     auth_mode: Literal["local_fixture", "clerk"] = "local_fixture"
     # Clerk JWT verification metadata. No Clerk secret is required at the FastAPI edge: the
-    # short-lived session JWT is verified against the instance JWKS. All are deployment settings,
-    # not domain identity. Env: ``CLUE_AUTH_CLERK_*``.
+    # short-lived session JWT (Clerk's default session token — no JWT template, no audience
+    # claim) is verified against the instance JWKS. All are deployment settings, not domain
+    # identity. Env: ``CLUE_AUTH_CLERK_*``.
     auth_clerk_jwks_url: str | None = None
     auth_clerk_issuer: str | None = None
-    auth_clerk_audience: str | None = None
     auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
 
     # --- local Clue Trial canary ------------------------------------------------------------

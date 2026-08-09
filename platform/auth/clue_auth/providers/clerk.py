@@ -24,7 +24,6 @@ class ClerkJwtConfig(BaseModel):
 
     jwks_url: HttpUrl
     issuer: str
-    audience: str
     authorized_parties: tuple[str, ...] = Field(min_length=1)
     clock_skew_seconds: int = Field(default=5, ge=0, le=60)
     jwks_cache_ttl_seconds: int = Field(default=300, ge=1, le=3600)
@@ -138,18 +137,21 @@ class ClerkAuthenticator:
         if not isinstance(kid, str) or not kid:
             raise SessionInvalid("session token has no signing key id")
         key = await self._key(kid)
-        required = ["iss", "sub", "sid", "iat", "nbf", "exp", "aud", "azp"]
+        # Session-token-native contract: Clerk's default session token carries `sid` and `azp`
+        # but never `aud` (an audience is a JWT-template concept, and template tokens in turn
+        # cannot carry the session-bound `sid`/`azp`). Authenticity rests on the RS256 signature,
+        # `iss`, and the `azp` allowlist below; no audience claim participates in verification.
+        required = ["iss", "sub", "sid", "iat", "nbf", "exp", "azp"]
         try:
             claims = jwt.decode(
                 token,
                 key=key,
                 algorithms=["RS256"],
                 issuer=self._config.issuer,
-                audience=self._config.audience,
                 leeway=self._config.clock_skew_seconds,
                 options={
                     "require": required,
-                    "verify_aud": True,
+                    "verify_aud": False,
                 },
             )
         except jwt.PyJWTError as exc:

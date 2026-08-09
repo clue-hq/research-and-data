@@ -21,7 +21,6 @@ from clue_auth.providers import ClerkAuthenticator, ClerkJwtConfig
 from .conftest import run_async
 
 ISSUER = "https://clerk.example.test"
-AUDIENCE = "clue-api"
 AZP = "https://app.example.test"
 KID = "test-key"
 
@@ -34,6 +33,8 @@ def _keys(kid: str = KID) -> tuple[Any, dict[str, Any]]:
 
 
 def _token(private: Any, *, kid: str = KID, **overrides: Any) -> str:
+    # Mirrors Clerk's *default session token* shape: `sid`/`azp` present, no `aud` claim
+    # (an audience is a JWT-template concept; template tokens cannot carry `sid`/`azp`).
     now = datetime.now(UTC)
     claims: dict[str, Any] = {
         "iss": ISSUER,
@@ -42,11 +43,11 @@ def _token(private: Any, *, kid: str = KID, **overrides: Any) -> str:
         "iat": int((now - timedelta(seconds=1)).timestamp()),
         "nbf": int((now - timedelta(seconds=1)).timestamp()),
         "exp": int((now + timedelta(minutes=5)).timestamp()),
-        "aud": AUDIENCE,
         "azp": AZP,
         "sts": "active",
     }
     claims.update(overrides)
+    claims = {k: v for k, v in claims.items() if v is not None}
     return jwt.encode(claims, private, algorithm="RS256", headers={"kid": kid, "typ": "JWT"})
 
 
@@ -62,7 +63,6 @@ def _authenticator(private: Any, jwk: dict[str, Any]) -> tuple[ClerkAuthenticato
     config = ClerkJwtConfig(
         jwks_url=f"{ISSUER}/.well-known/jwks.json",
         issuer=ISSUER,
-        audience=AUDIENCE,
         authorized_parties=(AZP,),
     )
     return ClerkAuthenticator(config, http_client=client), calls
@@ -99,7 +99,6 @@ def test_jwks_outage_is_retryable_and_throttled_without_forcing_signout() -> Non
             ClerkJwtConfig(
                 jwks_url=f"{ISSUER}/.well-known/jwks.json",
                 issuer=ISSUER,
-                audience=AUDIENCE,
                 authorized_parties=(AZP,),
             ),
             http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
@@ -129,8 +128,9 @@ def test_missing_or_malformed_bearer_is_authentication_required() -> None:
     ("overrides", "reason"),
     [
         ({"iss": "https://attacker.example"}, "issuer"),
-        ({"aud": "some-other-api"}, "audience"),
         ({"azp": "https://attacker.example"}, "authorized party"),
+        ({"azp": None}, "missing authorized party"),
+        ({"sid": None}, "missing session id"),
         ({"exp": 1}, "expired"),
         (
             {"nbf": int((datetime.now(UTC) + timedelta(hours=1)).timestamp())},
@@ -150,6 +150,22 @@ def test_invalid_session_claims_fail_closed(overrides: dict[str, Any], reason: s
 
     run_async(scenario())
     assert reason
+
+
+def test_audience_claim_does_not_participate_in_verification() -> None:
+    """Session-token-native contract: a default session token has no ``aud``; one that happens
+    to carry any ``aud`` (a customized session token) must verify identically."""
+
+    async def scenario() -> None:
+        private, jwk = _keys()
+        authenticator, _ = _authenticator(private, jwk)
+        for overrides in ({}, {"aud": "some-api"}, {"aud": ["a", "b"]}):
+            session = await authenticator.authenticate(
+                AuthenticationRequest(authorization=f"Bearer {_token(private, **overrides)}")
+            )
+            assert session.provider_session_subject == "session_123"
+
+    run_async(scenario())
 
 
 def test_unknown_key_and_tampered_signature_fail_closed() -> None:
@@ -191,7 +207,6 @@ def test_refresh_replaces_jwks_so_rotated_out_key_is_rejected() -> None:
             ClerkJwtConfig(
                 jwks_url=f"{ISSUER}/.well-known/jwks.json",
                 issuer=ISSUER,
-                audience=AUDIENCE,
                 authorized_parties=(AZP,),
                 jwks_cache_ttl_seconds=1,
             ),

@@ -10,11 +10,19 @@ or authors a backend bearer token. Next.js obtains the current short-lived sessi
 server and forwards it to FastAPI; FastAPI verifies it independently and resolves it through
 `auth_identity` to a Clue `platform_user`.
 
-Authentication remains deployment-default-off until D5 with `CLUE_AUTH_ENABLED=false`. Enabling it requires
-`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, server-only `CLUE_API_BASE_URL`, and a
-`CLUE_CLERK_JWT_TEMPLATE` whose `aud` claim equals backend `CLUE_AUTH_CLERK_AUDIENCE`; missing
-configuration fails loudly and never enters Clerk keyless mode or forwards a default token whose
-audience the API cannot accept.
+Authentication remains deployment-default-off until D5 with `CLUE_AUTH_ENABLED=false`. Enabling it
+requires `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and server-only
+`CLUE_API_BASE_URL`; missing configuration fails loudly and never enters Clerk keyless mode.
+
+The forwarded token is Clerk's **default session token** — no JWT template. Ratified 2026-08-09
+after live validation: Clerk template tokens structurally cannot carry the session-bound
+`sid`/`azp` claims the backend requires (and templates cannot set them — they are reserved), while
+the default session token always carries both for browser-originated sessions. The backend
+therefore verifies signature (RS256 against instance JWKS), `iss`, `exp`/`nbf`/`iat`, requires
+`sid`, and enforces `azp` against `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`; no audience claim
+participates in verification (`CLUE_AUTH_CLERK_AUDIENCE` and `CLUE_CLERK_JWT_TEMPLATE` are
+retired). This supersedes the earlier template/audience design, which was never validated against
+a live Clerk instance and could not have worked in either token shape.
 
 ## Server session reads
 

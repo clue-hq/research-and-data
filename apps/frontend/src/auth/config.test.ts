@@ -23,18 +23,16 @@ test("enabled authentication refuses missing provider/API configuration", () => 
     "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
     "CLERK_SECRET_KEY",
     "CLUE_API_BASE_URL",
-    "CLUE_CLERK_JWT_TEMPLATE",
   ] as const;
   const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
   process.env.CLUE_AUTH_ENABLED = "true";
   delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   delete process.env.CLERK_SECRET_KEY;
   delete process.env.CLUE_API_BASE_URL;
-  delete process.env.CLUE_CLERK_JWT_TEMPLATE;
   try {
     assert.throws(
       requireAuthenticationConfiguration,
-      /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, CLUE_API_BASE_URL, CLUE_CLERK_JWT_TEMPLATE/,
+      /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, CLUE_API_BASE_URL/,
     );
   } finally {
     for (const name of names) {

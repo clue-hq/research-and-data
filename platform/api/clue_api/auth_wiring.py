@@ -169,7 +169,6 @@ def build_principal_service(
             for name, value in (
                 ("CLUE_AUTH_CLERK_JWKS_URL", settings.auth_clerk_jwks_url),
                 ("CLUE_AUTH_CLERK_ISSUER", settings.auth_clerk_issuer),
-                ("CLUE_AUTH_CLERK_AUDIENCE", settings.auth_clerk_audience),
             )
             if not value
         ]
@@ -186,7 +185,6 @@ def build_principal_service(
                 {
                     "jwks_url": settings.auth_clerk_jwks_url,
                     "issuer": settings.auth_clerk_issuer,
-                    "audience": settings.auth_clerk_audience,
                     "authorized_parties": settings.auth_clerk_authorized_parties,
                 }
             )
