@@ -27,7 +27,7 @@ from .custom_components import (
     persist_compiled_custom_component_artifact,
     resolve_custom_component_source_snapshot,
 )
-from .design_store import HybridRepository
+from .design_store import DesignBlobStore, HybridRepository
 
 
 JsonObject = Dict[str, Any]
@@ -205,7 +205,7 @@ def compile_custom_component(
 def compile_and_persist_custom_component(
     *,
     repository: HybridRepository,
-    store_root: Path,
+    blobs: DesignBlobStore,
     node_binary: str,
     worker_path: Path,
     timeout_seconds: float,
@@ -244,7 +244,7 @@ def compile_and_persist_custom_component(
         raise NotFoundError("custom_component_source", slug)
     _, files = resolve_custom_component_source_snapshot(
         repository,
-        store_root,
+        blobs,
         account_id=account_id,
         revision_id=revision["revision_id"],
     )
@@ -291,7 +291,7 @@ def compile_and_persist_custom_component(
         try:
             artifact = persist_compiled_custom_component_artifact(
                 repository,
-                store_root,
+                blobs,
                 account_id=account_id,
                 slug=slug,
                 source=snapshot_bytes,

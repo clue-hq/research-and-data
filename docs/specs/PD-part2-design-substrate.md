@@ -24,7 +24,25 @@ takes `?workspace_id=`; B: **SQLite DELETED** — Repository/connect/run_migrati
 migrations gone, design suite 490/0 green). **The D2 arc is COMPLETE**: every design row
 tenant-scoped in Postgres behind one store seam. **D3 EXECUTED 2026-08-08** (brand + account-entity joins stamped via resolve-or-create;
 creation halves are interim scaffolding replaced by governed services at Part III, which
-also owns NOT NULL promotion + backfill). Next: D4 (storage) ∥ D5 (durable execution),
+also owns NOT NULL promotion + backfill). **D4 EXECUTED 2026-08-09** (every design asset byte
+durably owned by platform `clue_storage` through the `clue_design.storage` seam — row-before-blob
+`record_artifact`, fail-closed digest reads, keys `{workspace_id}/design/{sha256}` per R-D4-2;
+custom-component blobs, publish delivery assets (sidecar deleted — media type lives on the
+`artifact` row), the main asset store, ingestion staging (`ingest_tmp/` gone; `request_json`
+carries staged digests), and font-library faces all moved; `record_json.media.location`
+re-pointed to `provider "clue-storage"` with legacy labels dual-accepted and every reader
+resolving by digest, never by path; the Rust engine — untouched, per the master plan — keeps a
+**transient per-workspace materialization cache** `{cache_root}/{ws}/sha256/{ab}/{digest}` with
+write-back after every engine write (one ingestion chokepoint `_RecordingCore`; a scene-persist
+backstop sweep at the accept seam) and read-through materialization before every engine read, so
+wiping the cache loses nothing; `/asset-store/{digest}` stays public by the D2.5A ruling and now
+resolves live rows across tenants via the `artifact` table (R-D4-7, Part-IV custody residual);
+the mutable `.generation-cache.json` is exempt (per-workspace file in the cache root; Postgres
+home is D5's); migration `13cd5078d697` widens the B2 `artifact_key_encodes_scope` CHECK to
+admit exactly the two key shapes and adds the `artifact_content_sha256` index for the
+digest-first public read. Gates: design-API suite 501 passed / 9 skipped / 0 failed;
+agent-runtime suite 546/2/0; `tests/design` 63; offline platform suite 2178; db-smoke up→down→up
+green; single head `13cd5078d697`). Next: D5 (durable execution),
 then D6 (toolbelt), D7 (events), D8 (closeout). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
 by the founder 2026-08-07** (with refinements — see §6); **O6b RATIFIED 2026-08-08: option
 (a)**. **PENDING FOUNDER RATIFICATION (D2.2 field decision):** migration `7a9881f9717a`
@@ -33,7 +51,17 @@ extended O6's workspace-locality to every design id namespace that is client-sup
 component source/artifact hashes) — their PKs now include `workspace_id` (a global PK would
 let one workspace squat an id, or collide identical content hashes, across tenants); the
 document→account FK is deferred to D2.4 (re-added when accounts port). Reversible if
-rejected.
+rejected. **PENDING FOUNDER RATIFICATION (D4 field decisions):** (a) the storage-key namespace
+is `{workspace_id}/design/{sha256}`, not this doc's earlier bare `{ws}/{sha}` wording — the
+`design` segment keeps design keys structurally disjoint from claim-evidence keys, whose DSAR
+erasure destroys a blob when its live *claim* count reaches zero (a design blob has no claim
+citing it, so sharing the bare namespace would expose it to a zero-refcount purge); this
+required widening the platform's `artifact_key_encodes_scope` CHECK (migration `13cd5078d697`),
+the one platform-table touch of the slice. (b) The D4 gate's "API-local `asset-store/` retired"
+is met as: durable custody retired; a transient, wipe-safe, per-workspace engine
+materialization cache remains, because the Rust helper reads/writes bytes by local path and the
+master plan bars touching the engine — the cache is disposable by construction (rehydrated from
+platform storage on demand). Both reversible if rejected.
 **Parent:** `docs/specs/design-integration-master-plan.md` §Part II (the authoritative plan).
 This document is Part II's frozen implementation contract: slices, gates, the SQLite→Postgres
 table map, mapping rules, and the decisions register. Where this doc and the master plan

@@ -12,6 +12,8 @@ returns a queued job but GET reflects the terminal state.
 
 from __future__ import annotations
 
+import hashlib
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -19,7 +21,7 @@ from typing import Any, Callable, Optional
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client
+from conftest import make_blob_store, make_client
 
 from lumen_api import main as main_module
 from lumen_api.design_store import HybridRepository
@@ -38,6 +40,20 @@ from py_lumen_config import settings
 REFERENCE_ASSET_ID = "asset_ing_stubpdf00000000"
 
 PDF_HEADER = b"%PDF-1.7\n"
+
+
+def _pdf_bytes() -> bytes:
+    """The exact bytes `_post_pdf` uploads — the staged blob's content address."""
+    return PDF_HEADER + b"body"
+
+
+def engine_cache_dir(app) -> str:
+    """This app's per-workspace engine materialization cache (D4)."""
+    return str(Path(app.state.engine_cache_root) / os.environ["LUMEN_DEV_WORKSPACE_ID"])
+
+
+def _workspace(client: TestClient) -> str:
+    return os.environ["LUMEN_DEV_WORKSPACE_ID"]
 
 
 def _ptr(name: str) -> EvidencePointer:
@@ -126,13 +142,13 @@ def _install_stub_pipeline(
     injectable ``extract`` param mirrors how ``pipeline.py`` lazily resolves
     ``capture.pdf`` — so no Agent A file is imported."""
 
-    def _runner(database_path, asset_store_root, job_id, *, workspace_id=None):
+    def _runner(engine_cache_dir, job_id, *, workspace_id=None, storage=None):
         run_pdf_ingestion(
-            database_path,
-            asset_store_root,
+            engine_cache_dir,
             job_id,
             extract=extract,
             workspace_id=workspace_id,
+            storage=storage,
         )
 
     monkeypatch.setattr(main_module, "run_pdf_ingestion", _runner)
@@ -146,7 +162,7 @@ def _good_extract(pdf_bytes, filename, *, core, store_root, reporter):
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
+    app = create_app(tmp_path / "engine-cache")
     return make_client(app)
 
 
@@ -199,9 +215,12 @@ def test_ingest_pdf_happy_path_persists_kit_and_report(
     assert report["dark_colorway"] == "captured"
 
 
-def test_ingest_pdf_cleans_tmp_file_after_success(
+def test_ingest_pdf_cleans_staged_bytes_after_success(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """D4/R-D4-5: the upload is staged in platform storage, and a run that did not promote it
+    into a live asset must leave nothing behind. (The reference PDF is ingested by the extractor
+    under its OWN asset id, so the staged copy here is genuinely garbage.)"""
     _install_stub_pipeline(monkeypatch, extract=_good_extract)
 
     post = _post_pdf(client)
@@ -210,8 +229,8 @@ def test_ingest_pdf_cleans_tmp_file_after_success(
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 
-    tmp_path = Path(client.app.state.asset_store_root) / "ingest_tmp" / f"{job_id}.pdf"
-    assert not tmp_path.exists(), "tmp PDF must be deleted after a successful run"
+    staged = hashlib.sha256(_pdf_bytes()).hexdigest()
+    assert not make_blob_store(client.app).exists(staged)
 
 
 def test_ingest_pdf_failure_marks_job_failed_and_cleans_tmp(
@@ -234,40 +253,36 @@ def test_ingest_pdf_failure_marks_job_failed_and_cleans_tmp(
     assert got["error"] is not None
     assert "extraction exploded" in got["error"]["message"]
 
-    # The tmp file is deleted even on the failure path.
-    tmp_path = Path(client.app.state.asset_store_root) / "ingest_tmp" / f"{job_id}.pdf"
-    assert not tmp_path.exists(), "tmp PDF must be deleted after a failed run"
+    # The staged blob is discarded even on the failure path.
+    staged = hashlib.sha256(_pdf_bytes()).hexdigest()
+    assert not make_blob_store(client.app).exists(staged)
 
     # No pdf kit row was created.
     kits = client.get("/brand-kits").json()
     assert all(k.get("source") != "pdf" for k in kits)
 
 
-def test_ingest_pdf_missing_tmp_file_fails_cleanly(
+def test_ingest_pdf_missing_staged_bytes_fails_cleanly(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # run_pdf_ingestion must never raise; a missing tmp file → job failed with a
-    # clear error rather than a crash.
+    # run_pdf_ingestion must never raise; staged bytes that are gone → job failed with a
+    # clear LUMI0605 rather than a crash.
     _install_stub_pipeline(monkeypatch, extract=_good_extract)
 
     post = _post_pdf(client)
     job_id = post.json()["job"]["job_id"]
-    # Deleting the tmp file before the (synchronous) background task ran is not
-    # possible via the client; instead invoke the pipeline directly with a job
-    # whose tmp file we remove first.
-    tmp_path = Path(client.app.state.asset_store_root) / "ingest_tmp" / f"{job_id}.pdf"
-    # After the happy background run the file is already gone; re-run the
-    # pipeline against the same (now-clean) job to prove missing-tmp handling.
+    # After the happy background run the staged blob is already discarded; re-run the
+    # pipeline against the same (now-clean) job to prove the missing-input handling.
     run_pdf_ingestion(
-        str(client.app.state.database_path),
-        client.app.state.asset_store_root,
+        engine_cache_dir(client.app),
         job_id,
         extract=_good_extract,
+        workspace_id=_workspace(client),
+        storage=client.app.state.storage,
     )
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert "LUMI0605" in got["error"]["message"], got["error"]
-    assert not tmp_path.exists()
 
 
 def test_ingest_pdf_rejects_non_pdf_bytes(client: TestClient) -> None:

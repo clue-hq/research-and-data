@@ -9,9 +9,17 @@ the same way — one hero is generated once and re-placed). This closes that gap
 maps a generation request to the asset produced the first time, so a repeat request
 re-places the same asset for free.
 
-Persisted as a small JSON sidecar in the asset store root, so the cache lives and
-dies with the store it indexes (a wiped store takes its stale cache with it) and is
-shared by every caller pointed at that store — the API route and the agent loop.
+Persisted as a small JSON sidecar at `{engine_cache_root}/{workspace_id}/.generation-cache.json`
+(D4 / R-D4-8), so the cache lives and dies with the engine materialization cache it sits beside
+and is shared by every caller pointed at that workspace's dir — the API route and the agent loop.
+
+**LOUD WARNING (D4).** This file is *mutable JSON*, NOT asset bytes. It is the one thing under
+the engine cache root that is deliberately EXEMPT from `StorageBackend` custody: platform storage
+is content-addressed and immutable-by-construction, which is exactly wrong for a
+last-writer-wins index that is rewritten on every generation. Losing it costs money (a repeat
+prompt re-pays the model) but loses no data — every asset it points at has durable custody of its
+own — so a wiped cache is a correct, self-healing state. **Its real home is Postgres, and that is
+D5's to build.** Until then: do not "fix" this by registering it as a blob.
 """
 
 from __future__ import annotations

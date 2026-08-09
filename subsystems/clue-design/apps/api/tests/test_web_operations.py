@@ -70,7 +70,7 @@ SET_TEXT_ON_CONTAINER = {
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
+    app = create_app(tmp_path / "engine-cache")
     return make_client(app)
 
 

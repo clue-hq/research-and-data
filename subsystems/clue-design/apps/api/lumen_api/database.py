@@ -96,6 +96,23 @@ class CustomComponentReferenceError(RuntimeError):
         self.artifact_id = artifact_id
 
 
+def custom_component_opaque_ref_is_canonical(opaque_ref: str, digest: str) -> bool:
+    """Whether a blob descriptor's ``opaque_ref`` is one this API is allowed to have minted.
+
+    TWO shapes are canonical, and both are content-derived — the ref may never be free-form:
+
+    * ``{workspace_id}/design/{digest}`` — the D4 platform storage key
+      (``clue_design.storage.design_storage_key``), where the workspace segment carries no ``/``.
+    * ``sha256/{ab}/{digest}`` — the pre-D4 API-local store path, still accepted so a registry
+      row written before the move validates (the registry table is immutable, so those rows can
+      never be rewritten). Nothing reads either ref as a *path*: resolution is by ``digest``.
+    """
+    if opaque_ref == f"sha256/{digest[:2]}/{digest}":
+        return True
+    prefix, separator, suffix = opaque_ref.partition("/design/")
+    return bool(separator) and suffix == digest and bool(prefix) and "/" not in prefix
+
+
 def canonical_custom_component_blob(
     label: str,
     blob: Any,
@@ -112,7 +129,7 @@ def canonical_custom_component_blob(
         blob.get("algorithm") != "sha256"
         or len(digest) != 64
         or any(ch not in "0123456789abcdef" for ch in digest)
-        or opaque_ref != f"sha256/{digest[:2]}/{digest}"
+        or not custom_component_opaque_ref_is_canonical(opaque_ref, digest)
         or not isinstance(byte_length, int)
         or isinstance(byte_length, bool)
         or byte_length < minimum

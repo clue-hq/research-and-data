@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, iso, load_json
 from clue_design.errors import DesignNotFoundError
+from clue_design.storage import location_digest
 
 _ASSET_COLUMNS = (
     "asset_id, workspace_id, label, kind, status, mime_type, digest_algorithm,"
@@ -240,8 +241,14 @@ async def register_scene_assets(
         if record.get("id") != asset_id:
             continue
         media = record.get("media") or {}
-        location = media.get("location") or {}
-        if location.get("provider") != "local-store" or not location.get("opaque_ref"):
+        # D4: promotion is gated on the location RESOLVING TO A DIGEST, not on one provider
+        # label. A record's provider becomes `clue-storage` once its bytes are registered
+        # durably and stays `local-store`/`opaque_asset_store` on everything written before the
+        # move — matching only the legacy label would silently stop promoting every asset a
+        # D4-era producer puts into a scene. The digest test keeps the property the label was
+        # standing in for: a location we can actually serve bytes for. A record pointing at some
+        # other system's opaque handle still resolves to nothing and is still skipped.
+        if location_digest(media.get("location")) is None:
             continue
         candidates[str(asset_id)] = record
     if not candidates:

@@ -40,9 +40,16 @@ class Settings(BaseSettings):
     )
 
     # --- Backend API (lumen_api) ---
-    lumen_api_database_path: Path = Path("apps/api/lumen-api.sqlite3")
     lumen_api_cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
-    lumen_asset_store_root: Path | None = None  # None → <database dir>/asset-store
+    # D4/R-D4-1: this is the ENGINE MATERIALIZATION CACHE root, not a store. Durable custody of
+    # every design byte lives in platform storage (`clue_storage`); the Rust engine only ever
+    # reads/writes a transient per-workspace mirror at
+    # `{lumen_asset_store_root}/{workspace_id}/sha256/{ab}/{digest}` (the engine's own layout,
+    # unchanged, below a workspace dir). Wiping this tree loses nothing — Python writes back
+    # after every engine write and materializes read-through before every engine read.
+    # None → `<clue-design repo root>/.engine-cache` (git-ignored). The env var keeps its
+    # historical name (LUMEN_ASSET_STORE_ROOT) so deployments need no change.
+    lumen_asset_store_root: Path | None = None  # None → <repo root>/.engine-cache
     lumen_asset_max_bytes: int = 10 * 1024 * 1024
     # Curated font-library manifest (Track B). Generated + checked in by
     # scripts/provision_font_library.py; missing file → library disabled.
@@ -220,8 +227,15 @@ class Settings(BaseSettings):
 
     @property
     def effective_asset_store_root(self) -> Path:
-        """LUMEN_ASSET_STORE_ROOT if set, else asset-store beside the database."""
-        return self.lumen_asset_store_root or self.lumen_api_database_path.parent / "asset-store"
+        """The engine materialization-cache ROOT (D4): LUMEN_ASSET_STORE_ROOT if set, else the
+        git-ignored `.engine-cache` beside this repo.
+
+        It used to be anchored to the (now-deleted) SQLite database path; with the database gone
+        and the durable home moved to `clue_storage`, a repo-local ignored directory is the
+        honest default for a cache nothing durable depends on. Per-WORKSPACE cache dirs hang
+        below this root — callers take `engine_cache_root(workspace_id)`, never this raw path.
+        """
+        return self.lumen_asset_store_root or _REPO_ROOT / ".engine-cache"
 
     def image_model_configured(self) -> bool:
         return bool(self.image_model_base_url.strip() and self.image_model_api_key.strip())

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client
+from conftest import make_blob_store, make_client
 from sqlalchemy import text as sa_text
 from sqlalchemy.exc import DBAPIError
 
@@ -30,8 +30,8 @@ COMPONENT_HTML = """
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    return make_client(create_app(tmp_path / "api.sqlite3"))
+def client(tmp_path: Path, design_storage) -> TestClient:
+    return make_client(create_app(tmp_path / "engine-cache", storage=design_storage))
 
 
 def create_account(client: TestClient, account_id: str) -> dict:
@@ -54,7 +54,7 @@ def persist_artifact(
     repository = HybridRepository()
     return persist_compiled_custom_component_artifact(
         repository,
-        tmp_path / "custom-component-store",
+        make_blob_store(client.app),
         account_id=account_id,
         slug=slug,
         source=b"export default function Component() {} //" + suffix,
@@ -140,16 +140,21 @@ def test_registry_is_content_addressed_immutable_and_account_scoped(
     assert second["artifact_id"] != first["artifact_id"]
     assert first["artifact_id"].startswith("ccart_")
     assert len(first["artifact_id"]) == len("ccart_") + 64
+    # D4: the blob descriptor's opaque_ref is now the PLATFORM STORAGE KEY, and the bytes live
+    # in clue_storage under `{workspace}/design/{sha256}` with an artifact row recorded first.
+    blobs = make_blob_store(client.app)
     for name in ("source", "bundle"):
         blob = first[name]
-        stored = tmp_path / "custom-component-store" / blob["opaque_ref"]
-        assert stored.is_file()
-        assert stored.stat().st_size == blob["byte_length"]
+        assert blob["opaque_ref"] == (
+            f"{blobs.workspace_id}/design/{blob['value']}"
+        )
+        assert blobs.exists(blob["value"])
+        assert len(blobs.read(blob["value"])) == blob["byte_length"]
 
     repository = HybridRepository()
     resolved, bundle = resolve_custom_component_artifact_blob(
         repository,
-        tmp_path / "custom-component-store",
+        blobs,
         account_id="acc_alpha",
         artifact_id=first["artifact_id"],
         member="bundle",
@@ -159,7 +164,7 @@ def test_registry_is_content_addressed_immutable_and_account_scoped(
     with pytest.raises(NotFoundError):
         resolve_custom_component_artifact_blob(
             repository,
-            tmp_path / "custom-component-store",
+            blobs,
             account_id="acc_beta",
             artifact_id=first["artifact_id"],
             member="bundle",

@@ -75,6 +75,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from clue_db import create_engine
+from clue_storage import StorageBackend
 from clue_design import accounts as design_accounts
 from clue_design import assets as design_assets
 from clue_design import brand as design_brand
@@ -86,6 +87,7 @@ from clue_design import personalization as design_personalization
 from clue_design import publishes as design_publishes
 from clue_design import runs as design_runs
 from clue_design import snapshots as design_snapshots
+from clue_design import storage as design_storage
 from clue_design.errors import (
     DesignArtifactConflictError,
     DesignNotFoundError,
@@ -281,6 +283,112 @@ def list_orphaned_runs_across_workspaces() -> List[JsonObject]:
     """
     bridge = DesignStoreBridge(default_workspace_id(), ensure_workspace=False)
     return bridge._run(design_runs.list_running_runs_across_workspaces)
+
+
+class DesignBlobStore:
+    """The design API's BYTE store — platform ``clue_storage`` behind the same O5 bridge (D4).
+
+    The sibling of :class:`HybridRepository`: that one is the row store, this one is the blob
+    store, and both reach Postgres through :class:`DesignStoreBridge` (one call, one loop, one
+    transaction). Every method is exactly ONE bridged coroutine, because a design byte write is
+    ONE logical operation — the ``artifact`` row and the blob put must not be composed from two
+    bridge calls (the O5 atomicity rule; splitting them would let a committed row outlive a
+    failed put, or a blob land with no row).
+
+    Handed to the call sites that used to take a ``store_root: Path`` into the API-local
+    content-addressed tree. It carries its workspace because the storage key IS workspace-scoped
+    (``{workspace_id}/design/{sha256}`` — ruling R-D4-2), so byte custody is per-tenant by
+    construction rather than by caller discipline. Dies with the bridge at D5, when the design
+    API becomes async and calls ``clue_design.storage`` directly.
+    """
+
+    def __init__(
+        self,
+        storage: StorageBackend,
+        workspace_id: str | None = None,
+        *,
+        ensure_workspace: bool = True,
+    ) -> None:
+        self.storage = storage
+        self.workspace_id = workspace_id or default_workspace_id()
+        self._bridge = DesignStoreBridge(
+            self.workspace_id, ensure_workspace=ensure_workspace
+        )
+
+    def register(self, data: bytes, *, media_type: str, source_key: str) -> str:
+        """Store one blob (row before blob, idempotent) and return its storage key."""
+        return self._bridge._run(
+            lambda conn: design_storage.register_design_bytes(
+                conn,
+                self.storage,
+                workspace_id=self.workspace_id,
+                data=data,
+                media_type=media_type,
+                source_key=source_key,
+            )
+        )
+
+    def read(self, sha256: str) -> bytes:
+        """Read one blob by digest. A missing/erased/foreign-workspace digest raises the
+        bridge-translated ``NotFoundError`` (the DAL's fail-closed refusal)."""
+        return self._bridge._run(
+            lambda conn: design_storage.read_design_bytes(
+                conn,
+                self.storage,
+                workspace_id=self.workspace_id,
+                sha256=sha256,
+            )
+        )
+
+    def read_blob(self, sha256: str) -> Tuple[str, bytes]:
+        """``(media_type, data)`` in ONE bridged transaction — the ``artifact`` row's media type
+        is what replaced the publish store's ``{digest}.meta.json`` sidecar (ruling R-D4-3)."""
+        return self._bridge._run(
+            lambda conn: design_storage.read_design_blob(
+                conn,
+                self.storage,
+                workspace_id=self.workspace_id,
+                sha256=sha256,
+            )
+        )
+
+    def exists(self, sha256: str) -> bool:
+        """Whether this workspace holds a live artifact row for ``sha256`` (no blob I/O)."""
+        return self._bridge._run(
+            lambda conn: design_storage.design_bytes_exist(
+                conn, workspace_id=self.workspace_id, sha256=sha256
+            )
+        )
+
+    def delete(self, sha256: str) -> bool:
+        """Destroy this workspace's blob for ``sha256`` and tombstone its row (D4 Round B).
+
+        The asset hard-delete GC's byte-level half. It has already established that no asset
+        record and no document scene names the digest; this seam owns the row + blob."""
+        return self._bridge._run(
+            lambda conn: design_storage.delete_design_bytes(
+                conn,
+                self.storage,
+                workspace_id=self.workspace_id,
+                sha256=sha256,
+            )
+        )
+
+
+def read_public_design_blob(storage: StorageBackend, sha256: str) -> Tuple[str, bytes]:
+    """``(media_type, bytes)`` for ``GET /asset-store/{digest}`` — **workspace-unscoped** (R-D4-7).
+
+    Not a :class:`DesignBlobStore` method precisely because it names no tenant: the route is
+    O4-exempt (a published page and an origin-``null`` preview iframe cannot send the header),
+    and before D4 it served one global content-addressed tree. Keeping it a free function makes
+    that asymmetry impossible to miss at the call site. ``ensure_workspace=False`` — an
+    anonymous GET must never create a workspace row. See
+    ``clue_design.storage.read_public_design_blob`` for the full reasoning and its limits.
+    """
+    bridge = DesignStoreBridge(default_workspace_id(), ensure_workspace=False)
+    return bridge._run(
+        lambda conn: design_storage.read_public_design_blob(conn, storage, sha256=sha256)
+    )
 
 
 class HybridRepository:

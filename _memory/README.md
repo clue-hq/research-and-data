@@ -27,6 +27,16 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-09-part2-d4-close.md` — **Part II D4 CLOSED:** every design asset byte durably on
+  platform `clue_storage` (`{ws}/design/{sha}` keys, row-before-blob); Rust engine keeps a
+  transient per-ws materialization cache (write-back + read-through); migration `13cd5078d697`
+  (CHECK widened + `content_sha256` index); suite 501/9/0; two founder-ratification flags.
+- `2026-08-09-part2-d4a-design-storage-seam.md` — D4 Round A detail: the `clue_design.storage`
+  seam + `DesignBlobStore`; custom-component blobs + publish assets moved; sidecar dead; the
+  CHECK-collision and shared-row media-type findings.
+- `2026-08-09-part2-d4b-main-asset-store.md` — D4 Round B detail: engine cache demoted,
+  `asset_custody.py` write-back/read-through, staged ingestion on storage keys, public route on
+  the artifact table; the `tests/api` DB-pollution defect bisection; traps for later agents.
 - `2026-08-08-part2-d3-concept-joins.md` — **Part II D3 done:** brand-kit brand_id +
   design_account account_entity_id stamped via resolve-or-create (clue_design/joins.py,
   interim scaffolding; Part III owns governed creation + NOT NULL + backfill); suite 490/0.

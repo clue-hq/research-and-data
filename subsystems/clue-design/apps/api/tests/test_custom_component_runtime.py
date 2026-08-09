@@ -71,8 +71,8 @@ class RuntimeFrameParser(HTMLParser):
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    return make_client(create_app(tmp_path / "api.sqlite3"))
+def client(tmp_path: Path, design_storage) -> TestClient:
+    return make_client(create_app(tmp_path / "engine-cache", storage=design_storage))
 
 
 def create_account(client: TestClient, account_id: str = "acc_alpha") -> None:

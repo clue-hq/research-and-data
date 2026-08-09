@@ -18,12 +18,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from functools import partial
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional, Protocol
 
-from lumen_api.design_store import HybridRepository
+from clue_storage import StorageBackend, storage_from_settings
+from lumen_api.design_store import DesignBlobStore, HybridRepository
 from py_lumen_config import settings
 
 from .jobs import IngestionJobStore, StageReporter, run_ingestion_job
@@ -69,24 +69,45 @@ def _core_client() -> Any:
 
 
 class _RecordingCore:
-    """Proxy over CoreClient that captures ingest_asset records.
+    """Proxy over CoreClient that captures ingest_asset records — and, since D4, the ONE
+    write-back chokepoint for the whole ingestion lane.
 
-    The capture layer writes bytes into the asset STORE via core.ingest_asset
-    but the /assets/{id} routes serve from the DB asset RECORDS (the upload
+    The capture layer writes bytes into the engine's materialization cache via
+    core.ingest_asset but the /assets/{id} routes serve from the DB asset RECORDS (the upload
     route persists both). Wrapping the client here lets each pipeline persist
     the records afterward without threading a sink through the capture layer.
-    ingest_asset may run in worker threads (list.append is GIL-atomic);
-    persistence happens on the pipeline thread via `persist_records`.
+
+    That same wrapper is why the three capture modules (uploads / pdf / evidence_builder) need
+    no D4 changes at all: every one of their ``core.ingest_asset`` calls lands here, so ONE
+    ``register_engine_write`` gives durable custody to every byte the capture layer produces and
+    re-points each record's ``media.location`` (R-D4-4) before the record is ever persisted or
+    embedded in a kit. Threading a blob store through the capture layer instead would have put
+    the same call in four places and made "did every producer remember?" an audit question.
+
+    ingest_asset may run in worker threads (list.append is GIL-atomic; the write-back is one
+    self-contained bridged transaction per call); persistence happens on the pipeline thread via
+    `persist_records`.
     """
 
-    def __init__(self, inner: Any) -> None:
+    def __init__(self, inner: Any, blobs: DesignBlobStore, cache_dir: str) -> None:
         self._inner = inner
+        self._blobs = blobs
+        self._cache_dir = cache_dir
         self.records: list[JsonObject] = []
 
     def ingest_asset(self, *args: Any, **kwargs: Any) -> Any:
+        from lumen_api.asset_custody import register_engine_write
+        from clue_design.storage import SOURCE_KEY_ASSET
+
         response = self._inner.ingest_asset(*args, **kwargs)
         record = ((response or {}).get("asset") or {}).get("record") or {}
         if record.get("id"):
+            register_engine_write(
+                self._blobs,
+                self._cache_dir,
+                record=record,
+                source_key=SOURCE_KEY_ASSET,
+            )
             self.records.append(record)
         return response
 
@@ -101,6 +122,37 @@ class _RecordingCore:
                 continue
             seen.add(asset_id)
             repo.create_asset_record(record)
+
+
+def _read_staged(blobs: DesignBlobStore, digest: Any) -> "bytes | None":
+    """One staged upload's bytes (R-D4-5), or None — which the caller turns into LUMI0605."""
+    from lumen_api.asset_custody import read_asset_bytes
+
+    if not isinstance(digest, str) or not digest:
+        return None
+    return read_asset_bytes(blobs, digest)
+
+
+def _discard_staged(
+    repo: HybridRepository, blobs: DesignBlobStore, digests: "list[Any]"
+) -> None:
+    """Clean up the job's staged uploads — but ONLY the ones nothing kept (R-D4-5).
+
+    Staging and promotion are content-addressed, so a file that made it into the library is
+    living under the SAME key the staging register wrote: deleting the staged blob would delete
+    the asset's bytes. So the rule is the asset GC's rule, asked per digest — if any asset
+    record in this workspace still names it, the bytes were promoted and stay; otherwise the
+    upload was rejected, deduped away, or the job failed, and the staged copy is garbage.
+
+    Never raises: cleanup runs in a ``finally`` and must not mask the job's real outcome.
+    """
+    for digest in dict.fromkeys(d for d in digests if isinstance(d, str) and d):
+        try:
+            if repo.count_assets_with_digest(digest):
+                continue
+            blobs.delete(digest)
+        except Exception:  # noqa: BLE001 - cleanup is best-effort by construction
+            logger.warning("staged upload cleanup failed for %s", digest, exc_info=True)
 
 
 def _capture_diagnostics(outcome: Any) -> list[JsonObject]:
@@ -231,7 +283,8 @@ def _maybe_describe(
     evidence: Any,
     *,
     repo: HybridRepository,
-    asset_store_root: str,
+    blobs: DesignBlobStore,
+    cache_dir: str,
     reporter: Callable[[str, float], None],
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
@@ -254,14 +307,14 @@ def _maybe_describe(
     workspace_id = getattr(repo, "workspace_id", None)
     apply = apply_descriptions or partial(_default_apply_descriptions, workspace_id=workspace_id)
     describer = describer if describer is not None else resolve_describer()
-    resolve_bytes = _make_resolve_bytes(repo, asset_store_root)
+    resolve_bytes = _make_resolve_bytes(repo, blobs)
     try:
         return apply(
             evidence,
             describer=describer,
             resolve_bytes=resolve_bytes,
             reporter=reporter,
-            rasterize_svg=_make_rasterize_svg(repo, asset_store_root),
+            rasterize_svg=_make_rasterize_svg(repo, blobs, cache_dir),
             diagnostics=diagnostics,
         )
     except ImportError:
@@ -281,7 +334,7 @@ def _maybe_describe(
 
 
 def _make_rasterize_svg(
-    repo: HybridRepository, asset_store_root: str
+    repo: HybridRepository, blobs: "DesignBlobStore", cache_dir: str
 ) -> Callable[[str], "bytes | None"]:
     """Rasterize a stored SVG asset through the ENGINE renderer (imagery
     slice 1): wrap the asset in a minimal one-image scene and export a PNG —
@@ -294,8 +347,15 @@ def _make_rasterize_svg(
             from lumen_api.core import CoreClient
 
             core = CoreClient()
+            from lumen_api.asset_custody import ensure_materialized, record_digests
+
             record = repo.require_asset_record(asset_id)
             asset = record.get("asset") or record
+            # D4 read-through: the engine rasterizes from ITS cache, so the SVG's bytes have to
+            # be materialized out of durable storage first.
+            ensure_materialized(
+                blobs, cache_dir, (digest for digest, _mime in record_digests(asset))
+            )
             # `new_scene` yields an empty scene with ZERO pages, so an
             # export against it produced no artifact and every SVG declined
             # (LUMI0804). Give the raster its own square page and insert the
@@ -322,7 +382,7 @@ def _make_rasterize_svg(
                 "png",
                 page_ids=[page_id],
                 raise_on_error=False,
-                asset_store_root=asset_store_root,
+                asset_store_root=cache_dir,
             )
             for artifact in (export.get("export") or {}).get("artifacts") or []:
                 # The engine emits raw pixel bytes under `bytes` (a list of
@@ -341,12 +401,12 @@ def _make_rasterize_svg(
 
 # Public seam names for callers outside the pipeline (the /describe-assets
 # backfill route builds the same resolve/rasterize pair the ingest pass uses).
-def make_resolve_bytes(repo: HybridRepository, asset_store_root: str):
-    return _make_resolve_bytes(repo, asset_store_root)
+def make_resolve_bytes(repo: HybridRepository, blobs: "DesignBlobStore"):
+    return _make_resolve_bytes(repo, blobs)
 
 
-def make_rasterize_svg(repo: HybridRepository, asset_store_root: str):
-    return _make_rasterize_svg(repo, asset_store_root)
+def make_rasterize_svg(repo: HybridRepository, blobs: "DesignBlobStore", cache_dir: str):
+    return _make_rasterize_svg(repo, blobs, cache_dir)
 
 
 def _raster_page(page_id: str) -> dict:
@@ -410,13 +470,15 @@ def _raster_image_node(asset_id: str) -> dict:
 
 
 def _make_resolve_bytes(
-    repo: HybridRepository, asset_store_root: str
+    repo: HybridRepository, blobs: "DesignBlobStore"
 ) -> Callable[[str], "tuple[bytes, str] | None"]:
     """Build the ``resolve_bytes`` callable (§1): asset_id → (bytes, mime) via
-    ``HybridRepository.require_asset_record`` → ``media.location.opaque_ref`` (provider
-    ``local-store``) → store path. Mirrors main.py ``get_asset_bytes``. Returns
+    ``HybridRepository.require_asset_record`` → the record's digest → durable platform storage.
+    Mirrors main.py ``get_asset_bytes``, including D4's resolve-BY-DIGEST rule (so the three
+    historical ``opaque_ref`` shapes all resolve and no stored ref is read as a path). Returns
     ``None`` for ANY miss — never raises."""
-    root = Path(asset_store_root).resolve()
+    from lumen_api.asset_custody import read_asset_bytes
+    from clue_design.storage import location_digest
 
     def resolve_bytes(asset_id: str) -> "tuple[bytes, str] | None":
         try:
@@ -425,18 +487,11 @@ def _make_resolve_bytes(
             return None
         record = stored.get("asset") or {}
         media = record.get("media") or {}
-        location = media.get("location") or {}
-        opaque_ref = location.get("opaque_ref")
-        if location.get("provider") != "local-store" or not opaque_ref:
-            return None
-        candidate = (root / opaque_ref).resolve()
-        if root != candidate and root not in candidate.parents:
-            return None
-        if not candidate.is_file():
-            return None
         try:
-            data = candidate.read_bytes()
-        except OSError:
+            data = read_asset_bytes(blobs, location_digest(media.get("location")))
+        except Exception:
+            return None
+        if data is None:
             return None
         mime = media.get("mime_type") or "application/octet-stream"
         return (data, mime)
@@ -445,8 +500,7 @@ def _make_resolve_bytes(
 
 
 def run_website_ingestion(
-    database_path: str | Path,
-    asset_store_root: str,
+    engine_cache_dir: str,
     job_id: str,
     *,
     capture: _CaptureCallable = _default_capture,
@@ -454,29 +508,35 @@ def run_website_ingestion(
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
     workspace_id: str | None = None,
+    storage: StorageBackend | None = None,
 ) -> None:
     """Run a website ingestion job to a terminal state. Never raises.
 
     Safe for ``BackgroundTasks``: builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
     SQLite connection to open or close) and hands the work to ``run_ingestion_job`` (which
-    captures any exception onto the job row). ``database_path`` is VESTIGIAL since D2.5B —
-    accepted so the dispatching call sites are untouched by the deletion; D5 removes it.
+    captures any exception onto the job row). ``engine_cache_dir`` (D4) is the DISPATCHING
+    REQUEST's per-workspace engine materialization cache — a transient mirror, never a store;
+    every byte the capture layer writes there is given durable custody through the blob store
+    below (see ``_RecordingCore``).
 
     ``workspace_id`` (D2.3) is threaded from the dispatching request so the job row, the brand
     kit it publishes, and the assets it registers all land in the SAME workspace — the job's
     composite result FK is enforced now, so a mismatch fails loudly instead of orphaning.
-    ``None`` falls back to the configured dev workspace.
+    ``None`` falls back to the configured dev workspace. ``storage`` (D4) is likewise the
+    dispatching app's byte backend; ``None`` falls back to the configured one.
     """
     store = IngestionJobStore(workspace_id=workspace_id)
     repo = HybridRepository(workspace_id=workspace_id)
-    core = _RecordingCore(_core_client())
+    blobs = DesignBlobStore(storage or storage_from_settings(), workspace_id)
+    core = _RecordingCore(_core_client(), blobs, engine_cache_dir)
 
     def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
         return _ingest(
             store=store,
             repo=repo,
             core=core,
-            asset_store_root=asset_store_root,
+            blobs=blobs,
+            cache_dir=engine_cache_dir,
             job_id=job_id,
             reporter=reporter,
             capture=capture,
@@ -493,7 +553,8 @@ def _ingest(
     store: IngestionJobStore,
     repo: HybridRepository,
     core: Any,
-    asset_store_root: str,
+    blobs: DesignBlobStore,
+    cache_dir: str,
     job_id: str,
     reporter: StageReporter,
     capture: _CaptureCallable,
@@ -510,7 +571,7 @@ def _ingest(
 
     outcome = asyncio.run(capture(url, reporter=reporter, force_render=force_render))
     evidence = build_evidence(
-        outcome, core=core, store_root=asset_store_root, reporter=reporter
+        outcome, core=core, store_root=cache_dir, reporter=reporter
     )
 
     # Persist DB asset records for everything the capture layer ingested so
@@ -526,7 +587,8 @@ def _ingest(
     evidence = _maybe_describe(
         evidence,
         repo=repo,
-        asset_store_root=asset_store_root,
+        blobs=blobs,
+        cache_dir=cache_dir,
         reporter=reporter,
         describer=describer,
         apply_descriptions=apply_descriptions,
@@ -547,7 +609,7 @@ def _ingest(
         created_at=created_at or job["created_at"],
         version=1,
         font_metrics=_font_metrics_map(
-            evidence, _make_resolve_bytes(repo, asset_store_root)
+            evidence, _make_resolve_bytes(repo, blobs)
         ),
     )
     kit = result.brand_kit
@@ -645,35 +707,42 @@ def _default_extract_pdf(
 
 
 def run_pdf_ingestion(
-    database_path: str | Path,
-    asset_store_root: str,
+    engine_cache_dir: str,
     job_id: str,
     *,
     extract: _ExtractPdfCallable = _default_extract_pdf,
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
     workspace_id: str | None = None,
+    storage: StorageBackend | None = None,
 ) -> None:
     """Run a PDF ingestion job to a terminal state. Never raises.
 
     Safe for ``BackgroundTasks``: builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
     SQLite connection to open or close) and hands the work to ``run_ingestion_job`` (which
-    captures any exception onto the job row). ``database_path`` is VESTIGIAL since D2.5B —
-    accepted so the dispatching call sites are untouched by the deletion; D5 removes it. The uploaded PDF bytes are read
-    from ``request["tmp_path"]`` and that tmp file is always deleted before the
-    job reaches a terminal state. ``workspace_id`` (D2.3) is threaded from the dispatching
-    request; ``None`` falls back to the configured dev workspace.
+    captures any exception onto the job row). ``engine_cache_dir`` (D4) is the DISPATCHING
+    REQUEST's per-workspace engine materialization cache — a transient mirror, never a store;
+    every byte the capture layer writes there is given durable custody through the blob store
+    below (see ``_RecordingCore``). The uploaded PDF bytes are read from platform
+    storage by the digest the route staged at ``request["staged_digest"]`` (R-D4-5), and the
+    staged blob is always cleaned up before the job reaches a terminal state — unless it was
+    promoted into a live asset, which is byte-identical and therefore the SAME key. ``workspace_id`` (D2.3) is threaded from the dispatching
+    request; ``None`` falls back to the configured dev workspace. ``storage`` (D4) is likewise
+    the dispatching app's byte backend — threaded rather than re-derived so a process holding an
+    injected backend cannot stage an upload in one place and read it from another.
     """
     store = IngestionJobStore(workspace_id=workspace_id)
     repo = HybridRepository(workspace_id=workspace_id)
-    core = _RecordingCore(_core_client())
+    blobs = DesignBlobStore(storage or storage_from_settings(), workspace_id)
+    core = _RecordingCore(_core_client(), blobs, engine_cache_dir)
 
     def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
         return _ingest_pdf(
             store=store,
             repo=repo,
             core=core,
-            asset_store_root=asset_store_root,
+            blobs=blobs,
+            cache_dir=engine_cache_dir,
             job_id=job_id,
             reporter=reporter,
             extract=extract,
@@ -689,7 +758,8 @@ def _ingest_pdf(
     store: IngestionJobStore,
     repo: HybridRepository,
     core: Any,
-    asset_store_root: str,
+    blobs: DesignBlobStore,
+    cache_dir: str,
     job_id: str,
     reporter: StageReporter,
     extract: _ExtractPdfCallable,
@@ -701,28 +771,24 @@ def _ingest_pdf(
     filename = request.get("filename") or "brand-guidelines.pdf"
     requested_kit_id = request.get("brand_kit_id")
     requested_name = request.get("name")
-    tmp_path = request.get("tmp_path")
+    staged_digest = request.get("staged_digest")
 
     try:
-        if not tmp_path or not os.path.exists(tmp_path):
+        pdf_bytes = _read_staged(blobs, staged_digest)
+        if pdf_bytes is None:
             raise RuntimeError(
-                f"LUMI0605: uploaded PDF tmp file was not found (tmp_path={tmp_path!r})"
+                f"LUMI0605: staged PDF bytes were not found (digest={staged_digest!r})"
             )
-        pdf_bytes = Path(tmp_path).read_bytes()
 
         extraction = extract(
             pdf_bytes,
             filename,
             core=core,
-            store_root=asset_store_root,
+            store_root=cache_dir,
             reporter=reporter,
         )
     finally:
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+        _discard_staged(repo, blobs, [staged_digest])
 
     evidence = getattr(extraction, "evidence", extraction)
 
@@ -739,7 +805,8 @@ def _ingest_pdf(
     evidence = _maybe_describe(
         evidence,
         repo=repo,
-        asset_store_root=asset_store_root,
+        blobs=blobs,
+        cache_dir=cache_dir,
         reporter=reporter,
         describer=describer,
         apply_descriptions=apply_descriptions,
@@ -760,7 +827,7 @@ def _ingest_pdf(
         created_at=created_at or job["created_at"],
         version=1,
         font_metrics=_font_metrics_map(
-            evidence, _make_resolve_bytes(repo, asset_store_root)
+            evidence, _make_resolve_bytes(repo, blobs)
         ),
     )
     kit = result.brand_kit
@@ -870,35 +937,41 @@ class _UploadFileInputShim:
 
 
 def run_asset_ingestion(
-    database_path: str | Path,
-    asset_store_root: str,
+    engine_cache_dir: str,
     job_id: str,
     *,
     analyze: _AnalyzeUploadsCallable = _default_analyze_uploads,
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
     workspace_id: str | None = None,
+    storage: StorageBackend | None = None,
 ) -> None:
     """Run an asset-upload ingestion job to a terminal state. Never raises.
 
     Safe for ``BackgroundTasks``: builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
     SQLite connection to open or close) and hands the work to ``run_ingestion_job`` (which
-    captures any exception onto the job row). ``database_path`` is VESTIGIAL since D2.5B —
-    accepted so the dispatching call sites are untouched by the deletion; D5 removes it. The uploaded files live in tmp
-    files listed in ``request["files"][*]["tmp_path"]`` and are always deleted
-    before the job reaches a terminal state. ``workspace_id`` (D2.3) is threaded from the
+    captures any exception onto the job row). ``engine_cache_dir`` (D4) is the DISPATCHING
+    REQUEST's per-workspace engine materialization cache — a transient mirror, never a store;
+    every byte the capture layer writes there is given durable custody through the blob store
+    below (see ``_RecordingCore``). The uploaded files are read from platform
+    storage by the digests the route staged at ``request["files"][*]["staged_digest"]``
+    (R-D4-5), and each staged blob is cleaned up before the job reaches a terminal state —
+    unless it was promoted into a live asset, which is byte-identical and therefore the SAME
+    key. ``workspace_id`` (D2.3) is threaded from the
     dispatching request; ``None`` falls back to the configured dev workspace.
     """
     store = IngestionJobStore(workspace_id=workspace_id)
     repo = HybridRepository(workspace_id=workspace_id)
-    core = _RecordingCore(_core_client())
+    blobs = DesignBlobStore(storage or storage_from_settings(), workspace_id)
+    core = _RecordingCore(_core_client(), blobs, engine_cache_dir)
 
     def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
         return _ingest_assets(
             store=store,
             repo=repo,
             core=core,
-            asset_store_root=asset_store_root,
+            blobs=blobs,
+            cache_dir=engine_cache_dir,
             job_id=job_id,
             reporter=reporter,
             analyze=analyze,
@@ -914,7 +987,8 @@ def _ingest_assets(
     store: IngestionJobStore,
     repo: HybridRepository,
     core: Any,
-    asset_store_root: str,
+    blobs: DesignBlobStore,
+    cache_dir: str,
     job_id: str,
     reporter: StageReporter,
     analyze: _AnalyzeUploadsCallable,
@@ -926,38 +1000,34 @@ def _ingest_assets(
     requested_kit_id = request.get("brand_kit_id")
     requested_name = request.get("name")
     file_specs = list(request.get("files") or [])
-    tmp_paths = [spec.get("tmp_path") for spec in file_specs]
+    staged_digests = [spec.get("staged_digest") for spec in file_specs]
 
     try:
         inputs: list[Any] = []
         for spec in file_specs:
-            tmp_path = spec.get("tmp_path")
-            if not tmp_path or not os.path.exists(tmp_path):
+            staged_digest = spec.get("staged_digest")
+            data = _read_staged(blobs, staged_digest)
+            if data is None:
                 raise RuntimeError(
-                    "LUMI0605: uploaded asset tmp file was not found "
-                    f"(tmp_path={tmp_path!r})"
+                    "LUMI0605: staged asset bytes were not found "
+                    f"(digest={staged_digest!r})"
                 )
             inputs.append(
                 _upload_file_input(
-                    filename=spec.get("filename") or Path(tmp_path).name,
+                    filename=spec.get("filename") or str(staged_digest),
                     content_type=spec.get("content_type"),
-                    data=Path(tmp_path).read_bytes(),
+                    data=data,
                 )
             )
 
         analysis = analyze(
             inputs,
             core=core,
-            store_root=asset_store_root,
+            store_root=cache_dir,
             reporter=reporter,
         )
     finally:
-        for tmp_path in tmp_paths:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
+        _discard_staged(repo, blobs, staged_digests)
 
     # ``analyze_uploads`` returns (evidence, diagnostics); tolerate a bare
     # evidence return from simpler stubs too.
@@ -979,7 +1049,8 @@ def _ingest_assets(
     evidence = _maybe_describe(
         evidence,
         repo=repo,
-        asset_store_root=asset_store_root,
+        blobs=blobs,
+        cache_dir=cache_dir,
         reporter=reporter,
         describer=describer,
         apply_descriptions=apply_descriptions,
@@ -1000,7 +1071,7 @@ def _ingest_assets(
         created_at=created_at or job["created_at"],
         version=1,
         font_metrics=_font_metrics_map(
-            evidence, _make_resolve_bytes(repo, asset_store_root)
+            evidence, _make_resolve_bytes(repo, blobs)
         ),
     )
     kit = result.brand_kit

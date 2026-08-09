@@ -299,9 +299,48 @@ def manifest_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def materialize_blob(tmp_path: Path, digest: str) -> None:
-    blob = tmp_path / "store" / "sha256" / digest[:2] / digest
-    blob.parent.mkdir(parents=True, exist_ok=True)
-    blob.write_bytes(b"font-bytes")
+    """Give a manifest face DURABLE bytes in the library workspace (D4).
+
+    The library's faces live in platform storage like every other design byte; `library_font_spec`
+    materializes them into the library workspace's engine cache on demand. Seeding the CACHE
+    directly would not prove anything about custody — but note the digest here is fixture hex
+    (`"a"*64`), not the content address of `b"font-bytes"`, so the row is written under the
+    fixture digest deliberately: `library_font_spec` resolves faces by the digest the manifest
+    names, never by re-hashing."""
+    from clue_design import storage as design_storage
+    from clue_storage import storage_from_settings
+
+    from lumen_api.design_store import DesignStoreBridge, default_workspace_id
+
+    workspace_id = default_workspace_id()
+    backend = storage_from_settings()
+    bridge = DesignStoreBridge(workspace_id)
+    key = design_storage.design_storage_key(workspace_id, digest)
+
+    async def _write(conn):
+        from clue_storage.artifacts import record_artifact
+
+        await record_artifact(
+            conn,
+            storage_key=key,
+            workspace_id=workspace_id,
+            content_sha256=digest,
+            media_type="font/ttf",
+            size_bytes=len(b"font-bytes"),
+            source_key=design_storage.SOURCE_KEY_FONT,
+        )
+        await backend.put(key, b"font-bytes", media_type="font/ttf")
+
+    bridge._run(_write)
+
+
+def _destroy_blob(digest: str) -> None:
+    """Erase a library face's durable custody (D4) — the "unprovisioned environment" state."""
+    from clue_storage import storage_from_settings
+
+    from lumen_api.design_store import DesignBlobStore, default_workspace_id
+
+    DesignBlobStore(storage_from_settings(), default_workspace_id()).delete(digest)
 
 
 def write_manifest_fixture(path: Path, families: list) -> None:
@@ -339,7 +378,10 @@ def test_library_font_spec_flattens_materialized_faces(
     materialize_blob(tmp_path, "b" * 64)
     spec = runtime_library.library_font_spec()
     assert spec is not None
-    assert spec["store_root"] == str(tmp_path / "store")
+    # D4: the spec points the engine at the LIBRARY workspace's materialization cache.
+    assert spec["store_root"] == str(
+        tmp_path / "store" / runtime_library.library_workspace_id()
+    )
     assert spec["faces"] == [
         {"digest": "a" * 64, "family": "DM Sans", "weight": 400},
         {"digest": "b" * 64, "family": "DM Sans", "weight": 700},
@@ -399,9 +441,19 @@ def test_library_font_spec_skips_unmaterialized_faces(
     assert spec is not None
     assert spec["faces"] == [{"digest": "b" * 64, "family": "DM Sans", "weight": 700}]
 
-    # Nothing materialized → no spec at all (library disabled).
+    # Nothing durable → no spec at all (library disabled). D4: destroy the DURABLE bytes and
+    # the cache mirror the first call materialized — a cache copy alone must not keep a face
+    # "provisioned" once its custody is gone.
     runtime_library._spec_cache.update(key=None, spec=None)
-    (tmp_path / "store" / "sha256" / "bb" / ("b" * 64)).unlink()
+    _destroy_blob("b" * 64)
+    (
+        tmp_path
+        / "store"
+        / runtime_library.library_workspace_id()
+        / "sha256"
+        / "bb"
+        / ("b" * 64)
+    ).unlink()
     assert runtime_library.library_font_spec() is None
 
 
@@ -485,7 +537,7 @@ def test_font_library_endpoint_serves_manifest(
         manifest_file,
         [{"family": "DM Sans", "slug": "dm-sans", "faces": [], "tone": ["geometric"]}],
     )
-    client = make_client(create_app(tmp_path / "api.sqlite3"))
+    client = make_client(create_app(tmp_path / "engine-cache"))
     payload = client.get("/font-library").json()
     assert payload["families"][0]["family"] == "DM Sans"
 
@@ -493,7 +545,7 @@ def test_font_library_endpoint_serves_manifest(
 def test_font_library_endpoint_empty_when_unprovisioned(
     tmp_path: Path, manifest_file: Path
 ) -> None:
-    client = make_client(create_app(tmp_path / "api.sqlite3"))
+    client = make_client(create_app(tmp_path / "engine-cache"))
     assert client.get("/font-library").json() == {"version": 1, "families": []}
 
 
@@ -535,6 +587,18 @@ def test_checked_in_manifest_matches_curation() -> None:
 # --- kit font spec: per-face weight/style ------------------------------------
 
 
+class _NullBlobStore:
+    """A blob store with nothing in it — D4 materialization is fail-SOFT, so a spec is still
+    produced for faces whose bytes are durably absent (the helper then reports LUMS0101)."""
+
+    workspace_id = "ws_fake"
+
+    def read(self, sha256: str) -> bytes:
+        from lumen_api.database import NotFoundError
+
+        raise NotFoundError("design_blob", sha256)
+
+
 class _FakeAssetRepo:
     """Minimal store stand-in: brand_kit_font_spec only calls
     require_asset_record, which we resolve from a preloaded digest map."""
@@ -564,7 +628,7 @@ def test_brand_kit_font_spec_carries_per_face_weight_and_style() -> None:
             {"asset_id": "a2", "weight": 300, "style": "normal"},
         ]
     )
-    spec = brand_kit_font_spec(repo, kit, "/store")
+    spec = brand_kit_font_spec(repo, kit, _NullBlobStore(), "/store")
     assert spec == {
         "store_root": "/store",
         "faces": [
@@ -592,7 +656,7 @@ def test_brand_kit_font_spec_omits_invalid_weight_and_style() -> None:
             {"asset_id": "a3"},  # no weight/style at all
         ]
     )
-    spec = brand_kit_font_spec(repo, kit, "/store")
+    spec = brand_kit_font_spec(repo, kit, _NullBlobStore(), "/store")
     assert spec is not None
     assert spec["faces"] == [
         {"digest": "a" * 64, "family": "Aeonik"},

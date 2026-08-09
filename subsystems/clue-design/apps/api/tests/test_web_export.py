@@ -17,7 +17,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client
+from clue_design.storage import SOURCE_KEY_ASSET
+
+from conftest import make_blob_store, make_client
 from PIL import Image
 
 from lumen_api.design_store import HybridRepository
@@ -52,8 +54,8 @@ SAMPLE_HTML = """
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
+def client(tmp_path: Path, design_storage) -> TestClient:
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
     return make_client(app)
 
 
@@ -249,11 +251,10 @@ def test_export_copies_and_rewrites_image_assets(client: TestClient) -> None:
 
 
 def seed_font_asset(client: TestClient, asset_id: str, data: bytes) -> str:
-    digest = hashlib.sha256(data).hexdigest()
-    root = Path(client.app.state.asset_store_root)
-    blob = root / "sha256" / digest[:2] / digest
-    blob.parent.mkdir(parents=True, exist_ok=True)
-    blob.write_bytes(data)
+    # D4: the export reads face bytes from DURABLE storage, so seed them through the seam.
+    digest = make_blob_store(client.app).register(
+        data, media_type="font/woff2", source_key=SOURCE_KEY_ASSET
+    ) and hashlib.sha256(data).hexdigest()
     record = {
         "id": asset_id,
         "label": asset_id,

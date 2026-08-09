@@ -1,7 +1,7 @@
 """Account-bound custom-component registry gateway for website Deep Agent runs.
 
 The agent runtime receives this object as a capability, never a database path or
-store root. Every method builds a short-lived store and applies the account
+a byte-store root. Every method builds a short-lived store and applies the account
 predicate internally, so a model-controlled slug/artifact id cannot select
 another tenant. Source writes and compilation are deliberately separate,
 and artifact resolution accepts only compiler-v2 artifacts backed by a durable
@@ -25,7 +25,7 @@ from .database import (
     NotFoundError,
     custom_component_props_schema_issue,
 )
-from .design_store import HybridRepository
+from .design_store import DesignBlobStore, HybridRepository
 
 
 JsonObject = Dict[str, Any]
@@ -52,8 +52,7 @@ class DurableAgentCustomComponentRegistry:
     def __init__(
         self,
         *,
-        database_path: Path,
-        store_root: Path,
+        blobs: DesignBlobStore,
         account_id: str,
         document_id: str,
         node_binary: str,
@@ -65,10 +64,10 @@ class DurableAgentCustomComponentRegistry:
             raise ValueError("custom-component agent registry requires an account")
         if not document_id:
             raise ValueError("custom-component agent registry requires a document")
-        # VESTIGIAL since D2.5B (the store is Postgres and process-global): retained so the two
-        # construction sites in main.py stay untouched by the deletion slice. Dies at D5.
-        self.database_path = Path(database_path)
-        self.store_root = Path(store_root)
+        # D4: the byte store is a platform-storage handle (workspace-scoped keys), not a path.
+        # (The vestigial `database_path` anchor D2.5B left behind is gone with the asset store
+        # it used to root — nothing in this class ever names a filesystem location again.)
+        self.blobs = blobs
         self.account_id = account_id
         self.document_id = document_id
         self.node_binary = node_binary
@@ -77,10 +76,12 @@ class DurableAgentCustomComponentRegistry:
         self.compile_fn = compile_fn
 
     def _repository(self) -> HybridRepository:
-        # Postgres via clue_design (D2.5B: no SQLite handle to open or close). The workspace
-        # still defaults to the configured dev one — threading the request workspace into the
-        # turn workers is the D2.5A residual D5 owns.
-        return HybridRepository()
+        # Postgres via clue_design (D2.5B: no SQLite handle to open or close). The row store and
+        # the byte store must name the SAME tenant, so the repository takes its workspace from
+        # the injected blob-store handle instead of re-deriving the dev default (D4). Threading
+        # the *request* workspace all the way into the turn workers is still the D2.5A residual
+        # D5 owns — construction sites decide which workspace this handle carries.
+        return HybridRepository(self.blobs.workspace_id)
 
     @staticmethod
     def _latest_success_for_artifact(
@@ -182,7 +183,7 @@ class DurableAgentCustomComponentRegistry:
         if revision is not None:
             _, files = resolve_custom_component_source_snapshot(
                 repository,
-                self.store_root,
+                self.blobs,
                 account_id=self.account_id,
                 revision_id=revision["revision_id"],
             )
@@ -222,7 +223,7 @@ class DurableAgentCustomComponentRegistry:
                 continue
             _, files = resolve_custom_component_source_snapshot(
                 repository,
-                self.store_root,
+                self.blobs,
                 account_id=self.account_id,
                 revision_id=revision["revision_id"],
             )
@@ -251,7 +252,7 @@ class DurableAgentCustomComponentRegistry:
         repository = self._repository()
         revision = persist_custom_component_source_revision(
             repository,
-            self.store_root,
+            self.blobs,
             account_id=self.account_id,
             slug=slug,
             expected_version=expected_version,
@@ -272,7 +273,7 @@ class DurableAgentCustomComponentRegistry:
         repository = self._repository()
         return compile_and_persist_custom_component(
             repository=repository,
-            store_root=self.store_root,
+            blobs=self.blobs,
             node_binary=self.node_binary,
             worker_path=self.worker_path,
             timeout_seconds=self.timeout_seconds,

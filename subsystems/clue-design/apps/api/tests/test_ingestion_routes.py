@@ -73,16 +73,17 @@ def _install_stub_pipeline(
         seen.append(("Capturing your colors…", 0.65))
         return _load_evidence()
 
-    def _runner(database_path, asset_store_root, job_id, *, workspace_id=None):
+    def _runner(engine_cache_dir, job_id, *, workspace_id=None, storage=None):
         run_website_ingestion(
-            database_path,
-            asset_store_root,
+            engine_cache_dir,
             job_id,
             capture=capture,
             build_evidence=build_evidence or _build_evidence,
             # D2.3: the route hands the worker the request's workspace so the kit it
             # publishes satisfies the job's composite result FK.
             workspace_id=workspace_id,
+            # D4: and its byte backend, so custody lands where the app can read it.
+            storage=storage,
         )
 
     monkeypatch.setattr(main_module, "run_website_ingestion", _runner)
@@ -110,7 +111,7 @@ def _read_brand_kit_row(client: TestClient, brand_kit_id: str) -> dict:
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
+    app = create_app(tmp_path / "engine-cache")
     return make_client(app)
 
 

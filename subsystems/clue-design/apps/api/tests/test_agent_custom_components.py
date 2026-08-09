@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from clue_storage import FsStorage
+
+from conftest import make_blob_store
 
 from lumen_api.agent_custom_components import (
     DurableAgentCustomComponentRegistry,
@@ -58,8 +61,7 @@ export default function AccountMetric({
 
 def make_gateway(app, *, account_id: str, document_id: str):
     return DurableAgentCustomComponentRegistry(
-        database_path=Path(app.state.database_path),
-        store_root=Path(app.state.custom_component_store_root),
+        blobs=make_blob_store(app),
         account_id=account_id,
         document_id=document_id,
         node_binary=app.state.custom_component_compiler_node_bin,
@@ -69,8 +71,9 @@ def make_gateway(app, *, account_id: str, document_id: str):
 
 
 def seed(tmp_path: Path):
-    database_path = tmp_path / "api.sqlite3"
-    app = create_app(database_path)
+    app = create_app(
+        tmp_path / "engine-cache", storage=FsStorage(tmp_path / "design-storage")
+    )
     core = app.state.core
     repository = HybridRepository()
     repository.create_web_account(

@@ -25,13 +25,15 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client, unique_run_id
+from clue_design.storage import SOURCE_KEY_ASSET
+
+from conftest import make_blob_store, make_client, unique_run_id
 from lumen_api.main import create_app
 
 
 @pytest.fixture()
-def app(tmp_path: Path):
-    return create_app(tmp_path / "api.sqlite3")
+def app(tmp_path: Path, design_storage):
+    return create_app(tmp_path / "engine-cache", storage=design_storage)
 
 
 @pytest.fixture()
@@ -72,11 +74,13 @@ def test_build_info_is_exempt(bare: TestClient) -> None:
 
 def test_asset_store_bytes_are_exempt(bare: TestClient, app) -> None:
     # The published page and the origin-"null" preview iframe fetch these; they carry no header.
+    # D4: the bytes are durable in a WORKSPACE's storage, and this route resolves across
+    # tenants (R-D4-7) — which is exactly what keeps it header-free.
     payload = b"font-bytes"
     digest = hashlib.sha256(payload).hexdigest()
-    stored = Path(app.state.asset_store_root) / "sha256" / digest[:2] / digest
-    stored.parent.mkdir(parents=True, exist_ok=True)
-    stored.write_bytes(payload)
+    make_blob_store(app).register(
+        payload, media_type="font/woff2", source_key=SOURCE_KEY_ASSET
+    )
 
     response = bare.get(f"/asset-store/{digest}")
     assert response.status_code == 200

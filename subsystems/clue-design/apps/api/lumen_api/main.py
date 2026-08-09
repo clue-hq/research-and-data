@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
+import hashlib
 import io
 import json
 import logging
-import os
 import re
 
 # D2.5B: SQLite is DELETED from this API. `sqlite3` survives here only as the API's
@@ -38,7 +38,6 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
-    FileResponse,
     HTMLResponse,
     JSONResponse,
     Response,
@@ -47,6 +46,16 @@ from fastapi.responses import (
 from starlette.concurrency import run_in_threadpool
 
 from . import image_cache, image_provider, web_export
+from .asset_custody import (
+    cache_blob_path,
+    ensure_materialized,
+    materialize_scene_assets,
+    read_asset_bytes,
+    record_digests,
+    register_engine_write,
+    register_scene_asset_backstop,
+    write_cache_blob,
+)
 from .core import CoreClient, CoreError, has_error_diagnostics
 from .custom_component_compiler import (
     DEFAULT_COMPILER_TIMEOUT_SECONDS,
@@ -61,6 +70,7 @@ from .custom_component_runtime import (
     web_doc_uses_custom_components,
 )
 from .custom_components import (
+    CUSTOM_COMPONENT_MEMBER_MEDIA_TYPES,
     persist_custom_component_source_revision,
     resolve_custom_component_artifact_blob,
     resolve_custom_component_source_snapshot,
@@ -74,8 +84,11 @@ from .database import (
     utc_now,
 )
 from .design_store import (
+    DesignBlobStore,
     HybridRepository,
+    default_workspace_id,
     list_orphaned_runs_across_workspaces,
+    read_public_design_blob,
     resolve_stream_workspace_id,
     resolve_workspace_id,
 )
@@ -153,6 +166,10 @@ from lumen_ingestion.pipeline import (
     run_pdf_ingestion,
     run_website_ingestion,
 )
+from clue_design import storage as design_storage
+from clue_design.storage import location_digest
+from clue_storage import StorageBackend, storage_from_settings
+
 from py_lumen_config import settings
 from py_lumen_obs import bind_request_id, configure, get_logger, unbind_context
 
@@ -334,7 +351,11 @@ def _fail_orphaned_runs() -> None:
         )
 
 
-def create_app(database_path: Optional[Path] = None) -> FastAPI:
+def create_app(
+    engine_cache_root: Optional[Path] = None,
+    *,
+    storage: Optional[StorageBackend] = None,
+) -> FastAPI:
     # The ONE logging setup for the API: hand off to the shared obs module.
     # mode/format come from the environment (LUMEN_LOG_MODE / LUMEN_LOG_FORMAT);
     # nothing else in apps/api configures logging after this. Idempotent, so a
@@ -356,19 +377,26 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    # VESTIGE (D2.5B): `database_path` no longer names a database — SQLite is deleted and the
-    # store is process-global Postgres. It survives ONLY as the asset-store root ANCHOR: when
-    # LUMEN_ASSET_STORE_ROOT is unset the store lands at `<database dir>/asset-store`, which is
-    # what the suites' `create_app(tmp_path / "api.sqlite3")` relies on for per-test isolation.
-    # NO FILE IS CREATED at that path. D4 (clue_storage) re-homes the asset store and this
-    # parameter goes with it.
-    app.state.database_path = database_path or settings.lumen_api_database_path
-    app.state.asset_store_root = (
+    # D4 (R-D4-1): NOT a store — the root of the Rust engine's TRANSIENT materialization cache.
+    # Durable custody of every design byte is platform storage (below); the engine only ever
+    # sees `{root}/{workspace_id}/sha256/{ab}/{digest}`, which Python writes back from after an
+    # engine write and materializes into before an engine read. Wiping this tree loses nothing.
+    # Resolution order (unchanged in spirit from the old asset-store anchor): an explicit
+    # LUMEN_ASSET_STORE_ROOT wins, then this parameter (how a suite keeps its cache in tmp_path),
+    # then the git-ignored repo-local default. The old `database_path` vestige is GONE with it —
+    # it named no database since D2.5B and anchored nothing else.
+    app.state.engine_cache_root = Path(
         settings.lumen_asset_store_root
-        or app.state.database_path.parent / "asset-store"
+        or engine_cache_root
+        or settings.effective_asset_store_root
     )
-    app.state.custom_component_store_root = (
-        Path(app.state.asset_store_root) / "custom-components"
+    # D4: design BYTES live in platform storage (clue_storage), not under the asset-store tree.
+    # ONE process-wide backend, selected by settings alone (fs vs S3) — no caller learns which
+    # it holds. The parameter exists so a test can inject an `FsStorage(tmp_path)` and keep its
+    # blobs disposable; production always takes the configured default. The
+    # `custom-components/` sub-tree this replaced is deleted, not deprecated.
+    app.state.storage = (
+        storage if storage is not None else storage_from_settings()
     )
     app.state.custom_component_compiler_node_bin = "node"
     app.state.custom_component_compiler_worker = default_compiler_worker_path()
@@ -516,8 +544,38 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
             },
         )
 
-    def asset_store_root() -> str:
-        return str(app.state.asset_store_root)
+    def engine_cache_dir(workspace_id: str) -> str:
+        """This workspace's engine materialization cache (D4 / R-D4-1), created on demand.
+
+        Everything the engine reads or writes goes through a per-WORKSPACE cache dir, never a
+        shared one: the engine resolves purely by digest, so a single global tree would let one
+        tenant's export silently read another tenant's bytes for any digest they both happen to
+        hold. The per-workspace split makes that unexpressible without touching the engine's
+        layout below the workspace segment (a fixed contract).
+        """
+        path = Path(app.state.engine_cache_root) / workspace_id
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    def request_cache_dir(repo: HybridRepository) -> str:
+        """The engine cache for the request's own tenant — the O4-safe spelling."""
+        return engine_cache_dir(repo.workspace_id)
+
+    def blob_store(repo: HybridRepository) -> DesignBlobStore:
+        """The design BYTE store for a request, scoped to the same tenant as its row store (D4).
+
+        Storage keys are workspace-scoped (``{workspace_id}/design/{sha256}``), so byte custody
+        follows the O4 seam automatically: a handle built from the request's repository can only
+        read and write that tenant's blobs.
+        """
+        return DesignBlobStore(app.state.storage, repo.workspace_id)
+
+    def public_blob_store(workspace_id: str) -> DesignBlobStore:
+        """The O6b analogue of ``public_repository``: an anonymous publish-asset GET names its
+        tenant in the PATH and must never create a workspace row."""
+        return DesignBlobStore(
+            app.state.storage, workspace_id, ensure_workspace=False
+        )
 
     def repository(request: Request) -> HybridRepository:
         # D2.5B: SQLite is deleted; every store domain is Postgres via clue_design. The O4 seam is
@@ -761,12 +819,14 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         )
         background_tasks.add_task(
             run_website_ingestion,
-            str(app.state.database_path),
-            asset_store_root(),
+            request_cache_dir(repo),
             job["job_id"],
             # D2.3: the worker must publish its kit/assets into the SAME workspace the job row
             # lives in — the job's result FK is composite on (kit, version, workspace).
             workspace_id=repo.workspace_id,
+            # D4: and against THIS app's byte backend, so a staged upload is read back from
+            # where it was staged rather than from a re-derived default.
+            storage=app.state.storage,
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
@@ -804,10 +864,12 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 },
             )
 
-        # Create the job first so its id names the tmp file, then write the
-        # bytes to <asset_store_root>/ingest_tmp/<job_id>.pdf and record that
-        # path in the job request — run_pdf_ingestion reads + deletes it. The
-        # PDF bytes themselves are never stored in the job row.
+        # D4 (R-D4-5): the uploaded bytes are STAGED IN PLATFORM STORAGE, not in an
+        # `ingest_tmp/` directory beside a cache. A background job may outlive the process that
+        # accepted the upload, so its input has to be durable — a tmp file under a wipeable
+        # materialization cache was the one place these bytes could not safely live. The job
+        # request carries the staged DIGEST; `run_pdf_ingestion` reads it back through the blob
+        # store and the `finally` cleanup deletes it unless it was promoted to a live asset.
         job = IngestionJobStore(workspace_id=repo.workspace_id).create(
             "pdf",
             {
@@ -817,23 +879,28 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 "size_bytes": len(data),
             },
         )
-        tmp_dir = Path(asset_store_root()) / "ingest_tmp"
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-        tmp_path = tmp_dir / f"{job['job_id']}.pdf"
-        tmp_path.write_bytes(data)
+        blobs = blob_store(repo)
+        blobs.register(
+            data,
+            media_type="application/pdf",
+            source_key=design_storage.SOURCE_KEY_INGEST_STAGING,
+        )
 
         request = dict(job["request"])
-        request["tmp_path"] = str(tmp_path)
+        request["staged_digest"] = hashlib.sha256(data).hexdigest()
+        request["media_type"] = "application/pdf"
         job = IngestionJobStore(workspace_id=repo.workspace_id).update_request(job["job_id"], request)
 
         background_tasks.add_task(
             run_pdf_ingestion,
-            str(app.state.database_path),
-            asset_store_root(),
+            request_cache_dir(repo),
             job["job_id"],
             # D2.3: the worker must publish its kit/assets into the SAME workspace the job row
             # lives in — the job's result FK is composite on (kit, version, workspace).
             workspace_id=repo.workspace_id,
+            # D4: and against THIS app's byte backend, so a staged upload is read back from
+            # where it was staged rather than from a re-derived default.
+            storage=app.state.storage,
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
@@ -894,11 +961,10 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 },
             )
 
-        # Create the job first so its id names the tmp files, then write each
-        # file's bytes to <asset_store_root>/ingest_tmp/<job_id>_<idx>_<name>
-        # and record those paths in the job request — run_asset_ingestion reads
-        # + deletes them. The file bytes themselves are never stored in the job
-        # row.
+        # D4 (R-D4-5): each uploaded file is STAGED IN PLATFORM STORAGE (see the PDF route for
+        # why a tmp file under the engine cache is not a safe home for a background job's
+        # input). The job request carries each file's staged DIGEST; `run_asset_ingestion` reads
+        # them back through the blob store and cleans up the ones that were not promoted.
         job = IngestionJobStore(workspace_id=repo.workspace_id).create(
             "asset_upload",
             {
@@ -907,19 +973,22 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 "file_count": len(payloads),
             },
         )
-        tmp_dir = Path(asset_store_root()) / "ingest_tmp"
-        tmp_dir.mkdir(parents=True, exist_ok=True)
+        blobs = blob_store(repo)
 
         file_specs: List[JsonObject] = []
-        for idx, (upload, data) in enumerate(payloads):
-            safe_name = _sanitize_tmp_filename(upload.filename)
-            tmp_path = tmp_dir / f"{job['job_id']}_{idx}_{safe_name}"
-            tmp_path.write_bytes(data)
+        for upload, data in payloads:
+            media_type = upload.content_type or "application/octet-stream"
+            blobs.register(
+                data,
+                media_type=media_type,
+                source_key=design_storage.SOURCE_KEY_INGEST_STAGING,
+            )
             file_specs.append(
                 {
                     "filename": upload.filename,
                     "content_type": upload.content_type,
-                    "tmp_path": str(tmp_path),
+                    "staged_digest": hashlib.sha256(data).hexdigest(),
+                    "media_type": media_type,
                 }
             )
 
@@ -929,12 +998,14 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
 
         background_tasks.add_task(
             run_asset_ingestion,
-            str(app.state.database_path),
-            asset_store_root(),
+            request_cache_dir(repo),
             job["job_id"],
             # D2.3: the worker must publish its kit/assets into the SAME workspace the job row
             # lives in — the job's result FK is composite on (kit, version, workspace).
             workspace_id=repo.workspace_id,
+            # D4: and against THIS app's byte backend, so a staged upload is read back from
+            # where it was staged rather than from a re-derived default.
+            storage=app.state.storage,
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
@@ -1132,7 +1203,10 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         # that already carries the up-to-date ramp is left byte-identical, so
         # this alone never forces a no-op republish.
         ensure_type_size_ramp(brand_kit)
-        store_root = str(asset_store_root())
+        # D4: byte reads resolve durably (`make_resolve_bytes` reads through the blob store);
+        # only the SVG rasterizer touches the engine, and it materializes what it needs.
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
         describe_diagnostics: list = []
         # Glyph-coverage audit backfill (same pattern as the ramp): kits ingested
         # before the audit get fonts.*.metrics.missing_glyphs stamped from their
@@ -1140,14 +1214,14 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         # on republish without a full re-ingestion. Advisory LUMI0806 warnings.
         ensure_glyph_coverage(
             brand_kit,
-            make_resolve_bytes(repo, store_root),
+            make_resolve_bytes(repo, blobs),
             describe_diagnostics,
         )
         counts = describe_kit_assets(
             brand_kit,
             describer=resolve_describer(),
-            resolve_bytes=make_resolve_bytes(repo, store_root),
-            rasterize_svg=make_rasterize_svg(repo, store_root),
+            resolve_bytes=make_resolve_bytes(repo, blobs),
+            rasterize_svg=make_rasterize_svg(repo, blobs, cache_dir),
             diagnostics=describe_diagnostics,
             brand_name=record.get("name"),
             workspace_id=repo.workspace_id,
@@ -1360,6 +1434,12 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                     "message": "scene.meta.id must match the route document id",
                 },
             )
+        # D4 backstop (R-D4-1): this is an ACCEPT seam — an outside author (the editor, an
+        # agent turn) hands us a whole scene, and any asset it generated mid-turn exists only in
+        # the engine's wipeable cache until now. Give those bytes durable custody before the
+        # write promotes their records into the registry, so the registry can never outlive the
+        # bytes it points at. One pass; skip-if-already-durable, so it is normally all skips.
+        register_scene_asset_backstop(blob_store(repo), request_cache_dir(repo), scene)
         document = repo.replace_scene(document_id, scene, diagnostics)
         log_event(
             api_logger,
@@ -1403,6 +1483,11 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 "inverse_operations"
             ),
         }
+        # D4 backstop — see PUT /scene: an `upsert_asset` operation can carry a record whose
+        # bytes the caller only ever wrote into the engine cache.
+        register_scene_asset_backstop(
+            blob_store(repo), request_cache_dir(repo), result["scene"]
+        )
         updated = repo.update_document_state(
             document_id,
             result["scene"],
@@ -1818,7 +1903,9 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 document["scene"],
                 brand_kit,
                 mode,
-                brand_fonts=brand_kit_font_spec(repo, brand_kit, asset_store_root()),
+                brand_fonts=brand_kit_font_spec(
+                    repo, brand_kit, blob_store(repo), request_cache_dir(repo)
+                ),
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -1879,7 +1966,13 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
     ) -> JsonObject:
         # K3: a stateless export still shapes text with the scene's kit fonts
         # — the scene ref is the only kit signal this route carries.
-        brand_fonts = scene_brand_fonts(repo, payload.scene, asset_store_root())
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
+        brand_fonts = scene_brand_fonts(repo, payload.scene, blobs, cache_dir)
+        # D4 read-through: the engine resolves image pixels from its cache by digest, so every
+        # asset this scene names must be materialized before the export runs (a durably-absent
+        # digest is left out and the engine reports LUME0210, exactly as before).
+        materialize_scene_assets(blobs, cache_dir, [payload.scene])
         try:
             result = app.state.core.export_preview(
                 payload.scene,
@@ -1887,7 +1980,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 payload.page_ids,
                 payload.profile,
                 raise_on_error=False,
-                asset_store_root=asset_store_root(),
+                asset_store_root=cache_dir,
                 brand_fonts=brand_fonts,
             )
         except CoreError as error:
@@ -1921,10 +2014,21 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
 
     # Synchronous turn preview: stores nothing, but it is an editor call like any other, so it
     # sits inside the strict seam rather than becoming a headerless hole beside /agent/turns.
-    @app.post("/agent/turn-preview", dependencies=[Depends(resolve_workspace_id)])
-    def agent_turn_preview(payload: AgentTurnPreviewRequest) -> JsonObject:
-        runner = app.state.agent_turn_runner or run_agent_turn_preview
-        result = runner(payload, repo_root())
+    @app.post("/agent/turn-preview")
+    def agent_turn_preview(
+        payload: AgentTurnPreviewRequest,
+        workspace_id: str = Depends(resolve_workspace_id),
+    ) -> JsonObject:
+        override = app.state.agent_turn_runner
+        # The test seam's stubs take (payload, root); only the real runner takes the tenant,
+        # which since D4 decides which engine materialization cache the turn uses.
+        result = (
+            override(payload, repo_root())
+            if override is not None
+            else run_agent_turn_preview(
+                payload, repo_root(), workspace_id=workspace_id
+            )
+        )
         log_event(
             api_logger,
             logging.INFO,
@@ -1961,7 +2065,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         # reference.asset_not_found / too_many / preview_unavailable. The
         # resolved manifest rides into the worker so SVG rasterization is not
         # paid twice.
-        resolved_reference_assets = resolve_agent_turn_references(payload)
+        resolved_reference_assets = resolve_agent_turn_references(payload, blob_store(repo))
         run_id = f"run_{uuid4().hex}"
         repo.create_run(run_id, payload.document_id)
         root = repo_root()
@@ -1987,6 +2091,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                         root,
                         event_sink=sink,
                         resolved_reference_assets=resolved_reference_assets,
+                        workspace_id=workspace_id,
                     )
                 status = (
                     "failed"
@@ -2175,7 +2280,6 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         run_id = f"run_{uuid4().hex}"
         repo.create_run(run_id, document_id)
         root = repo_root()
-        database_path = app.state.database_path
         override = app.state.web_turn_runner
         prompt = payload.prompt
         model = payload.model
@@ -2223,10 +2327,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                     component_account_id = doc.get("account_id")
                     custom_component_registry = (
                         DurableAgentCustomComponentRegistry(
-                            database_path=Path(database_path),
-                            store_root=Path(
-                                app.state.custom_component_store_root
-                            ),
+                            blobs=blob_store(repo),
                             account_id=component_account_id,
                             document_id=document_id,
                             node_binary=(
@@ -2255,6 +2356,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                         account_card=account_card,
                         asset_library=asset_library,
                         custom_component_registry=custom_component_registry,
+                        workspace_id=workspace_id,
                     )
                 if response.get("status") == "applied":
                     operations = response.get("operations")
@@ -2381,7 +2483,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         require_web_document(document)
         web_doc = document["scene"]
         brand_kit, _source, _assets, brand_fonts = resolve_web_turn_brand_kit(
-            web_doc, database_path=app.state.database_path
+            web_doc, blob_store(repo)
         )
         # Kit @font-face: emit rules that point the browser at the kit's stored
         # faces (served from this request's own /asset-store origin) so the
@@ -2412,7 +2514,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                     override_variables = {}
             runtime_frames = build_custom_component_runtime_frames(
                 repo,
-                Path(app.state.custom_component_store_root),
+                blob_store(repo),
                 account_id=account_id if isinstance(account_id, str) else None,
                 web_doc=web_doc,
                 page_id="home",
@@ -2786,7 +2888,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         require_web_document(document)
         web_doc = document["scene"]
         brand_kit, _source, _assets, _fonts = resolve_web_turn_brand_kit(
-            web_doc, database_path=app.state.database_path
+            web_doc, blob_store(repo)
         )
         try:
             response = app.state.core.web_validate(web_doc, brand_kit)
@@ -2818,8 +2920,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 app.state.core,
                 repo,
                 document,
-                store_root=asset_store_root(),
-                database_path=app.state.database_path,
+                blobs=blob_store(repo),
                 generated_at=utc_now(),
                 node_bin=app.state.web_export_node_bin,
             )
@@ -2896,15 +2997,14 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 app.state.core,
                 repo,
                 document,
-                store_root=asset_store_root(),
-                database_path=app.state.database_path,
+                blobs=blob_store(repo),
                 slug=slug,
                 public_base=public_base,
                 workspace_id=store_workspace_id(repo),
                 node_bin=app.state.web_export_node_bin,
             )
             web_export.persist_publish_assets(
-                Path(asset_store_root()),
+                blob_store(repo),
                 package.assets,
                 package.manifest["custom_components"].get("assets"),
             )
@@ -3205,18 +3305,17 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
             )
         _, data = resolve_custom_component_artifact_blob(
             repo,
-            Path(app.state.custom_component_store_root),
+            blob_store(repo),
             account_id=account_id,
             artifact_id=artifact_id,
             member=member,  # type: ignore[arg-type]
         )
-        media_types = {
-            "source": "application/json",
-            "bundle": "text/javascript; charset=utf-8",
-            "css": "text/css; charset=utf-8",
-            "first_frame": "text/html; charset=utf-8",
-        }
-        return Response(content=data, media_type=media_types[member])
+        # D4: the ONE member↔media-type table, shared with the write path — a member is served
+        # as exactly the type its blob's `artifact` row records.
+        return Response(
+            content=data,
+            media_type=CUSTOM_COMPONENT_MEMBER_MEDIA_TYPES[member],
+        )
 
     @app.put("/web/accounts/{account_id}/custom-components/{slug}/source")
     def put_custom_component_source(
@@ -3229,7 +3328,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         try:
             revision = persist_custom_component_source_revision(
                 repo,
-                Path(app.state.custom_component_store_root),
+                blob_store(repo),
                 account_id=account_id,
                 slug=slug,
                 expected_version=payload.expected_version,
@@ -3266,7 +3365,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
             raise NotFoundError("custom_component_source", slug)
         _, files = resolve_custom_component_source_snapshot(
             repo,
-            Path(app.state.custom_component_store_root),
+            blob_store(repo),
             account_id=account_id,
             revision_id=revision["revision_id"],
         )
@@ -3301,7 +3400,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
     ) -> Any:
         response = compile_and_persist_custom_component(
             repository=repo,
-            store_root=Path(app.state.custom_component_store_root),
+            blobs=blob_store(repo),
             node_binary=app.state.custom_component_compiler_node_bin,
             worker_path=Path(app.state.custom_component_compiler_worker),
             timeout_seconds=app.state.custom_component_compiler_timeout_seconds,
@@ -3552,15 +3651,14 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                     app.state.core,
                     repo,
                     derived,
-                    store_root=asset_store_root(),
-                    database_path=app.state.database_path,
+                    blobs=blob_store(repo),
                     slug=slug,
                     public_base=public_base,
                     workspace_id=store_workspace_id(repo),
                     node_bin=app.state.web_export_node_bin,
                 )
                 web_export.persist_publish_assets(
-                    Path(asset_store_root()),
+                    blob_store(repo),
                     package.assets,
                     package.manifest["custom_components"].get("assets"),
                 )
@@ -3715,17 +3813,17 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
 
     @app.get("/w/{workspace_id}/p-assets/{asset_name}")
     def serve_publish_asset(workspace_id: str, asset_name: str) -> Response:
-        # The blobs are content-addressed and still live in the API-local asset store, so this
-        # route reads no tenant state; the workspace segment keeps every URL a publish package
-        # mints under one prefix. Per-tenant asset custody arrives with D4 (clue_storage).
-        del workspace_id
+        # D4: per-tenant byte custody is real, so the workspace segment is no longer decorative —
+        # it IS the storage scope this read resolves against (`{workspace}/design/{sha256}`).
+        # Another tenant's digest simply has no row here and 404s, the same refusal an unknown
+        # digest gets. `ensure_workspace=False`: an anonymous GET must never create a workspace.
         match = re.fullmatch(r"([0-9a-f]{64})\.(js|css|html)", asset_name)
         if match is None:
             return Response(status_code=404)
         digest, extension = match.groups()
         try:
             data, media_type = web_export.resolve_publish_asset(
-                Path(asset_store_root()), digest, extension
+                public_blob_store(workspace_id), digest, extension
             )
         except web_export.WebExportError:
             return Response(status_code=404)
@@ -3807,12 +3905,12 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         profile = resolve_document_export_profile(document["scene"], payload)
         export_format = profile.get("format") or payload.format
 
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
         try:
             source, brand_kit = choose_effective_brand(app.state.core, repo, document, payload)
             mode = choose_effective_brand_mode(document, brand_kit, payload.mode)
-            document_brand_fonts = brand_kit_font_spec(
-                repo, brand_kit, asset_store_root()
-            )
+            document_brand_fonts = brand_kit_font_spec(repo, brand_kit, blobs, cache_dir)
             preflight_result = app.state.core.preflight_scene(
                 document["scene"], brand_kit, mode, brand_fonts=document_brand_fonts
             )
@@ -3870,6 +3968,10 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
             )
             export_scene = updated_document["scene"]
 
+        # D4 read-through: the export renders real pixels, so materialize every digest the
+        # scene names into the engine cache first (the preflight above may have rewritten the
+        # scene, hence both).
+        materialize_scene_assets(blobs, cache_dir, [export_scene, document["scene"]])
         try:
             export_result = app.state.core.export_preview(
                 export_scene,
@@ -3877,7 +3979,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 payload.page_ids,
                 profile,
                 raise_on_error=False,
-                asset_store_root=asset_store_root(),
+                asset_store_root=cache_dir,
                 brand_fonts=document_brand_fonts,
             )
         except CoreError as error:
@@ -3934,7 +4036,9 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 payload.scene,
                 brand_kit,
                 mode,
-                brand_fonts=brand_kit_font_spec(repo, brand_kit, asset_store_root()),
+                brand_fonts=brand_kit_font_spec(
+                    repo, brand_kit, blob_store(repo), request_cache_dir(repo)
+                ),
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -4152,17 +4256,28 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         binding_set_id = binding.get("binding_set_id") or new_id("bind")
         instance_id = _instance_id(revision_id, binding_set_id)
         records = _binding_asset_records(repo, binding)
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
+        # D4 read-through: derive renders the template scene AND the per-binding asset records
+        # (an account logo the binding substitutes in), so both sets of digests must be in the
+        # engine cache before the call.
+        materialize_scene_assets(blobs, cache_dir, [revision["scene"]])
+        ensure_materialized(
+            blobs,
+            cache_dir,
+            (digest for record in records for digest, _mime in record_digests(record)),
+        )
         result = app.state.core.derive_instance(
             scene=revision["scene"],
             binding_set=binding,
             asset_records=records,
-            store_root=asset_store_root(),
+            store_root=cache_dir,
             export_formats=export_formats,
             export_dpi=export_dpi,
             export_profile=export_profile,
             # Bulk runs shape with the template's kit faces — without this
             # every instance silently substituted bundled Inter.
-            brand_fonts=scene_brand_fonts(repo, revision["scene"], asset_store_root()),
+            brand_fonts=scene_brand_fonts(repo, revision["scene"], blobs, cache_dir),
             raise_on_error=False,
         )
 
@@ -4192,6 +4307,26 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         fit_report = payload.get("fit_report") or {}
         status = "failed" if payload.get("has_errors") else "derived"
         generated = payload.get("generated") or {}
+        # D4 write-back, BEFORE anything is persisted. Derive writes two kinds of bytes into the
+        # cache: rendered EXPORT ARTIFACTS (the per-instance png/svg the row then references)
+        # and GENERATED asset records (e.g. a re-fit crop). Both get durable custody here, and
+        # the generated records are re-pointed at their storage keys so the registry rows the
+        # loop below writes never advertise a cache path.
+        register_engine_write(
+            blobs,
+            cache_dir,
+            relative_paths=payload.get("artifacts") or [],
+            source_key=design_storage.SOURCE_KEY_ENGINE_ARTIFACT,
+        )
+        for entry in generated.values():
+            record = (entry or {}).get("record")
+            if record:
+                register_engine_write(
+                    blobs,
+                    cache_dir,
+                    record=record,
+                    source_key=design_storage.SOURCE_KEY_ASSET,
+                )
         instance = repo.upsert_instance(
             {
                 "instance_id": instance_id,
@@ -4591,15 +4726,18 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 },
             }
         export_format = payload.format if payload.format in {"svg", "png"} else "svg"
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
+        materialize_scene_assets(blobs, cache_dir, [scene])
         try:
             result = app.state.core.derive_instance(
                 scene=scene,
                 binding_set=payload.binding_set,
                 asset_records=[],
-                store_root=asset_store_root(),
+                store_root=cache_dir,
                 export_formats=[export_format],
                 export_dpi=96,
-                brand_fonts=scene_brand_fonts(repo, scene, asset_store_root()),
+                brand_fonts=scene_brand_fonts(repo, scene, blobs, cache_dir),
                 raise_on_error=False,
             )
         except CoreError as error:
@@ -4620,12 +4758,21 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
             )
 
         payload_instance = result.get("instance") or {}
+        # D4 write-back: nothing about this preview persists, but the engine still put its
+        # rendered artifact into the cache — register it so a cache wipe between here and the
+        # read below cannot lose it, and so repeat previews of identical output dedup.
+        register_engine_write(
+            blobs,
+            cache_dir,
+            relative_paths=payload_instance.get("artifacts") or [],
+            source_key=design_storage.SOURCE_KEY_ENGINE_ARTIFACT,
+        )
         artifact_payload: Optional[JsonObject] = None
         for artifact in payload_instance.get("artifacts", []):
             relative = artifact.get("relative_path")
             if not relative:
                 continue
-            artifact_path = Path(asset_store_root()) / relative
+            artifact_path = Path(cache_dir) / relative
             if not artifact_path.exists():
                 continue
             data = artifact_path.read_bytes()
@@ -4689,9 +4836,11 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         tag_list = [tag.strip() for tag in (tags or "").split(",") if tag.strip()] or None
 
         asset_id = f"asset_{uuid4().hex[:12]}"
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
         try:
             result = app.state.core.ingest_asset(
-                store_root=asset_store_root(),
+                store_root=cache_dir,
                 bytes_base64=base64.b64encode(data).decode("ascii"),
                 asset_id=asset_id,
                 label=label or file.filename or asset_id,
@@ -4739,6 +4888,13 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
 
         asset_payload = result.get("asset") or {}
         record = asset_payload.get("record") or {}
+        # D4 write-back BEFORE the registry row: the engine wrote the bytes (and a thumbnail)
+        # into its cache; give them durable custody and re-point the record's locations at the
+        # storage keys (R-D4-4), so the row that lands — and the response the editor caches —
+        # never advertises a path under a wipeable tree.
+        register_engine_write(
+            blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
+        )
         stored = repo.create_asset_record(record)
         log_event(
             api_logger,
@@ -4764,9 +4920,11 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         asset_id = f"asset_qr_{uuid4().hex[:12]}"
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
         try:
             result = app.state.core.generate_qr(
-                store_root=asset_store_root(),
+                store_root=cache_dir,
                 data=payload.data,
                 asset_id=asset_id,
                 label=payload.label,
@@ -4802,6 +4960,10 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
 
         asset_payload = result.get("asset") or {}
         record = asset_payload.get("record") or {}
+        # D4 write-back before the registry row (see POST /assets).
+        register_engine_write(
+            blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
+        )
         stored = repo.create_asset_record(record)
         log_event(
             api_logger,
@@ -4832,6 +4994,8 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         asset record."""
         asset_id = f"asset_gen_{uuid4().hex[:12]}"
         cache_key: Optional[str] = None
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
         if image_provider.is_image_model_provider(payload.provider):
             # Phase 3b image EDIT: resolve the source asset's pixels up front.
             # The edit keys the cache on the source digest (same instruction on
@@ -4843,12 +5007,10 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 source_stored = repo.require_asset_record(payload.source_asset_id)
                 source_media = (source_stored["asset"].get("media") or {})
                 source_digest = (source_media.get("digest") or {}).get("value")
-                blob_path = (
-                    resolve_store_path(f"sha256/{source_digest[:2]}/{source_digest}")
-                    if source_digest
-                    else None
-                )
-                if blob_path is None or not blob_path.is_file():
+                # D4: a pure-Python read — go straight to durable storage. Routing it through
+                # the engine cache would mean materializing bytes no engine call will read.
+                source_bytes = read_asset_bytes(blobs, source_digest)
+                if source_bytes is None:
                     raise HTTPException(
                         status_code=409,
                         detail={
@@ -4861,7 +5023,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                         },
                     )
                 source_images = [
-                    (blob_path.read_bytes(), source_media.get("mime_type") or "image/png")
+                    (source_bytes, source_media.get("mime_type") or "image/png")
                 ]
             # RC (D-RC2.5): reference-conditioned GENERATION — resolve the
             # request's reference_asset_ids into real bytes (the field was inert
@@ -4875,7 +5037,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 if ref_ids:
                     reference_images, reference_digests = (
                         resolve_reference_images_for_generate(
-                            repo, ref_ids, asset_store_root()
+                            repo, blobs, cache_dir, ref_ids
                         )
                     )
             # Generation cache: re-use the asset produced by an identical earlier
@@ -4895,7 +5057,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 reference_digests=reference_digests,
                 source_digest=source_digest,
             )
-            cached_record = image_cache.lookup(asset_store_root(), cache_key)
+            cached_record = image_cache.lookup(cache_dir, cache_key)
             if cached_record:
                 log_event(
                     api_logger,
@@ -4955,7 +5117,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 ) from error
             try:
                 result = app.state.core.ingest_asset(
-                    store_root=asset_store_root(),
+                    store_root=cache_dir,
                     bytes_base64=base64.b64encode(generated.image_bytes).decode("ascii"),
                     asset_id=asset_id,
                     label=payload.label or (payload.prompt[:60].strip() or asset_id),
@@ -5002,7 +5164,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
             }
             try:
                 result = app.state.core.generate_asset(
-                    store_root=asset_store_root(),
+                    store_root=cache_dir,
                     provider=payload.provider,
                     request=request,
                     asset_id=asset_id,
@@ -5037,11 +5199,17 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
 
         asset_payload = result.get("asset") or {}
         record = asset_payload.get("record") or {}
+        # D4 write-back before the registry row (see POST /assets). Covers both branches: the
+        # Python image provider's bytes re-ingested through the engine, and a registered
+        # provider's `generate_asset`.
+        register_engine_write(
+            blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
+        )
         stored = repo.create_asset_record(record)
         if cache_key is not None:
             # Record the request → asset mapping so an identical repeat re-uses
             # this asset instead of re-paying the model.
-            image_cache.store(asset_store_root(), cache_key, stored["asset"])
+            image_cache.store(cache_dir, cache_key, stored["asset"])
         log_event(
             api_logger,
             logging.INFO,
@@ -5142,7 +5310,7 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
                 continue
             if repo.count_documents_referencing(digest_value):
                 continue
-            if delete_stored_digest(digest_value):
+            if delete_stored_digest(repo, digest_value):
                 removed_digests.append(digest_value)
 
         log_event(
@@ -5159,26 +5327,28 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         }
 
     def record_digest_values(record: JsonObject) -> List[str]:
-        values: List[str] = []
-        media = record.get("media") or {}
-        digest = media.get("digest") or {}
-        if digest.get("value"):
-            values.append(digest["value"])
-        thumbnail = media.get("thumbnail") or {}
-        thumbnail_ref = (thumbnail.get("location") or {}).get("opaque_ref") or ""
-        if thumbnail_ref.startswith("sha256/"):
-            thumbnail_digest = thumbnail_ref.rsplit("/", 1)[-1]
-            if thumbnail_digest and thumbnail_digest not in values:
-                values.append(thumbnail_digest)
-        return values
+        """The digests one asset record owns — its bytes and its thumbnail's.
 
-    def delete_stored_digest(digest_value: str) -> bool:
-        relative = f"sha256/{digest_value[:2]}/{digest_value}"
-        path = resolve_store_path(relative)
-        if not path.is_file():
-            return False
-        path.unlink()
-        return True
+        Shared with `asset_custody.record_digests` (which also carries each digest's media
+        type); this stays digest-only because its callers are reference counters.
+        """
+        return [digest for digest, _media_type in record_digests(record)]
+
+    def delete_stored_digest(repo: HybridRepository, digest_value: str) -> bool:
+        """Destroy one digest's bytes: durable blob + row first, then the cache mirror.
+
+        The caller has already proved nothing references the digest (no asset record, no
+        document scene). Durable custody goes through the seam — which tombstones the `artifact`
+        row and deletes the blob — and only then is the engine's cache copy unlinked, so a
+        failure part-way leaves the transient copy, never an orphaned durable one. Returns
+        whether durable bytes were actually destroyed; a cache-only leftover is cleaned up
+        regardless and does not count as a removal.
+        """
+        removed = blob_store(repo).delete(digest_value)
+        cache_path = cache_blob_path(request_cache_dir(repo), digest_value)
+        if cache_path.is_file():
+            cache_path.unlink()
+        return removed
 
     # GET /assets/descriptions is registered BEFORE GET /assets/{asset_id} so
     # the literal "descriptions" segment is not captured as an asset id (FastAPI
@@ -5238,23 +5408,26 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         asset_id: str,
         repo: HybridRepository = Depends(repository),
     ) -> Response:
+        # D4: a pure-Python read straight from durable storage — resolved BY DIGEST, so the
+        # three historical `opaque_ref` shapes (and their three provider labels) all serve, and
+        # no stored ref is ever interpreted as a filesystem path.
         stored = repo.require_asset_record(asset_id)
         record = stored["asset"]
         media = record.get("media") or {}
-        location = media.get("location") or {}
-        if location.get("provider") != "local-store" or not location.get("opaque_ref"):
+        digest = location_digest(media.get("location"))
+        if digest is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"asset {asset_id} has no locally stored bytes",
             )
-        path = resolve_store_path(location["opaque_ref"])
-        if not path.is_file():
+        data = read_asset_bytes(blob_store(repo), digest)
+        if data is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"asset {asset_id} bytes are missing from the store",
             )
         media_type = media.get("mime_type") or "application/octet-stream"
-        return Response(content=path.read_bytes(), media_type=media_type)
+        return Response(content=data, media_type=media_type)
 
     # O4-exempt (no X-Workspace-Id), RULED at D2.5A: the PUBLISHED page loads its images and
     # @font-face bytes from here (lumen-web's delivery render emits /asset-store/{digest} URLs),
@@ -5263,8 +5436,9 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
     # cannot satisfy. The bytes are content-addressed and immutable, so serving them without a
     # tenant leaks nothing an unguessable sha256 did not already gate.
     # RESIDUAL (matches the platform's [B2×presign] follow-up): content addressing is not
-    # authorization. Real per-tenant asset custody arrives with D4 (clue_storage) and Part-IV
-    # auth, which must decide the serving policy for workspace-scoped blobs.
+    # authorization. D4 gave every design byte per-tenant durable custody, but this route still
+    # resolves ACROSS tenants (ruling R-D4-7) so the public/preview surfaces keep working —
+    # Part-IV auth owns the serving policy for workspace-scoped blobs.
     @app.get("/asset-store/{digest}")
     def get_asset_store_bytes(digest: str) -> Response:
         """Content-addressed byte serving. The editor canvas resolves image
@@ -5281,19 +5455,25 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
             raise HTTPException(
                 status_code=404, detail="not a sha256 content digest"
             )
-        # The store layout has ONE owner: resolve through the same helper
-        # every opaque_ref-based route uses.
-        path = resolve_store_path(f"sha256/{digest[:2]}/{digest}")
-        if not path.is_file():
+        # D4 (R-D4-7): resolved through the `artifact` table — any LIVE row in the design
+        # namespace holding this content hash, deterministically picked. Deliberately
+        # workspace-UNSCOPED (see `clue_design.storage.read_public_design_blob`): the route is
+        # O4-exempt and used to serve one global content-addressed tree, so scoping it would
+        # break the published page and the origin-"null" preview iframe it exists for.
+        try:
+            media_type, data = read_public_design_blob(app.state.storage, digest)
+        except NotFoundError as error:
             raise HTTPException(
                 status_code=404,
                 detail=f"no stored bytes for digest {digest}",
-            )
-        with path.open("rb") as handle:
-            head = handle.read(512)
-        return FileResponse(
-            path,
-            media_type=sniff_mime(head) or "application/octet-stream",
+            ) from error
+        # The row's media type is authoritative EXCEPT when the producer had nothing better to
+        # say; then fall back to sniffing, which is what this route always did.
+        if media_type == "application/octet-stream":
+            media_type = sniff_mime(data[:512]) or "application/octet-stream"
+        return Response(
+            content=data,
+            media_type=media_type,
             headers={
                 "Cache-Control": "public, max-age=31536000, immutable",
                 # Content-addressed public bytes, CDN-style. Required because
@@ -5310,30 +5490,24 @@ def create_app(database_path: Optional[Path] = None) -> FastAPI:
         asset_id: str,
         repo: HybridRepository = Depends(repository),
     ) -> Response:
+        # D4: same shape as /bytes — durable read, resolved by digest.
         stored = repo.require_asset_record(asset_id)
         record = stored["asset"]
         thumbnail = (record.get("media") or {}).get("thumbnail") or {}
-        location = thumbnail.get("location") or {}
-        if location.get("provider") != "local-store" or not location.get("opaque_ref"):
+        digest = location_digest(thumbnail.get("location"))
+        if digest is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"asset {asset_id} has no thumbnail",
             )
-        path = resolve_store_path(location["opaque_ref"])
-        if not path.is_file():
+        data = read_asset_bytes(blob_store(repo), digest)
+        if data is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"asset {asset_id} thumbnail bytes are missing from the store",
             )
         media_type = thumbnail.get("mime_type") or "application/octet-stream"
-        return Response(content=path.read_bytes(), media_type=media_type)
-
-    def resolve_store_path(opaque_ref: str) -> Path:
-        root = Path(app.state.asset_store_root).resolve()
-        candidate = (root / opaque_ref).resolve()
-        if root != candidate and root not in candidate.parents:
-            raise HTTPException(status_code=400, detail="invalid asset location")
-        return candidate
+        return Response(content=data, media_type=media_type)
 
     def asset_max_bytes() -> int:
         return settings.lumen_asset_max_bytes
@@ -6007,14 +6181,6 @@ def _sniff_supported_asset(data: bytes) -> bool:
     return "<svg" in text
 
 
-def _sanitize_tmp_filename(filename: Optional[str]) -> str:
-    """Sanitize an uploaded filename for use in a tmp path: keep only
-    ``[A-Za-z0-9._-]`` and cap length. Never returns empty."""
-    base = os.path.basename(filename or "")
-    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", base).strip("._") or "asset"
-    return cleaned[:80]
-
-
 def ingest_url_rejected(url: str, error: Exception) -> HTTPException:
     code = getattr(error, "code", "LUMI0501")
     message = getattr(error, "message", None) or str(error) or f"blocked url: {url}"
@@ -6465,7 +6631,15 @@ def run_agent_turn_preview(
     root: Path,
     event_sink=None,
     resolved_reference_assets=_REFERENCES_UNRESOLVED,
+    workspace_id: Optional[str] = None,
 ) -> JsonObject:
+    # D4: the turn's tenant, threaded from the dispatching request. It decides which engine
+    # materialization cache the runtime reads and writes — and the accept seam that gives those
+    # bytes durable custody looks in the REQUEST's cache, so a turn pointed at the wrong
+    # workspace would silently lose everything it generated. Defaults to the dev workspace for
+    # the direct callers (CLI, fixtures) that have no request, mirroring the D2.5A residual on
+    # the by-value resolvers below.
+    turn_workspace_id = workspace_id or default_workspace_id()
     ensure_agent_runtime_path(root)
     try:
         from lumen_agent.config import AgentRuntimeConfig
@@ -6486,7 +6660,7 @@ def run_agent_turn_preview(
     # a worker-thread 422 would be swallowed by its catch-all; adversarial-gate
     # ship-blocker 1) and hands the manifest in via resolved_reference_assets.
     if resolved_reference_assets is _REFERENCES_UNRESOLVED:
-        reference_assets = resolve_agent_turn_references(payload)
+        reference_assets = resolve_agent_turn_references(payload, api_blob_store(turn_workspace_id))
     else:
         reference_assets = resolved_reference_assets
 
@@ -6499,13 +6673,16 @@ def run_agent_turn_preview(
         if payload.model:
             config = replace(config, model=payload.model)
         if config.asset_store_root is None:
-            # A seeded scene references assets ingested through the API's store;
-            # the agent must export from the same root or seeded imagery fails
-            # with LUME0210 (asset bytes missing). LUMEN_AGENT_ASSET_STORE still
-            # overrides explicitly.
-            config = replace(config, asset_store_root=api_asset_store_root())
+            # D4: the runtime's engine reads and writes the SAME per-workspace materialization
+            # cache the API's own engine calls use — a seeded scene's imagery is materialized
+            # there, and anything the turn generates lands there and is given durable custody at
+            # the accept seam (the scene-persist backstop). Pointing the runtime anywhere else
+            # fails seeded imagery with LUME0210. LUMEN_AGENT_ASSET_STORE still overrides.
+            config = replace(
+                config, asset_store_root=api_engine_cache_root(turn_workspace_id)
+            )
         brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
-            resolve_agent_turn_brand_kit(payload)
+            resolve_agent_turn_brand_kit(payload, api_blob_store(turn_workspace_id))
         )
         if brand_kit is not None:
             # K0 (kit application): the document's attached kit rides the run
@@ -6545,7 +6722,7 @@ def run_agent_turn_preview(
             config = replace(
                 config,
                 reference_assets=reference_assets,
-                asset_store_root=api_asset_store_root(),
+                asset_store_root=api_engine_cache_root(turn_workspace_id),
             )
         # Slice 2 D4: the loop is mandatory-multimodal (Director + reviewer attach
         # images every turn). Fail LOUDLY here, before the run authors, if the
@@ -6662,6 +6839,7 @@ def run_web_agent_turn(
     account_card: Optional[JsonObject] = None,
     asset_library: Optional[JsonObject] = None,
     custom_component_registry: Any = None,
+    workspace_id: Optional[str] = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
@@ -6698,6 +6876,13 @@ def run_web_agent_turn(
             str(error),
         )
 
+    # D4: see run_agent_turn_preview — the turn's tenant picks its engine cache. The registry
+    # capability already carries a workspace, so prefer its (they must not disagree).
+    turn_workspace_id = (
+        workspace_id
+        or getattr(getattr(custom_component_registry, "blobs", None), "workspace_id", None)
+        or default_workspace_id()
+    )
     web_doc = document["scene"]
     if target_node_ids:
         prompt = prompt + _describe_web_turn_targets(web_doc, target_node_ids)
@@ -6706,9 +6891,11 @@ def run_web_agent_turn(
         if model:
             config = replace(config, model=model)
         if config.asset_store_root is None:
-            # Generated imagery must land in (and export from) the API's store,
-            # exactly as the scene path pins it.
-            config = replace(config, asset_store_root=api_asset_store_root())
+            # D4: generated imagery must land in (and export from) the request workspace's
+            # engine cache, exactly as the scene path pins it.
+            config = replace(
+                config, asset_store_root=api_engine_cache_root(turn_workspace_id)
+            )
         if asset_library is not None:
             config = replace(config, asset_library=asset_library)
         if custom_component_registry is not None:
@@ -6727,7 +6914,7 @@ def run_web_agent_turn(
                 config, turn_target_node_ids=list(target_node_ids)
             )
         brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
-            resolve_web_turn_brand_kit(web_doc)
+            resolve_web_turn_brand_kit(web_doc, api_blob_store(turn_workspace_id))
         )
         if brand_kit is not None:
             config = replace(
@@ -6748,7 +6935,9 @@ def run_web_agent_turn(
             config = replace(
                 config,
                 account_card=account_card,
-                account_assets=resolve_account_assets(account_card),
+                account_assets=resolve_account_assets(
+                    account_card, turn_workspace_id
+                ),
             )
         # Mandatory-multimodal (the reviewer attaches screenshots): fail loud
         # before authoring if the configured model is text-only.
@@ -6801,13 +6990,36 @@ def ensure_agent_runtime_path(root: Path) -> None:
             sys.path.insert(0, path)
 
 
-def api_asset_store_root() -> Path:
-    """The API's asset store root, resolved exactly as create_app resolves it."""
-    return settings.effective_asset_store_root
+def api_engine_cache_root(workspace_id: str) -> Path:
+    """One workspace's engine materialization cache, resolved as ``create_app`` resolves it.
+
+    The off-request-thread twin of the app's own ``engine_cache_dir``: agent-turn workers and
+    the by-value resolvers below run outside a request, so they cannot read ``app.state``.
+    Deliberately per-WORKSPACE for the same reason the in-app accessor is — the engine resolves
+    purely by digest, so one shared tree would let a turn read another tenant's bytes.
+    """
+    path = settings.effective_asset_store_root / workspace_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def api_blob_store(workspace_id: Optional[str] = None) -> DesignBlobStore:
+    """A design blob-store handle for code that has no request to take one from.
+
+    Carries the SAME D2.5A residual the ``HybridRepository()`` constructions beside it do: off
+    the request thread there is no header to read, so it falls back to the configured dev
+    workspace. Row store and byte store therefore name the same tenant, which is the property
+    that matters; D5 threads the turn's real workspace through both at once. It also takes the
+    process-wide backend from settings rather than ``app.state.storage``, so a suite that
+    injects a throwaway backend into ``create_app`` and then drives THIS path must point
+    ``CLUE_STORAGE_FS_ROOT`` at the same place (the conftest fixture does).
+    """
+    return DesignBlobStore(storage_from_settings(), workspace_id)
 
 
 def resolve_agent_turn_brand_kit(
     payload: AgentTurnPreviewRequest,
+    blobs: Optional[DesignBlobStore] = None,
 ) -> Tuple[
     Optional[JsonObject], Optional[str], Optional[JsonObject], Optional[JsonObject]
 ]:
@@ -6833,11 +7045,14 @@ def resolve_agent_turn_brand_kit(
     try:
         # D2.5A residual (unchanged by D2.5B): this runs off the request thread, so the store
         # falls back to the configured dev workspace. D5 threads the turn's workspace through.
-        repo = HybridRepository()
+        blobs = blobs if blobs is not None else api_blob_store()
+        repo = HybridRepository(blobs.workspace_id)
         record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
         brand_kit = record["brand_kit"]
         manifest = brand_kit_asset_manifest(repo, brand_kit)
-        font_spec = brand_kit_font_spec(repo, brand_kit, str(api_asset_store_root()))
+        font_spec = brand_kit_font_spec(
+            repo, brand_kit, blobs, str(api_engine_cache_root(blobs.workspace_id))
+        )
         return brand_kit, "document", manifest, font_spec
     except Exception:
         return None, None, None, None
@@ -6973,7 +7188,7 @@ def build_web_font_face_css(
 
 
 def resolve_web_turn_brand_kit(
-    web_doc: JsonObject, database_path: Optional[Path] = None
+    web_doc: JsonObject, blobs: Optional[DesignBlobStore] = None
 ) -> Tuple[
     Optional[JsonObject], Optional[str], Optional[JsonObject], Optional[JsonObject]
 ]:
@@ -6986,20 +7201,23 @@ def resolve_web_turn_brand_kit(
     Resolution failures never fail the turn: no ref, an unknown kit id, or an
     unreadable database all return (None, None, None, None) and the pipeline
     falls back to the platform default kit — the same silent-fallback contract
-    the scene path has. `database_path` is VESTIGIAL since D2.5B (SQLite is deleted and the kit
-    store is process-global Postgres); it is accepted so the render endpoint's call site is
-    untouched, and ignored."""
+    the scene path has. `blobs` (D4) is the tenant's byte store, used to materialize the kit's
+    font faces into the engine cache; omitted (the off-request-thread callers), it falls back to
+    the dev workspace exactly as the row store beside it does."""
     theme = web_doc.get("theme") if isinstance(web_doc, dict) else None
     ref = theme.get("brand_kit") if isinstance(theme, dict) else None
     if not isinstance(ref, dict) or not ref.get("id"):
         return None, None, None, None
     try:
         # D2.5A residual (unchanged by D2.5B): off the request thread, so the dev workspace.
-        repo = HybridRepository()
+        blobs = blobs if blobs is not None else api_blob_store()
+        repo = HybridRepository(blobs.workspace_id)
         record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
         brand_kit = record["brand_kit"]
         manifest = brand_kit_asset_manifest(repo, brand_kit)
-        font_spec = brand_kit_font_spec(repo, brand_kit, str(api_asset_store_root()))
+        font_spec = brand_kit_font_spec(
+            repo, brand_kit, blobs, str(api_engine_cache_root(blobs.workspace_id))
+        )
         return brand_kit, "document", manifest, font_spec
     except Exception:
         return None, None, None, None
@@ -7050,7 +7268,7 @@ def account_values(
 
 
 def resolve_account_assets(
-    account_card: JsonObject, database_path: Optional[Path] = None
+    account_card: JsonObject, workspace_id: Optional[str] = None
 ) -> Optional[JsonObject]:
     """The account-logo manifest a personalized turn hands the runtime BY VALUE
     (mirrors resolve_web_turn_brand_kit / brand_kit_asset_manifest): the account
@@ -7063,8 +7281,9 @@ def resolve_account_assets(
     if not logo_asset_id:
         return None
     try:
-        # D2.3: the asset registry lives on Postgres. `database_path` is vestigial (D2.5B).
-        repo = HybridRepository()
+        # D2.3: the asset registry lives on Postgres. `workspace_id` is the turn's tenant
+        # (None → the dev workspace, the same D2.5A residual as the resolvers above).
+        repo = HybridRepository(workspace_id)
         record = repo.require_asset_record(str(logo_asset_id))
         return {str(logo_asset_id): {"record": record.get("asset") or record}}
     except Exception:
@@ -7193,26 +7412,28 @@ def _dedupe_and_cap_reference_ids(raw: Optional[List[str]]) -> List[str]:
 
 
 def resolve_reference_images_for_generate(
-    repo: HybridRepository, asset_ids: List[str], store_root: str
+    repo: HybridRepository,
+    blobs: DesignBlobStore,
+    cache_dir: str,
+    asset_ids: List[str],
 ) -> Tuple[List[Tuple[bytes, str]], List[str]]:
     """RC (D-RC2.5): resolve already-deduped+capped reference ids into order-
     sorted (bytes, mime) reference images + their preview digests, via the SAME
     RC manifest machinery the agent turn uses — same hard 422s (unknown id /
     broken preview) and the same SVG rasterize. The manifest guarantees each
-    preview blob exists (it 422s otherwise), so the bytes read is safe."""
-    manifest = reference_asset_manifest(repo, asset_ids, store_root)
+    preview blob is durable (it 422s otherwise), so the read is safe."""
+    manifest = reference_asset_manifest(repo, blobs, cache_dir, asset_ids)
     images: List[Tuple[bytes, str]] = []
     digests: List[str] = []
     for entry in sorted(manifest.values(), key=lambda e: e.get("order", 0)):
         digest = entry["preview_digest"]
-        blob = Path(store_root) / "sha256" / digest[:2] / digest
-        images.append((blob.read_bytes(), entry.get("mime_type") or "image/png"))
+        images.append((blobs.read(digest), entry.get("mime_type") or "image/png"))
         digests.append(digest)
     return images, digests
 
 
 def resolve_agent_turn_references(
-    payload: AgentTurnPreviewRequest,
+    payload: AgentTurnPreviewRequest, blobs: Optional[DesignBlobStore] = None
 ) -> Optional[JsonObject]:
     """RC (D2): the user-attached references for THIS turn, resolved from the
     asset library into a by-value manifest so the runtime never reads the API
@@ -7224,26 +7445,32 @@ def resolve_agent_turn_references(
     asset_ids = _dedupe_and_cap_reference_ids(payload.reference_asset_ids)
     if not asset_ids:
         return None
-    store_root = str(api_asset_store_root())
     # D2.5A residual (unchanged by D2.5B): off the request thread, so the dev workspace.
-    return reference_asset_manifest(HybridRepository(), asset_ids, store_root)
+    blobs = blobs if blobs is not None else api_blob_store()
+    return reference_asset_manifest(
+        HybridRepository(blobs.workspace_id),
+        blobs,
+        str(api_engine_cache_root(blobs.workspace_id)),
+        asset_ids,
+    )
 
 
 def reference_asset_manifest(
     repo: HybridRepository,
+    blobs: DesignBlobStore,
+    cache_dir: str,
     asset_ids: List[str],
-    store_root: str,
 ) -> JsonObject:
     """RC (D2): {asset_id: {record, preview_digest, mime_type, width, height,
     dominant_colors, title, description, order}} — EXACTLY the config.py
     reference_assets contract. Records come back VERBATIM from the library. A
     missing id is a hard 422 (never a silent skip — references are explicit
-    user intent). SVG references are engine-rasterized to a 512px PNG written
-    into the shared content-addressed store AT RESOLVE TIME, so the runtime
-    only ever handles raster previews; a rasterize failure is a 422 (LUMI0804-
-    class spirit — a broken preview on an explicit attachment fails the
-    request, never degrades). dominant_colors/title/description are advisory."""
-    import hashlib
+    user intent). SVG references are engine-rasterized to a 512px PNG that is
+    given DURABLE custody and mirrored into the engine cache AT RESOLVE TIME, so
+    the runtime (which reads the cache) only ever handles raster previews; a
+    rasterize failure is a 422 (LUMI0804-class spirit — a broken preview on an
+    explicit attachment fails the request, never degrades).
+    dominant_colors/title/description are advisory."""
     import io
 
     from PIL import Image
@@ -7256,7 +7483,7 @@ def reference_asset_manifest(
     except Exception:
         descriptions = {}
 
-    rasterize_svg = make_rasterize_svg(repo, store_root)
+    rasterize_svg = make_rasterize_svg(repo, blobs, cache_dir)
     manifest: JsonObject = {}
     for order, asset_id in enumerate(asset_ids):
         try:
@@ -7290,18 +7517,16 @@ def reference_asset_manifest(
                 )
             preview_bytes = png_bytes
             preview_digest = hashlib.sha256(png_bytes).hexdigest()
-            blob_path = (
-                Path(store_root) / "sha256" / preview_digest[:2] / preview_digest
+            # D4: the rasterized preview is a real derived artifact — durable custody first
+            # (idempotent on identical bytes), then the engine-cache mirror the runtime reads
+            # through `view("reference:<n>")`. Registering before mirroring is the same
+            # row-before-blob ordering the seam itself uses.
+            blobs.register(
+                png_bytes,
+                media_type="image/png",
+                source_key=design_storage.SOURCE_KEY_ENGINE_ARTIFACT,
             )
-            if not blob_path.is_file():
-                # Atomic write (review fix): a content-addressed blob must never
-                # be observable half-written — a crash mid-write would park
-                # corrupt bytes at a valid digest path forever. Write a tmp
-                # sibling and rename into place (os.replace is atomic on POSIX).
-                blob_path.parent.mkdir(parents=True, exist_ok=True)
-                tmp_path = blob_path.with_name(f".{preview_digest}.tmp-{os.getpid()}")
-                tmp_path.write_bytes(png_bytes)
-                os.replace(tmp_path, blob_path)
+            write_cache_blob(cache_dir, preview_digest, png_bytes)
         else:
             digest = (media.get("digest") or {}).get("value")
             if not digest:
@@ -7316,11 +7541,13 @@ def reference_asset_manifest(
                     },
                 )
             preview_digest = str(digest)
-            blob_path = Path(store_root) / "sha256" / preview_digest[:2] / preview_digest
             # Review fix (channel refuter, minor 1): a raster reference whose
-            # store blob is gone fails HERE like the SVG branch does — D2 says
+            # bytes are gone fails HERE like the SVG branch does — D2 says
             # boundary 422, never a silent mid-run degrade to a pixel-less view.
-            if not blob_path.is_file():
+            # D4: "gone" is now a DURABLE-storage miss, and the bytes are mirrored into the
+            # engine cache so the runtime can view them.
+            preview_bytes = read_asset_bytes(blobs, preview_digest)
+            if preview_bytes is None:
                 raise HTTPException(
                     status_code=422,
                     detail={
@@ -7332,7 +7559,7 @@ def reference_asset_manifest(
                         "diagnostics": [],
                     },
                 )
-            preview_bytes = blob_path.read_bytes()
+            write_cache_blob(cache_dir, preview_digest, preview_bytes)
 
         # dominant_colors is advisory: an empty list on any failure never blocks.
         dominant_colors: List[str] = []
@@ -7384,7 +7611,10 @@ def _reference_dimensions(record: JsonObject) -> Tuple[Optional[int], Optional[i
 
 
 def scene_brand_fonts(
-    repo: HybridRepository, scene: Optional[JsonObject], store_root: str
+    repo: HybridRepository,
+    scene: Optional[JsonObject],
+    blobs: DesignBlobStore,
+    cache_dir: str,
 ) -> Optional[JsonObject]:
     """K3 for stateless/scene-only paths: resolve the scene's own brand-kit
     reference (`meta.brand_kit`) to its font spec so shaping uses the kit's
@@ -7402,11 +7632,14 @@ def scene_brand_fonts(
         )["brand_kit"]
     except NotFoundError:
         return None
-    return brand_kit_font_spec(repo, referenced, store_root)
+    return brand_kit_font_spec(repo, referenced, blobs, cache_dir)
 
 
 def brand_kit_font_spec(
-    repo: HybridRepository, brand_kit: Optional[JsonObject], store_root: str
+    repo: HybridRepository,
+    brand_kit: Optional[JsonObject],
+    blobs: DesignBlobStore,
+    cache_dir: str,
 ) -> Optional[JsonObject]:
     """K3: {store_root, faces: [{digest, family, weight?, style?}]} for the
     kit's font faces, resolved from the asset library. The helper reads the
@@ -7460,7 +7693,13 @@ def brand_kit_font_spec(
                 faces.append(spec_face)
     if not faces:
         return None
-    return {"store_root": store_root, "faces": faces}
+    # D4 read-through: the helper loads each face's BYTES from `store_root`, which is now the
+    # engine's per-workspace materialization cache — so every face has to be pulled out of
+    # durable storage before the spec is handed over. Fail-soft: a face whose bytes are durably
+    # absent is left un-materialized and the helper reports it (LUMS0101), exactly as it did
+    # when the byte was missing from the local tree.
+    ensure_materialized(blobs, cache_dir, (face["digest"] for face in faces))
+    return {"store_root": str(cache_dir), "faces": faces}
 
 
 def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:

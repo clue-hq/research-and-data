@@ -5,19 +5,32 @@ write endpoint. P6.2's constrained compiler will call
 ``persist_compiled_custom_component_artifact`` only after its compile/security
 gate succeeds. Tests use the same seam with explicit fixture compiler
 provenance; no alternate "mark this source successful" API exists.
+
+**D4 (design-integration Part II): the bytes live in platform storage.** The
+API-local ``custom-components/sha256/{ab}/{digest}`` tree is gone; every blob is
+written through :class:`~lumen_api.design_store.DesignBlobStore` into
+``clue_storage`` under ``{workspace_id}/design/{sha256}``, with an ``artifact``
+row recorded before the blob. So these functions take a blob-store handle where
+they used to take a ``store_root: Path``. The blob descriptor a registry row
+carries keeps its exact shape — ``{algorithm, value, opaque_ref, byte_length}``
+— but ``opaque_ref`` now holds the platform storage key. Readers **never parse
+that ref as a path**: they resolve by ``value`` (the digest) against the
+caller's workspace, which is why a legacy row written by the old store (whose
+ref is ``sha256/{ab}/{digest}``) still reads correctly.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import os
 import posixpath
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Tuple
 
-from .design_store import HybridRepository
+from clue_design.storage import SOURCE_KEY_CUSTOM_COMPONENT
+
+from .database import NotFoundError
+from .design_store import DesignBlobStore, HybridRepository
 from .custom_component_contract import custom_component_slug_is_valid
 
 
@@ -26,6 +39,24 @@ MAX_SOURCE_FILE_COUNT = 32
 MAX_SOURCE_FILE_BYTES = 256 * 1024
 MAX_SOURCE_SNAPSHOT_BYTES = 1024 * 1024
 SOURCE_EXTENSIONS = {".ts", ".tsx", ".js", ".jsx"}
+
+# The media type each artifact member is stored AND served as. This is the ONE table: the
+# member-serving route reads it, and it is what lands on the blob's `artifact` row.
+#
+# It has to be the member's TRUE type, not a blanket `application/octet-stream`, because D4 put
+# component blobs and publish delivery assets in ONE content-addressed namespace (R-D4-3): a
+# compiled first frame and the publish asset minted from those same bytes are the same key and
+# therefore the same row, and `record_artifact` keeps the FIRST writer's media type. Storing a
+# member honestly is what makes the two writers agree instead of racing.
+CUSTOM_COMPONENT_MEMBER_MEDIA_TYPES: Dict[str, str] = {
+    "source": "application/json",
+    "bundle": "text/javascript; charset=utf-8",
+    "css": "text/css; charset=utf-8",
+    "first_frame": "text/html; charset=utf-8",
+}
+# A component SOURCE snapshot (the canonical-JSON file tree) — the same bytes the artifact's
+# `source` member carries, hence the same media type.
+SOURCE_SNAPSHOT_MEDIA_TYPE = CUSTOM_COMPONENT_MEMBER_MEDIA_TYPES["source"]
 
 
 def _canonical_json(value: JsonObject) -> bytes:
@@ -37,56 +68,40 @@ def _canonical_json(value: JsonObject) -> bytes:
     ).encode("utf-8")
 
 
-def _store_content_addressed_blob(store_root: Path, data: bytes) -> JsonObject:
-    digest = hashlib.sha256(data).hexdigest()
-    opaque_ref = f"sha256/{digest[:2]}/{digest}"
-    target = store_root / opaque_ref
-    target.parent.mkdir(parents=True, exist_ok=True)
-
-    if target.exists():
-        if not target.is_file() or target.read_bytes() != data:
-            raise RuntimeError(
-                f"content-addressed store collision/corruption at {opaque_ref}"
-            )
-    else:
-        file_descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{digest}.", dir=target.parent
-        )
-        temporary = Path(temporary_name)
-        try:
-            with os.fdopen(file_descriptor, "wb") as handle:
-                handle.write(data)
-                handle.flush()
-                os.fsync(handle.fileno())
-            try:
-                os.link(temporary, target)
-            except FileExistsError:
-                if not target.is_file() or target.read_bytes() != data:
-                    raise RuntimeError(
-                        f"content-addressed store collision/corruption at {opaque_ref}"
-                    )
-        finally:
-            temporary.unlink(missing_ok=True)
-
+def _store_content_addressed_blob(
+    blobs: DesignBlobStore, data: bytes, *, media_type: str
+) -> JsonObject:
+    storage_key = blobs.register(
+        data, media_type=media_type, source_key=SOURCE_KEY_CUSTOM_COMPONENT
+    )
     return {
         "algorithm": "sha256",
-        "value": digest,
-        "opaque_ref": opaque_ref,
+        "value": hashlib.sha256(data).hexdigest(),
+        "opaque_ref": storage_key,
         "byte_length": len(data),
     }
 
 
-def _read_content_addressed_blob(store_root: Path, blob: JsonObject) -> bytes:
+def _read_content_addressed_blob(blobs: DesignBlobStore, blob: JsonObject) -> bytes:
+    """Resolve one stored blob by DIGEST and re-verify it end to end.
+
+    The stored ``opaque_ref`` is never used as a lookup path — the key is derived from the
+    digest and the reader's workspace — so this accepts both a D4 storage-key ref and a
+    legacy ``sha256/{ab}/{digest}`` one. The digest + byte-length re-check survives the move
+    unchanged: platform storage is content-addressed too, but the descriptor is the registry's
+    own claim about the bytes and is still verified against them.
+    """
     digest = str(blob.get("value") or "")
-    expected_ref = f"sha256/{digest[:2]}/{digest}"
-    if blob.get("algorithm") != "sha256" or blob.get("opaque_ref") != expected_ref:
+    if blob.get("algorithm") != "sha256" or not blob.get("opaque_ref"):
         raise RuntimeError(
             f"content-addressed blob has an invalid store record: {blob!r}"
         )
-    path = Path(store_root) / expected_ref
     try:
-        data = path.read_bytes()
-    except (FileNotFoundError, IsADirectoryError) as error:
+        data = blobs.read(digest)
+    except (NotFoundError, ValueError) as error:
+        # NotFoundError: no live artifact row for this digest in this workspace, or its bytes
+        # are gone. ValueError: the descriptor's `value` is not a sha256 (a key is data — the
+        # seam refuses to mint a key from it). Both are "the blob is not there", as before.
         raise RuntimeError(
             f"content-addressed blob is missing: {blob.get('opaque_ref')}"
         ) from error
@@ -177,7 +192,7 @@ def canonical_custom_component_source_snapshot(
 
 def persist_custom_component_source_revision(
     repository: HybridRepository,
-    store_root: Path,
+    blobs: DesignBlobStore,
     *,
     account_id: str,
     slug: str,
@@ -191,7 +206,9 @@ def persist_custom_component_source_revision(
     snapshot_bytes, files_manifest = canonical_custom_component_source_snapshot(
         slug=slug, files=files
     )
-    snapshot_blob = _store_content_addressed_blob(store_root, snapshot_bytes)
+    snapshot_blob = _store_content_addressed_blob(
+        blobs, snapshot_bytes, media_type=SOURCE_SNAPSHOT_MEDIA_TYPE
+    )
     next_version = expected_version + 1
     revision_identity = {
         "schema_version": 1,
@@ -219,7 +236,7 @@ def persist_custom_component_source_revision(
 
 def resolve_custom_component_source_snapshot(
     repository: HybridRepository,
-    store_root: Path,
+    blobs: DesignBlobStore,
     *,
     account_id: str,
     revision_id: str,
@@ -227,7 +244,7 @@ def resolve_custom_component_source_snapshot(
     revision = repository.require_custom_component_source_revision(
         account_id, revision_id
     )
-    data = _read_content_addressed_blob(store_root, revision["snapshot"])
+    data = _read_content_addressed_blob(blobs, revision["snapshot"])
     try:
         snapshot = json.loads(data)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -258,7 +275,7 @@ def resolve_custom_component_source_snapshot(
 
 def persist_compiled_custom_component_artifact(
     repository: HybridRepository,
-    store_root: Path,
+    blobs: DesignBlobStore,
     *,
     account_id: str,
     slug: str,
@@ -300,17 +317,16 @@ def persist_compiled_custom_component_artifact(
             "compiled custom component manifest and provenance must be JSON-safe"
         ) from error
 
-    source_blob = _store_content_addressed_blob(Path(store_root), source)
-    bundle_blob = _store_content_addressed_blob(Path(store_root), bundle)
-    css_blob = (
-        _store_content_addressed_blob(Path(store_root), css)
-        if css is not None
-        else None
-    )
+    def store(member: str, data: bytes) -> JsonObject:
+        return _store_content_addressed_blob(
+            blobs, data, media_type=CUSTOM_COMPONENT_MEMBER_MEDIA_TYPES[member]
+        )
+
+    source_blob = store("source", source)
+    bundle_blob = store("bundle", bundle)
+    css_blob = store("css", css) if css is not None else None
     first_frame_blob = (
-        _store_content_addressed_blob(Path(store_root), first_frame)
-        if first_frame is not None
-        else None
+        store("first_frame", first_frame) if first_frame is not None else None
     )
     identity = {
         "schema_version": 1,
@@ -344,7 +360,7 @@ def persist_compiled_custom_component_artifact(
 
 def resolve_custom_component_artifact_blob(
     repository: HybridRepository,
-    store_root: Path,
+    blobs: DesignBlobStore,
     *,
     account_id: str,
     artifact_id: str,
@@ -358,4 +374,4 @@ def resolve_custom_component_artifact_blob(
         raise RuntimeError(
             f"custom component artifact has no {member} blob: {artifact_id}"
         )
-    return artifact, _read_content_addressed_blob(Path(store_root), blob)
+    return artifact, _read_content_addressed_blob(blobs, blob)

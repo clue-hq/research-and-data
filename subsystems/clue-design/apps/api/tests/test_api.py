@@ -4,6 +4,7 @@ import base64
 import copy
 import json
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -11,7 +12,7 @@ from typing import Optional
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client, unique_run_id
+from conftest import make_blob_store, make_client, unique_run_id
 
 from lumen_api import image_provider
 from lumen_api.design_store import HybridRepository
@@ -33,7 +34,7 @@ VALID_STYLES_PATH = (
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
+    app = create_app(tmp_path / "engine-cache")
     return make_client(app)
 
 
@@ -440,7 +441,7 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
     )
     assert compiled.status_code == 200, compiled.text
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
 
     scene = preflightable_scene()
     scene["meta"]["brand_kit"] = {"id": "brand_kit_insight_health", "version": 4}
@@ -566,7 +567,7 @@ def test_brand_kit_font_faces_ride_preflight_as_store_digests(
     )
     assert created.status_code == 200, created.text
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     scene = preflightable_scene()
     scene["meta"]["brand_kit"] = {
         "id": "brand_kit_insight_with_font",
@@ -626,7 +627,7 @@ def test_reference_manifest_matches_config_contract_shape(
     from lumen_api.main import resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     uploaded = upload_logo(client)
     assert uploaded.status_code == 200, uploaded.text
     asset = uploaded.json()["asset"]
@@ -670,7 +671,7 @@ def test_reference_manifest_no_ids_is_none(
     from lumen_api.main import resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     assert (
         resolve_agent_turn_references(
             AgentTurnPreviewRequest(prompt="x", scene=minimal_scene())
@@ -689,7 +690,7 @@ def test_reference_manifest_svg_materializes_raster_preview(
     from lumen_api.main import resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     uploaded = upload_reference_svg(client)
     assert uploaded.status_code == 200, uploaded.text
     asset = uploaded.json()["asset"]
@@ -707,9 +708,16 @@ def test_reference_manifest_svg_materializes_raster_preview(
     preview_digest = entry["preview_digest"]
     assert preview_digest != svg_digest
     assert entry["mime_type"] == "image/png"
-    store_root = tmp_path / "asset-store"
-    blob = store_root / "sha256" / preview_digest[:2] / preview_digest
-    assert blob.is_file(), "rasterized SVG preview must land in the store"
+    # D4: the rasterized preview gets DURABLE custody (it is a real derived artifact) and is
+    # mirrored into the engine cache, which is where the runtime's `view("reference:<n>")`
+    # reads it from. Both halves are the contract; the durable one is the load-bearing half.
+    workspace_id = os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    blobs = make_blob_store(client.app)
+    assert blobs.exists(preview_digest), "rasterized SVG preview must be durably stored"
+    cache_blob = (
+        tmp_path / "engine-cache" / workspace_id / "sha256" / preview_digest[:2] / preview_digest
+    )
+    assert cache_blob.is_file(), "and mirrored into the engine cache the runtime reads"
 
 
 def test_reference_manifest_unknown_id_is_422(
@@ -721,7 +729,7 @@ def test_reference_manifest_unknown_id_is_422(
     from lumen_api.main import resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     # Touch the store so the db/store exist for this run.
     upload_logo(client)
     with pytest.raises(HTTPException) as excinfo:
@@ -745,7 +753,7 @@ def test_reference_manifest_too_many_is_422(
     from lumen_api.main import resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     with pytest.raises(HTTPException) as excinfo:
         resolve_agent_turn_references(
             AgentTurnPreviewRequest(
@@ -765,7 +773,7 @@ def test_async_agent_turns_route_422s_on_bad_reference_before_creating_a_run(
     (POST /agent/turns) a bad attachment must surface as a REAL 422 from the
     route handler — validated BEFORE the run row exists — never be swallowed
     by the worker's catch-all into a generic agent_runtime.failed run."""
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     response = client.post(
         "/agent/turns",
         json={
@@ -792,7 +800,7 @@ def test_agent_turn_forwards_references_into_config(
     from lumen_api.main import repo_root, run_agent_turn_preview
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     asset_id = upload_logo(client).json()["asset"]["id"]
 
     captured: dict = {}
@@ -821,7 +829,11 @@ def test_agent_turn_forwards_references_into_config(
     assert config.reference_assets is not None
     assert asset_id in config.reference_assets
     assert config.reference_assets[asset_id]["order"] == 0
-    assert config.asset_store_root == (tmp_path / "asset-store")
+    # D4: the runtime is pinned to the turn workspace's ENGINE MATERIALIZATION CACHE — the
+    # same tree the API's own engine calls use, which is what keeps seeded imagery resolvable.
+    assert config.asset_store_root == (
+        tmp_path / "engine-cache" / os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    )
 
 
 def test_agent_turn_without_references_leaves_config_unset(
@@ -835,7 +847,7 @@ def test_agent_turn_without_references_leaves_config_unset(
     from lumen_api.main import repo_root, run_agent_turn_preview
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
 
     captured: dict = {}
 
@@ -1313,8 +1325,8 @@ def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
     # runs untouched. Live failure 2026-07-29: two website turns sat
     # 'running' for hours after an API bounce.
 
-    database_path = tmp_path / "api.sqlite3"
-    first = make_client(create_app(database_path))
+    cache_root = tmp_path / "engine-cache"
+    first = make_client(create_app(cache_root))
 
     orphan_web = unique_run_id("orphan_web")
     orphan_scene = unique_run_id("orphan_scene")
@@ -1337,7 +1349,7 @@ def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
     del first
 
     # "Restart": a new app over the same database sweeps at construction.
-    restarted = make_client(create_app(database_path))
+    restarted = make_client(create_app(cache_root))
 
     web_snapshot = restarted.get(f"/agent/runs/{orphan_web}").json()
     assert web_snapshot["status"] == "failed"
@@ -1801,13 +1813,13 @@ def test_request_id_from_contextvar_stamps_events() -> None:
 def test_startup_configures_logging_once(tmp_path: Path) -> None:
     root = logging.getLogger()
 
-    create_app(tmp_path / "once_a.sqlite3")
+    create_app(tmp_path / "once_a")
     owned = [h for h in root.handlers if getattr(h, "_lumen_obs_handler", False)]
     assert len(owned) == 1
 
     # A second app build must NOT stack another root handler — configure is
     # idempotent (it removes its own owned handlers first).
-    create_app(tmp_path / "once_b.sqlite3")
+    create_app(tmp_path / "once_b")
     owned_again = [h for h in root.handlers if getattr(h, "_lumen_obs_handler", False)]
     assert len(owned_again) == 1
 
@@ -3325,7 +3337,13 @@ def upload_logo(client: TestClient, **form) -> "object":
 
 
 def store_files(tmp_path: Path) -> list[Path]:
-    store_root = tmp_path / "asset-store"
+    """This test's DURABLE design blobs (D4).
+
+    The API-local `asset-store/` tree is gone: bytes live in platform storage, which the
+    conftest fixture roots at `tmp_path/default-storage` for every non-injecting app. Counting
+    the physical blobs there is the same property these assertions always asserted — how many
+    byte objects one logical asset costs, and whether the GC actually destroyed them."""
+    store_root = tmp_path / "default-storage"
     if not store_root.exists():
         return []
     return [path for path in store_root.rglob("*") if path.is_file()]
@@ -3344,14 +3362,15 @@ def test_asset_upload_stores_content_addressed_bytes(
     assert record["media"]["mime_type"] == "image/png"
     digest = record["media"]["digest"]
     assert digest["algorithm"] == "sha256"
+    # D4/R-D4-4: the persisted record points at PLATFORM STORAGE — the workspace-scoped design
+    # key, never a local path. That re-pointing is what survives a wiped engine cache.
     opaque_ref = record["media"]["location"]["opaque_ref"]
-    assert opaque_ref == f"sha256/{digest['value'][:2]}/{digest['value']}"
-    assert record["media"]["location"]["provider"] == "local-store"
+    workspace_id = os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    assert opaque_ref == f"{workspace_id}/design/{digest['value']}"
+    assert record["media"]["location"]["provider"] == "clue-storage"
     assert payload["deduplicated"] is False
 
-    store_path = tmp_path / "asset-store" / opaque_ref
-    assert store_path.is_file()
-    assert store_path.read_bytes() == LOGO_PNG_PATH.read_bytes()
+    assert make_blob_store(client.app).read(digest["value"]) == LOGO_PNG_PATH.read_bytes()
 
     served = client.get(f"/assets/{record['id']}/bytes")
     assert served.status_code == 200
@@ -4827,8 +4846,10 @@ def test_instance_derivation_with_saved_print_profile(client: TestClient) -> Non
     assert pdf.get("error") is None, pdf
     assert pdf["print_ready"]["status"] != "fail"
 
-    store_root = str(client.app.state.asset_store_root)
-    pdf_bytes = (Path(store_root) / pdf["relative_path"]).read_bytes()
+    # D4: the derive artifact is written into this workspace's engine cache (and registered
+    # durably at the same moment — see the cache-wipe rehydration test).
+    cache_dir = Path(client.app.state.engine_cache_root) / os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    pdf_bytes = (cache_dir / pdf["relative_path"]).read_bytes()
     assert pdf_bytes.startswith(b"%PDF-")
     assert b"/TrimBox" in pdf_bytes, "print finalize expected"
     assert b"FontFile2" in pdf_bytes, "embedded subset fonts expected"

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client
+from conftest import make_blob_store, make_client
 from sqlalchemy import text as sa_text
 from sqlalchemy.exc import DBAPIError
 
@@ -94,8 +94,8 @@ export default function CuratedChart() {
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    return make_client(create_app(tmp_path / "api.sqlite3"))
+def client(tmp_path: Path, design_storage) -> TestClient:
+    return make_client(create_app(tmp_path / "engine-cache", storage=design_storage))
 
 
 def create_account(client: TestClient, account_id: str) -> None:
@@ -591,14 +591,14 @@ def test_concurrent_source_compare_and_swap_has_exactly_one_winner(
     client: TestClient,
 ) -> None:
     create_account(client, "acc_alpha")
-    store_root = client.app.state.custom_component_store_root
+    blobs = make_blob_store(client.app)
 
     def write(label: str) -> str:
         repository = HybridRepository()
         try:
             persist_custom_component_source_revision(
                 repository,
-                store_root,
+                blobs,
                 account_id="acc_alpha",
                 slug="race-card",
                 expected_version=0,
@@ -647,7 +647,7 @@ def test_compile_overtaken_by_source_write_cannot_publish_stale_artifact(
         repository = HybridRepository()
         persist_custom_component_source_revision(
             repository,
-            client.app.state.custom_component_store_root,
+            make_blob_store(client.app),
             account_id="acc_alpha",
             slug="race-card",
             expected_version=1,

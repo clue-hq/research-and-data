@@ -16,13 +16,15 @@ returns a queued job but GET reflects the terminal state.
 
 from __future__ import annotations
 
+import hashlib
+import os
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client
+from conftest import make_blob_store, make_client
 
 from lumen_api import main as main_module
 from lumen_api.design_store import HybridRepository
@@ -158,14 +160,14 @@ def _install_stub_pipeline(
     mirroring how ``pipeline.py`` lazily resolves ``capture.uploads`` /
     ``describe`` so no Agent A file is imported."""
 
-    def _runner(database_path, asset_store_root, job_id, *, workspace_id=None):
+    def _runner(engine_cache_dir, job_id, *, workspace_id=None, storage=None):
         run_asset_ingestion(
-            database_path,
-            asset_store_root,
+            engine_cache_dir,
             job_id,
             analyze=analyze,
             apply_descriptions=apply_descriptions,
             workspace_id=workspace_id,
+            storage=storage,
         )
 
     monkeypatch.setattr(main_module, "run_asset_ingestion", _runner)
@@ -173,8 +175,18 @@ def _install_stub_pipeline(
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
+    app = create_app(tmp_path / "engine-cache")
     return make_client(app)
+
+
+def _staged_leftovers(client: TestClient) -> list[str]:
+    """Digests of the default upload set still holding durable bytes (D4/R-D4-5)."""
+    blobs = make_blob_store(client.app)
+    return [
+        digest
+        for digest in {hashlib.sha256(PNG_BYTES).hexdigest(), hashlib.sha256(JPEG_BYTES).hexdigest()}
+        if blobs.exists(digest)
+    ]
 
 
 def _post_assets(client: TestClient, *, uploads=None, **form):
@@ -310,7 +322,7 @@ def test_ingest_assets_mixed_supported_passes_through(
     assert got_job["status"] == "succeeded", got_job
 
 
-def test_ingest_assets_cleans_tmp_files_after_success(
+def test_ingest_assets_cleans_staged_bytes_after_success(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _install_stub_pipeline(monkeypatch, analyze=_good_analyze)
@@ -321,12 +333,13 @@ def test_ingest_assets_cleans_tmp_files_after_success(
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 
-    tmp_dir = Path(client.app.state.asset_store_root) / "ingest_tmp"
-    leftovers = list(tmp_dir.glob(f"{job_id}_*"))
-    assert leftovers == [], f"tmp files must be deleted after success: {leftovers}"
+    # D4/R-D4-5: each upload was staged in platform storage; the stub analyzer promotes none of
+    # them into a live asset, so every staged blob must be gone.
+    leftovers = _staged_leftovers(client)
+    assert leftovers == [], f"staged uploads must be discarded after success: {leftovers}"
 
 
-def test_ingest_assets_failure_marks_job_failed_and_cleans_tmp(
+def test_ingest_assets_failure_marks_job_failed_and_cleans_staged_bytes(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def boom_analyze(files, *, core, store_root, reporter):
@@ -343,34 +356,33 @@ def test_ingest_assets_failure_marks_job_failed_and_cleans_tmp(
     assert got["brand_kit_id"] is None
     assert "analysis exploded" in got["error"]["message"]
 
-    # Tmp files are deleted even on the failure path.
-    tmp_dir = Path(client.app.state.asset_store_root) / "ingest_tmp"
-    leftovers = list(tmp_dir.glob(f"{job_id}_*"))
-    assert leftovers == [], f"tmp files must be deleted after failure: {leftovers}"
+    # Staged blobs are discarded even on the failure path.
+    leftovers = _staged_leftovers(client)
+    assert leftovers == [], f"staged uploads must be discarded after failure: {leftovers}"
 
     # No asset_upload kit row was created.
     kits = client.get("/brand-kits").json()
     assert all(k.get("source") != "asset_upload" for k in kits)
 
 
-def test_ingest_assets_missing_tmp_file_fails_cleanly(
+def test_ingest_assets_missing_staged_bytes_fails_cleanly(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # run_asset_ingestion must never raise; a missing tmp file → job failed with
+    # run_asset_ingestion must never raise; staged bytes that are gone → job failed with
     # a clear LUMI0605 message rather than a crash. Re-running the pipeline
-    # against a job whose tmp files were already consumed proves the handling.
+    # against a job whose staged uploads were already discarded proves the handling.
     _install_stub_pipeline(monkeypatch, analyze=_good_analyze)
 
     post = _post_assets(client)
     job_id = post.json()["job"]["job_id"]
-    # After the (synchronous) happy background run the tmp files are already
-    # gone; re-run the pipeline against the same job to prove missing-tmp
-    # handling.
+    # After the (synchronous) happy background run the staged blobs are already
+    # discarded; re-run the pipeline against the same job to prove the handling.
     run_asset_ingestion(
-        str(client.app.state.database_path),
-        client.app.state.asset_store_root,
+        str(Path(client.app.state.engine_cache_root) / os.environ["LUMEN_DEV_WORKSPACE_ID"]),
         job_id,
         analyze=_good_analyze,
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
+        storage=client.app.state.storage,
     )
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got

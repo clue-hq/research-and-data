@@ -242,7 +242,7 @@ def test_engine_round_trip_validates(name: str) -> None:
 @pytest.mark.parametrize("name", FIXTURES)
 def test_post_brand_kit_persists(tmp_path: Path, name: str) -> None:
     result = _normalize(name)
-    app = create_app(tmp_path / f"api_{name}.sqlite3")
+    app = create_app(tmp_path / f"engine-cache-{name}")
     client = make_client(app)
     response = client.post(
         "/brand-kits",

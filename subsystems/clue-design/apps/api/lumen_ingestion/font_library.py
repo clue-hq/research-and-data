@@ -613,18 +613,23 @@ def provision_family(
     metrics: Optional[JsonObject],
     ingest: Callable[..., JsonObject],
     create_record: Callable[[JsonObject], JsonObject],
-    store_root: str,
+    blobs: Any,
+    cache_dir: str,
     google_fonts_commit: str,
 ) -> JsonObject:
-    """Ingest each face into the asset store + SQLite, returning the family's
-    manifest entry. `ingest` is CoreClient.ingest_asset (kwargs subset);
-    `create_record` is HybridRepository.create_asset_record."""
+    """Ingest each face and return the family's manifest entry.
+
+    `ingest` is CoreClient.ingest_asset (kwargs subset); `create_record` is
+    HybridRepository.create_asset_record. D4: the engine ingests into `cache_dir` (its transient
+    materialization cache), and each face's bytes are then given DURABLE custody in platform
+    storage under `design_font` — with the record's `media.location` re-pointed at the storage
+    key before the registry row is written, so a wiped cache costs nothing."""
     manifest_faces: List[JsonObject] = []
     for face in faces:
         asset_id = face_asset_id(curated.slug, face.weight, face.digest, face.style)
         style_label = " Italic" if face.style == "italic" else ""
         response = ingest(
-            store_root=store_root,
+            store_root=cache_dir,
             bytes_base64=base64.b64encode(face.bytes_).decode("ascii"),
             asset_id=asset_id,
             label=f"{curated.family} {WEIGHT_NAMES[face.weight]}{style_label} (font library)",
@@ -655,6 +660,13 @@ def provision_family(
             raise FontLibraryError(
                 f"{curated.family}: store digest {stored_digest} != computed {face.digest}"
             )
+        # D4 write-back BEFORE the registry row (the same ordering every producer uses).
+        from clue_design.storage import SOURCE_KEY_FONT
+        from lumen_api.asset_custody import register_engine_write
+
+        register_engine_write(
+            blobs, cache_dir, record=record, source_key=SOURCE_KEY_FONT
+        )
         # The helper cannot populate FontAssetMetadata (it never parses font
         # tables); stamp it here so the record is honest about what it holds.
         record["kind"] = "font"
