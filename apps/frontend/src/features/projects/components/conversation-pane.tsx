@@ -115,8 +115,12 @@ export function ConversationPane({
             entities={workspace.contextEntities}
             modelPickerOpen={controller.modelPickerOpen}
             models={workspace.models}
-            onEntityRemove={controller.removeEntity}
-            onEntitySelect={controller.selectEntity}
+            onEntityRemove={workspace.composerCapabilities.contextRefs
+              ? controller.removeEntity
+              : undefined}
+            onEntitySelect={workspace.composerCapabilities.contextRefs
+              ? controller.selectEntity
+              : undefined}
             onModelPickerToggle={controller.toggleModelPicker}
             onModelSelect={controller.selectModel}
             onPromptChange={controller.setPrompt}
@@ -157,13 +161,15 @@ export function ConversationPane({
           >
             <ProjectIcon name="plus" size={14} />
           </button>
-          <button
-            aria-label="Open canvas inspector"
-            onClick={() => controller.setInspectorOpen(true)}
-            type="button"
-          >
-            <ProjectIcon name="edit" size={14} />
-          </button>
+          {controller.selectedArtifact ? (
+            <button
+              aria-label="Open canvas inspector"
+              onClick={() => controller.setInspectorOpen(true)}
+              type="button"
+            >
+              <ProjectIcon name="edit" size={14} />
+            </button>
+          ) : null}
           <button
             aria-label="Expand conversation"
             aria-pressed={controller.focusPane === "conversation"}
@@ -215,8 +221,12 @@ export function ConversationPane({
           entities={workspace.contextEntities}
           modelPickerOpen={controller.modelPickerOpen}
           models={workspace.models}
-          onEntityRemove={controller.removeEntity}
-          onEntitySelect={controller.selectEntity}
+          onEntityRemove={workspace.composerCapabilities.contextRefs
+            ? controller.removeEntity
+            : undefined}
+          onEntitySelect={workspace.composerCapabilities.contextRefs
+            ? controller.selectEntity
+            : undefined}
           onModelPickerToggle={controller.toggleModelPicker}
           onModelSelect={controller.selectModel}
           onPromptChange={controller.setPrompt}

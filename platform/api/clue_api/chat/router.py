@@ -94,6 +94,9 @@ from clue_api.chat.schemas import (
     ProjectBootstrapResponse,
     ProjectBootstrapThreadWire,
     ProjectBootstrapWire,
+    ProjectShellResponse,
+    ProjectShellWire,
+    SidebarProjectsResponse,
     SubmitTurnRequest,
     ThreadListResponse,
     ThreadResponse,
@@ -116,12 +119,15 @@ from clue_core import OperationId, operation_id_from_key
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_projections import (
+    DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE,
     DEFAULT_THREAD_MESSAGE_PAGE_SIZE,
     DEFAULT_THREAD_PAGE_SIZE,
+    MAX_PROJECT_SIDEBAR_PAGE_SIZE,
     MAX_THREAD_MESSAGE_PAGE_SIZE,
     MAX_THREAD_PAGE_SIZE,
     InvalidCursorError,
     open_gate_kinds_for_threads,
+    project_sidebar_page,
     thread_gates,
     thread_messages,
     threads_for_project,
@@ -133,7 +139,13 @@ from clue_projections import (
     turn_status_ledger,
     turn_tool_calls,
 )
-from clue_spine import create_project, get_brand, get_project, list_brands_for_workspace
+from clue_spine import (
+    create_project,
+    get_brand,
+    get_project,
+    get_project_for_workspace,
+    list_brands_for_workspace,
+)
 from clue_storage import StorageBackend, content_address
 from clue_toolbelt import IdempotencyConflict, PreconditionFailed, ToolInvoker
 
@@ -775,6 +787,100 @@ def build_chat_router(
                     href=href,
                 )
             )
+
+    @router.get("/projects/sidebar")
+    async def project_sidebar_route(
+        who: PrincipalDep,
+        limit: Annotated[
+            int,
+            Query(ge=1, le=MAX_PROJECT_SIDEBAR_PAGE_SIZE),
+        ] = DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE,
+        cursor: Annotated[str | None, Query()] = None,
+    ) -> SidebarProjectsResponse:
+        """Return the real project/thread hierarchy in a constant query count."""
+
+        _require(who, PERMISSION_PROJECT_READ)
+        _require(who, PERMISSION_THREAD_READ)
+        try:
+            page = await project_sidebar_page(
+                workspace_id=who.workspace_id,
+                limit=limit,
+                cursor=cursor,
+                conn_factory=conn_factory,
+            )
+        except InvalidCursorError as exc:
+            raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
+
+        thread_ids = tuple(
+            thread.thread_id for project in page.items for thread in project.threads
+        )
+        open_gates = await open_gate_kinds_for_threads(
+            workspace_id=who.workspace_id,
+            thread_ids=thread_ids,
+            conn_factory=conn_factory,
+        )
+        busy = await threads_running(
+            workspace_id=who.workspace_id,
+            thread_ids=thread_ids,
+            conn_factory=conn_factory,
+        )
+        return SidebarProjectsResponse(
+            data=tuple(
+                {
+                    "id": project.project_id,
+                    "title": project.title,
+                    "href": f"/projects/{project.project_id}",
+                    "conversations": tuple(
+                        {
+                            "id": thread.thread_id,
+                            "title": thread.title,
+                            "href": f"/projects/{project.project_id}?thread={thread.thread_id}",
+                            "status": thread_wire(
+                                thread,
+                                open_gate_kinds=open_gates.get(thread.thread_id, ()),
+                                running=thread.thread_id in busy,
+                            ).status,
+                            "pinned": thread.pinned,
+                            "updated_at": thread.updated_at.isoformat(),
+                        }
+                        for thread in project.threads
+                    ),
+                }
+                for project in page.items
+            ),
+            meta={"next_cursor": page.next_cursor},
+        )
+
+    @router.get("/projects/{project_id}")
+    async def project_shell_route(
+        project_id: str,
+        who: PrincipalDep,
+    ) -> ProjectShellResponse:
+        """Return only durable project-shell data owned by this deployment."""
+
+        _require(who, PERMISSION_PROJECT_READ)
+        async with conn_factory() as conn:
+            project = await get_project_for_workspace(
+                conn,
+                workspace_id=who.workspace_id,
+                project_id=project_id,
+            )
+        if project is None:
+            raise _refuse(
+                status_code=404,
+                code="PROJECT_NOT_FOUND",
+                message="no such project in this workspace",
+            )
+        return ProjectShellResponse(
+            data=ProjectShellWire(
+                id=project.project_id,
+                title=project.name,
+                brand_id=project.brand_id,
+                product_id=project.product_id,
+                status=project.status,
+                created_at=project.created_at.isoformat(),
+            )
+        )
 
     # --- threads --------------------------------------------------------------------------------
 

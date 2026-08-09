@@ -4,6 +4,14 @@
   font-family: var(--clue-ds-typography-text-default-font-family), Arial, sans-serif;
 }
 
+.projectLoadState {
+  align-self: center;
+  grid-row: 1 / -1;
+  justify-self: center;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 14px;
+}
+
 .home {
   height: 100%;
   overflow-x: hidden;

@@ -70,9 +70,13 @@ export function ProjectSidebarTree({
                 {menuOpen ? (
                   <ProjectSidebarActionsMenu
                     onArchive={() => controller.archiveProjectChats(project.id)}
-                    onEdit={() => controller.beginEditProject(project.id)}
+                    onEdit={controller.projectMutationsAvailable
+                      ? () => controller.beginEditProject(project.id)
+                      : undefined}
                     onNewChat={() => controller.createConversation(project.id)}
-                    onTogglePinned={() => controller.togglePinned(project.id)}
+                    onTogglePinned={controller.projectMutationsAvailable
+                      ? () => controller.togglePinned(project.id)
+                      : undefined}
                     project={project}
                   />
                 ) : null}

@@ -26,7 +26,7 @@ export function ArtifactWorkspace({
         >
           <ProjectIcon name="gallery" size={14} />Gallery
         </button>
-        {!questionnaireActive ? (
+        {!questionnaireActive && workspace.artifacts.some((artifact) => artifact.type === "table") ? (
           <button onClick={controller.openTargetAccounts} type="button"><ProjectIcon name="target-accounts" size={12} />Target accounts</button>
         ) : null}
         {questionnaireActive ? (
@@ -41,7 +41,7 @@ export function ArtifactWorkspace({
         ) : null}
         <button aria-label="Expand workspace" aria-pressed={controller.focusPane === "artifacts"} className={styles.expandTab} onClick={controller.toggleArtifactFocus} type="button"><ProjectIcon name="expand" size={14} /></button>
       </header>
-      {questionnaireActive ? (
+      {questionnaireActive && workspace.questionnaire ? (
         <div className={styles.questionnaireStage}>
           <ProjectQuestionnaire
             data={workspace.questionnaire}
@@ -50,7 +50,7 @@ export function ArtifactWorkspace({
             value={controller.questionnaire}
           />
         </div>
-      ) : planActive ? (
+      ) : planActive && workspace.plan ? (
         <ProjectPlan plan={workspace.plan} />
       ) : controller.surface === "gallery" ? (
         <ArtifactGallery

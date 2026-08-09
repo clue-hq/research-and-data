@@ -4,9 +4,9 @@ import { SidebarFigmaIcon } from "./sidebar-figma-icon";
 
 interface ProjectSidebarActionsMenuProps {
   onArchive: () => void;
-  onEdit: () => void;
+  onEdit?: () => void;
   onNewChat: () => void;
-  onTogglePinned: () => void;
+  onTogglePinned?: () => void;
   project: SidebarProject;
 }
 
@@ -19,12 +19,16 @@ export function ProjectSidebarActionsMenu({
 }: ProjectSidebarActionsMenuProps) {
   const actions = [
     { icon: "sidebar-new-chat", label: "New chat", onSelect: onNewChat },
-    {
+    ...(onTogglePinned ? [{
       icon: "sidebar-pin",
       label: project.pinned ? "Unpin project" : "Pin project",
       onSelect: onTogglePinned,
-    },
-    { icon: "sidebar-edit-project", label: "Edit project", onSelect: onEdit },
+    }] : []),
+    ...(onEdit ? [{
+      icon: "sidebar-edit-project",
+      label: "Edit project",
+      onSelect: onEdit,
+    }] : []),
     {
       icon: "sidebar-archive",
       label: "Archive chats",

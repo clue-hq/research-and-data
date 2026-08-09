@@ -214,7 +214,15 @@ export const projectWorkspaceFixture: ProjectWorkspace = {
       type: "presentation",
     },
   ],
+  brandId: "brand-clue-demo",
+  composerCapabilities: {
+    agentProfileSelection: true,
+    attachments: false,
+    contextRefs: true,
+  },
   contextEntities: projectHomeFixture.entities,
+  createdAt: "2026-08-01T00:00:00Z",
+  defaultAgentProfileId: null,
   defaultModelId: "gpt-5.5",
   id: "10m-landing-page-campaign",
   models: [...projectModels],
@@ -231,6 +239,7 @@ export const projectWorkspaceFixture: ProjectWorkspace = {
     ],
     title: "Clue — Custom ABM Report Landing Page",
   },
+  productId: null,
   prompt: "design a landing page",
   questionnaire: {
     primaryAction: {
@@ -275,5 +284,6 @@ export const projectWorkspaceFixture: ProjectWorkspace = {
     },
     title: "A few questions about the landing page",
   },
+  status: "active",
   title: "10m+ landing page campaign",
 };

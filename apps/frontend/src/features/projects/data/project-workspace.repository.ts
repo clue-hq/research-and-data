@@ -1,6 +1,6 @@
 import {
   ProjectHomeSchema,
-  ProjectHomeResponseSchema,
+  ProjectWorkspaceResponseSchema,
   ProjectWorkspaceSchema,
   type ProjectHome,
   type ProjectWorkspace,
@@ -9,18 +9,18 @@ import {
   projectHomeFixture,
   projectWorkspaceFixture,
 } from "./project-workspace.fixture";
-import { resolveChatTransport } from "./chat-api";
+import {
+  chatRequest,
+  resolveChatTransport,
+  type ChatTransport,
+} from "./chat-api";
 
 export interface ProjectWorkspaceRepository {
-  getHome(): Promise<ProjectHome>;
-  getProject(projectId: string): Promise<ProjectWorkspace>;
+  get(projectId: string): Promise<ProjectWorkspace>;
 }
 
 export const fixtureProjectWorkspaceRepository: ProjectWorkspaceRepository = {
-  async getHome() {
-    return ProjectHomeSchema.parse(projectHomeFixture);
-  },
-  async getProject(projectId) {
+  async get(projectId) {
     return ProjectWorkspaceSchema.parse({
       ...projectWorkspaceFixture,
       id: projectId,
@@ -29,44 +29,22 @@ export const fixtureProjectWorkspaceRepository: ProjectWorkspaceRepository = {
 };
 
 export function createHttpProjectWorkspaceRepository(
-  apiBaseUrl: string,
+  transport: Extract<ChatTransport, { mode: "http" }>,
 ): ProjectWorkspaceRepository {
-  const baseUrl = `${apiBaseUrl.replace(/\/$/, "")}/`;
-
-  async function read(path: string) {
-    const response = await fetch(new URL(path, baseUrl), {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
-    if (!response.ok) {
-      throw new Error(`Project API returned ${response.status}`);
-    }
-    return response.json();
-  }
-
   return {
-    async getHome() {
-      return ProjectHomeResponseSchema.parse(await read("api/v1/home"));
-    },
-    async getProject(projectId) {
-      return ProjectWorkspaceSchema.parse(
-        await read(`api/v1/projects/${encodeURIComponent(projectId)}`),
+    async get(projectId) {
+      return ProjectWorkspaceResponseSchema.parse(
+        await chatRequest(
+          transport,
+          `/projects/${encodeURIComponent(projectId)}`,
+        ),
       );
     },
   };
 }
 
-/**
- * The server-rendered Home shell cannot call the origin-relative authenticated
- * BFF. In HTTP mode it therefore emits a neutral loading model; the client-side
- * Home repository reads `/api/v1/home` through that BFF before enabling Send.
- * Project-shell reads remain fixture-owned until R3.
- */
-function getRepository() {
-  return fixtureProjectWorkspaceRepository;
-}
-
-export function getProjectHome() {
+/** Fixture-only server render for Home; HTTP Home loads through its client repository. */
+export function getProjectHome(): Promise<ProjectHome> {
   if (resolveChatTransport().mode === "http") {
     return Promise.resolve(ProjectHomeSchema.parse({
       brands: [],
@@ -82,9 +60,18 @@ export function getProjectHome() {
       suggestions: [],
     }));
   }
-  return getRepository().getHome();
+  return Promise.resolve(ProjectHomeSchema.parse(projectHomeFixture));
 }
 
-export function getProjectWorkspace(projectId: string) {
-  return getRepository().getProject(projectId);
+/**
+ * A protected Server Component cannot call the origin-relative authenticated
+ * BFF. HTTP mode therefore supplies no project payload at all; the client
+ * repository loads and validates the real shell before mounting it. This is a
+ * loading boundary, never a fixture fallback.
+ */
+export function getProjectWorkspace(
+  projectId: string,
+): Promise<ProjectWorkspace | null> {
+  if (resolveChatTransport().mode === "http") return Promise.resolve(null);
+  return fixtureProjectWorkspaceRepository.get(projectId);
 }

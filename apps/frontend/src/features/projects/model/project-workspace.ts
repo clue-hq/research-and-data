@@ -91,6 +91,15 @@ export const ProjectQuestionnaireSchema = z.object({
   title: z.string().min(1),
 });
 
+export const ProjectPlanSchema = z.object({
+  audience: z.string().min(1),
+  sections: z.array(z.object({
+    lines: z.array(z.string().min(1)).min(1),
+    title: z.string().min(1),
+  })).min(1),
+  title: z.string().min(1),
+});
+
 export const ProjectHomeSchema = z.object({
   brands: z.array(ProjectBrandSchema),
   composerCapabilities: ProjectComposerCapabilitiesSchema,
@@ -212,6 +221,26 @@ export const ProjectBootstrapResponseSchema = ProjectBootstrapWireSchema.transfo
   }),
 );
 
+const ProjectWorkspaceWireSchema = z.object({
+  data: z.object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    brand_id: z.string().min(1),
+    product_id: z.string().min(1).nullable(),
+    status: z.enum(["draft", "active", "paused", "archived"]),
+    created_at: z.string().min(1),
+    context_entities: z.array(z.never()),
+    agent_profiles: z.array(z.never()),
+    default_agent_profile_id: z.null(),
+    composer_capabilities: z.object({
+      context_refs: z.literal(false),
+      attachments: z.literal(false),
+      agent_profile_selection: z.literal(false),
+    }),
+    artifacts: z.array(z.never()),
+  }),
+});
+
 /**
  * The project shell: the artifact-side surfaces and the composer's catalogs.
  *
@@ -224,22 +253,47 @@ export const ProjectBootstrapResponseSchema = ProjectBootstrapWireSchema.transfo
  */
 export const ProjectWorkspaceSchema = z.object({
   artifacts: z.array(ProjectArtifactSchema),
+  brandId: z.string().min(1),
+  composerCapabilities: ProjectComposerCapabilitiesSchema,
   contextEntities: z.array(ProjectEntitySchema),
-  defaultModelId: z.string().min(1),
+  createdAt: z.string().min(1),
+  defaultAgentProfileId: z.string().min(1).nullable(),
+  defaultModelId: z.string().min(1).nullable(),
   id: z.string().min(1),
-  models: z.array(ProjectModelOptionSchema).min(1),
-  plan: z.object({
-    audience: z.string().min(1),
-    sections: z.array(z.object({
-      lines: z.array(z.string().min(1)).min(1),
-      title: z.string().min(1),
-    })).min(1),
-    title: z.string().min(1),
-  }),
-  prompt: z.string().min(1),
-  questionnaire: ProjectQuestionnaireSchema,
+  models: z.array(ProjectModelOptionSchema),
+  plan: ProjectPlanSchema.nullable(),
+  productId: z.string().min(1).nullable(),
+  prompt: z.string(),
+  questionnaire: ProjectQuestionnaireSchema.nullable(),
+  status: z.enum(["draft", "active", "paused", "archived"]),
   title: z.string().min(1),
 });
+
+export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transform(
+  ({ data }) =>
+    ProjectWorkspaceSchema.parse({
+      artifacts: [],
+      brandId: data.brand_id,
+      composerCapabilities: {
+        attachments: data.composer_capabilities.attachments,
+        contextRefs: data.composer_capabilities.context_refs,
+        agentProfileSelection:
+          data.composer_capabilities.agent_profile_selection,
+      },
+      contextEntities: [],
+      createdAt: data.created_at,
+      defaultAgentProfileId: data.default_agent_profile_id,
+      defaultModelId: null,
+      id: data.id,
+      models: [],
+      plan: null,
+      productId: data.product_id,
+      prompt: "",
+      questionnaire: null,
+      status: data.status,
+      title: data.title,
+    }),
+);
 
 export const ProjectPhaseSchema = z.enum([
   "conversation",
@@ -278,6 +332,7 @@ export type ProjectWebsiteContent = z.infer<typeof ProjectWebsiteContentSchema>;
 export type ProjectTableContent = z.infer<typeof ProjectTableContentSchema>;
 export type ProjectArtifact = z.infer<typeof ProjectArtifactSchema>;
 export type ProjectQuestionnaire = z.infer<typeof ProjectQuestionnaireSchema>;
+export type ProjectPlan = z.infer<typeof ProjectPlanSchema>;
 export type ProjectQuestionGroup = z.infer<typeof ProjectQuestionGroupSchema>;
 export type ProjectHome = z.infer<typeof ProjectHomeSchema>;
 export type ProjectBootstrap = z.infer<typeof ProjectBootstrapResponseSchema>;

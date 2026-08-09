@@ -9,7 +9,6 @@ import {
 import { createChatRepositories } from "./chat-repositories";
 import { createHttpChatStreamRepository } from "./chat-stream.repository";
 import { FIXTURE_PROJECT_ID, FIXTURE_THREAD_ID } from "./chat.fixture";
-import { createSidebarProjectsRepository } from "./sidebar-projects.repository";
 
 /** The seam: the flag, the same-origin rule, and the fixture default. */
 
@@ -129,9 +128,8 @@ test("archiving a thread flips its status rather than deleting it", async () => 
 });
 
 test("the sidebar reads through its repository, never a fixture import", async () => {
-  const sidebar = createSidebarProjectsRepository(createChatRepositories());
-  const response = await sidebar.list();
-  assert.equal(response.meta.total, response.data.length);
+  const response = await createChatRepositories().sidebar.list();
+  assert.equal(response.meta.nextCursor, null);
   assert.ok(
     response.data.every((project) =>
       project.conversations.every((conversation) =>

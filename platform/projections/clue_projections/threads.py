@@ -37,6 +37,10 @@ __all__ = [
     "DEFAULT_THREAD_MESSAGE_PAGE_SIZE",
     "MAX_THREAD_PAGE_SIZE",
     "MAX_THREAD_MESSAGE_PAGE_SIZE",
+    "DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE",
+    "MAX_PROJECT_SIDEBAR_PAGE_SIZE",
+    "ProjectSidebarPage",
+    "ProjectSidebarProjectView",
     "ThreadMessagePage",
     "ThreadMessageSummary",
     "ThreadPage",
@@ -44,6 +48,7 @@ __all__ = [
     "ThreadView",
     "thread_messages",
     "thread_turns",
+    "project_sidebar_page",
     "threads_for_project",
     "threads_running",
 ]
@@ -52,6 +57,8 @@ DEFAULT_THREAD_PAGE_SIZE = 50
 MAX_THREAD_PAGE_SIZE = 200
 DEFAULT_THREAD_MESSAGE_PAGE_SIZE = 50
 MAX_THREAD_MESSAGE_PAGE_SIZE = 200
+DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE = 50
+MAX_PROJECT_SIDEBAR_PAGE_SIZE = 100
 
 #: The ``fleet_task.dedup_key`` prefix one ``AGENT_TURN`` task is named by. It is *authored* in
 #: ``clue_api.agent_turn_submission``; this package may not import that one (projections import no
@@ -78,6 +85,20 @@ class ThreadView(_View):
 
 class ThreadPage(_View):
     items: tuple[ThreadView, ...]
+    next_cursor: str | None = None
+
+
+class ProjectSidebarProjectView(_View):
+    """One workspace project and its batch-hydrated thread summaries."""
+
+    project_id: str
+    title: str
+    created_at: AwareDatetime
+    threads: tuple[ThreadView, ...]
+
+
+class ProjectSidebarPage(_View):
+    items: tuple[ProjectSidebarProjectView, ...]
     next_cursor: str | None = None
 
 
@@ -212,6 +233,123 @@ async def threads_for_project(
         else None
     )
     return ThreadPage(items=items, next_cursor=next_cursor)
+
+
+_PROJECT_SIDEBAR_PAGE = text(
+    """
+    WITH selected_projects AS MATERIALIZED (
+        SELECT project_id, name, created_at
+        FROM project
+        WHERE workspace_id = :workspace_id
+          AND (
+              CAST(:cursor_created_at AS timestamptz) IS NULL
+              OR (created_at, project_id)
+                 < (:cursor_created_at, CAST(:cursor_project_id AS text))
+          )
+        ORDER BY created_at DESC, project_id DESC
+        LIMIT :row_limit
+    )
+    SELECT
+        p.project_id,
+        p.name AS project_title,
+        p.created_at AS project_created_at,
+        t.id AS thread_id,
+        t.title AS thread_title,
+        t.status AS thread_status,
+        t.pinned AS thread_pinned,
+        t.created_at AS thread_created_at,
+        t.updated_at AS thread_updated_at
+    FROM selected_projects p
+    LEFT JOIN agent_thread t
+      ON t.workspace_id = :workspace_id
+     AND t.project_id = p.project_id
+    ORDER BY
+        p.created_at DESC,
+        p.project_id DESC,
+        t.pinned DESC NULLS LAST,
+        t.updated_at DESC NULLS LAST,
+        t.id DESC NULLS LAST
+    """
+)
+
+
+async def project_sidebar_page(
+    *,
+    workspace_id: str,
+    limit: int = DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE,
+    cursor: str | None = None,
+    conn_factory: ConnFactory = transaction,
+) -> ProjectSidebarPage:
+    """One project page with all its thread summaries in one SQL read.
+
+    The project limit is applied inside the CTE, before the thread join, so a
+    project with many conversations cannot crowd another project out of the
+    page. Thread hydration is one batch query for the whole page; gate and busy
+    status are separate whole-page batch reads at the HTTP composition layer.
+    """
+
+    if not 1 <= limit <= MAX_PROJECT_SIDEBAR_PAGE_SIZE:
+        raise ValueError(
+            f"project sidebar page size must be between 1 and {MAX_PROJECT_SIDEBAR_PAGE_SIZE}"
+        )
+    cursor_created_at: datetime | None = None
+    cursor_project_id: str | None = None
+    if cursor is not None:
+        position, cursor_project_id = decode_cursor(cursor, parts=2)
+        cursor_created_at = _parse_timestamp(position)
+
+    async with conn_factory() as conn:
+        rows = (
+            await conn.execute(
+                _PROJECT_SIDEBAR_PAGE,
+                {
+                    "workspace_id": workspace_id,
+                    "cursor_created_at": cursor_created_at,
+                    "cursor_project_id": cursor_project_id,
+                    "row_limit": limit + 1,
+                },
+            )
+        ).mappings().all()
+
+    project_order: list[str] = []
+    project_rows: dict[str, dict[str, object]] = {}
+    threads: dict[str, list[ThreadView]] = {}
+    for row in rows:
+        project_id = str(row["project_id"])
+        if project_id not in project_rows:
+            project_order.append(project_id)
+            project_rows[project_id] = dict(row)
+            threads[project_id] = []
+        if row["thread_id"] is not None:
+            threads[project_id].append(
+                ThreadView(
+                    thread_id=str(row["thread_id"]),
+                    project_id=project_id,
+                    title=row["thread_title"],
+                    status=str(row["thread_status"]),
+                    pinned=bool(row["thread_pinned"]),
+                    created_at=row["thread_created_at"],
+                    updated_at=row["thread_updated_at"],
+                )
+            )
+
+    has_more = len(project_order) > limit
+    selected_ids = project_order[:limit]
+    items = tuple(
+        ProjectSidebarProjectView(
+            project_id=project_id,
+            title=str(project_rows[project_id]["project_title"]),
+            created_at=project_rows[project_id]["project_created_at"],
+            threads=tuple(threads[project_id]),
+        )
+        for project_id in selected_ids
+    )
+    next_cursor = (
+        encode_cursor(items[-1].created_at.isoformat(), items[-1].project_id)
+        if has_more and items
+        else None
+    )
+    return ProjectSidebarPage(items=items, next_cursor=next_cursor)
 
 
 # --- the submissions-union ---------------------------------------------------------------------

@@ -1,15 +1,14 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 executable integration contract ratified; implementation pending where noted.**
+Status: **R0 ratified; repair slices R1-R3 implemented. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
-The durable thread/turn/gate/stream surface is implemented, but Home project
-creation, the project catalog, the complete project workspace read, and the
-sidebar catalog are not. Consequently the live frontend is currently mixed:
-chat repositories can use HTTP, while Home and project-shell data remain
-fixture-backed and the sidebar is a fixture-project/real-thread hybrid. R0
-freezes the contract that removes that split; it does not implement it.
+The durable thread/turn/gate/stream surface, atomic Home bootstrap, complete
+project workspace read, and tenant-scoped sidebar catalog are implemented.
+In HTTP mode those repositories all use authenticated backend data and never
+fall back to fixtures. Artifact integration is not yet available, so a real
+project deliberately returns and renders an empty Gallery.
 
 Authority order inside this document is:
 
@@ -22,6 +21,23 @@ When `CLUE_PROJECTS_API_BASE_URL` is configured, every projects repository must
 use the same-origin authenticated BFF and validate the corresponding wire
 schema. HTTP mode never falls back to fixtures after a refusal, parse error, or
 network failure. Presentation components do not call the API directly.
+
+### R3 implementation status (2026-08-10)
+
+- `GET /api/v1/projects/{project_id}` returns the real tenant-scoped project
+  shell, honest composer capabilities, and `artifacts: []` until artifact
+  integration lands.
+- `GET /api/v1/projects/sidebar` returns real tenant-scoped projects and their
+  thread summaries through a batch-hydrated projection. Busy and gate status
+  are resolved in batches; the endpoint does not fetch each project's threads
+  separately.
+- The frontend project and sidebar repositories validate these wire payloads.
+  HTTP mode neither combines them with fixture records nor accepts fixture URL
+  parameters for model, phase, prompt, or context.
+- Project rename, pin, delete, and other unsupported project mutations are
+  hidden in HTTP mode. Fixture preview mode keeps its local-only controls.
+- The project-header hover/click sidebar interaction is intentionally outside
+  R3 and remains a later repair slice; this read slice does not claim it.
 
 ## Ownership model
 

@@ -16,6 +16,7 @@ from clue_spine.spine import (
     get_brand,
     get_product,
     get_project,
+    get_project_for_workspace,
     get_workspace,
     list_brands_for_workspace,
     list_products,
@@ -49,5 +50,6 @@ __all__ = [
     "list_products",
     "create_project",
     "get_project",
+    "get_project_for_workspace",
     "list_projects",
 ]

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ProjectWorkspaceShell } from "@/features/projects/components/project-workspace-shell";
 import { getProjectWorkspace } from "@/features/projects/data/project-workspace.repository";
+import { resolveChatTransport } from "@/features/projects/data/chat-api";
 import { ProjectPhaseSchema } from "@/features/projects/model/project-workspace";
 
 export const metadata: Metadata = {
@@ -21,22 +22,27 @@ interface ProjectPageProps {
 export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
   const workspace = await getProjectWorkspace(projectId);
-  const phase = ProjectPhaseSchema.safeParse(query.phase);
+  const fixturePreview = resolveChatTransport().mode === "fixture";
+  const phase = ProjectPhaseSchema.safeParse(
+    fixturePreview ? query.phase : undefined,
+  );
 
   return (
     <ProjectWorkspaceShell
       initial={{
-        entityIds: query.entities?.split(",").filter(Boolean),
-        modelId: query.model,
+        entityIds: fixturePreview
+          ? query.entities?.split(",").filter(Boolean)
+          : undefined,
+        modelId: fixturePreview ? query.model : undefined,
         phase: phase.success ? phase.data : "conversation",
-        prompt: query.prompt,
+        prompt: fixturePreview ? query.prompt : undefined,
         surface: "gallery",
         threadId: query.thread,
       }}
-      workspace={{
-        ...workspace,
-        prompt: query.prompt?.trim() || workspace.prompt,
-      }}
+      projectId={projectId}
+      workspace={workspace && fixturePreview
+        ? { ...workspace, prompt: query.prompt?.trim() || workspace.prompt }
+        : workspace}
     />
   );
 }

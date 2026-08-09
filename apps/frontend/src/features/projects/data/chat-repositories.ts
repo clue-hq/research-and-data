@@ -35,6 +35,16 @@ import {
   createHttpProjectHomeRepository,
   type ProjectHomeRepository,
 } from "./project-home.repository";
+import {
+  createHttpProjectWorkspaceRepository,
+  fixtureProjectWorkspaceRepository,
+  type ProjectWorkspaceRepository,
+} from "./project-workspace.repository";
+import {
+  createHttpSidebarProjectsRepository,
+  fixtureSidebarProjectsRepository,
+  type SidebarProjectsRepository,
+} from "./sidebar-projects.repository";
 
 /**
  * The one place fixture-or-HTTP is chosen for the projects chat flow.
@@ -46,6 +56,8 @@ import {
 export interface ChatRepositories {
   transport: ChatTransport;
   home: ProjectHomeRepository;
+  projects: ProjectWorkspaceRepository;
+  sidebar: SidebarProjectsRepository;
   threads: ChatThreadsRepository;
   messages: ChatMessagesRepository;
   turns: ChatTurnsRepository;
@@ -66,6 +78,8 @@ export function createChatRepositories(
     return {
       transport,
       home: createHttpProjectHomeRepository(transport),
+      projects: createHttpProjectWorkspaceRepository(transport),
+      sidebar: createHttpSidebarProjectsRepository(transport),
       threads: createHttpChatThreadsRepository(transport),
       messages: createHttpChatMessagesRepository(transport),
       turns: createHttpChatTurnsRepository(transport),
@@ -80,6 +94,8 @@ export function createChatRepositories(
   return {
     transport,
     home: createFixtureProjectHomeRepository(),
+    projects: fixtureProjectWorkspaceRepository,
+    sidebar: fixtureSidebarProjectsRepository,
     threads: createFixtureChatThreadsRepository(),
     messages: createFixtureChatMessagesRepository(),
     turns: createFixtureChatTurnsRepository(state),

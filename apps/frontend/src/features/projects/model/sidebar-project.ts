@@ -16,8 +16,10 @@ export const SidebarConversationStatusSchema = ThreadStatusSchema;
 export const SidebarConversationSchema = z.object({
   href: z.string().startsWith("/"),
   id: z.string().min(1),
+  pinned: z.boolean().default(false),
   status: SidebarConversationStatusSchema.default("idle"),
   title: z.string().min(1),
+  updatedAt: z.string().min(1),
 });
 
 export const SidebarProjectSchema = z.object({
@@ -31,8 +33,47 @@ export const SidebarProjectSchema = z.object({
 
 export const SidebarProjectsResponseSchema = z.object({
   data: z.array(SidebarProjectSchema),
-  meta: z.object({ total: z.number().int().nonnegative() }),
+  meta: z.object({ nextCursor: z.string().min(1).nullable() }),
 });
+
+const SidebarProjectsWireSchema = z.object({
+  data: z.array(z.object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    href: z.string().startsWith("/projects/"),
+    conversations: z.array(z.object({
+      id: z.string().min(1),
+      title: z.string().min(1).nullable(),
+      href: z.string().startsWith("/projects/"),
+      status: SidebarConversationStatusSchema,
+      pinned: z.boolean(),
+      updated_at: z.string().min(1),
+    })),
+  })),
+  meta: z.object({ next_cursor: z.string().min(1).nullable() }),
+});
+
+export const SidebarProjectsWireResponseSchema = SidebarProjectsWireSchema.transform(
+  ({ data, meta }) =>
+    SidebarProjectsResponseSchema.parse({
+      data: data.map((project) => ({
+        conversations: project.conversations.map((conversation) => ({
+          href: conversation.href,
+          id: conversation.id,
+          pinned: conversation.pinned,
+          status: conversation.status,
+          title: conversation.title ?? "New chat",
+          updatedAt: conversation.updated_at,
+        })),
+        expanded: false,
+        href: project.href,
+        id: project.id,
+        pinned: false,
+        title: project.title,
+      })),
+      meta: { nextCursor: meta.next_cursor },
+    }),
+);
 
 export type SidebarConversation = z.infer<typeof SidebarConversationSchema>;
 export type SidebarConversationStatus = z.infer<

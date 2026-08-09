@@ -48,6 +48,9 @@ __all__ = [
     "PageMeta",
     "ProjectBootstrapResponse",
     "ProjectBootstrapWire",
+    "ProjectShellResponse",
+    "ProjectShellWire",
+    "SidebarProjectsResponse",
     "SubmitTurnRequest",
     "gate_response_message",
     "gate_wire",
@@ -403,6 +406,51 @@ class ProjectBootstrapWire(_Wire):
 
 class ProjectBootstrapResponse(_Wire):
     data: ProjectBootstrapWire
+
+
+class ProjectShellWire(_Wire):
+    id: str
+    title: str
+    brand_id: str
+    product_id: str | None
+    status: Literal["draft", "active", "paused", "archived"]
+    created_at: str
+    context_entities: tuple[dict[str, Any], ...] = ()
+    agent_profiles: tuple[dict[str, Any], ...] = ()
+    default_agent_profile_id: str | None = None
+    composer_capabilities: HomeComposerCapabilitiesWire = Field(
+        default_factory=HomeComposerCapabilitiesWire
+    )
+    artifacts: tuple[dict[str, Any], ...] = ()
+
+
+class ProjectShellResponse(_Wire):
+    data: ProjectShellWire
+
+
+class SidebarConversationWire(_Wire):
+    id: str
+    title: str | None
+    href: str
+    status: Literal["idle", "running", "approval", "needs-input", "archived"]
+    pinned: bool
+    updated_at: str
+
+
+class SidebarProjectWire(_Wire):
+    id: str
+    title: str
+    href: str
+    conversations: tuple[SidebarConversationWire, ...]
+
+
+class SidebarPageMeta(_Wire):
+    next_cursor: str | None = None
+
+
+class SidebarProjectsResponse(_Wire):
+    data: tuple[SidebarProjectWire, ...]
+    meta: SidebarPageMeta
 
 
 # --- the durable gate read (FI Lane D D5-close) --------------------------------------------------

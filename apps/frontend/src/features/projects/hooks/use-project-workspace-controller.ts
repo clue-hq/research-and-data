@@ -52,7 +52,7 @@ export function useProjectWorkspaceController({
   const [selectedModelId, setSelectedModelId] = useState(
     initial.modelId && workspace.models.some((model) => model.id === initial.modelId)
       ? initial.modelId
-      : workspace.defaultModelId,
+      : (workspace.defaultModelId ?? ""),
   );
   const [selectedArtifactId, setSelectedArtifactId] = useState(
     initial.artifactId ?? workspace.artifacts[2]?.id ?? workspace.artifacts[0]?.id ?? "",
@@ -75,10 +75,11 @@ export function useProjectWorkspaceController({
   const [inspectorSelection, setInspectorSelection] =
     useState<InspectorSelection>("canvas");
   const [questionnaire, setQuestionnaire] = useState({
-    primaryActionId: workspace.questionnaire.primaryAction.defaultChoiceId,
-    secondaryActionId: workspace.questionnaire.secondaryAction.defaultChoiceId,
-    targetAccounts: workspace.questionnaire.targetAccounts.defaultValue,
-    themeId: workspace.questionnaire.theme.defaultChoiceId,
+    primaryActionId: workspace.questionnaire?.primaryAction.defaultChoiceId ?? "",
+    secondaryActionId:
+      workspace.questionnaire?.secondaryAction.defaultChoiceId ?? "",
+    targetAccounts: workspace.questionnaire?.targetAccounts.defaultValue ?? "",
+    themeId: workspace.questionnaire?.theme.defaultChoiceId ?? "",
   });
   const [editableHeadline, setEditableHeadline] = useState(
     workspace.artifacts.find((artifact) => artifact.websiteContent)?.websiteContent?.headline ?? "",
@@ -198,10 +199,12 @@ export function useProjectWorkspaceController({
     openArtifact,
     openGallery,
     openPlan() {
+      if (!workspace.plan) return;
       setPreviewSurface("planning");
       setSurface("artifact");
     },
     openQuestionnaire() {
+      if (!workspace.questionnaire) return;
       setPreviewSurface("questionnaire");
       setSurface("artifact");
     },

@@ -274,6 +274,30 @@ async def get_project(conn: AsyncConnection, project_id: str) -> Project | None:
     return Project(**dict(row)) if row is not None else None
 
 
+async def get_project_for_workspace(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+) -> Project | None:
+    """Return one project only when it belongs to ``workspace_id``.
+
+    Client-facing reads use this form so a foreign and an unknown project have
+    the same scoped miss at the SQL boundary rather than loading a foreign row
+    and filtering it after the fact.
+    """
+
+    result = await conn.execute(
+        text(
+            f"SELECT {_PROJECT_COLUMNS} FROM project "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id"
+        ),
+        {"workspace_id": workspace_id, "project_id": project_id},
+    )
+    row = result.mappings().first()
+    return Project(**dict(row)) if row is not None else None
+
+
 async def confirm_project_product(
     conn: AsyncConnection,
     *,

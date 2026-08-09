@@ -6,10 +6,49 @@ import {
   useProjectWorkspaceController,
   type ProjectWorkspaceInitialState,
 } from "../hooks/use-project-workspace-controller";
+import { useProjectWorkspaceLoader } from "../hooks/use-project-workspace-loader";
 import type { ProjectWorkspace } from "../model/project-workspace";
+import styles from "./project-flow.module.css";
 import { ProjectWorkspaceView } from "./project-workspace-view";
 
 export function ProjectWorkspaceShell({
+  initial,
+  projectId,
+  workspace,
+}: {
+  initial: ProjectWorkspaceInitialState;
+  projectId: string;
+  workspace: ProjectWorkspace | null;
+}) {
+  const loaded = useProjectWorkspaceLoader({
+    initialWorkspace: workspace,
+    projectId,
+  });
+  if (loaded.loading) {
+    return (
+      <main className={styles.projectWorkspace}>
+        <p className={styles.projectLoadState} role="status">Loading project…</p>
+      </main>
+    );
+  }
+  if (loaded.error || !loaded.workspace) {
+    return (
+      <main className={styles.projectWorkspace}>
+        <p className={styles.projectLoadState} role="alert">
+          {loaded.error ?? "Project unavailable."}
+        </p>
+      </main>
+    );
+  }
+  return (
+    <LoadedProjectWorkspace
+      initial={initial}
+      workspace={loaded.workspace}
+    />
+  );
+}
+
+function LoadedProjectWorkspace({
   initial,
   workspace,
 }: {

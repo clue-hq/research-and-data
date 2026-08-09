@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useChatRepositories } from "../data/projects-transport";
-import { createSidebarProjectsRepository } from "../data/sidebar-projects.repository";
 import type { SidebarProject } from "../model/sidebar-project";
 
 /**
@@ -19,10 +18,8 @@ export function useSidebarProjectsController() {
   const pathname = usePathname();
   const router = useRouter();
   const repositories = useChatRepositories();
-  const sidebar = useMemo(
-    () => createSidebarProjectsRepository(repositories),
-    [repositories],
-  );
+  const sidebar = repositories.sidebar;
+  const projectMutationsAvailable = repositories.transport.mode === "fixture";
   const [projects, setProjects] = useState<SidebarProject[]>([]);
   const [menuProjectId, setMenuProjectId] = useState<string | null>(null);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
@@ -113,6 +110,7 @@ export function useSidebarProjectsController() {
   }
 
   function togglePinned(projectId: string) {
+    if (!projectMutationsAvailable) return;
     updateProject(projectId, (project) => ({
       ...project,
       pinned: !project.pinned,
@@ -121,6 +119,7 @@ export function useSidebarProjectsController() {
   }
 
   function beginEditProject(projectId: string) {
+    if (!projectMutationsAvailable) return;
     const project = projects.find((item) => item.id === projectId);
     if (!project) return;
     setEditProjectId(project.id);
@@ -134,6 +133,7 @@ export function useSidebarProjectsController() {
   }
 
   function saveEditProject() {
+    if (!projectMutationsAvailable) return;
     const nextName = editProjectName.trim();
     if (!editProjectId || !nextName) return;
     // Project rename is not served: the as-built contract keeps project
@@ -160,6 +160,7 @@ export function useSidebarProjectsController() {
   }
 
   function removeProject() {
+    if (!projectMutationsAvailable) return;
     if (!editProjectId) return;
     setProjects((current) =>
       current.filter((project) => project.id !== editProjectId),
@@ -182,6 +183,7 @@ export function useSidebarProjectsController() {
     editProjectName,
     menuProjectId,
     projects,
+    projectMutationsAvailable,
     removeProject,
     saveEditProject,
     setEditProjectName,

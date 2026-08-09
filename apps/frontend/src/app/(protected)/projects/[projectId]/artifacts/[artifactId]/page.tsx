@@ -19,7 +19,7 @@ export default async function ProjectArtifactPage({
   const [{ artifactId, projectId }, query] = await Promise.all([params, searchParams]);
   const workspace = await getProjectWorkspace(projectId);
 
-  if (!workspace.artifacts.some((artifact) => artifact.id === artifactId)) {
+  if (!workspace?.artifacts.some((artifact) => artifact.id === artifactId)) {
     notFound();
   }
 
@@ -31,6 +31,7 @@ export default async function ProjectArtifactPage({
         surface: "artifact",
         threadId: query.thread,
       }}
+      projectId={projectId}
       workspace={workspace}
     />
   );

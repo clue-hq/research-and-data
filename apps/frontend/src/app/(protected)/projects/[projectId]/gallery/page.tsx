@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ProjectWorkspaceShell } from "@/features/projects/components/project-workspace-shell";
 import { getProjectWorkspace } from "@/features/projects/data/project-workspace.repository";
+import { resolveChatTransport } from "@/features/projects/data/chat-api";
 
 export const metadata: Metadata = {
   title: "Project gallery",
@@ -21,10 +22,11 @@ export default async function ProjectGalleryPage({
   return (
     <ProjectWorkspaceShell
       initial={{
-        phase: "complete",
+        phase: resolveChatTransport().mode === "fixture" ? "complete" : "conversation",
         surface: "gallery",
         threadId: query.thread,
       }}
+      projectId={projectId}
       workspace={workspace}
     />
   );
