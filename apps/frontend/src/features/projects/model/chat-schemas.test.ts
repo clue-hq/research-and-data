@@ -11,6 +11,7 @@ import {
   THREAD_STATUS_PRECEDENCE,
   deriveThreadStatus,
   mostUrgentThreadStatus,
+  resolveProjectThreadRoute,
   threadLabel,
 } from "./chat-thread";
 import {
@@ -79,6 +80,34 @@ test("the status vocabulary is the pinned precedence, and archived outranks all"
   assert.equal(deriveThreadStatus({ archived: false, running: true }), "running");
   assert.equal(deriveThreadStatus({ archived: false }), "idle");
   assert.equal(mostUrgentThreadStatus("running", "approval"), "approval");
+});
+
+test("a project route never selects a thread outside its scoped thread page", () => {
+  const page = ChatThreadListResponseSchema.parse({
+    data: [
+      {
+        id: "thr_allowed",
+        title: "Allowed thread",
+        href: "/projects/prj_a?thread=thr_allowed",
+        status: "idle",
+        pinned: false,
+        project_id: "prj_a",
+        created_at: "2026-08-10T00:00:00Z",
+        updated_at: "2026-08-10T00:00:00Z",
+      },
+    ],
+    meta: { next_cursor: null },
+  });
+  const crossed = resolveProjectThreadRoute(page.threads, "thr_from_project_b");
+  assert.equal(crossed.kind, "selected");
+  if (crossed.kind === "selected") {
+    assert.equal(crossed.thread.id, "thr_allowed");
+    assert.equal(crossed.canonicalize, true);
+  }
+  assert.deepEqual(resolveProjectThreadRoute([], "thr_from_project_b"), {
+    kind: "not-found",
+    requestedThreadId: "thr_from_project_b",
+  });
 });
 
 test("message reads are body-free by default and carry the typed refs", () => {

@@ -17,7 +17,7 @@ export function ProjectHomeView({
               <span>Brand</span>
               <select
                 aria-label="Brand"
-                disabled={controller.loading || controller.submitting}
+                disabled={controller.loading}
                 onChange={(event) => controller.setSelectedBrandId(event.target.value)}
                 value={controller.selectedBrandId}
               >
@@ -33,7 +33,7 @@ export function ProjectHomeView({
           <ProjectComposer
             attachments={controller.attachments}
             entities={data.entities}
-            disabled={controller.loading || controller.submitting}
+            disabled={controller.loading}
             modelPickerOpen={controller.modelPickerOpen}
             models={data.models}
             onAttachmentFiles={
@@ -61,7 +61,7 @@ export function ProjectHomeView({
             onPromptChange={controller.setPrompt}
             onSubmit={controller.submit}
             prompt={controller.prompt}
-            sendDisabled={!controller.selectedBrandId}
+            sendDisabled={!controller.selectedBrandId || controller.submitting}
             selectedEntities={controller.selectedEntities}
             selectedEntityIds={controller.selectedEntityIds}
             selectedModel={controller.selectedModel}

@@ -5,6 +5,10 @@ import {
   newIdempotencyKey,
 } from "../data/chat-api";
 import { useChatRepositories } from "../data/projects-transport";
+import {
+  HomeSubmissionCoordinator,
+  parseHomeBootstrapDraft,
+} from "../model/home-submission";
 import type { ProjectComposerAttachment } from "../model/project-composer";
 import type {
   ProjectEntity,
@@ -39,23 +43,33 @@ export function useProjectHomeController(data: ProjectHome) {
   const [attachments, setAttachments] = useState<ProjectComposerAttachment[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
-  const [selectedBrandId, setSelectedBrandId] = useState(
+  const [selectedBrandId, setSelectedBrandIdState] = useState(
     data.defaultBrandId ?? data.brands[0]?.id ?? "",
   );
   const [selectedModelId, setSelectedModelId] = useState(data.models[0]?.id ?? "");
   const [loading, setLoading] = useState(httpMode);
-  const [submitting, setSubmitting] = useState(false);
+  const [inFlightFingerprints, setInFlightFingerprints] = useState<
+    ReadonlySet<string>
+  >(new Set());
   const [error, setError] = useState<string | null>(null);
   const attachmentUrls = useRef(new Set<string>());
   const uploadTimers = useRef<number[]>([]);
-  const pendingSubmission = useRef<{
-    fingerprint: string;
-    idempotencyKey: string;
-  } | null>(null);
+  const mounted = useRef(true);
+  const draft = useRef({
+    brandId: data.defaultBrandId ?? data.brands[0]?.id ?? "",
+    message: "",
+  });
+  const submissions = useRef(new HomeSubmissionCoordinator());
 
-  useEffect(() => () => {
-    uploadTimers.current.forEach((timer) => window.clearTimeout(timer));
-    attachmentUrls.current.forEach((url) => URL.revokeObjectURL(url));
+  useEffect(() => {
+    const timers = uploadTimers.current;
+    const urls = attachmentUrls.current;
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      timers.forEach((timer) => window.clearTimeout(timer));
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
   }, []);
 
   useEffect(() => {
@@ -66,9 +80,11 @@ export function useProjectHomeController(data: ProjectHome) {
       .then((next) => {
         if (cancelled) return;
         setHome(next);
-        setSelectedBrandId(
-          next.defaultBrandId ?? (next.brands.length === 1 ? next.brands[0].id : ""),
-        );
+        const nextBrandId =
+          next.defaultBrandId ?? (next.brands.length === 1 ? next.brands[0].id : "");
+        draft.current = { ...draft.current, brandId: nextBrandId };
+        submissions.current.draftChanged();
+        setSelectedBrandIdState(nextBrandId);
         setSelectedModelId(next.models[0]?.id ?? "");
         setError(null);
       })
@@ -104,8 +120,34 @@ export function useProjectHomeController(data: ProjectHome) {
   const selectedModel =
     home.models.find((model) => model.id === selectedModelId) ?? home.models[0];
 
+  const currentDraft = parseHomeBootstrapDraft({
+    brandId: selectedBrandId,
+    message: prompt,
+  });
+  const submitting = currentDraft.success
+    ? inFlightFingerprints.has(currentDraft.fingerprint)
+    : false;
+
+  function reviseDraft(next: { brandId: string; message: string }) {
+    if (
+      draft.current.brandId === next.brandId &&
+      draft.current.message === next.message
+    ) {
+      return;
+    }
+    draft.current = next;
+    submissions.current.draftChanged();
+    setError(null);
+  }
+
   function setPrompt(value: string) {
+    reviseDraft({ ...draft.current, message: value });
     setPromptState(value);
+  }
+
+  function setSelectedBrandId(value: string) {
+    reviseDraft({ ...draft.current, brandId: value });
+    setSelectedBrandIdState(value);
   }
 
   function selectEntity(entityId: string) {
@@ -145,25 +187,42 @@ export function useProjectHomeController(data: ProjectHome) {
 
   async function submit(promptOverride?: string) {
     const message = promptOverride ?? prompt;
-    if (!message.trim() || !selectedBrandId || loading || submitting) return;
-    const fingerprint = JSON.stringify({ brandId: selectedBrandId, message });
-    const attempt = pendingSubmission.current;
-    const idempotencyKey =
-      attempt?.fingerprint === fingerprint
-        ? attempt.idempotencyKey
-        : newIdempotencyKey("home-project");
-    pendingSubmission.current = { fingerprint, idempotencyKey };
-    setSubmitting(true);
+    if (loading) return;
+    const parsed = parseHomeBootstrapDraft({ brandId: selectedBrandId, message });
+    if (!parsed.success) {
+      setError(parsed.message);
+      return;
+    }
+    const attempt = submissions.current.begin(
+      parsed.fingerprint,
+      () => newIdempotencyKey("home-project"),
+    );
+    if (!attempt) return;
+    setInFlightFingerprints((current) =>
+      new Set(current).add(parsed.fingerprint),
+    );
     setError(null);
     try {
       const created = await repositories.home.create({
-        brandId: selectedBrandId,
-        message,
-        idempotencyKey,
+        ...parsed.request,
+        idempotencyKey: attempt.idempotencyKey,
       });
-      pendingSubmission.current = null;
-      router.push(created.href);
+      const outcome = submissions.current.succeeded(attempt);
+      if (!mounted.current) return;
+      const latestDraft = parseHomeBootstrapDraft(draft.current);
+      if (latestDraft.success && latestDraft.fingerprint === parsed.fingerprint) {
+        draft.current = { ...draft.current, message: "" };
+        submissions.current.draftChanged();
+        setPromptState("");
+        setSelectedEntityIds([]);
+        attachmentUrls.current.forEach((url) => URL.revokeObjectURL(url));
+        attachmentUrls.current.clear();
+        setAttachments([]);
+      }
+      if (outcome.navigate) router.push(created.href);
     } catch (failure) {
+      const outcome = submissions.current.failed(attempt);
+      if (!mounted.current || !outcome.display) return;
       if (failure instanceof ClueChatApiError) {
         setError(
           failure.requestId
@@ -174,7 +233,13 @@ export function useProjectHomeController(data: ProjectHome) {
         setError(failure instanceof Error ? failure.message : String(failure));
       }
     } finally {
-      setSubmitting(false);
+      if (mounted.current) {
+        setInFlightFingerprints((current) => {
+          const next = new Set(current);
+          next.delete(parsed.fingerprint);
+          return next;
+        });
+      }
     }
   }
 

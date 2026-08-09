@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ClueChatApiError } from "./chat-api";
 import { createHttpProjectHomeRepository } from "./project-home.repository";
 
 const TRANSPORT = { mode: "http", prefix: "/api/clue" } as const;
@@ -100,6 +101,38 @@ test("Home create sends one atomic request and trusts only the returned href", a
     assert.equal(created.href, "/projects/prj_real?thread=thr_real");
     assert.equal(created.project.title, "Untitled project");
     assert.equal(created.thread.title, "Start Northstar research");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Home refusals stay typed and never become fixture success", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json(
+    {
+      error: {
+        code: "IDEMPOTENCY_CONFLICT",
+        message: "this key belongs to another request",
+        requestId: "req-r4",
+      },
+    },
+    { status: 409 },
+  );
+  try {
+    await assert.rejects(
+      () => createHttpProjectHomeRepository(TRANSPORT).create({
+        brandId: "brd_1",
+        message: "Start Northstar research",
+        idempotencyKey: "home-project:conflict",
+      }),
+      (failure: unknown) => {
+        assert.ok(failure instanceof ClueChatApiError);
+        assert.equal(failure.code, "IDEMPOTENCY_CONFLICT");
+        assert.equal(failure.status, 409);
+        assert.equal(failure.requestId, "req-r4");
+        return true;
+      },
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

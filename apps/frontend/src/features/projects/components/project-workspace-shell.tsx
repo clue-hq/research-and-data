@@ -43,6 +43,7 @@ export function ProjectWorkspaceShell({
   return (
     <LoadedProjectWorkspace
       initial={initial}
+      key={`${loaded.workspace.id}:${initial.threadId ?? ""}`}
       workspace={loaded.workspace}
     />
   );

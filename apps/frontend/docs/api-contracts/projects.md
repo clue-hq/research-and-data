@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R3 implemented. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R4 implemented. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -38,6 +38,22 @@ network failure. Presentation components do not call the API directly.
   hidden in HTTP mode. Fixture preview mode keeps its local-only controls.
 - The project-header hover/click sidebar interaction is intentionally outside
   R3 and remains a later repair slice; this read slice does not claim it.
+
+### R4 implementation status (2026-08-10)
+
+- R4 reuses the atomic Home endpoints implemented in R2; it does not add a
+  second project-creation API. Home read, bootstrap request, bootstrap response,
+  and refusal envelopes are validated at the frontend repository seam.
+- One exact Home draft has at most one request in flight. An unchanged failed
+  draft reuses its idempotency key, while editing the message or brand rotates
+  that retry identity. A different draft is not disabled by an older request.
+- A successful latest submission clears only the submitted draft and navigates
+  using only the backend-returned `href`. Network completion order cannot
+  navigate an older concurrent draft over a newer one.
+- A thread query is resolved only against the real tenant/project-scoped thread
+  page. A mismatched thread is never read; the route selects an allowed thread
+  and replaces the query with its canonical id, or renders a controlled
+  unavailable state when the project has no allowed thread.
 
 ## Ownership model
 

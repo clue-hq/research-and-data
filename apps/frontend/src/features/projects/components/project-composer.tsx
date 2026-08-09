@@ -59,9 +59,9 @@ export function ProjectComposer({
   const sendButtonRef = useRef<HTMLButtonElement>(null);
   const handleDraftChange = useCallback((hasContent: boolean) => {
     if (sendButtonRef.current) {
-      sendButtonRef.current.disabled = disabled || !hasContent;
+      sendButtonRef.current.disabled = disabled || sendDisabled || !hasContent;
     }
-  }, [disabled]);
+  }, [disabled, sendDisabled]);
   const handleContextChange = useCallback(
     (entityIds: string[]) => {
       selectedEntityIds
@@ -84,6 +84,7 @@ export function ProjectComposer({
         .join(" ")}
       onSubmit={(event) => {
         event.preventDefault();
+        if (disabled || sendDisabled) return;
         const currentPrompt = editorRef.current?.getPrompt() ?? prompt;
         const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
         if (!currentPrompt.trim() && !currentEntityIds.length) return;
@@ -108,9 +109,10 @@ export function ProjectComposer({
           onContextChange={handleContextChange}
           onDraftChange={handleDraftChange}
           onPromptChange={onPromptChange}
-          onSubmit={(value) =>
-            onSubmit(value, editorRef.current?.getEntityIds() ?? [])
-          }
+          onSubmit={(value) => {
+            if (disabled || sendDisabled) return;
+            onSubmit(value, editorRef.current?.getEntityIds() ?? []);
+          }}
           prompt={prompt}
           ref={editorRef}
           selectedEntities={selectedEntities}

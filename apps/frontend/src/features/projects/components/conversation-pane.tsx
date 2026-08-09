@@ -186,6 +186,11 @@ export function ConversationPane({
           {chat.access.message}
         </p>
       ) : null}
+      {chat.route ? (
+        <p className={styles.messageText} role="alert">
+          {chat.route.message}
+        </p>
+      ) : null}
       {chat.error ? (
         <p className={styles.messageText} role="alert">
           {chat.error}
@@ -217,7 +222,7 @@ export function ConversationPane({
         ) : null}
         <ProjectComposer
           // Never disabled while work is detached: the user keeps the wheel.
-          disabled={chat.access !== null}
+          disabled={chat.access !== null || chat.route !== null}
           entities={workspace.contextEntities}
           modelPickerOpen={controller.modelPickerOpen}
           models={workspace.models}

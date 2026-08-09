@@ -110,6 +110,33 @@ export const ProjectHomeSchema = z.object({
   suggestions: z.array(z.string().min(1)).max(3),
 });
 
+const ProjectBootstrapMessageSchema = z
+  .string()
+  .min(1)
+  .max(32_000)
+  .refine((message) => message.trim().length > 0, {
+    message: "message must contain something other than whitespace",
+  });
+
+/** The complete browser-owned portion of one atomic Home bootstrap act. */
+export const ProjectBootstrapRequestSchema = z.object({
+  agentProfileId: z.string().min(1).max(200).nullable().default(null),
+  attachmentRefs: z.array(z.object({
+    artifactKey: z.string().min(1).max(1_000),
+    byteCount: z.number().int().nonnegative(),
+    filename: z.string().min(1).max(255),
+    mediaType: z.string().min(1).max(255),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  }).strict()).default([]),
+  brandId: z.string().min(1).max(200),
+  contextRefs: z.array(z.object({
+    objectId: z.string().min(1).max(200),
+    objectType: z.enum(["account", "contact"]),
+    version: z.number().int().positive().nullable().default(null),
+  }).strict()).default([]),
+  message: ProjectBootstrapMessageSchema,
+}).strict();
+
 const ProjectHomeWireSchema = z.object({
   data: z.object({
     brands: z.array(z.object({
@@ -335,6 +362,12 @@ export type ProjectQuestionnaire = z.infer<typeof ProjectQuestionnaireSchema>;
 export type ProjectPlan = z.infer<typeof ProjectPlanSchema>;
 export type ProjectQuestionGroup = z.infer<typeof ProjectQuestionGroupSchema>;
 export type ProjectHome = z.infer<typeof ProjectHomeSchema>;
+export type ProjectBootstrapRequest = z.infer<
+  typeof ProjectBootstrapRequestSchema
+>;
+export type ProjectBootstrapRequestInput = z.input<
+  typeof ProjectBootstrapRequestSchema
+>;
 export type ProjectBootstrap = z.infer<typeof ProjectBootstrapResponseSchema>;
 export type ProjectWorkspace = z.infer<typeof ProjectWorkspaceSchema>;
 export type ProjectPhase = z.infer<typeof ProjectPhaseSchema>;

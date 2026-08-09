@@ -101,6 +101,36 @@ export interface ChatThread {
   updatedAt: string;
 }
 
+export type ProjectThreadRouteResolution =
+  | { kind: "selected"; thread: ChatThread; canonicalize: boolean }
+  | { kind: "not-found"; requestedThreadId: string }
+  | { kind: "empty" };
+
+/** Resolve a URL thread only from this project's tenant-scoped thread page. */
+export function resolveProjectThreadRoute(
+  threads: readonly ChatThread[],
+  requestedThreadId: string | null,
+): ProjectThreadRouteResolution {
+  if (requestedThreadId) {
+    const requested = threads.find((thread) => thread.id === requestedThreadId);
+    if (requested) {
+      return { kind: "selected", thread: requested, canonicalize: false };
+    }
+  }
+  const fallback =
+    threads.find((thread) => thread.status !== "archived") ?? threads[0];
+  if (fallback) {
+    return {
+      kind: "selected",
+      thread: fallback,
+      canonicalize: fallback.id !== requestedThreadId,
+    };
+  }
+  return requestedThreadId
+    ? { kind: "not-found", requestedThreadId }
+    : { kind: "empty" };
+}
+
 function toThread(wire: z.infer<typeof ThreadWireSchema>): ChatThread {
   return {
     id: wire.id,

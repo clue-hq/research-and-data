@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ClueChatApiError,
   isAccessError,
@@ -22,6 +23,7 @@ import {
 } from "../model/chat-transcript";
 import {
   threadLabel,
+  resolveProjectThreadRoute,
   type ChatThread,
   type ThreadStatus,
 } from "../model/chat-thread";
@@ -50,6 +52,11 @@ export interface ChatAccessState {
   message: string;
 }
 
+export interface ChatRouteState {
+  code: "THREAD_NOT_FOUND" | "NO_THREADS";
+  message: string;
+}
+
 export interface ProjectChatController {
   threads: readonly ChatThread[];
   activeThread: ChatThread | null;
@@ -57,6 +64,8 @@ export interface ProjectChatController {
   transcript: readonly TranscriptMessage[];
   /** Non-null when the workspace/session refuses this conversation. */
   access: ChatAccessState | null;
+  /** A controlled route state; never a raw backend error in the transcript. */
+  route: ChatRouteState | null;
   loading: boolean;
   /** A stream or repository failure that did not change any durable outcome. */
   error: string | null;
@@ -86,6 +95,9 @@ export function useProjectChatController({
   projectId: string;
   initialThreadId?: string;
 }): ProjectChatController {
+  const pathname = usePathname();
+  const router = useRouter();
+  const routeQuery = useSearchParams().toString();
   const repositories = useChatRepositories();
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(
@@ -101,6 +113,7 @@ export function useProjectChatController({
   const [stream, setStream] = useState<TranscriptState>(emptyTranscriptState);
   const [optimistic, setOptimistic] = useState<OptimisticTurn[]>([]);
   const [access, setAccess] = useState<ChatAccessState | null>(null);
+  const [route, setRoute] = useState<ChatRouteState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -133,6 +146,13 @@ export function useProjectChatController({
       return;
     }
     if (failure instanceof ClueChatApiError) {
+      if (failure.code === "THREAD_NOT_FOUND") {
+        setRoute({
+          code: "THREAD_NOT_FOUND",
+          message: "This conversation is not available in this project.",
+        });
+        return;
+      }
       setError(
         failure.requestId
           ? `${failure.message} (request ${failure.requestId})`
@@ -142,6 +162,15 @@ export function useProjectChatController({
     }
     setError(failure instanceof Error ? failure.message : String(failure));
   }, []);
+
+  const replaceThreadInRoute = useCallback(
+    (threadId: string) => {
+      const query = new URLSearchParams(routeQuery);
+      query.set("thread", threadId);
+      router.replace(`${pathname}?${query.toString()}`);
+    },
+    [pathname, routeQuery, router],
+  );
 
   // --- reads ------------------------------------------------------------
 
@@ -180,13 +209,27 @@ export function useProjectChatController({
       try {
         const available = await loadThreads();
         if (cancelled || !mounted.current) return;
-        const chosen =
-          available.find((thread) => thread.id === activeThreadId) ??
-          available.find((thread) => thread.status !== "archived") ??
-          available[0] ??
-          null;
-        if (chosen && chosen.id !== activeThreadId) setActiveThreadId(chosen.id);
-        if (chosen) await loadConversation(chosen.id);
+        const resolution = resolveProjectThreadRoute(available, activeThreadId);
+        if (resolution.kind === "not-found") {
+          setRoute({
+            code: "THREAD_NOT_FOUND",
+            message: "This conversation is not available in this project.",
+          });
+          return;
+        }
+        if (resolution.kind === "empty") {
+          setRoute({
+            code: "NO_THREADS",
+            message: "This project has no conversations yet. Start a new thread.",
+          });
+          return;
+        }
+        setRoute(null);
+        if (resolution.canonicalize) {
+          setActiveThreadId(resolution.thread.id);
+          replaceThreadInRoute(resolution.thread.id);
+        }
+        await loadConversation(resolution.thread.id);
       } catch (failure) {
         if (!cancelled) report(failure);
       } finally {
@@ -198,7 +241,13 @@ export function useProjectChatController({
     };
     // `activeThreadId` intentionally drives a reload; the guard above keeps the
     // first pass from looping when the id is resolved rather than chosen.
-  }, [activeThreadId, loadConversation, loadThreads, report]);
+  }, [
+    activeThreadId,
+    loadConversation,
+    loadThreads,
+    replaceThreadInRoute,
+    report,
+  ]);
 
   // --- live attachment ---------------------------------------------------
 
@@ -420,14 +469,16 @@ export function useProjectChatController({
       try {
         const thread = await repositories.threads.create({ projectId, title });
         await loadThreads();
+        setRoute(null);
         setActiveThreadId(thread.id);
+        replaceThreadInRoute(thread.id);
         return thread;
       } catch (failure) {
         report(failure);
         return null;
       }
     },
-    [loadThreads, projectId, repositories, report],
+    [loadThreads, projectId, replaceThreadInRoute, repositories, report],
   );
 
   const renameThread = useCallback(
@@ -502,6 +553,7 @@ export function useProjectChatController({
     activeThreadId,
     transcript,
     access,
+    route,
     loading,
     error,
     busy: threadBusy,
@@ -514,6 +566,13 @@ export function useProjectChatController({
     retryTurn,
     selectThread(threadId) {
       if (threadId === activeThreadId) return;
+      if (!threads.some((thread) => thread.id === threadId)) {
+        setRoute({
+          code: "THREAD_NOT_FOUND",
+          message: "This conversation is not available in this project.",
+        });
+        return;
+      }
       for (const handle of attachments.current.values()) handle.close();
       attachments.current.clear();
       attached.current.clear();
@@ -525,8 +584,10 @@ export function useProjectChatController({
       setTurns([]);
       setOptimistic([]);
       setError(null);
+      setRoute(null);
       setLoading(true);
       setActiveThreadId(threadId);
+      replaceThreadInRoute(threadId);
     },
     createThread,
     renameThread,
