@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ClueChatApiError,
   PROJECTS_API_BASE_URL_VAR,
   chatUrl,
   newIdempotencyKey,
@@ -32,6 +33,49 @@ test("the flag is an origin-relative BFF prefix, and anything else is refused", 
     () => resolveChatTransport("https://api.example.com"),
     /origin-relative/,
   );
+});
+
+test(`${PROJECTS_API_BASE_URL_VAR} makes project fixtures unreachable on HTTP failure`, async () => {
+  const originalFetch = globalThis.fetch;
+  const requested: string[] = [];
+  globalThis.fetch = async (input) => {
+    requested.push(String(input));
+    return Response.json(
+      {
+        error: {
+          code: "UPSTREAM_UNAVAILABLE",
+          message: "backend unavailable",
+          requestId: "req-r7",
+        },
+      },
+      { status: 503 },
+    );
+  };
+
+  try {
+    const repositories = createChatRepositories(
+      resolveChatTransport("/api/clue"),
+    );
+    const outcomes = await Promise.allSettled([
+      repositories.home.get(),
+      repositories.projects.get(FIXTURE_PROJECT_ID),
+      repositories.sidebar.list(),
+    ]);
+
+    assert.equal(repositories.transport.mode, "http");
+    for (const outcome of outcomes) {
+      if (outcome.status !== "rejected") assert.fail("HTTP failure used a fixture");
+      assert.ok(outcome.reason instanceof ClueChatApiError);
+      assert.equal(outcome.reason.code, "UPSTREAM_UNAVAILABLE");
+    }
+    assert.deepEqual(requested.sort(), [
+      "/api/clue/api/v1/home",
+      `/api/clue/api/v1/projects/${FIXTURE_PROJECT_ID}`,
+      "/api/clue/api/v1/projects/sidebar",
+    ].sort());
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("every request is mounted under the chat surface's own prefix", () => {

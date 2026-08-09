@@ -1,8 +1,8 @@
-import type { ProjectWorkspace } from "../model/project-workspace";
+import type { ProjectPlan as ProjectPlanData } from "../model/project-workspace";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
-export function ProjectPlan({ plan }: { plan: NonNullable<ProjectWorkspace["plan"]> }) {
+export function ProjectPlan({ plan }: { plan: ProjectPlanData }) {
   return (
     <section className={styles.projectPlan}>
       <header><span><ProjectIcon name="file-text" size={12} />Plan</span></header>

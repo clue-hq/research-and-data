@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R6 implemented. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R7 implemented. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -93,6 +93,23 @@ network failure. Presentation components do not call the API directly.
 - The one mounted sidebar controller re-reads the real tenant-scoped catalog on
   pathname changes. A project created by Home is therefore present after the
   client-side navigation without a full browser restart or fixture fallback.
+
+### R7 implementation status (2026-08-10)
+
+- The real project workspace model contains only durable project metadata,
+  advertised composer capabilities, and the exact pre-integration
+  `artifacts: []` contract. Fixture-only plan, questionnaire, prompt, phase,
+  model, agent-profile, and context-catalog fields are no longer accepted as
+  project shell state.
+- The project workspace always renders the designed empty Gallery while no
+  artifact read contract exists. Fixture cards, artifact-editor controls,
+  Target accounts, plan, and questionnaire surfaces are unreachable from the
+  project route in both HTTP and fixture transport modes.
+- Configuring `CLUE_PROJECTS_API_BASE_URL` selects the HTTP project, Home, and
+  sidebar adapters as one set. A backend refusal or network failure remains an
+  error state; none can recover through fixture project metadata or artifacts.
+- Guessed artifact-detail URLs return not found until a real project-artifact
+  read is separately contracted and integrated.
 
 ## Ownership model
 

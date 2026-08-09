@@ -56,7 +56,7 @@ function LoadedProjectWorkspace({
   initial: ProjectWorkspaceInitialState;
   workspace: ProjectWorkspace;
 }) {
-  const controller = useProjectWorkspaceController({ initial, workspace });
+  const controller = useProjectWorkspaceController();
   // Two controllers, two responsibilities: the conversation is durable state
   // over real repositories, the artifact side is local view state over the
   // project shell. They share nothing but the screen.

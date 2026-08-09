@@ -269,32 +269,23 @@ const ProjectWorkspaceWireSchema = z.object({
 });
 
 /**
- * The project shell: the artifact-side surfaces and the composer's catalogs.
+ * The real project shell served before artifact integration exists.
  *
- * The conversation left this schema in slice D5. Threads, messages, parts, the
- * six-value phase transcript, the `previewTimeline` timer blob a real backend
- * would have had to ship, the `reasoningTrace` and `conversationCopy` display
- * strings, and the `conversationActivity` tool/source records the frontend used
- * to manufacture cards from are all gone: the transcript is durable turns and
- * streamed parts now, under `model/chat-*.ts`.
+ * It deliberately excludes the prototype's plan, questionnaire, model list,
+ * prompt, phase, and context catalog. Those values are not backend project
+ * state. `artifacts` is an exact empty tuple until a separately contracted
+ * artifact read surface can supply real records.
  */
 export const ProjectWorkspaceSchema = z.object({
-  artifacts: z.array(ProjectArtifactSchema),
+  artifacts: z.tuple([]),
   brandId: z.string().min(1),
   composerCapabilities: ProjectComposerCapabilitiesSchema,
-  contextEntities: z.array(ProjectEntitySchema),
   createdAt: z.string().min(1),
-  defaultAgentProfileId: z.string().min(1).nullable(),
-  defaultModelId: z.string().min(1).nullable(),
   id: z.string().min(1),
-  models: z.array(ProjectModelOptionSchema),
-  plan: ProjectPlanSchema.nullable(),
   productId: z.string().min(1).nullable(),
-  prompt: z.string(),
-  questionnaire: ProjectQuestionnaireSchema.nullable(),
   status: z.enum(["draft", "active", "paused", "archived"]),
   title: z.string().min(1),
-});
+}).strict();
 
 export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transform(
   ({ data }) =>
@@ -307,31 +298,13 @@ export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transfo
         agentProfileSelection:
           data.composer_capabilities.agent_profile_selection,
       },
-      contextEntities: [],
       createdAt: data.created_at,
-      defaultAgentProfileId: data.default_agent_profile_id,
-      defaultModelId: null,
       id: data.id,
-      models: [],
-      plan: null,
       productId: data.product_id,
-      prompt: "",
-      questionnaire: null,
       status: data.status,
       title: data.title,
     }),
 );
-
-export const ProjectPhaseSchema = z.enum([
-  "conversation",
-  "questionnaire",
-  "agent-running",
-  "planning",
-  "generating",
-  "complete",
-]);
-
-export const ArtifactSurfaceSchema = z.enum(["gallery", "artifact"]);
 export const GalleryLayoutSchema = z.enum(["grid", "list"]);
 export const ArtifactFilterSchema = z.enum([
   "all",
@@ -370,8 +343,6 @@ export type ProjectBootstrapRequestInput = z.input<
 >;
 export type ProjectBootstrap = z.infer<typeof ProjectBootstrapResponseSchema>;
 export type ProjectWorkspace = z.infer<typeof ProjectWorkspaceSchema>;
-export type ProjectPhase = z.infer<typeof ProjectPhaseSchema>;
-export type ArtifactSurface = z.infer<typeof ArtifactSurfaceSchema>;
 export type GalleryLayout = z.infer<typeof GalleryLayoutSchema>;
 export type ArtifactFilter = z.infer<typeof ArtifactFilterSchema>;
 export type ArtifactSort = z.infer<typeof ArtifactSortSchema>;

@@ -6,7 +6,7 @@ import {
   getProjectWorkspace,
 } from "./project-workspace.repository";
 
-test("project fixtures satisfy the backend handoff contract", async () => {
+test("fixture project shell uses the honest pre-artifact contract", async () => {
   const [home, project] = await Promise.all([
     getProjectHome(),
     getProjectWorkspace("10m-landing-page-campaign"),
@@ -15,9 +15,17 @@ test("project fixtures satisfy the backend handoff contract", async () => {
   assert.ok(project);
   assert.equal(home.defaultBrandId, "brand-clue-demo");
   assert.ok(home.composerCapabilities.contextRefs);
-  assert.ok(project.artifacts.every((artifact) => artifact.originThreadId));
-  assert.ok(project.artifacts.every((artifact) => artifact.originRunId));
-  assert.ok(project.models.some((model) => model.id === project.defaultModelId));
+  assert.deepEqual(project.artifacts, []);
+  assert.deepEqual(Object.keys(project).sort(), [
+    "artifacts",
+    "brandId",
+    "composerCapabilities",
+    "createdAt",
+    "id",
+    "productId",
+    "status",
+    "title",
+  ]);
   assert.equal(home.suggestions.length, 3);
   assert.ok(home.suggestions.every((suggestion) => suggestion.length > 0));
 });
@@ -55,9 +63,11 @@ test("HTTP project shell maps only durable data and keeps Gallery empty", async 
     assert.equal(requested, "/api/clue/api/v1/projects/prj_real");
     assert.equal(project.title, "Untitled project");
     assert.deepEqual(project.artifacts, []);
-    assert.deepEqual(project.models, []);
-    assert.equal(project.plan, null);
-    assert.equal(project.questionnaire, null);
+    assert.equal("models" in project, false);
+    assert.equal("plan" in project, false);
+    assert.equal("questionnaire" in project, false);
+    assert.equal("prompt" in project, false);
+    assert.equal("contextEntities" in project, false);
     assert.deepEqual(project.composerCapabilities, {
       agentProfileSelection: false,
       attachments: false,

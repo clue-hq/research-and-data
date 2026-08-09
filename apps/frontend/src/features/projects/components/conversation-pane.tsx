@@ -1,11 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
-import type { ProjectWorkspace } from "../model/project-workspace";
 import type { ProjectChatController } from "../hooks/use-project-chat-controller";
 import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
 import { useTurnInspector } from "../hooks/use-turn-inspector";
-import { CanvasInspector } from "./canvas-inspector";
 import { ChatTranscript } from "./chat-transcript";
 import { ChatTurnInspector } from "./chat-turn-inspector";
 import { ProjectComposer } from "./project-composer";
@@ -31,14 +29,12 @@ export function ConversationPane({
   chat,
   controller,
   projectId,
-  workspace,
 }: {
   chat: ProjectChatController;
   controller: ReturnType<
     typeof import("../hooks/use-project-workspace-controller").useProjectWorkspaceController
   >;
   projectId: string;
-  workspace: ProjectWorkspace;
 }) {
   // The dev-lens turn inspector. Its own controller, not part of `chat`: it
   // reads nothing the conversation needs and the conversation needs nothing from
@@ -67,74 +63,6 @@ export function ConversationPane({
     [chat],
   );
 
-  if (controller.inspectorOpen) {
-    return (
-      <section className={styles.conversationPane} data-mode="inspector">
-        <header className={styles.conversationHeader}>
-          <strong>
-            {chat.activeThread ? chat.threadLabelFor(chat.activeThread) : "Conversation"}
-          </strong>
-          <div>
-            <button
-              aria-label="Close inspector"
-              className={styles.activeTool}
-              onClick={() => controller.setInspectorOpen(false)}
-              type="button"
-            >
-              <ProjectIcon name="edit-active" size={14} />
-            </button>
-          </div>
-        </header>
-        <CanvasInspector
-          ctaLabel={controller.ctaLabel}
-          headlineAlign={controller.headlineAlign}
-          headlineFont={controller.headlineFont}
-          headlineSize={controller.headlineSize / 2}
-          headlineWeight={controller.headlineWeight}
-          heroImageFit={controller.heroImageFit}
-          heroImageRadius={controller.heroImageRadius}
-          onCtaLabelChange={controller.setCtaLabel}
-          onHeadlineAlignChange={controller.setHeadlineAlign}
-          onHeadlineColorChange={controller.setHeadlineColor}
-          onHeadlineFontChange={controller.setHeadlineFont}
-          onHeadlineSizeChange={(size) => controller.setHeadlineSize(size * 2)}
-          onHeadlineWeightChange={controller.setHeadlineWeight}
-          onHeroImageFitChange={controller.setHeroImageFit}
-          onHeroImageRadiusChange={controller.setHeroImageRadius}
-          onHeroImageReplace={controller.replaceHeroImage}
-          selection={controller.inspectorSelection}
-        />
-        <div className={styles.inspectorComposer}>
-          <span className={styles.selectionTag}>
-            heading 1{" "}
-            <button onClick={() => controller.setInspectorSelection("canvas")} type="button">
-              ×
-            </button>
-          </span>
-          <ProjectComposer
-            entities={workspace.contextEntities}
-            modelPickerOpen={controller.modelPickerOpen}
-            models={workspace.models}
-            onEntityRemove={workspace.composerCapabilities.contextRefs
-              ? controller.removeEntity
-              : undefined}
-            onEntitySelect={workspace.composerCapabilities.contextRefs
-              ? controller.selectEntity
-              : undefined}
-            onModelPickerToggle={controller.toggleModelPicker}
-            onModelSelect={controller.selectModel}
-            onPromptChange={controller.setPrompt}
-            onSubmit={(prompt) => void chat.submitMessage(prompt ?? controller.prompt)}
-            prompt={controller.prompt}
-            selectedEntities={controller.selectedEntities}
-            selectedEntityIds={controller.selectedEntityIds}
-            selectedModel={controller.selectedModel}
-          />
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className={styles.conversationPane}>
       <header className={styles.conversationHeader}>
@@ -161,15 +89,6 @@ export function ConversationPane({
           >
             <ProjectIcon name="plus" size={14} />
           </button>
-          {controller.selectedArtifact ? (
-            <button
-              aria-label="Open canvas inspector"
-              onClick={() => controller.setInspectorOpen(true)}
-              type="button"
-            >
-              <ProjectIcon name="edit" size={14} />
-            </button>
-          ) : null}
           <button
             aria-label="Expand conversation"
             aria-pressed={controller.focusPane === "conversation"}
@@ -223,26 +142,12 @@ export function ConversationPane({
         <ProjectComposer
           // Never disabled while work is detached: the user keeps the wheel.
           disabled={chat.access !== null || chat.route !== null}
-          entities={workspace.contextEntities}
-          modelPickerOpen={controller.modelPickerOpen}
-          models={workspace.models}
-          onEntityRemove={workspace.composerCapabilities.contextRefs
-            ? controller.removeEntity
-            : undefined}
-          onEntitySelect={workspace.composerCapabilities.contextRefs
-            ? controller.selectEntity
-            : undefined}
-          onModelPickerToggle={controller.toggleModelPicker}
-          onModelSelect={controller.selectModel}
           onPromptChange={controller.setPrompt}
           onSubmit={(prompt) => {
             void chat.submitMessage(prompt ?? controller.prompt);
             controller.setPrompt("");
           }}
           prompt={controller.prompt}
-          selectedEntities={controller.selectedEntities}
-          selectedEntityIds={controller.selectedEntityIds}
-          selectedModel={controller.selectedModel}
         />
       </div>
     </section>

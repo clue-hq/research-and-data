@@ -16,18 +16,20 @@ import {
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
+const NOOP = () => undefined;
+
 export function ProjectComposer({
   attachments = [],
   disabled = false,
   entities = [],
-  modelPickerOpen,
-  models,
+  modelPickerOpen = false,
+  models = [],
   onAttachmentFiles,
   onAttachmentRemove,
   onEntityRemove,
   onEntitySelect,
-  onModelPickerToggle,
-  onModelSelect,
+  onModelPickerToggle = NOOP,
+  onModelSelect = NOOP,
   onPromptChange,
   onSubmit,
   prompt,
@@ -39,14 +41,14 @@ export function ProjectComposer({
   attachments?: ProjectComposerAttachmentData[];
   disabled?: boolean;
   entities?: ProjectEntity[];
-  modelPickerOpen: boolean;
-  models: ProjectModelOption[];
+  modelPickerOpen?: boolean;
+  models?: ProjectModelOption[];
   onAttachmentFiles?: (files: File[]) => void;
   onAttachmentRemove?: (attachmentId: string) => void;
   onEntityRemove?: (entityId: string) => void;
   onEntitySelect?: (entityId: string) => void;
-  onModelPickerToggle: () => void;
-  onModelSelect: (modelId: string) => void;
+  onModelPickerToggle?: () => void;
+  onModelSelect?: (modelId: string) => void;
   onPromptChange: (value: string) => void;
   onSubmit: (value?: string, entityIds?: string[]) => void;
   prompt: string;

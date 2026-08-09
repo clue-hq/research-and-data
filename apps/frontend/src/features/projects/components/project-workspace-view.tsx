@@ -21,7 +21,7 @@ export function ProjectWorkspaceView({
   const sidebar = useApplicationSidebar();
   const pinned = sidebar.state === "pinned-expanded";
   return (
-    <main className={styles.projectWorkspace} data-phase={controller.previewSurface}>
+    <main className={styles.projectWorkspace}>
       <header className={styles.projectHeader}>
         <div>
           <button
@@ -44,8 +44,8 @@ export function ProjectWorkspaceView({
         <button aria-label="Copy project link" onClick={onCopyLink} type="button"><ProjectIcon name="link" size={14} /></button>
       </header>
       <div className={styles.projectColumns} data-focus={controller.focusPane}>
-        <ConversationPane chat={chat} controller={controller} projectId={workspace.id} workspace={workspace} />
-        <ArtifactWorkspace controller={controller} workspace={workspace} />
+        <ConversationPane chat={chat} controller={controller} projectId={workspace.id} />
+        <ArtifactWorkspace controller={controller} />
       </div>
     </main>
   );
