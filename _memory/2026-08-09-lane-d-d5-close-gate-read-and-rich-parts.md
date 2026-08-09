@@ -154,3 +154,17 @@ schema already accepts both as absent. Cost of skipping: zero.
 5. Contact-research launches are covered by the projection's union but not by a
    test (the `entity_research_contact_launch` FKs need an account run + a contact
    selection approval); account research is tested end to end.
+
+## Orchestrator verdict (Fable, appended post-review): ACCEPTED
+
+Verified independently: new suite + D4 acceptance + D3 stream + B-D join + chat surface =
+52/52 green. Review highlights: gate part meets the §3.4 floor with one deliberate,
+correct omission (title/summary — §3.1's adapter-owns-words rule); the route matches the
+shipped frontend schema field-for-field; the `_TASK_STATES` latent bug fix (finished runs
+rendered `queued`) is a genuine catch; sources-stays-dark is the empty-beats-fabricated
+doctrine applied right (model-declared refs are assertions, not provenance); deviation-11
+skip reasoning (connection-scoped frames cannot carry replay cursors) is correct.
+Carried forward: task card is a turn-close snapshot (live re-emission is a later want);
+TaskPart.title display-copy nit; contact-launch projection untested; the unowned shared-DB
+gate debt. The real approve round-trip is now unblocked end to end pending the flag-on
+browser pass. Next: dev-lens mini-slice staffs now (brief f1f0a545).
