@@ -136,6 +136,7 @@ export function ConversationPane({
       <header className={styles.conversationHeader}>
         <label>
           <select
+            aria-label="Conversation thread"
             onChange={(event) => chat.selectThread(event.target.value)}
             value={chat.activeThreadId ?? ""}
           >

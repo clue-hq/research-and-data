@@ -33,6 +33,31 @@
   text-align: center;
 }
 
+.homeBrandPicker {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+}
+
+.homeBrandPicker select {
+  width: 100%;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 8px;
+  background: white;
+  padding: 9px 10px;
+  color: var(--clue-ds-color-content-neutral);
+  font: inherit;
+}
+
+.homeError {
+  margin: 12px 4px 0;
+  color: #b42318;
+  font-size: 13px;
+  line-height: 18px;
+}
+
 .composer {
   position: relative;
   display: flex;
@@ -652,26 +677,36 @@
 .conversationHeader {
   display: flex;
   height: 48px;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 0 16px;
 }
 
 .conversationHeader label {
   position: relative;
   display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
   align-items: center;
 }
 
 .conversationHeader select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   appearance: none;
   border: 0;
   outline: 0;
+  overflow: hidden;
   background: transparent;
   padding: 8px 24px 8px 8px;
   color: inherit;
   font-size: 13px;
   line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .conversationHeader label > svg {
@@ -682,6 +717,7 @@
 
 .conversationHeader > div {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 4px;
 }

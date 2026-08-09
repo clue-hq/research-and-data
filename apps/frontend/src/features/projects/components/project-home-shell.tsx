@@ -9,7 +9,7 @@ export function ProjectHomeShell({ data }: { data: ProjectHome }) {
   const controller = useProjectHomeController(data);
   return (
     <ApplicationShell activeHref="/">
-      <ProjectHomeView controller={controller} data={data} />
+      <ProjectHomeView controller={controller} />
     </ApplicationShell>
   );
 }

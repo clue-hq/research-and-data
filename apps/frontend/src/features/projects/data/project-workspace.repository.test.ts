@@ -11,8 +11,8 @@ test("project fixtures satisfy the backend handoff contract", async () => {
     getProjectWorkspace("10m-landing-page-campaign"),
   ]);
 
-  assert.equal(home.suggestedProjectId, project.id);
-  assert.ok(home.suggestedThreadId.length > 0);
+  assert.equal(home.defaultBrandId, "brand-clue-demo");
+  assert.ok(home.composerCapabilities.contextRefs);
   assert.ok(project.artifacts.every((artifact) => artifact.originThreadId));
   assert.ok(project.artifacts.every((artifact) => artifact.originRunId));
   assert.ok(project.models.some((model) => model.id === project.defaultModelId));

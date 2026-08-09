@@ -30,6 +30,11 @@ import {
   createHttpChatTurnsRepository,
   type ChatTurnsRepository,
 } from "./chat-turns.repository";
+import {
+  createFixtureProjectHomeRepository,
+  createHttpProjectHomeRepository,
+  type ProjectHomeRepository,
+} from "./project-home.repository";
 
 /**
  * The one place fixture-or-HTTP is chosen for the projects chat flow.
@@ -40,6 +45,7 @@ import {
  */
 export interface ChatRepositories {
   transport: ChatTransport;
+  home: ProjectHomeRepository;
   threads: ChatThreadsRepository;
   messages: ChatMessagesRepository;
   turns: ChatTurnsRepository;
@@ -59,6 +65,7 @@ export function createChatRepositories(
   if (transport.mode === "http") {
     return {
       transport,
+      home: createHttpProjectHomeRepository(transport),
       threads: createHttpChatThreadsRepository(transport),
       messages: createHttpChatMessagesRepository(transport),
       turns: createHttpChatTurnsRepository(transport),
@@ -72,6 +79,7 @@ export function createChatRepositories(
   const state = createFixtureChatState();
   return {
     transport,
+    home: createFixtureProjectHomeRepository(),
     threads: createFixtureChatThreadsRepository(),
     messages: createFixtureChatMessagesRepository(),
     turns: createFixtureChatTurnsRepository(state),

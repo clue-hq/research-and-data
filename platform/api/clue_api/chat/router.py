@@ -25,9 +25,10 @@ demarcation registry §2.2, and doing it here would mean editing another lane's 
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Annotated, Any
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -72,6 +73,7 @@ from clue_api.chat.message_bodies import hydrate_message_bodies
 from clue_api.chat.principal import (
     PERMISSION_GATE_RESPOND,
     PERMISSION_PROJECT_READ,
+    PERMISSION_PROJECT_WRITE,
     PERMISSION_THREAD_READ,
     PERMISSION_THREAD_WRITE,
     PrincipalResolver,
@@ -83,8 +85,15 @@ from clue_api.chat.schemas import (
     CreateThreadRequest,
     GateListResponse,
     GateResponseRequest,
+    HomeProjectRequest,
+    HomeResponse,
+    HomeWire,
     MessageListResponse,
     PageMeta,
+    ProjectBootstrapProjectWire,
+    ProjectBootstrapResponse,
+    ProjectBootstrapThreadWire,
+    ProjectBootstrapWire,
     SubmitTurnRequest,
     ThreadListResponse,
     ThreadResponse,
@@ -99,7 +108,7 @@ from clue_api.chat.schemas import (
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
-from clue_api.thread_store import get_thread
+from clue_api.thread_store import create_thread, get_thread, thread_id_for_operation
 from clue_api.turn_action import derive_turn_action_ref
 from clue_auth import Permission, PrincipalError, PrincipalService
 from clue_config import Settings
@@ -124,7 +133,7 @@ from clue_projections import (
     turn_status_ledger,
     turn_tool_calls,
 )
-from clue_spine import get_project
+from clue_spine import create_project, get_brand, get_project, list_brands_for_workspace
 from clue_storage import StorageBackend, content_address
 from clue_toolbelt import IdempotencyConflict, PreconditionFailed, ToolInvoker
 
@@ -154,6 +163,40 @@ _REASON_STATUS: dict[str, tuple[int, str]] = {
     "thread_not_found": (404, "THREAD_NOT_FOUND"),
     "thread_archived": (409, "THREAD_ARCHIVED"),
 }
+
+_HOME_PROJECT_NAMESPACE = uuid5(NAMESPACE_URL, "clue-home-project-bootstrap")
+_UNTITLED_PROJECT = "Untitled project"
+_HOME_SUGGESTIONS = (
+    "Find target accounts for our new campaign",
+    "Research the buying committee for a target account",
+    "Plan a personalized ABM campaign",
+)
+
+
+def _framed(*parts: str) -> str:
+    return "".join(f"{len(part)}:{part}" for part in parts)
+
+
+def _home_project_id(*, workspace_id: str, idempotency_key: str) -> str:
+    """The one project identity a workspace-scoped Home act may create."""
+
+    return "prj_" + uuid5(
+        _HOME_PROJECT_NAMESPACE,
+        _framed(workspace_id, idempotency_key),
+    ).hex
+
+
+def _first_thread_title(message: str) -> str:
+    """Apply R0's exact Unicode-whitespace and 80-code-point title rule."""
+
+    normalized = re.sub(r"\s+", " ", message.strip())
+    if len(normalized) <= 80:
+        return normalized
+    prefix = normalized[:79]
+    boundary = prefix.rfind(" ")
+    if boundary > 0:
+        prefix = prefix[:boundary]
+    return prefix + "…"
 
 
 def chat_workspace_resolver(
@@ -492,6 +535,246 @@ def build_chat_router(
                 message="this idempotency key was already used with a different request",
             ) from exc
         return dict(result.references)
+
+    # --- Home bootstrap ------------------------------------------------------------------------
+
+    @router.get("/home")
+    async def home_route(who: PrincipalDep) -> HomeResponse:
+        """Return only the real, workspace-scoped inputs the Home composer may use.
+
+        R2 intentionally advertises no context, attachment or profile capability. Those controls
+        become interactive only when a later slice can validate and persist their durable refs;
+        until then an empty catalog is the honest contract, not a fixture stand-in.
+        """
+
+        _require(who, PERMISSION_PROJECT_READ)
+        async with conn_factory() as conn:
+            brands = await list_brands_for_workspace(conn, who.workspace_id)
+        return HomeResponse(
+            data=HomeWire(
+                brands=tuple({"id": brand.brand_id, "name": brand.name} for brand in brands),
+                default_brand_id=brands[0].brand_id if len(brands) == 1 else None,
+                suggestions=_HOME_SUGGESTIONS,
+            )
+        )
+
+    if artifacts is not None:
+
+        @router.post("/projects", status_code=201)
+        async def bootstrap_project_route(
+            body: HomeProjectRequest,
+            who: PrincipalDep,
+            response: Response,
+            idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+        ) -> ProjectBootstrapResponse:
+            """Atomically create a project and accept its first platform-Deep-Agent turn.
+
+            The HTTP process only captures and queues. It never resolves a model or invokes the
+            agent runtime; the same Lane-D fleet dispatcher used by an existing project observes
+            the committed submission afterwards.
+            """
+
+            _require(who, PERMISSION_PROJECT_WRITE)
+            _require(who, PERMISSION_THREAD_WRITE)
+            if not idempotency_key or not idempotency_key.strip():
+                raise _refuse(
+                    status_code=400,
+                    code="IDEMPOTENCY_KEY_REQUIRED",
+                    message="creating a project requires an Idempotency-Key header",
+                )
+            if body.context_refs or body.attachment_refs or body.agent_profile_id is not None:
+                raise _refuse(
+                    status_code=409,
+                    code="CAPABILITY_UNAVAILABLE",
+                    message=(
+                        "this deployment does not accept Home context, attachments, or profiles"
+                    ),
+                )
+
+            key = idempotency_key.strip()
+            project_id = _home_project_id(workspace_id=who.workspace_id, idempotency_key=key)
+            operation_id = operation_id_from_key(
+                who.workspace_id,
+                f"home-project-bootstrap:{key}",
+            )
+            thread_id = thread_id_for_operation(
+                workspace_id=who.workspace_id,
+                operation_id=operation_id,
+            )
+            turn_id = turn_id_for_submission(
+                workspace_id=who.workspace_id,
+                thread_id=thread_id,
+                idempotency_key=key,
+            )
+            title = _first_thread_title(body.message)
+            digest = content_address(body.message.encode())
+
+            async with conn_factory() as conn:
+                # One logical Home act owns one transaction-wide lock. It serializes concurrent
+                # retries before either can observe a half-created project/thread pair.
+                await conn.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+                    {"scope": f"home-project-bootstrap:{who.workspace_id}:{key}"},
+                )
+                brand = await get_brand(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    brand_id=body.brand_id,
+                )
+                if brand is None:
+                    raise _refuse(
+                        status_code=404,
+                        code="BRAND_NOT_FOUND",
+                        message="no such brand in this workspace",
+                    )
+
+                project = await get_project(conn, project_id)
+                if project is None:
+                    project = await create_project(
+                        conn,
+                        project_id=project_id,
+                        workspace_id=who.workspace_id,
+                        brand_id=body.brand_id,
+                        name=_UNTITLED_PROJECT,
+                        status="active",
+                    )
+                elif (
+                    project.workspace_id != who.workspace_id
+                    or project.brand_id != body.brand_id
+                    or project.name != _UNTITLED_PROJECT
+                    or project.status != "active"
+                ):
+                    raise _refuse(
+                        status_code=409,
+                        code="IDEMPOTENCY_CONFLICT",
+                        message="this idempotency key was already used with a different request",
+                    )
+
+                thread = await create_thread(
+                    conn,
+                    thread_id=thread_id,
+                    workspace_id=who.workspace_id,
+                    project_id=project_id,
+                    title=title,
+                    created_by_user_id=who.user_id,
+                    created_via_membership_id=who.membership_id,
+                )
+                if (
+                    thread.project_id != project_id
+                    or thread.title != title
+                ):
+                    raise _refuse(
+                        status_code=409,
+                        code="IDEMPOTENCY_CONFLICT",
+                        message="this idempotency key was already used with a different request",
+                    )
+
+                existing = await get_submission(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    turn_id=turn_id,
+                )
+                replayed = existing is not None
+                if existing is not None:
+                    if (
+                        existing.project_id != project_id
+                        or existing.thread_id != thread_id
+                        or existing.message_sha256 != digest
+                    ):
+                        raise _refuse(
+                            status_code=409,
+                            code="IDEMPOTENCY_CONFLICT",
+                            message=(
+                                "this idempotency key was already used with a different request"
+                            ),
+                        )
+                    submission = existing
+                    # Heal a prior post-commit delivery failure without making another task.
+                    await dispatch_next_thread_turn(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        thread_id=thread_id,
+                    )
+                else:
+                    captured = await persist_user_turn(
+                        conn,
+                        artifacts=artifacts,
+                        workspace_id=who.workspace_id,
+                        brand_id=project.brand_id,
+                        product_id=project.product_id,
+                        project_id=project_id,
+                        turn_id=turn_id,
+                        message=body.message,
+                        client_entity_id=None,
+                    )
+                    try:
+                        submission, _created = await insert_submission(
+                            conn,
+                            turn_id=turn_id,
+                            workspace_id=who.workspace_id,
+                            project_id=project_id,
+                            thread_id=thread_id,
+                            submitted_by_user_id=who.user_id,
+                            submitted_via_membership_id=who.membership_id,
+                            onboarding_input_id=captured.onboarding_input_id,
+                            message_artifact_key=captured.artifact_ref.artifact_key,
+                            message_sha256=captured.artifact_ref.sha256,
+                            idempotency_key=key,
+                        )
+                    except SubmissionConflict as exc:
+                        raise _refuse(
+                            status_code=409,
+                            code="IDEMPOTENCY_CONFLICT",
+                            message=str(exc),
+                        ) from exc
+                    await emit_turn_event(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        project_id=project_id,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                        event_type=TurnEventType.TURN_ACCEPTED,
+                        payload={
+                            "requested_at": submission.requested_at.isoformat(),
+                            "source": "home",
+                            "kind": "message",
+                        },
+                    )
+                    await dispatch_next_thread_turn(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        thread_id=thread_id,
+                    )
+
+            href = f"/projects/{project_id}?thread={thread_id}"
+            if replayed:
+                response.status_code = 200
+            return ProjectBootstrapResponse(
+                data=ProjectBootstrapWire(
+                    project=ProjectBootstrapProjectWire(
+                        id=project_id,
+                        title=project.name,
+                        brand_id=project.brand_id,
+                        href=f"/projects/{project_id}",
+                        created_at=project.created_at.isoformat(),
+                    ),
+                    thread=ProjectBootstrapThreadWire(
+                        id=thread.id,
+                        title=title,
+                        href=href,
+                        project_id=project_id,
+                        created_at=thread.created_at.isoformat(),
+                        updated_at=thread.updated_at.isoformat(),
+                    ),
+                    turn=TurnAcceptedWire(
+                        turn_id=str(turn_id),
+                        thread_id=thread_id,
+                        requested_at=submission.requested_at.isoformat(),
+                        replayed=replayed,
+                    ),
+                    href=href,
+                )
+            )
 
     # --- threads --------------------------------------------------------------------------------
 

@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  ClueChatApiError,
+  newIdempotencyKey,
+} from "../data/chat-api";
+import { useChatRepositories } from "../data/projects-transport";
 import type { ProjectComposerAttachment } from "../model/project-composer";
 import type {
   ProjectEntity,
@@ -27,34 +32,77 @@ function getMediaType(file: File) {
 
 export function useProjectHomeController(data: ProjectHome) {
   const router = useRouter();
+  const repositories = useChatRepositories();
+  const httpMode = repositories.transport.mode === "http";
+  const [home, setHome] = useState(data);
   const [prompt, setPromptState] = useState("");
   const [attachments, setAttachments] = useState<ProjectComposerAttachment[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState(data.models[0].id);
+  const [selectedBrandId, setSelectedBrandId] = useState(
+    data.defaultBrandId ?? data.brands[0]?.id ?? "",
+  );
+  const [selectedModelId, setSelectedModelId] = useState(data.models[0]?.id ?? "");
+  const [loading, setLoading] = useState(httpMode);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const attachmentUrls = useRef(new Set<string>());
   const uploadTimers = useRef<number[]>([]);
+  const pendingSubmission = useRef<{
+    fingerprint: string;
+    idempotencyKey: string;
+  } | null>(null);
 
   useEffect(() => () => {
     uploadTimers.current.forEach((timer) => window.clearTimeout(timer));
     attachmentUrls.current.forEach((url) => URL.revokeObjectURL(url));
   }, []);
 
+  useEffect(() => {
+    if (!httpMode) return;
+    let cancelled = false;
+    void repositories.home
+      .get()
+      .then((next) => {
+        if (cancelled) return;
+        setHome(next);
+        setSelectedBrandId(
+          next.defaultBrandId ?? (next.brands.length === 1 ? next.brands[0].id : ""),
+        );
+        setSelectedModelId(next.models[0]?.id ?? "");
+        setError(null);
+      })
+      .catch((failure: unknown) => {
+        if (cancelled) return;
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "Unable to load the Home composer.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [httpMode, repositories]);
+
   const selectedEntities = useMemo(
     () =>
       selectedEntityIds
-        .map((id) => data.entities.find((entity) => entity.id === id))
+        .map((id) => home.entities.find((entity) => entity.id === id))
         .filter((entity): entity is ProjectEntity => Boolean(entity)),
-    [data.entities, selectedEntityIds],
+    [home.entities, selectedEntityIds],
   );
 
   const suggestions = useMemo(() => {
-    if (prompt.trim().length <= 1) return data.suggestions;
-    return data.suggestions.map((suggestion, index) => index === 1 ? prompt.trim() : suggestion);
-  }, [data.suggestions, prompt]);
+    if (prompt.trim().length <= 1) return home.suggestions;
+    return home.suggestions.map((suggestion, index) => index === 1 ? prompt.trim() : suggestion);
+  }, [home.suggestions, prompt]);
 
   const selectedModel =
-    data.models.find((model) => model.id === selectedModelId) ?? data.models[0];
+    home.models.find((model) => model.id === selectedModelId) ?? home.models[0];
 
   function setPrompt(value: string) {
     setPromptState(value);
@@ -95,24 +143,47 @@ export function useProjectHomeController(data: ProjectHome) {
     });
   }
 
-  function submit(promptOverride?: string, entityIdsOverride?: string[]) {
-    const normalizedPrompt = (promptOverride ?? prompt).trim() || "design a landing page";
-    const contextEntityIds = entityIdsOverride ?? selectedEntityIds;
-    const query = new URLSearchParams({
-      model: selectedModel.id,
-      phase: "conversation",
-      prompt: normalizedPrompt,
-      thread: data.suggestedThreadId,
-    });
-    if (contextEntityIds.length) {
-      query.set("entities", contextEntityIds.join(","));
+  async function submit(promptOverride?: string) {
+    const message = promptOverride ?? prompt;
+    if (!message.trim() || !selectedBrandId || loading || submitting) return;
+    const fingerprint = JSON.stringify({ brandId: selectedBrandId, message });
+    const attempt = pendingSubmission.current;
+    const idempotencyKey =
+      attempt?.fingerprint === fingerprint
+        ? attempt.idempotencyKey
+        : newIdempotencyKey("home-project");
+    pendingSubmission.current = { fingerprint, idempotencyKey };
+    setSubmitting(true);
+    setError(null);
+    try {
+      const created = await repositories.home.create({
+        brandId: selectedBrandId,
+        message,
+        idempotencyKey,
+      });
+      pendingSubmission.current = null;
+      router.push(created.href);
+    } catch (failure) {
+      if (failure instanceof ClueChatApiError) {
+        setError(
+          failure.requestId
+            ? `${failure.message} (request ${failure.requestId})`
+            : failure.message,
+        );
+      } else {
+        setError(failure instanceof Error ? failure.message : String(failure));
+      }
+    } finally {
+      setSubmitting(false);
     }
-    router.push(`/projects/${data.suggestedProjectId}?${query.toString()}`);
   }
 
   return {
     addAttachments,
     attachments,
+    data: home,
+    error,
+    loading,
     modelPickerOpen,
     prompt,
     removeAttachment(attachmentId: string) {
@@ -133,9 +204,12 @@ export function useProjectHomeController(data: ProjectHome) {
     },
     selectedEntities,
     selectedEntityIds,
+    selectedBrandId,
     selectedModel,
+    setSelectedBrandId,
     setPrompt,
     submit,
+    submitting,
     toggleModelPicker() {
       setModelPickerOpen((current) => !current);
     },

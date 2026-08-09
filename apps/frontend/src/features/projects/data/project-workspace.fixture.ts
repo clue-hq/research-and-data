@@ -25,6 +25,14 @@ export const projectModels = [
 ] as const;
 
 export const projectHomeFixture: ProjectHome = {
+  brands: [{ id: "brand-clue-demo", name: "Clue Demo Brand" }],
+  composerCapabilities: {
+    agentProfileSelection: true,
+    attachments: true,
+    contextRefs: true,
+  },
+  defaultAgentProfileId: "gpt-5.5",
+  defaultBrandId: "brand-clue-demo",
   entities: [
     {
       id: "openai",
@@ -92,8 +100,6 @@ export const projectHomeFixture: ProjectHome = {
     "Highlight critical data points and what they reveal about user behavior",
     "Outline actionable recommendations based on the report’s findings for strategic planning",
   ],
-  suggestedProjectId: "10m-landing-page-campaign",
-  suggestedThreadId: "thread-primary",
 };
 
 export const projectWorkspaceFixture: ProjectWorkspace = {

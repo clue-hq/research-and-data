@@ -36,6 +36,9 @@ from clue_projections import GateView, ThreadMessagePage, ThreadMessageSummary, 
 __all__ = [
     "ArchiveThreadResponse",
     "CreateThreadRequest",
+    "HomeProjectRequest",
+    "HomeResponse",
+    "HomeWire",
     "GateAnswerWire",
     "GateLaunchWire",
     "GateListResponse",
@@ -43,6 +46,8 @@ __all__ = [
     "GateWire",
     "MessageListResponse",
     "PageMeta",
+    "ProjectBootstrapResponse",
+    "ProjectBootstrapWire",
     "SubmitTurnRequest",
     "gate_response_message",
     "gate_wire",
@@ -154,6 +159,40 @@ class SubmitTurnRequest(_Request):
         if (self.message is None) == (self.gate_response is None):
             raise ValueError("supply exactly one of message or gate_response")
         if self.message is not None and not self.message.strip():
+            raise ValueError("message must contain something other than whitespace")
+        return self
+
+
+class HomeContextRefRequest(_Request):
+    """An ordered, workspace-scoped reference accepted by a future Home capability."""
+
+    object_type: Literal["account", "contact"]
+    object_id: str = Field(min_length=1, max_length=200)
+    version: int | None = Field(default=None, gt=0)
+
+
+class HomeAttachmentRefRequest(_Request):
+    """A durable upload receipt; browser-local URLs and paths have no field in this shape."""
+
+    artifact_key: str = Field(min_length=1, max_length=1000)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    media_type: str = Field(min_length=1, max_length=255)
+    byte_count: int = Field(ge=0)
+    filename: str = Field(min_length=1, max_length=255)
+
+
+class HomeProjectRequest(_Request):
+    """The one atomic Home act: create a project and accept its first human turn."""
+
+    brand_id: str = Field(min_length=1, max_length=200)
+    message: str = Field(min_length=1, max_length=32_000)
+    context_refs: tuple[HomeContextRefRequest, ...] = ()
+    attachment_refs: tuple[HomeAttachmentRefRequest, ...] = ()
+    agent_profile_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def non_blank_message(self) -> HomeProjectRequest:
+        if not self.message.strip():
             raise ValueError("message must contain something other than whitespace")
         return self
 
@@ -307,6 +346,63 @@ class TurnAcceptedWire(_Wire):
 
 class TurnAcceptedResponse(_Wire):
     data: TurnAcceptedWire
+
+
+class HomeBrandWire(_Wire):
+    id: str
+    name: str
+
+
+class HomeComposerCapabilitiesWire(_Wire):
+    context_refs: bool = False
+    attachments: bool = False
+    agent_profile_selection: bool = False
+
+
+class HomeWire(_Wire):
+    brands: tuple[HomeBrandWire, ...]
+    default_brand_id: str | None
+    context_entities: tuple[dict[str, Any], ...] = ()
+    agent_profiles: tuple[dict[str, Any], ...] = ()
+    default_agent_profile_id: str | None = None
+    composer_capabilities: HomeComposerCapabilitiesWire = Field(
+        default_factory=HomeComposerCapabilitiesWire
+    )
+    suggestions: tuple[str, ...] = ()
+
+
+class HomeResponse(_Wire):
+    data: HomeWire
+
+
+class ProjectBootstrapProjectWire(_Wire):
+    id: str
+    title: str
+    brand_id: str
+    href: str
+    created_at: str
+
+
+class ProjectBootstrapThreadWire(_Wire):
+    id: str
+    title: str
+    href: str
+    status: Literal["running"] = "running"
+    pinned: bool = False
+    project_id: str
+    created_at: str
+    updated_at: str
+
+
+class ProjectBootstrapWire(_Wire):
+    project: ProjectBootstrapProjectWire
+    thread: ProjectBootstrapThreadWire
+    turn: TurnAcceptedWire
+    href: str
+
+
+class ProjectBootstrapResponse(_Wire):
+    data: ProjectBootstrapWire
 
 
 # --- the durable gate read (FI Lane D D5-close) --------------------------------------------------

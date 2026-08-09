@@ -16,6 +16,17 @@ export const ProjectModelOptionSchema = z.object({
   shortLabel: z.string().min(1),
 });
 
+export const ProjectBrandSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+});
+
+export const ProjectComposerCapabilitiesSchema = z.object({
+  attachments: z.boolean(),
+  contextRefs: z.boolean(),
+  agentProfileSelection: z.boolean(),
+});
+
 export const ProjectWebsiteContentSchema = z.object({
   badge: z.string().min(1),
   brandAlt: z.string().min(1),
@@ -81,12 +92,125 @@ export const ProjectQuestionnaireSchema = z.object({
 });
 
 export const ProjectHomeSchema = z.object({
+  brands: z.array(ProjectBrandSchema),
+  composerCapabilities: ProjectComposerCapabilitiesSchema,
+  defaultAgentProfileId: z.string().min(1).nullable(),
+  defaultBrandId: z.string().min(1).nullable(),
   entities: z.array(ProjectEntitySchema),
-  models: z.array(ProjectModelOptionSchema).min(1),
-  suggestions: z.array(z.string().min(1)).length(3),
-  suggestedProjectId: z.string().min(1),
-  suggestedThreadId: z.string().min(1),
+  models: z.array(ProjectModelOptionSchema),
+  suggestions: z.array(z.string().min(1)).max(3),
 });
+
+const ProjectHomeWireSchema = z.object({
+  data: z.object({
+    brands: z.array(z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+    })),
+    default_brand_id: z.string().min(1).nullable(),
+    context_entities: z.array(z.object({
+      object_type: z.enum(["account", "contact"]),
+      object_id: z.string().min(1),
+      label: z.string().min(1),
+      secondary_label: z.string().min(1),
+      image_url: z.string().nullable(),
+    })),
+    agent_profiles: z.array(z.unknown()),
+    default_agent_profile_id: z.string().min(1).nullable(),
+    composer_capabilities: z.object({
+      context_refs: z.boolean(),
+      attachments: z.boolean(),
+      agent_profile_selection: z.boolean(),
+    }),
+    suggestions: z.array(z.string().min(1)).max(3),
+  }),
+});
+
+export const ProjectHomeResponseSchema = ProjectHomeWireSchema.transform(({ data }) =>
+  ProjectHomeSchema.parse({
+    brands: data.brands,
+    composerCapabilities: {
+      attachments: data.composer_capabilities.attachments,
+      contextRefs: data.composer_capabilities.context_refs,
+      agentProfileSelection:
+        data.composer_capabilities.agent_profile_selection,
+    },
+    defaultAgentProfileId: data.default_agent_profile_id,
+    defaultBrandId: data.default_brand_id,
+    entities: data.context_entities.map((entity) => ({
+      id: entity.object_id,
+      imagePath: entity.image_url?.startsWith("/")
+        ? entity.image_url
+        : "/logos/clue.svg",
+      label: entity.label,
+      secondaryLabel: entity.secondary_label,
+      type: entity.object_type,
+    })),
+    // R2 advertises profile selection as unavailable. A future profile slice
+    // will add the governed profile -> picker mapping rather than treating a
+    // model id as a profile id.
+    models: [],
+    suggestions: data.suggestions,
+  }),
+);
+
+const ProjectBootstrapWireSchema = z.object({
+  data: z.object({
+    project: z.object({
+      id: z.string().min(1),
+      title: z.literal("Untitled project"),
+      brand_id: z.string().min(1),
+      href: z.string().startsWith("/projects/"),
+      created_at: z.string().min(1),
+    }),
+    thread: z.object({
+      id: z.string().min(1),
+      title: z.string().min(1),
+      href: z.string().startsWith("/projects/"),
+      status: z.literal("running"),
+      pinned: z.boolean(),
+      project_id: z.string().min(1),
+      created_at: z.string().min(1),
+      updated_at: z.string().min(1),
+    }),
+    turn: z.object({
+      turn_id: z.string().min(1),
+      thread_id: z.string().min(1),
+      requested_at: z.string().min(1),
+      replayed: z.boolean(),
+    }),
+    href: z.string().startsWith("/projects/"),
+  }),
+});
+
+export const ProjectBootstrapResponseSchema = ProjectBootstrapWireSchema.transform(
+  ({ data }) => ({
+    href: data.href,
+    project: {
+      id: data.project.id,
+      title: data.project.title,
+      brandId: data.project.brand_id,
+      href: data.project.href,
+      createdAt: data.project.created_at,
+    },
+    thread: {
+      id: data.thread.id,
+      title: data.thread.title,
+      href: data.thread.href,
+      status: data.thread.status,
+      pinned: data.thread.pinned,
+      projectId: data.thread.project_id,
+      createdAt: data.thread.created_at,
+      updatedAt: data.thread.updated_at,
+    },
+    turn: {
+      turnId: data.turn.turn_id,
+      threadId: data.turn.thread_id,
+      requestedAt: data.turn.requested_at,
+      replayed: data.turn.replayed,
+    },
+  }),
+);
 
 /**
  * The project shell: the artifact-side surfaces and the composer's catalogs.
@@ -145,6 +269,10 @@ export const InspectorSelectionSchema = z.enum([
 ]);
 
 export type ProjectEntity = z.infer<typeof ProjectEntitySchema>;
+export type ProjectBrand = z.infer<typeof ProjectBrandSchema>;
+export type ProjectComposerCapabilities = z.infer<
+  typeof ProjectComposerCapabilitiesSchema
+>;
 export type ProjectModelOption = z.infer<typeof ProjectModelOptionSchema>;
 export type ProjectWebsiteContent = z.infer<typeof ProjectWebsiteContentSchema>;
 export type ProjectTableContent = z.infer<typeof ProjectTableContentSchema>;
@@ -152,6 +280,7 @@ export type ProjectArtifact = z.infer<typeof ProjectArtifactSchema>;
 export type ProjectQuestionnaire = z.infer<typeof ProjectQuestionnaireSchema>;
 export type ProjectQuestionGroup = z.infer<typeof ProjectQuestionGroupSchema>;
 export type ProjectHome = z.infer<typeof ProjectHomeSchema>;
+export type ProjectBootstrap = z.infer<typeof ProjectBootstrapResponseSchema>;
 export type ProjectWorkspace = z.infer<typeof ProjectWorkspaceSchema>;
 export type ProjectPhase = z.infer<typeof ProjectPhaseSchema>;
 export type ArtifactSurface = z.infer<typeof ArtifactSurfaceSchema>;

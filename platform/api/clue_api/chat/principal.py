@@ -61,6 +61,7 @@ __all__ = [
     "DEV_ROLE_KEY",
     "PERMISSION_GATE_RESPOND",
     "PERMISSION_PROJECT_READ",
+    "PERMISSION_PROJECT_WRITE",
     "PERMISSION_THREAD_READ",
     "PERMISSION_THREAD_WRITE",
     "PrincipalResolver",
@@ -73,6 +74,7 @@ __all__ = [
 #: ``clue_auth.Permission`` literals, not strings of our own: a typo is a type error rather than a
 #: check that silently never passes.
 PERMISSION_PROJECT_READ: Permission = "project.read"
+PERMISSION_PROJECT_WRITE: Permission = "project.write"
 PERMISSION_THREAD_READ: Permission = "thread.read"
 PERMISSION_THREAD_WRITE: Permission = "thread.write"
 PERMISSION_GATE_RESPOND: Permission = "gate.respond"

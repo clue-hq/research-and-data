@@ -243,13 +243,14 @@ async def create_project(
     name: str,
     product_id: str | None = None,
     project_id: str | None = None,
+    status: ProjectStatus = "draft",
 ) -> Project:
     """Insert a project and return it. Composite FKs pin ``brand_id`` — and ``product_id`` when
     set — to the project's own workspace (a cross-workspace reference is an IntegrityError)."""
     result = await conn.execute(
         text(
-            "INSERT INTO project (project_id, workspace_id, brand_id, product_id, name) "
-            "VALUES (:project_id, :workspace_id, :brand_id, :product_id, :name) "
+            "INSERT INTO project (project_id, workspace_id, brand_id, product_id, name, status) "
+            "VALUES (:project_id, :workspace_id, :brand_id, :product_id, :name, :status) "
             f"RETURNING {_PROJECT_COLUMNS}"
         ),
         {
@@ -258,6 +259,7 @@ async def create_project(
             "brand_id": brand_id,
             "product_id": product_id,
             "name": name,
+            "status": status,
         },
     )
     return Project(**dict(result.mappings().one()))

@@ -1,5 +1,6 @@
 import {
   ProjectHomeSchema,
+  ProjectHomeResponseSchema,
   ProjectWorkspaceSchema,
   type ProjectHome,
   type ProjectWorkspace,
@@ -8,6 +9,7 @@ import {
   projectHomeFixture,
   projectWorkspaceFixture,
 } from "./project-workspace.fixture";
+import { resolveChatTransport } from "./chat-api";
 
 export interface ProjectWorkspaceRepository {
   getHome(): Promise<ProjectHome>;
@@ -44,7 +46,7 @@ export function createHttpProjectWorkspaceRepository(
 
   return {
     async getHome() {
-      return ProjectHomeSchema.parse(await read("api/v1/home"));
+      return ProjectHomeResponseSchema.parse(await read("api/v1/home"));
     },
     async getProject(projectId) {
       return ProjectWorkspaceSchema.parse(
@@ -55,20 +57,31 @@ export function createHttpProjectWorkspaceRepository(
 }
 
 /**
- * Pinned to fixtures until phase 2.
- *
- * The HTTP adapter above calls `api/v1/home` and `api/v1/projects/*`, which no
- * backend serves yet — slice 1 ships the accounts read layer only. This
- * repository used to flip on the same environment variable the accounts flow
- * read, so pointing the app at a real backend to see accounts also threw the
- * home route on the first non-2xx. It now reads none, and stays on fixtures
- * until the project surface exists and gets its own variable.
+ * The server-rendered Home shell cannot call the origin-relative authenticated
+ * BFF. In HTTP mode it therefore emits a neutral loading model; the client-side
+ * Home repository reads `/api/v1/home` through that BFF before enabling Send.
+ * Project-shell reads remain fixture-owned until R3.
  */
 function getRepository() {
   return fixtureProjectWorkspaceRepository;
 }
 
 export function getProjectHome() {
+  if (resolveChatTransport().mode === "http") {
+    return Promise.resolve(ProjectHomeSchema.parse({
+      brands: [],
+      composerCapabilities: {
+        agentProfileSelection: false,
+        attachments: false,
+        contextRefs: false,
+      },
+      defaultAgentProfileId: null,
+      defaultBrandId: null,
+      entities: [],
+      models: [],
+      suggestions: [],
+    }));
+  }
   return getRepository().getHome();
 }
 
