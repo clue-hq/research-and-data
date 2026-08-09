@@ -32,12 +32,18 @@ from clue_api.prose_synthesis_tools import (
     SYNTHESIZABLE_OUTCOMES,
     SynthesizeEntityProseTool,
 )
+from clue_api.value_narrative_tools import SynthesizeValueNarrativeTool
 from clue_core.entity_research import ResearchFinalizationOutcome
 from clue_core.execution_graph import operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_fleet import WorkResult
 from clue_obs.otel import MetricSink, get_metric_sink
-from clue_research.narrative import ACCOUNT_SUMMARY, CONTACT_OVERVIEW, METRIC_PROSE_FAILED
+from clue_research.narrative import (
+    ACCOUNT_SUMMARY,
+    CONTACT_OVERVIEW,
+    METRIC_PROSE_FAILED,
+    VALUE_NARRATIVE,
+)
 from clue_toolbelt import PreconditionFailed, ToolContext, ToolInvoker
 
 log = structlog.get_logger(__name__)
@@ -77,10 +83,17 @@ class ProseSynthesisStep:
         *,
         sink: MetricSink | None = None,
         conn_factory: ConnFactory = transaction,
+        narrative_enabled: bool = False,
     ) -> None:
         self._invoker: ToolInvoker | None = None
         self._sink = sink
         self._conn_factory = conn_factory
+        # Lane E E3. The *offer* is gated here, not only at composition: the narrative tool refuses
+        # `value_narrative_not_composed` in an unconfigured process, but a refusal is still a
+        # journaled invocation, and one refusal row per finished account job is not an acceptable
+        # steady state for a deployment that has the feature switched off. Flag off ⇒ the job is
+        # never offered ⇒ zero narrative rows anywhere.
+        self._narrative_enabled = narrative_enabled
 
     @property
     def is_bound(self) -> bool:
@@ -98,7 +111,13 @@ class ProseSynthesisStep:
         result: WorkResult,
         projection: AccountResearchFleetProjection,
     ) -> None:
-        """Offer one just-finalized account job to the prose tool. NEVER raises."""
+        """Offer one just-finalized account job to the prose tool, then — when the value-narrative
+        flag is on — to the positioning tool. NEVER raises.
+
+        The two offers are independent calls with their own gates, their own operation ids, and
+        their own catch-all: a prose refusal must not suppress the narrative, and a narrative
+        failure must not retro-actively taint the summary that already landed.
+        """
         await self._offer(
             job_id=job_id,
             result=result,
@@ -106,6 +125,18 @@ class ProseSynthesisStep:
             jobs=projection.jobs,
             field_key=ACCOUNT_SUMMARY,
         )
+        if self._narrative_enabled:
+            await self._offer(
+                job_id=job_id,
+                result=result,
+                workspace_id=projection.workspace_id,
+                jobs=projection.jobs,
+                field_key=VALUE_NARRATIVE,
+                tool_name=SynthesizeValueNarrativeTool.name,
+                # The narrative is keyed on the job alone: the account, product, ICP pin and client
+                # lineage are all read from durable rows, so there is no second parameter to name.
+                body={"job_id": str(job_id)},
+            )
 
     async def after_contact_job(
         self,
@@ -137,6 +168,8 @@ class ProseSynthesisStep:
         workspace_id: str,
         jobs: Sequence[_FinalizedJobSummary],
         field_key: str,
+        tool_name: str = SynthesizeEntityProseTool.name,
+        body: dict[str, object] | None = None,
     ) -> None:
         try:
             # Finalized *this cycle*: the inner handler stamps a receipt ref only on the path that
@@ -160,8 +193,8 @@ class ProseSynthesisStep:
                 operation_id=prose_operation_id(job_id, field_key),  # type: ignore[arg-type]
             )
             await self._invoker.invoke(
-                SynthesizeEntityProseTool.name,
-                {"job_id": str(job_id), "field_key": field_key},
+                tool_name,
+                body if body is not None else {"job_id": str(job_id), "field_key": field_key},
                 context,
             )
         except PreconditionFailed as refusal:

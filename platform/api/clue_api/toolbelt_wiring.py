@@ -139,6 +139,10 @@ from clue_api.tool_outputs import (
     TargetedEnrichmentOutput,
     TierCheckpointOutput,
 )
+from clue_api.value_narrative_tools import (
+    ValueNarrativeServices,
+    build_value_narrative_tools,
+)
 from clue_api.verification import build_verification_phase_handler
 from clue_config import DEFAULT_STAGE0_POLICY, Settings, load_settings
 from clue_core import (
@@ -2585,6 +2589,7 @@ def build_toolbelt(
     contact_content_handoff: ContactContentHandoffService | None = None,
     entity_research_launches: EntityResearchLaunchServices | None = None,
     prose_synthesis: ProseSynthesisServices | None = None,
+    value_narrative: ValueNarrativeServices | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -2832,6 +2837,15 @@ def build_toolbelt(
     # rather than being silently absent.
     for tool in build_prose_synthesis_tools(
         prose_synthesis,
+        gateway=gateway,
+        conn_factory=conn_factory,
+    ):
+        registry.register(tool, make_default=True)
+    # Lane E E3. Same everywhere-registered posture as the prose surface above, with one extra
+    # gate: the positioning services are composed only when `value_narrative_synthesis_enabled`,
+    # so a flag-off deployment registers the name and refuses `value_narrative_not_composed`.
+    for tool in build_value_narrative_tools(
+        value_narrative,
         gateway=gateway,
         conn_factory=conn_factory,
     ):

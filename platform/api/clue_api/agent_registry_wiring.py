@@ -112,6 +112,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # job to it. It is deliberately absent from every model surface — an agent that could summarize
     # on demand could spend on prose for a job the research engine never finished.
     "synthesize_entity_prose": (),
+    # Lane E E3. Machine-invoked only, for the same reason one slice stronger: positioning spends
+    # one completion (and one judge call) *per committee persona*, so an on-demand agent reach for
+    # it is an unbounded spend on research the engine may never have finished.
+    "synthesize_value_narrative": (),
     "synthesize_icps": (AgentRole.HEAD_OF_ABM,),
 }
 

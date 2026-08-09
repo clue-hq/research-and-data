@@ -197,6 +197,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # Lane E E1: this matrix builds the toolbelt without the prose synthesizers, so the governed
     # synthesis surface refuses fail-closed on composition before it reads anything.
     "synthesize_entity_prose": ("precondition", ("prose_synthesis_not_composed",)),
+    # Lane E E3: same posture for the positioning surface — the tool registers everywhere so the
+    # name set (and the C6 authority check over it) is identical in every process, and an
+    # uncomposed one refuses on composition before it reads a job.
+    "synthesize_value_narrative": ("precondition", ("value_narrative_not_composed",)),
 }
 
 
@@ -439,6 +443,7 @@ def _bodies() -> dict[str, dict[str, object]]:
             "expected_sha256": "0" * 64,
         },
         "synthesize_entity_prose": {"job_id": _UUID(), "field_key": "account.summary"},
+        "synthesize_value_narrative": {"job_id": _UUID()},
     }
 
 
@@ -835,11 +840,12 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # tools retain @1 replay contracts alongside their current @2 contracts; O2 adds the exact-set
     # account-deep launch boundary; M8D R10 adds the promoted separately confirmed
     # launch_account_research / launch_contact_research and their two run-read tools (44 → 48);
-    # Lane E E1 adds the governed on-completion prose synthesis surface (48 → 49).
-    assert len(registry.names()) == 49
+    # Lane E E1 adds the governed on-completion prose synthesis surface (48 → 49), and E3 the
+    # governed value-narrative positioning surface beside it (49 → 50).
+    assert len(registry.names()) == 50
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 56
+    assert len(registry) == 57
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

@@ -81,7 +81,7 @@ from clue_api.external_research_wake import (
 )
 from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, register_boot_handlers
 from clue_api.memory_wiring import memory_write_factory_builder
-from clue_api.narrative_wiring import register_narrative_wiring
+from clue_api.narrative_wiring import build_client_knowledge_retriever, register_narrative_wiring
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
     Recipe1ProjectExecutionRouter,
@@ -100,6 +100,7 @@ from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_api.value_narrative_tools import ValueNarrativeServices
 from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
 from clue_core import ProjectPhase
 from clue_db import ConnFactory, db_lifespan, transaction
@@ -425,7 +426,9 @@ async def _serve() -> None:
         # Lane E E1. Constructed here because the fleet composition needs it, but it cannot be
         # handed an invoker yet: the fleet's launch services feed `build_toolbelt` below, and
         # the invoker is built from the resulting registry. It is bound after that (`:bind`).
-        prose_step = ProseSynthesisStep()
+        prose_step = ProseSynthesisStep(
+            narrative_enabled=settings.value_narrative_synthesis_enabled
+        )
         entity_research = build_production_entity_research_fleet(
             settings=settings,
             secrets=secrets,
@@ -484,6 +487,20 @@ async def _serve() -> None:
         prose_synthesis = ProseSynthesisServices(
             account=prose_synthesizer, contact=prose_synthesizer
         )
+        # Lane E E3. The positioning services share the same toggle-following judge; the
+        # Client-Knowledge retriever is the api-root `read_client_kb_claims` seam (pgvector lands
+        # behind the same signature later). Composed only under the flag, so a disabled deployment
+        # registers the tool and refuses it rather than holding a live positioning surface.
+        value_narrative = (
+            ValueNarrativeServices(
+                gateway=gateway,
+                judge=prose_judge,
+                retriever=build_client_knowledge_retriever(conn_factory=transaction),
+                conn_factory=transaction,
+            )
+            if settings.value_narrative_synthesis_enabled
+            else None
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -502,6 +519,7 @@ async def _serve() -> None:
             contact_content_handoff=contact_content_handoff,
             entity_research_launches=entity_research_launches,
             prose_synthesis=prose_synthesis,
+            value_narrative=value_narrative,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)

@@ -115,9 +115,11 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # inventory entries but cannot enter the current model surface; only propose_field@2 carries
     # the dynamic Client-KB authority. Lane E E1's `synthesize_entity_prose@1` likewise adds an
     # inventory entry with no role grant (machine-invoked only), so it is disclosed as unavailable
-    # to every surface — 55 → 56 addresses, `available` unchanged.
-    assert len(by_address) == 56
+    # to every surface — 55 → 56 addresses, `available` unchanged. E3's
+    # `synthesize_value_narrative@1` is the same shape for the same reason (56 → 57).
+    assert len(by_address) == 57
     assert by_address["synthesize_entity_prose@1"].status is not AgentCapabilityStatus.AVAILABLE
+    assert by_address["synthesize_value_narrative@1"].status is not AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {

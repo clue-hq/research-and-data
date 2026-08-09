@@ -41,8 +41,11 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # promotes the separately confirmed account/contact entity-research launch and read tools.
     # Lane E E1 adds `synthesize_entity_prose`, machine-invoked only: the fleet step offers a
     # finalized job to it, and no model surface may reach for it.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 49
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 50
     assert C6_AGENT_TOOL_AUTHORITY["synthesize_entity_prose"] == ()
+    # Lane E E3, same reasoning one slice on: an agent that could position on demand could spend N
+    # completions on an account the research engine never finished.
+    assert C6_AGENT_TOOL_AUTHORITY["synthesize_value_narrative"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)
