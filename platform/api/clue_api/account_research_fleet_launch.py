@@ -408,7 +408,16 @@ class AccountResearchFleetLauncher:
                     request.supervisor_policy.policy_ref,
                 ),
                 budget_envelope_ref=f"account-research-launch:{request_sha}",
-                approval_refs=(source_action_ref, directive.confirming_turn_ref),
+                # The launching action and the directive's confirming turn, de-duplicated. They are
+                # usually two acts ("you confirmed the direction last week; you approve this launch
+                # now") and the pair records both. Under the FI Lane D Option-B kickoff they are
+                # deliberately **one** act: the user's structured approval confirms the directive
+                # and is the very turn the deepagent then launches from, so both names resolve to
+                # the same ``turn-action:`` receipt. Listing it twice would claim two approvals
+                # where there was one — and the selection contract rightly refuses duplicates.
+                approval_refs=tuple(
+                    dict.fromkeys((source_action_ref, directive.confirming_turn_ref))
+                ),
                 confirmed_by=actor,
                 confirmed_at=directive.confirmed_at,
             )

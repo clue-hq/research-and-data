@@ -79,6 +79,7 @@ async def compute_account_research_estimate(
     project_run_id: ProjectRunId,
     directive_id: ResearchDirectiveId,
     account_ids: tuple[EntityId, ...],
+    allow_draft: bool = False,
 ) -> AccountResearchEstimate:
     """Σ per-account ``effort_policy.budget_cap_cents`` over a human-checkpointed account set.
 
@@ -87,6 +88,10 @@ async def compute_account_research_estimate(
     Anything else raises :class:`AccountTierCheckpointMissing` — "no checkpoint" and "two
     checkpoints" are equally disqualifying, because either means nobody deliberately approved
     exactly this account for exactly this run.
+
+    ``allow_draft`` is what lets the *gate* run this: it prices the draft it is about to present,
+    which by definition is not confirmed yet. The launcher leaves it ``False``, so nothing about
+    "only a confirmed directive executes" is relaxed — only "a question may be priced".
     """
 
     effective_by_account: dict[EntityId, EffectiveAccountResearchDirective] = {}
@@ -97,6 +102,7 @@ async def compute_account_research_estimate(
             workspace_id=workspace_id,
             directive_id=directive_id,
             account_id=account_id,
+            allow_draft=allow_draft,
         )
         matching_tiers = [
             claim

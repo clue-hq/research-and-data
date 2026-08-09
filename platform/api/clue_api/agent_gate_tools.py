@@ -309,6 +309,9 @@ class OpenDirectiveConfirmationGateTool(Tool):
                 project_run_id=project_run_id,
                 directive_id=directive_id,
                 account_ids=account_ids,
+                # The gate's whole purpose is to price a *draft*; the launcher prices the confirmed
+                # directive with the identical computation.
+                allow_draft=True,
             )
         except AccountTierCheckpointMissing as exc:
             raise _GateRefused(str(exc), reason_code="account_tier_checkpoint_missing") from exc

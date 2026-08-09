@@ -1060,7 +1060,16 @@ async def effective_account_research_directive(
     directive_id: ResearchDirectiveId,
     account_id: EntityId,
     expected_pin: ResearchDirectivePin | None = None,
+    allow_draft: bool = False,
 ) -> EffectiveAccountResearchDirective:
+    """Compose one account's effective direction.
+
+    ``allow_draft`` is FI Lane D D4's pricing relaxation (see
+    :func:`clue_core.compose_account_research_directive`): the confirmation gate prices the draft it
+    presents with this same composition, so the gate's number and the launcher's verified number
+    cannot drift. Every execution path leaves it ``False``.
+    """
+
     directive = await get_research_directive(conn, directive_id, workspace_id=workspace_id)
     if directive is None:
         raise ResearchDirectiveNotFound(str(directive_id))
@@ -1091,6 +1100,7 @@ async def effective_account_research_directive(
         account_id=account_id,
         override=override,
         allow_superseded=expected_pin is not None,
+        allow_draft=allow_draft,
     )
     if expected_pin is not None and effective.pin != expected_pin:
         raise ResearchDirectiveConflict("stored directive content differs from the execution pin")
