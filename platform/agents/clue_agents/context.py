@@ -406,16 +406,16 @@ class FocusLayerSource:
     ) -> Sequence[ContextCandidate]:
         del profile, history
         refs = (*request.constitution.focus_refs, *request.focus_refs)
-        unique = {(ref.object_type, ref.object_id, ref.version): ref for ref in refs}
+        unique: list[DomainObjectRef] = []
+        seen: set[tuple[str, str, int | None]] = set()
+        for ref in refs:
+            identity = (ref.object_type, ref.object_id, ref.version)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            unique.append(ref)
         result: list[ContextCandidate] = []
-        for ref in sorted(
-            unique.values(),
-            key=lambda item: (
-                item.object_type,
-                item.object_id,
-                item.version,
-            ),
-        ):
+        for ordinal, ref in enumerate(unique):
             card = await self._cards.read(
                 workspace_id=request.constitution.workspace_id,
                 object_type=ref.object_type,
@@ -423,11 +423,21 @@ class FocusLayerSource:
             )
             if card is None:
                 continue
-            if card.ref != ref:
+            if (
+                card.ref.workspace_id != ref.workspace_id
+                or card.ref.object_type != ref.object_type
+                or card.ref.object_id != ref.object_id
+                or (ref.version is not None and card.ref.version != ref.version)
+            ):
                 raise ValueError("focus card version differs from the requested exact reference")
             result.append(
                 ContextCandidate(
-                    stable_key=f"{ref.object_type}:{ref.object_id}:{ref.version}",
+                    # The assembler sorts by stable key before budgeting and emission. Prefixing
+                    # the durable submission order keeps the user's account/contact sequence
+                    # intact all the way into L5 instead of silently alphabetizing it.
+                    stable_key=(
+                        f"{ordinal:06d}:{ref.object_type}:{ref.object_id}:{ref.version}"
+                    ),
                     ref=ref,
                     body=card.body,
                     materialized_path=_card_path("focus", ref),

@@ -81,11 +81,20 @@ def test_project_shell_is_scoped_real_and_fixture_free(require_chat_db: None) ->
             assert data["brand_id"] == brand.brand_id
             assert data["artifacts"] == []
             assert data["context_entities"] == []
-            assert data["agent_profiles"] == []
+            assert data["agent_profiles"] == [
+                {
+                    "id": "head-of-abm@v23",
+                    "label": "GPT-5.6 Terra",
+                    "short_label": "GPT-5.6 Terra",
+                    "description": "Clue's governed GPT-5.6 Terra conversation profile",
+                    "model_id": "openai/gpt-5.6-terra",
+                }
+            ]
+            assert data["default_agent_profile_id"] == "head-of-abm@v23"
             assert data["composer_capabilities"] == {
-                "context_refs": False,
+                "context_refs": True,
                 "attachments": False,
-                "agent_profile_selection": False,
+                "agent_profile_selection": True,
             }
             for refusal in (foreign_response, missing_response):
                 assert (refusal.status_code, refusal.json()["error"]["code"]) == (

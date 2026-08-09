@@ -17,6 +17,8 @@ from clue_api.chat.router import _first_thread_title
 from clue_api.thread_wiring import register_thread_tools
 from clue_auth import permissions_for_role
 from clue_config import Settings, load_settings
+from clue_core import AccountStatus
+from clue_research.identity import insert_account_entity
 from clue_spine import create_brand
 from clue_toolbelt import DbIdempotencyStore, ToolRegistry
 from tests._identity import fixture_membership_id, seed_principal
@@ -166,6 +168,13 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             brand = await _seed(conn, "ws-home-read")
+            account_id = await insert_account_entity(
+                conn,
+                canonical_name="Northstar Labs",
+                primary_domain="northstar.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id="ws-home-read",
+            )
             app, _storage = _app(conn)
             async with _client(app) as client:
                 response = await client.get(
@@ -177,13 +186,32 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
                 "data": {
                     "brands": [{"id": brand.brand_id, "name": "Clue Demo Brand"}],
                     "default_brand_id": brand.brand_id,
-                    "context_entities": [],
-                    "agent_profiles": [],
-                    "default_agent_profile_id": None,
+                    "context_entities": [
+                        {
+                            "object_type": "account",
+                            "object_id": str(account_id),
+                            "label": "Northstar Labs",
+                            "secondary_label": "northstar.example",
+                            "image_url": None,
+                            "version": None,
+                        }
+                    ],
+                    "agent_profiles": [
+                        {
+                            "id": "head-of-abm@v23",
+                            "label": "GPT-5.6 Terra",
+                            "short_label": "GPT-5.6 Terra",
+                            "description": (
+                                "Clue's governed GPT-5.6 Terra conversation profile"
+                            ),
+                            "model_id": "openai/gpt-5.6-terra",
+                        }
+                    ],
+                    "default_agent_profile_id": "head-of-abm@v23",
                     "composer_capabilities": {
-                        "context_refs": False,
+                        "context_refs": True,
                         "attachments": False,
-                        "agent_profile_selection": False,
+                        "agent_profile_selection": True,
                     },
                     "suggestions": [
                         "Find target accounts for our new campaign",
@@ -204,21 +232,41 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             brand = await _seed(conn, "ws-home-create")
+            first_account = await insert_account_entity(
+                conn,
+                canonical_name="First Account",
+                primary_domain="first.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id="ws-home-create",
+            )
+            second_account = await insert_account_entity(
+                conn,
+                canonical_name="Second Account",
+                primary_domain="second.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id="ws-home-create",
+            )
             app, storage = _app(conn)
             headers = {
                 "X-Workspace-Id": "ws-home-create",
                 "Idempotency-Key": "home-create-1",
             }
+            request_body = _body(brand.brand_id)
+            request_body["context_refs"] = [
+                {"object_type": "account", "object_id": str(second_account)},
+                {"object_type": "account", "object_id": str(first_account)},
+            ]
+            request_body["agent_profile_id"] = "head-of-abm@v23"
             async with _client(app) as client:
                 created = await client.post(
                     "/api/v1/projects",
                     headers=headers,
-                    json=_body(brand.brand_id),
+                    json=request_body,
                 )
                 replay = await client.post(
                     "/api/v1/projects",
                     headers=headers,
-                    json=_body(brand.brand_id),
+                    json=request_body,
                 )
             assert created.status_code == 201, created.text
             assert replay.status_code == 200, replay.text
@@ -243,6 +291,7 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                 "agent_thread",
                 "onboarding_input",
                 "agent_turn_submission",
+                "agent_turn_submission_context_ref",
                 "agent_turn_event_stream",
                 "fleet_task",
             ):
@@ -256,9 +305,38 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                 "agent_thread": 1,
                 "onboarding_input": 1,
                 "agent_turn_submission": 1,
+                "agent_turn_submission_context_ref": 2,
                 "agent_turn_event_stream": 1,
                 "fleet_task": 1,
             }
+            submission = (
+                await conn.execute(
+                    text(
+                        "SELECT agent_profile_id FROM agent_turn_submission "
+                        "WHERE workspace_id = :workspace_id"
+                    ),
+                    {"workspace_id": "ws-home-create"},
+                )
+            ).scalar_one()
+            assert submission == "head-of-abm@v23"
+            context_rows = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT object_type, object_id FROM "
+                            "agent_turn_submission_context_ref "
+                            "WHERE workspace_id = :workspace_id ORDER BY ordinal"
+                        ),
+                        {"workspace_id": "ws-home-create"},
+                    )
+                )
+                .tuples()
+                .all()
+            )
+            assert context_rows == [
+                ("account", str(second_account)),
+                ("account", str(first_account)),
+            ]
             assert list(storage.blobs.values()) == [
                 b"Start an ABM project for Northstar Labs"
             ]
@@ -266,7 +344,7 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
     run_async(scenario())
 
 
-def test_home_bootstrap_refuses_conflicts_foreign_brand_and_unavailable_capabilities(
+def test_home_bootstrap_refuses_conflicts_foreign_brand_and_invalid_context(
     require_chat_db: None,
 ) -> None:
     del require_chat_db
@@ -311,8 +389,8 @@ def test_home_bootstrap_refuses_conflicts_foreign_brand_and_unavailable_capabili
                 "IDEMPOTENCY_KEY_REQUIRED",
             )
             assert (unavailable.status_code, unavailable.json()["error"]["code"]) == (
-                409,
-                "CAPABILITY_UNAVAILABLE",
+                404,
+                "CONTEXT_REF_NOT_FOUND",
             )
             assert (foreign_brand.status_code, foreign_brand.json()["error"]["code"]) == (
                 404,

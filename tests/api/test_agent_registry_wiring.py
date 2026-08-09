@@ -25,6 +25,10 @@ from clue_api.agent_registry_wiring import (
     ToolRegistryAgentCatalog,
     build_agent_profile_registry,
 )
+from clue_api.chat.composer_context import (
+    PROJECT_CONVERSATION_AGENT_PROFILE_ID,
+    PROJECT_CONVERSATION_MODEL_ID,
+)
 from clue_api.toolbelt_wiring import build_toolbelt
 from tests.agents.workspace_helpers import make_workspace
 from tests.api.conftest import hermetic_flag_env
@@ -73,6 +77,12 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     for role, digest in expected_manifests.items():
         resolved = registry.resolve(role)
         assert resolved.profile.model.model_id == "openai/gpt-5.6-terra"
+        if role is AgentRole.HEAD_OF_ABM:
+            assert (
+                f"{resolved.profile_ref.name}@{resolved.profile_ref.version}"
+                == PROJECT_CONVERSATION_AGENT_PROFILE_ID
+            )
+            assert resolved.profile.model.model_id == PROJECT_CONVERSATION_MODEL_ID
         expected_tools = {
             (
                 "research_account_gaps@2"

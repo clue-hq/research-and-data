@@ -150,8 +150,15 @@ const ProjectHomeWireSchema = z.object({
       label: z.string().min(1),
       secondary_label: z.string().min(1),
       image_url: z.string().nullable(),
+      version: z.number().int().positive().nullable().default(null),
     })),
-    agent_profiles: z.array(z.unknown()),
+    agent_profiles: z.array(z.object({
+      id: z.string().min(1),
+      label: z.string().min(1),
+      short_label: z.string().min(1),
+      description: z.string().min(1),
+      model_id: z.string().min(1),
+    })),
     default_agent_profile_id: z.string().min(1).nullable(),
     composer_capabilities: z.object({
       context_refs: z.boolean(),
@@ -182,10 +189,12 @@ export const ProjectHomeResponseSchema = ProjectHomeWireSchema.transform(({ data
       secondaryLabel: entity.secondary_label,
       type: entity.object_type,
     })),
-    // R2 advertises profile selection as unavailable. A future profile slice
-    // will add the governed profile -> picker mapping rather than treating a
-    // model id as a profile id.
-    models: [],
+    models: data.agent_profiles.map((profile) => ({
+      description: profile.description,
+      id: profile.id,
+      label: profile.label,
+      shortLabel: profile.short_label,
+    })),
     suggestions: data.suggestions,
   }),
 );
@@ -256,13 +265,13 @@ const ProjectWorkspaceWireSchema = z.object({
     product_id: z.string().min(1).nullable(),
     status: z.enum(["draft", "active", "paused", "archived"]),
     created_at: z.string().min(1),
-    context_entities: z.array(z.never()),
-    agent_profiles: z.array(z.never()),
-    default_agent_profile_id: z.null(),
+    context_entities: ProjectHomeWireSchema.shape.data.shape.context_entities,
+    agent_profiles: ProjectHomeWireSchema.shape.data.shape.agent_profiles,
+    default_agent_profile_id: z.string().min(1).nullable(),
     composer_capabilities: z.object({
-      context_refs: z.literal(false),
-      attachments: z.literal(false),
-      agent_profile_selection: z.literal(false),
+      context_refs: z.boolean(),
+      attachments: z.boolean(),
+      agent_profile_selection: z.boolean(),
     }),
     artifacts: z.array(z.never()),
   }),
@@ -281,7 +290,10 @@ export const ProjectWorkspaceSchema = z.object({
   brandId: z.string().min(1),
   composerCapabilities: ProjectComposerCapabilitiesSchema,
   createdAt: z.string().min(1),
+  defaultAgentProfileId: z.string().min(1).nullable(),
+  entities: z.array(ProjectEntitySchema),
   id: z.string().min(1),
+  models: z.array(ProjectModelOptionSchema),
   productId: z.string().min(1).nullable(),
   status: z.enum(["draft", "active", "paused", "archived"]),
   title: z.string().min(1),
@@ -299,7 +311,23 @@ export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transfo
           data.composer_capabilities.agent_profile_selection,
       },
       createdAt: data.created_at,
+      defaultAgentProfileId: data.default_agent_profile_id,
+      entities: data.context_entities.map((entity) => ({
+        id: entity.object_id,
+        imagePath: entity.image_url?.startsWith("/")
+          ? entity.image_url
+          : "/logos/clue.svg",
+        label: entity.label,
+        secondaryLabel: entity.secondary_label,
+        type: entity.object_type,
+      })),
       id: data.id,
+      models: data.agent_profiles.map((profile) => ({
+        description: profile.description,
+        id: profile.id,
+        label: profile.label,
+        shortLabel: profile.short_label,
+      })),
       productId: data.product_id,
       status: data.status,
       title: data.title,

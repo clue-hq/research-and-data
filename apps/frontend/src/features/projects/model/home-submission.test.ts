@@ -26,6 +26,40 @@ test("Home draft validation is local and preserves the exact message bytes", () 
   }
 });
 
+test("Home draft identity includes ordered context and the promoted profile", () => {
+  const base = {
+    brandId: "brd_1",
+    message: "Research these accounts",
+    contextRefs: [
+      { objectId: "account-b", objectType: "account" as const, version: null },
+      { objectId: "account-a", objectType: "account" as const, version: null },
+    ],
+    agentProfileId: "head-of-abm@v23",
+  };
+  const parsed = parseHomeBootstrapDraft(base);
+  const reversed = parseHomeBootstrapDraft({
+    ...base,
+    contextRefs: [...base.contextRefs].reverse(),
+  });
+  const anotherProfile = parseHomeBootstrapDraft({
+    ...base,
+    agentProfileId: "another-profile@v1",
+  });
+
+  assert.equal(parsed.success, true);
+  assert.equal(reversed.success, true);
+  assert.equal(anotherProfile.success, true);
+  if (parsed.success && reversed.success && anotherProfile.success) {
+    assert.deepEqual(parsed.request.contextRefs.map((ref) => ref.objectId), [
+      "account-b",
+      "account-a",
+    ]);
+    assert.equal(parsed.request.agentProfileId, "head-of-abm@v23");
+    assert.notEqual(reversed.fingerprint, parsed.fingerprint);
+    assert.notEqual(anotherProfile.fingerprint, parsed.fingerprint);
+  }
+});
+
 test("an unchanged failed Home draft retries with the same key", () => {
   const coordinator = new HomeSubmissionCoordinator();
   let key = 0;

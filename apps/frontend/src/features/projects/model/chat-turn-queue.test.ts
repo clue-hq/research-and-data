@@ -69,18 +69,44 @@ test("a durable terminal read supersedes an older running stream override", () =
 test("message duplicate protection blocks only the exact in-flight request", () => {
   const guard = new MessageSubmissionGuard();
   let key = 0;
-  const first = guard.begin("thread-r5", "same message", () => `key-${++key}`);
+  const submission = (message: string, agentProfileId = "head-of-abm@v23") => ({
+    message,
+    contextRefs: [],
+    agentProfileId,
+  });
+  const first = guard.begin(
+    "thread-r5",
+    submission("same message"),
+    () => `key-${++key}`,
+  );
   assert.ok(first);
   assert.equal(
-    guard.begin("thread-r5", "same message", () => `key-${++key}`),
+    guard.begin(
+      "thread-r5",
+      submission("same message"),
+      () => `key-${++key}`,
+    ),
     null,
   );
   const different = guard.begin(
     "thread-r5",
-    "different message",
+    submission("different message"),
     () => `key-${++key}`,
   );
   assert.ok(different);
+  assert.ok(
+    guard.begin(
+      "thread-r5",
+      submission("same message", "another-profile@v1"),
+      () => `key-${++key}`,
+    ),
+  );
   guard.finish(first);
-  assert.ok(guard.begin("thread-r5", "same message", () => `key-${++key}`));
+  assert.ok(
+    guard.begin(
+      "thread-r5",
+      submission("same message"),
+      () => `key-${++key}`,
+    ),
+  );
 });

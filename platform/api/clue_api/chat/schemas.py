@@ -34,9 +34,13 @@ from clue_api.chat.message_bodies import HydratedBody
 from clue_projections import GateView, ThreadMessagePage, ThreadMessageSummary, ThreadView
 
 __all__ = [
+    "AgentProfileOptionWire",
     "ArchiveThreadResponse",
+    "ComposerContextEntityWire",
+    "ContextRefRequest",
     "CreateThreadRequest",
     "HomeProjectRequest",
+    "HomeComposerCapabilitiesWire",
     "HomeResponse",
     "HomeWire",
     "GateAnswerWire",
@@ -130,6 +134,24 @@ class GateResponseRequest(_Request):
     expected_estimated_cost_cents: Decimal = Field(ge=0)
 
 
+class ContextRefRequest(_Request):
+    """An ordered, workspace-scoped account/contact reference."""
+
+    object_type: Literal["account", "contact"]
+    object_id: str = Field(min_length=1, max_length=200)
+    version: int | None = Field(default=None, gt=0)
+
+
+class AttachmentRefRequest(_Request):
+    """A durable upload receipt; browser-local URLs and paths have no field in this shape."""
+
+    artifact_key: str = Field(min_length=1, max_length=1000)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    media_type: str = Field(min_length=1, max_length=255)
+    byte_count: int = Field(ge=0)
+    filename: str = Field(min_length=1, max_length=255)
+
+
 class SubmitTurnRequest(_Request):
     """``POST /api/v1/projects/:projectId/threads/:threadId/turns``.
 
@@ -150,6 +172,9 @@ class SubmitTurnRequest(_Request):
 
     message: str | None = Field(default=None, min_length=1, max_length=32_000)
     gate_response: GateResponseRequest | None = None
+    context_refs: tuple[ContextRefRequest, ...] = ()
+    attachment_refs: tuple[AttachmentRefRequest, ...] = ()
+    agent_profile_id: str | None = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode="after")
     def exactly_one_body(self) -> SubmitTurnRequest:
@@ -163,25 +188,13 @@ class SubmitTurnRequest(_Request):
             raise ValueError("supply exactly one of message or gate_response")
         if self.message is not None and not self.message.strip():
             raise ValueError("message must contain something other than whitespace")
+        if self.gate_response is not None and (
+            self.context_refs or self.attachment_refs or self.agent_profile_id is not None
+        ):
+            raise ValueError(
+                "context_refs, attachment_refs, and agent_profile_id require an ordinary message"
+            )
         return self
-
-
-class HomeContextRefRequest(_Request):
-    """An ordered, workspace-scoped reference accepted by a future Home capability."""
-
-    object_type: Literal["account", "contact"]
-    object_id: str = Field(min_length=1, max_length=200)
-    version: int | None = Field(default=None, gt=0)
-
-
-class HomeAttachmentRefRequest(_Request):
-    """A durable upload receipt; browser-local URLs and paths have no field in this shape."""
-
-    artifact_key: str = Field(min_length=1, max_length=1000)
-    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    media_type: str = Field(min_length=1, max_length=255)
-    byte_count: int = Field(ge=0)
-    filename: str = Field(min_length=1, max_length=255)
 
 
 class HomeProjectRequest(_Request):
@@ -189,8 +202,8 @@ class HomeProjectRequest(_Request):
 
     brand_id: str = Field(min_length=1, max_length=200)
     message: str = Field(min_length=1, max_length=32_000)
-    context_refs: tuple[HomeContextRefRequest, ...] = ()
-    attachment_refs: tuple[HomeAttachmentRefRequest, ...] = ()
+    context_refs: tuple[ContextRefRequest, ...] = ()
+    attachment_refs: tuple[AttachmentRefRequest, ...] = ()
     agent_profile_id: str | None = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode="after")
@@ -356,6 +369,23 @@ class HomeBrandWire(_Wire):
     name: str
 
 
+class ComposerContextEntityWire(_Wire):
+    object_type: Literal["account", "contact"]
+    object_id: str
+    label: str
+    secondary_label: str
+    image_url: str | None = None
+    version: int | None = None
+
+
+class AgentProfileOptionWire(_Wire):
+    id: str
+    label: str
+    short_label: str
+    description: str
+    model_id: str
+
+
 class HomeComposerCapabilitiesWire(_Wire):
     context_refs: bool = False
     attachments: bool = False
@@ -365,8 +395,8 @@ class HomeComposerCapabilitiesWire(_Wire):
 class HomeWire(_Wire):
     brands: tuple[HomeBrandWire, ...]
     default_brand_id: str | None
-    context_entities: tuple[dict[str, Any], ...] = ()
-    agent_profiles: tuple[dict[str, Any], ...] = ()
+    context_entities: tuple[ComposerContextEntityWire, ...] = ()
+    agent_profiles: tuple[AgentProfileOptionWire, ...] = ()
     default_agent_profile_id: str | None = None
     composer_capabilities: HomeComposerCapabilitiesWire = Field(
         default_factory=HomeComposerCapabilitiesWire
@@ -415,8 +445,8 @@ class ProjectShellWire(_Wire):
     product_id: str | None
     status: Literal["draft", "active", "paused", "archived"]
     created_at: str
-    context_entities: tuple[dict[str, Any], ...] = ()
-    agent_profiles: tuple[dict[str, Any], ...] = ()
+    context_entities: tuple[ComposerContextEntityWire, ...] = ()
+    agent_profiles: tuple[AgentProfileOptionWire, ...] = ()
     default_agent_profile_id: str | None = None
     composer_capabilities: HomeComposerCapabilitiesWire = Field(
         default_factory=HomeComposerCapabilitiesWire

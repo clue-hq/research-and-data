@@ -8,10 +8,12 @@ from uuid import UUID
 import pytest
 
 from clue_agents.context import (
+    CompiledContextCard,
     ContextAssemblyPolicy,
     ContextAssemblyReceipt,
     ContextCandidate,
     DeterministicAgentContextAssembler,
+    FocusLayerSource,
     LayerBudget,
     TurnLayerSource,
     Utf8ByteTokenCounter,
@@ -224,6 +226,46 @@ class _ArtifactReader:
     async def read(self, ref: ArtifactRef) -> bytes:
         self.read_keys.append(ref.artifact_key)
         return self.bodies[ref.artifact_key]
+
+
+class _FocusCards:
+    async def read(
+        self,
+        *,
+        workspace_id: str,
+        object_type: str,
+        object_id: str,
+    ) -> CompiledContextCard:
+        return CompiledContextCard(
+            ref={
+                "workspace_id": workspace_id,
+                "object_type": object_type,
+                "object_id": object_id,
+                "version": 7,
+            },
+            body=f"context for {object_id}",
+        )
+
+
+def test_focus_layer_preserves_submission_order_and_accepts_current_revision_refs() -> None:
+    source = FocusLayerSource(_FocusCards())
+    selected = (
+        domain_ref("second").model_copy(update={"version": None}),
+        domain_ref("first").model_copy(update={"version": None}),
+    )
+    values = asyncio.run(
+        source.load(
+            request=request(
+                constitution=constitution(focus_refs=()),
+                focus_refs=selected,
+            ),
+            profile=profile(),
+            history=(),
+        )
+    )
+
+    assert [item.ref.object_id for item in values] == ["second", "first"]
+    assert [item.stable_key[:6] for item in values] == ["000000", "000001"]
 
 
 def test_turn_layer_reads_message_but_never_raw_attachment_bytes() -> None:

@@ -429,6 +429,7 @@
 }
 
 .modelOption:hover,
+.modelOption[data-selected="true"],
 .entityOption:hover,
 .entityOption[data-active="true"],
 .entityOption[aria-selected="true"] {
@@ -2633,6 +2634,27 @@
 
 .messageText {
   margin: 0;
+}
+
+.messageContextRefs {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.messageContextRefs > span {
+  overflow: hidden;
+  max-width: 240px;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 999px;
+  background: var(--clue-ds-color-bg-page);
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .planApproval {

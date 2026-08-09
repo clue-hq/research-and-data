@@ -68,7 +68,7 @@ from clue_api.execution_wiring import build_tool_invoker
 from clue_api.projections_app import create_projections_app
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings, load_settings
-from clue_core import ProjectRunId
+from clue_core import AccountStatus, ProjectRunId
 from clue_fleet import (
     FleetTaskKind,
     FleetTaskStatus,
@@ -77,6 +77,7 @@ from clue_fleet import (
     finish_task,
 )
 from clue_fleet.work_worker import WorkContext
+from clue_research.identity import insert_account_entity
 from clue_storage import FsStorage
 from clue_toolbelt import DbIdempotencyStore, ToolRegistry
 from tests._identity import seed_principal
@@ -285,6 +286,7 @@ def test_a_submitted_turn_is_durable_and_queued_before_anything_runs(tmp_path: P
             assert submission.submitted_by_user_id == USER_ID
             assert submission.submitted_via_membership_id.startswith(MEMBERSHIP_ID)
             assert submission.thread_id == thread_id
+            assert submission.agent_profile_id == "head-of-abm@v23"
 
             # Capture-before-spend: the human's words and their `actor='human'` record exist.
             capture = (
@@ -323,6 +325,114 @@ def test_a_submitted_turn_is_durable_and_queued_before_anything_runs(tmp_path: P
             carried = payload if isinstance(payload, dict) else json.loads(payload)
             # References only. A session token in a queue payload is what Lane B §7 forbids.
             assert set(carried) == {"turn_id", "workspace_id", "project_id", "thread_id"}
+
+    run_async(scenario())
+
+
+def test_message_submission_persists_ordered_context_and_the_real_terra_profile(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-r8-composer", name="R8 composer")
+            first_account = await insert_account_entity(
+                conn,
+                canonical_name="First account",
+                primary_domain="first.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id=project.workspace_id,
+            )
+            second_account = await insert_account_entity(
+                conn,
+                canonical_name="Second account",
+                primary_domain="second.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id=project.workspace_id,
+            )
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="r8-composer",
+            )
+            app = _app(conn, settings=_settings(), storage=FsStorage(tmp_path / "artifacts"))
+            request = {
+                "message": "Compare these accounts in this order.",
+                "context_refs": [
+                    {"object_type": "account", "object_id": str(second_account)},
+                    {"object_type": "account", "object_id": str(first_account)},
+                ],
+                "attachment_refs": [],
+                "agent_profile_id": "head-of-abm@v23",
+            }
+            headers = {
+                "X-Workspace-Id": project.workspace_id,
+                "Idempotency-Key": "r8-composer-message",
+            }
+            async with _client(app) as client:
+                accepted = await client.post(
+                    f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns",
+                    json=request,
+                    headers=headers,
+                )
+                unavailable_profile = await client.post(
+                    f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns",
+                    json={**request, "agent_profile_id": "decorative-model@v1"},
+                    headers={**headers, "Idempotency-Key": "r8-bad-profile"},
+                )
+                attachment = await client.post(
+                    f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns",
+                    json={
+                        **request,
+                        "attachment_refs": [
+                            {
+                                "artifact_key": "browser-local://not-durable",
+                                "sha256": "a" * 64,
+                                "media_type": "text/plain",
+                                "byte_count": 1,
+                                "filename": "fake.txt",
+                            }
+                        ],
+                    },
+                    headers={**headers, "Idempotency-Key": "r8-attachment"},
+                )
+
+            assert accepted.status_code == 202, accepted.text
+            turn_id = UUID(accepted.json()["data"]["turn_id"])
+            submission = await get_submission(
+                conn,
+                workspace_id=project.workspace_id,
+                turn_id=turn_id,
+            )
+            assert submission is not None
+            assert submission.agent_profile_id == "head-of-abm@v23"
+            rows = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT object_type, object_id FROM "
+                            "agent_turn_submission_context_ref "
+                            "WHERE workspace_id = :workspace AND turn_id = :turn "
+                            "ORDER BY ordinal"
+                        ),
+                        {"workspace": project.workspace_id, "turn": turn_id},
+                    )
+                )
+                .tuples()
+                .all()
+            )
+            assert rows == [
+                ("account", str(second_account)),
+                ("account", str(first_account)),
+            ]
+            assert (
+                unavailable_profile.status_code,
+                unavailable_profile.json()["error"]["code"],
+            ) == (409, "AGENT_PROFILE_UNAVAILABLE")
+            assert (attachment.status_code, attachment.json()["error"]["code"]) == (
+                409,
+                "CAPABILITY_UNAVAILABLE",
+            )
 
     run_async(scenario())
 

@@ -12,7 +12,10 @@ export interface HomeSubmissionAttempt {
 
 /** Validate locally before an idempotency identity or an HTTP request exists. */
 export function parseHomeBootstrapDraft(input: {
+  agentProfileId?: string | null;
+  attachmentRefs?: ProjectBootstrapRequest["attachmentRefs"];
   brandId: string;
+  contextRefs?: ProjectBootstrapRequest["contextRefs"];
   message: string;
 }):
   | { success: true; request: ProjectBootstrapRequest; fingerprint: string }

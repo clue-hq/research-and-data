@@ -293,3 +293,14 @@ empty new-project Gallery; visible durable same-thread queueing; desktop hover
 overlay/click reflow sidebar. The executable contract is recorded in
 `apps/frontend/docs/api-contracts/projects.md`; §3.7 records the Lane-D
 architectural obligations. R0 changes documentation only.*
+
+*R8 composer-capability amendment (founder-ratified and implemented
+2026-08-10): Home and project conversations accept ordered, workspace-validated
+account/contact refs, persist them beside the immutable submission, pass them
+through L5 deterministic context assembly, and project them back onto the user
+message after reload. The model control intentionally remains visible with one
+real option only: `head-of-abm@v23`, labelled GPT-5.6 Terra and pinned to
+`openai/gpt-5.6-terra`; the detached worker verifies that submitted profile
+against the promoted profile before execution. Attachments remain unavailable
+and hidden because no durable upload-receipt endpoint exists; browser-local
+object URLs are never accepted.*

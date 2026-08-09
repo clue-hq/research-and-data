@@ -177,7 +177,30 @@ test("a 202 reports whether it replayed an already-accepted identity", () => {
 test("a turn body is exactly one of a message or a gate response", () => {
   assert.deepEqual(turnRequestBody({ kind: "message", message: "hi" }), {
     message: "hi",
+    context_refs: [],
+    attachment_refs: [],
+    agent_profile_id: null,
   });
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "message",
+      message: "research these",
+      contextRefs: [
+        { objectId: "contact-2", objectType: "contact", version: 4 },
+        { objectId: "account-1", objectType: "account", version: 2 },
+      ],
+      agentProfileId: "head-of-abm@v23",
+    }),
+    {
+      message: "research these",
+      context_refs: [
+        { object_id: "contact-2", object_type: "contact", version: 4 },
+        { object_id: "account-1", object_type: "account", version: 2 },
+      ],
+      attachment_refs: [],
+      agent_profile_id: "head-of-abm@v23",
+    },
+  );
   assert.deepEqual(
     turnRequestBody({
       kind: "gate_response",

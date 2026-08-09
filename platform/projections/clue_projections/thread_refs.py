@@ -10,6 +10,8 @@ durable, append-only agent-plane receipt that already existed:
 
 * :data:`MessageRefFlavor.ATTACHMENT` — an ``agent_artifact_ref`` with ``ref_role='attachment'``,
   the files the human sent with the turn.
+* :data:`MessageRefFlavor.CONTEXT` — an ordered
+  ``agent_turn_submission_context_ref`` row, the account/contact objects the human selected.
 * :data:`MessageRefFlavor.OUTPUT` / :data:`MessageRefFlavor.OPEN_GATE` — an
   ``agent_finalization_domain_ref`` row (its ``ref_role`` CHECK is exactly ``output | open_gate``):
   the domain objects the turn produced, and the gate it is waiting on.
@@ -55,6 +57,8 @@ class MessageRefFlavor(StrEnum):
 
     #: A file the human attached to the turn (``agent_artifact_ref.ref_role='attachment'``).
     ATTACHMENT = "attachment"
+    #: An account/contact object the human explicitly selected for this turn.
+    CONTEXT = "context"
     #: A domain object the turn produced (``agent_finalization_domain_ref.ref_role='output'``).
     OUTPUT = "output"
     #: The gate the turn is waiting on (``agent_finalization_domain_ref.ref_role='open_gate'``).
@@ -70,7 +74,9 @@ class MessageRefFlavor(StrEnum):
 
 
 #: The flavors a ``user`` message may carry. A user turn contributes exactly what the human sent.
-USER_MESSAGE_FLAVORS: frozenset[MessageRefFlavor] = frozenset({MessageRefFlavor.ATTACHMENT})
+USER_MESSAGE_FLAVORS: frozenset[MessageRefFlavor] = frozenset(
+    {MessageRefFlavor.ATTACHMENT, MessageRefFlavor.CONTEXT}
+)
 
 #: The flavors an ``assistant`` message may carry — everything the turn produced or is blocked on.
 ASSISTANT_MESSAGE_FLAVORS: frozenset[MessageRefFlavor] = frozenset(

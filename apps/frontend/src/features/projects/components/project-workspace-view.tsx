@@ -44,7 +44,12 @@ export function ProjectWorkspaceView({
         <button aria-label="Copy project link" onClick={onCopyLink} type="button"><ProjectIcon name="link" size={14} /></button>
       </header>
       <div className={styles.projectColumns} data-focus={controller.focusPane}>
-        <ConversationPane chat={chat} controller={controller} projectId={workspace.id} />
+        <ConversationPane
+          chat={chat}
+          controller={controller}
+          projectId={workspace.id}
+          workspace={workspace}
+        />
         <ArtifactWorkspace controller={controller} />
       </div>
     </main>

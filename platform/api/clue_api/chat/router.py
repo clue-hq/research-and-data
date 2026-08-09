@@ -39,6 +39,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from clue_agents import DomainObjectRef
 from clue_api.agent_gate import (
     KIND_DIRECTIVE_CONFIRMATION,
     AgentGateRow,
@@ -51,11 +52,20 @@ from clue_api.agent_turn_submission import (
     dispatch_next_thread_turn,
     get_submission,
     insert_submission,
+    submission_context_refs,
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
+from clue_api.chat.composer_context import (
+    PROJECT_CONVERSATION_AGENT_PROFILE_ID,
+    PROJECT_CONVERSATION_MODEL_ID,
+    ComposerContextEntity,
+    ContextReferenceError,
+    list_composer_context_entities,
+    validated_context_refs,
+)
 from clue_api.chat.inspector import (
     INSPECTOR_TABS,
     InspectorCapabilityResponse,
@@ -82,9 +92,12 @@ from clue_api.chat.principal import (
     build_dev_principal_resolver,
 )
 from clue_api.chat.schemas import (
+    AgentProfileOptionWire,
+    ComposerContextEntityWire,
     CreateThreadRequest,
     GateListResponse,
     GateResponseRequest,
+    HomeComposerCapabilitiesWire,
     HomeProjectRequest,
     HomeResponse,
     HomeWire,
@@ -449,6 +462,77 @@ def _gate_response(body: SubmitTurnRequest) -> GateResponseRequest:
     return body.gate_response
 
 
+def _agent_profile_options() -> tuple[AgentProfileOptionWire, ...]:
+    return (
+        AgentProfileOptionWire(
+            id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
+            label="GPT-5.6 Terra",
+            short_label="GPT-5.6 Terra",
+            description="Clue's governed GPT-5.6 Terra conversation profile",
+            model_id=PROJECT_CONVERSATION_MODEL_ID,
+        ),
+    )
+
+
+def _selected_agent_profile_id(requested: str | None) -> str:
+    selected = requested or PROJECT_CONVERSATION_AGENT_PROFILE_ID
+    if selected != PROJECT_CONVERSATION_AGENT_PROFILE_ID:
+        raise _refuse(
+            status_code=409,
+            code="AGENT_PROFILE_UNAVAILABLE",
+            message="the selected agent profile is not available for project conversations",
+        )
+    return selected
+
+
+def _context_entity_wire(entity: ComposerContextEntity) -> ComposerContextEntityWire:
+    return ComposerContextEntityWire(
+        object_type=entity.object_type,
+        object_id=entity.object_id,
+        label=entity.label,
+        secondary_label=entity.secondary_label,
+        image_url=entity.image_url,
+        version=entity.version,
+    )
+
+
+async def _validated_submission_context(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    refs: tuple[Any, ...],
+) -> tuple[DomainObjectRef, ...]:
+    requested = tuple(
+        DomainObjectRef(
+            workspace_id=workspace_id,
+            object_type=ref.object_type,
+            object_id=ref.object_id,
+            version=ref.version,
+        )
+        for ref in refs
+    )
+    try:
+        return await validated_context_refs(
+            conn,
+            workspace_id=workspace_id,
+            refs=requested,
+        )
+    except ContextReferenceError as exc:
+        raise _refuse(
+            status_code=404 if exc.code == "CONTEXT_REF_NOT_FOUND" else 409,
+            code=exc.code,
+            message=exc.message,
+        ) from exc
+
+
+def _composer_capabilities() -> HomeComposerCapabilitiesWire:
+    return HomeComposerCapabilitiesWire(
+        context_refs=True,
+        attachments=False,
+        agent_profile_selection=True,
+    )
+
+
 def build_chat_router(
     *,
     settings: Settings,
@@ -554,18 +638,28 @@ def build_chat_router(
     async def home_route(who: PrincipalDep) -> HomeResponse:
         """Return only the real, workspace-scoped inputs the Home composer may use.
 
-        R2 intentionally advertises no context, attachment or profile capability. Those controls
-        become interactive only when a later slice can validate and persist their durable refs;
-        until then an empty catalog is the honest contract, not a fixture stand-in.
+        Context entries come from Lane C's governed workspace reads. The one advertised profile is
+        the promoted Head-of-ABM GPT-5.6 Terra profile; attachments remain unavailable because no
+        durable upload-receipt endpoint exists yet.
         """
 
         _require(who, PERMISSION_PROJECT_READ)
         async with conn_factory() as conn:
             brands = await list_brands_for_workspace(conn, who.workspace_id)
+            context_entities = await list_composer_context_entities(
+                conn,
+                workspace_id=who.workspace_id,
+            )
         return HomeResponse(
             data=HomeWire(
                 brands=tuple({"id": brand.brand_id, "name": brand.name} for brand in brands),
                 default_brand_id=brands[0].brand_id if len(brands) == 1 else None,
+                context_entities=tuple(
+                    _context_entity_wire(entity) for entity in context_entities
+                ),
+                agent_profiles=_agent_profile_options(),
+                default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
+                composer_capabilities=_composer_capabilities(),
                 suggestions=_HOME_SUGGESTIONS,
             )
         )
@@ -594,14 +688,13 @@ def build_chat_router(
                     code="IDEMPOTENCY_KEY_REQUIRED",
                     message="creating a project requires an Idempotency-Key header",
                 )
-            if body.context_refs or body.attachment_refs or body.agent_profile_id is not None:
+            if body.attachment_refs:
                 raise _refuse(
                     status_code=409,
                     code="CAPABILITY_UNAVAILABLE",
-                    message=(
-                        "this deployment does not accept Home context, attachments, or profiles"
-                    ),
+                    message="this deployment does not accept attachments",
                 )
+            agent_profile_id = _selected_agent_profile_id(body.agent_profile_id)
 
             key = idempotency_key.strip()
             project_id = _home_project_id(workspace_id=who.workspace_id, idempotency_key=key)
@@ -639,6 +732,11 @@ def build_chat_router(
                         code="BRAND_NOT_FOUND",
                         message="no such brand in this workspace",
                     )
+                context_refs = await _validated_submission_context(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=body.context_refs,
+                )
 
                 project = await get_project(conn, project_id)
                 if project is None:
@@ -688,10 +786,17 @@ def build_chat_router(
                 )
                 replayed = existing is not None
                 if existing is not None:
+                    existing_context_refs = await submission_context_refs(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        turn_id=turn_id,
+                    )
                     if (
                         existing.project_id != project_id
                         or existing.thread_id != thread_id
                         or existing.message_sha256 != digest
+                        or existing.agent_profile_id != agent_profile_id
+                        or existing_context_refs != context_refs
                     ):
                         raise _refuse(
                             status_code=409,
@@ -732,6 +837,8 @@ def build_chat_router(
                             message_artifact_key=captured.artifact_ref.artifact_key,
                             message_sha256=captured.artifact_ref.sha256,
                             idempotency_key=key,
+                            context_refs=context_refs,
+                            agent_profile_id=agent_profile_id,
                         )
                     except SubmissionConflict as exc:
                         raise _refuse(
@@ -865,6 +972,14 @@ def build_chat_router(
                 workspace_id=who.workspace_id,
                 project_id=project_id,
             )
+            context_entities = (
+                ()
+                if project is None
+                else await list_composer_context_entities(
+                    conn,
+                    workspace_id=who.workspace_id,
+                )
+            )
         if project is None:
             raise _refuse(
                 status_code=404,
@@ -879,6 +994,12 @@ def build_chat_router(
                 product_id=project.product_id,
                 status=project.status,
                 created_at=project.created_at.isoformat(),
+                context_entities=tuple(
+                    _context_entity_wire(entity) for entity in context_entities
+                ),
+                agent_profiles=_agent_profile_options(),
+                default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
+                composer_capabilities=_composer_capabilities(),
             )
         )
 
@@ -1401,6 +1522,13 @@ def build_chat_router(
                     code="IDEMPOTENCY_KEY_REQUIRED",
                     message="submitting a turn requires an Idempotency-Key header",
                 )
+            if body.attachment_refs:
+                raise _refuse(
+                    status_code=409,
+                    code="CAPABILITY_UNAVAILABLE",
+                    message="this deployment does not accept attachments",
+                )
+            agent_profile_id = _selected_agent_profile_id(body.agent_profile_id)
             turn_id = turn_id_for_submission(
                 workspace_id=who.workspace_id,
                 thread_id=thread_id,
@@ -1440,6 +1568,11 @@ def build_chat_router(
                         code="PROJECT_NOT_FOUND",
                         message="no such project in this workspace",
                     )
+                context_refs = await _validated_submission_context(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=body.context_refs,
+                )
                 # The gate is proved before anything is written — including before the replay read,
                 # so a stale or foreign answer never even reaches the capture path.
                 gate = (
@@ -1463,7 +1596,16 @@ def build_chat_router(
                     turn_id=turn_id,
                 )
                 if existing is not None:
-                    if existing.message_sha256 != digest:
+                    existing_context_refs = await submission_context_refs(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        turn_id=turn_id,
+                    )
+                    if (
+                        existing.message_sha256 != digest
+                        or existing.agent_profile_id != agent_profile_id
+                        or existing_context_refs != context_refs
+                    ):
                         raise _refuse(
                             status_code=409,
                             code="IDEMPOTENCY_CONFLICT",
@@ -1516,6 +1658,8 @@ def build_chat_router(
                         message_artifact_key=captured.artifact_ref.artifact_key,
                         message_sha256=captured.artifact_ref.sha256,
                         idempotency_key=idempotency_key,
+                        context_refs=context_refs,
+                        agent_profile_id=agent_profile_id,
                     )
                 except SubmissionConflict as exc:
                     raise _refuse(

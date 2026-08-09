@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import type { ProjectChatController } from "../hooks/use-project-chat-controller";
+import type { ProjectWorkspace } from "../model/project-workspace";
 import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
 import { useTurnInspector } from "../hooks/use-turn-inspector";
 import { ChatTranscript } from "./chat-transcript";
@@ -29,12 +30,14 @@ export function ConversationPane({
   chat,
   controller,
   projectId,
+  workspace,
 }: {
   chat: ProjectChatController;
   controller: ReturnType<
     typeof import("../hooks/use-project-workspace-controller").useProjectWorkspaceController
   >;
   projectId: string;
+  workspace: ProjectWorkspace;
 }) {
   // The dev-lens turn inspector. Its own controller, not part of `chat`: it
   // reads nothing the conversation needs and the conversation needs nothing from
@@ -118,6 +121,7 @@ export function ConversationPane({
       <div className={styles.transcriptScroll} ref={transcriptScrollRef}>
         <ChatTranscript
           actions={partActions}
+          contextEntities={workspace.entities}
           messages={chat.transcript}
           onInspectTurn={turnInspector.available ? turnInspector.open : undefined}
         />
@@ -142,12 +146,45 @@ export function ConversationPane({
         <ProjectComposer
           // Never disabled while work is detached: the user keeps the wheel.
           disabled={chat.access !== null || chat.route !== null}
+          entities={workspace.entities}
+          modelPickerOpen={controller.modelPickerOpen}
+          models={workspace.models}
+          onEntityRemove={
+            workspace.composerCapabilities.contextRefs
+              ? controller.removeEntity
+              : undefined
+          }
+          onEntitySelect={
+            workspace.composerCapabilities.contextRefs
+              ? controller.selectEntity
+              : undefined
+          }
+          onModelPickerToggle={controller.toggleModelPicker}
+          onModelSelect={controller.selectModel}
           onPromptChange={controller.setPrompt}
-          onSubmit={(prompt) => {
-            void chat.submitMessage(prompt ?? controller.prompt);
+          onSubmit={(prompt, entityIds) => {
+            const contextRefs = (entityIds ?? controller.selectedEntityIds)
+              .map((id) => workspace.entities.find((entity) => entity.id === id))
+              .filter((entity) => entity !== undefined)
+              .map((entity) => ({
+                objectId: entity.id,
+                objectType: entity.type,
+                version: null,
+              }));
+            void chat.submitMessage(prompt ?? controller.prompt, {
+              contextRefs,
+              agentProfileId:
+                workspace.composerCapabilities.agentProfileSelection
+                  ? (controller.selectedModel?.id ?? null)
+                  : null,
+            });
             controller.setPrompt("");
+            controller.resetSubmissionContext();
           }}
           prompt={controller.prompt}
+          selectedEntities={controller.selectedEntities}
+          selectedEntityIds={controller.selectedEntityIds}
+          selectedModel={controller.selectedModel}
         />
       </div>
     </section>

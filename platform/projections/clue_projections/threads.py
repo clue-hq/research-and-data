@@ -604,6 +604,16 @@ _FINALIZATION_REFS = text(
     """
 )
 
+_SUBMISSION_CONTEXT_REFS = text(
+    """
+    SELECT turn_id, ordinal, object_type, object_id, object_version
+    FROM agent_turn_submission_context_ref
+    WHERE workspace_id = :workspace_id
+      AND turn_id = ANY(CAST(:turn_ids AS uuid[]))
+    ORDER BY turn_id, ordinal
+    """
+)
+
 _ARTIFACT_REF_ROLES: tuple[str, ...] = (
     MessageRefFlavor.ATTACHMENT.value,
     MessageRefFlavor.NEXT_ACTION.value,
@@ -615,7 +625,7 @@ _ARTIFACT_REF_ROLES: tuple[str, ...] = (
 async def _refs_by_turn(
     conn: AsyncConnection, *, workspace_id: str, turn_ids: tuple[UUID, ...]
 ) -> dict[UUID, tuple[MessageObjectRef, ...]]:
-    """Batch every candidate ref for a page of messages — two statements, not one per message."""
+    """Batch every candidate ref for a page of messages, never one statement per message."""
 
     if not turn_ids:
         return {}
@@ -635,6 +645,25 @@ async def _refs_by_turn(
                 object_type=ARTIFACT_OBJECT_TYPE,
                 object_id=row["artifact_key"],
                 version=None,
+                ordinal=int(row["ordinal"]),
+            )
+        )
+    context_rows = (
+        await conn.execute(
+            _SUBMISSION_CONTEXT_REFS,
+            {"workspace_id": workspace_id, "turn_ids": ids},
+        )
+    ).mappings()
+    for row in context_rows:
+        collected.setdefault(row["turn_id"], []).append(
+            MessageObjectRef(
+                flavor=MessageRefFlavor.CONTEXT,
+                workspace_id=workspace_id,
+                object_type=row["object_type"],
+                object_id=row["object_id"],
+                version=(
+                    None if row["object_version"] is None else int(row["object_version"])
+                ),
                 ordinal=int(row["ordinal"]),
             )
         )

@@ -2,6 +2,7 @@
 
 import { MessageResponse } from "@/components/ai-elements/message-response";
 import type { TranscriptMessage } from "../model/chat-transcript";
+import type { ProjectEntity } from "../model/project-workspace";
 import { ChatMessagePartView, type ChatPartActions } from "./chat-message-part";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
@@ -16,11 +17,13 @@ import styles from "./project-flow.module.css";
 export function ChatTranscript({
   actions,
   assistantName = "Clue",
+  contextEntities = [],
   messages,
   onInspectTurn,
 }: {
   actions: ChatPartActions;
   assistantName?: string;
+  contextEntities?: readonly ProjectEntity[];
   messages: readonly TranscriptMessage[];
   /**
    * The dev-lens affordance, or absent.
@@ -60,6 +63,25 @@ export function ChatTranscript({
             </div>
           ) : null}
           <div className={styles.messageParts}>
+            {message.refs.some((ref) => ref.flavor === "context") ? (
+              <div aria-label="Message context" className={styles.messageContextRefs}>
+                {message.refs
+                  .filter((ref) => ref.flavor === "context")
+                  .sort((left, right) => left.ordinal - right.ordinal)
+                  .map((ref) => {
+                    const entity = contextEntities.find(
+                      (candidate) =>
+                        candidate.id === ref.objectId &&
+                        candidate.type === ref.objectType,
+                    );
+                    return (
+                      <span key={`${ref.ordinal}:${ref.objectType}:${ref.objectId}`}>
+                        @{entity?.label ?? `${ref.objectType} ${ref.objectId}`}
+                      </span>
+                    );
+                  })}
+              </div>
+            ) : null}
             {message.body !== null ? (
               <div className={styles.messageText}>
                 <MessageResponse>{message.body}</MessageResponse>

@@ -37,23 +37,26 @@ Three mechanisms fence it, cheapest first:
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_agents import ArtifactRef
+from clue_agents import ArtifactRef, DomainObjectRef
 from clue_core import OnboardingInputId, ProjectRunId, UtcDatetime
 from clue_fleet import FleetTaskKind, WorkId, enqueue_task
 
 __all__ = [
     "AGENT_TURN_DEDUP_PREFIX",
     "AgentTurnSubmissionRow",
+    "SubmissionContextRefRow",
     "SubmissionConflict",
     "agent_turn_dedup_key",
     "dispatch_next_thread_turn",
     "get_submission",
+    "submission_context_refs",
     "message_artifact_ref",
     "insert_submission",
     "submissions_for_thread",
@@ -71,7 +74,7 @@ _THREAD_WORK_NAMESPACE = uuid5(NAMESPACE_URL, "clue-agent-turn-thread-work")
 _COLUMNS = (
     "turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
     "submitted_via_membership_id, onboarding_input_id, message_artifact_key, message_sha256, "
-    "idempotency_key, requested_at"
+    "idempotency_key, agent_profile_id, requested_at"
 )
 
 
@@ -136,7 +139,21 @@ class AgentTurnSubmissionRow(BaseModel):
     message_artifact_key: str
     message_sha256: str
     idempotency_key: str | None
+    agent_profile_id: str | None
     requested_at: UtcDatetime
+
+
+class SubmissionContextRefRow(BaseModel):
+    """One ordered account/contact ref captured with a human submission."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    turn_id: UUID
+    workspace_id: str
+    ordinal: int
+    object_type: str
+    object_id: str
+    object_version: int | None
 
 
 async def insert_submission(
@@ -152,6 +169,8 @@ async def insert_submission(
     message_artifact_key: str,
     message_sha256: str,
     idempotency_key: str | None,
+    context_refs: Sequence[DomainObjectRef] = (),
+    agent_profile_id: str | None = None,
 ) -> tuple[AgentTurnSubmissionRow, bool]:
     """Insert one submission, or replay it. Returns ``(row, created)``.
 
@@ -162,6 +181,9 @@ async def insert_submission(
     somebody else's turn.
     """
 
+    if any(ref.workspace_id != workspace_id for ref in context_refs):
+        raise ValueError("submission context refs cross the workspace boundary")
+
     inserted = (
         (
             await conn.execute(
@@ -169,9 +191,10 @@ async def insert_submission(
                     "INSERT INTO agent_turn_submission "
                     "(turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
                     " submitted_via_membership_id, onboarding_input_id, message_artifact_key, "
-                    " message_sha256, idempotency_key) "
+                    " message_sha256, idempotency_key, agent_profile_id) "
                     "VALUES (:turn_id, :workspace_id, :project_id, :thread_id, :user_id, "
-                    " :membership_id, :onboarding_input_id, :artifact_key, :sha256, :key) "
+                    " :membership_id, :onboarding_input_id, :artifact_key, :sha256, :key, "
+                    " :agent_profile_id) "
                     f"ON CONFLICT (turn_id) DO NOTHING RETURNING {_COLUMNS}"
                 ),
                 {
@@ -185,6 +208,7 @@ async def insert_submission(
                     "artifact_key": message_artifact_key,
                     "sha256": message_sha256,
                     "key": idempotency_key,
+                    "agent_profile_id": agent_profile_id,
                 },
             )
         )
@@ -192,15 +216,43 @@ async def insert_submission(
         .one_or_none()
     )
     if inserted is not None:
-        return AgentTurnSubmissionRow.model_validate(dict(inserted)), True
+        row = AgentTurnSubmissionRow.model_validate(dict(inserted))
+        for ordinal, ref in enumerate(context_refs):
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_turn_submission_context_ref "
+                    "(turn_id, workspace_id, ordinal, object_type, object_id, object_version) "
+                    "VALUES (:turn_id, :workspace_id, :ordinal, :object_type, :object_id, "
+                    " :object_version)"
+                ),
+                {
+                    "turn_id": turn_id,
+                    "workspace_id": workspace_id,
+                    "ordinal": ordinal,
+                    "object_type": ref.object_type,
+                    "object_id": ref.object_id,
+                    "object_version": ref.version,
+                },
+            )
+        return row, True
     existing = await get_submission(conn, workspace_id=workspace_id, turn_id=turn_id)
     if existing is None:
         # The id exists outside this workspace. Deriving the id from the workspace makes this
         # practically unreachable; refusing beats leaking that another tenant holds it.
         raise SubmissionConflict("this turn identity exists outside the requested workspace")
-    if existing.message_sha256 != message_sha256 or existing.thread_id != thread_id:
+    existing_refs = await submission_context_refs(
+        conn,
+        workspace_id=workspace_id,
+        turn_id=turn_id,
+    )
+    if (
+        existing.message_sha256 != message_sha256
+        or existing.thread_id != thread_id
+        or existing.agent_profile_id != agent_profile_id
+        or tuple(context_refs) != existing_refs
+    ):
         raise SubmissionConflict(
-            "this idempotency identity was already used for a different message"
+            "this idempotency identity was already used for a different submission"
         )
     return existing, False
 
@@ -227,6 +279,40 @@ async def get_submission(
         .one_or_none()
     )
     return AgentTurnSubmissionRow.model_validate(dict(row)) if row is not None else None
+
+
+async def submission_context_refs(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+) -> tuple[DomainObjectRef, ...]:
+    """Rehydrate context refs in the exact order the user supplied."""
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT turn_id, workspace_id, ordinal, object_type, object_id, "
+                    "object_version FROM agent_turn_submission_context_ref "
+                    "WHERE turn_id=:turn_id AND workspace_id=:workspace_id ORDER BY ordinal"
+                ),
+                {"turn_id": turn_id, "workspace_id": workspace_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    receipts = tuple(SubmissionContextRefRow.model_validate(dict(row)) for row in rows)
+    return tuple(
+        DomainObjectRef(
+            workspace_id=item.workspace_id,
+            object_type=item.object_type,
+            object_id=item.object_id,
+            version=item.object_version,
+        )
+        for item in receipts
+    )
 
 
 async def message_artifact_ref(

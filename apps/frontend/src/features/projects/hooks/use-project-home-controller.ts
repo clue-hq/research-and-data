@@ -46,7 +46,9 @@ export function useProjectHomeController(data: ProjectHome) {
   const [selectedBrandId, setSelectedBrandIdState] = useState(
     data.defaultBrandId ?? data.brands[0]?.id ?? "",
   );
-  const [selectedModelId, setSelectedModelId] = useState(data.models[0]?.id ?? "");
+  const [selectedModelId, setSelectedModelId] = useState(
+    data.defaultAgentProfileId ?? data.models[0]?.id ?? "",
+  );
   const [loading, setLoading] = useState(httpMode);
   const [inFlightFingerprints, setInFlightFingerprints] = useState<
     ReadonlySet<string>
@@ -56,7 +58,15 @@ export function useProjectHomeController(data: ProjectHome) {
   const uploadTimers = useRef<number[]>([]);
   const mounted = useRef(true);
   const draft = useRef({
+    agentProfileId:
+      data.defaultAgentProfileId ?? data.models[0]?.id ?? null,
+    attachmentRefs: [],
     brandId: data.defaultBrandId ?? data.brands[0]?.id ?? "",
+    contextRefs: [] as {
+      objectId: string;
+      objectType: "account" | "contact";
+      version: number | null;
+    }[],
     message: "",
   });
   const submissions = useRef(new HomeSubmissionCoordinator());
@@ -82,10 +92,18 @@ export function useProjectHomeController(data: ProjectHome) {
         setHome(next);
         const nextBrandId =
           next.defaultBrandId ?? (next.brands.length === 1 ? next.brands[0].id : "");
-        draft.current = { ...draft.current, brandId: nextBrandId };
+        const nextAgentProfileId =
+          next.defaultAgentProfileId ?? next.models[0]?.id ?? null;
+        draft.current = {
+          ...draft.current,
+          agentProfileId: nextAgentProfileId,
+          brandId: nextBrandId,
+          contextRefs: [],
+        };
         submissions.current.draftChanged();
         setSelectedBrandIdState(nextBrandId);
-        setSelectedModelId(next.models[0]?.id ?? "");
+        setSelectedEntityIds([]);
+        setSelectedModelId(nextAgentProfileId ?? "");
         setError(null);
       })
       .catch((failure: unknown) => {
@@ -120,21 +138,25 @@ export function useProjectHomeController(data: ProjectHome) {
   const selectedModel =
     home.models.find((model) => model.id === selectedModelId) ?? home.models[0];
 
+  const contextRefs = selectedEntities.map((entity) => ({
+    objectId: entity.id,
+    objectType: entity.type,
+    version: null,
+  }));
+
   const currentDraft = parseHomeBootstrapDraft({
+    agentProfileId: selectedModel?.id ?? null,
+    attachmentRefs: [],
     brandId: selectedBrandId,
+    contextRefs,
     message: prompt,
   });
   const submitting = currentDraft.success
     ? inFlightFingerprints.has(currentDraft.fingerprint)
     : false;
 
-  function reviseDraft(next: { brandId: string; message: string }) {
-    if (
-      draft.current.brandId === next.brandId &&
-      draft.current.message === next.message
-    ) {
-      return;
-    }
+  function reviseDraft(next: typeof draft.current) {
+    if (JSON.stringify(draft.current) === JSON.stringify(next)) return;
     draft.current = next;
     submissions.current.draftChanged();
     setError(null);
@@ -151,13 +173,39 @@ export function useProjectHomeController(data: ProjectHome) {
   }
 
   function selectEntity(entityId: string) {
-    setSelectedEntityIds((current) =>
-      current.includes(entityId) ? current : [...current, entityId],
-    );
+    setSelectedEntityIds((current) => {
+      const next = current.includes(entityId) ? current : [...current, entityId];
+      reviseDraft({
+        ...draft.current,
+        contextRefs: next
+          .map((id) => home.entities.find((entity) => entity.id === id))
+          .filter((entity): entity is ProjectEntity => Boolean(entity))
+          .map((entity) => ({
+            objectId: entity.id,
+            objectType: entity.type,
+            version: null,
+          })),
+      });
+      return next;
+    });
   }
 
   function removeEntity(entityId: string) {
-    setSelectedEntityIds((current) => current.filter((id) => id !== entityId));
+    setSelectedEntityIds((current) => {
+      const next = current.filter((id) => id !== entityId);
+      reviseDraft({
+        ...draft.current,
+        contextRefs: next
+          .map((id) => home.entities.find((entity) => entity.id === id))
+          .filter((entity): entity is ProjectEntity => Boolean(entity))
+          .map((entity) => ({
+            objectId: entity.id,
+            objectType: entity.type,
+            version: null,
+          })),
+      });
+      return next;
+    });
   }
 
   function addAttachments(files: File[]) {
@@ -185,10 +233,23 @@ export function useProjectHomeController(data: ProjectHome) {
     });
   }
 
-  async function submit(promptOverride?: string) {
+  async function submit(promptOverride?: string, entityIdsOverride?: string[]) {
     const message = promptOverride ?? prompt;
     if (loading) return;
-    const parsed = parseHomeBootstrapDraft({ brandId: selectedBrandId, message });
+    const submittedEntities = (entityIdsOverride ?? selectedEntityIds)
+      .map((id) => home.entities.find((entity) => entity.id === id))
+      .filter((entity): entity is ProjectEntity => Boolean(entity));
+    const parsed = parseHomeBootstrapDraft({
+      agentProfileId: selectedModel?.id ?? null,
+      attachmentRefs: [],
+      brandId: selectedBrandId,
+      contextRefs: submittedEntities.map((entity) => ({
+        objectId: entity.id,
+        objectType: entity.type,
+        version: null,
+      })),
+      message,
+    });
     if (!parsed.success) {
       setError(parsed.message);
       return;
@@ -211,7 +272,7 @@ export function useProjectHomeController(data: ProjectHome) {
       if (!mounted.current) return;
       const latestDraft = parseHomeBootstrapDraft(draft.current);
       if (latestDraft.success && latestDraft.fingerprint === parsed.fingerprint) {
-        draft.current = { ...draft.current, message: "" };
+        draft.current = { ...draft.current, contextRefs: [], message: "" };
         submissions.current.draftChanged();
         setPromptState("");
         setSelectedEntityIds([]);
@@ -244,26 +305,33 @@ export function useProjectHomeController(data: ProjectHome) {
   }
 
   return {
-    addAttachments,
-    attachments,
+    // The timer/object-URL preview belongs only to the isolated fixture
+    // transport. HTTP mode has no durable upload receipt endpoint, so it may
+    // never expose these handlers even if a mismatched server payload claimed
+    // attachments were available.
+    addAttachments: httpMode ? undefined : addAttachments,
+    attachments: httpMode ? [] : attachments,
     data: home,
     error,
     loading,
     modelPickerOpen,
     prompt,
-    removeAttachment(attachmentId: string) {
-      setAttachments((current) => {
-        const attachment = current.find((item) => item.id === attachmentId);
-        if (attachment?.url) {
-          URL.revokeObjectURL(attachment.url);
-          attachmentUrls.current.delete(attachment.url);
-        }
-        return current.filter((item) => item.id !== attachmentId);
-      });
-    },
+    removeAttachment: httpMode
+      ? undefined
+      : (attachmentId: string) => {
+          setAttachments((current) => {
+            const attachment = current.find((item) => item.id === attachmentId);
+            if (attachment?.url) {
+              URL.revokeObjectURL(attachment.url);
+              attachmentUrls.current.delete(attachment.url);
+            }
+            return current.filter((item) => item.id !== attachmentId);
+          });
+        },
     removeEntity,
     selectEntity,
     selectModel(modelId: string) {
+      reviseDraft({ ...draft.current, agentProfileId: modelId });
       setSelectedModelId(modelId);
       setModelPickerOpen(false);
     },

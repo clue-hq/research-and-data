@@ -82,7 +82,17 @@ export interface ProjectChatController {
   queuedTurns: readonly ChatTurn[];
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
-  submitMessage(text: string): Promise<void>;
+  submitMessage(
+    text: string,
+    options?: {
+      contextRefs?: readonly {
+        objectId: string;
+        objectType: "account" | "contact";
+        version: number | null;
+      }[];
+      agentProfileId?: string | null;
+    },
+  ): Promise<void>;
   answerGate(card: GateCardModel, decision: GateDecision): Promise<void>;
   stopActiveTurn(): Promise<void>;
   retryTurn(turnId: string): Promise<void>;
@@ -368,12 +378,24 @@ export function useProjectChatController({
   // --- writes ------------------------------------------------------------
 
   const submitMessage = useCallback(
-    async (text: string) => {
+    async (
+      text: string,
+      options: {
+        contextRefs?: readonly {
+          objectId: string;
+          objectType: "account" | "contact";
+          version: number | null;
+        }[];
+        agentProfileId?: string | null;
+      } = {},
+    ) => {
       const trimmed = text.trim();
       if (!trimmed || !activeThreadId) return;
+      const contextRefs = options.contextRefs ?? [];
+      const agentProfileId = options.agentProfileId ?? null;
       const attempt = messageSubmissions.current.begin(
         activeThreadId,
-        trimmed,
+        { message: trimmed, contextRefs, agentProfileId },
         () => newIdempotencyKey("turn"),
       );
       if (!attempt) return;
@@ -381,7 +403,12 @@ export function useProjectChatController({
         const accepted = await repositories.turns.submit({
           projectId,
           threadId: activeThreadId,
-          submission: { kind: "message", message: trimmed },
+          submission: {
+            kind: "message",
+            message: trimmed,
+            contextRefs,
+            agentProfileId,
+          },
           idempotencyKey: attempt.idempotencyKey,
         });
         if (!mounted.current) return;

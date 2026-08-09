@@ -14,6 +14,7 @@ import { z } from "zod";
 /** The closed flavor vocabulary of `MessageRefFlavor` (REQ-21 / D0). */
 export const MessageRefFlavorSchema = z.enum([
   "attachment",
+  "context",
   "output",
   "open_gate",
   "next_action",

@@ -57,6 +57,7 @@ from clue_api.agent_turn_submission import (
     dispatch_next_thread_turn,
     get_submission,
     insert_submission,
+    submission_context_refs,
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
@@ -542,6 +543,12 @@ def build_chat_stream_router(
                     message_artifact_key=captured.artifact_ref.artifact_key,
                     message_sha256=captured.artifact_ref.sha256,
                     idempotency_key=f"retry-of:{turn_id}",
+                    context_refs=await submission_context_refs(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        turn_id=turn_id,
+                    ),
+                    agent_profile_id=original.agent_profile_id,
                 )
                 await insert_control_request(
                     conn,

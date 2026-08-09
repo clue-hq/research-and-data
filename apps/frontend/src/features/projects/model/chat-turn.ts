@@ -184,10 +184,18 @@ export class MessageSubmissionGuard {
 
   begin(
     threadId: string,
-    message: string,
+    submission: {
+      message: string;
+      contextRefs: readonly {
+        objectId: string;
+        objectType: "account" | "contact";
+        version: number | null;
+      }[];
+      agentProfileId: string | null;
+    },
     createIdempotencyKey: () => string,
   ): MessageSubmissionAttempt | null {
-    const fingerprint = JSON.stringify([threadId, message]);
+    const fingerprint = JSON.stringify([threadId, submission]);
     if (this.inFlight.has(fingerprint)) return null;
     const attempt = {
       fingerprint,
@@ -251,12 +259,32 @@ export const GateResponseSchema = z.object({
 export type GateResponse = z.infer<typeof GateResponseSchema>;
 
 export type TurnSubmission =
-  | { kind: "message"; message: string }
+  | {
+      kind: "message";
+      message: string;
+      contextRefs?: readonly {
+        objectId: string;
+        objectType: "account" | "contact";
+        version: number | null;
+      }[];
+      agentProfileId?: string | null;
+    }
   | { kind: "gate_response"; response: GateResponse };
 
 /** The wire body of a turn submission. Exactly one of the two, never both. */
 export function turnRequestBody(submission: TurnSubmission): unknown {
-  if (submission.kind === "message") return { message: submission.message };
+  if (submission.kind === "message") {
+    return {
+      message: submission.message,
+      context_refs: (submission.contextRefs ?? []).map((reference) => ({
+        object_type: reference.objectType,
+        object_id: reference.objectId,
+        version: reference.version,
+      })),
+      attachment_refs: [],
+      agent_profile_id: submission.agentProfileId ?? null,
+    };
+  }
   return {
     gate_response: {
       gate_id: submission.response.gateId,

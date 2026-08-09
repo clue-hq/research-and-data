@@ -21,7 +21,10 @@ test("fixture project shell uses the honest pre-artifact contract", async () => 
     "brandId",
     "composerCapabilities",
     "createdAt",
+    "defaultAgentProfileId",
+    "entities",
     "id",
+    "models",
     "productId",
     "status",
     "title",
@@ -43,13 +46,26 @@ test("HTTP project shell maps only durable data and keeps Gallery empty", async 
         product_id: null,
         status: "active",
         created_at: "2026-08-10T12:00:00Z",
-        context_entities: [],
-        agent_profiles: [],
-        default_agent_profile_id: null,
+        context_entities: [{
+          object_type: "contact",
+          object_id: "contact_1",
+          label: "Avery Stone",
+          secondary_label: "VP Marketing",
+          image_url: null,
+          version: 2,
+        }],
+        agent_profiles: [{
+          id: "head-of-abm@v23",
+          label: "GPT-5.6 Terra",
+          short_label: "GPT-5.6 Terra",
+          description: "Clue's governed GPT-5.6 Terra conversation profile",
+          model_id: "openai/gpt-5.6-terra",
+        }],
+        default_agent_profile_id: "head-of-abm@v23",
         composer_capabilities: {
-          context_refs: false,
+          context_refs: true,
           attachments: false,
-          agent_profile_selection: false,
+          agent_profile_selection: true,
         },
         artifacts: [],
       },
@@ -63,15 +79,17 @@ test("HTTP project shell maps only durable data and keeps Gallery empty", async 
     assert.equal(requested, "/api/clue/api/v1/projects/prj_real");
     assert.equal(project.title, "Untitled project");
     assert.deepEqual(project.artifacts, []);
-    assert.equal("models" in project, false);
+    assert.deepEqual(project.models.map((model) => model.id), [
+      "head-of-abm@v23",
+    ]);
     assert.equal("plan" in project, false);
     assert.equal("questionnaire" in project, false);
     assert.equal("prompt" in project, false);
-    assert.equal("contextEntities" in project, false);
+    assert.deepEqual(project.entities.map((entity) => entity.id), ["contact_1"]);
     assert.deepEqual(project.composerCapabilities, {
-      agentProfileSelection: false,
+      agentProfileSelection: true,
       attachments: false,
-      contextRefs: false,
+      contextRefs: true,
     });
   } finally {
     globalThis.fetch = originalFetch;

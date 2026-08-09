@@ -5,22 +5,10 @@ import type {
 
 export const projectModels = [
   {
-    description: "Fast, reliable everyday work",
-    id: "gpt-5.5",
-    label: "GPT 5.5",
-    shortLabel: "GPT 5.5",
-  },
-  {
-    description: "For your most complex work",
-    id: "gpt-5.6-sol",
-    label: "GPT 5.6 Sol",
-    shortLabel: "GPT 5.6",
-  },
-  {
-    description: "Balanced cost and intelligence",
-    id: "grok-4.5",
-    label: "Grok 4.5",
-    shortLabel: "Grok 4.5",
+    description: "Clue's governed GPT-5.6 Terra conversation profile",
+    id: "head-of-abm@v23",
+    label: "GPT-5.6 Terra",
+    shortLabel: "GPT-5.6 Terra",
   },
 ] as const;
 
@@ -31,7 +19,7 @@ export const projectHomeFixture: ProjectHome = {
     attachments: true,
     contextRefs: true,
   },
-  defaultAgentProfileId: "gpt-5.5",
+  defaultAgentProfileId: "head-of-abm@v23",
   defaultBrandId: "brand-clue-demo",
   entities: [
     {
@@ -116,7 +104,10 @@ export const projectWorkspaceFixture: ProjectWorkspace = {
     contextRefs: false,
   },
   createdAt: "2026-08-01T00:00:00Z",
+  defaultAgentProfileId: null,
+  entities: [],
   id: "10m-landing-page-campaign",
+  models: [],
   productId: null,
   status: "active",
   title: "10m+ landing page campaign",

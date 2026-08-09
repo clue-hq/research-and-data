@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R7 implemented. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R8 implemented. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -111,6 +111,27 @@ network failure. Presentation components do not call the API directly.
 - Guessed artifact-detail URLs return not found until a real project-artifact
   read is separately contracted and integrated.
 
+### R8 implementation status (2026-08-10)
+
+- Home and project reads advertise a real, workspace-scoped account/contact
+  catalog from Lane C. Ordinary messages and atomic Home bootstrap accept those
+  references in user-authored order, validate ownership/current revision and
+  applicable contact/account relationships, then persist immutable receipts on
+  the submission.
+- The fleet worker rehydrates the receipts into `AgentTurnRequest.focus_refs`.
+  L5 context assembly retains the submitted ordering, and durable transcript
+  reads project the same ordered references back onto the user message after a
+  reload.
+- The composer keeps one visible model selector, as explicitly ruled for R8.
+  Its only option is the server-advertised promoted profile
+  `head-of-abm@v23`, labelled **GPT-5.6 Terra** and backed by
+  `openai/gpt-5.6-terra`. The chosen profile id is accepted, persisted, and
+  checked by the detached worker before the promoted profile is executed.
+- Attachments remain unavailable because this deployment has no durable upload
+  receipt endpoint. Both Home and project reads advertise `attachments=false`,
+  the frontend hides the control in HTTP mode, and the backend refuses any
+  attempted attachment receipt instead of accepting a browser-local URL.
+
 ## Ownership model
 
 ```text
@@ -217,13 +238,30 @@ nothing. It requires `project.read`.
       { "id": "brand_01J...", "name": "Clue Demo Brand" }
     ],
     "default_brand_id": "brand_01J...",
-    "context_entities": [],
-    "agent_profiles": [],
-    "default_agent_profile_id": null,
+    "context_entities": [
+      {
+        "object_type": "account",
+        "object_id": "de305d54-75b4-431b-adb2-eb6b9e546014",
+        "label": "Northstar Labs",
+        "secondary_label": "northstar.example",
+        "image_url": null,
+        "version": null
+      }
+    ],
+    "agent_profiles": [
+      {
+        "id": "head-of-abm@v23",
+        "label": "GPT-5.6 Terra",
+        "short_label": "GPT-5.6 Terra",
+        "description": "Clue's governed GPT-5.6 Terra conversation profile",
+        "model_id": "openai/gpt-5.6-terra"
+      }
+    ],
+    "default_agent_profile_id": "head-of-abm@v23",
     "composer_capabilities": {
-      "context_refs": false,
+      "context_refs": true,
       "attachments": false,
-      "agent_profile_selection": false
+      "agent_profile_selection": true
     },
     "suggestions": [
       "Find target accounts for our new campaign"
@@ -247,6 +285,9 @@ Contract rules:
   disabled; the frontend cannot simulate success.
 - When `agent_profile_selection` is false, `agent_profiles` is empty,
   `default_agent_profile_id` is null, and the backend uses its governed default.
+- This deployment intentionally advertises one selectable profile. Per the R8
+  product ruling, the selector remains visible with exactly the one real
+  **GPT-5.6 Terra** option; it is not a decorative multi-model menu.
 - When `context_refs` is false, `context_entities` is empty. When it becomes
   true, each entry has the exact `object_type`, `object_id`, `label`,
   `secondary_label`, and nullable `image_url` shape shown in §3's reference
@@ -262,9 +303,15 @@ accepts:
 {
   "brand_id": "brand_01J...",
   "message": "Start an ABM project for Northstar Labs",
-  "context_refs": [],
+  "context_refs": [
+    {
+      "object_type": "account",
+      "object_id": "de305d54-75b4-431b-adb2-eb6b9e546014",
+      "version": null
+    }
+  ],
   "attachment_refs": [],
-  "agent_profile_id": null
+  "agent_profile_id": "head-of-abm@v23"
 }
 ```
 
@@ -389,13 +436,30 @@ project shell:
     "product_id": null,
     "status": "active",
     "created_at": "2026-08-10T12:00:00Z",
-    "context_entities": [],
-    "agent_profiles": [],
-    "default_agent_profile_id": null,
+    "context_entities": [
+      {
+        "object_type": "account",
+        "object_id": "de305d54-75b4-431b-adb2-eb6b9e546014",
+        "label": "Northstar Labs",
+        "secondary_label": "northstar.example",
+        "image_url": null,
+        "version": null
+      }
+    ],
+    "agent_profiles": [
+      {
+        "id": "head-of-abm@v23",
+        "label": "GPT-5.6 Terra",
+        "short_label": "GPT-5.6 Terra",
+        "description": "Clue's governed GPT-5.6 Terra conversation profile",
+        "model_id": "openai/gpt-5.6-terra"
+      }
+    ],
+    "default_agent_profile_id": "head-of-abm@v23",
     "composer_capabilities": {
-      "context_refs": false,
+      "context_refs": true,
       "attachments": false,
-      "agent_profile_selection": false
+      "agent_profile_selection": true
     },
     "artifacts": []
   }
@@ -614,10 +678,11 @@ In HTTP mode:
   projects, threads, artifacts, messages, models, accounts, or contacts.
 - Attachments stay hidden until a durable upload/capture endpoint returns the
   attachment receipt defined in §3.
-- Model selection stays hidden until the backend advertises selectable
-  profiles and persists the chosen `agent_profile_id` on the submission.
-- Context chips stay hidden until the backend both advertises the capability
-  and persists/rehydrates the ordered references.
+- Model selection is visible because the backend advertises the one real Terra
+  profile and persists the chosen `agent_profile_id` on every message
+  submission. No second/decorative option is rendered.
+- Context chips are visible because the backend advertises the real Lane C
+  catalog and persists/rehydrates the ordered references.
 - Project rename/pin/delete and project-wide archive controls stay hidden until
   their real endpoints are separately contracted and implemented. Thread-level
   rename/pin/archive remain available through the as-built thread endpoints.

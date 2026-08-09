@@ -512,6 +512,59 @@ def test_message_pages_carry_typed_refs_attributed_by_message_role(
             attachment_key = await _artifact(
                 conn, workspace_id=project.workspace_id, sha=attachment_sha
             )
+            principal = await seed_principal(
+                conn,
+                workspace_id=project.workspace_id,
+                user_id="usr-d0-message-refs",
+            )
+            onboarding_input_id = uuid4()
+            await conn.execute(
+                text(
+                    "INSERT INTO onboarding_input "
+                    "(id, workspace_id, brand_id, project_id, kind, artifact_key, "
+                    " content_sha256, actor) "
+                    "VALUES (:id, :workspace, :brand, :project, 'user_turn', :key, :sha, "
+                    " 'human')"
+                ),
+                {
+                    "id": onboarding_input_id,
+                    "workspace": project.workspace_id,
+                    "brand": project.brand_id,
+                    "project": project.project_id,
+                    "key": attachment_key,
+                    "sha": attachment_sha,
+                },
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_turn_submission "
+                    "(turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
+                    " submitted_via_membership_id, onboarding_input_id, message_artifact_key, "
+                    " message_sha256, idempotency_key, agent_profile_id) "
+                    "VALUES (:turn, :workspace, :project, :thread, :user, :membership, "
+                    " :input, :key, :sha, 'd0-context-refs', 'head-of-abm@v23')"
+                ),
+                {
+                    "turn": turn_id,
+                    "workspace": project.workspace_id,
+                    "project": project.project_id,
+                    "thread": thread.id,
+                    "user": principal.user_id,
+                    "membership": principal.membership_id,
+                    "input": onboarding_input_id,
+                    "key": attachment_key,
+                    "sha": attachment_sha,
+                },
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_turn_submission_context_ref "
+                    "(turn_id, workspace_id, ordinal, object_type, object_id, object_version) "
+                    "VALUES (:turn, :workspace, 0, 'contact', 'contact-second', 4), "
+                    "(:turn, :workspace, 1, 'account', 'account-first', 2)"
+                ),
+                {"turn": turn_id, "workspace": project.workspace_id},
+            )
             await conn.execute(
                 text(
                     "INSERT INTO agent_artifact_ref (id, turn_id, workspace_id, owner_kind, "
@@ -565,9 +618,21 @@ def test_message_pages_carry_typed_refs_attributed_by_message_role(
             )
             user, assistant = page.items
             assert user.sequence == 1
-            assert [ref.flavor for ref in user.refs] == [MessageRefFlavor.ATTACHMENT]
+            assert [ref.flavor for ref in user.refs] == [
+                MessageRefFlavor.ATTACHMENT,
+                MessageRefFlavor.CONTEXT,
+                MessageRefFlavor.CONTEXT,
+            ]
             assert user.refs[0].object_type == "artifact"
             assert user.refs[0].object_id == attachment_key
+            assert [
+                (ref.object_type, ref.object_id, ref.version, ref.ordinal)
+                for ref in user.refs
+                if ref.flavor is MessageRefFlavor.CONTEXT
+            ] == [
+                ("contact", "contact-second", 4, 0),
+                ("account", "account-first", 2, 1),
+            ]
 
             assert {ref.flavor for ref in assistant.refs} == {
                 MessageRefFlavor.OUTPUT,

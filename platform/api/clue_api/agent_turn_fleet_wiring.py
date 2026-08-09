@@ -61,7 +61,9 @@ from clue_api.agent_turn_submission import (
     dispatch_next_thread_turn,
     get_submission,
     message_artifact_ref,
+    submission_context_refs,
 )
+from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.chat.turn_controls import stop_requested
 from clue_api.chat.turn_events import prune_turn_events
 from clue_api.chat.turn_stream import TurnStreamEmitter, TurnStreamPolicy
@@ -275,6 +277,11 @@ class ProjectConversationTurnRunner:
                 )
             scope = await self._load_scope(conn, submission)
             user_message_ref = await message_artifact_ref(conn, submission)
+            submission_focus_refs = await submission_context_refs(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+            )
         # FI Lane D D3: open this attempt's stream *before* anything runs. The outbox itself decides
         # the attempt ordinal, so a re-claimed task after a crash opens a distinct attempt and
         # resets whatever the dead one left open — never splicing two generations (§3.3(6)).
@@ -325,6 +332,16 @@ class ProjectConversationTurnRunner:
                 f"(status={status.value})"
             )
         resolved = self._engine.resolved
+        resolved_profile_id = f"{resolved.profile_ref.name}@{resolved.profile_ref.version}"
+        if resolved_profile_id != PROJECT_CONVERSATION_AGENT_PROFILE_ID:
+            raise RuntimeError(
+                "the advertised project-conversation profile differs from the promoted profile"
+            )
+        if (
+            submission.agent_profile_id is not None
+            and submission.agent_profile_id != resolved_profile_id
+        ):
+            raise RuntimeError("the submitted agent profile is not promoted for this surface")
         lease = self._engine.components.workspaces.acquire(
             workspace_id=workspace_id,
             project_id=scope.project_id,
@@ -396,7 +413,7 @@ class ProjectConversationTurnRunner:
                 focus_refs=(focus_ref,),
             ),
             user_message_artifact_ref=user_message_ref,
-            focus_refs=(focus_ref,),
+            focus_refs=submission_focus_refs,
             requested_at=submission.requested_at,
         )
         result = await self._execute_watched(
