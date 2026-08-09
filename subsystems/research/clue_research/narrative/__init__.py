@@ -92,6 +92,13 @@ from clue_research.narrative.prompts import (
     fact_to_text,
     parse_positioning_response,
 )
+from clue_research.narrative.prose_fields import (
+    ACCOUNT_SUMMARY,
+    CONTACT_OVERVIEW,
+    PROSE_FIELD_KEYS,
+    PROSE_PACK,
+    load_prose_pack,
+)
 from clue_research.narrative.publisher import (
     HandoffPublisher,
     OutboxHandoffPublisher,
@@ -185,6 +192,12 @@ __all__ = [
     "NARRATIVE_PACK",
     "NARRATIVE_FIELD_KEYS",
     "load_narrative_pack",
+    # Lane E prose field pack (E0)
+    "ACCOUNT_SUMMARY",
+    "CONTACT_OVERVIEW",
+    "PROSE_PACK",
+    "PROSE_FIELD_KEYS",
+    "load_prose_pack",
     # reuse stamping
     "NARRATIVE_REUSE_POLICY",
     # C7.3 deterministic account/contact research views

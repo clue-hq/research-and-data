@@ -421,6 +421,10 @@ async def _compose_account_fixture() -> tuple[
             section_kind=ResearchSectionKind.INSIGHTS,
             claim=signal,
         ),
+        ResearchStatementCandidate(
+            section_kind=ResearchSectionKind.VALUE_NARRATIVE,
+            claim=_verified_narrative_claim(account),
+        ),
     )
     identity = _reference(
         item_id="identity:account",
@@ -487,7 +491,7 @@ def test_account_fixture_composes_all_frontend_sections_and_complete_provenance(
     view, _, _, _ = run_async(_compose_account_fixture())
     assert tuple(section.kind for section in view.sections) == ACCOUNT_SECTION_ORDER
     assert all(section.items for section in view.sections)
-    assert view.status_summary.total_statement_count == 4
+    assert view.status_summary.total_statement_count == 5
     assert {ref.statement_kind.value for ref in view.provenance_index} == {
         "direct",
         "derived",
@@ -580,6 +584,186 @@ def test_account_composition_is_order_deterministic_and_hash_is_grouping_indepen
     assert regrouped.source_state_sha256 == first.source_state_sha256
     assert regrouped.view_id == first.view_id
     assert regrouped.sections != first.sections
+
+
+def _verified_narrative_claim(subject: ResearchSubjectRef) -> Claim:
+    base = account_claim(
+        entity_id=subject.entity_id,
+        field_key="account.value_narrative",
+        value_json={
+            "persona": "economic_buyer",
+            "argument": "Grounded argument for why the client's product matters here.",
+            "icp_spec_version": 1,
+            "project_id": _PROJECT,
+        },
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        confidence=0.82,
+        run_id=new_run_id(),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        evidence_span="synthetic narrative evidence",
+        source_url="https://synthetic.invalid/narrative",
+    )
+    return Claim.model_validate(
+        base.model_copy(
+            update={
+                "verification_status": VerificationStatus.VERIFIED,
+                "reuse_scope": ReuseScope.TENANT_PRIVATE,
+                "workspace_id": _WORKSPACE,
+                "product_id": _PRODUCT,
+            }
+        ).model_dump(mode="python")
+    )
+
+
+def _account_composer_for_candidates(
+    account: ResearchSubjectRef,
+    candidates: tuple[ResearchStatementCandidate, ...],
+) -> DeterministicResearchViewComposer:
+    identity = _reference(
+        item_id="identity:account",
+        subject=account,
+        species=ResearchDataSpecies.IDENTITY,
+    )
+    status = _reference(
+        item_id="execution:account",
+        subject=account,
+        species=ResearchDataSpecies.EXECUTION,
+    )
+    return _composer(
+        subject_read=CanonicalSubjectRead(
+            subject=account,
+            sections=(
+                ResearchSectionSeed(
+                    kind=ResearchSectionKind.IDENTITY,
+                    references=(identity,),
+                ),
+                ResearchSectionSeed(
+                    kind=ResearchSectionKind.RESEARCH_STATUS,
+                    references=(status,),
+                ),
+            ),
+        ),
+        candidates=candidates,
+        fit=ResearchSectionSeed(kind=ResearchSectionKind.FIT),
+        committee=ResearchSectionSeed(kind=ResearchSectionKind.COMMITTEE),
+        activity=ResearchSectionSeed(kind=ResearchSectionKind.ACTIVITY),
+        coverage=_coverage(account),
+    )
+
+
+def test_l1_verified_value_narrative_claim_composes_instead_of_failing_the_view() -> None:
+    """L1 regression (Lane E charter §3): the first VERIFIED ``account.value_narrative`` claim
+    must compose into the account view's VALUE_NARRATIVE section — not raise
+    ``section_not_allowed_for_subject`` and 404 the whole account view."""
+
+    async def scenario() -> AccountResearchView:
+        account = _account_subject()
+        candidate = ResearchStatementCandidate(
+            section_kind=ResearchSectionKind.VALUE_NARRATIVE,
+            claim=_verified_narrative_claim(account),
+        )
+        composer = _account_composer_for_candidates(account, (candidate,))
+        view = await composer.compose(_request(account, product_id=_PRODUCT))
+        assert isinstance(view, AccountResearchView)
+        return view
+
+    view = run_async(scenario())
+    kinds = tuple(section.kind for section in view.sections)
+    narrative_at = kinds.index(ResearchSectionKind.VALUE_NARRATIVE)
+    assert narrative_at == kinds.index(ResearchSectionKind.INSIGHTS) + 1
+    assert narrative_at < kinds.index(ResearchSectionKind.COMMITTEE)
+    section = view.sections[narrative_at]
+    assert section.items
+
+
+def test_a_routed_but_unordered_account_section_still_fails_closed() -> None:
+    """The guard L1 exposed must survive the fix: a claim candidate whose section is legal in the
+    route authority but absent from ``ACCOUNT_SECTION_ORDER`` (EVIDENCE, for accounts) keeps
+    raising ``section_not_allowed_for_subject`` — never a silent drop."""
+
+    async def scenario() -> None:
+        account = _account_subject()
+        candidate = ResearchStatementCandidate(
+            section_kind=ResearchSectionKind.EVIDENCE,
+            claim=_verified_account_claim(account, "account.evidence.item", "Evidence body"),
+        )
+        composer = _account_composer_for_candidates(account, (candidate,))
+        await composer.compose(_request(account, product_id=_PRODUCT))
+
+    with pytest.raises(
+        ResearchViewCompositionError,
+        match="section_not_allowed_for_subject:evidence",
+    ):
+        run_async(scenario())
+
+
+def test_d10_account_summary_and_value_narrative_render_the_honest_empty_state() -> None:
+    """Lane E E0 (D-10): with zero prose claims, the account view's SUMMARY — and post-L1 its
+    VALUE_NARRATIVE section (the D4-acknowledged contract change) — render availability=UNKNOWN
+    with the ``unresearched`` reason, never fabricated or suppressed prose."""
+
+    async def scenario() -> AccountResearchView:
+        account = _account_subject()
+        composer = _account_composer_for_candidates(account, ())
+        view = await composer.compose(_request(account, product_id=None))
+        assert isinstance(view, AccountResearchView)
+        return view
+
+    view = run_async(scenario())
+    for kind in (ResearchSectionKind.SUMMARY, ResearchSectionKind.VALUE_NARRATIVE):
+        section = next(value for value in view.sections if value.kind is kind)
+        assert not section.items
+        assert section.availability is ResearchAvailability.UNKNOWN
+        assert section.reason_codes == ("unresearched",)
+
+
+def test_d10_contact_summary_renders_the_honest_empty_state() -> None:
+    """Lane E E0 (D-10): a contact with zero prose claims renders SUMMARY as UNKNOWN/unresearched
+    — the state ``contact.overview`` fills only after deep research completes."""
+
+    async def scenario() -> ContactResearchView:
+        account = _account_subject()
+        contact = _contact_subject(account)
+        identity = _reference(
+            item_id="identity:contact",
+            subject=contact,
+            species=ResearchDataSpecies.IDENTITY,
+        )
+        status = _reference(
+            item_id="execution:contact",
+            subject=contact,
+            species=ResearchDataSpecies.EXECUTION,
+        )
+        composer = _composer(
+            subject_read=CanonicalSubjectRead(
+                subject=contact,
+                sections=(
+                    ResearchSectionSeed(
+                        kind=ResearchSectionKind.IDENTITY,
+                        references=(identity,),
+                    ),
+                    ResearchSectionSeed(
+                        kind=ResearchSectionKind.RESEARCH_STATUS,
+                        references=(status,),
+                    ),
+                ),
+            ),
+            candidates=(),
+            fit=ResearchSectionSeed(kind=ResearchSectionKind.FIT),
+            committee=ResearchSectionSeed(kind=ResearchSectionKind.COMMITTEE),
+            activity=ResearchSectionSeed(kind=ResearchSectionKind.ACTIVITY),
+            coverage=_coverage(contact),
+        )
+        view = await composer.compose(_request(contact, product_id=None))
+        assert isinstance(view, ContactResearchView)
+        return view
+
+    view = run_async(scenario())
+    section = next(value for value in view.sections if value.kind is ResearchSectionKind.SUMMARY)
+    assert not section.items
+    assert section.availability is ResearchAvailability.UNKNOWN
+    assert section.reason_codes == ("unresearched",)
 
 
 async def _compose_contact_fixture() -> ContactResearchView:
