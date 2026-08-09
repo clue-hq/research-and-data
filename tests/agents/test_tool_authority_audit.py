@@ -41,7 +41,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # promotes the separately confirmed account/contact entity-research launch and read tools.
     # FI Lane D D0 added the four REQ-21 thread tools, all ungranted: they are invocable by the
     # authenticated chat surface but sit on no model surface, and they are not human-only either.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 52
+    # FI Lane D D4 added `open_directive_confirmation_gate`, granted to the Head of ABM: asking the
+    # human for authority is that role's own act, and the tool cannot address a gate to anybody but
+    # the human whose turn it is answering.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 53
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()

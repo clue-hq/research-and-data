@@ -45,9 +45,23 @@ from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 # Mirrors C6_SURFACE_POLICIES for the trial surface. M8D R10 retired the account-deep launch and
 # gap-enrichment tools from every active role (they are no longer *grantable*, so there is nothing
 # to withhold) and put the promoted separately confirmed launches behind the same trial withhold.
+# FI Lane D D4 added `open_directive_confirmation_gate` to the same set, for the same sentence: a
+# dev harness that could present a real, addressed, durable confirmation gate — but could never act
+# on the answer — would be inviting a human to approve spend no surface here can perform.
 _WITHHELD = {
     "launch_account_research",
     "launch_contact_research",
+    "open_directive_confirmation_gate",
+    "start_recon",
+    "submit_onboarding_input",
+    "synthesize_icps",
+}
+
+# The production conversation's own subtraction, which D4 made genuinely different from the trial's:
+# it keeps the drafting, gate, and launch tools (that flow is the whole point of the surface) and
+# withholds only the three the trial withholds for reasons that still hold here — this surface does
+# no external research and never captures on the client's behalf.
+_PROJECT_WITHHELD = {
     "start_recon",
     "submit_onboarding_input",
     "synthesize_icps",
@@ -386,11 +400,11 @@ def test_the_operator_projection_reports_the_narrowed_surface_not_just_the_full_
             AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE
         ).resource_manifest.aggregate_sha256
     )
-    # The production conversation is reported with its own reason code and the same subtraction:
-    # the launch tools are structurally absent there too until D4 earns them.
+    # The production conversation is reported with its own reason code and its own, *narrower*
+    # subtraction: D4 earned the drafting/gate/launch tools here, and only here.
     production = by_surface[PROJECT_CONVERSATION_SURFACE]
-    assert production.reason_code == "project_conversation_pre_kickoff"
-    assert set(production.withheld_tool_names) == _WITHHELD
+    assert production.reason_code == "project_conversation_no_autonomous_research"
+    assert set(production.withheld_tool_names) == _PROJECT_WITHHELD
     assert production.delegation_roles == ()
     # Roles with no declared surface report none rather than an empty-ish placeholder.
     assert entries[AgentRole.RESEARCH].surfaces == ()

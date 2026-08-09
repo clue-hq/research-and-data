@@ -183,6 +183,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "rename_thread": ("precondition", ("thread_not_found",)),
     "set_thread_pinned": ("precondition", ("thread_not_found",)),
     "archive_thread": ("precondition", ("thread_not_found",)),
+    # FI Lane D D4 / §3-P5(a). The gate tool's first prerequisite is the *turn* it would address the
+    # gate to: a ref naming no turn of this workspace proves no addressee, so it refuses rather than
+    # presenting a gate nobody is entitled to answer.
+    "open_directive_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
     "submit_onboarding_input": ("precondition", ("artifact_not_found",)),
     "start_recon": ("precondition", ("onboarding_input_not_found",)),
     "record_interview_answer": ("precondition", ("onboarding_input_not_found",)),
@@ -374,6 +378,12 @@ def _bodies() -> dict[str, dict[str, object]]:
         "rename_thread": {"thread_id": "thr_absent", "title": "renamed"},
         "set_thread_pinned": {"thread_id": "thr_absent", "pinned": True},
         "archive_thread": {"thread_id": "thr_absent"},
+        "open_directive_confirmation_gate": {
+            "project_run_id": _UUID(),
+            "research_directive_id": _UUID(),
+            "account_entity_ids": [_UUID()],
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
         "submit_onboarding_input": {
             "brand_id": "brand_missing",
             "kind": "website",
@@ -842,11 +852,12 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # tools retain @1 replay contracts alongside their current @2 contracts; O2 adds the exact-set
     # account-deep launch boundary; M8D R10 adds the promoted separately confirmed
     # launch_account_research / launch_contact_research and their two run-read tools (44 → 48);
-    # FI Lane D D0 adds REQ-21's four thread-shell tools (48 → 52), each with exactly one version.
-    assert len(registry.names()) == 52
+    # FI Lane D D0 adds REQ-21's four thread-shell tools (48 → 52), each with exactly one version,
+    # and D4 adds the one gate-presenting tool (52 → 53).
+    assert len(registry.names()) == 53
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 59
+    assert len(registry) == 60
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

@@ -55,8 +55,8 @@ subset, or do nothing. Discovery and tiering never imply account research. A com
 fleet never implies contact selection or contact research.
 
 Before account launch, present the exact accounts, fields, directional questions, admitted source
-plans, committee scope, privacy constraints, maximum spend, cap, and unresolved gates. Keep
-qualitative Exa questions distinct from structured Sumble organization fields. Do not invent
+plans, committee scope, privacy constraints, estimate, cap, and unresolved gates. Keep qualitative
+Exa questions distinct from structured Sumble organization fields. Do not invent
 deterministic attempts for fields whose effective source plan starts with Exa.
 
 ## The confirmation gate is the only route to a launch
@@ -77,8 +77,9 @@ rejects or asks for revisions, no confirmation exists: discuss, redraft, and ope
 treat your own summary of a conversation, an inferred agreement, or a previous gate as approval for
 a redrafted directive — a changed directive is a new subject and needs a new gate.
 
-Call `launch_account_research@1` only after such a confirming turn, and only for the exact
-confirmed directive, account set, maximum spend, and cap. The launch creates one account
+Call `launch_account_research@1` only after the current user action explicitly approves the exact
+confirmed directive, account set, estimate, and cap. On this surface that action is always the
+confirming turn described above — nothing else counts as approval. The launch creates one account
 `create_agent()` job per selected account on the detached fleet. It produces account claims and an
 organization-map backed committee, never contact deep research. Use `read_account_research_run@1`
 for progress and terminal results. A queue receipt or provider wait is not completed research.
