@@ -1,11 +1,14 @@
-"""Lane E E1 (WP-A) — the on-completion prose synthesizer (`account.summary`).
+"""Lane E E1/E2 (WP-A) — the on-completion prose synthesizer.
 
-The pure machinery (the versioned prompt, the empty-beats-fabricated parser, the policy shape)
+E1 covers ``account.summary``; E2 adds ``contact.overview`` plus the two governance rules a
+person's write-up needs (claim-level G6 by ``use_class``, and the identity-binding stamp).
+
+The pure machinery (the versioned prompts, the empty-beats-fabricated parser, the policy shapes)
 runs in ``make check`` with no DB; :class:`ProseSynthesizer` behaviour is exercised against a live
 Postgres (skips without one, like the M12 positioner suite) because it reads the merge view and
-writes an ``account.summary`` claim + its ``claim_support`` row.
+writes a prose claim + its ``claim_support`` row.
 
-Charter: ``docs/specs/FI-lane-E-on-completion-synthesis.md`` §2.3-§2.7.
+Charter: ``docs/specs/FI-lane-E-on-completion-synthesis.md`` §2.3-§2.7, §4.1-§4.2.
 """
 
 from __future__ import annotations
@@ -25,16 +28,21 @@ from clue_core import (
     Claim,
     ClaimId,
     Completion,
+    Confidence,
     EntityId,
     ExtractionMethod,
+    IdentityBinding,
     JudgeResult,
     JudgeVerdict,
     Message,
     ResearchMode,
     ReuseScope,
     RunId,
+    UseClass,
     VerificationStatus,
     account_claim,
+    can_be_promoted,
+    contact_claim,
     new_run_id,
 )
 from clue_obs.otel import InMemorySink
@@ -45,11 +53,23 @@ from clue_research.claimstore import (
     insert_claim,
     record_verification,
 )
-from clue_research.identity import DEFAULT_REUSE_POLICY, insert_account_entity, stamp_reuse
-from clue_research.narrative import ACCOUNT_SUMMARY, load_prose_pack, read_claim_support
+from clue_research.identity import (
+    DEFAULT_REUSE_POLICY,
+    insert_account_entity,
+    insert_contact_entity,
+    stamp_reuse,
+)
+from clue_research.narrative import (
+    ACCOUNT_SUMMARY,
+    CONTACT_OVERVIEW,
+    load_prose_pack,
+    read_claim_support,
+)
 from clue_research.narrative.prompts import AccountFact, fact_to_text
 from clue_research.narrative.prose import (
     ACCOUNT_SUMMARY_PROMPT_VERSION,
+    CONTACT_OVERVIEW_PROMPT_VERSION,
+    DEFAULT_CONTACT_PROSE_POLICY,
     DEFAULT_PROSE_POLICY,
     GAP_INSUFFICIENT_FACTS,
     GAP_UNGROUNDED_SYNTHESIS,
@@ -57,13 +77,16 @@ from clue_research.narrative.prose import (
     METRIC_PROSE_JUDGE_SKIPPED,
     METRIC_PROSE_PRODUCED,
     PROSE_ACCOUNT_FIELDS,
+    PROSE_CONTACT_FIELDS,
     PROSE_PROMPTS,
     ProseOutcome,
     ProsePolicy,
     ProseSynthesizer,
     build_account_summary_messages,
+    build_contact_overview_messages,
     parse_prose_response,
 )
+from clue_research.profiling.committee.fields import load_committee_pack
 from clue_research.profiling.fields import load_deep_profiling_pack
 from tests._workspace import seed_workspace
 
@@ -177,6 +200,93 @@ def test_prose_account_fields_allowlist_excludes_pii_and_client_relative_fields(
     assert len(set(PROSE_ACCOUNT_FIELDS)) == len(PROSE_ACCOUNT_FIELDS)  # no duplicates
 
 
+# === E2 (WP-A2) — the contact-overview pure surface ==========================
+
+
+def test_contact_overview_prompt_registry_and_unknown_version_raises() -> None:
+    """Prompt-as-data, second tenant: the contact prompt lives in the same versioned registry and
+    an unknown version fails loud rather than synthesizing with the account prompt."""
+    assert PROSE_PROMPTS[CONTACT_OVERVIEW_PROMPT_VERSION]
+    assert (
+        PROSE_PROMPTS[CONTACT_OVERVIEW_PROMPT_VERSION]
+        != PROSE_PROMPTS[ACCOUNT_SUMMARY_PROMPT_VERSION]
+    )
+    with pytest.raises(ValueError, match="unknown prose prompt_version"):
+        build_contact_overview_messages(contact_facts=[], account_context=None, prompt_version="v9")
+
+
+def test_default_contact_policy_is_the_contact_prompt_at_a_two_fact_floor() -> None:
+    """§2.1: the contact policy is the same shape with its own prompt and the §2.6 contact floor —
+    two *contact* facts (the account-context line is garnish and never counts)."""
+    assert DEFAULT_CONTACT_PROSE_POLICY.prompt_version == CONTACT_OVERVIEW_PROMPT_VERSION
+    assert DEFAULT_CONTACT_PROSE_POLICY.min_facts == 2
+    assert DEFAULT_PROSE_POLICY.prompt_version == ACCOUNT_SUMMARY_PROMPT_VERSION  # E1 untouched
+
+
+def test_contact_overview_prompt_fences_facts_and_optional_account_context() -> None:
+    """§3.3: the contact facts are fenced as untrusted data; the account-context fence appears
+    ONLY when there is account context; and no persona / client-capability material appears —
+    that absence is the neutrality property, exactly as on the account side."""
+    facts = [
+        AccountFact(
+            field_key="contact.current_title",
+            value_text="VP of Engineering",
+            evidence_span="listed as VP of Engineering on the team page",
+        )
+    ]
+    messages = build_contact_overview_messages(
+        contact_facts=facts, account_context="- [core.account_name] Acme Robotics"
+    )
+    system, user = messages[0].content, messages[1].content
+
+    assert messages[0].role.value == "system" and messages[1].role.value == "user"
+    assert "GROUNDING" in system and "SECURITY" in system
+    assert '"paragraphs"' in system  # the output contract
+    assert "<<<CONTACT_FACTS>>>" in user and "<<<END_CONTACT_FACTS>>>" in user
+    assert "<<<ACCOUNT_CONTEXT>>>" in user and "<<<END_ACCOUNT_CONTEXT>>>" in user
+    assert "untrusted data" in user.lower()
+    assert "- [contact.current_title] VP of Engineering" in user
+    assert "evidence: listed as VP of Engineering on the team page" in user
+    assert "- [core.account_name] Acme Robotics" in user
+
+    bare = build_contact_overview_messages(contact_facts=facts, account_context=None)[1].content
+    assert "<<<CONTACT_FACTS>>>" in bare
+    assert "ACCOUNT_CONTEXT" not in bare  # no empty fence when there is no context
+
+    blob = (system + user).lower()
+    for forbidden in ("persona", "angle", "client capabilit", "our client", "buying committee"):
+        assert forbidden not in blob
+
+
+def test_prose_contact_fields_allowlist_excludes_assessments_pii_and_compliance_records() -> None:
+    """§3.1: the allowlist is the professional + facet contact surface. Client-relative committee
+    assessments, PII channels and compliance records are excluded by KEY; the two escalatable
+    facets stay ON the list because G6 excludes them per-CLAIM by ``use_class``."""
+    for present in (
+        "contact.current_title",
+        "contact.job_function",
+        "contact.organization_relationship",
+        "contact.facet.career_history",
+        "contact.facet.recent_post",
+        # deliberately allowlisted: a de-escalated (non-sensitive) claim is legitimate material,
+        # and the SENSITIVE ones are dropped per-claim by G6 — not by key.
+        "contact.facet.causes",
+        "contact.facet.stated_interests",
+    ):
+        assert present in PROSE_CONTACT_FIELDS
+    for excluded in (
+        "contact.role_on_committee",
+        "contact.persona",
+        "contact.class",
+        "core.work_email",
+        "core.direct_phone",
+        "contact.import_record",
+        "contact.jurisdiction",
+    ):
+        assert excluded not in PROSE_CONTACT_FIELDS
+    assert len(set(PROSE_CONTACT_FIELDS)) == len(PROSE_CONTACT_FIELDS)  # no duplicates
+
+
 # === DB-gated behaviour =====================================================
 
 
@@ -206,29 +316,36 @@ class FakeJudge:
         self.calls: list[Claim] = []
 
     async def judge(self, claim: Claim) -> JudgeResult:
-        from clue_core import VerificationStatus
-        from clue_research.claimstore import record_verification
-
         self.calls.append(claim)
-        status = {
+        status: VerificationStatus | None = {
             JudgeVerdict.SUPPORTED: VerificationStatus.VERIFIED,
             JudgeVerdict.PARTIAL: VerificationStatus.FLAGGED,
             JudgeVerdict.UNSUPPORTED: VerificationStatus.REJECTED,
             JudgeVerdict.CONTRADICTED: VerificationStatus.REJECTED,
         }[self._verdict]
-        await record_verification(self._conn, claim.id, status=status)
+        # ``supported`` promotes only a *structurally promotable* claim — a weak-binding contact
+        # claim stays unverified however good the verdict is (``status_for_verdict`` /
+        # ``can_be_promoted``). Mirroring that here is what makes the E2 binding-stamp test real:
+        # a fake that promoted unconditionally would hide the guarantee it is meant to pin.
+        if status is VerificationStatus.VERIFIED and not can_be_promoted(claim):
+            status = None
+        if status is not None:
+            await record_verification(self._conn, claim.id, status=status)
         return JudgeResult(claim_id=claim.id, verdict=self._verdict, score=self._score)
 
 
 @asynccontextmanager
 async def prose_conn() -> AsyncIterator[AsyncConnection]:
-    """``rollback_conn`` plus the Lane E prose pack (so ``account.summary`` resolves) and the M8.2
-    deep-profiling pack (so the ``account.resonance.*`` half of :data:`PROSE_ACCOUNT_FIELDS`
-    resolves — only ``resonance.culture`` lives in ``CORE_PACK``). The shared harness loads the
-    core + M12 narrative packs only."""
+    """``rollback_conn`` plus the Lane E prose pack (so ``account.summary`` / ``contact.overview``
+    resolve), the M8.2 deep-profiling pack (the ``account.resonance.*`` half of
+    :data:`PROSE_ACCOUNT_FIELDS` and the ``contact.facet.*`` half of
+    :data:`PROSE_CONTACT_FIELDS` — only ``resonance.culture`` / ``facet.recent_post`` live in
+    ``CORE_PACK``) and the M8.3 committee pack (the professional ``contact.*`` fields). The shared
+    harness loads the core + M12 narrative packs only."""
     async with rollback_conn() as conn:
         await load_prose_pack(conn)
         await load_deep_profiling_pack(conn)
+        await load_committee_pack(conn)
         yield conn
 
 
@@ -297,6 +414,7 @@ def _synthesizer(
     response: str = _PARAGRAPHS,
     judge: FakeJudge | None = None,
     policy: ProsePolicy = DEFAULT_PROSE_POLICY,
+    contact_policy: ProsePolicy = DEFAULT_CONTACT_PROSE_POLICY,
     sink: InMemorySink | None = None,
 ) -> tuple[ProseSynthesizer, FakeGateway]:
     gateway = FakeGateway(response)
@@ -305,6 +423,7 @@ def _synthesizer(
             gateway=gateway,
             judge=judge,
             policy=policy,
+            contact_policy=contact_policy,
             conn_factory=_factory(conn),
             sink=sink,
         ),
@@ -640,6 +759,513 @@ def test_facts_render_through_fact_to_text_in_allowlist_order() -> None:
                 user.index("core.account_name")
                 < user.index("account.strategic_moves")
                 < user.index(field)
+            )
+
+    run_async(_run())
+
+
+# === E2 (WP-A2) — the contact overview, DB-gated ============================
+
+_CONTACT_TITLE = "contact.current_title"
+_CONTACT_FUNCTION = "contact.job_function"
+_CONTACT_LEVEL = "contact.job_level"
+_CONTACT_CAREER = "contact.facet.career_history"
+_CONTACT_CAUSES = "contact.facet.causes"
+_CONTACT_INTERESTS = "contact.facet.stated_interests"
+
+_OVERVIEW_PARAGRAPH = "Dana Reed is VP of Engineering at Acme Robotics."
+_CONTACT_PARAGRAPHS = f'{{"paragraphs": ["{_OVERVIEW_PARAGRAPH}"]}}'
+
+_ACCOUNT_CONTEXT_FACTS: tuple[tuple[str, JsonValue], ...] = (
+    ("core.account_name", "Acme Robotics"),
+    ("core.company_about", "Acme builds warehouse robotics."),
+)
+
+
+async def _contact(
+    conn: AsyncConnection, account: EntityId, *, full_name: str = "Dana Reed"
+) -> EntityId:
+    return await insert_contact_entity(
+        conn,
+        account_entity_id=account,
+        full_name=full_name,
+        linkedin_url=f"https://linkedin.com/in/{full_name.lower().replace(' ', '-')}",
+    )
+
+
+async def _write_contact_fact(
+    conn: AsyncConnection,
+    contact: EntityId,
+    field_key: str,
+    value: JsonValue,
+    *,
+    use_class: UseClass | None = UseClass.PROFESSIONAL_PUBLIC,
+    binding: IdentityBinding | None = IdentityBinding.STRONG,
+    workspace_id: str = "tenant-a",
+) -> ClaimId:
+    """Write a tier-1 contact claim the merge serves, stamped through the real ``contact_claim``
+    factory + ``stamp_reuse`` path.
+
+    ``binding`` / ``use_class`` may be ``None``: the 0004 governance CHECK requires them only for
+    ``contact.facet.*``, so a *plain* ``contact.*`` claim with neither is representable, insertable
+    and servable — precisely the hole E2's two governance rules have to close. The factory requires
+    both, so the ``None`` is applied afterwards by ``model_copy`` (the shape
+    ``tests/integration/test_fi2_slice1_read_layer.py`` uses)."""
+    claim = stamp_reuse(
+        contact_claim(
+            entity_id=contact,
+            field_key=field_key,
+            value_json=value,
+            source_tier=1,
+            extraction_method=ExtractionMethod.HUMAN,
+            confidence=Confidence(1.0),
+            run_id=new_run_id(),
+            research_mode=ResearchMode.CONTACT_PROFILING,
+            identity_binding=binding or IdentityBinding.STRONG,
+            use_class=use_class or UseClass.PROFESSIONAL_PUBLIC,
+            evidence_span=f"evidence for {field_key}",
+        ),
+        workspace_id=workspace_id,
+    ).model_copy(update={"identity_binding": binding, "use_class": use_class})
+    return await insert_claim(conn, claim)
+
+
+_TWO_CONTACT_FACTS: tuple[tuple[str, JsonValue], ...] = (
+    (_CONTACT_TITLE, "VP of Engineering"),
+    (_CONTACT_CAREER, [{"org": "Globex", "role": "Director of Engineering"}]),
+)
+
+
+async def _seed_contact_facts(
+    conn: AsyncConnection,
+    contact: EntityId,
+    facts: tuple[tuple[str, JsonValue], ...] = _TWO_CONTACT_FACTS,
+    *,
+    binding: IdentityBinding | None = IdentityBinding.STRONG,
+) -> list[ClaimId]:
+    return [
+        await _write_contact_fact(conn, contact, key, value, binding=binding)
+        for key, value in facts
+    ]
+
+
+async def _synthesize_contact(
+    synthesizer: ProseSynthesizer,
+    contact: EntityId,
+    *,
+    parent_account_id: EntityId | None = None,
+    workspace_id: str = "tenant-a",
+    job_id: UUID | None = None,
+    research_outcome: str = "completed",
+) -> ProseOutcome:
+    return await synthesizer.synthesize_contact_overview(
+        contact_entity_id=contact,
+        workspace_id=workspace_id,
+        research_run_id=new_run_id(),
+        job_id=job_id or uuid4(),
+        research_outcome=research_outcome,
+        parent_account_id=parent_account_id,
+    )
+
+
+async def _live_overviews(
+    conn: AsyncConnection, contact: EntityId, *, workspace_id: str = "tenant-a"
+) -> list[Claim]:
+    return list(
+        await claims_for(
+            conn, contact, CONTACT_OVERVIEW, scope=WorkspaceScope.for_workspace(workspace_id)
+        )
+    )
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_contact_overview_happy_path_writes_one_strong_verified_claim() -> None:
+    """The E2 core: STRONG professional + facet facts plus the parent account's context produce
+    ONE live tier-4 ``contact.overview`` claim — born ``identity_binding=STRONG`` (§1.1: every
+    cited contact claim is STRONG) and ``use_class=professional-public`` — carrying all five
+    schema keys with ``project_id=None``, a support row citing the contact facts AND the
+    account-context claims, promoted VERIFIED and served by the canonical merge."""
+
+    async def _run() -> None:
+        async with prose_conn() as conn:
+            account = await _account(conn)
+            contact = await _contact(conn, account)
+            contact_ids = await _seed_contact_facts(conn, contact)
+            context_ids = await _seed_facts(conn, account, _ACCOUNT_CONTEXT_FACTS)
+            job_id = uuid4()
+            sink = InMemorySink()
+            judge = FakeJudge(conn)
+            synthesizer, gateway = _synthesizer(
+                conn, response=_CONTACT_PARAGRAPHS, judge=judge, sink=sink
+            )
+
+            outcome = await _synthesize_contact(
+                synthesizer,
+                contact,
+                parent_account_id=account,
+                job_id=job_id,
+                research_outcome="needs_review",
+            )
+
+            assert outcome.kind == "written"
+            assert outcome.verification_status == VerificationStatus.VERIFIED.value
+            assert set(outcome.support_claim_ids) == set(contact_ids) | set(context_ids)
+            assert len(judge.calls) == 1 and judge.calls[0].id == outcome.claim_id
+
+            live = await _live_overviews(conn, contact)
+            assert len(live) == 1
+            claim = live[0]
+            assert claim.id == outcome.claim_id
+            assert claim.source_tier == 4
+            assert claim.extraction_method is ExtractionMethod.LLM_SYNTHESIS
+            assert claim.identity_binding is IdentityBinding.STRONG  # §1.1 all-STRONG inputs
+            assert claim.use_class is UseClass.PROFESSIONAL_PUBLIC
+            assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE
+            assert claim.workspace_id == "tenant-a"
+            assert claim.product_id is None
+            assert claim.evidence_span
+            assert claim.verification_status is VerificationStatus.VERIFIED
+
+            value = claim.value_json
+            assert isinstance(value, dict)
+            assert set(value) == {
+                "paragraphs",
+                "prompt_version",
+                "synthesized_from_job_id",
+                "research_outcome",
+                "project_id",
+            }
+            assert value["paragraphs"] == [_OVERVIEW_PARAGRAPH]
+            assert value["prompt_version"] == CONTACT_OVERVIEW_PROMPT_VERSION
+            assert value["synthesized_from_job_id"] == str(job_id)
+            assert value["research_outcome"] == "needs_review"
+            assert value["project_id"] is None
+
+            support = await read_claim_support(conn, claim.id)
+            assert support is not None
+            # The account-context ids ride the (legacy-named) account_evidence_ids leg with the
+            # contact facts — one support surface, not an extended schema.
+            assert set(support.account_evidence_ids) == set(contact_ids) | set(context_ids)
+            assert support.client_knowledge_ids == ()
+
+            served = await current_values(
+                conn, [contact], [CONTACT_OVERVIEW], scope=WorkspaceScope.for_workspace("tenant-a")
+            )
+            assert served[(contact, CONTACT_OVERVIEW)].provenance.claim_id == claim.id
+            assert sink.counter(METRIC_PROSE_PRODUCED, field_key=CONTACT_OVERVIEW) == 1
+            assert sink.counter(METRIC_PROSE_JUDGE_SKIPPED, field_key=CONTACT_OVERVIEW) == 0
+            # both fences reached the model
+            user = gateway.calls[0][1][1].content
+            assert "<<<CONTACT_FACTS>>>" in user and "<<<ACCOUNT_CONTEXT>>>" in user
+            assert "Acme builds warehouse robotics." in user
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_contact_min_facts_counts_contact_facts_only() -> None:
+    """§1.3: ``min_facts`` counts CONTACT facts. A single contact fact plus a full account context
+    is still a coverage gap (the context is garnish, never coverage), and the floor itself is
+    policy — ``contact_policy`` threads through the constructor."""
+
+    async def _run() -> None:
+        async with prose_conn() as conn:
+            account = await _account(conn)
+            contact = await _contact(conn, account)
+            await _seed_contact_facts(conn, contact, _TWO_CONTACT_FACTS[:1])  # one contact fact
+            await _seed_facts(conn, account, _ACCOUNT_CONTEXT_FACTS)  # ... plus full context
+            sink = InMemorySink()
+            synthesizer, gateway = _synthesizer(
+                conn, response=_CONTACT_PARAGRAPHS, judge=FakeJudge(conn), sink=sink
+            )
+
+            outcome = await _synthesize_contact(synthesizer, contact, parent_account_id=account)
+
+            assert outcome.kind == "coverage_gap"
+            assert outcome.gap_reason == GAP_INSUFFICIENT_FACTS
+            assert gateway.calls == []  # never spends to fabricate
+            assert await _live_overviews(conn, contact) == []
+            assert (
+                sink.counter(
+                    METRIC_PROSE_COVERAGE_GAP,
+                    field_key=CONTACT_OVERVIEW,
+                    reason=GAP_INSUFFICIENT_FACTS,
+                )
+                == 1
+            )
+
+            # the second contact fact clears the default floor ...
+            await _seed_contact_facts(conn, contact, _TWO_CONTACT_FACTS[1:])
+            assert (
+                await _synthesize_contact(synthesizer, contact, parent_account_id=account)
+            ).kind == "written"
+
+            # ... and a stricter injected contact policy raises it again.
+            strict, strict_gateway = _synthesizer(
+                conn,
+                response=_CONTACT_PARAGRAPHS,
+                judge=FakeJudge(conn),
+                contact_policy=DEFAULT_CONTACT_PROSE_POLICY.model_copy(update={"min_facts": 3}),
+            )
+            strict_outcome = await _synthesize_contact(strict, contact, parent_account_id=account)
+            assert strict_outcome.kind == "coverage_gap"
+            assert strict_gateway.calls == []
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_weak_bound_contact_facts_never_reach_the_prompt() -> None:
+    """§1.1 (b): literally-WEAK contact claims are excluded by the merge in BOTH toggle modes, so
+    they never surface as facts — the synthesis is a coverage gap, not a WEAK-stamped write."""
+
+    async def _run() -> None:
+        async with prose_conn() as conn:
+            account = await _account(conn)
+            contact = await _contact(conn, account)
+            await _seed_contact_facts(conn, contact, binding=IdentityBinding.WEAK)
+            sink = InMemorySink()
+            synthesizer, gateway = _synthesizer(
+                conn, response=_CONTACT_PARAGRAPHS, judge=FakeJudge(conn), sink=sink
+            )
+
+            outcome = await _synthesize_contact(synthesizer, contact, parent_account_id=account)
+
+            assert outcome.kind == "coverage_gap"
+            assert outcome.gap_reason == GAP_INSUFFICIENT_FACTS
+            assert outcome.claim_id is None
+            assert gateway.calls == []
+            assert await _live_overviews(conn, contact) == []
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_contact_overview_without_account_context_still_synthesizes() -> None:
+    """§1.3: absent account context — no ``parent_account_id``, or a parent with no name/about
+    winners — is NOT a gap: no ACCOUNT_CONTEXT fence, no account ids in the support row, and the
+    overview is written from the contact's own facts."""
+
+    async def _run() -> None:
+        async with prose_conn() as conn:
+            account = await _account(conn)
+            contact = await _contact(conn, account)
+            contact_ids = await _seed_contact_facts(conn, contact)
+            synthesizer, gateway = _synthesizer(
+                conn, response=_CONTACT_PARAGRAPHS, judge=FakeJudge(conn)
+            )
+
+            # (a) no parent account passed at all
+            outcome = await _synthesize_contact(synthesizer, contact)
+            assert outcome.kind == "written"
+            assert set(outcome.support_claim_ids) == set(contact_ids)
+            user = gateway.calls[0][1][1].content
+            assert "<<<CONTACT_FACTS>>>" in user and "ACCOUNT_CONTEXT" not in user
+            support = await read_claim_support(conn, outcome.claim_id)
+            assert support is not None and set(support.account_evidence_ids) == set(contact_ids)
+
+            # (b) a parent account that has no name/about winners yet
+            second = await _synthesize_contact(synthesizer, contact, parent_account_id=account)
+            assert second.kind == "written"
+            assert set(second.support_claim_ids) == set(contact_ids)
+            assert "ACCOUNT_CONTEXT" not in gateway.calls[1][1][1].content
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_second_contact_synthesis_supersedes_the_prior_overview() -> None:
+    """§2.5, contact tenant: one live claim per ``(entity, field, workspace, project_id=None)`` —
+    a second completed contact job refreshes the overview rather than duplicating it."""
+
+    async def _run() -> None:
+        async with prose_conn() as conn:
+            account = await _account(conn)
+            contact = await _contact(conn, account)
+            await _seed_contact_facts(conn, contact)
+            synthesizer, _ = _synthesizer(conn, response=_CONTACT_PARAGRAPHS, judge=FakeJudge(conn))
+
+            first = await _synthesize_contact(synthesizer, contact, job_id=uuid4())
+            second = await _synthesize_contact(synthesizer, contact, job_id=uuid4())
+
+            assert first.claim_id != second.claim_id
+            live = await _live_overviews(conn, contact)
+            assert [claim.id for claim in live] == [second.claim_id]
+            history = await claims_for(
+                conn,
+                contact,
+                CONTACT_OVERVIEW,
+                include_superseded=True,
+                scope=WorkspaceScope.for_workspace("tenant-a"),
+            )
+            assert len(history) == 2
+            prior = next(claim for claim in history if claim.id == first.claim_id)
+            assert prior.superseded_by == second.claim_id
+            assert await read_claim_support(conn, second.claim_id) is not None
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_contact_overview_with_no_judge_is_unverified_and_disabled_mode_serves_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Toggle compat on the contact tenant: ``judge=None`` writes the overview at its born
+    ``unverified`` status with the skip recorded; disabled mode serves it, enabled mode does
+    not."""
+
+    async def _run() -> None:
+        async with prose_conn() as conn:
+            account = await _account(conn)
+            contact = await _contact(conn, account)
+            await _seed_contact_facts(conn, contact)
+            sink = InMemorySink()
+            synthesizer, _ = _synthesizer(conn, response=_CONTACT_PARAGRAPHS, judge=None, sink=sink)
+
+            monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "false")
+            outcome = await _synthesize_contact(synthesizer, contact, parent_account_id=account)
+
+            assert outcome.kind == "written"
+            assert outcome.verification_status == VerificationStatus.UNVERIFIED.value
+            assert sink.counter(METRIC_PROSE_JUDGE_SKIPPED, field_key=CONTACT_OVERVIEW) == 1
+            assert sink.counter(METRIC_PROSE_PRODUCED, field_key=CONTACT_OVERVIEW) == 1
+
+            scope = WorkspaceScope.for_workspace("tenant-a")
+            served = await current_values(conn, [contact], [CONTACT_OVERVIEW], scope=scope)
+            assert served[(contact, CONTACT_OVERVIEW)].provenance.claim_id == outcome.claim_id
+
+            monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "true")
+            assert (contact, CONTACT_OVERVIEW) not in await current_values(
+                conn, [contact], [CONTACT_OVERVIEW], scope=scope
+            )
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_g6_sensitive_contact_claims_are_totally_absent() -> None:
+    """§1.2 (G6): a contact claim tagged ``use_class=sensitive`` — including one that escalated
+    per-claim on an allowlisted field — is absent from EVERYWHERE: the prompt the model sees, the
+    stored claim's evidence span, and the support row's ids. The synthesis still succeeds on the
+    remaining eligible facts, which is the whole point of a claim-level rule: the benign siblings
+    of a sensitive field stay usable."""
+
+    async def _run() -> None:
+        async with prose_conn() as conn:
+            account = await _account(conn)
+            contact = await _contact(conn, account)
+            eligible = await _seed_contact_facts(conn, contact)
+            secret_cause: JsonValue = [{"cause": "unspeakable-marker", "context": "donor list"}]
+            sensitive_ids = [
+                await _write_contact_fact(
+                    conn, contact, _CONTACT_CAUSES, secret_cause, use_class=UseClass.SENSITIVE
+                ),
+                await _write_contact_fact(
+                    conn,
+                    contact,
+                    _CONTACT_INTERESTS,
+                    ["unspeakable-marker rallies"],
+                    use_class=UseClass.SENSITIVE,  # escalated per-claim on an allowlisted field
+                ),
+            ]
+            synthesizer, gateway = _synthesizer(
+                conn, response=_CONTACT_PARAGRAPHS, judge=FakeJudge(conn)
+            )
+
+            outcome = await _synthesize_contact(synthesizer, contact, parent_account_id=account)
+
+            assert outcome.kind == "written"
+            prompt = "\n".join(
+                message.content for _model, msgs in gateway.calls for message in msgs
+            )
+            assert "unspeakable-marker" not in prompt
+            assert _CONTACT_CAUSES not in prompt and _CONTACT_INTERESTS not in prompt
+
+            claim = (await _live_overviews(conn, contact))[0]
+            assert claim.evidence_span is not None
+            assert "unspeakable-marker" not in claim.evidence_span
+
+            support = await read_claim_support(conn, claim.id)
+            assert support is not None
+            assert set(support.account_evidence_ids).isdisjoint(sensitive_ids)
+            assert set(outcome.support_claim_ids).isdisjoint(sensitive_ids)
+            assert set(eligible) <= set(support.account_evidence_ids)
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_g6_is_fail_closed_on_a_contact_claim_with_no_use_class() -> None:
+    """§1.2, fail-closed: a plain ``contact.*`` claim can legally be born with NO use-class (the
+    0004 CHECK binds only ``contact.facet.*``), and the merge serves it. An unclassifiable claim
+    is treated exactly like a sensitive one — dropped from the facts, and therefore from the
+    coverage count too, so one eligible fact plus one unclassified fact is a gap, not a write."""
+
+    async def _run() -> None:
+        async with prose_conn() as conn:
+            account = await _account(conn)
+            contact = await _contact(conn, account)
+            await _seed_contact_facts(conn, contact, _TWO_CONTACT_FACTS[:1])  # one eligible fact
+            await _write_contact_fact(
+                conn, contact, _CONTACT_FUNCTION, "unclassified-marker", use_class=None
+            )
+            sink = InMemorySink()
+            synthesizer, gateway = _synthesizer(
+                conn, response=_CONTACT_PARAGRAPHS, judge=FakeJudge(conn), sink=sink
+            )
+
+            outcome = await _synthesize_contact(synthesizer, contact, parent_account_id=account)
+
+            assert outcome.kind == "coverage_gap"
+            assert outcome.gap_reason == GAP_INSUFFICIENT_FACTS
+            assert gateway.calls == []  # the unclassified claim never reached a paid call
+            assert await _live_overviews(conn, contact) == []
+            assert (
+                sink.counter(
+                    METRIC_PROSE_COVERAGE_GAP,
+                    field_key=CONTACT_OVERVIEW,
+                    reason=GAP_INSUFFICIENT_FACTS,
+                )
+                == 1
+            )
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_non_strong_bound_inputs_make_the_overview_born_weak_and_unservable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§1.1: a served contact claim whose ``identity_binding`` is ``None`` is *not* STRONG, so the
+    prose it grounds is born WEAK. That write is stored-but-never-served: the merge excludes it in
+    BOTH toggle modes (identity protection is not verification) and it can never be promoted past
+    ``unverified`` even on a supported verdict."""
+
+    async def _run() -> None:
+        async with prose_conn() as conn:
+            account = await _account(conn)
+            contact = await _contact(conn, account)
+            await _seed_contact_facts(conn, contact, _TWO_CONTACT_FACTS[:1])  # STRONG
+            await _write_contact_fact(conn, contact, _CONTACT_FUNCTION, "engineering", binding=None)
+            judge = FakeJudge(conn)  # SUPPORTED — promotion must still be refused
+            synthesizer, _ = _synthesizer(conn, response=_CONTACT_PARAGRAPHS, judge=judge)
+
+            outcome = await _synthesize_contact(synthesizer, contact, parent_account_id=account)
+
+            assert outcome.kind == "written"  # a WEAK stamp is never a coverage gap
+            assert outcome.verification_status == VerificationStatus.UNVERIFIED.value
+            claim = (await _live_overviews(conn, contact))[0]
+            assert claim.identity_binding is IdentityBinding.WEAK
+            assert not can_be_promoted(claim)
+            assert len(judge.calls) == 1  # it was judged; promotion was refused, not skipped
+
+            scope = WorkspaceScope.for_workspace("tenant-a")
+            assert (contact, CONTACT_OVERVIEW) not in await current_values(
+                conn, [contact], [CONTACT_OVERVIEW], scope=scope
+            )
+            monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "false")
+            assert (contact, CONTACT_OVERVIEW) not in await current_values(
+                conn, [contact], [CONTACT_OVERVIEW], scope=scope
             )
 
     run_async(_run())

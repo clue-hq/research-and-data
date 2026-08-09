@@ -94,6 +94,8 @@ from clue_research.narrative.prompts import (
 )
 from clue_research.narrative.prose import (
     ACCOUNT_SUMMARY_PROMPT_VERSION,
+    CONTACT_OVERVIEW_PROMPT_VERSION,
+    DEFAULT_CONTACT_PROSE_POLICY,
     DEFAULT_PROSE_POLICY,
     GAP_INSUFFICIENT_FACTS,
     GAP_UNGROUNDED_SYNTHESIS,
@@ -101,13 +103,16 @@ from clue_research.narrative.prose import (
     METRIC_PROSE_FAILED,
     METRIC_PROSE_JUDGE_SKIPPED,
     METRIC_PROSE_PRODUCED,
+    PROSE_ACCOUNT_CONTEXT_FIELDS,
     PROSE_ACCOUNT_FIELDS,
+    PROSE_CONTACT_FIELDS,
     PROSE_PROMPTS,
     SPAN_PROSE_SYNTHESIS,
     ProseOutcome,
     ProsePolicy,
     ProseSynthesizer,
     build_account_summary_messages,
+    build_contact_overview_messages,
     parse_prose_response,
 )
 from clue_research.narrative.prose_fields import (
@@ -216,15 +221,21 @@ __all__ = [
     "PROSE_PACK",
     "PROSE_FIELD_KEYS",
     "load_prose_pack",
-    # Lane E prose synthesizer (E1) — the on-completion synthesis unit + its prompt-as-data
+    # Lane E prose synthesizer (E1 account.summary / E2 contact.overview) — the on-completion
+    # synthesis unit + its prompt-as-data
     "ProseSynthesizer",
     "ProseOutcome",
     "ProsePolicy",
     "DEFAULT_PROSE_POLICY",
+    "DEFAULT_CONTACT_PROSE_POLICY",
     "PROSE_ACCOUNT_FIELDS",
+    "PROSE_CONTACT_FIELDS",
+    "PROSE_ACCOUNT_CONTEXT_FIELDS",
     "PROSE_PROMPTS",
     "ACCOUNT_SUMMARY_PROMPT_VERSION",
+    "CONTACT_OVERVIEW_PROMPT_VERSION",
     "build_account_summary_messages",
+    "build_contact_overview_messages",
     "parse_prose_response",
     "GAP_INSUFFICIENT_FACTS",
     "GAP_UNGROUNDED_SYNTHESIS",
