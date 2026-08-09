@@ -31,16 +31,21 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from clue_api.agent_gate import money_text
 from clue_api.chat.message_bodies import HydratedBody
-from clue_projections import ThreadMessagePage, ThreadMessageSummary, ThreadView
+from clue_projections import GateView, ThreadMessagePage, ThreadMessageSummary, ThreadView
 
 __all__ = [
     "ArchiveThreadResponse",
     "CreateThreadRequest",
+    "GateAnswerWire",
+    "GateLaunchWire",
+    "GateListResponse",
     "GateResponseRequest",
+    "GateWire",
     "MessageListResponse",
     "PageMeta",
     "SubmitTurnRequest",
     "gate_response_message",
+    "gate_wire",
     "ThreadListResponse",
     "ThreadMessageWire",
     "ThreadResponse",
@@ -302,6 +307,108 @@ class TurnAcceptedWire(_Wire):
 
 class TurnAcceptedResponse(_Wire):
     data: TurnAcceptedWire
+
+
+# --- the durable gate read (FI Lane D D5-close) --------------------------------------------------
+#
+# One wire member per :class:`~clue_projections.gates.GateView` member, same spelling, same
+# nesting. The read is a *faithful* projection of a join that already exists — deliberately not a
+# second, prettier contract — because the approval card's whole job is to echo back exactly what
+# the immutable row says, and any reshaping here would be a place for the two to drift.
+
+
+class GateAnswerWire(_Wire):
+    """How a gate was answered, if it was. Absent (``null``) is what "open" means (§6-D3)."""
+
+    turn_id: str
+    action_ref: str
+    decision: str
+    answered_by_user_id: str
+    answered_at: str
+
+
+class GateLaunchWire(_Wire):
+    """The research run an approved gate's confirming turn actually authorized."""
+
+    research_run_id: str
+    run_kind: str
+    run_state: str
+    source_action_ref: str
+    approval_refs: tuple[str, ...]
+
+
+class GateWire(_Wire):
+    """One gate, its answer, and anything the answer launched.
+
+    ``max_spend_cents`` crosses as its canonical **text** spelling rather than a JSON number: the
+    column is ``numeric(20,4)``, an answer is refused unless its amount matches the stored one
+    numerically, and a float round-trip is the one way a client could send back an amount it never
+    saw. :func:`~clue_api.agent_gate.money_text` is the same function the digest and the captured
+    request bytes use, so one amount has exactly one spelling everywhere.
+    """
+
+    gate_id: str
+    workspace_id: str
+    project_id: str
+    thread_id: str
+    turn_id: str
+    kind: str
+    subject_ref: str
+    subject_revision: int | None
+    expected_subject_sha256: str
+    subject_snapshot: dict[str, Any]
+    max_spend_cents: str
+    currency: str
+    addressee_user_id: str
+    created_at: str
+    answer: GateAnswerWire | None
+    launches: tuple[GateLaunchWire, ...]
+
+
+class GateListResponse(_Wire):
+    data: tuple[GateWire, ...]
+
+
+def gate_wire(view: GateView) -> GateWire:
+    """One thread gate on the wire."""
+
+    return GateWire(
+        gate_id=view.gate_id,
+        workspace_id=view.workspace_id,
+        project_id=view.project_id,
+        thread_id=view.thread_id,
+        turn_id=view.turn_id,
+        kind=view.kind,
+        subject_ref=view.subject_ref,
+        subject_revision=view.subject_revision,
+        expected_subject_sha256=view.expected_subject_sha256,
+        subject_snapshot=dict(view.subject_snapshot),
+        max_spend_cents=money_text(view.max_spend_cents),
+        currency=view.currency,
+        addressee_user_id=view.addressee_user_id,
+        created_at=view.created_at.isoformat(),
+        answer=(
+            None
+            if view.answer is None
+            else GateAnswerWire(
+                turn_id=view.answer.turn_id,
+                action_ref=view.answer.action_ref,
+                decision=view.answer.decision,
+                answered_by_user_id=view.answer.answered_by_user_id,
+                answered_at=view.answer.answered_at.isoformat(),
+            )
+        ),
+        launches=tuple(
+            GateLaunchWire(
+                research_run_id=launch.research_run_id,
+                run_kind=launch.run_kind,
+                run_state=launch.run_state,
+                source_action_ref=launch.source_action_ref,
+                approval_refs=launch.approval_refs,
+            )
+            for launch in view.launches
+        ),
+    )
 
 
 def thread_wire(

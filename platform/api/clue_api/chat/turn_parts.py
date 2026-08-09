@@ -383,12 +383,20 @@ def task_part_from_run(
     The mapping is deliberately conservative: a run state the platform has not taught this surface
     about becomes ``queued`` rather than a guessed phase, because a wrong phase is a lie the UI
     animates.
+
+    ``terminal`` is the one state that cannot be mapped from the run row alone — the run table
+    records only *that* it ended — so it is resolved from the counts, which is where per-subject
+    outcomes actually live. A run that ended with some subjects exhausted, routed to review or
+    budget-stopped is ``partial``, never ``completed``: §3.4's whole reason for having a ``partial``
+    state is that "finished" and "finished with everything asked of it" are different facts.
     """
 
     return TaskPart(
         part_id=task_part_id(run_id=run_id),
         revision=revision,
-        state=_TASK_STATES.get(state, TaskState.QUEUED),
+        state=_terminal_task_state(counts)
+        if state == "terminal"
+        else _TASK_STATES.get(state, TaskState.QUEUED),
         title=run_kind.replace("_", " "),
         run_ref={
             "object_type": "entity_research_run",
@@ -399,13 +407,23 @@ def task_part_from_run(
     )
 
 
-#: ``entity_research_run.state`` → the §3.4 task vocabulary.
+#: ``entity_research_run.state`` → the §3.4 task vocabulary. The run table's closed vocabulary is
+#: ``queued``/``running``/``waiting_external``/``terminal`` (migration ``022b1154b3aa``);
+#: ``terminal`` is absent here because it is derived from the counts by
+#: :func:`_terminal_task_state`. ``waiting_external`` is deep research *in flight* behind a provider
+#: call — not a question for the human, which is what ``needs_input`` would claim.
 _TASK_STATES: dict[str, TaskState] = {
     "queued": TaskState.QUEUED,
     "running": TaskState.DEEP_RESEARCH,
-    "suspended": TaskState.SUSPENDED,
-    "completed": TaskState.COMPLETED,
-    "partial": TaskState.PARTIAL,
-    "failed": TaskState.FAILED,
-    "cancelled": TaskState.FAILED,
+    "waiting_external": TaskState.DEEP_RESEARCH,
 }
+
+
+def _terminal_task_state(counts: TaskCounts) -> TaskState:
+    """What an ended run actually achieved, read off its subjects' finalization outcomes."""
+
+    if counts.completed == 0 and counts.partial == 0 and counts.failed > 0:
+        return TaskState.FAILED
+    if counts.partial > 0 or counts.failed > 0:
+        return TaskState.PARTIAL
+    return TaskState.COMPLETED

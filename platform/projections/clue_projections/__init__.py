@@ -90,6 +90,11 @@ from clue_projections.research_directives import (
     ResearchDirectivePreview,
     project_research_directive_preview,
 )
+from clue_projections.research_tasks import (
+    ResearchTaskCounts,
+    ResearchTaskView,
+    research_tasks_for_action_refs,
+)
 from clue_projections.research_views import (
     ResearchViewStatus,
     ResearchViewStatusPage,
@@ -228,6 +233,9 @@ __all__ = [
     "ResearchDirectiveAccountPreview",
     "ResearchDirectivePreview",
     "project_research_directive_preview",
+    "ResearchTaskCounts",
+    "ResearchTaskView",
+    "research_tasks_for_action_refs",
     # Phase C2 proposals
     "ProposalScopeCard",
     "FieldProposalCard",

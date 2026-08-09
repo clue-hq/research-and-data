@@ -68,6 +68,7 @@ from clue_api.chat.principal import (
 )
 from clue_api.chat.schemas import (
     CreateThreadRequest,
+    GateListResponse,
     GateResponseRequest,
     MessageListResponse,
     PageMeta,
@@ -78,6 +79,7 @@ from clue_api.chat.schemas import (
     TurnAcceptedWire,
     UpdateThreadRequest,
     gate_response_message,
+    gate_wire,
     message_list_response,
     thread_wire,
     thread_wire_from_references,
@@ -98,6 +100,7 @@ from clue_projections import (
     MAX_THREAD_PAGE_SIZE,
     InvalidCursorError,
     open_gate_kinds_for_threads,
+    thread_gates,
     thread_messages,
     threads_for_project,
     threads_running,
@@ -644,6 +647,47 @@ def build_chat_router(
                 references=tuple((item.body_artifact_key, item.body_sha256) for item in page.items),
             )
         return message_list_response(page, thread_id=thread_id, bodies=bodies)
+
+    @router.get("/projects/{project_id}/threads/{thread_id}/gates")
+    async def list_gates_route(
+        project_id: str,
+        thread_id: str,
+        who: PrincipalDep,
+    ) -> GateListResponse:
+        """Every gate this thread has ever presented, oldest first, with its answer and launches.
+
+        The read the approval card cannot work without. A gate is answered by echoing back exactly
+        what was on the screen — ``POST …/turns`` refuses a ``gate_response`` whose
+        ``expected_subject_sha256`` or ``expected_estimated_cost_cents`` differs from the immutable
+        row — so a client that cannot read the durable gate can *show* a card and can never
+        *answer* it. The stream's ``gate`` part signals that a card exists; this is where its
+        answerable payload comes from.
+
+        **Unpaginated on purpose.** A thread's gates are bounded by the number of directives its
+        conversation drafted, the projection is one indexed anti-join over one thread, and a closed
+        gate stays in history (§3.4) — so a cursor here would be machinery for a list that does not
+        grow with the transcript. The message and thread reads, which do, keep theirs.
+
+        Scoped exactly like every other thread read: a thread in another project or another
+        workspace is **not found**, never forbidden, because a 403 would confirm to somebody who
+        cannot see it that it exists.
+        """
+
+        _require(who, PERMISSION_THREAD_READ)
+        async with conn_factory() as conn:
+            thread = await get_thread(conn, workspace_id=who.workspace_id, thread_id=thread_id)
+        if thread is None or thread.project_id != project_id:
+            raise _refuse(
+                status_code=404,
+                code="THREAD_NOT_FOUND",
+                message="no such thread in this project",
+            )
+        views = await thread_gates(
+            workspace_id=who.workspace_id,
+            thread_id=thread_id,
+            conn_factory=conn_factory,
+        )
+        return GateListResponse(data=tuple(gate_wire(view) for view in views))
 
     # --- turn submission (D2) + the structured gate response (D4) ------------------------------
 

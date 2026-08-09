@@ -301,11 +301,24 @@ class ConversationTurnEngine:
         A **replayed** turn streams nothing and says so: no delta of this attempt exists, so the
         honest instruction is "re-fetch the canonical message", not a fabricated replay of text the
         model produced in an earlier process.
+
+        The **task** projection runs whatever the turn's status: a launch is committed by its own
+        transaction, so a turn that launched research and then failed to finalize still launched it,
+        and hiding the card would hide spend the human authorized.
+
+        What is deliberately **not** projected here is a ``sources`` part. §3.4's floor demands real
+        message-scoped source items, and this surface has none to give: the project conversation
+        withholds every fetching tool by policy ("you do not … fetch external sources",
+        ``C6_SURFACE_POLICIES``), so no durable source receipt is produced in a turn. The only
+        remaining candidate — the finalization's ``domain_refs`` — is *model-declared*, carries no
+        URL, title or evidence ref, and projecting it would manufacture provenance out of a
+        model's assertion. An honest gap beats an invented citation; when a tool on this surface
+        starts producing durable source receipts, that receipt is what feeds
+        ``TurnStreamEmitter.emit_sources_part``.
         """
 
         if envelope is not None:
-            for ref in envelope.open_gate_refs:
-                await stream.emit_gate_part(ref=ref, gate_kind=ref.object_type)
+            await stream.emit_gate_parts(refs=envelope.open_gate_refs)
             for ref in envelope.domain_refs:
                 if ref.object_type in _PLAN_OBJECT_TYPES:
                     await stream.emit_plan_part(
@@ -313,6 +326,7 @@ class ConversationTurnEngine:
                         title=ref.object_type.replace("_", " "),
                         revision_label=None if ref.version is None else str(ref.version),
                     )
+        await stream.emit_launched_task_parts()
         if replayed:
             await stream.rehydrate(reason="turn_replayed")
         else:

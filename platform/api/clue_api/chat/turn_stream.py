@@ -44,6 +44,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import ROUND_CEILING, Decimal
 from typing import Any
 from uuid import UUID, uuid5
 
@@ -52,6 +53,7 @@ from langchain_core.outputs import ChatGenerationChunk, GenerationChunk, LLMResu
 from pydantic import JsonValue
 from sqlalchemy import text as sql_text
 
+from clue_api.agent_gate import DECISIONS, GATE_OBJECT_TYPE
 from clue_api.chat.finalize_stream import FinalizeTextDeltaExtractor
 from clue_api.chat.turn_events import (
     TurnEventType,
@@ -86,8 +88,15 @@ from clue_api.chat.turn_parts import (
     text_part_id,
     tool_part_id,
 )
+from clue_api.turn_action import derive_turn_action_ref
 from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
+from clue_projections import (
+    GateView,
+    ResearchTaskView,
+    research_tasks_for_action_refs,
+    thread_gates,
+)
 
 log = get_logger("clue_api.chat.turn_stream")
 
@@ -661,12 +670,92 @@ class TurnStreamEmitter:
             ),
         )
 
+    async def emit_gate_parts(self, *, refs: Sequence[object]) -> None:
+        """Project a finalization's ``open_gate_refs`` — richly when they name a durable gate.
+
+        One read of :func:`~clue_projections.gates.thread_gates` for the whole finalization, not one
+        per ref: that projection is the transcript's own gate question (gate + answer + the run its
+        approval launched), and re-deriving any of it here would be a second, drifting copy of a
+        join D4 already owns.
+
+        A ref with no matching row falls back to :meth:`emit_gate_part`'s thin shape rather than
+        failing the stream. That is not a defensive hedge — ``open_gate_refs`` is an open
+        ``DomainObjectRef`` vocabulary, so a future gate flavour that is not an ``agent_gate`` row
+        stays renderable as "a gate exists here" instead of vanishing.
+        """
+
+        if not refs:
+            return
+        by_id: dict[str, GateView] = {}
+        try:
+            for view in await thread_gates(
+                workspace_id=self.workspace_id,
+                thread_id=self.thread_id,
+                conn_factory=self._conn_factory,
+            ):
+                by_id[view.gate_id] = view
+        except Exception as error:  # noqa: BLE001 — a read failure may not fail a turn
+            self.emission_failures.append(f"gate_projection: {type(error).__name__}")
+            log.exception(
+                "chat.turn_stream.gate_projection_failed",
+                turn_id=str(self.turn_id),
+                workspace_id=self.workspace_id,
+            )
+        for ref in refs:
+            wire = object_ref_wire(ref)
+            found = by_id.get(str(wire.get("object_id", "")))
+            if found is None:
+                await self.emit_gate_part(ref=ref, gate_kind=str(wire.get("object_type", "gate")))
+            else:
+                await self._emit_durable_gate_part(wire=wire, view=found)
+
+    async def _emit_durable_gate_part(self, *, wire: dict[str, JsonValue], view: GateView) -> None:
+        """The §3.4 ``gate`` floor, every field of it read off the immutable row and its answer.
+
+        Two absences are deliberate. **``title``/``summary`` stay unset** — §3.1/§3.4's standing
+        rule is that the backend sends semantic state and the adapter chooses the words, and a gate
+        kind plus an amount is exactly the semantic state a card needs to write its own heading.
+        **``permitted_decisions`` is the full vocabulary even on a closed gate**: what a gate
+        *permits* is a property of the gate, and "this one is finished" is said by ``decision`` and
+        ``state``, not by silently emptying the option list.
+        """
+
+        part_id = gate_part_id(
+            object_type=str(wire.get("object_type", GATE_OBJECT_TYPE)),
+            object_id=view.gate_id,
+        )
+        answer = view.answer
+        await self._part(
+            TurnEventType.PART_COMPLETED if answer is not None else TurnEventType.PART_CREATED,
+            GatePart(
+                part_id=part_id,
+                revision=self._revision(part_id),
+                gate_ref=wire,
+                # The *real* kind (``directive_confirmation``), never the ref's object type: a card
+                # told its kind is "agent_gate" knows only that a gate exists, which is the very
+                # gap this method closes.
+                gate_kind=view.kind,
+                state="responded" if answer is not None else "requested",
+                subject_refs=(_gate_subject_ref(view),),
+                expected_subject_sha256=view.expected_subject_sha256,
+                amount_cents=_cent_ceiling(view.max_spend_cents),
+                currency=view.currency,
+                addressee_user_id=view.addressee_user_id,
+                permitted_decisions=DECISIONS,
+                decision=None if answer is None else answer.decision,
+                answered_by_user_id=None if answer is None else answer.answered_by_user_id,
+                answered_at=None if answer is None else answer.answered_at.isoformat(),
+            ),
+        )
+
     async def emit_gate_part(
         self, *, ref: object, gate_kind: str, state: str = "requested"
     ) -> None:
-        """The gate projection seam. D4 owns the durable ``agent_gate`` object; this projects
-        whatever ref the finalization carried, so an ``awaiting_input`` turn is renderable the
-        moment the gate substrate lands, without D3 inventing a gate."""
+        """The thin gate projection: a ref exists, and nothing durable was found behind it.
+
+        Kept as the honest floor for a ref that names no ``agent_gate`` row. The rich payload is
+        :meth:`emit_gate_parts`, which is what every production turn-close goes through.
+        """
 
         wire = object_ref_wire(ref)
         part_id = gate_part_id(
@@ -695,6 +784,46 @@ class TurnStreamEmitter:
                 revision=self._revision(part_id),
                 items=tuple(items),
             ),
+        )
+
+    async def emit_launched_task_parts(self) -> None:
+        """Project whatever detached research **this turn's own authority** launched (§3.4 task).
+
+        The join key is the turn's canonical ``turn-action:`` receipt: the launcher persists it as
+        the launch-control row's ``source_action_ref``, so "what did this turn launch?" is a read of
+        a durable receipt rather than anything the emitter, the agent or the toolbelt had to carry.
+        A turn that launched nothing emits nothing — an honest gap, not an empty card.
+
+        It runs at turn close (once, on the completed attempt) because that is the first moment the
+        launch is committed *and* the run's jobs exist to be counted. The card is a snapshot of that
+        moment, not a live feed: a run outlives its turn by design, and the surface that follows it
+        afterwards is the run projection, not this stream.
+        """
+
+        try:
+            tasks = await research_tasks_for_action_refs(
+                workspace_id=self.workspace_id,
+                action_refs=(derive_turn_action_ref(self.turn_id),),
+                conn_factory=self._conn_factory,
+            )
+        except Exception as error:  # noqa: BLE001 — a read failure may not fail a turn
+            self.emission_failures.append(f"task_projection: {type(error).__name__}")
+            log.exception(
+                "chat.turn_stream.task_projection_failed",
+                turn_id=str(self.turn_id),
+                workspace_id=self.workspace_id,
+            )
+            return
+        for task in tasks:
+            await self._emit_task_part(task)
+
+    async def _emit_task_part(self, task: ResearchTaskView) -> None:
+        await self.emit_task_part(
+            run_id=UUID(task.research_run_id),
+            run_kind=task.run_kind,
+            state=task.run_state,
+            counts=TaskCounts(**task.counts.model_dump()),
+            completed=task.run_state == "terminal",
         )
 
     async def emit_task_part(
@@ -847,6 +976,39 @@ _TERMINAL_EVENTS: dict[str, TurnEventType] = {
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _cent_ceiling(amount: Decimal) -> int:
+    """A ``numeric(20,4)`` cent amount as the integer §3.4 asks for — rounded **up**.
+
+    The column holds sub-cent precision the wire's ``amount_cents`` cannot carry. Truncating would
+    render a *maximum spend* as smaller than it is, so the one safe direction is the ceiling: the
+    card never promises a lower cap than the gate stored. The authoritative amount an approval
+    echoes back is still the durable ``max_spend_cents``, read through the gates route.
+    """
+
+    return int(amount.to_integral_value(rounding=ROUND_CEILING))
+
+
+def _gate_subject_ref(view: GateView) -> dict[str, JsonValue]:
+    """The gate's subject as a typed ref (§3.4's "subject refs, expected revision/hash").
+
+    ``subject_ref`` is a versioned display reference (``research-directive:<id>:v<n>``); the bare
+    identifier lives in the immutable snapshot precisely so a consumer never has to parse that
+    string. Parsing is the fallback, not the path.
+    """
+
+    identifier = view.subject_snapshot.get("research_directive_id")
+    object_id = str(identifier) if isinstance(identifier, str) else view.subject_ref
+    ref: dict[str, JsonValue] = {
+        "workspace_id": view.workspace_id,
+        "object_type": "research_directive",
+        "object_id": object_id,
+        "sha256": view.expected_subject_sha256,
+    }
+    if view.subject_revision is not None:
+        ref["version"] = view.subject_revision
+    return ref
 
 
 class TurnStreamCallbackHandler(AsyncCallbackHandler):
