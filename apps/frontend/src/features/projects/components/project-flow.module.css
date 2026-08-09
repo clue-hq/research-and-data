@@ -2997,3 +2997,94 @@
     transition: none;
   }
 }
+
+/* --- FI Lane D D5: streamed Markdown, gate cards, research tasks ---------- */
+
+/*
+ * Assistant prose is rendered as Markdown blocks now, not a single <p>, so the
+ * container owns block rhythm. Everything below is typography only: no state,
+ * no timing, no animation that a wire value could drive.
+ */
+.messageText :global(.clue-markdown) > * {
+  margin: 0 0 8px;
+}
+
+.messageText :global(.clue-markdown) > *:last-child {
+  margin-bottom: 0;
+}
+
+.messageText :global(.clue-markdown) h1,
+.messageText :global(.clue-markdown) h2,
+.messageText :global(.clue-markdown) h3,
+.messageText :global(.clue-markdown) h4,
+.messageText :global(.clue-markdown) h5,
+.messageText :global(.clue-markdown) h6 {
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.messageText :global(.clue-markdown) ul,
+.messageText :global(.clue-markdown) ol {
+  padding-left: 18px;
+  list-style: revert;
+}
+
+.messageText :global(.clue-markdown) li {
+  margin: 2px 0;
+}
+
+.messageText :global(.clue-markdown) code {
+  border-radius: 4px;
+  background: var(--clue-surface-muted, rgba(17, 19, 24, 0.06));
+  padding: 1px 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.messageText :global(.clue-markdown) pre {
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--clue-surface-muted, rgba(17, 19, 24, 0.06));
+  padding: 10px 12px;
+}
+
+.messageText :global(.clue-markdown) pre code {
+  background: none;
+  padding: 0;
+}
+
+.messageText :global(.clue-markdown) blockquote {
+  border-left: 2px solid var(--clue-border-neutral, rgba(17, 19, 24, 0.12));
+  padding-left: 10px;
+  color: var(--clue-text-secondary, rgba(17, 19, 24, 0.64));
+}
+
+.messageText :global(.clue-markdown) a {
+  text-decoration: underline;
+}
+
+/* An answered gate stays in history; its controls are visibly spent. */
+.planApproval[data-gate-state="responded"],
+.planApproval[data-gate-state="denied"] {
+  height: auto;
+  opacity: 0.82;
+}
+
+.planApproval[data-gate-state="unavailable"] {
+  height: auto;
+}
+
+.planApproval button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* One visible research task, whatever the scale. Tones are semantic only. */
+.generationStep[data-tone="failed"] strong,
+.generationStep[data-tone="blocked"] strong {
+  color: var(--clue-text-critical, #b42318);
+}
+
+.generationStep[data-tone="partial"] strong {
+  color: var(--clue-text-warning, #b54708);
+}

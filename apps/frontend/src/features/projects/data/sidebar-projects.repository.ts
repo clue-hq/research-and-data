@@ -1,9 +1,25 @@
+import { threadLabel } from "../model/chat-thread";
 import {
   SidebarProjectsResponseSchema,
   type SidebarProjectsResponse,
 } from "../model/sidebar-project";
+import type { ChatRepositories } from "./chat-repositories";
 import { sidebarProjectFixtures } from "./sidebar-projects.fixture";
 
+/**
+ * The sidebar's project/thread tree.
+ *
+ * **Contract status.** The proposal's `GET /api/v1/projects/sidebar` is not
+ * implemented, and neither is any project *catalog* read: the as-built section
+ * puts project lifecycle (`POST /projects`, `DELETE /projects/:projectId`)
+ * outside the chat shell's ownership, phase-2 and a separate owner. What the
+ * backend does serve is the per-project paginated thread list. So the HTTP
+ * adapter below is honest about being a *hybrid*: the project rows still come
+ * from the fixture catalog, and each project's conversations are replaced with
+ * the real threads — including their derived status, which is what makes the
+ * sidebar's approval / needs-input / running badges true. When a project read
+ * lands, only this file changes.
+ */
 export interface SidebarProjectsRepository {
   list(): Promise<SidebarProjectsResponse>;
 }
@@ -17,34 +33,43 @@ export const fixtureSidebarProjectsRepository: SidebarProjectsRepository = {
   },
 };
 
-export function createHttpSidebarProjectsRepository(
-  apiBaseUrl: string,
+export function createHydratedSidebarProjectsRepository(
+  repositories: ChatRepositories,
 ): SidebarProjectsRepository {
   return {
     async list() {
-      const response = await fetch(
-        new URL(
-          "/api/v1/projects/sidebar",
-          `${apiBaseUrl.replace(/\/$/, "")}/`,
-        ),
-        { cache: "no-store", headers: { Accept: "application/json" } },
+      const catalog = await fixtureSidebarProjectsRepository.list();
+      const hydrated = await Promise.all(
+        catalog.data.map(async (project) => {
+          const page = await repositories.threads.list({ projectId: project.id });
+          return {
+            ...project,
+            conversations: page.threads.map((thread) => ({
+              href: thread.href,
+              id: thread.id,
+              status: thread.status,
+              title: threadLabel(thread),
+            })),
+          };
+        }),
       );
-
-      if (!response.ok) {
-        throw new Error(`Sidebar projects API returned ${response.status}`);
-      }
-
-      return SidebarProjectsResponseSchema.parse(await response.json());
+      return SidebarProjectsResponseSchema.parse({
+        data: hydrated,
+        meta: { total: hydrated.length },
+      });
     },
   };
 }
 
-/**
- * Pinned to fixtures until phase 2 — see the note in
- * `project-workspace.repository.ts`. `GET /api/v1/projects/sidebar` is not
- * served by slice 1, and this repository must not flip on the accounts flow's
- * variable.
- */
+export function createSidebarProjectsRepository(
+  repositories: ChatRepositories,
+): SidebarProjectsRepository {
+  return repositories.transport.mode === "http"
+    ? createHydratedSidebarProjectsRepository(repositories)
+    : fixtureSidebarProjectsRepository;
+}
+
+/** The server-rendered read used before the browser has a transport. */
 export async function getSidebarProjects() {
   return fixtureSidebarProjectsRepository.list();
 }

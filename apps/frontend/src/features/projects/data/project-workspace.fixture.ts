@@ -210,88 +210,6 @@ export const projectWorkspaceFixture: ProjectWorkspace = {
   ],
   contextEntities: projectHomeFixture.entities,
   defaultModelId: "gpt-5.5",
-  conversationActivity: {
-    sources: [
-      {
-        href: "https://openai.com/",
-        id: "openai-company",
-        label: "OpenAI company profile",
-        logoPath: "/logos/openai.svg",
-      },
-      {
-        href: "https://www.linkedin.com/company/openai/",
-        id: "openai-linkedin",
-        label: "OpenAI on LinkedIn",
-        logoPath: "/logos/linkedin.svg",
-      },
-      {
-        href: "https://x.com/openai",
-        id: "openai-x",
-        label: "OpenAI on X",
-        logoPath: "/logos/x.svg",
-      },
-    ],
-    tools: [
-      {
-        id: "load-account-context",
-        input: { accountId: "openai", includeContacts: true },
-        output: "OpenAI account context and two selected contacts loaded.",
-        title: "Read account and contact context",
-      },
-      {
-        id: "research-account",
-        input: { account: "OpenAI", sources: ["website", "linkedin", "x"] },
-        output: "Verified current company positioning and recent public activity.",
-        title: "Research selected account",
-      },
-    ],
-  },
-  conversationCopy: {
-    agentRunningLabel: "landing agent is running...",
-    assistantName: "Clue",
-    beforeQuestionnaire: [
-      "Before I start building, I need to establish a share brief for the project.",
-      "Please help me out by filling out this questionnaire.",
-    ],
-    buildingAccepted: "Plan accepted. I’ll start building.",
-    buildingLabel: "Building landing page 1/3",
-    initialReasoning: "I’m reviewing the selected account and the best artifact structure for this request.",
-    planCardLabel: "Clue proposed a plan",
-    planCreated: "Created a plan, once you approve it, I’ll start building.",
-    planStarting: "Got my answers, let me create a plan.",
-    questionnaireCardLabel: "Clue asked some questions",
-    reasoningLabel: "Thought for 5 seconds",
-  },
-  generationCopy: {
-    completeCreditsLabel: "6,048 credits spent",
-    completeLabel: "Build complete",
-    completeTimingLabel: "Built for 30 seconds",
-    progressCreditsLabel: "4,586 credits spent so far",
-    progressLabel: "Building landing page 1/3",
-  },
-  generationSteps: [
-    {
-      id: "openai-research",
-      label: "OpenAI",
-      logoPath: "/logos/openai.svg",
-      note: "Verifying claims...",
-      progress: 96,
-    },
-    {
-      id: "copy-update",
-      label: "Cursor",
-      logoPath: "/logos/cursor.svg",
-      note: "Updating copy...",
-      progress: 72,
-    },
-    {
-      id: "draft-generation",
-      label: "Cursor",
-      logoPath: "/logos/cursor.svg",
-      note: "Generating first draft...",
-      progress: 8,
-    },
-  ],
   id: "10m-landing-page-campaign",
   models: [...projectModels],
   plan: {
@@ -308,17 +226,6 @@ export const projectWorkspaceFixture: ProjectWorkspace = {
     title: "Clue — Custom ABM Report Landing Page",
   },
   prompt: "design a landing page",
-  previewTimeline: {
-    agentRunningMs: 5000,
-    conversationToQuestionnaireMs: 1200,
-    generationMilestones: [
-      { delayMs: 1000, progress: 34 },
-      { delayMs: 10000, progress: 67 },
-      { delayMs: 20000, progress: 86 },
-      { delayMs: 30000, progress: 100 },
-    ],
-    generationStartProgress: 8,
-  },
   questionnaire: {
     primaryAction: {
       defaultChoiceId: "download-report",
@@ -362,33 +269,5 @@ export const projectWorkspaceFixture: ProjectWorkspace = {
     },
     title: "A few questions about the landing page",
   },
-  reasoningTrace: {
-    profile: {
-      caption: "Hayden Bleasel’s profile photo from x.com, showing a Ghibli-style man.",
-      detail: "Hayden Bleasel is an Australian product designer, software engineer, and founder. He is currently based in the United States working for Vercel, an American cloud application company.",
-      imageAlt: "Illustrated portrait of Hayden Bleasel",
-      imagePath: "/projects/reasoning/hayden-bleasel.png",
-      label: "Found the profile photo for Hayden Bleasel",
-    },
-    recentSearch: {
-      label: "Searching for recent work...",
-      tags: [
-        { label: "x.com", logoPath: "/logos/x.svg" },
-        { label: "linkedin.com", logoPath: "/logos/linkedin.svg" },
-      ],
-    },
-    targetSearch: {
-      label: "Searching for tagged accounts",
-      tags: [
-        { label: "synergy.com" },
-        { label: "pfizer.com" },
-      ],
-    },
-    title: "Thought for a few seconds",
-  },
-  threads: [
-    { id: "thread-primary", title: "ad design" },
-    { id: "thread-iteration", title: "homepage revisions" },
-  ],
   title: "10m+ landing page campaign",
 };

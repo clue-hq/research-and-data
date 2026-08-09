@@ -16,11 +16,6 @@ export const ProjectModelOptionSchema = z.object({
   shortLabel: z.string().min(1),
 });
 
-export const ProjectThreadSchema = z.object({
-  id: z.string().min(1),
-  title: z.string().min(1),
-});
-
 export const ProjectWebsiteContentSchema = z.object({
   badge: z.string().min(1),
   brandAlt: z.string().min(1),
@@ -61,48 +56,6 @@ export const ProjectArtifactSchema = z.object({
   websiteContent: ProjectWebsiteContentSchema.optional(),
 });
 
-export const GenerationStepSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  logoPath: z.string().startsWith("/"),
-  note: z.string().min(1),
-  progress: z.number().min(0).max(100),
-});
-
-export const ProjectPreviewTimelineSchema = z.object({
-  agentRunningMs: z.number().int().positive(),
-  conversationToQuestionnaireMs: z.number().int().positive(),
-  generationMilestones: z.array(z.object({
-    delayMs: z.number().int().positive(),
-    progress: z.number().min(0).max(100),
-  })).min(1),
-  generationStartProgress: z.number().min(0).max(100),
-});
-
-const ReasoningTagSchema = z.object({
-  label: z.string().min(1),
-  logoPath: z.string().startsWith("/").optional(),
-});
-
-export const ProjectReasoningTraceSchema = z.object({
-  profile: z.object({
-    caption: z.string().min(1),
-    detail: z.string().min(1),
-    imageAlt: z.string().min(1),
-    imagePath: z.string().startsWith("/"),
-    label: z.string().min(1),
-  }),
-  recentSearch: z.object({
-    label: z.string().min(1),
-    tags: z.array(ReasoningTagSchema).min(1),
-  }),
-  targetSearch: z.object({
-    label: z.string().min(1),
-    tags: z.array(ReasoningTagSchema).min(1),
-  }),
-  title: z.string().min(1),
-});
-
 export const ProjectQuestionChoiceSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -135,45 +88,20 @@ export const ProjectHomeSchema = z.object({
   suggestedThreadId: z.string().min(1),
 });
 
+/**
+ * The project shell: the artifact-side surfaces and the composer's catalogs.
+ *
+ * The conversation left this schema in slice D5. Threads, messages, parts, the
+ * six-value phase transcript, the `previewTimeline` timer blob a real backend
+ * would have had to ship, the `reasoningTrace` and `conversationCopy` display
+ * strings, and the `conversationActivity` tool/source records the frontend used
+ * to manufacture cards from are all gone: the transcript is durable turns and
+ * streamed parts now, under `model/chat-*.ts`.
+ */
 export const ProjectWorkspaceSchema = z.object({
   artifacts: z.array(ProjectArtifactSchema),
   contextEntities: z.array(ProjectEntitySchema),
   defaultModelId: z.string().min(1),
-  conversationActivity: z.object({
-    sources: z.array(z.object({
-      href: z.string().url(),
-      id: z.string().min(1),
-      label: z.string().min(1),
-      logoPath: z.string().startsWith("/").optional(),
-    })).min(1),
-    tools: z.array(z.object({
-      id: z.string().min(1),
-      input: z.record(z.string(), z.unknown()).optional(),
-      output: z.string().min(1).optional(),
-      title: z.string().min(1),
-    })).min(2),
-  }),
-  conversationCopy: z.object({
-    agentRunningLabel: z.string().min(1),
-    assistantName: z.string().min(1),
-    beforeQuestionnaire: z.array(z.string().min(1)).min(1),
-    buildingAccepted: z.string().min(1),
-    buildingLabel: z.string().min(1),
-    initialReasoning: z.string().min(1),
-    planCardLabel: z.string().min(1),
-    planCreated: z.string().min(1),
-    planStarting: z.string().min(1),
-    questionnaireCardLabel: z.string().min(1),
-    reasoningLabel: z.string().min(1),
-  }),
-  generationCopy: z.object({
-    completeCreditsLabel: z.string().min(1),
-    completeLabel: z.string().min(1),
-    completeTimingLabel: z.string().min(1),
-    progressCreditsLabel: z.string().min(1),
-    progressLabel: z.string().min(1),
-  }),
-  generationSteps: z.array(GenerationStepSchema).min(1),
   id: z.string().min(1),
   models: z.array(ProjectModelOptionSchema).min(1),
   plan: z.object({
@@ -185,10 +113,7 @@ export const ProjectWorkspaceSchema = z.object({
     title: z.string().min(1),
   }),
   prompt: z.string().min(1),
-  previewTimeline: ProjectPreviewTimelineSchema,
   questionnaire: ProjectQuestionnaireSchema,
-  reasoningTrace: ProjectReasoningTraceSchema,
-  threads: z.array(ProjectThreadSchema).min(1),
   title: z.string().min(1),
 });
 
@@ -219,77 +144,11 @@ export const InspectorSelectionSchema = z.enum([
   "button",
 ]);
 
-const ProjectToolStateSchema = z.enum([
-  "approval-requested",
-  "approval-responded",
-  "input-available",
-  "input-streaming",
-  "output-available",
-  "output-denied",
-  "output-error",
-]);
-
-export const ProjectMessagePartSchema = z.discriminatedUnion("type", [
-  z.object({
-    id: z.string().min(1),
-    text: z.string().min(1),
-    type: z.literal("text"),
-  }),
-  z.object({
-    detail: z.string().min(1).optional(),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    showTrace: z.boolean().default(false),
-    streaming: z.boolean().default(false),
-    type: z.literal("reasoning"),
-  }),
-  z.object({
-    action: z.enum(["questionnaire", "plan"]),
-    icon: z.enum(["clipboard-list", "list"]),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    type: z.literal("action"),
-  }),
-  z.object({
-    id: z.string().min(1),
-    input: z.record(z.string(), z.unknown()).optional(),
-    output: z.string().min(1).optional(),
-    state: ProjectToolStateSchema,
-    title: z.string().min(1),
-    type: z.literal("tool"),
-  }),
-  z.object({
-    id: z.string().min(1),
-    type: z.literal("plan"),
-  }),
-  z.object({
-    complete: z.boolean(),
-    id: z.string().min(1),
-    progress: z.number().min(0).max(100),
-    type: z.literal("task"),
-  }),
-  z.object({
-    id: z.string().min(1),
-    type: z.literal("sources"),
-  }),
-]);
-
-export const ProjectMessageSchema = z.object({
-  authorLabel: z.string().min(1).optional(),
-  id: z.string().min(1),
-  parts: z.array(ProjectMessagePartSchema).min(1),
-  role: z.enum(["assistant", "user"]),
-});
-
 export type ProjectEntity = z.infer<typeof ProjectEntitySchema>;
 export type ProjectModelOption = z.infer<typeof ProjectModelOptionSchema>;
-export type ProjectThread = z.infer<typeof ProjectThreadSchema>;
 export type ProjectWebsiteContent = z.infer<typeof ProjectWebsiteContentSchema>;
 export type ProjectTableContent = z.infer<typeof ProjectTableContentSchema>;
 export type ProjectArtifact = z.infer<typeof ProjectArtifactSchema>;
-export type GenerationStep = z.infer<typeof GenerationStepSchema>;
-export type ProjectPreviewTimeline = z.infer<typeof ProjectPreviewTimelineSchema>;
-export type ProjectReasoningTrace = z.infer<typeof ProjectReasoningTraceSchema>;
 export type ProjectQuestionnaire = z.infer<typeof ProjectQuestionnaireSchema>;
 export type ProjectQuestionGroup = z.infer<typeof ProjectQuestionGroupSchema>;
 export type ProjectHome = z.infer<typeof ProjectHomeSchema>;
@@ -301,5 +160,3 @@ export type ArtifactFilter = z.infer<typeof ArtifactFilterSchema>;
 export type ArtifactSort = z.infer<typeof ArtifactSortSchema>;
 export type PreviewDevice = z.infer<typeof PreviewDeviceSchema>;
 export type InspectorSelection = z.infer<typeof InspectorSelectionSchema>;
-export type ProjectMessagePart = z.infer<typeof ProjectMessagePartSchema>;
-export type ProjectMessage = z.infer<typeof ProjectMessageSchema>;

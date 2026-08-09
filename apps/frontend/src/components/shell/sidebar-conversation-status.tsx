@@ -21,10 +21,13 @@ export function SidebarConversationStatus({ status }: { status: Status }) {
     );
   }
 
+  // The pinned precedence vocabulary, minus the two statuses that render
+  // without a badge (`idle` above, and `running` as the spinner). `archived`
+  // replaces the proposal's `review`, which no backend surface ever emits.
   const config = {
-    review: {
+    archived: {
       icon: null,
-      label: "Review",
+      label: "Archived",
       style: styles.reviewBadge,
     },
     approval: {

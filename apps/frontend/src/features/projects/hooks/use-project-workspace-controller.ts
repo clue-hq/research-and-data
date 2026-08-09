@@ -8,15 +8,30 @@ import type {
   InspectorSelection,
   PreviewDevice,
   ProjectPhase,
-  ProjectThread,
   ProjectWorkspace,
 } from "../model/project-workspace";
-import { buildProjectMessages } from "../data/build-project-messages";
 
+/**
+ * The artifact half of the project workspace.
+ *
+ * **What left this hook in slice D5.** The conversation did: the transcript, the
+ * threads, message submission, and every `setTimeout` that used to advance a
+ * six-value phase enum and manufacture a transcript from it. Those are
+ * `use-project-chat-controller` now, backed by real turns, and the deleted
+ * timers are the charter's "production progression is event-driven; prototype
+ * timeouts must not become the backend lifecycle model".
+ *
+ * **What `previewSurface` still is.** The `?phase=` query parameter documented
+ * as *frontend-only preview state* in `docs/api-contracts/projects.md` — it
+ * opens an approved artifact-side screen directly. It is set from that
+ * parameter and from explicit user clicks, never from a timer, and no message
+ * anywhere is derived from it.
+ */
 export interface ProjectWorkspaceInitialState {
   artifactId?: string;
   entityIds?: string[];
   modelId?: string;
+  /** The artifact-side preview screen, from `?phase=`. Not a conversation state. */
   phase: ProjectPhase;
   prompt?: string;
   surface: ArtifactSurface;
@@ -31,21 +46,16 @@ export function useProjectWorkspaceController({
   workspace: ProjectWorkspace;
 }) {
   const router = useRouter();
-  const timers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
-  const [phase, setPhase] = useState(initial.phase);
+  const [previewSurface, setPreviewSurface] = useState(initial.phase);
   const [surface, setSurface] = useState(initial.surface);
-  const [prompt, setPromptState] = useState("");
-  const [activeThreadId, setActiveThreadId] = useState(
-    initial.threadId ?? workspace.threads[0].id,
-  );
-  const [threads, setThreads] = useState<ProjectThread[]>(workspace.threads);
+  const [prompt, setPromptState] = useState(initial.prompt ?? "");
   const [selectedModelId, setSelectedModelId] = useState(
     initial.modelId && workspace.models.some((model) => model.id === initial.modelId)
       ? initial.modelId
       : workspace.defaultModelId,
   );
   const [selectedArtifactId, setSelectedArtifactId] = useState(
-    initial.artifactId ?? workspace.artifacts[2]?.id ?? workspace.artifacts[0].id,
+    initial.artifactId ?? workspace.artifacts[2]?.id ?? workspace.artifacts[0]?.id ?? "",
   );
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [selectedEntityIds, setSelectedEntityIds] = useState(() =>
@@ -53,7 +63,6 @@ export function useProjectWorkspaceController({
       workspace.contextEntities.some((entity) => entity.id === id),
     ),
   );
-  const [chainOpen, setChainOpen] = useState(true);
   const [galleryLayout, setGalleryLayout] = useState<GalleryLayout>("grid");
   const [galleryQuery, setGalleryQuery] = useState("");
   const [artifactFilter, setArtifactFilter] = useState<ArtifactFilter>("all");
@@ -65,10 +74,6 @@ export function useProjectWorkspaceController({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorSelection, setInspectorSelection] =
     useState<InspectorSelection>("canvas");
-  const [generationProgress, setGenerationProgress] = useState(
-    initial.phase === "generating" ? workspace.previewTimeline.generationStartProgress : 0,
-  );
-  const [generationDetailsOpen, setGenerationDetailsOpen] = useState(true);
   const [questionnaire, setQuestionnaire] = useState({
     primaryActionId: workspace.questionnaire.primaryAction.defaultChoiceId,
     secondaryActionId: workspace.questionnaire.secondaryAction.defaultChoiceId,
@@ -116,19 +121,9 @@ export function useProjectWorkspaceController({
         ),
     [selectedEntityIds, workspace.contextEntities],
   );
-  const activeThread = useMemo(
-    () =>
-      threads.find((thread) => thread.id === activeThreadId) ?? threads[0],
-    [activeThreadId, threads],
-  );
   const galleryArtifacts = useMemo(() => {
-    const phaseArtifacts = phase === "complete"
-      ? workspace.artifacts
-      : phase === "generating"
-        ? workspace.artifacts.slice(0, 1)
-        : [];
     const query = galleryQuery.trim().toLocaleLowerCase();
-    const filtered = phaseArtifacts.filter((artifact) => {
+    const filtered = workspace.artifacts.filter((artifact) => {
       if (artifactFilter !== "all" && artifact.type !== artifactFilter) return false;
       if (!query) return true;
       return `${artifact.title} ${artifact.editedLabel}`.toLocaleLowerCase().includes(query);
@@ -136,64 +131,22 @@ export function useProjectWorkspaceController({
     return artifactSort === "name"
       ? [...filtered].sort((left, right) => left.title.localeCompare(right.title))
       : filtered;
-  }, [artifactFilter, artifactSort, galleryQuery, phase, workspace.artifacts]);
-  const messages = useMemo(
-    () => buildProjectMessages({ generationProgress, phase, workspace }),
-    [generationProgress, phase, workspace],
-  );
+  }, [artifactFilter, artifactSort, galleryQuery, workspace.artifacts]);
 
   useEffect(() => {
-    const activeTimers = timers.current;
     return () => {
-      activeTimers.forEach((timer) => clearTimeout(timer));
       if (heroImageObjectUrl.current) URL.revokeObjectURL(heroImageObjectUrl.current);
     };
   }, []);
 
-  useEffect(() => {
-    if (initial.phase !== "conversation") return;
-    const timer = setTimeout(() => {
-      setPhase("questionnaire");
-      setSurface("artifact");
-    }, workspace.previewTimeline.conversationToQuestionnaireMs);
-    timers.current.push(timer);
-    return () => clearTimeout(timer);
-  }, [initial.phase, workspace.previewTimeline.conversationToQuestionnaireMs]);
-
-  useEffect(() => {
-    if (phase !== "agent-running") return;
-    const timer = setTimeout(
-      () => setPhase("planning"),
-      workspace.previewTimeline.agentRunningMs,
-    );
-    timers.current.push(timer);
-    return () => clearTimeout(timer);
-  }, [phase, workspace.previewTimeline.agentRunningMs]);
-
-  useEffect(() => {
-    if (phase !== "generating") return;
-    workspace.previewTimeline.generationMilestones.forEach(({ delayMs, progress }) => {
-      const timer = setTimeout(() => {
-        setGenerationProgress(progress);
-        if (progress === 100) {
-          setPhase("complete");
-          setSurface("gallery");
-        }
-      }, delayMs);
-      timers.current.push(timer);
-    });
-  }, [phase, workspace.previewTimeline.generationMilestones]);
-
-  function syncRoute(artifactId?: string, threadId = activeThreadId) {
-    const params = new URLSearchParams({ thread: threadId });
-    const suffix = `?${params.toString()}`;
+  function syncRoute(artifactId?: string) {
     if (artifactId) {
-      router.replace(`/projects/${workspace.id}/artifacts/${artifactId}${suffix}`, {
+      router.replace(`/projects/${workspace.id}/artifacts/${artifactId}`, {
         scroll: false,
       });
       return;
     }
-    router.replace(`/projects/${workspace.id}/gallery${suffix}`, { scroll: false });
+    router.replace(`/projects/${workspace.id}/gallery`, { scroll: false });
   }
 
   function openArtifact(artifactId: string) {
@@ -206,36 +159,9 @@ export function useProjectWorkspaceController({
 
   function openGallery() {
     setSurface("gallery");
+    setPreviewSurface("conversation");
     setInspectorOpen(false);
     syncRoute();
-  }
-
-  function selectThread(threadId: string) {
-    setActiveThreadId(threadId);
-    const url = new URL(window.location.href);
-    url.searchParams.set("thread", threadId);
-    window.history.pushState(null, "", `${url.pathname}?${url.searchParams.toString()}`);
-  }
-
-  function createThread() {
-    const id = `thread-local-${threads.length + 1}`;
-    const thread = { id, title: `New chat ${threads.length + 1}` };
-    setThreads((current) => [...current, thread]);
-    setActiveThreadId(id);
-    setPromptState("");
-    setPhase("conversation");
-    setSurface("gallery");
-    const url = new URL(window.location.href);
-    url.searchParams.set("thread", id);
-    window.history.pushState(null, "", `/projects/${workspace.id}/gallery?${url.searchParams.toString()}`);
-  }
-
-  function submitMessage(promptOverride?: string, entityIdsOverride?: string[]) {
-    if (!(promptOverride ?? prompt).trim()) return;
-    if (entityIdsOverride) setSelectedEntityIds(entityIdsOverride);
-    setPromptState("");
-    setPhase("planning");
-    setSurface("gallery");
   }
 
   function setPrompt(value: string) {
@@ -249,23 +175,13 @@ export function useProjectWorkspaceController({
   }
 
   return {
-    acceptPlan() {
-      setGenerationProgress(workspace.previewTimeline.generationStartProgress);
-      setPhase("generating");
-      setSurface("gallery");
-    },
-    activeThread,
     artifactFilter,
     artifactSort,
-    chainOpen,
-    createThread,
     ctaLabel,
     editableHeadline,
     galleryLayout,
     galleryArtifacts,
     galleryQuery,
-    generationDetailsOpen,
-    generationProgress,
     groupByAccount,
     focusPane,
     headlineAlign,
@@ -279,15 +195,14 @@ export function useProjectWorkspaceController({
     inspectorOpen,
     inspectorSelection,
     modelPickerOpen,
-    messages,
     openArtifact,
     openGallery,
     openPlan() {
-      setPhase("planning");
+      setPreviewSurface("planning");
       setSurface("artifact");
     },
     openQuestionnaire() {
-      setPhase("questionnaire");
+      setPreviewSurface("questionnaire");
       setSurface("artifact");
     },
     openHome() {
@@ -297,18 +212,11 @@ export function useProjectWorkspaceController({
       const targetAccounts = workspace.artifacts.find((artifact) => artifact.type === "table");
       if (targetAccounts) openArtifact(targetAccounts.id);
     },
-    phase,
+    previewSurface,
     prompt,
     previewDevice,
     previewZoom,
     questionnaire,
-    rejectPlan() {
-      setPhase("questionnaire");
-      setSurface("artifact");
-    },
-    revisePlan() {
-      setPromptState("Revise the plan: ");
-    },
     selectInspector(selection: InspectorSelection) {
       setInspectorSelection(selection);
       setInspectorOpen(true);
@@ -322,15 +230,12 @@ export function useProjectWorkspaceController({
       setModelPickerOpen(false);
     },
     selectEntity,
-    selectThread,
-    setChainOpen,
     setCtaLabel,
     setArtifactFilter,
     setArtifactSort,
     setEditableHeadline,
     setGalleryLayout,
     setGalleryQuery,
-    setGenerationDetailsOpen,
     setGroupByAccount,
     setHeadlineAlign,
     setHeadlineColor,
@@ -345,13 +250,14 @@ export function useProjectWorkspaceController({
     setPreviewDevice,
     setPreviewZoom,
     setQuestionnaire,
-    submitMessage,
     submitQuestionnaire() {
-      setPhase("agent-running");
+      // The questionnaire is an artifact-side preview screen with no backend of
+      // its own; submitting closes it. It no longer jumps a conversation state,
+      // because the conversation is real now and only a turn can move it.
+      setPreviewSurface("conversation");
       setSurface("gallery");
     },
     surface,
-    threads,
     replaceHeroImage(file: File) {
       if (heroImageObjectUrl.current) URL.revokeObjectURL(heroImageObjectUrl.current);
       const objectUrl = URL.createObjectURL(file);

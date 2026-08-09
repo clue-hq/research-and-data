@@ -1,12 +1,17 @@
 import { z } from "zod";
+import { ThreadStatusSchema } from "./chat-thread";
 
-export const SidebarConversationStatusSchema = z.enum([
-  "idle",
-  "running",
-  "review",
-  "approval",
-  "needs-input",
-]);
+/**
+ * The sidebar's compact project/thread hierarchy.
+ *
+ * The conversation status is the pinned precedence vocabulary from
+ * `chat-thread.ts` — one enum for the whole feature, so the sidebar badge and
+ * the thread header can never disagree. The frontend proposal's `review` is
+ * gone (no backend surface emits it) and `archived` is present (the backend
+ * does emit it), which is charter §2's "the sidebar's five-status vocabulary
+ * and the workspace's six-phase vocabulary never meet" being closed.
+ */
+export const SidebarConversationStatusSchema = ThreadStatusSchema;
 
 export const SidebarConversationSchema = z.object({
   href: z.string().startsWith("/"),

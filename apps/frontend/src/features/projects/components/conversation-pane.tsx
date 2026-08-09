@@ -1,30 +1,79 @@
+"use client";
+
+import { useMemo } from "react";
 import type { ProjectWorkspace } from "../model/project-workspace";
+import type { ProjectChatController } from "../hooks/use-project-chat-controller";
 import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
 import { CanvasInspector } from "./canvas-inspector";
+import { ChatTranscript } from "./chat-transcript";
 import { ProjectComposer } from "./project-composer";
 import { ProjectIcon } from "./project-icon";
-import { PlanApproval } from "./plan-approval";
-import { ProjectMessageTimeline } from "./project-message-timeline";
 import styles from "./project-flow.module.css";
 
+/**
+ * The conversation half of the project workspace, now backed by real turns.
+ *
+ * Three behaviours the fixture era did not have, and all three are contractual:
+ *
+ * - **the composer stays usable during detached work** (§3.5). Research runs do
+ *   not lock the thread, so the user keeps asking questions; a turn submitted
+ *   while another is executing is *visibly queued* rather than silently dropped
+ *   or raced.
+ * - **Stop acts on the active generation attempt only** (§3.5). It does not
+ *   roll back committed tool effects and does not suspend a detached run, and
+ *   the control says so by only appearing while a turn is live.
+ * - **access refusals are a state** (Lane B contract §6), never an empty
+ *   transcript: a session that expired or a membership that changed says so.
+ */
 export function ConversationPane({
+  chat,
   controller,
   workspace,
 }: {
-  controller: ReturnType<typeof import("../hooks/use-project-workspace-controller").useProjectWorkspaceController>;
+  chat: ProjectChatController;
+  controller: ReturnType<
+    typeof import("../hooks/use-project-workspace-controller").useProjectWorkspaceController
+  >;
   workspace: ProjectWorkspace;
 }) {
   const { transcriptScrollRef } = useTranscriptAutoScroll({
-    generationProgress: controller.generationProgress,
-    phase: controller.phase,
+    revision: chat.transcript.reduce(
+      (total, message) => total + message.parts.length + (message.body ? 1 : 0),
+      chat.transcript.length,
+    ),
   });
+
+  const partActions = useMemo(
+    () => ({
+      busy: chat.submitting,
+      gateFor: chat.gateFor,
+      onGateDecision: (
+        card: Parameters<ProjectChatController["answerGate"]>[0],
+        decision: Parameters<ProjectChatController["answerGate"]>[1],
+      ) => {
+        void chat.answerGate(card, decision);
+      },
+    }),
+    [chat],
+  );
 
   if (controller.inspectorOpen) {
     return (
       <section className={styles.conversationPane} data-mode="inspector">
         <header className={styles.conversationHeader}>
-          <strong>{controller.activeThread.title}</strong>
-          <div><button aria-label="New thread" onClick={controller.createThread} type="button"><ProjectIcon name="plus" size={14} /></button><button aria-label="Close inspector" className={styles.activeTool} onClick={() => controller.setInspectorOpen(false)} type="button"><ProjectIcon name="edit-active" size={14} /></button><button aria-label="Expand conversation" aria-pressed={controller.focusPane === "conversation"} onClick={controller.toggleConversationFocus} type="button"><ProjectIcon name="expand" size={14} /></button></div>
+          <strong>
+            {chat.activeThread ? chat.threadLabelFor(chat.activeThread) : "Conversation"}
+          </strong>
+          <div>
+            <button
+              aria-label="Close inspector"
+              className={styles.activeTool}
+              onClick={() => controller.setInspectorOpen(false)}
+              type="button"
+            >
+              <ProjectIcon name="edit-active" size={14} />
+            </button>
+          </div>
         </header>
         <CanvasInspector
           ctaLabel={controller.ctaLabel}
@@ -46,7 +95,12 @@ export function ConversationPane({
           selection={controller.inspectorSelection}
         />
         <div className={styles.inspectorComposer}>
-          <span className={styles.selectionTag}>heading 1 <button onClick={() => controller.setInspectorSelection("canvas")} type="button">×</button></span>
+          <span className={styles.selectionTag}>
+            heading 1{" "}
+            <button onClick={() => controller.setInspectorSelection("canvas")} type="button">
+              ×
+            </button>
+          </span>
           <ProjectComposer
             entities={workspace.contextEntities}
             modelPickerOpen={controller.modelPickerOpen}
@@ -56,7 +110,7 @@ export function ConversationPane({
             onModelPickerToggle={controller.toggleModelPicker}
             onModelSelect={controller.selectModel}
             onPromptChange={controller.setPrompt}
-            onSubmit={controller.submitMessage}
+            onSubmit={(prompt) => void chat.submitMessage(prompt ?? controller.prompt)}
             prompt={controller.prompt}
             selectedEntities={controller.selectedEntities}
             selectedEntityIds={controller.selectedEntityIds}
@@ -71,31 +125,77 @@ export function ConversationPane({
     <section className={styles.conversationPane}>
       <header className={styles.conversationHeader}>
         <label>
-          <select onChange={(event) => controller.selectThread(event.target.value)} value={controller.activeThread.id}>
-            {controller.threads.map((thread) => <option key={thread.id} value={thread.id}>{thread.title}</option>)}
+          <select
+            onChange={(event) => chat.selectThread(event.target.value)}
+            value={chat.activeThreadId ?? ""}
+          >
+            {chat.threads.map((thread) => (
+              <option key={thread.id} value={thread.id}>
+                {chat.threadLabelFor(thread)}
+                {thread.status === "idle" ? "" : ` · ${thread.status}`}
+              </option>
+            ))}
           </select>
           <ProjectIcon name="chevron-down" size={12} />
         </label>
-        <div><button aria-label="New thread" onClick={controller.createThread} type="button"><ProjectIcon name="plus" size={14} /></button><button aria-label="Open canvas inspector" onClick={() => controller.setInspectorOpen(true)} type="button"><ProjectIcon name="edit" size={14} /></button><button aria-label="Expand conversation" aria-pressed={controller.focusPane === "conversation"} onClick={controller.toggleConversationFocus} type="button"><ProjectIcon name="expand" size={14} /></button></div>
+        <div>
+          <button
+            aria-label="New thread"
+            onClick={() => void chat.createThread()}
+            type="button"
+          >
+            <ProjectIcon name="plus" size={14} />
+          </button>
+          <button
+            aria-label="Open canvas inspector"
+            onClick={() => controller.setInspectorOpen(true)}
+            type="button"
+          >
+            <ProjectIcon name="edit" size={14} />
+          </button>
+          <button
+            aria-label="Expand conversation"
+            aria-pressed={controller.focusPane === "conversation"}
+            onClick={controller.toggleConversationFocus}
+            type="button"
+          >
+            <ProjectIcon name="expand" size={14} />
+          </button>
+        </div>
       </header>
+
+      {chat.access ? (
+        <p className={styles.messageText} role="alert">
+          {chat.access.message}
+        </p>
+      ) : null}
+      {chat.error ? (
+        <p className={styles.messageText} role="alert">
+          {chat.error}
+        </p>
+      ) : null}
+      {chat.warnings.map((warning) => (
+        <p className={styles.messageText} key={warning} role="note">
+          {warning}
+        </p>
+      ))}
+
       <div className={styles.transcriptScroll} ref={transcriptScrollRef}>
-        <ProjectMessageTimeline
-          controller={controller}
-          messages={controller.messages}
-          workspace={workspace}
-        />
+        <ChatTranscript actions={partActions} messages={chat.transcript} />
       </div>
-      <div className={styles.workspaceComposer} data-phase={controller.phase}>
-        {controller.phase === "planning" ? (
-          <PlanApproval
-            label={workspace.conversationCopy.planCardLabel}
-            onAccept={controller.acceptPlan}
-            onReject={controller.rejectPlan}
-            onRevise={controller.revisePlan}
-          />
+
+      <div className={styles.workspaceComposer}>
+        {chat.busy ? (
+          <div className={styles.planApprovalActions}>
+            <span role="status">Working — new messages will queue behind this turn.</span>
+            <button onClick={() => void chat.stopActiveTurn()} type="button">
+              Stop
+            </button>
+          </div>
         ) : null}
         <ProjectComposer
-          disabled={controller.phase === "generating"}
+          // Never disabled while work is detached: the user keeps the wheel.
+          disabled={chat.access !== null}
           entities={workspace.contextEntities}
           modelPickerOpen={controller.modelPickerOpen}
           models={workspace.models}
@@ -104,7 +204,10 @@ export function ConversationPane({
           onModelPickerToggle={controller.toggleModelPicker}
           onModelSelect={controller.selectModel}
           onPromptChange={controller.setPrompt}
-          onSubmit={controller.submitMessage}
+          onSubmit={(prompt) => {
+            void chat.submitMessage(prompt ?? controller.prompt);
+            controller.setPrompt("");
+          }}
           prompt={controller.prompt}
           selectedEntities={controller.selectedEntities}
           selectedEntityIds={controller.selectedEntityIds}

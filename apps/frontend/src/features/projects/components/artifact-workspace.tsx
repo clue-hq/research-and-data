@@ -13,8 +13,8 @@ export function ArtifactWorkspace({
   controller: ReturnType<typeof import("../hooks/use-project-workspace-controller").useProjectWorkspaceController>;
   workspace: ProjectWorkspace;
 }) {
-  const questionnaireActive = controller.phase === "questionnaire";
-  const planActive = controller.phase === "planning";
+  const questionnaireActive = controller.previewSurface === "questionnaire";
+  const planActive = controller.previewSurface === "planning";
   return (
     <section className={styles.artifactWorkspace}>
       <header className={styles.artifactTabs}>
@@ -26,7 +26,7 @@ export function ArtifactWorkspace({
         >
           <ProjectIcon name="gallery" size={14} />Gallery
         </button>
-        {controller.phase !== "conversation" && controller.phase !== "agent-running" ? (
+        {!questionnaireActive ? (
           <button onClick={controller.openTargetAccounts} type="button"><ProjectIcon name="target-accounts" size={12} />Target accounts</button>
         ) : null}
         {questionnaireActive ? (
@@ -66,7 +66,6 @@ export function ArtifactWorkspace({
           onGalleryQueryChange={controller.setGalleryQuery}
           onGroupByAccountChange={controller.setGroupByAccount}
           onOpenArtifact={controller.openArtifact}
-          showSkeletons={controller.phase === "generating"}
         />
       ) : (
         <ArtifactViewer

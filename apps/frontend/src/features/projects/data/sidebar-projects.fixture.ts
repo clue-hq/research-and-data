@@ -37,7 +37,7 @@ export const sidebarProjectFixtures: SidebarProject[] = [
         id: "thread-review",
         title: "Pipeline review",
         href: "/projects/custom-reports?thread=thread-review",
-        status: "review",
+        status: "needs-input",
       },
       {
         id: "thread-approval",
