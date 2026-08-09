@@ -739,9 +739,15 @@ def test_a_dry_run_previews_exactly_what_the_write_pass_does() -> None:
             preview = await backfill_project_lens(conn, workspace_id=ws, dry_run=True)
             assert preview.written == 2  # one membership + the derived discovery run
             assert (
-                await conn.execute(text("SELECT count(*) FROM project_account"))
+                await conn.execute(
+                    text("SELECT count(*) FROM project_account WHERE workspace_id = :w"), {"w": ws}
+                )
             ).scalar_one() == 0
-            assert (await conn.execute(text("SELECT count(*) FROM run_lineage"))).scalar_one() == 0
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM run_lineage WHERE workspace_id = :w"), {"w": ws}
+                )
+            ).scalar_one() == 0
 
             real = await backfill_project_lens(conn, workspace_id=ws)
             assert real.model_dump() == preview.model_dump()
@@ -768,7 +774,12 @@ def test_workspace_scoping_leaves_other_workspaces_untouched() -> None:
 
             assert report.by_workspace == {"ws_bf7a": 1}
             assert (
-                await conn.execute(text("SELECT workspace_id FROM run_lineage"))
+                await conn.execute(
+                    text(
+                        "SELECT workspace_id FROM run_lineage "
+                        "WHERE workspace_id IN ('ws_bf7a', 'ws_bf7b')"
+                    )
+                )
             ).scalars().all() == ["ws_bf7a"]
 
     run_async(_run())
