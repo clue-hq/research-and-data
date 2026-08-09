@@ -1,17 +1,27 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: frontend shell ready; proposed backend contract.
+Status: **R0 executable integration contract ratified; implementation pending where noted.**
 
 Owner for backend integration: Aaryan.
 
-The frontend is fixture-backed, and **pinned** there until phase 2: no backend
-serves these endpoints yet, so the projects repositories deliberately read no
-environment variable at all (they used to flip on `CLUE_API_BASE_URL`, which
-meant configuring the accounts flow broke the home and project routes). When
-this contract is implemented, these repositories get their own variable. The
-fixture and HTTP adapters both validate responses with the schemas under
-`src/features/projects/model/project-workspace.ts`. Presentation components do
-not call the API directly.
+The durable thread/turn/gate/stream surface is implemented, but Home project
+creation, the project catalog, the complete project workspace read, and the
+sidebar catalog are not. Consequently the live frontend is currently mixed:
+chat repositories can use HTTP, while Home and project-shell data remain
+fixture-backed and the sidebar is a fixture-project/real-thread hybrid. R0
+freezes the contract that removes that split; it does not implement it.
+
+Authority order inside this document is:
+
+1. **Executable integration contract (2026-08-10)** below.
+2. **As-built thread-shell contract (2026-08-08)** for endpoints the executable
+   section does not amend.
+3. Earlier read/write/preview proposals, retained only as design history.
+
+When `CLUE_PROJECTS_API_BASE_URL` is configured, every projects repository must
+use the same-origin authenticated BFF and validate the corresponding wire
+schema. HTTP mode never falls back to fixtures after a refusal, parse error, or
+network failure. Presentation components do not call the API directly.
 
 ## Ownership model
 
@@ -50,7 +60,509 @@ every output traceable to the request and run that produced it.
   hamburger pins the sidebar open and reflows the workspace; clicking again
   returns it to the collapsed state. Mobile keeps the separate drawer behavior.
 
-## Read endpoints
+## Executable integration contract — founder-ratified 2026-08-10 (R0)
+
+**This section is authoritative over every earlier proposal in this file.** It
+defines the target for the frontend/backend repair slices. Existing endpoints
+remain authoritative where this section explicitly says "as built"; every
+other item is an implementation obligation, not a claim that the route exists.
+
+### 1. Wire, authority, and error conventions
+
+- API JSON uses `snake_case`. Frontend Zod adapters map it once to camel-case
+  view models; components never parse or reshape transport payloads.
+- Request bodies reject unknown keys. A misspelled or unsupported field is a
+  `422 VALIDATION_ERROR`, never a silent no-op.
+- The browser calls the origin-relative BFF prefix (normally `/api/clue`). The
+  BFF supplies the authenticated session and selected workspace. Browser bodies
+  never contain `workspace_id`, `user_id`, `membership_id`, `actor_id`,
+  `action_ref`, provider tokens, or provider identity claims.
+- Every route re-checks its permission and scopes every read/write by the
+  authenticated workspace. A foreign project, thread, brand, turn, context
+  object, or attachment returns a scoped `404`; the response does not reveal
+  whether that object exists elsewhere.
+- Project creation requires the new internal permission `project.write` plus
+  `thread.write`. `operator`, `admin`, and `owner` receive `project.write`;
+  `viewer` does not. Adding it requires an explicit Lane-B policy-version bump.
+- All non-2xx JSON responses use the existing envelope and request header:
+
+```json
+{
+  "error": {
+    "code": "STABLE_MACHINE_CODE",
+    "message": "Safe user-facing explanation",
+    "requestId": "request-correlation-id"
+  }
+}
+```
+
+The response also carries `X-Request-Id`. Raw provider errors, tool arguments,
+private reasoning, stack traces, and prompt bodies never appear in this
+envelope.
+
+The stable errors this integration branches on are:
+
+| HTTP | `error.code` | Meaning |
+|---|---|---|
+| 400 | `IDEMPOTENCY_KEY_REQUIRED` | A required write omitted a usable idempotency header. |
+| 401 | `AUTHENTICATION_REQUIRED` / `SESSION_INVALID` | No valid authenticated session. |
+| 403 | `WORKSPACE_FORBIDDEN` / `PERMISSION_DENIED` / `MEMBERSHIP_STATE_CHANGED` | The internal principal cannot act in the selected workspace. |
+| 404 | `BRAND_NOT_FOUND` / `PROJECT_NOT_FOUND` / `THREAD_NOT_FOUND` / `TURN_NOT_FOUND` / `CONTEXT_REF_NOT_FOUND` / `ATTACHMENT_NOT_FOUND` / `AGENT_PROFILE_NOT_FOUND` | The scoped object cannot be used; foreign-object existence is not disclosed. |
+| 409 | `IDEMPOTENCY_CONFLICT` / `CAPABILITY_UNAVAILABLE` / `THREAD_ARCHIVED` / `TURN_NOT_RUNNING` / `GATE_ALREADY_ANSWERED` / `GATE_SUBJECT_STALE` / `GATE_AMOUNT_STALE` | The request is valid JSON but conflicts with durable state or advertised capability. |
+| 422 | `VALIDATION_ERROR` / `INVALID_CURSOR` | The request shape, value, or pagination cursor is invalid. |
+| 500 | `INTERNAL_ERROR` | An unexpected server failure; details stay in correlated logs. |
+| 503 | `BODIES_UNAVAILABLE` | This deployment cannot hydrate transcript bodies. |
+
+Unknown future codes remain displayable through their safe `message`, but the
+frontend only branches behavior on codes it knows.
+
+### 2. Home read
+
+`GET /api/v1/home` returns the authenticated workspace's configuration for a
+new conversation. It returns no suggested project/thread ids and creates
+nothing. It requires `project.read`.
+
+```json
+{
+  "data": {
+    "brands": [
+      { "id": "brand_01J...", "name": "Clue Demo Brand" }
+    ],
+    "default_brand_id": "brand_01J...",
+    "context_entities": [],
+    "agent_profiles": [],
+    "default_agent_profile_id": null,
+    "composer_capabilities": {
+      "context_refs": false,
+      "attachments": false,
+      "agent_profile_selection": false
+    },
+    "suggestions": [
+      "Find target accounts for our new campaign"
+    ]
+  }
+}
+```
+
+Contract rules:
+
+- `brands` contains only active brands in the selected workspace.
+- `default_brand_id` is non-null only when exactly one brand is usable or a
+  separately persisted workspace preference names a usable brand. The backend
+  never chooses the first row or a lexicographically convenient brand.
+- When multiple brands exist and there is no valid default, the frontend must
+  obtain a real brand selection before project creation.
+- `suggestions` contains zero to three plain-text suggestions. They are not
+  project identities or commands.
+- A composer control is interactive only when its capability is `true`.
+  Unsupported attachment/model/context controls are hidden or explicitly
+  disabled; the frontend cannot simulate success.
+- When `agent_profile_selection` is false, `agent_profiles` is empty,
+  `default_agent_profile_id` is null, and the backend uses its governed default.
+- When `context_refs` is false, `context_entities` is empty. When it becomes
+  true, each entry has the exact `object_type`, `object_id`, `label`,
+  `secondary_label`, and nullable `image_url` shape shown in §3's reference
+  semantics; the account/contact source remains Lane C's real read layer.
+
+### 3. Atomic Home bootstrap
+
+`POST /api/v1/projects` is the only Home submission route. It requires a
+non-blank `Idempotency-Key` header, `project.write`, and `thread.write`, and
+accepts:
+
+```json
+{
+  "brand_id": "brand_01J...",
+  "message": "Start an ABM project for Northstar Labs",
+  "context_refs": [],
+  "attachment_refs": [],
+  "agent_profile_id": null
+}
+```
+
+Field rules:
+
+- `brand_id` is required and must name an active brand in the authenticated
+  workspace.
+- `message` is 1–32,000 characters and must contain non-whitespace text.
+- `context_refs` is ordered. The server supplies workspace scope, validates
+  each `object_type`/`object_id`/optional positive `version`, and persists the
+  same order with the accepted submission. When enabled, one entry is
+  `{ "object_type": "account", "object_id": "acct_01J...", "version": null }`;
+  `object_type` is exactly `account | contact` for this composer.
+- `attachment_refs` is ordered and may contain only durable, workspace-scoped
+  upload receipts: `artifact_key`, 64-character lowercase `sha256`,
+  `media_type`, `byte_count`, and `filename`. Browser blob URLs and local paths
+  are structurally forbidden.
+- `agent_profile_id` is allowed only when `GET /home` advertised it and
+  `agent_profile_selection=true`.
+- `context_refs` and `attachment_refs` default to `[]` when omitted;
+  `agent_profile_id` defaults to null.
+- A non-empty optional capability field sent while its capability is false is
+  refused with `409 CAPABILITY_UNAVAILABLE`.
+- The client cannot supply the project id, project title, thread id, thread
+  title, turn id, phase, run id, `actor_id`, or `action_ref`.
+
+The server performs one transaction, in this order:
+
+1. Resolve and authorize the internal principal and selected workspace.
+2. Validate the brand, context references, attachments, and agent profile.
+3. Resolve the workspace-scoped idempotency identity and request fingerprint.
+4. Create the Project with the exact title `Untitled project`.
+5. Create its first Thread with the deterministic message-derived title below.
+6. Capture the exact user-message bytes as the content-addressed artifact and
+   `onboarding_input` required by capture-before-use.
+7. Insert the immutable `agent_turn_submission` receipt with that body
+   reference, the authenticated internal user/membership, and every ordered
+   reference. Together the capture + submission are the durable accepted user
+   message while queued; the fleet worker later materializes the canonical
+   `agent_thread_message` row under the existing two-phase turn contract.
+8. Append `turn.accepted` and persist the dispatch/queue intent.
+9. Commit; only then may the fleet worker observe and execute the turn.
+
+No model/gateway call occurs in the HTTP process. A failure before commit makes
+no partial Project, Thread, Message, submission, or dispatch visible.
+
+The first request returns `201`; an exact idempotent replay returns `200` with
+the same ids and `replayed=true`:
+
+```json
+{
+  "data": {
+    "project": {
+      "id": "prj_01J...",
+      "title": "Untitled project",
+      "brand_id": "brand_01J...",
+      "href": "/projects/prj_01J...",
+      "created_at": "2026-08-10T12:00:00Z"
+    },
+    "thread": {
+      "id": "thr_01J...",
+      "title": "Start an ABM project for Northstar Labs",
+      "href": "/projects/prj_01J...?thread=thr_01J...",
+      "status": "running",
+      "pinned": false,
+      "project_id": "prj_01J...",
+      "created_at": "2026-08-10T12:00:00Z",
+      "updated_at": "2026-08-10T12:00:00Z"
+    },
+    "turn": {
+      "turn_id": "019f...",
+      "thread_id": "thr_01J...",
+      "requested_at": "2026-08-10T12:00:00Z",
+      "replayed": false
+    },
+    "href": "/projects/prj_01J...?thread=thr_01J..."
+  }
+}
+```
+
+The frontend navigates only to `data.href`. It does not append `prompt`,
+`phase`, `model`, `entities`, or fixture identities, and the project route does
+not submit the message again.
+
+Idempotency is scoped to the authenticated workspace and this operation:
+
+- same key + byte-equivalent canonical request → same project/thread/turn;
+- same key + different brand/message/ref/profile bytes →
+  `409 IDEMPOTENCY_CONFLICT`;
+- a network failure after commit is recovered by replaying the same key;
+- concurrent requests under one key produce exactly one project and one turn.
+
+Missing/blank keys return `400 IDEMPOTENCY_KEY_REQUIRED`.
+
+### 4. Deterministic first-thread title
+
+For the Home-created thread, the server:
+
+1. trims leading/trailing Unicode whitespace from `message`;
+2. collapses each internal Unicode-whitespace run to one ASCII space;
+3. if the normalized value is at most 80 Unicode code points, uses it exactly;
+4. otherwise takes a word-boundary prefix that fits within 79 code points and
+   appends `…`, for a maximum of 80 code points. If the first 79 code points
+   contain no word boundary, it uses those 79 code points plus `…`.
+
+Because Home rejects a blank message, this title is non-null. `New chat` is
+only a presentation fallback for a separately created unnamed thread; it is
+not the Home-created thread's stored title. A later manual rename is never
+overwritten by automatic title derivation.
+
+### 5. Project and sidebar reads
+
+`GET /api/v1/projects/:projectId` requires `project.read` and returns the real
+project shell:
+
+```json
+{
+  "data": {
+    "id": "prj_01J...",
+    "title": "Untitled project",
+    "brand_id": "brand_01J...",
+    "product_id": null,
+    "status": "active",
+    "created_at": "2026-08-10T12:00:00Z",
+    "context_entities": [],
+    "agent_profiles": [],
+    "default_agent_profile_id": null,
+    "composer_capabilities": {
+      "context_refs": false,
+      "attachments": false,
+      "agent_profile_selection": false
+    },
+    "artifacts": []
+  }
+}
+```
+
+The project response does not contain fixture-only `prompt`, `phase`, `plan`,
+`questionnaire`, `previewTimeline`, `reasoningTrace`, or client-manufactured
+conversation activity. Threads, transcript, turns, gates, and streams load from
+their first-class Lane-D endpoints.
+
+A project with no real artifacts returns `artifacts: []`; the frontend renders
+the explicit empty Gallery. It never borrows fixture cards. Until the design
+artifact read contract lands, every artifact shown in HTTP mode must come from
+a real backend record or not be shown.
+
+`GET /api/v1/projects/sidebar?limit=...&cursor=...` requires `project.read` and
+`thread.read` and returns a tenant-scoped, batch-hydrated hierarchy. `limit`
+defaults to 50 and is constrained to 1–100:
+
+```json
+{
+  "data": [
+    {
+      "id": "prj_01J...",
+      "title": "Untitled project",
+      "href": "/projects/prj_01J...",
+      "conversations": [
+        {
+          "id": "thr_01J...",
+          "title": "Start an ABM project for Northstar Labs",
+          "href": "/projects/prj_01J...?thread=thr_01J...",
+          "status": "running",
+          "pinned": false,
+          "updated_at": "2026-08-10T12:00:00Z"
+        }
+      ]
+    }
+  ],
+  "meta": { "next_cursor": null }
+}
+```
+
+Project expansion/collapse and desktop pinning are frontend shell state and are
+not serialized by this endpoint. Project-level `pinned` is absent because no
+project-pin mutation exists. Thread `pinned` is the real as-built thread field.
+Thread title may be null for a separately created unnamed thread; the frontend
+then renders `New chat` without pretending it is stored.
+
+Conversation status is `idle | running | approval | needs-input | archived`.
+Both queued and executing turns derive `running`; `approval` and `needs-input`
+derive from unanswered durable gates. This sidebar status is informative and
+does not decide whether Stop is available.
+
+### 6. Turn submission, queueing, and controls
+
+The as-built ordinary endpoint remains:
+
+```text
+POST /api/v1/projects/:projectId/threads/:threadId/turns
+```
+
+It requires `Idempotency-Key`, accepts exactly one of `message` or
+`gate_response`, and returns `202` with the as-built `TurnAcceptedWire`.
+`context_refs`, `attachment_refs`, and `agent_profile_id` use the same shapes
+and capability rules as Home bootstrap, but are valid only with an ordinary
+`message`; a gate response plus any of them is `422 VALIDATION_ERROR`.
+
+The submissions-union read adds an explicit hydration opt-in so a queued user
+message survives a reload before the worker has materialized its canonical
+history row:
+
+```text
+GET /api/v1/projects/:projectId/threads/:threadId/turns?include=submission_bodies
+```
+
+Each turn item then includes:
+
+```json
+{
+  "submitted_message": {
+    "body_artifact_key": "sha256/...",
+    "body_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "body": "Start an ABM project for Northstar Labs",
+    "body_unavailable_reason": null
+  }
+}
+```
+
+Without the opt-in, `body` is null. Hydration is workspace-scoped,
+media-type checked, byte-budgeted, and digest verified exactly like the message
+body read. Once the canonical user message exists, the frontend deduplicates
+the submission projection and message row by `(turn_id, role=user)`; it never
+renders the same human message twice.
+
+Queue rules are binding:
+
+- The public turn-state vocabulary is exactly `queued | running | completed |
+  awaiting_input | failed | cancelled`; retry is a new linked turn/generation
+  attempt, not mutation of a terminal state.
+- At most one platform-Deep-Agent turn has durable state `running` per thread.
+- Later accepted turns remain durable `queued` submissions in exact acceptance
+  order; reads and reloads must show them before worker execution begins.
+- Submission remains available while another turn runs. Per-request duplicate
+  protection must not disable the whole conversation composer.
+- `thread_busy` means any queued or running turn exists.
+- `running_turn` means the one turn whose state is exactly `running`.
+- Stop is rendered only for `running_turn`; it never targets a queued turn.
+- A terminal `completed`, `failed`, `cancelled`, or `awaiting_input` event
+  releases the thread and makes the next queued turn dispatchable.
+
+`POST …/turns/:turnId/stop` records cancellation of the running model attempt
+and returns `202`:
+
+```json
+{
+  "data": {
+    "turn_id": "019f...",
+    "control_id": "019f...",
+    "requested_at": "2026-08-10T12:00:03Z",
+    "already_requested": false
+  }
+}
+```
+
+A repeated Stop returns the same durable request with
+`already_requested=true`. A queued or terminal target returns
+`409 TURN_NOT_RUNNING`. Stop does not undo committed tool effects or suspend a
+detached research run.
+
+### 7. SSE control frames and terminal lifecycle
+
+Every SSE frame carries an `event:` name and one JSON `data:` object. The
+`event:` name must byte-equal `data.type`. The frontend treats disagreement as
+a protocol failure and rehydrates from durable state; it never guesses.
+
+Durable frames keep the as-built envelope:
+
+```text
+schema_version, event_id, sequence, occurred_at,
+project_id, thread_id, turn_id, type,
+generation_attempt_id?, message_id?, part_id?, part_kind?, run_id?,
+delta_index?, part?, delta?, reason?, status?, failure_code?, replayed?
+```
+
+Connect-generated frames are deliberately cursorless but still carry the
+common identity and discriminator:
+
+```json
+{
+  "schema_version": "1",
+  "project_id": "prj_01J...",
+  "thread_id": "thr_01J...",
+  "turn_id": "019f...",
+  "type": "stream.hello"
+}
+```
+
+```json
+{
+  "schema_version": "1",
+  "project_id": "prj_01J...",
+  "thread_id": "thr_01J...",
+  "turn_id": "019f...",
+  "type": "stream.reset",
+  "reason": "cursor_older_than_horizon",
+  "rehydrate": "transcript"
+}
+```
+
+Synthetic frames never invent `event_id`, `sequence`, or `occurred_at`.
+A durable reconciliation `stream.reset` keeps its real durable cursor.
+
+The turn stream is finite:
+
+- backlog containing a terminal event is emitted through that event and closes;
+- a live batch containing a terminal event is emitted through it and closes;
+- the frontend finalizes immediately when it parses the terminal event, aborts
+  its reader, hides Stop, and refreshes the canonical transcript; it does not
+  wait for socket EOF to update the UI;
+- reconnect occurs only while durable state remains queued/running;
+- `stream.reset` causes transcript/turn rehydration before any new attach.
+
+Malformed non-terminal frames are diagnostic telemetry, not transcript
+messages. An unsupported schema version or identity mismatch stops the stream,
+shows a controlled recovery state, and re-fetches durable data. Raw strings
+such as `malformed turn-stream frame` never appear as chat content.
+
+### 8. Sidebar interaction state
+
+The project header hamburger controls one shared authenticated application
+shell; it is not a navigation link. Desktop states are:
+
+```text
+collapsed | hover-preview | pinned-expanded
+```
+
+- Pointer hover or keyboard focus from `collapsed` enters `hover-preview`.
+- `hover-preview` is an overlay and does not change workspace width.
+- Pointer/focus departure returns to `collapsed`; Escape also closes preview.
+- Click from collapsed/preview enters `pinned-expanded` and reflows the project
+  workspace.
+- Click while pinned returns to `collapsed`.
+- Mobile uses the existing modal drawer and does not reuse desktop reflow.
+
+The button exposes its true action through `aria-label` and `aria-expanded`.
+It never calls `router.push("/")` and never uses the label `Go to home`.
+
+### 9. Capability honesty and fixture prohibition
+
+In HTTP mode:
+
+- Home, project, sidebar, threads, messages, turns, gates, and stream adapters
+  all use HTTP repositories behind the same transport selection.
+- An error stays an error. No repository catches it and substitutes fixture
+  projects, threads, artifacts, messages, models, accounts, or contacts.
+- Attachments stay hidden until a durable upload/capture endpoint returns the
+  attachment receipt defined in §3.
+- Model selection stays hidden until the backend advertises selectable
+  profiles and persists the chosen `agent_profile_id` on the submission.
+- Context chips stay hidden until the backend both advertises the capability
+  and persists/rehydrates the ordered references.
+- Project rename/pin/delete and project-wide archive controls stay hidden until
+  their real endpoints are separately contracted and implemented. Thread-level
+  rename/pin/archive remain available through the as-built thread endpoints.
+- Fixture-only phase simulation and query parameters are allowed only in
+  explicitly fixture/dev preview routes, never in an HTTP-backed project URL.
+
+Fixture adapters may remain for isolated visual tests, but they must implement
+the same repository interfaces and lifecycle semantics. They are not a
+production fallback.
+
+### 10. R0 acceptance obligations for later slices
+
+Implementation is conformant only when contract tests prove:
+
+1. One Home action creates one durable project/thread/capture/submission.
+2. Idempotent retry cannot duplicate any of those rows.
+3. Cross-workspace brand/project/thread/ref/attachment access reveals nothing.
+4. The response route contains only backend-returned project/thread ids.
+5. A new project renders an empty Gallery with no fixture cards.
+6. Queued turns survive reload and execute in order.
+7. Stop is offered only for the running turn and disappears on terminal.
+8. `stream.hello`/`stream.reset` parse and every turn stream closes on terminal.
+9. Sidebar hover overlays, click reflows, and neither action navigates Home.
+10. Every visible composer control either completes its durable contract or is
+    absent from HTTP mode.
+
+---
+
+The sections below preserve the original frontend proposal and the 2026-08-08
+as-built amendments for history. Where they conflict with the executable
+contract above, the executable contract wins.
+
+## Historical frontend proposal — read endpoints (non-authoritative)
 
 ### `GET /api/v1/projects/sidebar`
 
@@ -159,7 +671,7 @@ supports `text`, `reasoning`, `action`, `tool`, `plan`, `task`, and `sources`
 parts. Each part requires a stable ID so streamed updates can replace a part in
 place rather than append duplicate status UI.
 
-## Write endpoints
+## Historical frontend proposal — write endpoints (non-authoritative)
 
 - `POST /api/v1/projects` — atomically create an `Untitled project`, its first
   Thread (short title derived from the first user message), the first Message,
@@ -257,7 +769,7 @@ The current inspector shell exercises text `color`, `fontFamily`, `fontSize`,
 replacement-file fields. The frontend keeps these edits local until the node
 PATCH endpoint is connected.
 
-## Frontend-only preview state
+## Historical frontend-only preview state (non-authoritative)
 
 The `thread`, `phase`, `prompt`, `model`, and comma-separated `entities` query
 parameters exist so approved
@@ -272,9 +784,10 @@ the backend is connected.
 
 ## As-built thread-shell contract — founder-ratified 2026-08-08 (Lane D D0–D2)
 
-**This section is authoritative where it conflicts with the proposal above.** It records the
-founder's ratification of the nine as-built deviations from Lane D slice D0 (the durable thread
-shell) plus the D2 turn-submission contract. Owner: Lane D
+**This section is authoritative over the historical proposal above and subordinate only to the
+2026-08-10 executable integration contract.** It records the founder's ratification of the nine
+as-built deviations from Lane D slice D0 (the durable thread shell) plus the D2 turn-submission
+contract. Owner: Lane D
 (`docs/specs/FI-lane-D-production-chat-and-launch.md`); implementation in
 `platform/api/clue_api/chat/` behind `CLUE_CHAT_ENABLED` (default off).
 

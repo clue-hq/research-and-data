@@ -1,6 +1,6 @@
 # FI lane demarcation registry — the FI-2 implementation agent's exclusive territory vs every other lane
 
-**Status: AUTHORITATIVE for scope boundaries once founder-acked. Purpose: guarantee zero overlap between the FI-2 implementation agent (working in the primary worktree on `docs/specs/FI-2-workspace-account-layer.md`) and every other lane (A–G). Every lane charter defers to this registry on "who owns what"; a lane needing something inside FI-2's territory requests it from that agent, never builds it.**
+**Status: AUTHORITATIVE for scope boundaries once founder-acked; amended 2026-08-10 for the R0 chat-integration join. Purpose: guarantee zero overlap between the FI-2 implementation agent (working in the primary worktree on `docs/specs/FI-2-workspace-account-layer.md`) and every other lane (A–G). Every lane charter defers to this registry on "who owns what"; a lane needing something inside FI-2's territory requests it from that agent, never builds it.**
 
 Date: 2026-08-08. Compiled from: the FI-2 spec (§§2–9), the FI-2 agent's actual commit trail in this worktree (`74046e1a..4715756c`, 30+ commits), and its closing entries (`_memory/2026-08-08-fi2-slice0-complete.md`, `_memory/2026-08-08-fi2-slice1-backend-complete.md`).
 
@@ -43,7 +43,45 @@ The accounts & contacts flow's contract amendments and adapter flips (its entire
 Not a lane to staff. Coordination with it happens through this registry and the founder, not through parallel edits.
 
 ### 2.4 Lane D — production chat + Option-B launch
-**No deliverable overlap with FI-2.** Explicit exclusions to keep it that way: Lane D never touches `frontend_read/**`, `apps/frontend/src/features/accounts/**`, `api-contracts/accounts.md`, FI-2 membership/lineage tables, or any slice-2/3 file in §1.2. Its frontend work is `apps/frontend/src/features/projects/**` + `api-contracts/projects.md` only. Touchpoints, read-only or additive: it consumes Lane B's closed `RequestPrincipal` and internal user/membership ids, and owns the durable chat turn/gate plus `turn-action:<turn_id>` derivation; it *consumes* FI-2's `researchStatus` vocabulary (already ratified with `not_launchable` reserved for exactly this lane); its D4 status read-back consumes the L2 index (done) and Lane B's L3; its POST routes own their CORS posture per the ratified same-origin-proxy decision; it registers its routers at the composition-root chokepoint (§3).
+**No deliverable overlap with FI-2.** Explicit exclusions to keep it that way:
+Lane D never touches `frontend_read/**`,
+`apps/frontend/src/features/accounts/**`, `api-contracts/accounts.md`, FI-2
+membership/lineage tables, or any slice-2/3 file in §1.2. Its frontend work is
+`apps/frontend/src/features/projects/**` + `api-contracts/projects.md` only.
+Touchpoints, read-only or additive: it consumes Lane B's closed
+`RequestPrincipal` and internal user/membership ids, and owns the durable chat
+turn/gate plus `turn-action:<turn_id>` derivation; it *consumes* FI-2's
+`researchStatus` vocabulary (already ratified with `not_launchable` reserved
+for exactly this lane); its D4 status read-back consumes the L2 index (done) and
+Lane B's L3; its POST routes own their CORS posture per the ratified
+same-origin-proxy decision; it registers its routers at the composition-root
+chokepoint (§3).
+
+**R0 chat-integration join amendment (founder-ratified 2026-08-10).** D5's
+original exclusion of project lifecycle remains historically correct; it is
+not retroactively widened. A bounded join slice in the Lane-D worktree now owns
+the minimum project-side seams required to make Home chat real:
+
+- `GET /api/v1/home`, atomic `POST /api/v1/projects`,
+  `GET /api/v1/projects/sidebar`, and `GET /api/v1/projects/:projectId`;
+- the project-workspace/Home/sidebar repositories and Zod models under
+  `apps/frontend/src/features/projects/**`;
+- the shared authenticated application shell and the project-header sidebar
+  control, provided the edit stays within projects/shell files and does not
+  enter `features/accounts/**`;
+- adoption of Lane B's new internal `project.write` permission through a
+  coordinated policy-version change; and
+- consumption of Lane C's account/contact ids only through its published read
+  contracts and typed refs, never by editing Lane C files.
+
+The join slice explicitly does **not** own project rename/delete/project-pin,
+project-wide archive, artifact generation/read/edit, design-subsystem mounting,
+or Lane E synthesis. New projects return `artifacts: []` and render the empty
+Gallery until the separately governed design/artifact integration lands. Lane
+D still owns the stream-control-frame, terminal closure, queue-vs-running,
+Stop, and transcript-recovery corrections. The exact executable contract is
+`apps/frontend/docs/api-contracts/projects.md` § "Executable integration
+contract".
 
 ### 2.5 Lane E — on-completion synthesis
 **Exclusions (already in its charter, now binding via this registry):** never edits `narrative/positioner.py` / `narrative/fields.py` supersede predicates (§6.4 is FI-2 slice 3's — E3 lands only *after* it); never adds `run_lineage` registration (prose claims ride the triggering job's already-registered `research_run_id`); never touches `account_entity_research.py` (§6.1 is FI-2's), `current_values`/merge, or `frontend_read/**` (its prose claims reach that surface automatically through the merge — if the detail endpoint needs a `summary` field added, that is a *request to the FI-2 agent*, not a Lane E edit). Its own files: `narrative/prose.py` (new), `narrative/research_views.py` (the L1 tuple entry only), a new prose pack via `narrative_wiring`, the fleet-handler synthesis step + tool. File-disjoint from FI-2 by construction; the one shared *file* risk is `narrative/fields.py` if the prose pack were declared there — it must live in its own module instead.
@@ -61,7 +99,7 @@ No overlap: FI-2 names the bridge a non-goal, and its own closing entry *depends
 
 1. **Api composition root** (`projections_app.py` / `projections_main.py` / `fleet_main.py` / `toolbelt_wiring.py`): the FI-2 agent has active edits (router mount). Other lanes add *registration calls only*, each in its own milestone-owned `*_wiring.py` module (the PF-7 pattern), and rebase around FI-2's edits — never restructure these files while FI-2 slices are in flight.
 2. **Alembic single head:** current head is FI-2's `870fe4f2af87`, and FI-2 is the *active* minting lane in the primary worktree. Every other lane chains off head at branch time and expects an `alembic merge` at integration; nobody renumbers.
-3. **`api-contracts/accounts.md` is FI-2's document.** Other lanes reference it; only the FI-2 agent (and founder) write it. `api-contracts/projects.md` is Lane D's on the same terms.
+3. **`api-contracts/accounts.md` is FI-2's document.** Other lanes reference it; only the FI-2 agent (and founder) write it. `api-contracts/projects.md` is Lane D/the R0 chat-integration join's on the same terms; its 2026-08-10 executable section outranks its retained historical proposal.
 
 ## 4. Corrections to the standing decision queue
 

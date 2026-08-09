@@ -1,11 +1,25 @@
 # FI Lane D — The production chat surface + conversation-mediated research launch (D-9 Option B)
 
-**Status: RATIFIED CHARTER — every §6 decision is founder-resolved (2026-08-08); the lane is build-ready. §6-D1 async worker-executed turns; §6-D2 genuine, complete token streaming; §6-D3 durable generic `agent_gate` substrate (immutable gate + insert-once answer record); §6-D4 real Clue-owned authenticated user principal under `FI-lane-B-authenticated-principal-contract.md`; §6-D5 estimate tool DEFERRED post-V1 (server-derived maximum-spend on the gate instead); §6-D6 trial surface kept as dev-only harness. Full end-to-end scope per the founder's 2026-08-08 no-shortcuts directive: speed comes from parallel worktrees, never from cutting designed features.**
+**Status: RATIFIED CHARTER — every §6 decision is founder-resolved (2026-08-08); R0's executable Home/project/chat join contract was added 2026-08-10. §6-D1 async worker-executed turns; §6-D2 genuine, complete token streaming; §6-D3 durable generic `agent_gate` substrate (immutable gate + insert-once answer record); §6-D4 real Clue-owned authenticated user principal under `FI-lane-B-authenticated-principal-contract.md`; §6-D5 estimate tool DEFERRED post-V1 (server-derived maximum-spend on the gate instead); §6-D6 trial surface kept as dev-only harness. Full end-to-end scope per the founder's 2026-08-08 no-shortcuts directive: speed comes from parallel worktrees, never from cutting designed features.**
 
 Date: 2026-08-08. Branch: `platform/frontend-integration`.
 Parent rulings: FI-1 §9 — **D-9 RESOLVED Option B** (research launch is a deepagent tool call inside the project conversation, authorized by the user's confirming turn; the production chat surface **S6 enters MVP scope**). Doc A (`clue-hq-platform-agent-runtime.md`) is the binding vocabulary; the harness doc's REQ-18–22 define the agent-workspace surface and the project/thread/tab shell.
 Method: two read-only Opus code studies (2026-08-08: agent-turn substrate + launch authority chain; frontend chat contract). Every baseline fact carries a file:line citation from them.
 Scope boundary: this lane is bound by **`docs/specs/FI-lane-demarcation.md` §2.4** — it never touches `frontend_read/**`, `apps/frontend/src/features/accounts/**`, `api-contracts/accounts.md`, or any FI-2 slice-2/3 file; its frontend territory is `features/projects/**` + `api-contracts/projects.md` only. Its identity dependency is the provider-neutral `RequestPrincipal` and internal-id contract in **`docs/specs/FI-lane-B-authenticated-principal-contract.md`**; Lane D never imports/interprets Clerk identity, organization, role, session, or token claims.
+
+**2026-08-10 join amendment.** The observed Home-to-chat failure crosses the
+original D5 boundary because D5 deliberately did not own project lifecycle.
+The founder-ratified repair therefore introduces a bounded **chat-integration
+join slice** in this worktree. It owns only `GET /home`, atomic
+`POST /projects` bootstrap, project/sidebar reads, the shared project shell,
+and their `features/projects/**` repositories. Lane D continues to own the
+turn/queue/stream/Stop behavior the join consumes. This amendment does not pull
+project rename/delete/pin, artifact generation, Gallery artifact reads, the
+design subsystem, or any Lane E/F/G file into Lane D; new projects render an
+empty Gallery until the separately governed artifact integration exists. The
+complete executable shapes and authority order live in
+`apps/frontend/docs/api-contracts/projects.md` § "Executable integration
+contract" and are not duplicated here.
 
 ---
 
@@ -173,10 +187,62 @@ The composer may remain available during detached work. While a same-thread mode
 
 Initial/cold load comes from paginated durable messages plus current gate/run projections, not replaying the entire SSE history. Live attach starts from the returned cursor; reconnect sends `Last-Event-ID`. If the cursor is outside retention or an attempt was reset, `stream.reset` instructs the repository to re-fetch the canonical message/turn projection and then attach at the new cursor. At-least-once delivery is deduplicated by `event_id`; part identity/revision prevents duplicate UI. Transport errors use the shared `{error:{code,message,requestId}}` envelope and never surface raw provider exceptions, tool arguments, or private reasoning.
 
+### 3.7 R0 executable Home/project/chat join (founder-ratified 2026-08-10)
+
+The authoritative wire schemas, idempotency/error matrix, title algorithm,
+capability rules, sidebar state machine, and fixture prohibition are in
+`apps/frontend/docs/api-contracts/projects.md` § "Executable integration
+contract". This charter freezes the architectural obligations that contract
+must preserve:
+
+1. **One Home act, one durable transaction.** `POST /api/v1/projects` creates
+   the `Untitled project`, its message-titled first thread, the captured human
+   message, immutable submission, `turn.accepted`, and dispatch intent before
+   returning the real route. No second Send and no client-authored ids.
+2. **Same turn engine.** Bootstrap factors through the existing capture,
+   submission, event, single-flight, and dispatch services; it does not create
+   a second Home-only execution path. The HTTP process never composes/calls the
+   gateway.
+3. **Explicit project authority.** Creation adds `project.write` to Lane B's
+   internal permission vocabulary (operator/admin/owner, not viewer), bumps the
+   policy version, and still requires `thread.write`. The client supplies no
+   workspace or actor authority.
+4. **No arbitrary brand.** The request names a workspace-scoped brand. Home may
+   expose a default only when unambiguous or separately persisted; row order is
+   never business authority.
+5. **Finite turn streams.** Synthetic `stream.hello`/connect-time
+   `stream.reset` carry the same version/type/project/thread/turn identity the
+   frontend parser requires. The SSE `event:` equals JSON `type`; terminal
+   backlog/live events are emitted and the turn stream closes. The client
+   finalizes on the terminal frame rather than waiting for EOF.
+6. **Queue and Stop are different state.** Queued and running both make the
+   thread busy, but only the exactly-running turn is stoppable. Later messages
+   remain durably visible in acceptance order and dispatch after every terminal
+   outcome, including cancel/failure/awaiting-input.
+7. **A real shell, not a hybrid.** Home, project, sidebar, and chat repositories
+   share the same transport choice. HTTP errors cannot fall back to fixture
+   project ids, titles, threads, models, artifacts, or timeline phases.
+8. **Honest capability surface.** Context refs, attachments, and agent-profile
+   selection are interactive only when advertised and durably accepted. Until
+   then their controls are absent/disabled. A new project has a real empty
+   Gallery; fixture artifacts never stand in for an unimplemented backend.
+9. **Hamburger controls layout.** Desktop hover previews as an overlay; click
+   pins and reflows; mobile remains a drawer. No sidebar toggle navigates Home.
+
+This is a cross-seam integration amendment, not a reopening of D1–D6 and not an
+authorization to implement the design/artifact subsystem on this branch.
+
 ---
 
 ## 4. Slices (each independently landable; per-slice sign-off per the branch charter)
 
+- **R0 — executable integration contract freeze (documentation only).** Add
+  §3.7, reconcile `FI-lane-demarcation.md` §2.4, and make
+  `apps/frontend/docs/api-contracts/projects.md` authoritative for the atomic
+  Home bootstrap, exact titles, project/sidebar reads, finite SSE lifecycle,
+  queue-vs-Stop state, shared sidebar behavior, empty Gallery, capability
+  honesty, error codes, and no-fixture-fallback rule. No runtime, schema, or
+  migration change is part of R0.
 - **D0 — durable shell.** P1: `thread` table + internal-user/membership FKs + pagination + `refs[]` vocabulary + thread CRUD tools/endpoints. D0's ownership migration chains after Lane B B1; its remaining thread/message work proceeds in parallel. Also: L6-truncation inversion (newest-retained) + the missing `get_onboarding_input_for_artifact` index. AC: thread CRUD round-trips over HTTP with an injected internal test principal; no provider id enters a row; turn list paginates; a 200-message thread keeps its newest messages in L6; db-smoke green.
 - **D1 — identity + action_ref (with Lane B).** P2 incl. the directive-tool blocker fix and canonical `turn-action:<turn_id>` resolver. AC: `confirm_account_research_directive@2` succeeds end-to-end from a turn on a dev workspace, `confirmed_by`/`confirming_action_ref` equal the ambient turn values; a plan/client-supplied `action_ref` is structurally absent/rejected; the ref resolves only inside its workspace and actor/gate scope; `draft_…@2` drives through the agent seam in a test.
 - **D2 — async turn execution.** P3: `AGENT_TURN` task kind, worker composition (once, at startup), the production turn route, per-thread single-flight + visible queueing, replay short-circuit honored, stop/retry attempt semantics, trial surface retired to dev-only. AC: concurrent turns on two workspaces execute without cross-talk; two turns on one thread execute in submission order; a worker crash mid-turn starts a distinct retry attempt and reaches one committed outcome; the HTTP process never touches the gateway; detached research does not block a new chat turn.
@@ -184,7 +250,14 @@ Initial/cold load comes from paginated durable messages plus current gate/run pr
 - **D4 — the kickoff flow.** P5: gate objects (immutable gate + insert-once answer), structured gate-response turns, the server-derived maximum-spend on the gate (no estimate tool — §6-D5), the new surface, launch narration. AC (the Option-B acceptance): in one conversation on a two-account fixture with approved tier checkpoints — agent drafts, presents the exact server-derived maximum-spend, turn ends `awaiting_input` with a readable gate; Approve creates a visible human turn and invokes the human-only confirm tool with server-derived authority; the platform deepagent then launches; `entity_research_run.source_action_ref` equals the confirming turn's ref; `approval_refs` carries both refs; reject/revise leave closed/updated gate records; a non-confirming turn or stale hash/estimate does *not* launch; the canary policy surfaces in narration.
 - **D5 — frontend rebuild.** P6 + contract deltas + §3.1 AI Elements map. AC: fixtures→HTTP flip streams a real multi-tool turn and tokenized final message end-to-end; streamed Markdown renders without raw syntax/flicker; independent reasoning/activity disclosures preserve scroll position; the approval card renders requested/responded/denied from the gate object; the research task aggregates N accounts into one visible task per the Figma spec and covers partial/needs-input/suspended states; cold reload rehydrates transcript/gate/task state; no phase-enum manufacturing remains.
 
-Ordering after Lane B B0: D0’s non-FK work ∥ D1’s Lane-D half ∥ D3 scaffolding; D0 ownership FKs join after B1; D2 may execute with a deterministic injected `RequestPrincipal`; production D1 joins B2/B4; D3 ∥ D4 follows, then D5 (joining B3). D4 cannot pass production acceptance before the Lane-B principal join. D4's status read-back needs Lane C's L2/L3; nothing here touches Lane E/F/G files. Chokepoints per FI-3 discipline: api composition root, alembic single-head.
+R0 precedes every 2026-08-10 join-repair implementation slice. Historical
+ordering after Lane B B0 remains: D0’s non-FK work ∥ D1’s Lane-D half ∥ D3
+scaffolding; D0 ownership FKs join after B1; D2 may execute with a deterministic
+injected `RequestPrincipal`; production D1 joins B2/B4; D3 ∥ D4 follows, then
+D5 (joining B3). D4 cannot pass production acceptance before the Lane-B
+principal join. D4's status read-back needs Lane C's L2/L3; nothing here
+touches Lane E/F/G files. Chokepoints per FI-3 discipline: api composition
+root, alembic single-head.
 
 ---
 
@@ -210,3 +283,13 @@ The streaming suite is not a superficial “received some SSE” test. It must c
 *Ratification log: 2026-08-08 — D2 complete token streaming ratified by founder; under-specified contract recommendations from §§3.1–3.6 added at founder request. D4 real authenticated Clue principal ratified by founder and formalized in `FI-lane-B-authenticated-principal-contract.md`, including the no-provider-FK rule and Clerk authentication-only boundary. Later the same day, founder resolved the remaining register: D1 async worker-executed turns; D3 durable generic `agent_gate` as immutable gate + insert-once answer record; D5 estimate tool deferred post-V1 in favor of a server-derived maximum-spend amount stored on the gate and re-verified at launch; D6 trial kept dev-only. The §6 register is fully resolved; the charter is build-ready.*
 
 *As-built amendments (founder-ratified 2026-08-08, after slices D0–D2 + the B1-join landed): (1) the nine thread-shell contract deviations are ratified and recorded authoritatively in `apps/frontend/docs/api-contracts/projects.md` ("As-built thread-shell contract"). (2) **P3's persist step is two-phase**: the HTTP route persists the user message + an immutable `agent_turn_submission` row (NOT NULL internal submitter identity, capture-before-spend FK; `turn_id` derived from the idempotency identity) and enqueues; the fleet worker creates the `agent_turn` row, copying the submitter from the durable submission row — never from the queue payload. Rationale: creating the full turn row in HTTP would compose the model provider there, violating the gateway-isolation rule. Consequence: a queued-not-yet-executed turn is visible as a submission; D3/D5 read surfaces union submissions with turn events. (3) Ownership/submitter columns are nullable with FKs to the B1 tables (machine turns have no human submitter; fabricating one violates Lane B ruling 8); a NULL-submitter turn can never anchor an `action_ref`.*
+
+*R0 join-contract amendment (founder-ratified 2026-08-10): after live browser
+verification exposed fixture Home routing, malformed connect frames, a
+non-terminating turn stream, stale Stop targeting/state, a hybrid sidebar and a
+hamburger that navigated Home, the founder fixed the intended behavior:
+`Untitled project`; first-message-derived thread title; one atomic Home action;
+empty new-project Gallery; visible durable same-thread queueing; desktop hover
+overlay/click reflow sidebar. The executable contract is recorded in
+`apps/frontend/docs/api-contracts/projects.md`; §3.7 records the Lane-D
+architectural obligations. R0 changes documentation only.*
