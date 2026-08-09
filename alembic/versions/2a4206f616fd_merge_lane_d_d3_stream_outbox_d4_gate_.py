@@ -17,13 +17,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from alembic import op
-import sqlalchemy as sa
-
-
 # revision identifiers, used by Alembic.
-revision: str = '2a4206f616fd'
-down_revision: str | None = ('98a5ddafa21b', '3caa27516b81')
+revision: str = "2a4206f616fd"
+down_revision: str | None = ("98a5ddafa21b", "3caa27516b81")
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
