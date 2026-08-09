@@ -373,6 +373,41 @@ class Settings(BaseSettings):
     # SSE poll cadence of the turn stream's live tail. The outbox is the buffer (§3.3(7)); a slow
     # or absent consumer never touches model execution. Env: ``CLUE_CHAT_STREAM_POLL_INTERVAL_S``.
     chat_stream_poll_interval_s: float = 0.25
+
+    # --- FI Lane D "dev-lens" mini-slice (prompt/skill tuning; DEV-ONLY BY CONSTRUCTION) ------
+    # Two developer lenses onto a turn. Both are refused at process start outside a dev/local
+    # deployment by :meth:`_refuse_dev_lens_in_production` below — the same predicate the dev
+    # principal and the ``local_header`` projections resolver are refused by — so the production
+    # contract they would weaken cannot be reached by a configuration mistake, only by editing the
+    # refusal itself.
+    #
+    # (1) What the ``reasoning`` part carries. ``summary`` (the default, and the ONLY value a
+    # production process may hold) is charter §3.3's ratified contract byte for byte: the part is a
+    # safe status surface — a round is running, it asked for N governed calls — and no provider
+    # reasoning token reaches the wire. ``raw`` additionally asks the provider for whatever
+    # reasoning trace it is willing to expose and streams it onto that same part, so a developer
+    # tuning a prompt can see how the model reacted to it. What arrives is provider-dependent and
+    # frequently a *summary of* rather than the actual private chain-of-thought; see
+    # ``clue_gateway.agent_model._reasoning_request`` for the honest per-provider account.
+    # Env: ``CLUE_CHAT_REASONING_TRACE_MODE``.
+    chat_reasoning_trace_mode: Literal["summary", "raw"] = "summary"
+    # Optional thinking budget requested alongside ``raw``. ``None`` (the default) asks for the
+    # provider's own default depth. It is a *request*: a model with no extended-thinking mode
+    # ignores it, and no platform behaviour depends on it being honoured.
+    # Env: ``CLUE_CHAT_REASONING_THINKING_BUDGET_TOKENS``.
+    chat_reasoning_thinking_budget_tokens: int | None = Field(default=None, ge=1)
+    # (2) The turn-context inspector: four dev-only read routes under the chat surface that serve
+    # the C6 receipts a turn already wrote (the seven-layer context bundle and its included bytes,
+    # the model rounds, the authored/validated plan, the tool invocations and their refusals). It
+    # adds no storage and writes nothing; it is dev-only because it hands one HTTP caller the exact
+    # bytes that were put in front of a model, which is a debugging affordance and not a product
+    # surface. Off means the routes are never registered and a request 404s.
+    # Env: ``CLUE_CHAT_DEV_INSPECTOR_ENABLED``.
+    chat_dev_inspector_enabled: bool = False
+    # Cumulative byte budget one inspector response may spend hydrating content-addressed bodies.
+    # Over-budget bodies come back as refs plus a ``budget`` truncation marker — never silently
+    # shortened text. Env: ``CLUE_CHAT_DEV_INSPECTOR_BUDGET_BYTES``.
+    chat_dev_inspector_budget_bytes: int = Field(default=512_000, ge=1)
     # --- Lane B authenticated principal ----------------------------------------------------
     # Provider authentication is an adapter choice; Clue-owned users/memberships remain the
     # authorization substrate in every mode. The local fixture adapter still resolves a real
@@ -511,6 +546,37 @@ class Settings(BaseSettings):
         if self.auth_environment == "production" and self.projections_auth_mode == "local_header":
             raise ValueError(
                 "production authentication forbids the local-header projections resolver"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _refuse_dev_lens_in_production(self) -> Settings:
+        """Refuse both dev-lens halves at process start in a production deployment.
+
+        This is the whole "dev-only by construction" claim, and it is deliberately a *startup*
+        refusal rather than a request-time check: a production process holding either value does
+        not start, so there is no running deployment in which a later code path could be reached
+        with the flag on. Same predicate, same place, and the same failure mode as the two refusals
+        immediately above (production must not carry the local-fixture auth adapter or the
+        local-header projections resolver).
+
+        ``raw`` reasoning would put provider reasoning content on a wire the ratified contract says
+        carries only a safe activity summary; the inspector would serve the exact assembled context
+        bytes over HTTP. Neither is a product surface, so neither may exist outside a developer's
+        own deployment.
+        """
+
+        if self.auth_environment != "production":
+            return self
+        if self.chat_reasoning_trace_mode != "summary":
+            raise ValueError(
+                "production forbids CLUE_CHAT_REASONING_TRACE_MODE=raw: what streams as reasoning "
+                "is a safe activity summary, never provider reasoning content"
+            )
+        if self.chat_dev_inspector_enabled:
+            raise ValueError(
+                "production forbids CLUE_CHAT_DEV_INSPECTOR_ENABLED: the turn-context inspector "
+                "serves the exact assembled context bytes and is a development lens only"
             )
         return self
 

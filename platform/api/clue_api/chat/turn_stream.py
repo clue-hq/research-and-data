@@ -45,7 +45,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import ROUND_CEILING, Decimal
-from typing import Any
+from typing import Any, Final
 from uuid import UUID, uuid5
 
 from langchain_core.callbacks import AsyncCallbackHandler
@@ -105,6 +105,7 @@ __all__ = [
     "TurnStreamEmitter",
     "TurnStreamPolicy",
     "generation_attempt_id_for",
+    "reasoning_deltas_from_chunk",
 ]
 
 
@@ -130,6 +131,13 @@ class TurnStreamPolicy:
 
     batch_max_chars: int = 256
     batch_interval_s: float = 0.05
+    #: The **dev-only** raw-reasoning lens (``CLUE_CHAT_REASONING_TRACE_MODE=raw``). ``False`` — the
+    #: only value a production process can hold, because the setting is refused at startup outside a
+    #: dev deployment — is charter §3.3's ratified contract: whatever the provider says it was
+    #: thinking is discarded here and never reaches the outbox. ``True`` routes it onto the round's
+    #: own ``reasoning`` part. The gate lives on the emitter rather than only on the callback
+    #: handler so that *every* path to a reasoning delta, present and future, passes one check.
+    reasoning_trace: bool = False
 
 
 @dataclass(slots=True)
@@ -141,6 +149,17 @@ class _TextPartState:
     pending: list[str] = field(default_factory=list)
     started: bool = False
     ended: bool = False
+    last_flush: float = 0.0
+
+
+@dataclass(slots=True)
+class _ReasoningTextState:
+    """One round's accumulated reasoning trace (dev lens only)."""
+
+    part_id: str
+    next_delta_index: int = 0
+    pending: list[str] = field(default_factory=list)
+    text: list[str] = field(default_factory=list)
     last_flush: float = 0.0
 
 
@@ -179,6 +198,7 @@ class TurnStreamEmitter:
         self._revisions: dict[str, int] = {}
         self._activity: list[ActivityStep] = []
         self._text: _TextPartState | None = None
+        self._reasoning: dict[int, _ReasoningTextState] = {}
         self._rounds = 0
         #: Emission failures, counted rather than raised: the stream may never fail a turn.
         self.emission_failures: list[str] = []
@@ -336,29 +356,91 @@ class TurnStreamEmitter:
 
     # -- model rounds ---------------------------------------------------------------------------
 
+    @property
+    def reasoning_trace_enabled(self) -> bool:
+        """Whether this emitter will accept a provider reasoning delta at all (dev lens only)."""
+
+        return self._policy.reasoning_trace
+
+    def _reasoning_part_id(self, round_ordinal: int) -> str:
+        return reasoning_part_id(
+            generation_attempt_id=self.generation_attempt_id,
+            round_ordinal=round_ordinal,
+        )
+
     async def round_started(self, *, round_ordinal: int) -> None:
         self._rounds = max(self._rounds, round_ordinal)
-        part = ReasoningPart(
-            part_id=reasoning_part_id(
-                generation_attempt_id=self.generation_attempt_id,
+        part_id = self._reasoning_part_id(round_ordinal)
+        await self._part(
+            TurnEventType.PART_CREATED,
+            ReasoningPart(
+                part_id=part_id,
+                revision=self._revision(part_id),
+                state=ReasoningState.ACTIVE,
                 round_ordinal=round_ordinal,
+                started_at=_now(),
             ),
-            revision=self._revision(
-                reasoning_part_id(
-                    generation_attempt_id=self.generation_attempt_id,
-                    round_ordinal=round_ordinal,
-                )
-            ),
-            state=ReasoningState.ACTIVE,
-            round_ordinal=round_ordinal,
-            started_at=_now(),
         )
-        await self._part(TurnEventType.PART_CREATED, part)
         await self._activity_step(
             step_id=f"round:{round_ordinal}",
             kind="model_round",
             status=ActivityStepStatus.ACTIVE,
             label=f"Model round {round_ordinal}",
+        )
+
+    async def reasoning_delta(self, *, round_ordinal: int, delta: str) -> None:
+        """Route one provider reasoning delta onto this round's ``reasoning`` part — **dev only**.
+
+        Refused outright unless :attr:`TurnStreamPolicy.reasoning_trace` is on, which a production
+        process cannot hold: ``CLUE_CHAT_REASONING_TRACE_MODE=raw`` fails settings construction
+        outside a dev deployment. In ``summary`` mode this method is the drain the ratified §3.3
+        contract requires — the delta is dropped here, not filtered later.
+
+        **The frame is a ``text.delta`` targeting the reasoning part's id.** No new event type, no
+        new part kind, and therefore no migration: the outbox's ``(event_type = 'text.delta') =
+        (delta_index IS NOT NULL)`` CHECK and its ``part_kind`` CHECK both already admit this shape,
+        and a consumer that accumulates deltas per part id already knows what to do with it. The
+        one thing it must *not* do is treat the accumulation as assistant prose, which is why the
+        frame carries ``part_kind='reasoning'`` and no ``message_id``: this text belongs to no
+        message, and :meth:`reconcile_text` — which is scoped to the *text* part's id — never sees
+        it, because there is deliberately no durable reasoning message to reconcile against.
+        """
+
+        if not self._policy.reasoning_trace or not delta:
+            return
+        state = self._reasoning.get(round_ordinal)
+        if state is None:
+            state = _ReasoningTextState(
+                part_id=self._reasoning_part_id(round_ordinal),
+                last_flush=self._monotonic(),
+            )
+            self._reasoning[round_ordinal] = state
+        state.pending.append(delta)
+        state.text.append(delta)
+        pending_chars = sum(len(item) for item in state.pending)
+        first = state.next_delta_index == 0
+        elapsed = self._monotonic() - state.last_flush
+        if (
+            first
+            or pending_chars >= self._policy.batch_max_chars
+            or elapsed >= self._policy.batch_interval_s
+        ):
+            await self._flush_reasoning(state)
+
+    async def _flush_reasoning(self, state: _ReasoningTextState) -> None:
+        if not state.pending:
+            return
+        delta = "".join(state.pending)
+        state.pending.clear()
+        index = state.next_delta_index
+        state.next_delta_index += 1
+        state.last_flush = self._monotonic()
+        await self._emit(
+            TurnEventType.TEXT_DELTA,
+            part_id=state.part_id,
+            part_kind=PartKind.REASONING.value,
+            delta_index=index,
+            payload={"delta": delta},
         )
 
     async def round_finished(
@@ -368,10 +450,11 @@ class TurnStreamEmitter:
         requested_tool_calls: int = 0,
         failed: bool = False,
     ) -> None:
-        part_id = reasoning_part_id(
-            generation_attempt_id=self.generation_attempt_id,
-            round_ordinal=round_ordinal,
-        )
+        part_id = self._reasoning_part_id(round_ordinal)
+        trace = self._reasoning.pop(round_ordinal, None)
+        if trace is not None:
+            await self._flush_reasoning(trace)
+        text = "".join(trace.text) if trace is not None and trace.text else None
         part = ReasoningPart(
             part_id=part_id,
             revision=self._revision(part_id),
@@ -380,6 +463,11 @@ class TurnStreamEmitter:
             requested_tool_calls=requested_tool_calls,
             started_at=_now(),
             completed_at=_now(),
+            # The closing snapshot carries the whole accumulated trace so a consumer that attached
+            # late (or replayed from a cursor past the deltas) still sees it — and carries the
+            # ephemerality marker with it, because nothing durable will ever confirm this text.
+            text=text,
+            text_ephemeral=None if text is None else True,
         )
         await self._part(
             TurnEventType.PART_FAILED if failed else TurnEventType.PART_COMPLETED,
@@ -1011,6 +1099,50 @@ def _gate_subject_ref(view: GateView) -> dict[str, JsonValue]:
     return ref
 
 
+#: Content-block members that hold reasoning text on the shapes the gateway's models produce.
+#: ``summary`` is the OpenAI-Responses reasoning-summary stream (``summary_text`` deltas);
+#: ``content`` is where a thinking-block provider's text lands once OpenRouter has normalized it.
+_REASONING_TEXT_MEMBERS: Final = ("summary", "content")
+
+
+def reasoning_deltas_from_chunk(message: Any) -> tuple[str, ...]:
+    """Every newly produced reasoning fragment on one streamed chunk — **dev lens only**.
+
+    Pure, and deliberately shape-tolerant rather than shape-trusting: the gateway builds
+    ``ChatOpenAI(use_responses_api=True, output_version="responses/v1")``, which surfaces reasoning
+    as ``{"type": "reasoning", "summary": [{"type": "summary_text", "text": …}]}`` content blocks;
+    a thinking-block provider routed through OpenRouter arrives in the same block's ``content``
+    member; and a chat-completions passthrough puts a plain string in
+    ``additional_kwargs['reasoning_content']``. All three are the *normalized* LangChain shape — no
+    provider wire format reaches here — so reading whichever is present is compatibility, not
+    leniency about untrusted input.
+
+    Returns only non-empty fragments, in production order. It never returns the assistant's answer:
+    a chunk's ordinary text/tool-call content is not inspected at all, so this function cannot be
+    the path by which the finalize argument or provider chatter leaks — that remains
+    :class:`~clue_api.chat.finalize_stream.FinalizeTextDeltaExtractor`'s sole job.
+    """
+
+    fragments: list[str] = []
+    content = getattr(message, "content", None)
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "reasoning":
+                continue
+            for member in _REASONING_TEXT_MEMBERS:
+                for item in block.get(member) or ():
+                    if isinstance(item, dict):
+                        piece = item.get("text")
+                        if isinstance(piece, str) and piece:
+                            fragments.append(piece)
+    extra = getattr(message, "additional_kwargs", None)
+    if isinstance(extra, dict):
+        piece = extra.get("reasoning_content")
+        if isinstance(piece, str) and piece:
+            fragments.append(piece)
+    return tuple(fragments)
+
+
 class TurnStreamCallbackHandler(AsyncCallbackHandler):
     """Attach one emitter to one turn's model calls.
 
@@ -1025,9 +1157,14 @@ class TurnStreamCallbackHandler(AsyncCallbackHandler):
       newly decoded characters become ``text.delta``.
 
     What it never does: emit the model's plain ``content`` token. On this surface any content
-    outside the finalize argument is provider chatter or reasoning, and §3.3's closing rule is that
-    none of it reaches the wire. The only text this handler can produce is text the extractor
-    decoded out of ``finalize_turn.user_message``.
+    outside the finalize argument is provider chatter, and §3.3's closing rule is that none of it
+    reaches the wire. The only assistant text this handler can produce is text the extractor decoded
+    out of ``finalize_turn.user_message``.
+
+    The one exception is opt-in, dev-only, and separately gated: when the emitter's policy carries
+    the raw-reasoning lens, *reasoning* content blocks (never ordinary content, never tool
+    arguments) are routed onto the round's own ``reasoning`` part. With the lens off — the only
+    state a production process can be in — the blocks are not even read.
     """
 
     def __init__(self, *, emitter: TurnStreamEmitter) -> None:
@@ -1074,17 +1211,24 @@ class TurnStreamCallbackHandler(AsyncCallbackHandler):
     ) -> None:
         # The signature is LangChain's exactly (``token`` really can be a content-block list on a
         # v1 model). ``token`` is then discarded on purpose: on this surface any content outside
-        # the finalize argument is provider chatter or reasoning, and §3.3's closing rule keeps all
-        # of it off the wire. The only text this handler can emit is text the extractor decoded.
+        # the finalize argument is provider chatter, and §3.3's closing rule keeps all of it off
+        # the wire. The only assistant text this handler can emit is text the extractor decoded.
         del token, parent_run_id, tags, kwargs
         if chunk is None:
             return
+        message = getattr(chunk, "message", None)
+        round_ordinal = self._rounds.get(run_id, 1)
+        # The dev lens runs *before* the finalize extractor is looked up, and independently of it:
+        # a provider can stream reasoning in a round that never produces a finalize call, and the
+        # two surfaces have nothing to do with each other. With the lens off — the only state a
+        # production process can be in — the chunk's blocks are not read at all.
+        if self._emitter.reasoning_trace_enabled:
+            for fragment in reasoning_deltas_from_chunk(message):
+                await self._emitter.reasoning_delta(round_ordinal=round_ordinal, delta=fragment)
         extractor = self._extractors.get(run_id)
         if extractor is None:
             return
-        message = getattr(chunk, "message", None)
         chunks = getattr(message, "tool_call_chunks", None) or ()
-        round_ordinal = self._rounds.get(run_id, 1)
         for item in chunks:
             delta = extractor.feed_tool_call_chunk(
                 index=_chunk_field(item, "index"),

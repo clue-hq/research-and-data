@@ -147,6 +147,23 @@ from clue_projections.threads import (
     threads_for_project,
     threads_running,
 )
+from clue_projections.turn_inspector import (
+    TurnContextLayerView,
+    TurnContextReceiptView,
+    TurnContextRefView,
+    TurnModelRoundView,
+    TurnPlanEventView,
+    TurnPlanOperationView,
+    TurnPlanReceiptView,
+    TurnStatusEventView,
+    TurnToolCallView,
+    turn_context_receipt,
+    turn_exists,
+    turn_model_rounds,
+    turn_plan_receipt,
+    turn_status_ledger,
+    turn_tool_calls,
+)
 
 __all__ = [
     # schema version
@@ -236,6 +253,22 @@ __all__ = [
     "ResearchTaskCounts",
     "ResearchTaskView",
     "research_tasks_for_action_refs",
+    # FI Lane D dev-lens turn-context inspector (dev-only read surface; zero new storage)
+    "TurnContextLayerView",
+    "TurnContextReceiptView",
+    "TurnContextRefView",
+    "TurnModelRoundView",
+    "TurnPlanEventView",
+    "TurnPlanOperationView",
+    "TurnPlanReceiptView",
+    "TurnStatusEventView",
+    "TurnToolCallView",
+    "turn_context_receipt",
+    "turn_exists",
+    "turn_model_rounds",
+    "turn_plan_receipt",
+    "turn_status_ledger",
+    "turn_tool_calls",
     # Phase C2 proposals
     "ProposalScopeCard",
     "FieldProposalCard",

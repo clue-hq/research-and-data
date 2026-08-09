@@ -55,6 +55,19 @@ from clue_api.agent_turn_submission import (
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
+from clue_api.chat.inspector import (
+    INSPECTOR_TABS,
+    InspectorCapabilityResponse,
+    InspectorCapabilityWire,
+    InspectorContextResponse,
+    InspectorPlanResponse,
+    InspectorRoundsResponse,
+    InspectorToolsResponse,
+    context_response,
+    plan_response,
+    rounds_response,
+    tools_response,
+)
 from clue_api.chat.message_bodies import hydrate_message_bodies
 from clue_api.chat.principal import (
     PERMISSION_GATE_RESPOND,
@@ -104,6 +117,12 @@ from clue_projections import (
     thread_messages,
     threads_for_project,
     threads_running,
+    turn_context_receipt,
+    turn_exists,
+    turn_model_rounds,
+    turn_plan_receipt,
+    turn_status_ledger,
+    turn_tool_calls,
 )
 from clue_spine import get_project
 from clue_storage import StorageBackend, content_address
@@ -688,6 +707,177 @@ def build_chat_router(
             conn_factory=conn_factory,
         )
         return GateListResponse(data=tuple(gate_wire(view) for view in views))
+
+    # --- the dev-lens turn-context inspector (dev-only; never registered in production) ---------
+    #
+    # Registered only under ``settings.chat_dev_inspector_enabled``, which
+    # ``Settings._refuse_dev_lens_in_production`` refuses at process construction in a production
+    # deployment. So production-unreachability is structural twice over: the routes are absent, in
+    # a process that would not have started with the flag set. There is no request-time check to
+    # get wrong because there is no request-time state.
+    #
+    # Every one of them serves receipts the turn already wrote — no new table, no new column, no
+    # write of any kind — and is scoped by the same ``thread.read`` permission and the same
+    # 404-not-403 rule as its neighbours.
+
+    async def _thread_or_404(*, who: RequestPrincipal, project_id: str, thread_id: str) -> None:
+        """Prove this principal's workspace holds this thread in this project, or 404.
+
+        Not 403: telling somebody who cannot see a thread that it exists is itself a disclosure.
+        """
+
+        async with conn_factory() as conn:
+            thread = await get_thread(conn, workspace_id=who.workspace_id, thread_id=thread_id)
+        if thread is None or thread.project_id != project_id:
+            raise _refuse(
+                status_code=404,
+                code="THREAD_NOT_FOUND",
+                message="no such thread in this project",
+            )
+
+    async def _inspected_turn(
+        *, who: RequestPrincipal, project_id: str, thread_id: str, turn_id: UUID
+    ) -> None:
+        """The scope check every inspector read runs before touching a receipt."""
+
+        _require(who, PERMISSION_THREAD_READ)
+        await _thread_or_404(who=who, project_id=project_id, thread_id=thread_id)
+        if not await turn_exists(
+            workspace_id=who.workspace_id,
+            thread_id=thread_id,
+            turn_id=turn_id,
+            conn_factory=conn_factory,
+        ):
+            raise _refuse(
+                status_code=404,
+                code="TURN_NOT_FOUND",
+                message="no such turn in this thread",
+            )
+
+    if settings.chat_dev_inspector_enabled:
+        budget_bytes = settings.chat_dev_inspector_budget_bytes
+
+        @router.get("/projects/{project_id}/threads/{thread_id}/inspector")
+        async def inspector_capability_route(
+            project_id: str,
+            thread_id: str,
+            who: PrincipalDep,
+        ) -> InspectorCapabilityResponse:
+            """The capability probe the drawer's affordance is rendered from.
+
+            The frontend reads no environment variable to decide whether the inspector exists: it
+            asks, and a deployment without the lens answers 404 because the route was never
+            registered. One probe per thread, so a component never hardcodes a flag it cannot see
+            the server change.
+            """
+
+            _require(who, PERMISSION_THREAD_READ)
+            await _thread_or_404(who=who, project_id=project_id, thread_id=thread_id)
+            return InspectorCapabilityResponse(
+                data=InspectorCapabilityWire(
+                    enabled=True,
+                    tabs=INSPECTOR_TABS,
+                    budget_bytes=budget_bytes,
+                    bodies_available=storage is not None,
+                )
+            )
+
+        @router.get("/projects/{project_id}/threads/{thread_id}/turns/{turn_id}/inspector/context")
+        async def inspector_context_route(
+            project_id: str,
+            thread_id: str,
+            turn_id: UUID,
+            who: PrincipalDep,
+        ) -> InspectorContextResponse:
+            """Tab 1 — the seven-layer assembly receipt and the exact included bytes."""
+
+            await _inspected_turn(
+                who=who, project_id=project_id, thread_id=thread_id, turn_id=turn_id
+            )
+            receipt = await turn_context_receipt(
+                workspace_id=who.workspace_id, turn_id=turn_id, conn_factory=conn_factory
+            )
+            async with conn_factory() as conn:
+                return await context_response(
+                    conn,
+                    storage=storage,
+                    workspace_id=who.workspace_id,
+                    turn_id=str(turn_id),
+                    receipt=receipt,
+                    budget_bytes=budget_bytes,
+                )
+
+        @router.get("/projects/{project_id}/threads/{thread_id}/turns/{turn_id}/inspector/rounds")
+        async def inspector_rounds_route(
+            project_id: str,
+            thread_id: str,
+            turn_id: UUID,
+            who: PrincipalDep,
+        ) -> InspectorRoundsResponse:
+            """Tab 2 — the governed model calls: model ids, tokens, cost, status, timing."""
+
+            await _inspected_turn(
+                who=who, project_id=project_id, thread_id=thread_id, turn_id=turn_id
+            )
+            return rounds_response(
+                await turn_model_rounds(
+                    workspace_id=who.workspace_id, turn_id=turn_id, conn_factory=conn_factory
+                )
+            )
+
+        @router.get("/projects/{project_id}/threads/{thread_id}/turns/{turn_id}/inspector/plan")
+        async def inspector_plan_route(
+            project_id: str,
+            thread_id: str,
+            turn_id: UUID,
+            who: PrincipalDep,
+        ) -> InspectorPlanResponse:
+            """Tab 3 — the authored plan, what validation admitted, and both verdict ledgers."""
+
+            await _inspected_turn(
+                who=who, project_id=project_id, thread_id=thread_id, turn_id=turn_id
+            )
+            plans = await turn_plan_receipt(
+                workspace_id=who.workspace_id, turn_id=turn_id, conn_factory=conn_factory
+            )
+            events = await turn_status_ledger(
+                workspace_id=who.workspace_id, turn_id=turn_id, conn_factory=conn_factory
+            )
+            async with conn_factory() as conn:
+                return await plan_response(
+                    conn,
+                    storage=storage,
+                    workspace_id=who.workspace_id,
+                    turn_id=str(turn_id),
+                    plans=plans,
+                    turn_events=events,
+                    budget_bytes=budget_bytes,
+                )
+
+        @router.get("/projects/{project_id}/threads/{thread_id}/turns/{turn_id}/inspector/tools")
+        async def inspector_tools_route(
+            project_id: str,
+            thread_id: str,
+            turn_id: UUID,
+            who: PrincipalDep,
+        ) -> InspectorToolsResponse:
+            """Tab 4 — the admitted governed operations, their arguments and their receipts."""
+
+            await _inspected_turn(
+                who=who, project_id=project_id, thread_id=thread_id, turn_id=turn_id
+            )
+            calls = await turn_tool_calls(
+                workspace_id=who.workspace_id, turn_id=turn_id, conn_factory=conn_factory
+            )
+            async with conn_factory() as conn:
+                return await tools_response(
+                    conn,
+                    storage=storage,
+                    workspace_id=who.workspace_id,
+                    turn_id=str(turn_id),
+                    calls=calls,
+                    budget_bytes=budget_bytes,
+                )
 
     # --- turn submission (D2) + the structured gate response (D4) ------------------------------
 

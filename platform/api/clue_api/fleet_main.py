@@ -643,6 +643,10 @@ async def _serve() -> None:
                 stream_policy=TurnStreamPolicy(
                     batch_max_chars=settings.chat_turn_stream_batch_max_chars,
                     batch_interval_s=settings.chat_turn_stream_batch_interval_s,
+                    # The dev-only raw-reasoning lens. ``raw`` is refused at settings construction
+                    # outside a dev deployment, so a production worker composes ``False`` here or
+                    # does not start at all.
+                    reasoning_trace=settings.chat_reasoning_trace_mode == "raw",
                 ),
                 stop_poll_interval_s=settings.chat_turn_stop_poll_interval_s,
             )

@@ -154,9 +154,19 @@ class ToolPart(_Part):
 class ReasoningPart(_Part):
     """A safe status surface for one model round — never raw provider reasoning (§3.3's rule).
 
-    It carries no text at all. What the model privately "thought" is not a platform output; what
-    the platform can honestly say is that a round is running or has ended, and how many governed
-    calls it asked for.
+    In the shipped (``summary``) mode it carries no text at all. What the model privately "thought"
+    is not a platform output; what the platform can honestly say is that a round is running or has
+    ended, and how many governed calls it asked for. Both text fields default to ``None`` and
+    ``wire()`` excludes ``None``, so a ``summary``-mode snapshot is byte-for-byte the payload this
+    part has always had.
+
+    ``text`` exists for the **dev-only** raw-reasoning lens (``CLUE_CHAT_REASONING_TRACE_MODE=raw``,
+    refused at startup outside a dev deployment). When it is set, ``text_ephemeral`` is set with it
+    and says the load-bearing thing about it: unlike assistant prose, this text has **no durable
+    counterpart**. There is no reasoning message in the transcript, no byte-equality reconciliation
+    against one, and nothing to re-fetch after a ``stream.reset`` — it exists for as long as the
+    outbox holds it and then it is gone. A consumer must render it as a live diagnostic and must
+    never treat it as part of the turn's record.
     """
 
     kind: PartKind = PartKind.REASONING
@@ -165,6 +175,8 @@ class ReasoningPart(_Part):
     requested_tool_calls: int = Field(default=0, ge=0)
     started_at: str
     completed_at: str | None = None
+    text: str | None = None
+    text_ephemeral: bool | None = None
 
 
 class ActivityStep(BaseModel):
