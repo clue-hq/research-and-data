@@ -108,3 +108,32 @@ three shared files and re-running).
    end. Bounded and deliberate; a background flusher is the fix if it ever shows.
 6. `emission_failures` is counted, logged and asserted empty in tests, but nothing surfaces it as a
    metric yet.
+
+## Close-out (same day, after the orchestrator merged the heads → `2a4206f616fd`)
+
+`chat/router.py` was granted to D3 once D4 finished, and open items 1–3 above are **closed**
+(commit `95ec3210`):
+
+- **`turn.accepted` now comes from the route**, in the same transaction as the capture and the
+  submission, so a queued turn is announced while it waits. The worker's emitter keeps its
+  announcement as the off-route fallback (dev trial, harnesses) but checks
+  `turn_stream_has_event(...)` first — one announcement per turn, `payload.source` says which
+  wrote it. The route emits through `chat/turn_events.py` (no LangChain), so the gateway-isolation
+  guard is untouched.
+- **`?include=bodies` is a parameter on `GET …/messages`**; the sibling `…/messages/bodies` route
+  is deleted. `chat/message_bodies.py` remains the single hydrator, and `message_list_response`
+  grew an optional `bodies` mapping. An unknown `include` is a 422.
+- **The thread listing passes `running`** from `threads_running()` — a second one-statement
+  anti-join beside D4's gate one.
+
+One D4 assertion changed as a direct consequence, not a revert: after a gate is answered the
+sidebar reads **`running`**, not `idle`, because the gate response is itself a captured, queued
+turn. D4's claim (the approval badge clears) is intact, and the test now also pins the precedence
+`archived > approval > needs-input > running > idle`.
+
+Verification on the merged head: `alembic upgrade head` → `downgrade base` → `upgrade head` green
+on a clean throwaway DB (`d3_smoke2`, 55040, dropped after). `tests/api` + `tests/projections` +
+`tests/fleet` = **1002 passed**, with only the two known pre-existing failures
+(`test_agent_registry_wiring::…c61_backend`, and `test_b4_composed_run_db::…deep_quarantines`, the
+documented order-dependent flake when `tests/api` runs first). mypy clean, ruff clean,
+lint-imports 25/0. Remaining open items are 4–6 above.
