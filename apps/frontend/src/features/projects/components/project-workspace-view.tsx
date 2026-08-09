@@ -1,3 +1,5 @@
+import { useApplicationSidebar } from "@/components/shell/application-shell";
+import { PROJECT_SIDEBAR_TRIGGER_ID } from "@/components/shell/use-desktop-sidebar";
 import type { ProjectChatController } from "../hooks/use-project-chat-controller";
 import type { ProjectWorkspace } from "../model/project-workspace";
 import { ArtifactWorkspace } from "./artifact-workspace";
@@ -16,11 +18,27 @@ export function ProjectWorkspaceView({
   onCopyLink: () => void;
   workspace: ProjectWorkspace;
 }) {
+  const sidebar = useApplicationSidebar();
+  const pinned = sidebar.state === "pinned-expanded";
   return (
     <main className={styles.projectWorkspace} data-phase={controller.previewSurface}>
       <header className={styles.projectHeader}>
         <div>
-          <button aria-label="Go to home" onClick={controller.openHome} type="button"><ProjectIcon name="menu" size={16} /></button>
+          <button
+            aria-controls="application-sidebar"
+            aria-expanded={sidebar.expanded}
+            aria-label={pinned ? "Collapse sidebar" : "Pin sidebar open"}
+            className={styles.desktopSidebarTrigger}
+            id={PROJECT_SIDEBAR_TRIGGER_ID}
+            onBlur={sidebar.scheduleDismissal}
+            onClick={(event) => sidebar.toggle(event.currentTarget)}
+            onFocus={(event) => sidebar.preview(event.currentTarget)}
+            onPointerEnter={(event) => sidebar.preview(event.currentTarget)}
+            onPointerLeave={sidebar.scheduleDismissal}
+            type="button"
+          >
+            <ProjectIcon name="menu" size={16} />
+          </button>
           <button className={styles.projectTitle} type="button">{workspace.title}<ProjectIcon name="chevron-down" size={12} /></button>
         </div>
         <button aria-label="Copy project link" onClick={onCopyLink} type="button"><ProjectIcon name="link" size={14} /></button>

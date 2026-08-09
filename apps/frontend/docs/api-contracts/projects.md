@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R5 implemented. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R6 implemented. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -75,6 +75,24 @@ network failure. Presentation components do not call the API directly.
 - Three-turn database acceptance proves A running with B/C queued, Stop A,
   B then C dispatch in order, and the same A/B/C state reconstructs through the
   cold turn-list route during B.
+
+### R6 implementation status (2026-08-10)
+
+- The protected route layout owns one persistent application shell for Home,
+  the project catalog, and project workspaces. Those screens no longer mount
+  independent sidebars; account routes retain their separately-owned existing
+  shell until their lane is joined.
+- The desktop project-workspace control implements the ratified
+  `collapsed | hover-preview | pinned-expanded` state table. Hover/focus opens
+  an overlay without changing content width, click pins and reflows, click while
+  pinned collapses, delayed pointer/focus departure dismisses preview, and
+  Escape closes preview and restores focus to the trigger.
+- The project-header control is a real button with `aria-controls`, truthful
+  `aria-expanded` and action labels. It never navigates Home and never exposes
+  the former misleading `Go to home` label. Mobile keeps the modal drawer.
+- The one mounted sidebar controller re-reads the real tenant-scoped catalog on
+  pathname changes. A project created by Home is therefore present after the
+  client-side navigation without a full browser restart or fixture fallback.
 
 ## Ownership model
 

@@ -6,6 +6,7 @@ import {
 } from "@/features/session/data/session-actions";
 import { resolveChatTransport } from "@/features/projects/data/chat-api";
 import { ProjectsTransportProvider } from "@/features/projects/data/projects-transport";
+import { ProjectApplicationShell } from "@/components/shell/application-shell";
 
 export default async function ProtectedLayout({
   children,
@@ -24,7 +25,7 @@ export default async function ProtectedLayout({
           session={session}
         />
       ) : null}
-      {children}
+      <ProjectApplicationShell>{children}</ProjectApplicationShell>
     </ProjectsTransportProvider>
   );
 }

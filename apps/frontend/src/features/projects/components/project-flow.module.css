@@ -627,6 +627,10 @@
   background: transparent;
 }
 
+.projectHeader .desktopSidebarTrigger {
+  display: none;
+}
+
 .projectHeader .projectTitle {
   width: 220px;
   justify-content: flex-start;
@@ -3236,8 +3240,15 @@
   .artifactGrid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
 }
 
+@media (min-width: 1024px) {
+  .projectHeader .desktopSidebarTrigger {
+    display: inline-flex;
+  }
+}
+
 @media (max-width: 900px) {
   .homeHero { min-height: 600px; padding-top: 180px; }
+  .projectHeader { padding-left: 52px; }
   .projectColumns { display: block; overflow-y: auto; }
   .conversationPane { min-height: 620px; border-right: 0; border-bottom: 0.5px solid var(--clue-ds-color-border-subtle); }
   .artifactWorkspace { min-height: 700px; }

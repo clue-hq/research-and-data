@@ -39,7 +39,7 @@ export function useSidebarProjectsController() {
     return () => {
       cancelled = true;
     };
-  }, [sidebar]);
+  }, [pathname, sidebar]);
 
   const editProject = useMemo(
     () => projects.find((project) => project.id === editProjectId) ?? null,

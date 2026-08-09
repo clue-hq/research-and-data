@@ -208,9 +208,6 @@ export function useProjectWorkspaceController({
       setPreviewSurface("questionnaire");
       setSurface("artifact");
     },
-    openHome() {
-      router.push("/");
-    },
     openTargetAccounts() {
       const targetAccounts = workspace.artifacts.find((artifact) => artifact.type === "table");
       if (targetAccounts) openArtifact(targetAccounts.id);
