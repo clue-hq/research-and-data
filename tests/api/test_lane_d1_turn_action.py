@@ -690,12 +690,19 @@ def test_the_confirming_turn_is_the_receipt_end_to_end(tmp_path: Path) -> None:
                 "directive_id": str(directive_id),
                 "expected_sha256": drafted.references["canonical_json_sha256"],
             }
+            # The Lane B ⇄ Lane D join: a confirmation now runs under a **closed** human principal,
+            # not a bare actor id. Both halves come out of the receipt itself — the resolved turn
+            # names its submitter *and* the membership it was submitted through — so the context is
+            # still derived, never asserted by a caller.
+            assert resolved.submitted_via_membership_id is not None
             confirm_ctx = ToolContext(
                 workspace_id=WORKSPACE_ID,
                 actor="human",
                 conn_factory=cf,
                 operation_id=new_operation_id(),
+                principal_kind="human",
                 actor_id=resolved.submitted_by_user_id,
+                membership_id=resolved.submitted_via_membership_id,
                 action_ref=resolved.action_ref,
             )
             confirmed = await invoke_tool(
@@ -745,7 +752,11 @@ def test_a_confirmation_without_an_ambient_receipt_is_refused(tmp_path: Path) ->
             ):
                 registry.register(tool, make_default=tool.version == "2")
 
-            with pytest.raises(PreconditionFailed) as refused:
+            # Two distinct refusals, and the difference between them is the Lane B join.
+            # (a) No authenticated principal at all: B4's ``require_human_authority`` refuses
+            #     before the receipt is even considered — ``actor="human"`` is an effect class, not
+            #     an identity, and a receipt-bearing gate may not be entered on one.
+            with pytest.raises(PreconditionFailed) as unauthenticated:
                 await invoke_tool(
                     registry,
                     "confirm_account_research_directive",
@@ -758,6 +769,27 @@ def test_a_confirmation_without_an_ambient_receipt_is_refused(tmp_path: Path) ->
                     ),
                     idempotency_ttl_s=TTL,
                 )
-            assert refused.value.reason_codes == ("trusted_human_receipt_required",)
+            assert unauthenticated.value.reason_codes == ("human_authority_required",)
+
+            # (b) A fully authenticated human — real user, real membership — who simply has no
+            #     durable action to point at. This is the D1 assertion proper: authentication is
+            #     never a substitute for the receipt.
+            with pytest.raises(PreconditionFailed) as receiptless:
+                await invoke_tool(
+                    registry,
+                    "confirm_account_research_directive",
+                    {"directive_id": str(uuid4()), "expected_sha256": "0" * 64},
+                    ToolContext(
+                        workspace_id=WORKSPACE_ID,
+                        actor="human",
+                        conn_factory=cf,
+                        operation_id=new_operation_id(),
+                        principal_kind="human",
+                        actor_id=USER_ID,
+                        membership_id=MEMBERSHIP_ID,
+                    ),
+                    idempotency_ttl_s=TTL,
+                )
+            assert receiptless.value.reason_codes == ("trusted_human_receipt_required",)
 
     run_async(scenario())

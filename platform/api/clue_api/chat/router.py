@@ -25,7 +25,7 @@ demarcation registry §2.2, and doing it here would mean editing another lane's 
 
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
@@ -53,11 +53,16 @@ from clue_api.agent_turn_submission import (
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.auth_tool_context import tool_context_for_principal
+from clue_api.auth_wiring import PrincipalDependency, principal_from_request
 from clue_api.chat.message_bodies import hydrate_message_bodies
 from clue_api.chat.principal import (
+    PERMISSION_GATE_RESPOND,
+    PERMISSION_PROJECT_READ,
     PERMISSION_THREAD_READ,
     PERMISSION_THREAD_WRITE,
     PrincipalResolver,
+    ProductionPrincipalRequired,
     RequestPrincipal,
     build_dev_principal_resolver,
 )
@@ -81,6 +86,7 @@ from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
 from clue_api.thread_store import get_thread
 from clue_api.turn_action import derive_turn_action_ref
+from clue_auth import Permission, PrincipalError, PrincipalService
 from clue_config import Settings
 from clue_core import OperationId, operation_id_from_key
 from clue_db import ConnFactory
@@ -98,13 +104,14 @@ from clue_projections import (
 )
 from clue_spine import get_project
 from clue_storage import StorageBackend, content_address
-from clue_toolbelt import IdempotencyConflict, PreconditionFailed, ToolContext, ToolInvoker
+from clue_toolbelt import IdempotencyConflict, PreconditionFailed, ToolInvoker
 
 log = get_logger("clue_api.chat")
 
 __all__ = [
     "CHAT_PREFIX",
     "REQUEST_ID_HEADER",
+    "bind_authenticated_principal",
     "bind_principal_resolver",
     "build_chat_router",
     "chat_principal_resolver",
@@ -189,6 +196,49 @@ def bind_principal_resolver(resolver: PrincipalResolver) -> Callable[..., Reques
     return resolve
 
 
+def bind_authenticated_principal(
+    service: PrincipalService,
+    *,
+    permission: Permission = PERMISSION_PROJECT_READ,
+) -> Callable[..., Awaitable[RequestPrincipal]]:
+    """Adapt **Lane B's real chain** into the same FastAPI dependency the routes declare.
+
+    This is the B2 join: the provider session is validated, mapped through ``auth_identity`` to a
+    ``platform_user``, and checked against an active ``workspace_membership`` for the *selected*
+    workspace before any route body runs. Nothing about the routes changes — they still declare
+    :func:`chat_principal_resolver` — which is the whole point of having kept the seam.
+
+    ``permission`` is the floor for *entering* the surface, not the authority for what a route
+    does: every endpoint re-checks its own permission against ``principal.permissions`` (contract
+    §3.5, "every backend request … re-checks the required permission").
+
+    Two details earn their lines:
+
+    * **Cache coherence.** Lane B's :class:`~clue_api.auth_wiring.PrincipalDependency` stores the
+      principal it resolved on ``request.state``. When the composition root has also pointed this
+      surface's workspace seam at Lane B's authenticated resolver, that work is already done by the
+      time this dependency runs, so it is reused instead of authenticating and reading Postgres a
+      second time for the same request.
+    * **The workspace re-check survives.** A reused principal is still compared against the
+      selector this surface resolved, exactly as the injected path is (ruling 6).
+    """
+
+    dependency = PrincipalDependency(service, permission=permission)
+
+    async def resolve(request: Request, workspace_id: WorkspaceDep) -> RequestPrincipal:
+        cached = principal_from_request(request)
+        principal = cached if cached is not None else await dependency(request, workspace_id)
+        if principal.workspace_id != workspace_id:
+            raise _refuse(
+                status_code=403,
+                code="WORKSPACE_FORBIDDEN",
+                message="the authorized workspace differs from the requested workspace",
+            )
+        return principal
+
+    return resolve
+
+
 def _request_id(request: Request) -> str:
     existing = getattr(request.state, "request_id", None)
     if isinstance(existing, str):
@@ -245,6 +295,19 @@ class _EnvelopeRoute(APIRoute):
                     else (str(detail) if isinstance(detail, str) else code.lower())
                 )
                 return _envelope(request, status_code=exc.status_code, code=code, message=message)
+            except PrincipalError as exc:
+                # Lane B's authentication/authorization refusals already carry the contract §6 code
+                # and status (AUTHENTICATION_REQUIRED / SESSION_INVALID / IDENTITY_NOT_PROVISIONED /
+                # USER_DISABLED / WORKSPACE_FORBIDDEN / PERMISSION_DENIED / MEMBERSHIP_STATE_CHANGED).
+                # They are raised inside dependency resolution, which happens *inside* the route
+                # handler — so without this clause the generic catch below would turn a correct 403
+                # into a 500 and the client could not tell "no access" from "we broke".
+                return _envelope(
+                    request,
+                    status_code=exc.status_code,
+                    code=exc.code,
+                    message=exc.message,
+                )
             except (RequestValidationError, ValidationError) as exc:
                 # ``RequestValidationError`` is the request-body/query failure (an unknown field,
                 # a bad type); the pydantic one is a response-model failure. Both are 422 with a
@@ -338,8 +401,8 @@ def build_chat_router(
         else DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
     )
 
-    def _require(who: RequestPrincipal, permission: str) -> None:
-        if not who.allows(permission):
+    def _require(who: RequestPrincipal, permission: Permission) -> None:
+        if permission not in who.permissions:
             raise _refuse(
                 status_code=403,
                 code="PERMISSION_DENIED",
@@ -367,11 +430,18 @@ def build_chat_router(
         outside the model surface with authority the server derived. A caller that passes an
         ``operation_id`` gets replay identity of its own choosing, which the gate path uses so a
         retried approval replays the same confirmation instead of colliding with it.
+
+        The context is built by **Lane B's own** :func:`tool_context_for_principal` rather than by
+        hand. That is the B4 join: it stamps ``principal_kind='human'`` and the
+        ``membership_id`` alongside the user id, which is precisely what
+        :func:`clue_api.auth_tool_context.require_human_authority` demands of every receipt-bearing
+        human-only tool (``confirm_account_research_directive@2`` among them). A hand-built context
+        without those two fields is the *legacy* shape, and a legacy context can never satisfy a
+        gate that requires an action reference.
         """
 
-        ctx = ToolContext(
-            workspace_id=who.workspace_id,
-            actor="human",
+        ctx = tool_context_for_principal(
+            who,
             conn_factory=conn_factory,
             operation_id=(
                 operation_id
@@ -380,7 +450,6 @@ def build_chat_router(
                     who.workspace_id, f"chat:{name}:{idempotency_key or uuid4().hex}"
                 )
             ),
-            actor_id=who.user_id,
             action_ref=action_ref,
         )
         try:
@@ -697,6 +766,11 @@ def build_chat_router(
             """
 
             _require(who, PERMISSION_THREAD_WRITE)
+            if body.gate_response is not None:
+                # Answering a gate is its own authority in the contract's §3.5 floor: a member who
+                # may write turns is not thereby a member who may close an approval. Checked here,
+                # before the idempotency key is even read, so a member without it performs nothing.
+                _require(who, PERMISSION_GATE_RESPOND)
             if not idempotency_key or not idempotency_key.strip():
                 raise _refuse(
                     status_code=400,
@@ -916,23 +990,44 @@ def install_chat_surface(
     conn_factory: ConnFactory,
     tool_invoker: ToolInvoker,
     principal_resolver: PrincipalResolver | None = None,
+    auth_service: PrincipalService | None = None,
     storage: StorageBackend | None = None,
 ) -> None:
     """Mount the chat router when ``settings.chat_enabled``; otherwise do nothing at all.
 
-    Raises :class:`~clue_api.chat.principal.ProductionPrincipalRequired` when the surface is
-    enabled outside ``local_header`` auth mode without an injected resolver — a process that would
-    serve chat traffic under a development identity must fail to start, not at first request.
+    **Exactly one identity source, decided here and never at request time.** In precedence order:
+
+    1. ``auth_service`` — Lane B's authenticated chain. This is production.
+    2. ``principal_resolver`` — an injected/deterministic test principal (contract §9).
+    3. the guarded development resolver, valid only in ``local_header`` auth mode.
+
+    Wiring (1) and (2)/(3) together is a *configuration contradiction*, not a preference order to
+    resolve silently: two identity sources means "who is this request?" has two answers and only
+    the dependency-override ordering decides which one wins. So it raises
+    :class:`~clue_api.chat.principal.ProductionPrincipalRequired` at composition — the same class
+    raised when the surface is enabled outside ``local_header`` mode with no real principal at all.
+    A process that would serve chat traffic under a development or ambiguous identity must fail to
+    start, not at first request.
     """
 
     if not settings.chat_enabled:
         return
-    resolver = (
-        principal_resolver
-        if principal_resolver is not None
-        else build_dev_principal_resolver(settings)
-    )
-    app.dependency_overrides[chat_principal_resolver] = bind_principal_resolver(resolver)
+    if auth_service is not None and principal_resolver is not None:
+        raise ProductionPrincipalRequired(
+            "the chat surface was given both Lane B's authenticated principal service and an "
+            "injected development/test principal resolver; wire exactly one"
+        )
+    if auth_service is not None:
+        app.dependency_overrides[chat_principal_resolver] = bind_authenticated_principal(
+            auth_service
+        )
+    else:
+        resolver = (
+            principal_resolver
+            if principal_resolver is not None
+            else build_dev_principal_resolver(settings)
+        )
+        app.dependency_overrides[chat_principal_resolver] = bind_principal_resolver(resolver)
     app.include_router(
         build_chat_router(
             settings=settings,

@@ -87,11 +87,6 @@ def build_application(
         if resolved.c7_recheck_enabled and not research_views.deferred_requester.is_bound:
             raise RuntimeError("C7 recheck is enabled but its governed requester is unbound")
     budget = BudgetEngine(store=DbBudgetStore())
-    # FI Lane D (B1 join): the chat surface's development principal must name **real** Lane B rows
-    # (contract §4). The rows can only be provisioned once the process has a database, so the
-    # resolver is handed over now and bound from the startup check below; a process that cannot
-    # provision its identity fails to start rather than serving chat under a fictional one.
-    chat_principal = StartupDevPrincipalResolver() if resolved.chat_enabled else None
     auth_service = None
     auth_closer = None
     if resolved.auth_enabled:
@@ -99,6 +94,39 @@ def build_application(
             settings=resolved,
             conn_factory=transaction,
         )
+
+    # --- the chat surface's identity source: exactly one, decided here -------------------------
+    # FI Lane B ⇄ Lane D join. Before the join this process built the development principal
+    # whenever chat was enabled *and* the real principal service whenever auth was enabled, and
+    # said nothing about the case where both were true — the chat surface would then have been
+    # handed a development identity while the rest of the app authenticated properly. That is
+    # resolved explicitly:
+    #
+    #   auth_enabled          -> Lane B's real chain governs the chat surface; NO dev resolver.
+    #   not auth_enabled      -> the guarded, Postgres-provisioned development principal.
+    #
+    # and the two settings that select them must agree, or the process refuses to start. The
+    # development principal's rows can only be provisioned once the process has a database, so the
+    # resolver is handed over now and bound from the startup check below; a process that cannot
+    # provision its identity fails to start rather than serving chat under a fictional one.
+    if resolved.chat_enabled:
+        if resolved.auth_enabled and resolved.projections_auth_mode == "local_header":
+            raise RuntimeError(
+                "contradictory chat identity configuration: CLUE_AUTH_ENABLED=true selects the "
+                "authenticated principal, but CLUE_PROJECTIONS_AUTH_MODE=local_header selects the "
+                "development one; set CLUE_PROJECTIONS_AUTH_MODE=authenticated_principal"
+            )
+        if not resolved.auth_enabled and resolved.projections_auth_mode != "local_header":
+            raise RuntimeError(
+                "the chat surface has no authenticated principal: CLUE_AUTH_ENABLED is false and "
+                f"CLUE_PROJECTIONS_AUTH_MODE={resolved.projections_auth_mode!r} forbids the "
+                "development principal; enable CLUE_AUTH_ENABLED or select local_header"
+            )
+    chat_principal = (
+        StartupDevPrincipalResolver()
+        if resolved.chat_enabled and not resolved.auth_enabled
+        else None
+    )
 
     async def startup_check() -> None:
         if resolved.projections_auth_mode == "service":

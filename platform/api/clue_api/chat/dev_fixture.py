@@ -33,12 +33,12 @@ this a fixture *of* the real substrate rather than a parallel one.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.chat.principal import (
-    CHAT_PERMISSIONS,
     DEV_ROLE_KEY,
     PrincipalResolver,
     ProductionPrincipalRequired,
@@ -47,14 +47,23 @@ from clue_api.chat.principal import (
 from clue_auth import (
     AuthIdentityError,
     PlatformUser,
+    RoleKey,
     WorkspaceMembership,
     create_platform_user,
-    create_workspace_membership,
     get_auth_identity,
     get_platform_user,
     get_workspace_membership,
     link_auth_identity,
+    permissions_for_role,
 )
+
+# The unguarded membership primitive, imported from the module rather than the package root. Lane
+# B's public API exposes only ``create_workspace_member``, which requires an *acting* membership
+# already holding ``workspace.manage_members``; provisioning a workspace's development owner has no
+# such actor. That is the same bootstrap case Lane B's own ``provision_workspace_owner`` and
+# ``accept_workspace_invitation`` solve with this very primitive, so the fixture borrows it rather
+# than inventing a second way to write the row.
+from clue_auth.store import create_workspace_membership
 from clue_config import Settings
 from clue_db import ConnFactory, transaction
 from clue_spine import get_workspace
@@ -88,7 +97,7 @@ class DevPrincipalIds:
     user_id: str
     membership_id: str
     workspace_id: str
-    role_key: str
+    role_key: RoleKey
 
 
 def dev_provider_subject(user_id: str) -> str:
@@ -168,12 +177,15 @@ async def build_provisioned_dev_principal_resolver(
     def resolve(workspace_id: str) -> RequestPrincipal:
         del workspace_id  # the router re-checks it against the principal below
         return RequestPrincipal(
-            principal_kind="human",
             user_id=ids.user_id,
             membership_id=ids.membership_id,
             workspace_id=ids.workspace_id,
             role_key=ids.role_key,
-            permissions=CHAT_PERMISSIONS,
+            # The provisioned membership's *own* role decides what this principal may do — the
+            # same ``permissions_for_role`` the real authorizer applies. A fixture that granted
+            # itself a different set would stop testing production's authorization.
+            permissions=permissions_for_role(ids.role_key),
+            authenticated_at=datetime.now(UTC),
         )
 
     return resolve

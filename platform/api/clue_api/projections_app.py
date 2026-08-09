@@ -785,8 +785,11 @@ def create_projections_app(
     C5.1 journaled invocation boundary. ``conn_factory`` is the connection seam every projection
     read + tool precondition + stream-token write uses (tests bind a savepoint-scoped factory).
     ``workspace_resolver`` / ``actor_resolver`` swap the auth seams via ``dependency_overrides``.
-    ``chat_principal_resolver`` injects Lane B's authenticated ``RequestPrincipal`` into the chat
-    surface; without one, the surface may only run under ``local_header`` auth mode.
+    ``auth_service`` is Lane B's authenticated principal chain; when present it governs the chat
+    surface's identity (and, absent explicit resolvers, the other surfaces' workspace/actor seams).
+    ``chat_principal_resolver`` injects a deterministic test/development ``RequestPrincipal``
+    instead; without either, the chat surface may only run under ``local_header`` auth mode, and
+    supplying both is refused at composition rather than resolved silently.
     ``sse_live_tail=False`` makes the SSE stream replay-then-close (deterministic for tests);
     production leaves it ``True`` (an open live stream). ``chat_stream_live_tail`` is the same
     switch for FI Lane D D3's turn stream."""
@@ -820,14 +823,16 @@ def create_projections_app(
             workspace_resolver, actor_resolver = authenticated_route_resolvers(auth_service)
 
     # FI Lane D D0: the `/api/v1` chat surface — REQ-21's thread shell. Default-off flag; enabled
-    # outside local_header auth mode it demands an injected Lane B principal resolver and refuses
-    # to start without one.
+    # outside local_header auth mode it demands a real Lane B principal (either the authenticated
+    # service below, or an injected resolver) and refuses to start without one. Supplying both is
+    # a contradiction the installer refuses outright.
     install_chat_surface(
         app,
         settings=resolved,
         conn_factory=conn_factory,
         tool_invoker=tool_invoker,
         principal_resolver=chat_principal_resolver,
+        auth_service=auth_service,
         # D2's turn submission captures the user's bytes as a durable artifact before enqueueing.
         # The same backend the ingestion surface already uses; nothing model-shaped is added here.
         storage=ingestion_storage,

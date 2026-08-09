@@ -86,6 +86,7 @@ from clue_api.chat.turn_events import (
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
 from clue_api.stream_tokens import consume_turn_stream_token, mint_turn_stream_token
 from clue_api.thread_store import get_thread
+from clue_auth import Permission
 from clue_config import Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
@@ -157,8 +158,8 @@ def build_chat_stream_router(
         else DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
     )
 
-    def _require(who: RequestPrincipal, permission: str) -> None:
-        if not who.allows(permission):
+    def _require(who: RequestPrincipal, permission: Permission) -> None:
+        if permission not in who.permissions:
             raise _refuse(
                 status_code=403,
                 code="PERMISSION_DENIED",

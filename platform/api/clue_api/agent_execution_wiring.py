@@ -1422,12 +1422,18 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                             input_refs=dict(trusted_arguments[step.node_key]),
                             depends_on=step.depends_on,
                         ),
+                        # B4 ⇄ D1 join. Pin resolution is the *execution service's* own read while
+                        # it validates a proposed plan — nobody's human effect — so it runs under
+                        # the service principal, never under the turn's user (a service credential
+                        # that could mint a human actor id is exactly Lane B ruling 8's
+                        # impersonation). The turn's ``action_ref`` still rides along: an approval
+                        # receipt is *evidence* a service may carry, and a pin derived for a gated
+                        # step needs to see it.
                         ctx=tool_context_for_internal_service(
                             service_id="svc_agent_execution",
                             workspace_id=constitution.workspace_id,
                             conn_factory=self._conn_factory,
                             operation_id=operation_id,
-                            actor_id=constitution.actor_id,
                             action_ref=self._action_ref,
                             execution_id=constitution.execution_id,
                             execution_node_key=step.node_key,

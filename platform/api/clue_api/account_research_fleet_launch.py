@@ -181,6 +181,10 @@ class AccountResearchFleetLauncher:
                 or directive.status is not ResearchDirectiveStatus.CONFIRMED
                 or directive.confirming_turn_ref is None
                 or directive.confirmed_at is None
+                # All three halves of the confirmation receipt or none: the directive's own row is
+                # the only place the human approver is recorded, and the frozen selection below
+                # cites it (see ``confirmed_by`` there).
+                or directive.confirmed_by is None
             ):
                 raise AccountResearchFleetLaunchError(
                     "account research requires the current human-confirmed directive"
@@ -437,7 +441,19 @@ class AccountResearchFleetLauncher:
                 approval_refs=tuple(
                     dict.fromkeys((source_action_ref, directive.confirming_turn_ref))
                 ),
-                confirmed_by=actor,
+                # The **human who confirmed the directive**, read from the directive row — not the
+                # identity that happens to be invoking the launch. Its pair, ``confirmed_at``, is
+                # already read from there, and the two must describe one act.
+                #
+                # Before the Lane B ⇄ Lane D join this was ``actor``, and the two agreed by luck:
+                # the launcher's caller was the same user. B4 makes the launching invoker a
+                # *service* principal whenever the deepagent launches from a model-planned node
+                # (Lane B ruling 8 — a worker executes an approved act without becoming its
+                # approver), so ``actor`` would now write ``svc_execution_worker`` into a field
+                # meaning "who approved this spend", beside a timestamp of when the human did.
+                # The receipt is the human's; the worker's identity is already recorded as the
+                # fleet row's creator and in the C5 journal.
+                confirmed_by=directive.confirmed_by,
                 confirmed_at=directive.confirmed_at,
             )
             research_run_id = uuid5(_RUN_NAMESPACE, request_sha)

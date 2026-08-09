@@ -248,6 +248,13 @@ class CreateThreadTool(_ThreadTool):
                 # authenticated boundary resolved; an agent-initiated thread simply has none until
                 # Lane B gives agents a service identity here.
                 created_by_user_id=ctx.actor_id,
+                # The Lane B ⇄ Lane D join: B4 now carries the membership through the ToolContext,
+                # so the second half of the ownership pair stops being NULL-by-necessity. A
+                # service/legacy context carries no membership and correctly writes NULL — the
+                # composite FK onto ``workspace_membership (membership_id, workspace_id)`` is
+                # MATCH SIMPLE, so absence passes and a *claimed* membership must be real and must
+                # belong to this thread's workspace.
+                created_via_membership_id=ctx.membership_id,
             )
         return ToolResult(tool=self.name, version=self.version, references=_references(row))
 

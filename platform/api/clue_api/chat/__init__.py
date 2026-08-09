@@ -31,6 +31,7 @@ from clue_api.chat.principal import (
 from clue_api.chat.router import (
     CHAT_PREFIX,
     REQUEST_ID_HEADER,
+    bind_authenticated_principal,
     bind_principal_resolver,
     build_chat_router,
     chat_principal_resolver,
@@ -53,6 +54,7 @@ __all__ = [
     "ProductionPrincipalRequired",
     "RequestPrincipal",
     "StartupDevPrincipalResolver",
+    "bind_authenticated_principal",
     "bind_principal_resolver",
     "build_chat_router",
     "build_dev_principal_resolver",

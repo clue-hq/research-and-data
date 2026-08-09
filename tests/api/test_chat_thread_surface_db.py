@@ -19,7 +19,7 @@ The D0 acceptance criteria this file owns:
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -36,7 +36,7 @@ from clue_api.chat import (
 )
 from clue_config import Settings, load_settings
 from clue_toolbelt import DbIdempotencyStore, ToolRegistry
-from tests._identity import seed_principal
+from tests._identity import fixture_membership_id, seed_principal
 from tests._workspace import seed_project as _seed_project_row
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
@@ -51,6 +51,9 @@ from tests.projections._helpers import build_surface
 #: anything a provider could have issued — the point of the "no provider id" assertion below.
 USER_ID = "usr_d0_test"
 MEMBERSHIP_ID = "wsm_d0_test"
+#: The moment the injected test principal "authenticated". A fixed instant, because the Lane B
+#: principal records when the session was proved and a test must not depend on wall clock.
+_AUTHENTICATED_AT = datetime(2026, 8, 9, 9, 0, tzinfo=UTC)
 
 #: What a Clerk-shaped identifier looks like. No column may ever contain one.
 PROVIDER_SUBJECT = "user_2abcCLERKsubject"
@@ -109,12 +112,12 @@ async def seed_project(conn, workspace_id: str, *, name: str):
 
 def _principal(workspace_id: str, *, permissions: frozenset[str] | None = None) -> RequestPrincipal:
     return RequestPrincipal(
-        principal_kind="human",
         user_id=USER_ID,
-        membership_id=MEMBERSHIP_ID,
+        membership_id=fixture_membership_id(workspace_id=workspace_id, user_id=USER_ID),
         workspace_id=workspace_id,
         role_key="owner",
         permissions=CHAT_PERMISSIONS if permissions is None else permissions,
+        authenticated_at=_AUTHENTICATED_AT,
     )
 
 
@@ -233,10 +236,15 @@ def test_thread_crud_round_trips_over_http_with_the_injected_principal(
                 .one()
             )
             # The creator is the principal's *internal* id, taken from ambient authority — the
-            # request body never carried one. Membership stays NULL until Lane B B4 threads it
-            # through the ToolContext seam; a fabricated value would be worse than an absent one.
+            # request body never carried one. Since the Lane B ⇄ Lane D join, B4's ToolContext
+            # carries the membership too, so the second half of the ownership pair is written from
+            # the same principal instead of staying NULL-by-necessity; the composite foreign key
+            # onto ``workspace_membership (membership_id, workspace_id)`` is what makes it a
+            # *proved* membership of this thread's workspace rather than a claimed string.
             assert row["created_by_user_id"] == USER_ID
-            assert row["created_via_membership_id"] is None
+            assert row["created_via_membership_id"] == fixture_membership_id(
+                workspace_id=project.workspace_id, user_id=USER_ID
+            )
             assert row["status"] == "archived"
             assert row["title"] == "Enterprise account research"
 

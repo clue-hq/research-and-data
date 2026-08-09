@@ -99,6 +99,9 @@ from tests.projections._helpers import build_surface
 
 USER_ID = "usr_d3_test"
 MEMBERSHIP_ID = "wsm_d3_test"
+#: The moment the injected test principal "authenticated". A fixed instant, because the Lane B
+#: principal records when the session was proved and a test must not depend on wall clock.
+_AUTHENTICATED_AT = datetime(2026, 8, 9, 9, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -147,12 +150,12 @@ def _settings(**kwargs: object) -> Settings:
 
 def _principal(workspace_id: str) -> RequestPrincipal:
     return RequestPrincipal(
-        principal_kind="human",
         user_id=USER_ID,
         membership_id=f"{MEMBERSHIP_ID}-{workspace_id}",
         workspace_id=workspace_id,
         role_key="owner",
         permissions=CHAT_PERMISSIONS,
+        authenticated_at=_AUTHENTICATED_AT,
     )
 
 

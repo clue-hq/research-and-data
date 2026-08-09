@@ -104,6 +104,9 @@ from tests.profiling.conftest import (
 from tests.projections._helpers import build_surface
 
 USER_ID = "usr_d4_optionb"
+#: The moment the injected test principal "authenticated". A fixed instant, because the Lane B
+#: principal records when the session was proved and a test must not depend on wall clock.
+_AUTHENTICATED_AT = datetime(2026, 8, 9, 9, 0, tzinfo=UTC)
 NOW_UTC = datetime(2026, 8, 9, 11, 0, tzinfo=UTC)
 
 _PAIN = "account.operational_pain"
@@ -430,12 +433,12 @@ def _app(conn: AsyncConnection, scenario: _Scenario) -> Any:
 
     def resolve(workspace_id: str) -> RequestPrincipal:
         return RequestPrincipal(
-            principal_kind="human",
             user_id=USER_ID,
             membership_id=f"wsm_d4_optionb_{workspace_id}",
             workspace_id=workspace_id,
             role_key="owner",
             permissions=CHAT_PERMISSIONS,
+            authenticated_at=_AUTHENTICATED_AT,
         )
 
     return create_projections_app(
