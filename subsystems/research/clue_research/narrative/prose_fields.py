@@ -59,7 +59,14 @@ CONTACT_OVERVIEW = "contact.overview"
 # - ``research_outcome``: the §7-D1 stamp — {completed, needs_review} — so the prose is honest
 #   about its basis (never synthesized on ``cancelled``);
 # - ``project_id``: the §7-D2 amendment slot, ``null`` while the fields are PROJECT_NEUTRAL (see
-#   the module docstring — do not "simplify" it away).
+#   the module docstring — do not "simplify" it away). It is **enum-pinned to null**, deliberately,
+#   not typed ``["string", "null"]``: the claimstore value-schema validator supports one scalar
+#   type per property and has no union branch (``registry._SCALAR_CHECKS`` /
+#   ``_validate_payload``), so the union form made both tenants unwritable by *any* payload — a
+#   present ``project_id`` crashed on the unhashable list type and an absent one failed the
+#   ``required`` check. The enum fixes that AND turns the "always null while neutral" invariant
+#   into a substrate guarantee: starting to stamp real project ids is forced through this line, in
+#   the same change that flips the species to PROJECT_RELATIVE (FI-2 §6.4 pairing discipline).
 # ``additionalProperties`` is left open so the shape can grow additively without a migration.
 _PROSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -79,7 +86,7 @@ _PROSE_SCHEMA: dict[str, Any] = {
         "prompt_version": {"type": "string"},
         "synthesized_from_job_id": {"type": "string"},
         "research_outcome": {"enum": ["completed", "needs_review"]},
-        "project_id": {"type": ["string", "null"]},
+        "project_id": {"enum": [None]},
     },
 }
 

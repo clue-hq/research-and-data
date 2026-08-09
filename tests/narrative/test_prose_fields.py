@@ -11,10 +11,15 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import text
 
 from clue_core import EntityType, PassKind, ResearchScope, ResearchSectionKind, ReuseScope
-from clue_research.claimstore import list_research_view_routes
+from clue_research.claimstore import (
+    ValueSchemaError,
+    list_research_view_routes,
+    validate_value_against_schema,
+)
 from clue_research.narrative import (
     ACCOUNT_SUMMARY,
     CONTACT_OVERVIEW,
@@ -79,14 +84,43 @@ def test_prose_value_schema_carries_the_d2_project_id_slot() -> None:
         assert paragraphs["items"]["type"] == "string"
         # D2 amendment (§2.5/§7): the project dimension exists from day one, fixed to null while
         # the fields are PROJECT_NEUTRAL — flipping to PROJECT_RELATIVE is a value change, never
-        # a key migration.
-        assert schema["properties"]["project_id"]["type"] == ["string", "null"]
+        # a key migration. The slot is **enum-pinned to null** rather than typed
+        # ``["string", "null"]``: the claimstore value-schema validator supports a single scalar
+        # type only (no unions — ``registry._SCALAR_CHECKS``), so the union made the field
+        # unwritable by ANY payload; the enum both fixes that and enforces the "always null while
+        # neutral" invariant at the substrate, forcing the future species flip through this line.
+        assert schema["properties"]["project_id"] == {"enum": [None]}
         assert schema["properties"]["research_outcome"]["enum"] == [
             "completed",
             "needs_review",
         ]
         # additive growth without a migration (the fields.py:55-68 rationale)
         assert "additionalProperties" not in schema
+
+
+def test_prose_value_schema_admits_a_null_project_id_and_rejects_a_stamped_one() -> None:
+    """The D2 invariant, pinned at the validator that actually runs on every insert: a neutral
+    payload (``project_id: None``) is writable, and a payload that starts stamping real project ids
+    is refused until the species flips with it (FI-2 §6.4 pairing discipline).
+
+    Regression guard: the original ``{"type": ["string", "null"]}`` union crashed
+    ``_validate_payload`` (``TypeError: unhashable type: 'list'``) for BOTH branches, so
+    ``account.summary`` was unwritable by any payload at all.
+    """
+    for seed in PROSE_PACK:
+        schema = seed.value_schema
+        assert schema is not None
+        neutral: dict[str, object] = {
+            "paragraphs": ["a paragraph"],
+            "prompt_version": "account_summary_v1",
+            "synthesized_from_job_id": "0b6c1f1e-0000-0000-0000-000000000000",
+            "research_outcome": "completed",
+            "project_id": None,
+        }
+        validate_value_against_schema(neutral, schema)  # writable — no raise
+
+        with pytest.raises(ValueSchemaError, match="project_id"):
+            validate_value_against_schema({**neutral, "project_id": "some-project"}, schema)
 
 
 def test_load_prose_pack_registers_fields_and_routes(require_narrative_db: None) -> None:
