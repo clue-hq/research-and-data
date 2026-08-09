@@ -5,14 +5,17 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import text
 
 from clue_auth import (
     InvitationUnavailableError,
     MembershipPermissionError,
     accept_workspace_invitation,
+    change_workspace_member_role,
     create_platform_user,
     create_workspace_invitation,
-    create_workspace_membership,
+    create_workspace_member,
+    erase_invitation_delivery_target,
     erase_platform_user,
     get_auth_identity,
     get_workspace_membership,
@@ -20,8 +23,10 @@ from clue_auth import (
     identity_bundle,
     link_auth_identity,
     provision_workspace_owner,
-    revoke_workspace_membership,
+    readmit_workspace_member,
+    revoke_workspace_member,
 )
+from clue_auth.store import create_workspace_membership, revoke_workspace_membership
 from clue_spine import create_workspace
 
 from .conftest import rollback_conn, run_async
@@ -284,5 +289,112 @@ def test_identity_dsar_erases_provider_values_but_keeps_internal_audit_ids() -> 
                 )
                 is None
             )
+
+    run_async(scenario())
+
+
+def test_unaccepted_invitation_delivery_target_can_be_erased_by_address() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            owner = await provision_workspace_owner(
+                conn,
+                workspace_name="Invitation DSAR",
+                provider_key="clerk",
+                provider_subject="invitation-dsar-owner",
+                now=NOW,
+            )
+            invitation = await create_workspace_invitation(
+                conn,
+                workspace_id=owner.workspace.workspace_id,
+                invited_address="NeverAccepted@Example.com",
+                role_key="viewer",
+                token_digest=hash_invitation_token("unaccepted-dsar"),
+                expires_at=NOW + timedelta(hours=1),
+                invited_by_membership_id=owner.membership.membership_id,
+                now=NOW,
+            )
+
+            erased = await erase_invitation_delivery_target(conn, "neveraccepted@example.com")
+            stored = (
+                await conn.execute(
+                    text(
+                        "SELECT invited_address FROM workspace_invitation "
+                        "WHERE invitation_id = :invitation_id"
+                    ),
+                    {"invitation_id": invitation.invitation_id},
+                )
+            ).scalar_one()
+
+            assert erased == 1
+            assert stored == f"erased:{invitation.invitation_id}"
+
+    run_async(scenario())
+
+
+def test_membership_admin_is_guarded_preserves_an_owner_and_can_readmit() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            owner = await provision_workspace_owner(
+                conn,
+                workspace_name="Membership lifecycle",
+                provider_key="clerk",
+                provider_subject="membership-owner",
+                now=NOW,
+            )
+            viewer = await create_platform_user(conn)
+            viewer_membership = await create_workspace_member(
+                conn,
+                acting_membership_id=owner.membership.membership_id,
+                workspace_id=owner.workspace.workspace_id,
+                user_id=viewer.user_id,
+                role_key="viewer",
+                now=NOW,
+            )
+            with pytest.raises(MembershipPermissionError, match="manage_members"):
+                await create_workspace_member(
+                    conn,
+                    acting_membership_id=viewer_membership.membership_id,
+                    workspace_id=owner.workspace.workspace_id,
+                    user_id=(await create_platform_user(conn)).user_id,
+                    role_key="viewer",
+                    now=NOW,
+                )
+            with pytest.raises(MembershipPermissionError, match="retain at least one"):
+                await revoke_workspace_member(
+                    conn,
+                    acting_membership_id=owner.membership.membership_id,
+                    workspace_id=owner.workspace.workspace_id,
+                    membership_id=owner.membership.membership_id,
+                    now=NOW,
+                )
+
+            revoked = await revoke_workspace_member(
+                conn,
+                acting_membership_id=owner.membership.membership_id,
+                workspace_id=owner.workspace.workspace_id,
+                membership_id=viewer_membership.membership_id,
+                now=NOW,
+            )
+            readmitted = await readmit_workspace_member(
+                conn,
+                acting_membership_id=owner.membership.membership_id,
+                workspace_id=owner.workspace.workspace_id,
+                membership_id=viewer_membership.membership_id,
+                role_key="operator",
+                now=NOW + timedelta(minutes=1),
+            )
+            unchanged_owner = await change_workspace_member_role(
+                conn,
+                acting_membership_id=owner.membership.membership_id,
+                workspace_id=owner.workspace.workspace_id,
+                membership_id=owner.membership.membership_id,
+                role_key="owner",
+            )
+
+            assert revoked.status == "revoked"
+            assert readmitted.status == "active"
+            assert readmitted.role_key == "operator"
+            assert readmitted.revoked_at is None
+            assert unchanged_owner.role_key == "owner"
 
     run_async(scenario())

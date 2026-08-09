@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from clue_api.account_entity_research import born_complete_account_field_keys
 from clue_api.account_research_wiring import (
     AccountResolverBindingAvailability,
     AccountResolverBindings,
@@ -137,7 +138,25 @@ class ExaDeepAccountResolverProvider:
             fields: list[ExaDeepFieldSpec] = []
             freshness_seconds: list[int] = []
             gate_rejections: list[str] = []
-            account_field_keys = account_axis_field_keys(effective.field_keys)
+            directive_field_keys = account_axis_field_keys(effective.field_keys)
+            # FI-2 §6.2: a field the workspace already knows — neutral species, fresh,
+            # evidence-backed, conflict-free — never enters the bundle, so no provider is paid for
+            # re-deriving a fact already on file.  The borrowed set is the engine's own derivation
+            # (``born_complete_account_field_keys``), not a second definition of "already known".
+            borrowed = await born_complete_account_field_keys(
+                conn,
+                workspace_id=workspace_id,
+                account_entity_id=account_entity_id,
+                field_keys=[str(field_key) for field_key in directive_field_keys],
+            )
+            account_field_keys = tuple(
+                field_key for field_key in directive_field_keys if str(field_key) not in borrowed
+            )
+            skipped = tuple(
+                f"{field_key}:existing_claim_fresh"
+                for field_key in directive_field_keys
+                if str(field_key) in borrowed
+            )
             for field_key in account_field_keys:
                 planned = await plan_sources(
                     conn,
@@ -192,12 +211,20 @@ class ExaDeepAccountResolverProvider:
                 if ttl is not None:
                     freshness_seconds.append(max(1, int(ttl.total_seconds())))
 
+        # An empty account-axis bundle reserves *nothing*: no plan is compiled, no operation row is
+        # written, no HTTP is dispatched.  When the emptiness is because every admitted field was
+        # already known, that is the §6.2 win and the reason code says so rather than reporting a
+        # missing authorization that does not exist.
         if not fields:
             return AccountResolverBindings(
                 availability=AccountResolverBindingAvailability.NOT_APPLICABLE,
                 bindings=materialized.bindings,
-                reason_code="exa_deep_no_effective_authorized_fields",
-                audit_refs=tuple(gate_rejections),
+                reason_code=(
+                    "exa_deep_all_fields_already_known"
+                    if skipped and not account_field_keys
+                    else "exa_deep_no_effective_authorized_fields"
+                ),
+                audit_refs=(*skipped, *gate_rejections),
             )
 
         account_field_set = frozenset(account_field_keys)
@@ -207,8 +234,7 @@ class ExaDeepAccountResolverProvider:
                 effective.questions,
                 key=lambda item: (item.priority, item.question_id),
             )
-            if item.target_field_key is not None
-            and str(item.target_field_key) in account_field_set
+            if item.target_field_key is not None and str(item.target_field_key) in account_field_set
         )
         config = ExaDeepConfig(
             search_type=self._settings.exa_account_deep_search_type,
@@ -246,7 +272,7 @@ class ExaDeepAccountResolverProvider:
                     reason_code="exa_deep_acquisition_in_progress",
                     operation_ref=str(acquired.operation.operation_id),
                     retry_after=acquired.retry_after or datetime.now(UTC) + timedelta(seconds=30),
-                    audit_refs=tuple(operation_refs),
+                    audit_refs=(*skipped, *operation_refs),
                 )
             if acquired.outcome in {
                 ExaDeepAcquisitionOutcome.FAILED_TERMINAL,
@@ -257,7 +283,7 @@ class ExaDeepAccountResolverProvider:
                     bindings={},
                     reason_code=f"exa_deep_{acquired.outcome.value}",
                     operation_ref=str(acquired.operation.operation_id),
-                    audit_refs=tuple(operation_refs),
+                    audit_refs=(*skipped, *operation_refs),
                 )
 
         resolved = await self._snapshots.resolver_bindings(
@@ -266,7 +292,7 @@ class ExaDeepAccountResolverProvider:
             account_entity_id=account_entity_id,
             research_directive=research_directive,
         )
-        return replace(resolved, audit_refs=tuple(operation_refs))
+        return replace(resolved, audit_refs=(*skipped, *operation_refs))
 
 
 def build_production_exa_deep_resolver_provider(

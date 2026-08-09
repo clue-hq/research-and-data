@@ -63,6 +63,7 @@ from clue_execution.journal import (
     LostExecutionLease,
     OperationConflict,
     StaleCursor,
+    ToolAuthorityStateChanged,
     get_cursor,
     rebuild_cursor,
 )
@@ -211,6 +212,7 @@ __all__ = [
     "JournalCrashHook",
     "LostExecutionLease",
     "OperationConflict",
+    "ToolAuthorityStateChanged",
     "StaleCursor",
     "get_cursor",
     "rebuild_cursor",

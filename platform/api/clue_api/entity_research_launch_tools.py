@@ -18,6 +18,7 @@ from clue_api.account_research_fleet_launch import (
     AccountResearchFleetLauncher,
     AccountResearchFleetLaunchRequest,
 )
+from clue_api.auth_tool_context import require_human_authority
 from clue_api.contact_research_fleet import ContactResearchFleetService
 from clue_api.contact_research_fleet_launch import (
     ContactResearchFleetLauncher,
@@ -281,13 +282,13 @@ class ApproveEntityContactResearchSelectionTool(Tool):
         assert isinstance(inputs, ApproveEntityContactResearchSelectionInput)
         if self._service is None:
             return _not_composed()
-        if ctx.actor != "human" or ctx.actor_id is None or ctx.action_ref is None:
-            return (
-                PreconditionFailure(
-                    reason_code="trusted_human_receipt_required",
-                    message="only an authenticated human may approve the exact contact selection",
-                ),
-            )
+        authority = require_human_authority(
+            ctx,
+            action_ref_required=True,
+            message="only an authenticated human may approve the exact contact selection",
+        )
+        if authority:
+            return authority
         if inputs.request.workspace_id != ctx.workspace_id:
             return (
                 PreconditionFailure(

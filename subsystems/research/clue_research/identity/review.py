@@ -46,9 +46,9 @@ from clue_core import (
 )
 from clue_locks import multi_lock
 from clue_research.claimstore import (
-    DEFAULT_MERGE_POLICY,
     MergePolicy,
     WorkspaceScope,
+    active_merge_policy,
     claims_for,
     merge_claims,
 )
@@ -1042,7 +1042,7 @@ async def current_value_resolved(
     *,
     scope: WorkspaceScope,
     entity_type: EntityType = EntityType.ACCOUNT,
-    policy: MergePolicy = DEFAULT_MERGE_POLICY,
+    policy: MergePolicy | None = None,
 ) -> CurrentValue | None:
     """The current truth for a field, **resolved across a merge**: claims attached to any entity
     that merged into the survivor are read under the survivor (substrate §2). Reuses M1's pure
@@ -1051,7 +1051,10 @@ async def current_value_resolved(
     ``scope`` is **required** (M2.5 — fail-closed), exactly like :func:`current_value`: the
     merge-resolved read crosses *entities*, not *tenants*, so the tenant filter is applied to every
     member's claims — a tenant scope never surfaces another tenant's private claim under the merge.
+    ``policy=None`` resolves to :func:`active_merge_policy` (the toggle-aware effective default).
     """
+    if policy is None:
+        policy = active_merge_policy()
     survivor = await surviving_id(conn, entity_id, entity_type)
     members = await merged_member_ids(conn, survivor, entity_type)
     claims: list[Claim] = []

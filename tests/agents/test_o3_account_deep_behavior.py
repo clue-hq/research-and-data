@@ -66,12 +66,9 @@ def test_scripted_o3_conversations_cover_the_non_linear_gate() -> None:
     # its durable identity is the approved directive/selection/budget triple — so a replay is the
     # same launch, never a second one.
     descriptor = build_toolbelt(storage=None, gateway=None).descriptor("launch_account_research")
+    assert "only after the current user action explicitly approves" in descriptor.model_description
     assert (
-        "only after the current user action explicitly approves" in descriptor.model_description
-    )
-    assert (
-        "it never means account or committee research has completed"
-        in descriptor.model_description
+        "it never means account or committee research has completed" in descriptor.model_description
     )
     assert "never authorizes contact research" in descriptor.model_description
     assert descriptor.effect_class.value == "spend"

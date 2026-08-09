@@ -65,6 +65,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_gate_wiring import register_agent_gate_tools
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.auth_tool_context import require_human_authority
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.composition import build_pre_spend_gate
 from clue_api.contact_content_handoff import ContactContentHandoffService
@@ -2080,11 +2081,15 @@ class ApproveContactResearchSelectionTool(Tool):
         ctx: ToolContext,
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ApproveContactResearchSelectionInput)
-        if ctx.actor != "human":
-            return _fail(
-                "human_required",
-                "only a human can approve a contact-research selection successor",
-            )
+        authority = require_human_authority(
+            ctx,
+            action_ref_required=True,
+            message=(
+                "selection approval requires authenticated human identity and action reference"
+            ),
+        )
+        if authority:
+            return authority
         if ctx.actor_id is None or ctx.action_ref is None:
             return _fail(
                 "trusted_human_receipt_required",

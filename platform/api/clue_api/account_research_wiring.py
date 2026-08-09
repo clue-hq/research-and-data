@@ -407,9 +407,7 @@ class GovernedAccountProfiler:
             conn_factory=self._conn_factory,
         )
         account_fields = (
-            None
-            if spec.field_keys is None
-            else account_axis_field_keys(spec.field_keys)
+            None if spec.field_keys is None else account_axis_field_keys(spec.field_keys)
         )
         plan = await store.begin(
             account_run_id=run_id,

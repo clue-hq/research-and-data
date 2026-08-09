@@ -31,10 +31,16 @@ committee persona it:
 4. synthesizes one grounded argument via the gateway, writes it as a tier-4 ``llm_synthesis``
    ``account.value_narrative`` claim (stamped ``TENANT_PRIVATE``) + its ``claim_support`` row,
    then runs the faithfulness judge — which promotes a grounded argument to ``verified`` and
-   leaves an ungrounded one un-promoted (M12.1 AC2).
+   leaves an ungrounded one un-promoted (M12.1 AC2). With the runtime verification toggle off no
+   judge exists (``judge=None`` — FI-M12 toggle compat §3-A): the claim is written and left at its
+   born status, and the skip is recorded (``research.narrative.judge_skipped``); the disabled-mode
+   effective merge policy is what serves it.
 
 Re-running on the same ``(account, icp, persona)`` **supersedes** the prior narrative rather than
-duplicating it (append-only + supersede; M12.1 AC7).
+duplicating it (append-only + supersede; M12.1 AC7) — *within one project*. Since FI-2 §6.4 the
+supersede key also carries the ``project_id`` the narrative was produced for, so a second project's
+narrative for the same ``(product, ICP, persona)`` **coexists** with the first's instead of
+destroying it; each lens reads its own through ``run_lineage``.
 """
 
 from __future__ import annotations
@@ -79,7 +85,8 @@ from clue_research.claimstore import (
     claims_for,
     current_values,
     insert_claim,
-    supersede_claim,
+    project_supersedable,
+    supersede_claims,
 )
 from clue_research.identity import stamp_reuse
 from clue_research.narrative.fields import VALUE_NARRATIVE
@@ -115,6 +122,10 @@ ATTR_N_NARRATIVES = "narrative.n_narratives"
 ATTR_N_COVERAGE_GAPS = "narrative.n_coverage_gaps"
 METRIC_NARRATIVES_PRODUCED = "research.narrative.produced"
 METRIC_NARRATIVE_COVERAGE_GAP = "research.narrative.coverage_gap"
+# Emitted when a narrative is written with no judge constructed (``judge=None`` — the runtime
+# verification toggle is off; FI-M12 toggle compat §3-A). The claim stays at its born
+# (unverified) status; the merge serves it only under the disabled-mode effective policy.
+METRIC_NARRATIVE_JUDGE_SKIPPED = "research.narrative.judge_skipped"
 
 # Why a persona produced no narrative (returned for observability; the durable signal is simply the
 # absence of a narrative claim for a committee persona, which M12.2 reads as low coverage).
@@ -191,7 +202,7 @@ class Positioner:
         gateway: LLMGateway,
         retriever: ClientKnowledgeRetriever,
         committee_reader: CommitteeReader,
-        judge: FaithfulnessJudge,
+        judge: FaithfulnessJudge | None,
         policy: PositioningPolicy = DEFAULT_POSITIONING_POLICY,
         conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
@@ -215,6 +226,7 @@ class Positioner:
         icp_key: str | None = None,
         kb_version: int | None = None,
         product_id: str | None = None,
+        project_id: str | None = None,
     ) -> PositioningResult:
         """Produce the per-persona value narrative for one ``(account, icp)``.
 
@@ -230,7 +242,15 @@ class Positioner:
         ``value_json`` and keys supersession on ``(persona, icp_key, icp_version)`` — so segment B's
         re-synthesis never clobbers segment A's narrative at the same version. ``None`` preserves
         the
-        legacy version-only keying (a single-segment account)."""
+        legacy version-only keying (a single-segment account).
+
+        ``project_id`` is the project this narrative is being produced for (FI-2 §6.4). It is
+        stamped into ``value_json`` (the claim row has no project column) and joins the supersede
+        key, so a second project's narrative for the same ``(product, ICP, persona)`` **coexists**
+        with the first's rather than destroying it. A narrative claim carrying **no** ``project_id``
+        is the legacy (pre-§6.4) shape and is absorbed by the first project that regenerates that
+        key — see :meth:`_live_for_persona`. Passing ``None`` keeps the legacy behaviour: such a run
+        supersedes only other unstamped narratives, never a project's."""
         policy = self._policy
         scope = WorkspaceScope.for_workspace(workspace_id)
         with traced_step(
@@ -275,6 +295,7 @@ class Positioner:
                     run_id=run_id,
                     kb_version=kb_version,
                     product_id=product_id,
+                    project_id=project_id,
                     scope=scope,
                 )
                 total_cost += cost
@@ -312,6 +333,7 @@ class Positioner:
         run_id: RunId,
         kb_version: int | None,
         product_id: str | None,
+        project_id: str | None,
         scope: WorkspaceScope,
     ) -> tuple[ValueNarrativeRef | None, CoverageGap | None, CostCents]:
         """Synthesize (or coverage-gap) one persona's narrative. Returns ``(ref, gap, cost)`` —
@@ -400,6 +422,10 @@ class Positioner:
             value_json["icp_key"] = icp_key
         if product_id is not None:
             value_json["product_id"] = product_id
+        if project_id is not None:
+            # FI-2 §6.4: the project dimension of the supersede key (the claim row has no project
+            # column), so P2's narrative coexists with P1's instead of superseding it.
+            value_json["project_id"] = project_id
         evidence_span = assemble_evidence_span(
             account_facts, chunks, max_chars=policy.max_evidence_chars
         )
@@ -430,6 +456,7 @@ class Positioner:
                 icp_spec_version=icp_spec_version,
                 icp_key=icp_key,
                 product_id=product_id,
+                project_id=project_id,
                 scope=scope,
             )
             await write_claim_support(
@@ -440,7 +467,15 @@ class Positioner:
             )
 
         # (f) faithfulness gate: promotes a grounded argument, leaves an ungrounded one un-promoted.
-        verdict = await self._judge.judge(claim)
+        #     ``judge=None`` (the runtime verification toggle is off — FI-M12 toggle compat §3-A):
+        #     the claim stands at its born unverified status, provenance above is already written,
+        #     and the skip is recorded so disabled-mode narratives are observable.
+        if self._judge is not None:
+            verdict = await self._judge.judge(claim)
+            judge_verdict = verdict.verdict.value
+        else:
+            judge_verdict = None
+            self._emit_judge_skipped(persona)
         self._emit_produced(persona)
         ref = ValueNarrativeRef(
             claim_id=new_id,
@@ -448,7 +483,7 @@ class Positioner:
             angle_label=angle.angle_label,
             account_evidence_ids=tuple(account_evidence_ids),
             client_knowledge_ids=tuple(client_knowledge_ids),
-            judge_verdict=verdict.verdict.value,
+            judge_verdict=judge_verdict,
         )
         return ref, None, cost
 
@@ -461,13 +496,13 @@ class Positioner:
         icp_spec_version: int,
         icp_key: str | None,
         product_id: str | None,
+        project_id: str | None,
         scope: WorkspaceScope,
     ) -> ClaimId:
         """Insert the narrative claim, superseding any prior live narrative for the same ``(account,
-        persona, icp_key, icp)`` (append-only + supersede; M12.1 AC7 — re-run never duplicates).
-        When
-        ``icp_key`` is set, segment B never supersedes segment A's narrative at the same version
-        (D5).
+        persona, icp_key, icp, project)`` (append-only + supersede; M12.1 AC7 — re-run never
+        duplicates). When ``icp_key`` is set, segment B never supersedes segment A's narrative at
+        the same version (D5); since FI-2 §6.4, project P2 never supersedes project P1's.
         """
         live = await self._live_for_persona(
             conn,
@@ -476,20 +511,26 @@ class Positioner:
             icp_spec_version=icp_spec_version,
             icp_key=icp_key,
             product_id=product_id,
+            project_id=project_id,
             scope=scope,
         )
         if not live:
             return await insert_claim(conn, claim)
         if len(live) > 1:
+            # Normally one; more than one means a pre-existing anomaly, or (post-§6.4) an unstamped
+            # legacy narrative sitting alongside this project's own prior. Collapse *all* of them
+            # into the new claim — the many→one analogue — so no stray sibling keeps contributing
+            # to ``current_value``.
             _log.warning(
                 "more than one live value_narrative for (account=%s, persona=%s, icp_key=%s, "
-                "icp=%s); superseding the most recent (the others are a pre-existing anomaly)",
+                "icp=%s, project=%s); superseding all of them",
                 claim.entity_id,
                 persona.value,
                 icp_key,
                 icp_spec_version,
+                project_id,
             )
-        return await supersede_claim(conn, live[0].id, claim)
+        return await supersede_claims(conn, [prior.id for prior in live], claim)
 
     async def _live_for_persona(
         self,
@@ -500,11 +541,14 @@ class Positioner:
         icp_spec_version: int,
         icp_key: str | None,
         product_id: str | None,
+        project_id: str | None,
         scope: WorkspaceScope,
     ) -> list[Claim]:
-        """The live ``account.value_narrative`` claims for this exact ``(account, persona, icp_key,
-        icp)`` (claims_for returns non-superseded; ordered collected_at DESC so ``[0]`` is the most
-        recent). ``icp_key=None`` matches on version only (legacy single-segment keying).
+        """The live ``account.value_narrative`` claims this synthesis is allowed to supersede — the
+        exact ``(account, persona, icp_key, icp, product, project)`` key (claims_for returns
+        non-superseded; ordered collected_at DESC so ``[0]`` is the most recent).
+        ``icp_key=None`` matches on version only (legacy single-segment keying); the project leg is
+        :func:`~clue_research.claimstore.project_supersedable`.
         """
         claims = await claims_for(conn, account_entity_id, VALUE_NARRATIVE, scope=scope)
         result: list[Claim] = []
@@ -516,9 +560,14 @@ class Positioner:
                 and value.get("icp_spec_version") == icp_spec_version
                 and (icp_key is None or value.get("icp_key") == icp_key)
                 and claim.product_id == product_id
+                and project_supersedable(value.get("project_id"), project_id)
             ):
                 result.append(claim)
         return result
+
+    def _emit_judge_skipped(self, persona: Persona) -> None:
+        sink = self._sink or get_metric_sink()
+        sink.add(METRIC_NARRATIVE_JUDGE_SKIPPED, 1, {"persona": persona.value})
 
     def _emit_gap(self, persona: Persona, reason: str) -> None:
         sink = self._sink or get_metric_sink()

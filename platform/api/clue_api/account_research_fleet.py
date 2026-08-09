@@ -43,8 +43,10 @@ from clue_core.entity_research import (
 from clue_db import ConnFactory, transaction
 from clue_fleet.entity_research import (
     EntityResearchJobError,
+    EntityResearchJobEventKind,
     EntityResearchJobWorkHandler,
     EntityResearchRunEnvelope,
+    append_entity_research_job_event,
     cancel_entity_research_run,
     launch_entity_research_run,
 )
@@ -150,6 +152,8 @@ class AccountResearchJobSummary(BaseModel):
     current_wait_ref: str | None
     spent_cents: Decimal
     result_refs: tuple[str, ...] = ()
+    unresolved_field_keys: tuple[str, ...] = ()
+    committee_status: Literal["complete", "partial", "needs_review"] | None = None
     committee_member_ids: tuple[UUID, ...] = ()
     review_item_refs: tuple[str, ...] = ()
 
@@ -486,9 +490,7 @@ class AccountResearchFleetService:
                     .all()
                 )
             }
-            expected_account_runs = {
-                job_id: bound_account_runs.get(job_id) for job_id in job_ids
-            }
+            expected_account_runs = {job_id: bound_account_runs.get(job_id) for job_id in job_ids}
             if observed_account_runs != expected_account_runs:
                 raise AccountResearchFleetError(
                     "account fleet replay changed exact account-run bindings"
@@ -898,6 +900,22 @@ class AccountResearchFleetService:
                 ),
                 {"job_id": job_id},
             )
+            prior_state = ResearchJobState(str(row["state"]))
+            await append_entity_research_job_event(
+                conn,
+                run_id=row["research_run_id"],
+                job_id=job_id,
+                kind=EntityResearchJobEventKind.QUEUED,
+                from_state=prior_state,
+                to_state=ResearchJobState.QUEUED,
+                actor="engine:account-fleet-supervisor",
+                references={
+                    "reason_code": reason,
+                    "task_id": str(context.task_id),
+                    "lease_generation": int(context.lease_generation),
+                    "error_message_sha256": _sha(str(error)),
+                },
+            )
             await conn.execute(
                 text(
                     "UPDATE entity_research_account_fleet_job_control SET "
@@ -1211,13 +1229,17 @@ class AccountResearchFleetService:
                                job.spent_cents, control.cohort, control.admission_state,
                                control.effective_priority,
                                COALESCE(coverage.result_refs, ARRAY[]::text[]) AS result_refs,
+                               COALESCE(coverage.unresolved_field_keys, ARRAY[]::text[])
+                                   AS unresolved_field_keys,
+                               coverage.committee_status,
                                COALESCE(coverage.committee_member_ids, ARRAY[]::uuid[])
                                    AS committee_member_ids
                         FROM entity_research_job job
                         JOIN entity_research_account_fleet_job_control control
                           ON control.job_id=job.job_id
                         LEFT JOIN LATERAL (
-                            SELECT item.result_refs, item.committee_member_ids
+                            SELECT item.result_refs, item.unresolved_field_keys,
+                                   item.committee_status, item.committee_member_ids
                             FROM entity_research_account_coverage item
                             WHERE item.job_id=job.job_id
                             ORDER BY item.created_at DESC, item.coverage_id DESC LIMIT 1
@@ -1266,6 +1288,8 @@ class AccountResearchFleetService:
                 current_wait_ref=row["current_wait_ref"],
                 spent_cents=Decimal(row["spent_cents"]),
                 result_refs=tuple(str(value) for value in row["result_refs"]),
+                unresolved_field_keys=tuple(str(value) for value in row["unresolved_field_keys"]),
+                committee_status=row["committee_status"],
                 committee_member_ids=tuple(row["committee_member_ids"]),
                 review_item_refs=tuple(reviews_by_job.get(row["job_id"], ())),
             )

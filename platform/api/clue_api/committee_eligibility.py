@@ -186,10 +186,7 @@ class CommitteeEligibilityService:
                 pass_a_reasons.append("project_run_lineage_mismatch")
             elif run.status is not ProjectRunStatus.ACTIVE:
                 pass_a_reasons.append("project_run_not_active")
-            elif (
-                request.entity_research_job_id is None
-                and run.phase is not ProjectPhase.DEEP
-            ):
+            elif request.entity_research_job_id is None and run.phase is not ProjectPhase.DEEP:
                 pass_a_reasons.append("historical_project_run_not_active_deep")
             scoring = await get_checkpoint(conn, request.project_run_id, ProjectPhase.SCORING)
             if scoring is None or scoring.status is not PhaseCheckpointStatus.COMMITTED:

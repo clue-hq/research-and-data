@@ -1410,7 +1410,13 @@ class RecipeExecutor:
                 actor="human" if node.actor == "human" else "agent",
                 conn_factory=self._conn_factory,
                 operation_id=node.operation_id,
-                actor_id=actor_id,
+                # B4 x D1 join: the *invoker* of a model-planned (agent) node is the execution
+                # worker — a service principal — while the human's authority rides the ambient
+                # turn-derived ``action_ref`` (resolving it yields the submitting user). A
+                # human-authority node keeps the turn's human ``actor_id`` (legacy kind: the C5
+                # seam carries no membership, which ``principal_kind='human'`` would require).
+                principal_kind="service" if node.actor != "human" else None,
+                actor_id="svc_execution_worker" if node.actor != "human" else actor_id,
                 action_ref=action_ref,
                 execution_id=runtime.execution_id,
                 execution_node_id=node.node_id,
@@ -1701,7 +1707,10 @@ class RecipeExecutor:
                         actor="human" if node.actor == "human" else "agent",
                         conn_factory=self._conn_factory,
                         operation_id=node.operation_id,
-                        actor_id=actor_id,
+                        # B4 x D1 join: see the comment at the interaction-tool site above —
+                        # service invoker for agent nodes, human authority via ``action_ref``.
+                        principal_kind="service" if node.actor != "human" else None,
+                        actor_id="svc_execution_worker" if node.actor != "human" else actor_id,
                         action_ref=action_ref,
                         execution_id=runtime.execution_id,
                         execution_node_id=node.node_id,
@@ -1754,7 +1763,10 @@ class RecipeExecutor:
                         actor="human" if node.actor == "human" else "agent",
                         conn_factory=self._conn_factory,
                         operation_id=node.operation_id,
-                        actor_id=actor_id,
+                        # B4 x D1 join: see the comment at the interaction-tool site above —
+                        # service invoker for agent nodes, human authority via ``action_ref``.
+                        principal_kind="service" if node.actor != "human" else None,
+                        actor_id="svc_execution_worker" if node.actor != "human" else actor_id,
                         action_ref=action_ref,
                         execution_id=runtime.execution_id,
                         execution_node_id=node.node_id,

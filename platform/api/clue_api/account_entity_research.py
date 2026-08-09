@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
-from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from langchain_core.tools import StructuredTool, ToolException
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents.account_entity_research import (
     AccountCommitteePlanProjection,
     AccountCoverageProjection,
+    AccountExistingClaimProjection,
     AccountResearchStateProjection,
     AssessAccountCoverageInput,
     FinalizeAccountResearchInput,
@@ -38,8 +40,11 @@ from clue_agents.entity_research_runtime import (
     EntityResearchGovernedToolRefusal,
     current_entity_research_tool_execution,
 )
-from clue_api.entity_research_tools import convert_engine_authority_rejections
-from clue_core import EntityId, ProjectRunId, serialize_value_json
+from clue_api.entity_research_tools import (
+    convert_engine_authority_rejections,
+    semantic_validation_error,
+)
+from clue_core import EntityId, ProjectRunId, ResearchScope, serialize_value_json
 from clue_core.entity_research import (
     EntityResearchJobAuthorization,
     FinalizationVerification,
@@ -48,6 +53,12 @@ from clue_core.entity_research import (
     ResearchFinalizationReceipt,
     ResearchSubjectType,
 )
+
+# "Is this field project-relative?" must have exactly one answer for the economics here and for
+# the lens that renders the resulting claims, so the species read is imported rather than restated
+# (it resolves through `core.resolve_research_scope` over the *effective* registry, retired
+# declarations included — see its docstring).
+from clue_research.claimstore import WorkspaceScope, current_values, field_species
 from clue_research.directives import effective_account_research_directive
 from clue_research.durable import find_account_runs_for_entity
 
@@ -66,6 +77,78 @@ _CONTACT_TOOL_PREFIXES = (
 
 class AccountResearchAuthorityError(EntityResearchGovernedToolRefusal):
     """Model-repairable account guard/engine refusal (returned to the agent, never fatal)."""
+
+
+async def existing_account_claims(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_entity_id: UUID,
+    field_keys: Sequence[str],
+) -> tuple[AccountExistingClaimProjection, ...]:
+    """What this workspace already knows about ``field_keys`` for one account (FI-2 §6.1).
+
+    One canonical-merge read (never a raw ``claim.workspace_id`` filter — the workspace scope is
+    the claimstore's own predicate) plus one species read, so the agent sees the account's current
+    truth before it plans, and every economics consumer decides "born complete?" from the same two
+    reads rather than from a private re-derivation of its own.
+    """
+
+    subject = EntityId(account_entity_id)
+    current = await current_values(
+        conn,
+        [subject],
+        field_keys,
+        scope=WorkspaceScope.for_workspace(workspace_id),
+    )
+    species = await field_species(conn, workspace_id=workspace_id, field_keys=list(field_keys))
+    return tuple(
+        AccountExistingClaimProjection(
+            field_key=key,
+            claim_ref=f"claim:{value.provenance.claim_id}",
+            value=value.value_json,
+            source_url=value.provenance.source_url,
+            source_tier=int(value.provenance.source_tier),
+            evidence_span=value.provenance.evidence_span,
+            confidence=float(value.provenance.confidence),
+            freshness_state=cast(Literal["fresh", "stale"], value.freshness_state.value),
+            conflict=value.conflict,
+            # Fail closed: an unresolvable species is reported *relative*, the species that is
+            # never skippable.  ``field_species`` answers for every declared field, so this
+            # default is unreachable today; if it ever becomes reachable, the safe reading of
+            # "we do not know whose answer this is" is "it is not the workspace's to borrow".
+            research_scope=species.get(key, ResearchScope.PROJECT_RELATIVE).value,
+        )
+        for key in field_keys
+        if (value := current.get((subject, key))) is not None
+    )
+
+
+async def born_complete_account_field_keys(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_entity_id: UUID,
+    field_keys: Sequence[str],
+) -> frozenset[str]:
+    """The subset of ``field_keys`` no provider may be paid for (FI-2 §6.2).
+
+    The *one* borrowed-set derivation: the R5 guard (which refuses a call that would re-buy one of
+    these) and the Exa bundle compiler (which never puts one in a bundle) both read it here, so the
+    guard's "every primary Exa field" rule and the bundle's contents can never disagree about what
+    the workspace already knows.
+    """
+
+    return frozenset(
+        item.field_key
+        for item in await existing_account_claims(
+            conn,
+            workspace_id=workspace_id,
+            account_entity_id=account_entity_id,
+            field_keys=field_keys,
+        )
+        if item.born_complete
+    )
 
 
 async def read_account_committee_plan(
@@ -135,6 +218,7 @@ class AccountResearchStateStore:
     ) -> AccountResearchStateProjection:
         active = active or self._active_account()
         authorization = active.context.authorization
+        admitted = authorization.selection.admitted_field_keys
         async with self._conn_factory() as conn:
             job = (
                 (
@@ -175,6 +259,9 @@ class AccountResearchStateStore:
                 ).scalar_one()
             )
             committee_plan = await read_account_committee_plan(conn, authorization=authorization)
+            existing_claims = await self._existing_claims(
+                conn, authorization=authorization, admitted=admitted
+            )
         latest: dict[str, Mapping[str, object]] = {}
         committee_refs: list[str] = []
         member_ids: list[UUID] = []
@@ -188,9 +275,14 @@ class AccountResearchStateStore:
                 value = cast(UUID, row["target_entity_id"])
                 if value not in member_ids:
                     member_ids.append(value)
-        admitted = authorization.selection.admitted_field_keys
+        # FI-2 §6.1: a field this workspace already knows — neutral species, fresh, evidence-backed
+        # and conflict-free — is born complete: the job never plans, spends or researches it, and
+        # the coverage ledger cites the existing claim instead of a result of its own.
+        born_complete = {item.field_key for item in existing_claims if item.born_complete}
         completed = tuple(
-            key for key in admitted if key in latest and str(latest[key]["outcome"]) == "found"
+            key
+            for key in admitted
+            if key in born_complete or (key in latest and str(latest[key]["outcome"]) == "found")
         )
         unresolved = tuple(key for key in admitted if key not in set(completed))
         return AccountResearchStateProjection(
@@ -200,6 +292,7 @@ class AccountResearchStateStore:
             admitted_field_keys=admitted,
             admitted_source_keys=authorization.selection.admitted_source_keys,
             committee_source_keys=authorization.selection.committee_source_keys,
+            existing_claims=existing_claims,
             result_refs=tuple(f"research-result:{row['result_id']}" for row in results),
             completed_field_keys=completed,
             unresolved_field_keys=unresolved,
@@ -209,6 +302,22 @@ class AccountResearchStateStore:
             spent_cents=str(Decimal(job["spent_cents"])),
             contact_research_request_count=contact_count,
             committee_plan=committee_plan,
+        )
+
+    @staticmethod
+    async def _existing_claims(
+        conn: AsyncConnection,
+        *,
+        authorization: EntityResearchJobAuthorization,
+        admitted: Sequence[str],
+    ) -> tuple[AccountExistingClaimProjection, ...]:
+        """This job's view of :func:`existing_account_claims` over its admitted fields."""
+
+        return await existing_account_claims(
+            conn,
+            workspace_id=str(authorization.workspace_id),
+            account_entity_id=authorization.subject_entity_id,
+            field_keys=admitted,
         )
 
     async def evidence(self, inputs: InspectAccountEvidenceInput) -> dict[str, JsonValue]:
@@ -270,6 +379,17 @@ class AccountResearchStateStore:
             raise AccountResearchAuthorityError(
                 "account coverage observed forbidden contact research"
             )
+        # A zero-result close is legal exactly once (FI-2 §6.1): when the account was researched by
+        # spending nothing, i.e. every completed field is borrowed from a claim already on file.
+        # The set-equality above already refuses an agent that omits results it produced; this
+        # refuses the opposite mistake — closing empty over work that did complete a field.
+        if not state.result_refs:
+            borrowed = {item.field_key for item in state.existing_claims if item.born_complete}
+            if not set(state.completed_field_keys) <= borrowed:
+                raise AccountResearchAuthorityError(
+                    "coverage without results is admissible only when every completed field is "
+                    "answered by an existing claim"
+                )
         coverage_id = uuid4()
         unresolved_reasons: list[str] = []
         async with self._conn_factory() as conn:
@@ -280,14 +400,40 @@ class AccountResearchStateStore:
                     latest_account.setdefault(
                         str(row["field_key"]), cast(Mapping[str, object], row)
                     )
+            # The ledger explains every field's money: a field this job researched reports its
+            # result outcome; a field it did not reports *why* the claim already on file could not
+            # stand in for the spend (FI-2 §6.1 — same reason vocabulary as the contact runtime,
+            # plus the species reason only the account axis can produce).
+            existing_by_field = {item.field_key: item for item in state.existing_claims}
             for field_key in state.unresolved_field_keys:
                 selected_row = latest_account.get(field_key)
-                reason = (
-                    "not_researched"
-                    if selected_row is None
-                    else f"{selected_row['outcome']}:{selected_row['verification_status']}"
-                )
+                existing = existing_by_field.get(field_key)
+                if selected_row is not None:
+                    reason = f"{selected_row['outcome']}:{selected_row['verification_status']}"
+                elif existing is None:
+                    reason = "not_researched"
+                elif existing.research_scope != "project_neutral":
+                    # A fresh relative claim is another project's answer, never this project's.
+                    reason = "existing_claim_project_relative"
+                elif existing.conflict:
+                    reason = "existing_claim_conflict"
+                elif existing.freshness_state != "fresh":
+                    reason = f"existing_claim_{existing.freshness_state}"
+                else:
+                    reason = "existing_claim_missing_evidence"
                 unresolved_reasons.append(f"{field_key}:{reason}")
+            # "Skipped" means the money was never spent, so *any* result row for the field
+            # disqualifies it — a failed or empty attempt cost just as much as a successful one,
+            # and reporting it as never-spent would misstate the spend trail.
+            completed = set(state.completed_field_keys)
+            researched = set(latest_account)
+            skipped_field_reasons = tuple(
+                f"{item.field_key}:existing_claim_fresh"
+                for item in state.existing_claims
+                if item.born_complete
+                and item.field_key in completed
+                and item.field_key not in researched
+            )
 
             scope_count = int(
                 (
@@ -384,6 +530,15 @@ class AccountResearchStateStore:
                     .all()
                 )
             )
+            # A born-complete field's evidence is the claim that made it complete: fold those claim
+            # ids into the ledger so the coverage cites what stood in for the research spend, and
+            # the finalization engine can verify it (FI-2 §6.1, the contact runtime's mechanism).
+            existing_claim_ids = tuple(
+                item.claim_ref.removeprefix("claim:")
+                for item in state.existing_claims
+                if item.born_complete and item.field_key in set(state.completed_field_keys)
+            )
+            claim_ids = tuple(dict.fromkeys((*claim_ids, *existing_claim_ids)))
             projection = AccountCoverageProjection(
                 coverage_id=coverage_id,
                 coverage_ledger_ref=f"account-coverage:{coverage_id}",
@@ -391,6 +546,7 @@ class AccountResearchStateStore:
                 completed_field_keys=state.completed_field_keys,
                 unresolved_field_keys=state.unresolved_field_keys,
                 unresolved_reasons=tuple(unresolved_reasons),
+                skipped_field_reasons=skipped_field_reasons,
                 committee_result_refs=state.committee_result_refs,
                 committee_member_ids=state.committee_member_ids,
                 committee_status=cast(Any, committee_status),
@@ -860,17 +1016,45 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
         if call.tool_name == "research_account_deep":
             if sources != {_QUALITATIVE_SOURCE}:
                 raise AccountResearchAuthorityError("qualitative account research uses Exa Deep")
-            exa_authority = {
-                item.field_key: item.source_keys
-                for item in context.authorization.selection.field_source_authority
-                if _QUALITATIVE_SOURCE in item.source_keys
-            }
-            primary = {
-                field_key
-                for field_key, source_keys in exa_authority.items()
-                if source_keys[0] == _QUALITATIVE_SOURCE
-            }
+            if not fields:
+                # A zero-field bundle buys nothing and cannot be repaired downstream:
+                # ``EntityResearchSemanticToolInput.field_keys`` has no minimum length and the
+                # record-time field/source pairing check is itself conditional on a non-empty
+                # ``field_keys``, so the call would reach the Exa action and die there on
+                # ``EntityResearchResultIntegrityError`` — the *suspending* species under R10.
+                # The first-call rule used to catch it as a side effect; net of the borrowed set
+                # a wholly-borrowed account has an empty ``primary``, so it no longer does.
+                # Refuse it here instead, as the turn the agent can act on: the correct move on an
+                # all-borrowed account is to finalize, not to call with nothing.
+                raise AccountResearchAuthorityError(
+                    "Exa account research needs at least one field to buy"
+                )
+            # FI-2 §6.2: the borrowed set — admitted fields a fresh, evidence-backed,
+            # conflict-free *neutral* claim already answers.  The M8D Exa bundle is compiled
+            # straight from ``field_keys``, and Exa (unlike Sumble, whose own preflight refuses a
+            # fresh field under §6.3) has no provider-side freshness check, so this guard is the
+            # only layer that can keep the invariant "no provider is paid for a born-complete
+            # field" on the qualitative path.  It is also why the first-call rule below is stated
+            # *net* of the borrowed set: the agent sees exactly these fields as already complete
+            # in its state read, so a prompt-obedient omission must pass, not cost a turn.
+            #
+            # Every fact the three rules below weigh is read on **one** connection, inside one
+            # transaction: the borrowed set and the prior-call history decide the same question
+            # ("what is left to buy?"), and reading them on two connections could interleave a
+            # concurrent write between them and answer it inconsistently.  The injected factory is
+            # ``clue_db.transaction`` in production, which is READ COMMITTED: this is one
+            # transaction, not one snapshot — each statement
+            # still sees its own snapshot; the guarantee here is that they are ordered, not
+            # that they are simultaneous.  (``repeatable_read_transaction`` exists for the
+            # stronger property and is deliberately not used: the guard reads far less than it
+            # would cost to serialize.)
             async with self._conn_factory() as conn:
+                borrowed = await born_complete_account_field_keys(
+                    conn,
+                    workspace_id=str(context.authorization.workspace_id),
+                    account_entity_id=context.authorization.subject_entity_id,
+                    field_keys=context.authorization.selection.admitted_field_keys,
+                )
                 prior = int(
                     (
                         await conn.execute(
@@ -897,6 +1081,24 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
                         )
                     ).scalars()
                 )
+            already_known = fields & borrowed
+            if already_known:
+                raise AccountResearchAuthorityError(
+                    "Exa account research cannot re-buy a field an existing fresh claim already "
+                    f"answers: {', '.join(sorted(already_known))}"
+                )
+            exa_authority = {
+                item.field_key: item.source_keys
+                for item in context.authorization.selection.field_source_authority
+                if _QUALITATIVE_SOURCE in item.source_keys
+            }
+            primary = {
+                field_key
+                for field_key, source_keys in exa_authority.items()
+                if source_keys[0] == _QUALITATIVE_SOURCE
+            } - borrowed
+            # A borrowed Exa-primary field would fall out of ``primary`` and land here as if it
+            # were a fallback; it cannot, because ``already_known`` refused the call above.
             fallback = fields - primary
             if fallback - prior_structured_fields:
                 raise AccountResearchAuthorityError(
@@ -978,6 +1180,7 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                             """
                             SELECT intent.proposal_json, intent.proposal_sha256,
                                    intent.current_state_sha256, coverage.committee_status,
+                                   coverage.completed_field_keys,
                                    job.current_state_sha256 AS job_state,
                                    job.spent_cents AS job_spent_cents,
                                    run.spent_cents AS run_spent_cents,
@@ -1021,6 +1224,18 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                                                       fold.provider_operation_ref
                                             )
                                       )) AS pending_operations
+                                   ,ARRAY(SELECT DISTINCT result_field.field_key
+                                     FROM entity_research_result_field result_field
+                                     JOIN entity_research_result result
+                                       ON result.result_id=result_field.result_id
+                                     JOIN entity_research_result_evidence evidence
+                                       ON evidence.result_id=result_field.result_id
+                                      AND evidence.field_ordinal=result_field.ordinal
+                                     WHERE 'research-result:' || result.result_id::text =
+                                           ANY(coverage.result_refs)
+                                       AND result_field.subject_type='account'
+                                       AND result_field.target_entity_id=intent.account_entity_id
+                                       AND result_field.outcome='found') AS result_evidence_fields
                                    ,(SELECT count(*)
                                      FROM unnest(coverage.completed_field_keys) completed(field_key)
                                      WHERE NOT EXISTS (
@@ -1038,6 +1253,23 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                                                intent.account_entity_id
                                            AND result_field.field_key=completed.field_key
                                            AND result_field.outcome='found'
+                                     )
+                                     -- FI-2 §6.1: a field this job never researched is evidenced
+                                     -- by the live claim the coverage cited instead of spending
+                                     -- (born-complete). The claim must still be visible to this
+                                     -- workspace and carry an evidence span, so "completed" never
+                                     -- means "asserted without evidence".
+                                     AND NOT EXISTS (
+                                         SELECT 1 FROM claim existing
+                                         WHERE 'claim:' || existing.id::text =
+                                               ANY(coverage.claim_refs)
+                                           AND existing.entity_id=intent.account_entity_id
+                                           AND existing.field_key=completed.field_key
+                                           AND existing.superseded_by IS NULL
+                                           AND existing.evidence_span IS NOT NULL
+                                           AND btrim(existing.evidence_span)<>''
+                                           AND (existing.reuse_scope='public_footprint'
+                                                OR existing.workspace_id=intent.workspace_id)
                                      )) AS missing_completed_evidence
                             FROM entity_research_account_finalization_intent intent
                             JOIN entity_research_account_coverage coverage
@@ -1063,6 +1295,34 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                 .mappings()
                 .first()
             )
+            # The engine re-derives the skip rule itself rather than trusting the coverage: every
+            # completed field with no result of its own must still be answered, right now, by a
+            # fresh, evidence-backed, conflict-free *neutral* claim (FI-2 §6.1).
+            existing_completed = (
+                frozenset()
+                if row is None
+                else frozenset(row["completed_field_keys"])
+                - frozenset(row["result_evidence_fields"])
+            )
+            current = (
+                {}
+                if not existing_completed
+                else await current_values(
+                    conn,
+                    [EntityId(authorization.subject_entity_id)],
+                    existing_completed,
+                    scope=WorkspaceScope.for_workspace(str(authorization.workspace_id)),
+                )
+            )
+            species = (
+                {}
+                if not existing_completed
+                else await field_species(
+                    conn,
+                    workspace_id=str(authorization.workspace_id),
+                    field_keys=sorted(existing_completed),
+                )
+            )
         if (
             row is None
             or ResearchFinalizationProposal.model_validate(row["proposal_json"]) != proposal
@@ -1070,6 +1330,23 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
             raise EntityResearchFinalizationRejected(
                 "model finalization lacks the exact engine-tool proposal intent"
             )
+        borrowable = {
+            key
+            for (_entity_id, key), value in current.items()
+            if value.freshness_state.value == "fresh"
+            and value.provenance.evidence_span
+            and not value.conflict
+        }
+        relative_borrowed = {
+            key
+            for key in existing_completed
+            # Fail closed, like the other two species lookups (the §6.1 state read and the §6.3
+            # Sumble ladder): an unresolvable species is treated as *relative*, the species that
+            # may never close a field with another project's claim. ``field_species`` answers for
+            # every declared field, so this default is unreachable today; if it ever becomes
+            # reachable, "we cannot tell whose answer this is" must not buy the borrow.
+            if species.get(key, ResearchScope.PROJECT_RELATIVE) is not ResearchScope.PROJECT_NEUTRAL
+        }
         no_pending = int(row["pending_operations"]) == 0
         state_matches = (
             str(row["job_state"])
@@ -1088,7 +1365,9 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
         )
         verification = FinalizationVerification(
             no_pending_operations=no_pending,
-            evidence_complete=int(row["missing_completed_evidence"]) == 0,
+            evidence_complete=(
+                int(row["missing_completed_evidence"]) == 0 and existing_completed <= borrowable
+            ),
             coverage_matches=coverage_matches and review_shape,
             spend_reconciled=(
                 no_pending
@@ -1099,7 +1378,9 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                 bool(proposal.identity_use_verification_ref)
                 and str(row["committee_status"]) in {"complete", "partial", "needs_review"}
             ),
-            policy_scope_respected=int(row["contact_requests"]) == 0,
+            # A project-relative field is this project's own question: no other project's claim,
+            # however fresh, may close it (FI-2 §6.1 / R3).
+            policy_scope_respected=int(row["contact_requests"]) == 0 and not relative_borrowed,
             current_state_matches=state_matches,
         )
         if not verification.all_passed():
@@ -1124,10 +1405,23 @@ def account_engine_tool_bindings(
     def repairable(
         coroutine: Callable[..., Awaitable[dict[str, JsonValue]]],
     ) -> Callable[..., Awaitable[dict[str, JsonValue]]]:
-        return convert_engine_authority_rejections(
+        governed = convert_engine_authority_rejections(
             coroutine,
             error_types=(AccountResearchAuthorityError,),
         )
+
+        @functools.wraps(governed)
+        async def guarded(*args: object, **kwargs: object) -> dict[str, JsonValue]:
+            try:
+                return await governed(*args, **kwargs)
+            except ValidationError as error:
+                # These tools validate their own arguments inside the body, so a malformed
+                # argument surfaces here rather than through LangChain's args_schema path (which
+                # is bound to the same handler below). Either way it is a model mistake the agent
+                # can repair — never an uncaught exception that kills a live research job.
+                raise ToolException(semantic_validation_error(error)) from error
+
+        return guarded
 
     async def read_state(include_result_index: bool = True) -> dict[str, JsonValue]:
         value = await store.state()
@@ -1155,6 +1449,7 @@ def account_engine_tool_bindings(
                 "Read exact persisted account results, gaps, committee, pending work, and spend."
             ),
             args_schema=ReadAccountResearchStateInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
         "inspect_account_evidence": StructuredTool.from_function(
@@ -1162,6 +1457,7 @@ def account_engine_tool_bindings(
             name="inspect_account_evidence",
             description="Inspect the complete evidence index for exact persisted account results.",
             args_schema=InspectAccountEvidenceInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
         "assess_account_coverage": StructuredTool.from_function(
@@ -1169,6 +1465,7 @@ def account_engine_tool_bindings(
             name="assess_account_coverage",
             description="Derive durable account-field and office-coherent committee coverage.",
             args_schema=AssessAccountCoverageInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
         "finalize_account_research": StructuredTool.from_function(
@@ -1180,6 +1477,7 @@ def account_engine_tool_bindings(
                 "ResearchFinalizationProposal response-format tool and stop."
             ),
             args_schema=FinalizeAccountResearchInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
     }
@@ -1192,5 +1490,7 @@ __all__ = [
     "AccountResearchFinalizationEngine",
     "AccountResearchStateStore",
     "account_engine_tool_bindings",
+    "born_complete_account_field_keys",
+    "existing_account_claims",
     "read_account_committee_plan",
 ]

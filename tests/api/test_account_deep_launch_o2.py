@@ -128,7 +128,9 @@ def test_launch_is_immutable_exactly_replayable_and_drives_the_effective_budget(
                 ToolContext(
                     workspace_id=WORKSPACE_ID,
                     actor="human",
+                    principal_kind="human",
                     actor_id="human:o2-tier-approval",
+                    membership_id="wsm_o2_tier_approval",
                     action_ref="turn:o2-tier-approved",
                     conn_factory=same_connection,
                     operation_id=new_operation_id(),
@@ -153,7 +155,9 @@ def test_launch_is_immutable_exactly_replayable_and_drives_the_effective_budget(
                     ToolContext(
                         workspace_id=WORKSPACE_ID,
                         actor="human",
+                        principal_kind="human",
                         actor_id="human:o2-acceptance",
+                        membership_id="wsm_o2_acceptance",
                         action_ref="turn:o2-launch-confirmed",
                         conn_factory=same_connection,
                         operation_id=operation_id,

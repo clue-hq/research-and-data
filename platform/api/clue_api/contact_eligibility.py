@@ -48,8 +48,8 @@ from clue_core import (
 )
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import (
-    DEFAULT_MERGE_POLICY,
     WorkspaceScope,
+    active_merge_policy,
     claims_by_ids,
     merge_claims,
 )
@@ -300,10 +300,9 @@ class ContactEligibilityResolver:
             by_field[str(claim.field_key)].append(claim)
 
         now = datetime.now(UTC)
-        role_current = merge_claims(
-            by_field.get(ROLE_ON_COMMITTEE, ()), None, DEFAULT_MERGE_POLICY, now
-        )
-        persona_current = merge_claims(by_field.get(PERSONA, ()), None, DEFAULT_MERGE_POLICY, now)
+        merge_policy = active_merge_policy()  # resolved once per contact (toggle-aware default)
+        role_current = merge_claims(by_field.get(ROLE_ON_COMMITTEE, ()), None, merge_policy, now)
+        persona_current = merge_claims(by_field.get(PERSONA, ()), None, merge_policy, now)
         if role_current is None or persona_current is None:
             return None
         by_id = {claim.id: claim for claim in claims}
@@ -330,7 +329,7 @@ class ContactEligibilityResolver:
 
         selected: list[GovernedContactClaim] = []
         for field_key, contenders in by_field.items():
-            current = merge_claims(contenders, None, DEFAULT_MERGE_POLICY, now)
+            current = merge_claims(contenders, None, merge_policy, now)
             if current is None:
                 continue
             claim = by_id[current.provenance.claim_id]

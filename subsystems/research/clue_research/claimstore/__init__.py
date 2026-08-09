@@ -65,6 +65,7 @@ from clue_research.claimstore.merge import (
     DEFAULT_MERGE_POLICY,
     FreshnessMode,
     MergePolicy,
+    active_merge_policy,
     current_value,
     current_values,
     merge_claims,
@@ -92,6 +93,7 @@ from clue_research.claimstore.registry import (
     WorkspaceFieldRetiredError,
     assert_workspace_dynamic_client_kb_active,
     check_claim_writable,
+    field_species,
     get_corroboration_config,
     get_effective_field,
     get_field,
@@ -125,6 +127,7 @@ from clue_research.claimstore.research_view_routes import (
 from clue_research.claimstore.run_lineage import (
     RUN_LINEAGE_KINDS,
     project_run_ids,
+    project_supersedable,
     record_run_lineage,
     runs_for_project_run,
 )
@@ -161,6 +164,7 @@ __all__ = [
     "MergePolicy",
     "FreshnessMode",
     "DEFAULT_MERGE_POLICY",
+    "active_merge_policy",
     "canonical_json",
     # entailment-question identity (PC-C8 §6c-b) — one definition three packages agree on
     "ENTAILMENT_JUDGMENT_NAMESPACE",
@@ -185,6 +189,7 @@ __all__ = [
     "get_workspace_field",
     "get_effective_field",
     "list_fields",
+    "field_species",
     "list_effective_fields",
     "validate_value",
     "validate_effective_value",
@@ -230,4 +235,5 @@ __all__ = [
     "record_run_lineage",
     "project_run_ids",
     "runs_for_project_run",
+    "project_supersedable",
 ]

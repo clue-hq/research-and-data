@@ -41,8 +41,8 @@ from clue_core.review import (
     VerificationAnnotationReader,
 )
 from clue_research.claimstore import (
-    DEFAULT_MERGE_POLICY,
     WorkspaceScope,
+    active_merge_policy,
     claims_by_ids,
     claims_for,
     current_values_resolved_for_product,
@@ -299,7 +299,7 @@ class ReviewProjector:
         cv = merge_claims(
             candidates,
             None,
-            DEFAULT_MERGE_POLICY,
+            active_merge_policy(),
             datetime.now(UTC),
         )
         if cv is None or not isinstance(cv.value_json, dict):

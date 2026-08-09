@@ -23,7 +23,14 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim, load_core_pack
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_for,
+    insert_claim,
+    load_core_pack,
+    project_run_ids,
+    record_run_lineage,
+)
 from clue_research.discovery_scoring.scoring import FIT_FIELD, INTENT_FIELD
 from clue_research.discovery_scoring.tiering import (
     DEFAULT_TIERING_CONFIG,
@@ -271,6 +278,155 @@ def test_persist_tier_other_icp_not_superseded(require_discovery_db: None) -> No
             live = await claims_for(conn, eid, TIER_FIELD, scope=scope)
             assert len(live) == 2
             assert {c.value_json["icp_key"] for c in live} == {"icp_one", "icp_two"}
+
+    run_async(_run())
+
+
+# --- FI-2 §6.4: the project dimension of the tier supersede predicate --------
+def test_persist_tier_second_project_coexists(require_discovery_db: None) -> None:
+    """FI-2 §6.4: a second project tiering the SAME account under the SAME ICP no longer destroys
+    the first project's tier — both stay live, each attributable to its own project via lineage."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            eid = await insert_account_entity(
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=CLIENT
+            )
+            view = AccountScoreView(account_id=eid, fit=0.5, intent=1.0)
+            scope = WorkspaceScope.for_workspace(CLIENT)
+            run_p1, run_p2 = new_run_id(), new_run_id()
+
+            for project_id, run_id, tier in (
+                ("proj-one", run_p1, "high"),
+                ("proj-two", run_p2, "low"),
+            ):
+                await record_run_lineage(
+                    conn,
+                    run_id=run_id,
+                    workspace_id=CLIENT,
+                    kind="tiering",
+                    project_id=project_id,
+                )
+                await persist_tier(
+                    conn,
+                    view=view,
+                    tier=tier,
+                    cutoff_version="v-aaa",
+                    run_id=run_id,
+                    workspace_id=CLIENT,
+                    icp_key=ICP,
+                    icp_version=1,
+                    project_id=project_id,
+                )
+
+            live = await claims_for(conn, eid, TIER_FIELD, scope=scope)
+            assert len(live) == 2  # P2 did NOT supersede P1
+            assert {c.value_json["tier"] for c in live} == {"high", "low"}  # type: ignore[index]
+
+            # Each lens serves exactly its own tier, read through the lineage predicate.
+            for project_id, expected in (("proj-one", "high"), ("proj-two", "low")):
+                runs = set(await project_run_ids(conn, workspace_id=CLIENT, project_id=project_id))
+                mine = [c for c in live if c.run_id in runs]
+                assert len(mine) == 1
+                assert mine[0].value_json["tier"] == expected  # type: ignore[index]
+                assert mine[0].value_json["project_id"] == project_id  # type: ignore[index]
+
+    run_async(_run())
+
+
+def test_persist_tier_same_project_still_supersedes(require_discovery_db: None) -> None:
+    """Within ONE project, a re-tier at a new cutoff supersedes exactly as it does today — §6.4
+    only stops cross-project destruction."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            eid = await insert_account_entity(
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=CLIENT
+            )
+            view = AccountScoreView(account_id=eid, fit=0.5, intent=1.0)
+            scope = WorkspaceScope.for_workspace(CLIENT)
+
+            for cversion, tier in (("v-aaa", "high"), ("v-bbb", "medium")):
+                await persist_tier(
+                    conn,
+                    view=view,
+                    tier=tier,
+                    cutoff_version=cversion,
+                    run_id=new_run_id(),
+                    workspace_id=CLIENT,
+                    icp_key=ICP,
+                    icp_version=1,
+                    project_id="proj-one",
+                )
+
+            live = await claims_for(conn, eid, TIER_FIELD, scope=scope)
+            assert len(live) == 1
+            assert live[0].value_json["cutoff_version"] == "v-bbb"  # type: ignore[index]
+            history = await claims_for(conn, eid, TIER_FIELD, scope=scope, include_superseded=True)
+            assert len(history) == 2  # append-only history preserved
+
+    run_async(_run())
+
+
+def test_persist_tier_absorbs_an_unstamped_legacy_tier_once(require_discovery_db: None) -> None:
+    """The migration-free legacy rule: an unstamped (pre-§6.4) tier is absorbed by the FIRST
+    project that re-tiers the account; every later project coexists with that project's claim."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            eid = await insert_account_entity(
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=CLIENT
+            )
+            view = AccountScoreView(account_id=eid, fit=0.5, intent=1.0)
+            scope = WorkspaceScope.for_workspace(CLIENT)
+
+            legacy_id, _ = await persist_tier(  # no project_id — the legacy shape
+                conn,
+                view=view,
+                tier="high",
+                cutoff_version="v-aaa",
+                run_id=new_run_id(),
+                workspace_id=CLIENT,
+                icp_key=ICP,
+                icp_version=1,
+            )
+            await persist_tier(
+                conn,
+                view=view,
+                tier="medium",
+                cutoff_version="v-bbb",
+                run_id=new_run_id(),
+                workspace_id=CLIENT,
+                icp_key=ICP,
+                icp_version=1,
+                project_id="proj-one",
+            )
+            live = await claims_for(conn, eid, TIER_FIELD, scope=scope)
+            assert len(live) == 1  # the legacy claim was absorbed, not left as a zombie
+            assert live[0].value_json["project_id"] == "proj-one"  # type: ignore[index]
+            history = await claims_for(conn, eid, TIER_FIELD, scope=scope, include_superseded=True)
+            assert {c.id for c in history if c.superseded_by is not None} == {legacy_id}
+
+            await persist_tier(  # a second project now coexists with P1's claim
+                conn,
+                view=view,
+                tier="low",
+                cutoff_version="v-ccc",
+                run_id=new_run_id(),
+                workspace_id=CLIENT,
+                icp_key=ICP,
+                icp_version=1,
+                project_id="proj-two",
+            )
+            live = await claims_for(conn, eid, TIER_FIELD, scope=scope)
+            assert len(live) == 2
+            assert {c.value_json["project_id"] for c in live} == {  # type: ignore[index]
+                "proj-one",
+                "proj-two",
+            }
 
     run_async(_run())
 

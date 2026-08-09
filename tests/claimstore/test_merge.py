@@ -176,3 +176,32 @@ def test_batch_scales_to_1k_entities() -> None:
         assert elapsed < 5.0, f"1k batch merge took {elapsed:.2f}s (budget 5s)"
 
     run_async(_run())
+
+
+def test_disabled_verification_serves_the_lone_unverified_tier4_by_default(
+    make_account: Callable[..., Claim], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FI-M12 toggle compat §3-B: with ``CLUE_VERIFICATION_ENABLED=false`` the *defaulted*
+    ``current_value`` read serves an unverified tier-4 claim (the global read-side relaxation);
+    the enabled default keeps it ``None`` (proved by ``test_empty_when_no_eligible_claim``)."""
+
+    async def _run() -> None:
+        lone_tier4 = make_account(
+            value_json={"amount_usd": 4},
+            source_tier=4,
+            extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        )
+        async with rollback_conn() as conn:
+            await insert_claim(conn, lone_tier4)
+            monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "false")
+            served = await current_value(conn, lone_tier4.entity_id, _FIELD, scope=ALL_WORKSPACES)
+            assert served is not None
+            assert served.value_json == {"amount_usd": 4}
+            assert served.provenance.source_tier == 4
+            monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "true")
+            assert (
+                await current_value(conn, lone_tier4.entity_id, _FIELD, scope=ALL_WORKSPACES)
+                is None
+            )
+
+    run_async(_run())

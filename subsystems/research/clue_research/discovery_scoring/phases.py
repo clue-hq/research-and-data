@@ -639,6 +639,9 @@ class TierCheckpointPhaseHandler:
                         workspace_id=ctx.workspace_id,
                         icp_key=ctx.icp_key,
                         icp_version=ctx.icp_version,
+                        # FI-2 §6.4: stamp the project too, so this writer never lands in the
+                        # unstamped class an absorbing write is allowed to take.
+                        project_id=ctx.project_id,
                     )
                 except Exception:  # noqa: BLE001 - isolate and make the gate retryable.
                     await savepoint.rollback()
@@ -828,6 +831,9 @@ class TierCheckpointPhaseHandler:
                             workspace_id=ctx.workspace_id,
                             icp_key=ctx.icp_key,
                             icp_version=ctx.icp_version,
+                            # FI-2 §6.4: pin the tier to the approving project so a second
+                            # project's checkpoint never supersedes this one's tier.
+                            project_id=ctx.project_id,
                         )
                     except Exception:  # noqa: BLE001 — isolate one account; continue the approve.
                         # Commit is outside the try so a commit failure is never double-rolled-back.

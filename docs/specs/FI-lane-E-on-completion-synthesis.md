@@ -1,6 +1,6 @@
 # FI Lane E — On-completion prose synthesis (`account.summary`, `contact.overview`) + the L1 fix
 
-**Status: DRAFT — awaiting founder sign-off on §7 open decisions. Design grounded in two read-only Opus code studies (2026-08-08: M12-reuse study; finalization-trigger study); every baseline fact carries a file:line citation from them.**
+**Status: RATIFIED 2026-08-08 (founder) — all §7 decisions ruled; see the ratification log. Design grounded in two read-only Opus code studies (2026-08-08: M12-reuse study; finalization-trigger study); every baseline fact carries a file:line citation from them.**
 
 Date: 2026-08-08. Branch: `platform/frontend-integration`.
 Parent ruling: FI-1 §9, 2026-08-08 — **D-10 RESOLVED**: `summaryParagraphs` / contact `overviewParagraphs` render an honest empty state until the entity's deep research completes; on completion a genuine synthesis composes prose **claims** from the completed research's claims, reusing M12 machinery where it fits, never fabricated in an adapter.
@@ -16,7 +16,7 @@ Scope boundary: bound by **`docs/specs/FI-lane-demarcation.md` §2.5** — never
 3. **The L1 fix** (`VALUE_NARRATIVE` missing from `ACCOUNT_SECTION_ORDER`) — not a dependency of the two tenants (they route to `SUMMARY`, see §1.3), but owned here because it lives in the same package and must land before *any* production narrative claim is written.
 4. **Optional third tenant** (§7-D3): composing the M12.1 `Positioner` into production through the same seam.
 
-Non-goals: read endpoints (Lane C), the D-4 absence vocabulary (Lane B — but it is a **shipping prerequisite**, §4.4), the R11 DEEP-phase bridge (fast-follow per the 2026-08-08 lifecycle ruling), any un-quarantining, scheduled/cadence refresh (M9.5 backlog item; refresh here is on-completion only).
+Non-goals: read endpoints (Lane C), the D-4 absence vocabulary (FI-2 slice 1 Task 6 — ratified 2026-08-08; still a **shipping prerequisite**, §4.4), the R11 DEEP-phase bridge (fast-follow per the 2026-08-08 lifecycle ruling), any un-quarantining, scheduled/cadence refresh (M9.5 backlog item; refresh here is on-completion only).
 
 ---
 
@@ -87,7 +87,9 @@ The composition unit (proposed module: `subsystems/research/clue_research/narrat
 
 ### 2.5 Supersede keys (the hardest call — the FI-2 studies' collision warning applies)
 
-The narrative's `(persona, icp_spec_version[, icp_key], product_id)` key (`positioner.py:509-521`) is wrong for both tenants. Being PROJECT_NEUTRAL, each keeps **exactly one live claim per `(entity, field, workspace)`** — no persona/product/ICP/project dimension. Any new completed research pass on the entity supersedes the prior prose (refresh-on-completion; the refresh benefits every project, per FI-2 R3). Cross-project coexistence concerns don't arise *because* the field is neutral; if §7-D2 flips either field to `project_relative`, the key must gain `project_id` (FI-2 §6.4 discipline) in the same change — flag this pairing in the code comment.
+The narrative's `(persona, icp_spec_version[, icp_key], product_id)` key (`positioner.py:509-521`) is wrong for both tenants. Being PROJECT_NEUTRAL, each keeps **exactly one live claim per `(entity, field, workspace)`** — no persona/product/ICP dimension. Any new completed research pass on the entity supersedes the prior prose (refresh-on-completion; the refresh benefits every project, per FI-2 R3).
+
+**D2 amendment (ratified 2026-08-08):** the supersede key nonetheless carries an explicit **`project_id` dimension from day one, fixed to `None`** while the fields are neutral — the key is `(entity, field, workspace, project_id=None)`, which is behaviorally identical to the neutral design (one live claim per entity) but makes the future PROJECT_RELATIVE extension a *value* change (stamp real `project_id`s, register the relative species) instead of a key migration. The same `project_id: null` slot is carried in `value_json` alongside `synthesized_from_job_id`. Code comment must flag the pairing: flipping the species and populating `project_id` happen in the same change (FI-2 §6.4 discipline).
 
 ### 2.6 The two prompt shapes (prompt-as-data, versioned, fenced)
 
@@ -115,7 +117,7 @@ Add `ResearchSectionKind.VALUE_NARRATIVE` to `ACCOUNT_SECTION_ORDER` (`research_
 1. **G6 — sensitive facets never enter the prompt.** The contact input set excludes SENSITIVE-use-class fields (`contact.facet.causes`, …) and any claim not display-eligible under the fail-closed gates; facet inclusion requires the M10 use-gate cleared (the positioner's `is_outreach_promotable` discipline, `positioner.py:346-351`, applied with display-eligibility semantics).
 2. **Identity binding on `contact.overview`:** stamped STRONG only when *every* cited contact claim is STRONG-bound; otherwise WEAK — and the merge then correctly refuses to serve it (`merge.py:141-146`). Weakly-evidenced prose degrades to the empty state, never to unattributable prose.
 3. **G7:** nothing in this lane counts signals; noted for the adjacent `recentSignalsLabel` mapping only.
-4. **D-4 is a shipping prerequisite** (Lane B): the current Zod floors (`z.array(z.string().min(1)).min(1)` — `account-detail.ts:50`, `account-contact.ts:53`) cannot express the empty state this whole design produces. Lane E's backend slices can land first; the *frontend* rendering of either state waits on D-4.
+4. **D-4 is a shipping prerequisite** (FI-2 slice 1 Task 6; ratified — the frontend flip carries it): the current Zod floors (`z.array(z.string().min(1)).min(1)` — `account-detail.ts:50`, `account-contact.ts:53`) cannot express the empty state this whole design produces. Lane E's backend slices can land first; the *frontend* rendering of either state waits on D-4.
 
 ---
 
@@ -142,11 +144,26 @@ Ledger- and claim-based, never log-based: A9 rows + `claim_support` + verdict ro
 
 ## 7. Open decisions (founder)
 
-- **D1 — outcome gate:** synthesize on {`completed`, `needs_review`} (recommended; `research_outcome` stamped) vs `completed` only (skips most real jobs today).
-- **D2 — species:** `account.summary` and `contact.overview` as PROJECT_NEUTRAL (recommended: one live prose per entity, refreshed on any project's completion, serving every lens — matches the MVP one-detail-view ruling) vs PROJECT_RELATIVE (per-project prose, coexisting, lineage-grouped; flips §2.5's supersede key in the same change).
-- **D3 — E3 in or out of MVP:** **recommend IN** (amended 2026-08-08 per the founder's no-shortcuts directive: the synthesis module ships end-to-end; the original "out" recommendation was MVP thrift, not architecture). E3 is built in parallel with E1/E2 and lands after FI-2 slice 3's project-scoped supersede change — a sequencing gate that protects the two-lens model, not a scope cut.
-- **D4 — L1's visible contract change** (the empty VALUE_NARRATIVE section on every account view) — acknowledge.
+- **D1 — outcome gate: RATIFIED — synthesize on {`completed`, `needs_review`}**, stamping `research_outcome` into `value_json` so the prose is honest about its basis. Rationale accepted: the fleet tolerates up to 50% `needs_review`, so completed-only would skip most real jobs and leave most screens empty. Never on `cancelled`.
+- **D2 — species: RATIFIED — PROJECT_NEUTRAL, with a forward-compatibility amendment.** One world-fact summary per entity, refreshed on any project's completion, serving every lens (matches the MVP one-detail-view ruling). **Amendment (founder):** the §2.5 supersede key and claim shape carry an explicit `project_id` dimension **from day one** — always `None` while the fields are neutral, so behavior is exactly one live claim per `(entity, field, workspace)` as designed — making a future PROJECT_RELATIVE extension a value change (start stamping real `project_id`s + register the relative species), never a key migration. §2.5's "if D2 flips, the key must gain `project_id` in the same change" clause is thereby satisfied pre-emptively.
+- **D3 — E3 in MVP: RATIFIED — IN.** The full value narrative (Positioner composition) ships in the MVP. Landing order: E3 lands after FI-2 slice 3 completes (its T1 project-scoped supersede predicates landed `5fa0403c`+`6626edf3` 2026-08-08, so the §6.4 sequencing gate is satisfied; E3 waits only for the remainder of slice 3 to finish landing).
+- **D4 — L1's visible contract change: ACKNOWLEDGED.** Every account view gains an empty `VALUE_NARRATIVE` section (`UNKNOWN/unresearched`) until research fills it; the frontend must tolerate it (D-4 vocabulary covers this; recorded into `apps/frontend/docs/api-contracts/accounts.md` at landing).
 
 ---
 
-*Ratification log: (pending).*
+## 8. Worktree kickoff (read this first in the Lane E worktree)
+
+Added at finalization (2026-08-08) so a fresh agent can start cold. All §7 decisions are ratified; nothing here is pending.
+
+1. **Worktree/branch.** New worktree off `platform/frontend-integration`; suggested branch `platform/lane-e-prose-synthesis`. Merges back into `platform/frontend-integration`. Local commits only; never push (repo rule).
+2. **Required reading, in order:** this charter (§0–§7); `docs/specs/FI-lane-demarcation.md` **§2.5** (binding exclusions — the "must never touch" list); `docs/specs/FI-M12-verification-toggle-compat.md` (the optional-judge contract your writers are born with); `_memory/2026-08-08-lane-e-charter.md` + `_memory/2026-08-08-lane-e-ratified-and-m12-toggle-compat.md` (study facts — do not re-derive them).
+3. **Your files** (demarcation §2.5): `subsystems/research/clue_research/narrative/prose.py` (new), the L1 tuple entry in `narrative/research_views.py` (that one edit only), a new prose field-pack module registered via `narrative_wiring` (PF-7 pattern — **not** in `narrative/fields.py`), the fleet-handler `ProseSynthesisStep` + `synthesize_entity_prose@1` tool. **Never edit:** `current_values`/merge, positioner/fields supersede predicates, `account_entity_research.py`, `frontend_read/**`, `run_lineage` registration, `api-contracts/accounts.md`. A read-surface field addition is a request to the FI-2 agent.
+4. **Build order:** E0 → E1 → E2 → E3 (§5). E0 is fully unblocked. E3's FI-2 §6.4 sequencing gate is **satisfied** (`5fa0403c`+`6626edf3`); E3 lands after FI-2 slice 3 finishes landing on the integration branch — check `git log` for slice-3 completion before landing E3, build in parallel regardless.
+5. **The verification toggle.** The A+B merge/judge compatibility change (`FI-M12-verification-toggle-compat.md`) is implemented **from the primary worktree, not yours** (its files are outside your territory). Your obligations: `prose.py` accepts `judge: FaithfulnessJudge | None` (skip + metric when `None`, claim stays unverified), and every E1/E2/E3 acceptance suite runs with `CLUE_VERIFICATION_ENABLED` **both** `true` and `false`. If you reach E1 before the A+B change has landed, the disabled-mode AC "claim visible in `current_values`" will fail on the merge gate — coordinate landing order rather than touching `merge.py`.
+6. **D2 amendment is load-bearing:** the supersede key is `(entity, field, workspace, project_id=None)` and `value_json` carries `project_id: null` from day one (§2.5). Do not "simplify" it away.
+7. **Checks:** the research-side gate is `make check` (targeted suites per §6); if you mint a migration, Alembic hash ids chained off the current head (`870fe4f2af87` at demarcation time — re-check), single head per branch, expect `alembic merge` at integration. The frontend rendering of either state waits on FI-2's D-4 flip — your backend slices land first and that is expected (§4.4).
+8. **Memory protocol:** keep `_memory/` session notes as you go (repo rule); close each slice with a dated entry.
+
+---
+
+*Ratification log: 2026-08-08 — founder ruled all four §7 decisions (D1 both-outcomes+stamp; D2 PROJECT_NEUTRAL with the day-one `project_id` key dimension amendment; D3 E3 IN, landing after FI-2 slice 3; D4 acknowledged). Lane E is unblocked: E0 may start. Related same-day ruling: M12/Lane-E writers must honor `CLUE_VERIFICATION_ENABLED` in both states — see `docs/specs/FI-M12-verification-toggle-compat.md`.*

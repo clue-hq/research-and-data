@@ -327,3 +327,92 @@ def test_fallback_to_unpromotable_returns_flagged_value() -> None:
     assert result is not None
     assert result.conflict is True  # flagged
     assert result.value_json == {"amount_usd": 4}
+
+
+# --- FI-M12 verification-toggle compat §3-B: the effective default merge policy ----------------
+# ``active_merge_policy`` derives ``require_verified_tier4`` from the temporary runtime toggle
+# (``CLUE_VERIFICATION_ENABLED``) so every defaulted production read flips together. REJECTED and
+# WEAK-binding exclusions stay on in both modes (identity protection is not verification).
+
+
+def test_active_merge_policy_enabled_preserves_the_strict_default() -> None:
+    """With verification enabled (the default) the effective policy IS the M1.2 default —
+    bit-for-bit, so every existing read behaves identically."""
+    from clue_config.settings import load_settings
+    from clue_research.claimstore import DEFAULT_MERGE_POLICY, active_merge_policy
+
+    settings = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.verification_enabled is True
+    assert active_merge_policy(settings) is DEFAULT_MERGE_POLICY
+
+
+def test_active_merge_policy_disabled_drops_only_the_tier4_verified_gate() -> None:
+    """Disabled mode flips ``require_verified_tier4`` alone; every other rule (REJECTED,
+    weak-binding, no unpromotable fallback, tolerances) is unchanged."""
+    import pytest as _pytest
+
+    from clue_config.settings import load_settings
+    from clue_research.claimstore import DEFAULT_MERGE_POLICY, active_merge_policy
+
+    monkey = _pytest.MonkeyPatch()
+    try:
+        monkey.setenv("CLUE_VERIFICATION_ENABLED", "false")
+        policy = active_merge_policy(load_settings(_env_file=None))  # type: ignore[call-arg]
+    finally:
+        monkey.undo()
+    assert policy.require_verified_tier4 is False
+    assert policy.exclude_rejected is True
+    assert policy.exclude_weak_binding is True
+    assert policy.fallback_to_unpromotable is False
+    strict = DEFAULT_MERGE_POLICY.model_dump()
+    relaxed = policy.model_dump()
+    assert {k for k in strict if strict[k] != relaxed[k]} == {"require_verified_tier4"}
+
+
+def test_active_merge_policy_reads_the_environment_when_no_settings_passed() -> None:
+    """The zero-arg form (what the defaulted claimstore reads use) follows the live environment."""
+    import pytest as _pytest
+
+    from clue_research.claimstore import active_merge_policy
+
+    monkey = _pytest.MonkeyPatch()
+    try:
+        monkey.setenv("CLUE_VERIFICATION_ENABLED", "false")
+        assert active_merge_policy().require_verified_tier4 is False
+        monkey.setenv("CLUE_VERIFICATION_ENABLED", "true")
+        assert active_merge_policy().require_verified_tier4 is True
+    finally:
+        monkey.undo()
+
+
+def test_disabled_mode_serves_unverified_tier4_but_never_rejected_or_weak() -> None:
+    """The §5 merge contract: with verification disabled an unverified tier-4 claim wins current
+    truth; a judge-REJECTED claim and a weak-binding contact claim still never win."""
+    import pytest as _pytest
+
+    from clue_research.claimstore import active_merge_policy
+
+    monkey = _pytest.MonkeyPatch()
+    try:
+        monkey.setenv("CLUE_VERIFICATION_ENABLED", "false")
+        policy = active_merge_policy()
+    finally:
+        monkey.undo()
+
+    served = _merge([_claim(4, value={"amount_usd": 4})], policy=policy)
+    assert served is not None
+    assert served.value_json == {"amount_usd": 4}
+    assert served.provenance.source_tier == 4
+    assert served.conflict is False  # served as truth, not the flagged unpromotable fallback
+
+    rejected = _claim(4, value={"amount_usd": 9}, status=VerificationStatus.REJECTED)
+    assert _merge([rejected], policy=policy) is None
+
+    weak = _claim(
+        4,
+        entity_type=EntityType.CONTACT,
+        binding=IdentityBinding.WEAK,
+        field="contact.facet.recent_post",
+        value="someone else's hook",
+    )
+    assert _merge([weak], policy=policy) is None

@@ -23,7 +23,7 @@ from clue_research.claimstore.claims import (
     _retention_eligible_sql,
     _row_to_claim,
 )
-from clue_research.claimstore.merge import DEFAULT_MERGE_POLICY, MergePolicy, merge_claims
+from clue_research.claimstore.merge import MergePolicy, active_merge_policy, merge_claims
 from clue_research.claimstore.research_view_routes import ResearchViewFieldRoute
 from clue_research.claimstore.tenancy import WorkspaceScope
 
@@ -155,16 +155,19 @@ async def current_values_resolved_for_product(
     field_keys: Sequence[str],
     scope: WorkspaceScope,
     product_id: str | None,
-    policy: MergePolicy = DEFAULT_MERGE_POLICY,
+    policy: MergePolicy | None = None,
 ) -> dict[tuple[EntityId, str], CurrentValue]:
     """Resolve current neutral-or-exact truth without allowing another product to contend.
 
     Product-specific truth wins before normal merge ranking. Neutral truth is the fail-safe
     fallback when the requested product has no promotable candidate. The result is grouped per
     exact entity/field, unlike the canonical-member route reader which intentionally merges member
-    identities into one routed subject.
+    identities into one routed subject. ``policy=None`` resolves to :func:`active_merge_policy`
+    (the verification-toggle-aware effective default).
     """
 
+    if policy is None:
+        policy = active_merge_policy()
     claims, metadata = await _load_product_claims_and_metadata(
         conn,
         entity_ids=entity_ids,
@@ -201,10 +204,15 @@ async def current_field_claims_resolved_for_product(
     scope: WorkspaceScope,
     product_id: str | None,
     allowed_run_ids: Sequence[str] = (),
-    policy: MergePolicy = DEFAULT_MERGE_POLICY,
+    policy: MergePolicy | None = None,
 ) -> tuple[ResolvedCurrentClaim, ...]:
-    """Select one current direct claim per explicit route after product filtering."""
+    """Select one current direct claim per explicit route after product filtering.
 
+    ``policy=None`` resolves to :func:`active_merge_policy` (the toggle-aware effective default).
+    """
+
+    if policy is None:
+        policy = active_merge_policy()
     members = tuple(dict.fromkeys(member_entity_ids))
     # Personalization-candidate routes are derived-only by contract; a raw fact can remain in its
     # semantic display section but can never become outreach copy merely because it is public.
