@@ -191,6 +191,51 @@ class Stage0StepPinProvider:
                 )
             )
 
+        # --- FI Lane D D4: the Option-B kickoff chain ------------------------------------------
+        # ``draft`` composes direction against the live registries, so it pins them the way
+        # ``start_recon`` does. The gate and the launch pin the two durable objects they act on:
+        # the project run that authorizes spend, and the exact directive revision being confirmed
+        # (which is what makes a redrafted directive refuse rather than slip through).
+        if step.tool_name == "draft_account_research_directive":
+            requested.extend(
+                (
+                    await self._current(
+                        kind="field_registry",
+                        key="__all_active__",
+                        ctx=ctx,
+                    ),
+                    await self._current(
+                        kind="source_registry",
+                        key="__all_active__",
+                        ctx=ctx,
+                    ),
+                )
+            )
+        if step.tool_name in {"open_directive_confirmation_gate", "launch_account_research"}:
+            project_run_id = body.get("project_run_id")
+            if isinstance(project_run_id, str):
+                requested.append(
+                    await self._current(kind="project_run", key=project_run_id, ctx=ctx)
+                )
+            directive_id = body.get("research_directive_id")
+            if isinstance(directive_id, str):
+                requested.append(
+                    await self._current(kind="research_directive", key=directive_id, ctx=ctx)
+                )
+        if step.tool_name == "launch_account_research":
+            # Declared absent, not resolved: the selection this launch pins is the selection the
+            # launch *creates* (its id is derived from the request digest inside the launch
+            # transaction), so requiring it would make the tool permanently unreachable. This is
+            # the same explicit-absence idiom the optional Stage-0 kinds below use.
+            requested.append(
+                PinRequest(
+                    kind="account_research_selection",
+                    key="__not_supplied__",
+                    version="missing",
+                    required=False,
+                )
+            )
+
         if step.tool_name == "propose_field":
             requested.extend(
                 (

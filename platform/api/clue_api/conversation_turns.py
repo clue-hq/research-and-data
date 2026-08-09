@@ -74,8 +74,15 @@ __all__ = [
 #: so a tool granted on a profile but absent from the pinned revision is rejected at plan validation
 #: (``c5_tool_not_allowed``). Two surfaces pinning two revisions would mean two different sets of
 #: callable tools for the same role, discovered only at the first refused plan.
+#:
+#: **v6** (FI Lane D D4) widens that slot to the Option-B kickoff chain —
+#: ``draft_account_research_directive@2``, ``open_directive_confirmation_gate@1``,
+#: ``launch_account_research@1`` — because a surface grant alone is not enough: the C5 slot is a
+#: second, independent ceiling, and until this revision the widened conversation surface would have
+#: shown the model three tools that plan validation then refused. The trial surface still withholds
+#: all three, so raising the shared ceiling grants the trial nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
-CONVERSATION_RECIPE_VERSION = 5
+CONVERSATION_RECIPE_VERSION = 6
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface

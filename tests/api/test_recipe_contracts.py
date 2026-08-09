@@ -59,6 +59,12 @@ def test_operation_id_requirements_are_explicit() -> None:
     audit = build_replay_safety_audit(_standing_recipe_registry())
     operation_bound = {item.address for item in audit if item.operation_id_required}
     assert operation_bound == {
+        # FI Lane D D4 added three tools to recipe0-stage0@6; only the draft is operation-bound.
+        # Its durable identity *is* the operation (``ResearchDirectiveId(operation_id)``), so a
+        # retry lands on the same directive. The gate and the launch are domain-idempotent —
+        # a gate is identified by the turn plus the exact revision it presents, and a launch by
+        # the confirmed directive plus its account set and budget.
+        "draft_account_research_directive@2",
         "evaluate_stage0_readiness@1",
         "import_accounts@1",
         "profile_contact@1",

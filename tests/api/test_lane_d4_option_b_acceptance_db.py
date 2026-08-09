@@ -167,8 +167,19 @@ class _Scenario:
         self.__dict__.update(values)
 
 
-async def _seed_two_account_conversation(conn: AsyncConnection, tmp_path: Path) -> _Scenario:
-    """The canonical fixture: two tier-checkpointed accounts, one thread, one drafted directive."""
+async def _seed_two_account_conversation(
+    conn: AsyncConnection,
+    tmp_path: Path,
+    *,
+    create_turn_row: bool = True,
+) -> _Scenario:
+    """The canonical fixture: two tier-checkpointed accounts, one thread, one drafted directive.
+
+    ``create_turn_row`` writes the worker's half of the opening turn's identity. It defaults on
+    because a gate's presenting-turn FK needs it and this module never runs a real C5 execution;
+    the model-planned suite turns it off so the adapter can create the execution and the turn row
+    together, exactly as the fleet worker does.
+    """
 
     storage = FsStorage(tmp_path / "optionb-artifacts")
     fixture = await seed_insight_health_account_deep_fixture(conn, pages=_pages(), storage=storage)
@@ -252,55 +263,57 @@ async def _seed_two_account_conversation(conn: AsyncConnection, tmp_path: Path) 
         message_sha256=captured.artifact_ref.sha256,
         idempotency_key="optionb-opening-turn",
     )
-    # The worker's half of that same turn identity: in production the fleet worker creates the
-    # ``agent_turn`` row before it runs the graph, so by the time the agent presents a gate the
-    # row the gate's presenting-turn FK needs already exists.
-    manifest = await artifacts.persist_body(
-        workspace_id=workspace_id,
-        data=json.dumps({"resources": []}).encode(),
-        media_type="application/json",
-    )
-    execution_id = uuid5(NAMESPACE_URL, "lane-d4:optionb:execution")
-    await conn.execute(
-        text(
-            "INSERT INTO execution "
-            "(id, workspace_id, project_id, started_by, parameter_manifest_hash, "
-            " pin_manifest_hash) "
-            "VALUES (:id, :workspace, :project, 'human', :hash, :hash)"
-        ),
-        {
-            "id": execution_id,
-            "workspace": workspace_id,
-            "project": project_id,
-            "hash": "0" * 64,
-        },
-    )
-    await conn.execute(
-        text(
-            "INSERT INTO agent_turn "
-            "(id, execution_id, workspace_id, project_id, thread_id, actor_id, role, "
-            " workspace_root_id, profile_name, profile_version, profile_sha256, "
-            " resource_manifest_key, resource_manifest_artifact_sha256, resource_manifest_sha256, "
-            " retention_class, requested_at, submitted_by_user_id, submitted_via_membership_id) "
-            "VALUES (:id, :execution, :workspace, :project, :thread, :actor_id, 'head_of_abm', "
-            " 'root-optionb', 'head-of-abm', 'v23', :sha, :key, :sha256, :sha256, 'test', "
-            " :requested_at, :user, :membership)"
-        ),
-        {
-            "id": presenting_turn_id,
-            "execution": execution_id,
-            "workspace": workspace_id,
-            "project": project_id,
-            "thread": thread_id,
-            "actor_id": USER_ID,
-            "sha": "0" * 64,
-            "key": manifest.artifact_key,
-            "sha256": manifest.sha256,
-            "requested_at": NOW_UTC,
-            "user": USER_ID,
-            "membership": f"wsm_d4_optionb_{workspace_id}",
-        },
-    )
+    if create_turn_row:
+        # The worker's half of that same turn identity: in production the fleet worker creates the
+        # ``agent_turn`` row before it runs the graph, so by the time the agent presents a gate the
+        # row the gate's presenting-turn FK needs already exists.
+        manifest = await artifacts.persist_body(
+            workspace_id=workspace_id,
+            data=json.dumps({"resources": []}).encode(),
+            media_type="application/json",
+        )
+        execution_id = uuid5(NAMESPACE_URL, "lane-d4:optionb:execution")
+        await conn.execute(
+            text(
+                "INSERT INTO execution "
+                "(id, workspace_id, project_id, started_by, parameter_manifest_hash, "
+                " pin_manifest_hash) "
+                "VALUES (:id, :workspace, :project, 'human', :hash, :hash)"
+            ),
+            {
+                "id": execution_id,
+                "workspace": workspace_id,
+                "project": project_id,
+                "hash": "0" * 64,
+            },
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO agent_turn "
+                "(id, execution_id, workspace_id, project_id, thread_id, actor_id, role, "
+                " workspace_root_id, profile_name, profile_version, profile_sha256, "
+                " resource_manifest_key, resource_manifest_artifact_sha256, "
+                " resource_manifest_sha256, retention_class, requested_at, "
+                " submitted_by_user_id, submitted_via_membership_id) "
+                "VALUES (:id, :execution, :workspace, :project, :thread, :actor_id, 'head_of_abm', "
+                " 'root-optionb', 'head-of-abm', 'v23', :sha, :key, :sha256, :sha256, 'test', "
+                " :requested_at, :user, :membership)"
+            ),
+            {
+                "id": presenting_turn_id,
+                "execution": execution_id,
+                "workspace": workspace_id,
+                "project": project_id,
+                "thread": thread_id,
+                "actor_id": USER_ID,
+                "sha": "0" * 64,
+                "key": manifest.artifact_key,
+                "sha256": manifest.sha256,
+                "requested_at": NOW_UTC,
+                "user": USER_ID,
+                "membership": f"wsm_d4_optionb_{workspace_id}",
+            },
+        )
 
     # The agent's draft — a DRAFT directive over *both* accounts. Nothing is confirmed yet.
     directive_registry = ToolRegistry()
@@ -390,6 +403,7 @@ async def _seed_two_account_conversation(conn: AsyncConnection, tmp_path: Path) 
         presenting_turn_id=presenting_turn_id,
         account_ids=(fixture.selected_account_id, second_account_id),
         directive_id=ResearchDirectiveId(draft_operation),
+        directive_body=body.model_dump(mode="json"),
         directive_sha256=str(drafted.references["canonical_json_sha256"]),
         conn_factory=conn_factory,
         storage=storage,
