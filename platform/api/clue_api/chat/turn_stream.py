@@ -57,6 +57,7 @@ from clue_api.chat.turn_events import (
     TurnEventType,
     emit_turn_event,
     next_generation_attempt,
+    turn_stream_has_event,
     turn_text_deltas,
 )
 from clue_api.chat.turn_parts import (
@@ -192,6 +193,16 @@ class TurnStreamEmitter:
             ordinal, prior = await next_generation_attempt(
                 conn, workspace_id=workspace_id, turn_id=turn_id
             )
+            # The HTTP route announces acceptance the moment the turn is durable, which is the
+            # honest moment — the platform accepted it there, not here. This stays as the fallback
+            # for a turn accepted off-route (the dev trial, a test harness), and it is a check
+            # rather than an unconditional emit so no turn is ever announced twice.
+            announced = await turn_stream_has_event(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                event_type=TurnEventType.TURN_ACCEPTED,
+            )
         emitter = cls(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -203,10 +214,11 @@ class TurnStreamEmitter:
             policy=policy,
         )
         if ordinal == 1:
-            await emitter._emit(
-                TurnEventType.TURN_ACCEPTED,
-                payload={"attempt_ordinal": ordinal},
-            )
+            if not announced:
+                await emitter._emit(
+                    TurnEventType.TURN_ACCEPTED,
+                    payload={"attempt_ordinal": ordinal, "source": "worker"},
+                )
         else:
             await emitter._reset_prior_attempt(prior[-1] if prior else None)
         return emitter

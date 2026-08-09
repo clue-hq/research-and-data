@@ -53,6 +53,7 @@ from clue_api.agent_turn_submission import (
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.chat.message_bodies import hydrate_message_bodies
 from clue_api.chat.principal import (
     PERMISSION_THREAD_READ,
     PERMISSION_THREAD_WRITE,
@@ -76,6 +77,7 @@ from clue_api.chat.schemas import (
     thread_wire,
     thread_wire_from_references,
 )
+from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
 from clue_api.thread_store import get_thread
 from clue_api.turn_action import derive_turn_action_ref
@@ -92,6 +94,7 @@ from clue_projections import (
     open_gate_kinds_for_threads,
     thread_messages,
     threads_for_project,
+    threads_running,
 )
 from clue_spine import get_project
 from clue_storage import StorageBackend, content_address
@@ -439,14 +442,29 @@ def build_chat_router(
         # One anti-join for the whole page (FI Lane D D4): the sidebar's approval / needs-input
         # badge is derived from unanswered gates, and a per-row read would cost a query per
         # conversation to answer "is anyone waiting on me?".
+        thread_ids = tuple(item.thread_id for item in page.items)
         open_gates = await open_gate_kinds_for_threads(
             workspace_id=who.workspace_id,
-            thread_ids=tuple(item.thread_id for item in page.items),
+            thread_ids=thread_ids,
+            conn_factory=conn_factory,
+        )
+        # The other half of the same badge (FI Lane D D3), and the other one-statement anti-join:
+        # a thread is *running* when the submissions-union says it holds a turn that is queued or
+        # executing. Queued counts — a turn submitted thirty seconds ago that no worker has claimed
+        # yet is the conversation working, not the conversation idle — and it is only visible at
+        # all because the union reads submissions, which is where a not-yet-executed turn lives.
+        busy = await threads_running(
+            workspace_id=who.workspace_id,
+            thread_ids=thread_ids,
             conn_factory=conn_factory,
         )
         return ThreadListResponse(
             data=tuple(
-                thread_wire(item, open_gate_kinds=open_gates.get(item.thread_id, ()))
+                thread_wire(
+                    item,
+                    open_gate_kinds=open_gates.get(item.thread_id, ()),
+                    running=item.thread_id in busy,
+                )
                 for item in page.items
             ),
             meta=PageMeta(next_cursor=page.next_cursor),
@@ -510,9 +528,31 @@ def build_chat_router(
             int, Query(ge=1, le=MAX_THREAD_MESSAGE_PAGE_SIZE)
         ] = DEFAULT_THREAD_MESSAGE_PAGE_SIZE,
         cursor: Annotated[str | None, Query()] = None,
+        include: Annotated[str | None, Query(pattern="^bodies$")] = None,
     ) -> MessageListResponse:
+        """One page of the durable transcript; ``?include=bodies`` hydrates that page's bodies.
+
+        Body-free stays the default (D0's decision): a message summary carries the *content
+        address*, and the words are fetched deliberately. But a transcript cannot be rendered from
+        addresses — a browser cannot issue one artifact fetch per message — so charter §3.6's cold
+        load is this listing plus an explicit opt-in, hydrated server-side in one round trip.
+
+        The opt-in is bounded three ways and stays that way: by the page (the pagination limit *is*
+        the fan-out limit, so no request shape hydrates a whole thread), by a cumulative byte
+        budget, and by media type. A body that cannot be served — erased, too large, not text —
+        comes back ``null`` with a reason rather than an empty string that would render as a message
+        nobody wrote. Without a storage backend the parameter is refused rather than silently
+        ignored, because a surface that cannot read bytes must not pretend it did.
+        """
+
         _require(who, PERMISSION_THREAD_READ)
         del project_id
+        if include is not None and artifacts is None:
+            raise _refuse(
+                status_code=503,
+                code="BODIES_UNAVAILABLE",
+                message="this deployment has no artifact backend to hydrate message bodies",
+            )
         try:
             page = await thread_messages(
                 workspace_id=who.workspace_id,
@@ -523,7 +563,17 @@ def build_chat_router(
             )
         except InvalidCursorError as exc:
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
-        return message_list_response(page, thread_id=thread_id)
+        if include is None:
+            return message_list_response(page, thread_id=thread_id)
+        assert storage is not None  # guarded above: ``artifacts`` exists iff ``storage`` does
+        async with conn_factory() as conn:
+            bodies = await hydrate_message_bodies(
+                conn,
+                storage=storage,
+                workspace_id=who.workspace_id,
+                references=tuple((item.body_artifact_key, item.body_sha256) for item in page.items),
+            )
+        return message_list_response(page, thread_id=thread_id, bodies=bodies)
 
     # --- turn submission (D2) + the structured gate response (D4) ------------------------------
 
@@ -818,6 +868,30 @@ def build_chat_router(
                                 f"gate-answer:{gate.gate_id}:{turn_id}",
                             ),
                         )
+                # FI Lane D D3: announce acceptance where it actually happens. The platform
+                # accepted this turn *here*, the moment its bytes, its capture record and its
+                # submitter became durable — not later, in the worker that eventually claims it. So
+                # a client attaching to the stream sees `turn.accepted` even while the turn waits
+                # behind another one on the same thread. Emitting a frame is not running a turn:
+                # this is an INSERT into a transport table, and the isolation guard still holds
+                # (nothing model-shaped is reachable from here).
+                #
+                # It rides the same transaction as the capture and the submission, so the frame
+                # cannot exist for a turn that does not, and the replay path above emits nothing —
+                # a second POST under one idempotency key announces nothing new.
+                await emit_turn_event(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    project_id=project_id,
+                    thread_id=thread_id,
+                    turn_id=turn_id,
+                    event_type=TurnEventType.TURN_ACCEPTED,
+                    payload={
+                        "requested_at": submission.requested_at.isoformat(),
+                        "source": "route",
+                        "kind": "gate_response" if gate is not None else "message",
+                    },
+                )
                 await dispatch_next_thread_turn(
                     conn,
                     workspace_id=who.workspace_id,

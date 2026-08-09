@@ -25,7 +25,11 @@ authorises opening one stream, which serves only the rows of the workspace and t
 * ``GET  …/turns/{turn_id}/events`` — attach: ``stream.hello``, then the ``Last-Event-ID`` backlog
   (or ``stream.reset`` when the cursor is beyond the replay horizon), then a live tail.
 * ``POST …/turns/{turn_id}/stop`` / ``…/retry`` — the §3.5 controls, as durable requests.
-* ``GET  …/messages/bodies`` — the paginated transcript page *with* its bodies hydrated.
+
+The hydrated cold-load read is **not** here: it is the chat router's ``GET …/messages`` with
+``?include=bodies``, which is where the contract puts it. This module still owns the hydrator
+(:mod:`clue_api.chat.message_bodies`) that route delegates to, so there is one implementation of
+"resolve this page's bodies, bounded" rather than two surfaces that drift.
 
 **Dispatch-on-attach.** Attaching to a turn also offers the thread's next queued turn to the fleet
 if none is in flight. It closes the narrow window the D2 review recorded — a process death between
@@ -69,11 +73,8 @@ from clue_api.chat.router import (
     chat_principal_resolver,
 )
 from clue_api.chat.schemas import (
-    MessageListResponse,
-    PageMeta,
     TurnAcceptedResponse,
     TurnAcceptedWire,
-    message_wire,
 )
 from clue_api.chat.turn_controls import get_control_request, insert_control_request
 from clue_api.chat.turn_events import (
@@ -89,11 +90,7 @@ from clue_config import Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_projections import (
-    DEFAULT_THREAD_MESSAGE_PAGE_SIZE,
-    MAX_THREAD_MESSAGE_PAGE_SIZE,
-    InvalidCursorError,
     ThreadTurnView,
-    thread_messages,
     thread_turns,
 )
 from clue_spine import get_project
@@ -527,66 +524,6 @@ def build_chat_stream_router(
                     requested_at=submission.requested_at.isoformat(),
                     replayed=False,
                 )
-            )
-
-        @router.get("/projects/{project_id}/threads/{thread_id}/messages/bodies")
-        async def hydrated_messages_route(
-            project_id: str,
-            thread_id: str,
-            who: PrincipalDep,
-            limit: Annotated[
-                int, Query(ge=1, le=MAX_THREAD_MESSAGE_PAGE_SIZE)
-            ] = DEFAULT_THREAD_MESSAGE_PAGE_SIZE,
-            cursor: Annotated[str | None, Query()] = None,
-        ) -> MessageListResponse:
-            """The cold-load transcript read: one page of messages **with** their bodies (§3.6).
-
-            The same page, the same cursor and the same element shape as the body-free listing —
-            this is that contract's ``include=bodies`` opt-in, served at its own path because D4
-            owns the listing route this round. When that route is free, its ``include`` parameter
-            delegates here rather than growing a second hydration implementation.
-            """
-
-            _require(who, PERMISSION_THREAD_READ)
-            await _scope(who=who, project_id=project_id, thread_id=thread_id)
-            try:
-                page = await thread_messages(
-                    workspace_id=who.workspace_id,
-                    thread_id=thread_id,
-                    limit=limit,
-                    cursor=cursor,
-                    conn_factory=conn_factory,
-                )
-            except InvalidCursorError as exc:
-                raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
-            async with conn_factory() as conn:
-                bodies = await hydrate_message_bodies(
-                    conn,
-                    storage=storage,  # type: ignore[arg-type]
-                    workspace_id=who.workspace_id,
-                    references=tuple(
-                        (item.body_artifact_key, item.body_sha256) for item in page.items
-                    ),
-                )
-            return MessageListResponse(
-                data=tuple(
-                    message_wire(
-                        item,
-                        thread_id=thread_id,
-                        body=(
-                            hydrated.body
-                            if (hydrated := bodies.get(item.body_artifact_key)) is not None
-                            else None
-                        ),
-                        body_unavailable_reason=(
-                            None
-                            if hydrated is None or hydrated.body is not None
-                            else hydrated.reason
-                        ),
-                    )
-                    for item in page.items
-                ),
-                meta=PageMeta(next_cursor=page.next_cursor),
             )
 
     return router

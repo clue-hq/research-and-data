@@ -23,12 +23,14 @@ The two substantive shape decisions:
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from clue_api.agent_gate import money_text
+from clue_api.chat.message_bodies import HydratedBody
 from clue_projections import ThreadMessagePage, ThreadMessageSummary, ThreadView
 
 __all__ = [
@@ -384,8 +386,30 @@ def message_wire(
     )
 
 
-def message_list_response(page: ThreadMessagePage, *, thread_id: str) -> MessageListResponse:
+def message_list_response(
+    page: ThreadMessagePage,
+    *,
+    thread_id: str,
+    bodies: Mapping[str, HydratedBody] | None = None,
+) -> MessageListResponse:
+    """One page on the wire. ``bodies`` is supplied only by the ``?include=bodies`` opt-in.
+
+    A message whose body was requested but could not be served keeps ``body=None`` and carries the
+    reason, so "we did not ask for it" and "we asked and it is gone" stay distinguishable.
+    """
+
     return MessageListResponse(
-        data=tuple(message_wire(item, thread_id=thread_id) for item in page.items),
+        data=tuple(
+            message_wire(
+                item,
+                thread_id=thread_id,
+                body=(None if hydrated is None else hydrated.body),
+                body_unavailable_reason=(
+                    None if hydrated is None or hydrated.body is not None else hydrated.reason
+                ),
+            )
+            for item in page.items
+            for hydrated in ((None if bodies is None else bodies.get(item.body_artifact_key)),)
+        ),
         meta=PageMeta(next_cursor=page.next_cursor),
     )

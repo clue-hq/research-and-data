@@ -51,6 +51,7 @@ __all__ = [
     "plan_turn_replay",
     "prune_turn_events",
     "turn_event_created_at",
+    "turn_stream_has_event",
     "turn_text_deltas",
 ]
 
@@ -385,6 +386,38 @@ async def turn_text_deltas(
         )
     ).scalars()
     return tuple("" if value is None else str(value) for value in rows)
+
+
+async def turn_stream_has_event(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+    event_type: TurnEventType,
+) -> bool:
+    """Whether this turn already carries a frame of ``event_type``.
+
+    The idempotence check behind a lifecycle frame that two different processes can legitimately
+    try to emit: ``turn.accepted`` is written by the HTTP route the moment a turn is durable, and
+    the worker emits it only if it finds none — which is what keeps a turn accepted off-route (the
+    dev trial, a test harness) announceable without ever announcing a turn twice.
+    """
+
+    row = (
+        await conn.execute(
+            text(
+                "SELECT 1 FROM agent_turn_event_stream "
+                "WHERE workspace_id = :workspace_id AND turn_id = :turn_id "
+                "AND event_type = :event_type LIMIT 1"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "turn_id": turn_id,
+                "event_type": event_type.value,
+            },
+        )
+    ).first()
+    return row is not None
 
 
 async def next_generation_attempt(

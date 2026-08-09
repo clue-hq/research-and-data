@@ -474,7 +474,13 @@ def test_the_sidebar_status_is_approval_while_the_gate_is_open_and_idle_once_ans
                 statuses_after = {
                     item["id"]: item["status"] for item in listing_after.json()["data"]
                 }
-                assert statuses_after[seeded.thread_id] == "idle"
+                # The approval badge clears the moment the gate is answered — which is this test's
+                # claim. What replaces it is ``running``, not ``idle``, because answering a gate
+                # *is* a turn: the structured response was captured and queued, and D3's
+                # submissions-union half of this same derivation reports a queued turn as the
+                # conversation working. The two halves composing is the point (charter §2's "the
+                # two status vocabularies never meet" is what they fix together).
+                assert statuses_after[seeded.thread_id] == "running"
 
             assert (
                 await open_gate_kinds_for_threads(
@@ -489,6 +495,14 @@ def test_the_sidebar_status_is_approval_while_the_gate_is_open_and_idle_once_ans
                 "needs-input"
             )
             assert thread_status(status="archived", open_gate_kinds=()) == "archived"
+            # An open gate outranks a running turn: a badge that says "running" while the
+            # conversation is actually blocked on the user is the one wrong answer here.
+            assert (
+                thread_status(
+                    status="active", open_gate_kinds=("directive_confirmation",), running=True
+                )
+                == "approval"
+            )
 
     run_async(scenario())
 

@@ -1558,6 +1558,114 @@ def test_the_turn_read_surface_unions_queued_submissions_with_turn_events(
     run_async(scenario())
 
 
+def test_the_route_announces_acceptance_once_and_the_worker_does_not_repeat_it(
+    tmp_path: Path,
+) -> None:
+    """``turn.accepted`` is emitted where acceptance happens — and exactly once.
+
+    The route writes it in the same transaction as the capture and the submission, so a queued turn
+    is announced while it waits; a duplicate POST announces nothing new; and the worker's emitter,
+    which still announces a turn accepted off-route, finds the frame and stays quiet.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d3-accepted", name="D3 accepted")
+            thread_id = await _thread(
+                conn, workspace_id=project.workspace_id, project_id=project.project_id, label="ac"
+            )
+            storage = FsStorage(tmp_path / "artifacts")
+            app = _app(conn, settings=_settings(), storage=storage)
+            path = f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns"
+            headers = {"X-Workspace-Id": project.workspace_id, "Idempotency-Key": "k-accepted"}
+            async with _client(app) as client:
+                accepted = await client.post(path, json={"message": "hello"}, headers=headers)
+                assert accepted.status_code == 202, accepted.text
+                turn_id = UUID(accepted.json()["data"]["turn_id"])
+                # The same POST again is a replay: same turn, and no second announcement.
+                replayed = await client.post(path, json={"message": "hello"}, headers=headers)
+                assert replayed.json()["data"]["replayed"] is True
+
+            frames = await _frames(conn, workspace_id=project.workspace_id, turn_id=turn_id)
+            announced = _of_type(frames, TurnEventType.TURN_ACCEPTED)
+            assert len(announced) == 1
+            assert announced[0].payload["source"] == "route"
+            assert announced[0].payload["kind"] == "message"
+            # No attempt has begun, so the frame carries no generation identity ...
+            assert announced[0].generation_attempt_id is None
+            # ... and the worker opening attempt 1 does not announce it a second time.
+            emitter = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_id)
+            assert emitter.attempt_ordinal == 1
+            after = await _frames(conn, workspace_id=project.workspace_id, turn_id=turn_id)
+            assert len(_of_type(after, TurnEventType.TURN_ACCEPTED)) == 1
+
+            # A turn accepted off-route (the dev trial, a harness) is still announced by the worker.
+            offroute = await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="off route",
+                key="k-offroute",
+                storage=storage,
+                dispatch=False,
+            )
+            worker_side = await _emitter(
+                conn, project=project, thread_id=thread_id, turn_id=offroute
+            )
+            del worker_side
+            frames = await _frames(conn, workspace_id=project.workspace_id, turn_id=offroute)
+            announced = _of_type(frames, TurnEventType.TURN_ACCEPTED)
+            assert len(announced) == 1
+            assert announced[0].payload["source"] == "worker"
+
+    run_async(scenario())
+
+
+def test_the_thread_listing_reports_running_from_the_submissions_union(tmp_path: Path) -> None:
+    """The sidebar badge, end to end: idle → running → idle as the turn's state changes."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d3-badge", name="D3 badge")
+            thread_id = await _thread(
+                conn, workspace_id=project.workspace_id, project_id=project.project_id, label="bg"
+            )
+            storage = FsStorage(tmp_path / "artifacts")
+            app = _app(conn, settings=_settings(), storage=storage)
+            listing = f"/api/v1/projects/{project.project_id}/threads"
+            headers = {"X-Workspace-Id": project.workspace_id}
+
+            async def _status() -> str:
+                async with _client(app) as client:
+                    listed = await client.get(listing, headers=headers)
+                assert listed.status_code == 200, listed.text
+                rows = [row for row in listed.json()["data"] if row["id"] == thread_id]
+                assert len(rows) == 1
+                return str(rows[0]["status"])
+
+            assert await _status() == "idle"
+
+            turn_id = await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="are we running?",
+                key="k-badge",
+                storage=storage,
+            )
+            # Queued counts as running: the conversation is working, not idle.
+            assert await _status() == "running"
+
+            emitter = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_id)
+            await emitter.turn_started()
+            assert await _status() == "running"
+
+            await emitter.turn_finished(status="completed")
+            assert await _status() == "idle"
+
+    run_async(scenario())
+
+
 def test_a_stranded_queued_turn_heals_on_attach_and_on_the_sweep(tmp_path: Path) -> None:
     """The D2 review's stranded-dispatch gap, closed from both sides."""
 
@@ -1673,8 +1781,11 @@ def test_include_bodies_hydrates_the_page_and_stays_bounded(tmp_path: Path) -> N
             headers = {"X-Workspace-Id": project.workspace_id}
             async with _client(app) as client:
                 plain = await client.get(path, headers=headers)
-                hydrated = await client.get(f"{path}/bodies", headers=headers)
-                paged = await client.get(f"{path}/bodies", params={"limit": 2}, headers=headers)
+                hydrated = await client.get(path, params={"include": "bodies"}, headers=headers)
+                paged = await client.get(
+                    path, params={"include": "bodies", "limit": 2}, headers=headers
+                )
+                bogus = await client.get(path, params={"include": "refs"}, headers=headers)
             assert plain.status_code == 200
             # The default listing stays body-free (D0's decision is unchanged).
             assert all(item["body"] is None for item in plain.json()["data"])
@@ -1684,6 +1795,9 @@ def test_include_bodies_hydrates_the_page_and_stays_bounded(tmp_path: Path) -> N
             page = paged.json()
             assert len(page["data"]) == 2
             assert page["meta"]["next_cursor"] is not None
+            # An unknown ``include`` is a loud 422, never a silently ignored parameter.
+            assert bogus.status_code == 422
+            assert bogus.json()["error"]["code"] == "VALIDATION_ERROR"
 
     run_async(scenario())
 
