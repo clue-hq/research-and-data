@@ -120,3 +120,86 @@ runs and reverted them before committing; nothing in that patch is in the tree. 
    durable read it should project from.
 5. `thread_status`'s `running` half is D3's; the function takes the two inputs independently so
    both lanes' halves compose without either rewriting the other.
+
+---
+
+## Close-out (same day, after the orchestrator merged the Lane-D heads)
+
+Single head `2a4206f616fd`; `alembic upgrade head` and the repo-wide DB fixtures work again, and
+`conversation_turns.py` was released to me. Open item 1 — the C5 recipe ceiling — is **closed**.
+Commit `e1d3be13`.
+
+### What shipped
+
+- **`recipe0-stage0-v6.json`** — v5 plus the kickoff chain. Its interaction slot allowlists
+  `draft_account_research_directive@2`, `open_directive_confirmation_gate@1` and
+  `launch_account_research@1`; `dynamic_pin_kinds` gains `project_run`, `research_directive`,
+  `account_research_selection`. **Gotcha:** the tool pins must be mirrored into *both* the gate
+  node's own `requirements` and `compatibility.nodes[...]` — `RecipeDefinition` validates that the
+  two agree, and only mirroring one fails at load with "compatibility.nodes must exactly mirror
+  graph node-local requirements".
+- **Two pin resolvers** in `recipe_wiring`. `research_directive` (keyed on directive id, versioned
+  by the directive's own `version`, immutable-identity payload only — `status` deliberately out,
+  the way `project_run` excludes its mutable counters). `account_research_selection` — the launch's
+  subject, which the launch *creates*; the provider declares it absent with the existing
+  `key="__not_supplied__", version="missing", required=False` idiom, so it resolves to a recorded
+  `status='missing'` pin instead of an incompatibility. Requiring it would deadlock the tool
+  against the thing it makes. It still resolves truthfully post-launch, so replays pin the real one.
+- **`Stage0StepPinProvider` branches** — registries for the draft; `project_run` + `research_directive`
+  for the gate and the launch; the declared-absent selection for the launch.
+- **`CONVERSATION_RECIPE_VERSION = 6`** (one line, plus the rationale comment).
+- **`RECIPE_0_TOOL_ADDRESSES`** gains the three addresses (anything runnable in the slot is
+  replay-certified there first).
+- **`tests/api/test_lane_d4_model_planned_kickoff_db.py`** (4 tests) — the model-planned acceptance.
+
+### The new acceptance
+
+Real promoted revision, real `RecipeExecutor`, real `Stage0StepPinProvider`, real
+`C5AgentExecutionAdapter`; only the model is absent (the test authors the plan). The agent plans
+the gate → the human answers through the production route → the agent, woken on that confirming
+turn, plans the launch → the run's `source_action_ref` and `approval_refs` are the confirming
+turn's receipt, identical to the launcher-driven acceptance. Plus: a plan proposing the human-only
+confirm tool is refused by both ceilings; and the shared ceiling grants the trial nothing (its
+surface still subtracts the gate and launch tools).
+
+### Findings
+
+1. **`draft_account_research_directive@2` cannot ride a plan.** The C5 graph forbids a raw body
+   anywhere in a plan **by key name** (`_RAW_BODY_KEYS` = `body`, `content`, `interview_answer`, …)
+   and that tool's input field is literally `body`. So the slot admits it, but a plan that inlines
+   a directive body is rejected `raw_body_key`. Pre-existing, unrelated to D4, and fixing it means
+   either passing the body as an artifact ref or renaming a frozen field (rewriting its schema
+   digest and every profile that pins it) — both outside the catalog/pin seams. Pinned by
+   `test_the_draft_tool_is_admitted_by_the_slot_but_cannot_ride_a_plan_today` with the exact code.
+2. **`agent_plan` FKs `(turn_id, execution_id, workspace_id)` onto `agent_turn`** — a turn row
+   minted against a different execution can never hold a plan. That is why
+   `_seed_two_account_conversation` grew `create_turn_row`: the launcher-driven suite pre-creates
+   the row (its gate needs the FK and it runs no C5 execution), while the model-planned suite
+   creates the execution and the turn row together, as the fleet worker does.
+3. `draft_account_research_directive@2` is the only one of the three that is operation-bound
+   (`ResearchDirectiveId(operation_id)`); the gate and the launch are domain-idempotent.
+   `test_recipe_contracts::test_operation_id_requirements_are_explicit` updated accordingly.
+
+### Gates (round 2)
+
+- `make db-smoke` up→down→up on a clean throwaway DB (`d4_smoke2`, 55040), now via plain
+  `alembic upgrade head` — single head `2a4206f616fd`.
+- `uv run mypy` clean (611 files); `lint-imports` 25 kept / 0 broken; `ruff check`/`format --check`
+  clean on every file this round touched.
+- D4 suites + the isolation guard: **43 passed** (13 + 19 + 5 + 4 + 2).
+- `tests/execution` (67), `tests/agents` (188), `tests/architecture`, and full `tests/api` green
+  except the one **pre-existing** failure, now proven pre-existing by stashing this round's work
+  and watching it fail identically: `test_agent_registry_wiring::
+  test_resolved_snapshot_materializes_through_c61_backend` (materializes `stage0-interview@v9`
+  while the profile has pinned v10 since v22).
+- Repo-wide `ruff check .` reports 4 errors, none mine: 3 in the orchestrator's merge migration
+  `2a4206f616fd` (unsorted imports + two unused imports) and 1 E501 in the pre-existing untracked
+  `tests/claimstore/test_lens_isolation.py`.
+
+### Still open
+
+- The `draft` raw-body constraint above (finding 1) — needs an owner if the agent is ever to draft
+  from a plan rather than from a tool call the platform makes for it.
+- `entity_research_runtime_enabled` remains off by default; unchanged by this round.
+- Nothing else from the original open list moved: the gate substrate is still generic-but-only-
+  `directive_confirmation`-answerable, and D3 owns gate-lifecycle emission.
