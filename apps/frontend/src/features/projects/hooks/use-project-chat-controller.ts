@@ -28,9 +28,14 @@ import {
   type ThreadStatus,
 } from "../model/chat-thread";
 import {
+  applyTurnStateOverrides,
   isTurnLive,
+  MessageSubmissionGuard,
+  reconcileTurnStateOverrides,
+  selectTurnQueueState,
   turnStateForStreamEvent,
   type ChatTurn,
+  type TurnState,
 } from "../model/chat-turn";
 
 /**
@@ -69,10 +74,12 @@ export interface ProjectChatController {
   loading: boolean;
   /** A stream or repository failure that did not change any durable outcome. */
   error: string | null;
-  /** True while a same-thread turn is queued or executing. */
-  busy: boolean;
-  /** The turn a Stop control acts on, if any. */
-  activeTurnId: string | null;
+  /** True when at least one turn is queued or running. */
+  threadBusy: boolean;
+  /** The one durable running turn Stop may target. */
+  runningTurn: ChatTurn | null;
+  /** Durable queued turns, preserving submission order. */
+  queuedTurns: readonly ChatTurn[];
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
   submitMessage(text: string): Promise<void>;
@@ -105,6 +112,9 @@ export function useProjectChatController({
   );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [turnStateOverrides, setTurnStateOverrides] = useState<
+    ReadonlyMap<string, TurnState>
+  >(new Map());
   const [gateRead, setGateRead] = useState<ChatGateRead>({
     available: false,
     gates: [],
@@ -126,6 +136,7 @@ export function useProjectChatController({
   //: this a closed attachment would be re-opened on every reload — an endless
   //: mint-token / replay-backlog loop against a real backend.
   const attached = useRef(new Set<string>());
+  const messageSubmissions = useRef(new MessageSubmissionGuard());
   const mounted = useRef(true);
   useEffect(() => {
     const open = attachments.current;
@@ -191,6 +202,9 @@ export function useProjectChatController({
       if (!mounted.current) return;
       setMessages(messagePage.messages);
       setTurns(turnPage.turns);
+      setTurnStateOverrides((current) =>
+        reconcileTurnStateOverrides(current, turnPage.turns),
+      );
       setGateRead(gates);
       // A durable message for a turn means the optimistic stand-in has done its
       // job; keeping it would double the user's own sentence.
@@ -249,6 +263,11 @@ export function useProjectChatController({
     report,
   ]);
 
+  const effectiveTurns = useMemo(
+    () => applyTurnStateOverrides(turns, turnStateOverrides),
+    [turnStateOverrides, turns],
+  );
+
   // --- live attachment ---------------------------------------------------
 
   const attach = useCallback(
@@ -279,6 +298,11 @@ export function useProjectChatController({
                   : turn,
               ),
             );
+            setTurnStateOverrides((current) => {
+              const next = new Map(current);
+              next.set(event.turnId, streamedState);
+              return next;
+            });
           }
         },
         onWarning(reason) {
@@ -326,10 +350,10 @@ export function useProjectChatController({
   useEffect(() => {
     if (!activeThreadId) return;
     const candidates = new Map<string, ChatTurn>();
-    for (const turn of turns.slice(-REHYDRATED_TURNS)) {
+    for (const turn of effectiveTurns.slice(-REHYDRATED_TURNS)) {
       candidates.set(turn.turnId, turn);
     }
-    for (const turn of turns.filter(isTurnLive)) {
+    for (const turn of effectiveTurns.filter(isTurnLive)) {
       candidates.set(turn.turnId, turn);
     }
     for (const turn of candidates.values()) {
@@ -339,7 +363,7 @@ export function useProjectChatController({
       }
       attach(activeThreadId, turn.turnId);
     }
-  }, [activeThreadId, attach, turns]);
+  }, [activeThreadId, attach, effectiveTurns]);
 
   // --- writes ------------------------------------------------------------
 
@@ -347,14 +371,18 @@ export function useProjectChatController({
     async (text: string) => {
       const trimmed = text.trim();
       if (!trimmed || !activeThreadId) return;
-      setSubmitting(true);
-      const idempotencyKey = newIdempotencyKey("turn");
+      const attempt = messageSubmissions.current.begin(
+        activeThreadId,
+        trimmed,
+        () => newIdempotencyKey("turn"),
+      );
+      if (!attempt) return;
       try {
         const accepted = await repositories.turns.submit({
           projectId,
           threadId: activeThreadId,
           submission: { kind: "message", message: trimmed },
-          idempotencyKey,
+          idempotencyKey: attempt.idempotencyKey,
         });
         if (!mounted.current) return;
         setOptimistic((current) => [
@@ -370,7 +398,7 @@ export function useProjectChatController({
       } catch (failure) {
         report(failure);
       } finally {
-        if (mounted.current) setSubmitting(false);
+        messageSubmissions.current.finish(attempt);
       }
     },
     [activeThreadId, attach, loadConversation, projectId, repositories, report],
@@ -419,19 +447,15 @@ export function useProjectChatController({
     [activeThreadId, attach, loadConversation, projectId, repositories, report],
   );
 
-  const activeTurn = useMemo(
-    () => turns.find((turn) => turn.state === "running") ?? null,
-    [turns],
-  );
-  const threadBusy = useMemo(() => turns.some(isTurnLive), [turns]);
+  const queue = useMemo(() => selectTurnQueueState(effectiveTurns), [effectiveTurns]);
 
   const stopActiveTurn = useCallback(async () => {
-    if (!activeThreadId || !activeTurn) return;
+    if (!activeThreadId || !queue.runningTurn) return;
     try {
       await repositories.turns.stop({
         projectId,
         threadId: activeThreadId,
-        turnId: activeTurn.turnId,
+        turnId: queue.runningTurn.turnId,
       });
       await loadConversation(activeThreadId);
     } catch (failure) {
@@ -439,9 +463,9 @@ export function useProjectChatController({
     }
   }, [
     activeThreadId,
-    activeTurn,
     loadConversation,
     projectId,
+    queue.runningTurn,
     repositories,
     report,
   ]);
@@ -520,8 +544,8 @@ export function useProjectChatController({
   // --- derived -----------------------------------------------------------
 
   const transcript = useMemo(
-    () => composeTranscript({ messages, turns, stream, optimistic }),
-    [messages, optimistic, stream, turns],
+    () => composeTranscript({ messages, turns: effectiveTurns, stream, optimistic }),
+    [effectiveTurns, messages, optimistic, stream],
   );
 
   const gatesById = useMemo(() => {
@@ -556,8 +580,9 @@ export function useProjectChatController({
     route,
     loading,
     error,
-    busy: threadBusy,
-    activeTurnId: activeTurn?.turnId ?? null,
+    threadBusy: queue.threadBusy,
+    runningTurn: queue.runningTurn,
+    queuedTurns: queue.queuedTurns,
     submitting,
     gateFor,
     submitMessage,
@@ -582,6 +607,7 @@ export function useProjectChatController({
       setStream(emptyTranscriptState());
       setMessages([]);
       setTurns([]);
+      setTurnStateOverrides(new Map());
       setOptimistic([]);
       setError(null);
       setRoute(null);

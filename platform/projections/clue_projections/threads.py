@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
@@ -47,6 +48,7 @@ __all__ = [
     "ThreadTurnView",
     "ThreadView",
     "thread_messages",
+    "thread_turn",
     "thread_turns",
     "project_sidebar_page",
     "threads_for_project",
@@ -300,16 +302,20 @@ async def project_sidebar_page(
 
     async with conn_factory() as conn:
         rows = (
-            await conn.execute(
-                _PROJECT_SIDEBAR_PAGE,
-                {
-                    "workspace_id": workspace_id,
-                    "cursor_created_at": cursor_created_at,
-                    "cursor_project_id": cursor_project_id,
-                    "row_limit": limit + 1,
-                },
+            (
+                await conn.execute(
+                    _PROJECT_SIDEBAR_PAGE,
+                    {
+                        "workspace_id": workspace_id,
+                        "cursor_created_at": cursor_created_at,
+                        "cursor_project_id": cursor_project_id,
+                        "row_limit": limit + 1,
+                    },
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
 
     project_order: list[str] = []
     project_rows: dict[str, dict[str, object]] = {}
@@ -399,6 +405,10 @@ _THREAD_TURNS = text(
     "ORDER BY s.requested_at, s.turn_id LIMIT :row_limit"
 )
 
+_THREAD_TURN = text(
+    f"{_TURN_UNION_SELECT} AND s.thread_id = :thread_id AND s.turn_id = :turn_id LIMIT 1"
+)
+
 # "Which of these threads is busy?" — the same union, reduced to a per-thread boolean, so the
 # thread listing answers it in one statement instead of one per row.
 _THREADS_RUNNING = text(
@@ -434,6 +444,54 @@ def _turn_state(row: dict[str, object]) -> str:
     return "queued"
 
 
+def _thread_turn_view(row: dict[str, object]) -> ThreadTurnView:
+    return ThreadTurnView(
+        turn_id=UUID(str(row["turn_id"])),
+        thread_id=str(row["thread_id"]),
+        project_id=str(row["project_id"]),
+        state=_turn_state(row),
+        requested_at=cast(datetime, row["requested_at"]),
+        submitted_by_user_id=str(row["submitted_by_user_id"]),
+        last_event_id=(
+            None if row["last_event_id"] is None else int(str(row["last_event_id"]))
+        ),
+        generation_attempts=int(str(row["attempts"] or 0)),
+    )
+
+
+async def thread_turn(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    thread_id: str,
+    turn_id: UUID,
+) -> ThreadTurnView | None:
+    """Read one turn's derived state inside the caller's transaction.
+
+    State-sensitive writes such as Stop must use the same submissions-union
+    derivation as the list surface. Taking the caller's connection keeps the
+    check and the resulting control receipt in one transaction without copying
+    the projection SQL into the write layer.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                _THREAD_TURN,
+                {
+                    "workspace_id": workspace_id,
+                    "thread_id": thread_id,
+                    "turn_id": turn_id,
+                    "dedup_prefix": AGENT_TURN_TASK_DEDUP_PREFIX,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return None if row is None else _thread_turn_view(dict(row))
+
+
 async def thread_turns(
     *,
     workspace_id: str,
@@ -464,19 +522,7 @@ async def thread_turns(
             .mappings()
             .all()
         )
-    return tuple(
-        ThreadTurnView(
-            turn_id=row["turn_id"],
-            thread_id=row["thread_id"],
-            project_id=row["project_id"],
-            state=_turn_state(dict(row)),
-            requested_at=row["requested_at"],
-            submitted_by_user_id=row["submitted_by_user_id"],
-            last_event_id=(None if row["last_event_id"] is None else int(row["last_event_id"])),
-            generation_attempts=int(row["attempts"] or 0),
-        )
-        for row in rows
-    )
+    return tuple(_thread_turn_view(dict(row)) for row in rows)
 
 
 async def threads_running(

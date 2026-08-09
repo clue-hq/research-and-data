@@ -93,6 +93,7 @@ from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_projections import (
     ThreadTurnView,
+    thread_turn,
     thread_turns,
 )
 from clue_spine import get_project
@@ -405,17 +406,38 @@ def build_chat_stream_router(
             who=who, project_id=project_id, thread_id=thread_id, turn_id=turn_id
         )
         async with conn_factory() as conn:
-            control, created = await insert_control_request(
+            existing = await get_control_request(
                 conn,
                 workspace_id=who.workspace_id,
-                project_id=submission.project_id,
-                thread_id=thread_id,
                 turn_id=turn_id,
                 kind="stop",
-                # Ambient authority, never a request field.
-                requested_by_user_id=who.user_id,
-                requested_via_membership_id=who.membership_id,
             )
+            if existing is not None:
+                control, created = existing, False
+            else:
+                target = await thread_turn(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    thread_id=thread_id,
+                    turn_id=turn_id,
+                )
+                if target is None or target.state != "running":
+                    raise _refuse(
+                        status_code=409,
+                        code="TURN_NOT_RUNNING",
+                        message="only the running turn can be stopped",
+                    )
+                control, created = await insert_control_request(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    project_id=submission.project_id,
+                    thread_id=thread_id,
+                    turn_id=turn_id,
+                    kind="stop",
+                    # Ambient authority, never a request field.
+                    requested_by_user_id=who.user_id,
+                    requested_via_membership_id=who.membership_id,
+                )
         return {
             "data": {
                 "turn_id": str(turn_id),

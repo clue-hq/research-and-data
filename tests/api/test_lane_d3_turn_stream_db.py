@@ -80,7 +80,8 @@ from clue_api.conversation_capture import persist_user_turn
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.projections_app import create_projections_app
 from clue_config import Settings, load_settings
-from clue_fleet import FleetTaskStatus
+from clue_core import ProjectRunId
+from clue_fleet import FleetTaskKind, FleetTaskStatus, claim_next_task, finish_task
 from clue_projections import (
     AGENT_TURN_TASK_DEDUP_PREFIX,
     thread_turns,
@@ -229,9 +230,7 @@ async def _submit_turn(
     return turn_id
 
 
-def _app(
-    conn: Any, *, settings: Settings, storage: Any, live_tail: bool = False
-) -> Any:
+def _app(conn: Any, *, settings: Settings, storage: Any, live_tail: bool = False) -> Any:
     from clue_api.thread_wiring import register_thread_tools
 
     cf = conn_session_factory(conn)
@@ -1445,14 +1444,25 @@ def test_stop_cancels_the_active_attempt_and_cannot_look_like_a_finished_message
                 key="k-stop",
                 storage=storage,
             )
+            app = _app(conn, settings=_settings(), storage=storage)
+            base = f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns"
+            headers = {"X-Workspace-Id": project.workspace_id}
+            async with _client(app) as client:
+                queued_stop = await client.post(f"{base}/{turn_id}/stop", headers=headers)
+            assert queued_stop.status_code == 409, queued_stop.text
+            assert queued_stop.json()["error"]["code"] == "TURN_NOT_RUNNING"
+            assert (
+                await get_control_request(
+                    conn, workspace_id=project.workspace_id, turn_id=turn_id, kind="stop"
+                )
+                is None
+            )
+
             cf = conn_session_factory(conn)
             emitter = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_id)
             await emitter.turn_started()
             await emitter.text_delta(round_ordinal=1, call_index=0, delta="I was saying som")
 
-            app = _app(conn, settings=_settings(), storage=storage)
-            base = f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns"
-            headers = {"X-Workspace-Id": project.workspace_id}
             async with _client(app) as client:
                 stopped = await client.post(f"{base}/{turn_id}/stop", headers=headers)
                 assert stopped.status_code == 202, stopped.text
@@ -1519,6 +1529,131 @@ def test_stop_cancels_the_active_attempt_and_cannot_look_like_a_finished_message
                 if frame.part_kind == PartKind.TEXT.value
             ]
             assert partial and partial[0].payload["partial"] is True
+
+    run_async(scenario())
+
+
+def test_three_turn_stop_releases_the_queue_in_order_and_reload_reconstructs_it(
+    tmp_path: Path,
+) -> None:
+    """R5: A is stopped, then B and C become the one running turn in order."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-r5-three-turn", name="R5 three turn")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="r5q",
+            )
+            storage = FsStorage(tmp_path / "artifacts")
+            turn_ids = [
+                await _submit_turn(
+                    conn,
+                    project=project,
+                    thread_id=thread_id,
+                    message=message,
+                    key=f"r5-{index}",
+                    storage=storage,
+                )
+                for index, message in enumerate(("Turn A", "Turn B", "Turn C"), start=1)
+            ]
+            turn_a, turn_b, turn_c = turn_ids
+            work_id = thread_work_id(
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+            )
+
+            async def claim(worker_id: str) -> Any:
+                task = await claim_next_task(
+                    conn,
+                    kind=FleetTaskKind.AGENT_TURN,
+                    worker_id=worker_id,
+                    project_run_id=ProjectRunId(work_id),
+                )
+                assert task is not None
+                return task
+
+            async def finish(task: Any, worker_id: str, outcome: str) -> None:
+                assert await finish_task(
+                    conn,
+                    task_id=task.task_id,
+                    worker_id=worker_id,
+                    status=FleetTaskStatus.DONE,
+                    result_ref={"outcome": outcome},
+                )
+
+            app = _app(conn, settings=_settings(), storage=storage)
+            base = f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns"
+            headers = {"X-Workspace-Id": project.workspace_id}
+
+            task_a = await claim("worker-a")
+            emitter_a = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_a)
+            await emitter_a.turn_started()
+            async with _client(app) as client:
+                before_stop = await client.get(base, headers=headers)
+                queued_stop = await client.post(f"{base}/{turn_c}/stop", headers=headers)
+                stopped = await client.post(f"{base}/{turn_a}/stop", headers=headers)
+            assert [item["state"] for item in before_stop.json()["data"]] == [
+                "running",
+                "queued",
+                "queued",
+            ]
+            assert queued_stop.status_code == 409
+            assert queued_stop.json()["error"]["code"] == "TURN_NOT_RUNNING"
+            assert stopped.status_code == 202
+            assert stopped.json()["data"]["turn_id"] == str(turn_a)
+
+            await emitter_a.turn_cancelled()
+            await finish(task_a, "worker-a", "cancelled")
+            assert (
+                await dispatch_next_thread_turn(
+                    conn, workspace_id=project.workspace_id, thread_id=thread_id
+                )
+                == turn_b
+            )
+
+            task_b = await claim("worker-b")
+            emitter_b = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_b)
+            await emitter_b.turn_started()
+            async with _client(app) as client:
+                # This GET is the cold/reload authority, not an in-memory worker view.
+                during_b = await client.get(base, headers=headers)
+            assert [item["turn_id"] for item in during_b.json()["data"]] == [
+                str(turn_a),
+                str(turn_b),
+                str(turn_c),
+            ]
+            assert [item["state"] for item in during_b.json()["data"]] == [
+                "cancelled",
+                "running",
+                "queued",
+            ]
+
+            await emitter_b.turn_finished(status="completed")
+            async with _client(app) as client:
+                terminal_stop = await client.post(f"{base}/{turn_b}/stop", headers=headers)
+            assert terminal_stop.status_code == 409
+            assert terminal_stop.json()["error"]["code"] == "TURN_NOT_RUNNING"
+            await finish(task_b, "worker-b", "completed")
+            assert (
+                await dispatch_next_thread_turn(
+                    conn, workspace_id=project.workspace_id, thread_id=thread_id
+                )
+                == turn_c
+            )
+
+            await claim("worker-c")
+            emitter_c = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_c)
+            await emitter_c.turn_started()
+            async with _client(app) as client:
+                during_c = await client.get(base, headers=headers)
+            assert [item["state"] for item in during_c.json()["data"]] == [
+                "cancelled",
+                "completed",
+                "running",
+            ]
 
     run_async(scenario())
 

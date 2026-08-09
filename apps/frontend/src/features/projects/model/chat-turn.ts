@@ -104,6 +104,107 @@ export const ChatTurnListResponseSchema = z
 
 export type ChatTurnPage = z.infer<typeof ChatTurnListResponseSchema>;
 
+const TERMINAL_TURN_STATES: ReadonlySet<TurnState> = new Set([
+  "completed",
+  "awaiting_input",
+  "failed",
+  "cancelled",
+]);
+
+export interface TurnQueueState {
+  threadBusy: boolean;
+  runningTurn: ChatTurn | null;
+  queuedTurns: readonly ChatTurn[];
+}
+
+/** The three independent selectors that drive queue and Stop presentation. */
+export function selectTurnQueueState(
+  turns: readonly ChatTurn[],
+): TurnQueueState {
+  const runningTurn = turns.find((turn) => turn.state === "running") ?? null;
+  const queuedTurns = turns.filter((turn) => turn.state === "queued");
+  return {
+    threadBusy: runningTurn !== null || queuedTurns.length > 0,
+    runningTurn,
+    // `GET …/turns` is already in durable submission order; filtering keeps it.
+    queuedTurns,
+  };
+}
+
+export function isTerminalTurnState(state: string): state is TurnState {
+  return TERMINAL_TURN_STATES.has(state as TurnState);
+}
+
+/**
+ * Apply stream-authoritative transitions over a potentially stale list read.
+ *
+ * A terminal frame must hide Stop on the same render even if an older list
+ * request returns `running` afterwards. A `turn.started` frame likewise owns
+ * the running target until the canonical read catches up.
+ */
+export function applyTurnStateOverrides(
+  turns: readonly ChatTurn[],
+  overrides: ReadonlyMap<string, TurnState>,
+): ChatTurn[] {
+  return turns.map((turn) => {
+    const state = overrides.get(turn.turnId);
+    return state === undefined || state === turn.state ? turn : { ...turn, state };
+  });
+}
+
+/** Drop a stream override once the durable read has reached or passed it. */
+export function reconcileTurnStateOverrides(
+  overrides: ReadonlyMap<string, TurnState>,
+  durableTurns: readonly ChatTurn[],
+): ReadonlyMap<string, TurnState> {
+  if (overrides.size === 0) return overrides;
+  const durable = new Map(durableTurns.map((turn) => [turn.turnId, turn.state]));
+  const next = new Map(overrides);
+  for (const [turnId, state] of overrides) {
+    const durableState = durable.get(turnId);
+    if (
+      durableState === state ||
+      (durableState !== undefined && isTerminalTurnState(durableState)) ||
+      (state === "queued" && durableState === "running")
+    ) {
+      next.delete(turnId);
+    }
+  }
+  return next.size === overrides.size ? overrides : next;
+}
+
+export interface MessageSubmissionAttempt {
+  fingerprint: string;
+  idempotencyKey: string;
+}
+
+/** Block only a duplicate of the exact message request currently in flight. */
+export class MessageSubmissionGuard {
+  private readonly inFlight = new Map<string, MessageSubmissionAttempt>();
+
+  begin(
+    threadId: string,
+    message: string,
+    createIdempotencyKey: () => string,
+  ): MessageSubmissionAttempt | null {
+    const fingerprint = JSON.stringify([threadId, message]);
+    if (this.inFlight.has(fingerprint)) return null;
+    const attempt = {
+      fingerprint,
+      idempotencyKey: createIdempotencyKey(),
+    };
+    this.inFlight.set(fingerprint, attempt);
+    return attempt;
+  }
+
+  finish(attempt: MessageSubmissionAttempt): void {
+    const current = this.inFlight.get(attempt.fingerprint);
+    if (current?.idempotencyKey === attempt.idempotencyKey) {
+      this.inFlight.delete(attempt.fingerprint);
+    }
+  }
+}
+
 export function isTurnLive(turn: ChatTurn): boolean {
   return LIVE_TURN_STATES.has(turn.state as TurnState);
 }

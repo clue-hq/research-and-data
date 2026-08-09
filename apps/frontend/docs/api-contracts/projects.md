@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R4 implemented. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R5 implemented. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -54,6 +54,27 @@ network failure. Presentation components do not call the API directly.
   page. A mismatched thread is never read; the route selects an allowed thread
   and replaces the query with its canonical id, or renders a controlled
   unavailable state when the project has no allowed thread.
+
+### R5 implementation status (2026-08-10)
+
+- The frontend derives three separate values from the effective durable turn
+  page: `threadBusy`, the exactly-`running` turn, and queued turns in submission
+  order. Stop renders and posts only for the running turn; a queued-only thread
+  remains visibly busy without presenting Stop.
+- Stream lifecycle transitions temporarily override a stale turn-list response.
+  The override is discarded when the canonical read reaches the same or a later
+  terminal state, so a delayed `running` response cannot resurrect Stop after a
+  terminal frame.
+- One exact message request may be in flight only once, while a different
+  message remains submittable. This duplicate-click guard does not disable the
+  conversation composer while the thread is busy.
+- The Stop endpoint now derives the target state from the same submissions-union
+  projection used by `GET …/turns`. A new Stop request for a queued or terminal
+  turn returns `409 TURN_NOT_RUNNING`; an already-recorded Stop remains an
+  idempotent replay.
+- Three-turn database acceptance proves A running with B/C queued, Stop A,
+  B then C dispatch in order, and the same A/B/C state reconstructs through the
+  cold turn-list route during B.
 
 ## Ownership model
 

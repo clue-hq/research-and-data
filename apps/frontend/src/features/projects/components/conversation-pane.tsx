@@ -23,7 +23,7 @@ import styles from "./project-flow.module.css";
  *   or raced.
  * - **Stop acts on the active generation attempt only** (§3.5). It does not
  *   roll back committed tool effects and does not suspend a detached run, and
- *   the control says so by only appearing while a turn is live.
+ *   the control says so by appearing only for the exactly-running turn.
  * - **access refusals are a state** (Lane B contract §6), never an empty
  *   transcript: a session that expired or a membership that changed says so.
  */
@@ -206,14 +206,14 @@ export function ConversationPane({
       <ChatTurnInspector inspector={turnInspector} />
 
       <div className={styles.workspaceComposer}>
-        {chat.busy ? (
+        {chat.threadBusy ? (
           <div className={styles.planApprovalActions}>
             <span role="status">
-              {chat.activeTurnId
+              {chat.runningTurn
                 ? "Working — new messages will queue behind this turn."
                 : "Queued — waiting for the current turn to start."}
             </span>
-            {chat.activeTurnId ? (
+            {chat.runningTurn ? (
               <button onClick={() => void chat.stopActiveTurn()} type="button">
                 Stop
               </button>
