@@ -40,6 +40,13 @@ _ENTRYPOINTS = (
     "clue_api.chat.principal",
     "clue_api.conversation_capture",
     "clue_api.agent_turn_submission",
+    # FI Lane D D3: the turn stream serves attach/stop/retry/cold-load from the same web process.
+    # It reads a durable outbox the *worker* writes, so the same rule binds it: nothing on this
+    # side of the seam may reach a gateway, a model provider, or the turn engine.
+    "clue_api.chat.stream",
+    "clue_api.chat.turn_events",
+    "clue_api.chat.turn_controls",
+    "clue_api.chat.message_bodies",
 )
 
 #: Modules that own, build, or run a model. None of them may be reachable from a turn route.
