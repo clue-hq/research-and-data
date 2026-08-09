@@ -21,7 +21,7 @@ from typing import Any, Callable, Optional
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_blob_store, make_client
+from conftest import make_blob_store, make_client, wait_for_ingestion_job
 
 from lumen_api import main as main_module
 from lumen_api.design_store import HybridRepository
@@ -142,13 +142,16 @@ def _install_stub_pipeline(
     injectable ``extract`` param mirrors how ``pipeline.py`` lazily resolves
     ``capture.pdf`` — so no Agent A file is imported."""
 
-    def _runner(engine_cache_dir, job_id, *, workspace_id=None, storage=None):
+    def _runner(
+        engine_cache_dir, job_id, *, workspace_id, storage=None, expected_generation=None
+    ):
         run_pdf_ingestion(
             engine_cache_dir,
             job_id,
             extract=extract,
             workspace_id=workspace_id,
             storage=storage,
+            expected_generation=expected_generation,
         )
 
     monkeypatch.setattr(main_module, "run_pdf_ingestion", _runner)
@@ -187,6 +190,7 @@ def test_ingest_pdf_happy_path_persists_kit_and_report(
     assert job["status"] == "queued", job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}")
     assert got.status_code == 200, got.text
     got_job = got.json()["job"]
@@ -226,6 +230,7 @@ def test_ingest_pdf_cleans_staged_bytes_after_success(
     post = _post_pdf(client)
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 
@@ -247,6 +252,7 @@ def test_ingest_pdf_failure_marks_job_failed_and_cleans_tmp(
     assert job["status"] == "queued", job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert got["brand_kit_id"] is None
@@ -271,8 +277,12 @@ def test_ingest_pdf_missing_staged_bytes_fails_cleanly(
 
     post = _post_pdf(client)
     job_id = post.json()["job"]["job_id"]
-    # After the happy background run the staged blob is already discarded; re-run the
-    # pipeline against the same (now-clean) job to prove the missing-input handling.
+    # D5 Round C: the happy pass runs on the embedded FLEET worker now, so wait for it before
+    # the second, direct pass — otherwise the two race and the worker's success overwrites the
+    # direct run's failure, which is the thing under test.
+    assert wait_for_ingestion_job(client, job_id)["status"] == "succeeded"
+    # After the happy pass the staged blob is already discarded; re-run the pipeline against
+    # the same (now-clean) job to prove the missing-input handling.
     run_pdf_ingestion(
         engine_cache_dir(client.app),
         job_id,
@@ -280,6 +290,7 @@ def test_ingest_pdf_missing_staged_bytes_fails_cleanly(
         workspace_id=_workspace(client),
         storage=client.app.state.storage,
     )
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert "LUMI0605" in got["error"]["message"], got["error"]

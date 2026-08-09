@@ -21,8 +21,14 @@ from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# py_lumen_config/config.py -> parents[0]=py_lumen_config, parents[1]=repo root
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+# D5 Round B (R-D5-B1): this package moved from `<clue-design>/py_lumen_config/` into its own
+# distribution directory, `<clue-design>/packages/py-lumen-config/py_lumen_config/`, so it can be
+# a real installed uv workspace member instead of a PYTHONPATH shim. The design-tree root is
+# therefore three levels up, not one — and it MATTERS: this anchor locates `.env`/`.env.local`
+# and the default engine-cache root. Getting it wrong would silently stop loading the dev
+# environment rather than fail, which is why it is spelled out here.
+# config.py -> [0]=py_lumen_config -> [1]=py-lumen-config -> [2]=packages -> [3]=clue-design root
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 # .env first, then .env.local (overrides). Real env vars beat both.
 _ENV_FILES = [
     _REPO_ROOT / ".env",
@@ -57,6 +63,22 @@ class Settings(BaseSettings):
     lumen_log_level: str = "INFO"  # resolved leniently: unknown names fall back to INFO
     # Prebuilt lumen-api-helper binary; None → `cargo run -p lumen-api-helper`.
     lumen_core_helper: str | None = None
+    # D5 Round B (R-D5-B5): run a design fleet worker on the API's OWN event loop.
+    # Agent/web turns are leased fleet work now, so SOMETHING has to drain the queue. In
+    # production that is the detached `clue_api.fleet_main` worker (behind
+    # CLUE_DESIGN_RUNTIME_ENABLED); in development — and under the design API's test suite — no
+    # second process exists, and a turn offered with nobody draining would simply sit `queued`
+    # forever. Defaults ON so `uvicorn lumen_api.main:app` keeps behaving like one self-contained
+    # server. It is the SAME handler either way, so this switch changes who drives, never what
+    # runs. Set LUMEN_EMBEDDED_FLEET_WORKER=0 when a detached worker owns the drain.
+    lumen_embedded_fleet_worker: bool = True
+    # D5 Round C: how often the API's OWN stranded-work reaper sweeps, in seconds. Same argument
+    # as the embedded worker — in development nothing else is running, so a run or ingestion job
+    # stranded by a hard kill would sit `running` forever with no second process to notice. Runs
+    # only when the embedded worker does (the two are one drain story), and `<= 0` disables it.
+    # Deliberately slow: it is a safety net over a rare failure, not a control loop, and every
+    # pass is a query against three indexed status predicates.
+    lumen_design_reaper_interval_s: float = 300.0
 
     # --- Image generation (image_provider) ---
     # Blank base_url/api_key → /assets/generate returns a clean 503.

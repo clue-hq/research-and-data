@@ -60,6 +60,62 @@ class DesignArtifactConflictError(DesignStoreError):
         self.key = key
 
 
+class DesignRunFencedError(DesignStoreError):
+    """A terminal write was refused: the run's lease generation has moved past the writer's.
+
+    Raised by the D5 terminal-write guards (``set_run_result`` / ``complete_run`` /
+    ``append_run_event`` under an ``expected_generation``). It names the ONE hazard the fleet
+    switch introduces: the design turn body is synchronous and is executed under
+    ``asyncio.to_thread``, so a worker that loses its lease can only stop *cooperatively* — it
+    returns immediately, but the thread it abandoned keeps running and may still try to write a
+    terminal result minutes later. That zombie must never overwrite the takeover worker's run.
+
+    The refusal is loud (a typed error the handler logs) but not fatal to the caller: a fenced-out
+    writer has by definition already been replaced, so the correct behaviour is to drop the write
+    and stop, never to retry.
+
+    This is the *design row's* fence. The authoritative platform fence remains the ``work_lease``
+    row, and the `[B1×integration]` hard-fence-token residual still stands.
+    """
+
+    def __init__(
+        self, run_id: str, expected_generation: int, current_generation: int | None
+    ) -> None:
+        super().__init__(
+            f"design run {run_id} write refused: writer holds lease generation "
+            f"{expected_generation}, row is at {current_generation}"
+        )
+        self.run_id = run_id
+        self.expected_generation = expected_generation
+        self.current_generation = current_generation
+
+
+class DesignJobFencedError(DesignStoreError):
+    """An ingestion-job write was refused: the job's lease generation moved past the writer's.
+
+    The ingestion twin of :class:`DesignRunFencedError` (D5 Round C), and it exists for the same
+    reason: the ingestion pipeline is a long synchronous function executed under
+    ``asyncio.to_thread``, so a worker that loses its lease can only stop cooperatively. The
+    abandoned thread keeps capturing/normalizing and may try to stamp progress or a terminal
+    result long after a takeover worker re-claimed and re-ran the job.
+
+    Kept a SEPARATE type rather than folded into ``DesignRunFencedError`` because the two name
+    different rows with different identifiers (``run_id`` vs ``job_id``) and their handlers log
+    different things; a caller that catches one must not silently swallow the other.
+    """
+
+    def __init__(
+        self, job_id: str, expected_generation: int, current_generation: int | None
+    ) -> None:
+        super().__init__(
+            f"design ingestion job {job_id} write refused: writer holds lease generation "
+            f"{expected_generation}, row is at {current_generation}"
+        )
+        self.job_id = job_id
+        self.expected_generation = expected_generation
+        self.current_generation = current_generation
+
+
 class DesignSourceVersionConflictError(DesignStoreError):
     """A component source write lost its compare-and-set race on ``source_version``.
 

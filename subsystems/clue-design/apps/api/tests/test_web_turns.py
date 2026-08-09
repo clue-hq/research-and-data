@@ -375,7 +375,9 @@ def test_web_turn_applied_replays_operations_and_writes_envelope(
         json={"prompt": "Build a landing page", "base_version": 0},
     )
     assert response.status_code == 200, response.text
-    assert response.json()["status"] == "running"
+    # D5 Round B: the route offers the turn to the fleet; `queued` is the honest status of a run
+    # no worker has claimed yet.
+    assert response.json()["status"] == "queued"
     run_id = response.json()["run_id"]
 
     run = wait_for_run(client, run_id)

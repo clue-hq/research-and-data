@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from clue_db import db_lifespan
+from clue_design import runs as design_runs
 from clue_design.errors import DesignNotFoundError
 from clue_design.sequences import (
     allocate_envelope_seq,
@@ -108,10 +109,14 @@ def test_run_event_allocator_locks_the_run_row(require_design_db: None) -> None:
             )
             await conn.execute(
                 text(
-                    "INSERT INTO design_agent_run (run_id, workspace_id, status)"
-                    " VALUES (:r, :w, 'running')"
+                    # D5 columns are NOT NULL; this raw insert stands in for a run the DAL
+                    # would have created, so it derives its work id the same way create_run
+                    # does and makes the checkpoint thread the run id.
+                    "INSERT INTO design_agent_run"
+                    " (run_id, workspace_id, work_id, checkpoint_thread_id, kind, status)"
+                    " VALUES (:r, :w, :work_id, :r, 'agent_turn', 'running')"
                 ),
-                {"r": run, "w": ws},
+                {"r": run, "w": ws, "work_id": design_runs.work_id_for_run(run)},
             )
             assert await allocate_run_event_seq(conn, run_id=run, workspace_id=ws) == 1
             with pytest.raises(DesignNotFoundError):

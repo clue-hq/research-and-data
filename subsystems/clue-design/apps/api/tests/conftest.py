@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import sys
 from pathlib import Path
+from typing import Iterator, List
 
 
 API_ROOT = Path(__file__).resolve().parents[1]
@@ -76,6 +78,42 @@ def make_blob_store(app: FastAPI) -> DesignBlobStore:
     return DesignBlobStore(app.state.storage, os.environ["LUMEN_DEV_WORKSPACE_ID"])
 
 
+#: How long an ingestion-job poller waits for the embedded fleet worker to reach a terminal row.
+#: Generous because a real ingestion pass does engine work; a job that is genuinely stuck fails
+#: the assertion that follows rather than hanging the suite.
+INGESTION_JOB_TIMEOUT_S = 60.0
+
+
+def wait_for_ingestion_job(
+    client: TestClient, job_id: str, timeout_s: float = INGESTION_JOB_TIMEOUT_S
+) -> dict:
+    """Block until an ingestion job reaches a terminal status, then return it.
+
+    D5 Round C moved ingestion off ``BackgroundTasks`` onto the ``design_job`` fleet queue. Under
+    ``BackgroundTasks`` the TestClient ran the work synchronously before unblocking the POST, so
+    a test could assert on a finished job the instant the response came back. Now the API OFFERS
+    the job and the embedded fleet worker — a real task on the app's own event loop — claims and
+    executes it, so the POST returns while the job is still ``queued``. That is the production
+    behaviour, so the suites wait for it rather than pretending it did not change.
+
+    Returns the terminal job dto; on timeout it returns the LAST-seen one so the caller's own
+    assertion reports the real status (``running``/``queued``) instead of a bare TimeoutError.
+    """
+    import time
+
+    deadline = time.monotonic() + timeout_s
+    job: dict = {}
+    while True:
+        response = client.get(f"/brand-kits/ingest/{job_id}")
+        if response.status_code == 200:
+            job = response.json()["job"]
+            if job.get("status") in ("succeeded", "failed"):
+                return job
+        if time.monotonic() >= deadline:
+            return job
+        time.sleep(0.05)
+
+
 def unique_run_id(label: str) -> str:
     """A collision-free agent-run id (D2.5A).
 
@@ -88,15 +126,45 @@ def unique_run_id(label: str) -> str:
     return f"run_{label}_{uuid.uuid4().hex[:12]}"
 
 
+#: Clients whose lifespan this module entered, closed by the autouse fixture below. Module-level
+#: rather than fixture-owned because `make_client` is a plain helper called mid-test (often more
+#: than once), so it has no fixture scope of its own to hang teardown on.
+_LIFESPAN_CLIENTS: List[TestClient] = []
+
+
+@pytest.fixture(autouse=True)
+def _shutdown_lifespan_clients() -> Iterator[None]:
+    """Run every `make_client` app's shutdown at test end — stopping its embedded fleet worker.
+
+    Paired with `make_client` entering the lifespan (see there). Exceptions on the way out are
+    suppressed deliberately: a test that already failed must not be re-reported as a teardown
+    error, and the worker task is cancelled by the lifespan itself in any case.
+    """
+    yield
+    while _LIFESPAN_CLIENTS:
+        client = _LIFESPAN_CLIENTS.pop()
+        with contextlib.suppress(Exception):
+            client.__exit__(None, None, None)
+
+
 def make_client(app: FastAPI) -> TestClient:
-    """A TestClient that sends X-Workspace-Id on every request (D2.5A).
+    """A TestClient that sends X-Workspace-Id on every request (D2.5A), with its LIFESPAN RUNNING.
 
     The O4 seam is strict now — an absent header is a 401, not a silent fall-back to the dev
     workspace — so every suite client must carry one. It reads the SAME env var the autouse
     isolation fixture sets, so a client keeps talking to its own test's workspace, and direct
     store constructions in the same test agree with it.
+
+    D5 Round B: the client is ENTERED here (`__enter__`), because Starlette runs an app's
+    lifespan only inside the context manager and the lifespan is what starts the embedded design
+    fleet worker. Agent/web turns are leased fleet work now — a turn offered with nobody draining
+    the queue would sit `queued` for the whole test. Adapting this one helper keeps every async-
+    turn test unchanged; the autouse fixture above owns the matching exit.
     """
-    return TestClient(app, headers={"X-Workspace-Id": os.environ["LUMEN_DEV_WORKSPACE_ID"]})
+    client = TestClient(app, headers={"X-Workspace-Id": os.environ["LUMEN_DEV_WORKSPACE_ID"]})
+    client.__enter__()
+    _LIFESPAN_CLIENTS.append(client)
+    return client
 
 
 @pytest.fixture()

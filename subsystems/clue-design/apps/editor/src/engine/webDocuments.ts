@@ -420,14 +420,16 @@ export async function startWebTurn(
 }
 
 export interface WebRunSnapshot {
-  status: "running" | "succeeded" | "failed";
+  /** `queued` (D5): the run row exists but no fleet worker has claimed it yet.
+   * Non-terminal — every consumer treats it exactly like `running`. */
+  status: "queued" | "running" | "succeeded" | "failed";
   result: Record<string, unknown> | null;
 }
 
 /** Fetch a run's durable snapshot (`GET /agent/runs/{runId}`). Used by the
  * turn hook when the SSE stream errors: the DB row distinguishes a transient
- * connection blip (status still `running` — let EventSource reconnect) from a
- * run that actually settled or was failed by the server's orphan sweep. */
+ * connection blip (status still `queued`/`running` — let EventSource reconnect)
+ * from a run that actually settled or was failed by the server's orphan sweep. */
 export async function fetchWebRunSnapshot(
   { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   runId: string
@@ -442,7 +444,12 @@ export async function fetchWebRunSnapshot(
   }
   const payload = (await response.json()) as { status?: unknown; result?: unknown };
   const status = payload.status;
-  if (status !== "running" && status !== "succeeded" && status !== "failed") {
+  if (
+    status !== "queued" &&
+    status !== "running" &&
+    status !== "succeeded" &&
+    status !== "failed"
+  ) {
     throw new Error("Run lookup returned an unreadable status.");
   }
   return {

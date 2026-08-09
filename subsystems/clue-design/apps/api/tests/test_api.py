@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from conftest import make_blob_store, make_client, unique_run_id
 
 from lumen_api import image_provider
-from lumen_api.design_store import HybridRepository
+from lumen_api.design_store import DesignBlobStore, HybridRepository
 from lumen_api.main import agent_response_from_trace, create_app
 from py_lumen_config import settings
 from py_lumen_obs import bind_request_id, get_logger, unbind_context
@@ -36,6 +36,20 @@ VALID_STYLES_PATH = (
 def client(tmp_path: Path) -> TestClient:
     app = create_app(tmp_path / "engine-cache")
     return make_client(app)
+
+
+def _workspace_blobs() -> DesignBlobStore:
+    """This test's byte store on the process-configured backend.
+
+    D5 Round C made ``blobs`` REQUIRED on the by-value turn resolvers (they used to default to
+    ``api_blob_store()``, i.e. the dev workspace, which meant an unthreaded caller silently read
+    another tenant's library). This is exactly what that default resolved to under the autouse
+    isolation fixture, so the tests below still exercise the same rows — they just have to say
+    which tenant they mean now.
+    """
+    from lumen_api.main import api_blob_store
+
+    return api_blob_store(os.environ["LUMEN_DEV_WORKSPACE_ID"])
 
 
 def minimal_scene() -> dict:
@@ -427,7 +441,7 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
     resolves the full kit JSON from the library (passed by value into the
     runtime config); resolution failures degrade to (None, None) so the turn
     itself can never fail on kit lookup."""
-    from lumen_api.main import resolve_agent_turn_brand_kit
+    from lumen_api.main import api_blob_store, resolve_agent_turn_brand_kit
     from lumen_api.models import AgentTurnPreviewRequest
 
     compiled = client.post(
@@ -446,7 +460,8 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
     scene = preflightable_scene()
     scene["meta"]["brand_kit"] = {"id": "brand_kit_insight_health", "version": 4}
     kit, source, manifest, brand_fonts = resolve_agent_turn_brand_kit(
-        AgentTurnPreviewRequest(prompt="Restyle the letter", scene=scene)
+        AgentTurnPreviewRequest(prompt="Restyle the letter", scene=scene),
+        _workspace_blobs(),
     )
     assert source == "document"
     assert kit is not None
@@ -460,14 +475,16 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
 
     # No scene ref → no kit (platform-default behavior unchanged).
     assert resolve_agent_turn_brand_kit(
-        AgentTurnPreviewRequest(prompt="x", scene=preflightable_scene())
+        AgentTurnPreviewRequest(prompt="x", scene=preflightable_scene()),
+        _workspace_blobs(),
     ) == (None, None, None, None)
 
     # Unknown kit id → graceful Nones, never an exception.
     ghost = preflightable_scene()
     ghost["meta"]["brand_kit"] = {"id": "brand_kit_ghost", "version": 1}
     assert resolve_agent_turn_brand_kit(
-        AgentTurnPreviewRequest(prompt="x", scene=ghost)
+        AgentTurnPreviewRequest(prompt="x", scene=ghost),
+        _workspace_blobs(),
     ) == (None, None, None, None)
 
     # K2: a kit WITH a logo asset yields a manifest carrying the library
@@ -515,7 +532,8 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
         "version": kit_with_logo["version"],
     }
     kit, source, manifest, _ = resolve_agent_turn_brand_kit(
-        AgentTurnPreviewRequest(prompt="Add our logo", scene=logo_scene)
+        AgentTurnPreviewRequest(prompt="Add our logo", scene=logo_scene),
+        _workspace_blobs(),
     )
     assert kit is not None and source == "document"
     entry = manifest[logo_asset_id]
@@ -531,7 +549,7 @@ def test_brand_kit_font_faces_ride_preflight_as_store_digests(
     assets yields a {store_root, digests} spec (via the agent-turn resolver),
     and a real-engine /preflight-preview against that kit stays clean — the
     helper loads the face bytes from the store instead of erroring."""
-    from lumen_api.main import resolve_agent_turn_brand_kit
+    from lumen_api.main import api_blob_store, resolve_agent_turn_brand_kit
     from lumen_api.models import AgentTurnPreviewRequest
 
     compiled = client.post(
@@ -574,7 +592,8 @@ def test_brand_kit_font_faces_ride_preflight_as_store_digests(
         "version": kit_with_font["version"],
     }
     kit, source, _, brand_fonts = resolve_agent_turn_brand_kit(
-        AgentTurnPreviewRequest(prompt="Set our type", scene=scene)
+        AgentTurnPreviewRequest(prompt="Set our type", scene=scene),
+        _workspace_blobs(),
     )
     assert kit is not None and source == "document"
     assert brand_fonts is not None
@@ -624,7 +643,7 @@ def test_reference_manifest_matches_config_contract_shape(
     reference_assets contract — record verbatim, the asset's OWN sha256 as
     preview_digest, mime/dims/dominant_colors/order — and dedupes ids
     preserving first-occurrence order."""
-    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.main import api_blob_store, resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
     monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
@@ -640,7 +659,8 @@ def test_reference_manifest_matches_config_contract_shape(
             prompt="Match this",
             scene=minimal_scene(),
             reference_asset_ids=[asset_id, "", asset_id],
-        )
+        ),
+        _workspace_blobs(),
     )
     assert set(manifest.keys()) == {asset_id}
     entry = manifest[asset_id]
@@ -668,13 +688,14 @@ def test_reference_manifest_no_ids_is_none(
 ) -> None:
     """No reference ids → None: the turn is byte-identical to today (and no DB
     connection is opened)."""
-    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.main import api_blob_store, resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
     monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     assert (
         resolve_agent_turn_references(
-            AgentTurnPreviewRequest(prompt="x", scene=minimal_scene())
+            AgentTurnPreviewRequest(prompt="x", scene=minimal_scene()),
+            _workspace_blobs(),
         )
         is None
     )
@@ -687,7 +708,7 @@ def test_reference_manifest_svg_materializes_raster_preview(
     preview_digest is a PNG that exists in the shared store, NOT the SVG's own
     digest, and mime_type reports the raster."""
     from fastapi import HTTPException  # noqa: F401  (kept for parity w/ 422 tests)
-    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.main import api_blob_store, resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
     monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
@@ -702,7 +723,8 @@ def test_reference_manifest_svg_materializes_raster_preview(
             prompt="Match this",
             scene=minimal_scene(),
             reference_asset_ids=[asset_id],
-        )
+        ),
+        _workspace_blobs(),
     )
     entry = manifest[asset_id]
     preview_digest = entry["preview_digest"]
@@ -726,7 +748,7 @@ def test_reference_manifest_unknown_id_is_422(
     """RC (D2): a missing id is EXPLICIT user intent gone wrong — a hard 422
     naming the id, never a silent skip like the kit manifest."""
     from fastapi import HTTPException
-    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.main import api_blob_store, resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
     monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
@@ -738,7 +760,8 @@ def test_reference_manifest_unknown_id_is_422(
                 prompt="x",
                 scene=minimal_scene(),
                 reference_asset_ids=["asset_ghost"],
-            )
+            ),
+            _workspace_blobs(),
         )
     assert excinfo.value.status_code == 422
     assert excinfo.value.detail["code"] == "reference.asset_not_found"
@@ -750,7 +773,7 @@ def test_reference_manifest_too_many_is_422(
 ) -> None:
     """RC (D1): >4 references → 422 reference.too_many (cap enforced API-side)."""
     from fastapi import HTTPException
-    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.main import api_blob_store, resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
     monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
@@ -760,7 +783,8 @@ def test_reference_manifest_too_many_is_422(
                 prompt="x",
                 scene=minimal_scene(),
                 reference_asset_ids=[f"asset_{i}" for i in range(5)],
-            )
+            ),
+            _workspace_blobs(),
         )
     assert excinfo.value.status_code == 422
     assert excinfo.value.detail["code"] == "reference.too_many"
@@ -824,6 +848,7 @@ def test_agent_turn_forwards_references_into_config(
             reference_asset_ids=[asset_id],
         ),
         repo_root(),
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
     )
     config = captured["config"]
     assert config.reference_assets is not None
@@ -866,6 +891,7 @@ def test_agent_turn_without_references_leaves_config_unset(
     run_agent_turn_preview(
         AgentTurnPreviewRequest(prompt="Design a poster", scene=minimal_scene()),
         repo_root(),
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
     )
     assert captured["config"].reference_assets is None
 
@@ -1265,11 +1291,14 @@ def _fake_async_runner(status: str = "proposed"):
 
 
 def _wait_for_run_terminal(client: TestClient, run_id: str) -> dict:
+    # D5 Round B: a run is now born `queued` and only becomes `running` once a fleet worker
+    # claims it, so "not running" is no longer the same thing as "terminal". Wait for a genuinely
+    # terminal status instead of the absence of one non-terminal status.
     import time as _time
 
-    for _ in range(200):
+    for _ in range(400):
         snapshot = client.get(f"/agent/runs/{run_id}").json()
-        if snapshot["status"] != "running":
+        if snapshot["status"] in ("succeeded", "failed"):
             return snapshot
         _time.sleep(0.02)
     raise AssertionError(f"run {run_id} never reached a terminal status")
@@ -1292,7 +1321,9 @@ def test_agent_turns_async_persists_result_and_terminal_event(
     )
     assert start.status_code == 200, start.text
     started = start.json()
-    assert started["status"] == "running"
+    # D5 Round B: the route OFFERS the turn to the fleet and returns; `queued` is the honest
+    # status of a run no worker has claimed yet. The editor reads only `run_id` from this body.
+    assert started["status"] == "queued"
     run_id = started["run_id"]
     assert run_id.startswith("run_")
 
@@ -1318,57 +1349,41 @@ def test_agent_run_snapshot_404_for_unknown_run(client: TestClient) -> None:
     assert client.get("/agent/runs/run_missing").status_code == 404
 
 
-def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
-    # Turns run on daemon threads inside the API process, so a restart kills
-    # them silently. The next create_app must fail every leftover 'running'
-    # row (terminal result + error event so SSE settles) and leave finished
-    # runs untouched. Live failure 2026-07-29: two website turns sat
-    # 'running' for hours after an API bounce.
-
+def test_a_restart_leaves_an_unclaimed_run_recoverable(tmp_path: Path) -> None:
+    # D5 Round B replaces the startup orphan sweep with lease recovery, and this test replaces
+    # `test_startup_sweep_fails_runs_orphaned_by_a_restart` with the INVERSE contract.
+    #
+    # The sweep existed because turns ran on daemon threads inside the API process: a restart
+    # killed them silently, so every leftover `running` row was an orphan by construction and
+    # failing it at boot was the only way the editor's stream could settle. Turns are leased
+    # fleet work now. A run that a dead worker was driving is NOT lost — its lease expires and a
+    # takeover worker re-claims it through the D5 CAS — so a boot-time sweep would destroy
+    # recoverable work. It is gone, and the assertion is that a restart changes nothing.
     cache_root = tmp_path / "engine-cache"
     first = make_client(create_app(cache_root))
 
-    orphan_web = unique_run_id("orphan_web")
-    orphan_scene = unique_run_id("orphan_scene")
+    queued_run = unique_run_id("queued")
     finished_run = unique_run_id("finished")
 
     repo = HybridRepository()
-    repo.create_document(
-        {"id": "doc_web_orphan", "title": "Orphan site", "schema_version": 1, "pages": []},
-        doc_kind="web",
-    )
-    repo.create_run(orphan_web, "doc_web_orphan")
-    # D2.5A: design_agent_run.document_id is a real FK, so the "run whose document was never
-    # tracked" case is now expressed as a run with NO document — which is what the old dangling
-    # id resolved to anyway (the LEFT JOIN yielded a NULL doc_kind either way).
-    repo.create_run(orphan_scene, None)
+    repo.create_run(queued_run, None)
     repo.create_run(finished_run, None)
     repo.complete_run(
         finished_run, "succeeded", {"status": "applied"}, "result", {"status": "applied"}
     )
     del first
 
-    # "Restart": a new app over the same database sweeps at construction.
+    # "Restart": a new app over the same database. Nothing is swept.
     restarted = make_client(create_app(cache_root))
 
-    web_snapshot = restarted.get(f"/agent/runs/{orphan_web}").json()
-    assert web_snapshot["status"] == "failed"
-    assert web_snapshot["result"]["doc_kind"] == "web"
-    assert web_snapshot["result"]["diagnostics"][0]["code"] == "agent_runtime.orphaned"
-    assert any(event["type"] == "error" for event in web_snapshot["events"])
-
-    scene_snapshot = restarted.get(f"/agent/runs/{orphan_scene}").json()
-    assert scene_snapshot["status"] == "failed"
-    assert "doc_kind" not in scene_snapshot["result"]
+    queued = restarted.get(f"/agent/runs/{queued_run}").json()
+    assert queued["status"] == "queued"
+    assert queued["result"] is None
+    assert queued["events"] == []
 
     finished = restarted.get(f"/agent/runs/{finished_run}").json()
     assert finished["status"] == "succeeded"
     assert finished["result"] == {"status": "applied"}
-
-    # The SSE stream for an orphan closes with `done` immediately.
-    stream = restarted.get(f"/agent/runs/{orphan_web}/events").text
-    assert "event: done" in stream
-    assert "agent_runtime.orphaned" in stream
 
 
 def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:

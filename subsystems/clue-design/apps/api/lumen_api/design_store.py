@@ -13,12 +13,31 @@ class — every method below is a Postgres call, and nothing is inherited. (The 
 deliberately: renaming it is D5's job, alongside the bridge's deletion, so this slice is a pure
 subtraction with no call-site churn.)
 
-**The O5 bridge** (:class:`DesignStoreBridge`) — DISPOSABLE scaffOLDING, deleted at D5 with the
-daemon threads. Each call is ``asyncio.run`` of exactly ONE ``clue_design`` DAL coroutine
+**The O5 bridge** (:class:`DesignStoreBridge`) — DISPOSABLE scaffolding, but **it does NOT die
+at D5**, and the earlier "deleted at D5 with the daemon threads" note here was wrong about
+which half D5 owns. **RULING (D5 Round C):** D5's promise was durable execution, and it kept it
+— the daemon threads ARE gone, in-flight work survives a restart, and the WORKER path is
+async-native (a leased ``clue_fleet`` handler on its own event loop, executing the synchronous
+design body under ``asyncio.to_thread``). What D5 never promised is an async **request** path.
+Every design route is still a synchronous FastAPI endpoint, by design, and a synchronous route
+needs a synchronous store: the bridge is what makes that legal. Deleting it would mean rewriting
+every route and every call site in ``main.py`` as ``async def`` — a surface change, not a
+durable-execution change, and one with no behavioural payoff on its own.
+
+**Where its death now belongs:** the surface work — **Part IV** (mounting the design editor in
+the platform shell, where the routes are re-homed and re-shaped anyway) or **Part-I Step-2**
+(week-one hygiene, which folds this tree into the root workspace/lint/typing graph). Whichever
+lands first is the one that should make the routes ``async def`` and have them call
+``clue_design`` directly. Until then the bridge is correct, load-bearing scaffolding rather than
+a leftover. See ``docs/specs/design-integration-master-plan.md`` and the O5 ratification note in
+``docs/specs/PD-part2-design-substrate.md`` §O5.
+
+Mechanically unchanged: each call is ``asyncio.run`` of exactly ONE ``clue_design`` DAL coroutine
 inside ONE engine/connection/transaction created for that call's private event loop (never a
 pool from another loop). Anything atomic (allocate-seq + insert; CAS + stack update; scene write
 + asset promotion) is one coroutine — the founder's binding O5 rule. Costs (per-call engine,
-awkward cancellation) are accepted; a restart still kills in-flight work until D5.
+awkward cancellation) are accepted. The "a restart still kills in-flight work" cost is the one
+that is GONE: since D5 that work is leased fleet work, and a dead worker's run is re-claimed.
 
 **The store** (:class:`HybridRepository`) — every method is one bridge call; main.py's call
 sites are unchanged from the staged-port era. **Every cross-domain seam is CLOSED.** The
@@ -73,6 +92,7 @@ import threading
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from uuid import UUID
 
 from clue_db import create_engine
 from clue_storage import StorageBackend
@@ -88,6 +108,7 @@ from clue_design import publishes as design_publishes
 from clue_design import runs as design_runs
 from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
+from clue_design.enums import DesignRunKind
 from clue_design.errors import (
     DesignArtifactConflictError,
     DesignNotFoundError,
@@ -179,7 +200,8 @@ def _run_isolated[T](coro: "Awaitable[T]") -> T:
     callback (D2.3), and the one async endpoint would do the same. ``asyncio.run`` refuses that
     ("cannot be called from a running event loop"), so the call is handed to a one-shot worker
     thread instead — still exactly ONE loop / connection / transaction per call (the O5 rule),
-    just not this thread's. Dies with the rest of the bridge at D5.
+    just not this thread's. Dies with the rest of the bridge — at the surface work (Part IV /
+    Part-I Step-2), not at D5; see the module docstring's ruling.
     """
     try:
         asyncio.get_running_loop()
@@ -270,19 +292,11 @@ async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
         _ensured_workspaces.add(workspace_id)
 
 
-def list_orphaned_runs_across_workspaces() -> List[JsonObject]:
-    """Every ``running`` run in the database, with its ``workspace_id`` — the startup sweep's
-    ONE unscoped read.
-
-    Unscoped on purpose: a process restart orphans the in-flight turns of *every* workspace that
-    process was serving (turns run on daemon threads inside it), and the sweep runs at app
-    construction, before any request exists to name a tenant. Scoping it to the dev workspace
-    would leave every other tenant's runs stuck ``running`` forever — the exact failure the
-    sweep exists to prevent. The caller fails each row through a workspace-CORRECT store; this
-    read itself returns no run payload and writes nothing.
-    """
-    bridge = DesignStoreBridge(default_workspace_id(), ensure_workspace=False)
-    return bridge._run(design_runs.list_running_runs_across_workspaces)
+# D5 Round B: ``list_orphaned_runs_across_workspaces`` is DELETED with the daemon threads.
+# The startup sweep existed because turns ran on threads inside the API process, so a restart
+# left every in-flight run stranded ``running`` forever. Turns are leased fleet work now: a dead
+# worker's lease simply expires and a takeover worker re-claims the run through the D5 CAS. A
+# sweep that failed those runs at boot would actively destroy recoverable work.
 
 
 class DesignBlobStore:
@@ -298,8 +312,9 @@ class DesignBlobStore:
     Handed to the call sites that used to take a ``store_root: Path`` into the API-local
     content-addressed tree. It carries its workspace because the storage key IS workspace-scoped
     (``{workspace_id}/design/{sha256}`` — ruling R-D4-2), so byte custody is per-tenant by
-    construction rather than by caller discipline. Dies with the bridge at D5, when the design
-    API becomes async and calls ``clue_design.storage`` directly.
+    construction rather than by caller discipline. Dies with the bridge when the design API's
+    ROUTES become async and call ``clue_design.storage`` directly — the surface work (Part IV /
+    Part-I Step-2), not D5; see the module docstring's ruling.
     """
 
     def __init__(
@@ -311,9 +326,7 @@ class DesignBlobStore:
     ) -> None:
         self.storage = storage
         self.workspace_id = workspace_id or default_workspace_id()
-        self._bridge = DesignStoreBridge(
-            self.workspace_id, ensure_workspace=ensure_workspace
-        )
+        self._bridge = DesignStoreBridge(self.workspace_id, ensure_workspace=ensure_workspace)
 
     def register(self, data: bytes, *, media_type: str, source_key: str) -> str:
         """Store one blob (row before blob, idempotent) and return its storage key."""
@@ -409,9 +422,7 @@ class HybridRepository:
         # default serves direct constructions in scripts/tests, which read the same env the
         # per-test isolation fixture sets).
         self.workspace_id = workspace_id or default_workspace_id()
-        self._bridge = DesignStoreBridge(
-            self.workspace_id, ensure_workspace=ensure_workspace
-        )
+        self._bridge = DesignStoreBridge(self.workspace_id, ensure_workspace=ensure_workspace)
 
     # --- documents ---------------------------------------------------------------------------
 
@@ -539,9 +550,7 @@ class HybridRepository:
             )
         )
 
-    def set_agent_instructions(
-        self, document_id: str, instructions: Optional[str]
-    ) -> JsonObject:
+    def set_agent_instructions(self, document_id: str, instructions: Optional[str]) -> JsonObject:
         return self._bridge._run(
             lambda conn: design_documents.set_agent_instructions(
                 conn,
@@ -578,14 +587,10 @@ class HybridRepository:
 
     def list_web_templates(self) -> List[JsonObject]:
         return self._bridge._run(
-            lambda conn: design_documents.list_web_templates(
-                conn, workspace_id=self.workspace_id
-            )
+            lambda conn: design_documents.list_web_templates(conn, workspace_id=self.workspace_id)
         )
 
-    def set_document_account(
-        self, document_id: str, account_id: Optional[str]
-    ) -> JsonObject:
+    def set_document_account(self, document_id: str, account_id: Optional[str]) -> JsonObject:
         return self._bridge._run(
             lambda conn: design_documents.set_document_account(
                 conn,
@@ -633,9 +638,7 @@ class HybridRepository:
             )
         )
 
-    def require_brand_kit(
-        self, brand_kit_id: str, version: Optional[int] = None
-    ) -> JsonObject:
+    def require_brand_kit(self, brand_kit_id: str, version: Optional[int] = None) -> JsonObject:
         return self._bridge._run(
             lambda conn: design_brand.get_brand_kit(
                 conn,
@@ -645,9 +648,7 @@ class HybridRepository:
             )
         )
 
-    def update_brand_kit_approval(
-        self, brand_kit_id: str, approval_status: str
-    ) -> JsonObject:
+    def update_brand_kit_approval(self, brand_kit_id: str, approval_status: str) -> JsonObject:
         return self._bridge._run(
             lambda conn: design_brand.update_brand_kit_approval(
                 conn,
@@ -778,9 +779,7 @@ class HybridRepository:
             )
         )
 
-    def list_binding_sets(
-        self, template_revision_id: Optional[str] = None
-    ) -> List[JsonObject]:
+    def list_binding_sets(self, template_revision_id: Optional[str] = None) -> List[JsonObject]:
         return self._bridge._run(
             lambda conn: design_personalization.list_binding_sets(
                 conn,
@@ -922,9 +921,7 @@ class HybridRepository:
 
     def list_web_accounts(self) -> List[JsonObject]:
         return self._bridge._run(
-            lambda conn: design_accounts.list_web_accounts(
-                conn, workspace_id=self.workspace_id
-            )
+            lambda conn: design_accounts.list_web_accounts(conn, workspace_id=self.workspace_id)
         )
 
     def update_web_account(self, account_id: str, patch: JsonObject) -> JsonObject:
@@ -1087,9 +1084,7 @@ class HybridRepository:
             )
         )
 
-    def require_custom_component_artifact(
-        self, account_id: str, artifact_id: str
-    ) -> JsonObject:
+    def require_custom_component_artifact(self, account_id: str, artifact_id: str) -> JsonObject:
         return self._bridge._run(
             lambda conn: design_components.require_custom_component_artifact(
                 conn,
@@ -1186,9 +1181,7 @@ class HybridRepository:
             )
         )
 
-    def record_custom_component_compilation(
-        self, compilation: JsonObject
-    ) -> JsonObject:
+    def record_custom_component_compilation(self, compilation: JsonObject) -> JsonObject:
         return self._bridge._run(
             lambda conn: design_components.record_custom_component_compilation(
                 conn, workspace_id=self.workspace_id, compilation=compilation
@@ -1207,9 +1200,7 @@ class HybridRepository:
             )
         )
 
-    def list_custom_component_compilations(
-        self, account_id: str, slug: str
-    ) -> List[JsonObject]:
+    def list_custom_component_compilations(self, account_id: str, slug: str) -> List[JsonObject]:
         return self._bridge._run(
             lambda conn: design_components.list_custom_component_compilations(
                 conn, workspace_id=self.workspace_id, account_id=account_id, slug=slug
@@ -1316,9 +1307,7 @@ class HybridRepository:
             slug = str(node.get("slug") or "")
             artifact_id = str(node.get("artifact_id") or "")
             artifact = resolve(location, node_id, slug, artifact_id)
-            issue = custom_component_props_schema_issue(
-                node.get("props"), artifact.get("manifest")
-            )
+            issue = custom_component_props_schema_issue(node.get("props"), artifact.get("manifest"))
             if issue is not None:
                 raise CustomComponentReferenceError(
                     "custom_component.props_invalid",
@@ -1341,21 +1330,103 @@ class HybridRepository:
 
     # --- agent runs + run events (D2.5A) ------------------------------------------------------
 
-    def create_run(self, run_id: str, document_id: Optional[str]) -> JsonObject:
+    def create_run(
+        self,
+        run_id: str,
+        document_id: Optional[str],
+        *,
+        kind: str = "agent_turn",
+        payload: Optional[JsonObject] = None,
+    ) -> JsonObject:
+        """Open ONE run row, born ``queued``. Nothing else.
+
+        D5 Round A gave this method a claim half, because on the pre-fleet path the creator WAS
+        the executor (a daemon thread started right after it returned) and a ``queued`` row with
+        nobody coming for it would have stalled the API's pollers. Round B deletes both: the
+        daemon threads are gone and the fleet worker does the claiming, so a run that has been
+        offered but not yet claimed is now an honest, transient state rather than a lie.
+
+        Kept as its own method (rather than folded into :meth:`create_run_and_offer`) because the
+        design suite creates runs directly to exercise the run/event surface without a queue.
+        """
         return self._bridge._run(
             lambda conn: design_runs.create_run(
                 conn,
                 workspace_id=self.workspace_id,
                 run_id=run_id,
                 document_id=document_id,
+                kind=DesignRunKind(kind),
+                payload=payload,
             )
         )
 
+    def create_run_and_offer(
+        self,
+        run_id: str,
+        document_id: Optional[str],
+        *,
+        kind: str,
+        envelope: JsonObject,
+        work_id: UUID,
+        priority: int = 0,
+    ) -> JsonObject:
+        """Create the run AND offer its ``design_job`` to the fleet — ONE transaction (R-D5-B5).
+
+        The atomicity is the point, and it is the ``launch_entity_research_run`` precedent
+        (``clue_fleet.entity_research``: the run row and its tasks are offered in one
+        transaction). Split across two commits there are two ways to be wrong and both are live
+        failure modes: a run row with no task is a turn that never starts and never fails, and a
+        task with no run row is a worker that claims work it cannot find. One transaction admits
+        neither.
+
+        ``envelope`` is the frozen ``DesignTurnEnvelope`` payload — it is stored TWICE on purpose:
+        on ``design_agent_run.payload`` (the design plane's own immutable record of the work) and
+        on ``fleet_task.payload_json`` (what the worker is handed). They are written in the same
+        transaction from the same object, so they cannot disagree.
+        """
+
+        # D5 Round B: the design APP (never the design SUBSTRATE — Rule S4 forbids clue_design ->
+        # clue_fleet and is untouched) speaks the fleet queue's shape, so a turn's run row and its
+        # ``design_job`` task are offered in ONE transaction.
+        #
+        # Imported HERE, not at module scope, and that is load-bearing: `import clue_fleet` pulls
+        # the whole fleet package, which reaches clue_research.durable -> langgraph -> langsmith ->
+        # httpx. This module is on the import path of `lumen_ingestion.describe`, which has a
+        # standing guard test that importing it drags in neither PIL nor httpx (the ingestion
+        # lazy-import discipline). A module-level fleet import breaks that guard for no benefit —
+        # only this one method needs the queue.
+        from clue_core import ProjectRunId
+        from clue_fleet.enums import FleetTaskKind
+        from clue_fleet.queue import enqueue_task
+
+        async def _create_and_offer(conn: AsyncConnection) -> JsonObject:
+            run = await design_runs.create_run(
+                conn,
+                workspace_id=self.workspace_id,
+                run_id=run_id,
+                document_id=document_id,
+                kind=DesignRunKind(kind),
+                payload=envelope,
+                work_id=work_id,
+            )
+            await enqueue_task(
+                conn,
+                kind=FleetTaskKind.DESIGN_JOB,
+                project_run_id=ProjectRunId(work_id),
+                dedup_key=str(work_id),
+                payload=envelope,
+                priority=priority,
+                # A design run id is minted fresh per turn, so its work id is new by
+                # construction; reopen_terminal would only matter for a re-offered id.
+                reopen_terminal=False,
+            )
+            return run
+
+        return self._bridge._run(_create_and_offer)
+
     def get_run(self, run_id: str) -> Optional[JsonObject]:
         return self._bridge._run(
-            lambda conn: design_runs.get_run(
-                conn, workspace_id=self.workspace_id, run_id=run_id
-            )
+            lambda conn: design_runs.get_run(conn, workspace_id=self.workspace_id, run_id=run_id)
         )
 
     def require_run(self, run_id: str) -> JsonObject:
@@ -1365,9 +1436,7 @@ class HybridRepository:
             )
         )
 
-    def set_run_result(
-        self, run_id: str, status: str, result: Optional[JsonObject]
-    ) -> None:
+    def set_run_result(self, run_id: str, status: str, result: Optional[JsonObject]) -> None:
         self._bridge._run(
             lambda conn: design_runs.set_run_result(
                 conn,
@@ -1385,10 +1454,17 @@ class HybridRepository:
         result: Optional[JsonObject],
         event_type: str,
         event_data: Optional[JsonObject] = None,
+        *,
+        expected_generation: Optional[int] = None,
     ) -> int:
         """One bridge call, hence ONE transaction, for "this run is over" — the terminal result
         and its marker event land together or not at all (see ``clue_design.runs.complete_run``
-        for the race this closes)."""
+        for the race this closes).
+
+        ``expected_generation`` (D5 Round B) is the zombie fence: an abandoned turn thread whose
+        worker has been taken over gets :class:`~clue_design.errors.DesignRunFencedError` here
+        instead of overwriting the live attempt's result. Callers with no lease (tests, direct
+        scripts) omit it and keep the unfenced behaviour."""
         return self._bridge._run(
             lambda conn: design_runs.complete_run(
                 conn,
@@ -1398,14 +1474,25 @@ class HybridRepository:
                 result=result,
                 event_type=event_type,
                 event_data=event_data,
+                expected_generation=expected_generation,
             )
         )
 
-    def append_run_event(self, run_id: str, event_type: str, data: JsonObject) -> int:
+    def append_run_event(
+        self,
+        run_id: str,
+        event_type: str,
+        data: JsonObject,
+        *,
+        expected_generation: Optional[int] = None,
+    ) -> int:
         """The seq allocation and the insert are ONE DAL coroutine — hence one transaction with
         the parent run's ``FOR UPDATE`` lock still held (the O5 rule). ``next_run_event_seq`` is
         therefore deliberately NOT overridden: exposing the allocation as its own bridge call
-        would be exactly the split O5 forbids, and nothing outside this method uses it."""
+        would be exactly the split O5 forbids, and nothing outside this method uses it.
+
+        ``expected_generation`` fences a taken-over attempt's progress events — see
+        :meth:`complete_run`."""
         return self._bridge._run(
             lambda conn: design_runs.append_run_event(
                 conn,
@@ -1413,6 +1500,7 @@ class HybridRepository:
                 run_id=run_id,
                 event_type=event_type,
                 data=data,
+                expected_generation=expected_generation,
             )
         )
 
@@ -1431,9 +1519,7 @@ class HybridRepository:
         one Postgres query again (the D2.2-era version stitched SQLite rows to Postgres
         documents because only half the join had been ported)."""
         return self._bridge._run(
-            lambda conn: design_runs.list_running_runs(
-                conn, workspace_id=self.workspace_id
-            )
+            lambda conn: design_runs.list_running_runs(conn, workspace_id=self.workspace_id)
         )
 
     # --- cross-domain reads over the Postgres document feed ----------------------------------
@@ -1506,9 +1592,7 @@ class HybridRepository:
 
     # --- snapshots + template revisions ------------------------------------------------------
 
-    def create_snapshot(
-        self, document_id: str, snapshot_id: str, reason: str
-    ) -> JsonObject:
+    def create_snapshot(self, document_id: str, snapshot_id: str, reason: str) -> JsonObject:
         return self._bridge._run(
             lambda conn: design_snapshots.create_snapshot(
                 conn,

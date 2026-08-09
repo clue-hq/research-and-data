@@ -24,6 +24,17 @@ members = [
     # by exact path — the clue-design exclude below keeps the rest of the merged three-language
     # tree out until Part-I Step-2 hygiene runs.
     "subsystems/clue-design/apps/api",
+    # D5: the design agent runtime joins on the same terms. It must be an INSTALLED package (not
+    # a sys.path insertion) before a fleet worker can import it out of process, and entering the
+    # workspace is what forces its deepagents pin to be the platform's one — the "one version
+    # story" treaty.
+    "subsystems/clue-design/apps/agent_runtime",
+    # D5 Round B (R-D5-B1): the two design-tree shims become real installed packages on the same
+    # terms. A fleet worker importing `lumen_agent.harness` out of process cannot rely on
+    # `PYTHONPATH=subsystems/clue-design`, and `ensure_agent_runtime_path`'s sys.path insertion is
+    # deleted this round. Packaging only — the Step-2 fold into clue_obs/clue_config is future work.
+    "subsystems/clue-design/packages/py-lumen-obs",
+    "subsystems/clue-design/packages/py-lumen-config",
 ]
 exclude = ["subsystems/clue-design"]
 
@@ -89,6 +100,18 @@ ignore_missing_imports = true
 # behind adapters/concrete (Rule 4).
 [[tool.mypy.overrides]]
 module = ["aioboto3", "scrapling.*", "markdownify"]
+follow_imports = "skip"
+ignore_missing_imports = true
+
+# Part II D5 Round B — the merged design app is an external boundary to the platform's type
+# check. `clue_api.design_fleet` lazy-imports `lumen_api.fleet_handler` to register the design
+# work handler with the fleet worker, but the design tree carries no `py.typed` marker and is
+# NOT in this file's mypy `files`/`mypy_path` (it is out of the root lint until Part-I Step-2).
+# Same stance as the SDK boundaries above: the handler is duck-typed at the seam against the
+# `WorkHandler` protocol, whose kind is re-checked at construction, so nothing is silently
+# unchecked — the protocol conformance is enforced at runtime instead of statically.
+[[tool.mypy.overrides]]
+module = ["lumen_api.*"]
 follow_imports = "skip"
 ignore_missing_imports = true
 

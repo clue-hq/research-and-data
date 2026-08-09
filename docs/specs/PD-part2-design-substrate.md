@@ -42,8 +42,39 @@ home is D5's); migration `13cd5078d697` widens the B2 `artifact_key_encodes_scop
 admit exactly the two key shapes and adds the `artifact_content_sha256` index for the
 digest-first public read. Gates: design-API suite 501 passed / 9 skipped / 0 failed;
 agent-runtime suite 546/2/0; `tests/design` 63; offline platform suite 2178; db-smoke up→down→up
-green; single head `13cd5078d697`). Next: D5 (durable execution),
-then D6 (toolbelt), D7 (events), D8 (closeout). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
+green; single head `13cd5078d697`). **D5 EXECUTED 2026-08-09** (three rounds — durable execution
+on the platform fleet. A: `fleet_task_kind` gains `design_job` (one mechanical kind; the
+immutable envelope discriminates `agent_turn`/`web_turn`/`ingestion` — the M8D precedent);
+`design_agent_run` reshaped into a leasable durable job (`work_id`, `checkpoint_thread_id` =
+run id, `kind`, frozen `payload` envelope, born-`queued` status, lease observability columns);
+generation-fenced claim CAS (queued→running; same-gen idempotent; higher-gen takeover;
+lower-gen refused); `apps/agent_runtime` becomes a real uv member pinning the platform's
+`deepagents==0.6.12` (zero lockfile version changes). B: the daemon threads and the startup
+orphan sweep are GONE — turns are created-and-offered in one transaction, executed by
+`DesignJobWorkHandler` (registered in `fleet_main` behind `design_runtime_enabled`, and as an
+embedded lifespan worker in the design API — `LUMEN_EMBEDDED_FLEET_WORKER`, default true — so
+dev/tests drain through the SAME handler); the sync turn body runs under `asyncio.to_thread` so
+the supervised heartbeat keeps beating; terminal writes are generation-fenced
+(`DesignRunFencedError`) so a fenced-out zombie thread can never overwrite a takeover's result
+(proven by the kill-and-resume test with observed refusal); LangGraph state checkpoints to
+Postgres via the sync `PostgresSaver` (the `AsyncPostgresSaver` twin — same durable tables; the
+turn body is synchronous) keyed by the run id, with **resume-as-restart** semantics, honestly:
+the harness's trace-dir/`final.json` authority is not in the checkpoint, so a takeover clears
+the thread and re-executes the same frozen envelope (true mid-turn resume = recorded residual);
+the two shims `py_lumen_obs`/`py_lumen_config` became real workspace packages (moved under
+`packages/`; the full fold into `clue_obs`/`clue_config` stays Step-2); the editor accepts the
+new `queued` status as alive on its SSE-recovery path. C: ingestion rides the same fleet kind
+(create-and-offer in one tx; job-side claim CAS mirrors the run CAS; `BackgroundTasks` dispatch
+and its restart hole gone); the stranded-work reaper holds the invariant that no design row sits
+`running` forever (in-handler exception containment + re-offer-once-then-fail with a durable
+`reoffer_count`, live lease always wins; migration `ad332dc38f36`); the last dev-workspace
+fallbacks on the request/worker paths died (two live cross-tenant reads found and fixed);
+the O5 bridge ruling corrected in place — the bridge survives D5 (worker path async-native;
+request paths synchronous by design; retirement owned by Part IV / Step-2). Gates: design-API
+suite 501/9/0; `tests/design`+`tests/fleet` 171; agent-runtime 551/2 with NO path shims; editor
+tsc clean + 989/101; offline platform suite 2199; db-smoke green; single head `ad332dc38f36`;
+mypy 590; 25/25 contracts). Next: D6 (toolbelt),
+then D7 (events), D8 (closeout). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
 by the founder 2026-08-07** (with refinements — see §6); **O6b RATIFIED 2026-08-08: option
 (a)**. **PENDING FOUNDER RATIFICATION (D2.2 field decision):** migration `7a9881f9717a`
 extended O6's workspace-locality to every design id namespace that is client-supplied
@@ -213,6 +244,14 @@ tables; the transient `brand_kits_new` does not exist at rest.)
   ONE transaction, never composed from several `asyncio.run` calls.** Known costs accepted
   (loop/connection churn, awkward cancellation, restart still kills in-flight work); both the
   daemon threads and the bridge are deleted at D5.
+  **CORRECTED at D5 Round C (executed 2026-08-09):** only the DAEMON THREADS died at D5, and the
+  "restart kills in-flight work" cost died with them (design work is leased fleet work now, and a
+  dead worker's run is re-claimed). **The bridge survives D5.** D5 made the WORKER path
+  async-native; the API's REQUEST paths are synchronous by design, and a synchronous route needs
+  a synchronous store. Retiring the bridge means making every design route `async def` — surface
+  work, owned by **Part IV** (editor mounted in the platform shell) or **Part-I Step-2**
+  (week-one hygiene), whichever lands first. The ruling and its reasoning live at the top of
+  `subsystems/clue-design/apps/api/lumen_api/design_store.py`.
   **Founder FYI recorded for D5 planning:** the fleet may NOT end up hosting the design
   deepagent (current leaning, not committed). The binding requirements regardless of host:
   design runs survive restarts, and **multiple concurrent design-deepagent sessions per user**

@@ -266,9 +266,10 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
                 if (settledRef.current) {
                   return;
                 }
-                if (snapshot.status === "running") {
-                  // Run is alive server-side — let EventSource reconnect and
-                  // replay from Last-Event-ID.
+                if (snapshot.status === "queued" || snapshot.status === "running") {
+                  // Run is alive server-side — `queued` just means no fleet
+                  // worker has claimed it yet (D5). Let EventSource reconnect
+                  // and replay from Last-Event-ID.
                   return;
                 }
                 settleDone(

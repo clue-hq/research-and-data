@@ -1,9 +1,14 @@
 """`run_website_ingestion` — the website ingestion job glue (slice 1 §9).
 
-Wires the capture package (Agent A) to slice-0's normalizer and the persistence
-API, running inside a FastAPI ``BackgroundTasks`` worker. The whole thing is
-driven through ``run_ingestion_job`` from slice 0 so it *never raises*: every
-failure lands on the job row instead.
+Wires the capture package (Agent A) to slice-0's normalizer and the persistence API. It ran
+inside a FastAPI ``BackgroundTasks`` worker until **Part II slice D5 Round C**, which moved
+ingestion onto the ``design_job`` fleet queue: the three entry points below are now driven from a
+frozen ``DesignIngestionEnvelope`` by ``lumen_api.main.execute_ingestion_job``, inside
+``asyncio.to_thread`` on a leased worker. Nothing in this module had to change shape for that —
+it was always a self-contained "job id in, terminal row out" function — but its inputs are now
+mandatory (``workspace_id``) and fenceable (``expected_generation``). The whole thing is still
+driven through ``run_ingestion_job`` from slice 0 so it *never raises*: every failure lands on
+the job row instead.
 
 The capture package (``lumen_ingestion.capture``) and the core client
 (``lumen_api.core``) are imported lazily so this module stays importable even
@@ -507,25 +512,34 @@ def run_website_ingestion(
     build_evidence: _BuildEvidenceCallable = _default_build_evidence,
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
-    workspace_id: str | None = None,
+    workspace_id: str,
     storage: StorageBackend | None = None,
+    expected_generation: int | None = None,
 ) -> None:
     """Run a website ingestion job to a terminal state. Never raises.
 
-    Safe for ``BackgroundTasks``: builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
+    Self-contained by design (it was a ``BackgroundTasks`` target until D5 Round C moved it onto
+    the ``design_job`` fleet queue, and the property that made it safe there is what makes it
+    safe in a worker thread now): it builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
     SQLite connection to open or close) and hands the work to ``run_ingestion_job`` (which
     captures any exception onto the job row). ``engine_cache_dir`` (D4) is the DISPATCHING
     REQUEST's per-workspace engine materialization cache — a transient mirror, never a store;
     every byte the capture layer writes there is given durable custody through the blob store
     below (see ``_RecordingCore``).
 
-    ``workspace_id`` (D2.3) is threaded from the dispatching request so the job row, the brand
-    kit it publishes, and the assets it registers all land in the SAME workspace — the job's
-    composite result FK is enforced now, so a mismatch fails loudly instead of orphaning.
-    ``None`` falls back to the configured dev workspace. ``storage`` (D4) is likewise the
+    ``workspace_id`` (D2.3) is threaded from the dispatching request — since D5 Round C, out of
+    the job's frozen ``DesignIngestionEnvelope`` — so the job row, the brand kit it publishes,
+    and the assets it registers all land in the SAME workspace; the job's composite result FK is
+    enforced, so a mismatch fails loudly instead of orphaning. It is now REQUIRED: D5 Round C
+    removed the dev-workspace fallback, because a worker-path write that silently picks a tenant
+    is invisible until it is a cross-tenant incident. ``storage`` (D4) is likewise the
     dispatching app's byte backend; ``None`` falls back to the configured one.
+    ``expected_generation`` (D5 Round C) is the claiming worker's lease generation — set it and
+    every job write is fenced against a takeover (see ``IngestionJobStore``).
     """
-    store = IngestionJobStore(workspace_id=workspace_id)
+    store = IngestionJobStore(
+        workspace_id=workspace_id, expected_generation=expected_generation
+    )
     repo = HybridRepository(workspace_id=workspace_id)
     blobs = DesignBlobStore(storage or storage_from_settings(), workspace_id)
     core = _RecordingCore(_core_client(), blobs, engine_cache_dir)
@@ -713,12 +727,15 @@ def run_pdf_ingestion(
     extract: _ExtractPdfCallable = _default_extract_pdf,
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
-    workspace_id: str | None = None,
+    workspace_id: str,
     storage: StorageBackend | None = None,
+    expected_generation: int | None = None,
 ) -> None:
     """Run a PDF ingestion job to a terminal state. Never raises.
 
-    Safe for ``BackgroundTasks``: builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
+    Self-contained by design (it was a ``BackgroundTasks`` target until D5 Round C moved it onto
+    the ``design_job`` fleet queue, and the property that made it safe there is what makes it
+    safe in a worker thread now): it builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
     SQLite connection to open or close) and hands the work to ``run_ingestion_job`` (which
     captures any exception onto the job row). ``engine_cache_dir`` (D4) is the DISPATCHING
     REQUEST's per-workspace engine materialization cache — a transient mirror, never a store;
@@ -726,12 +743,16 @@ def run_pdf_ingestion(
     below (see ``_RecordingCore``). The uploaded PDF bytes are read from platform
     storage by the digest the route staged at ``request["staged_digest"]`` (R-D4-5), and the
     staged blob is always cleaned up before the job reaches a terminal state — unless it was
-    promoted into a live asset, which is byte-identical and therefore the SAME key. ``workspace_id`` (D2.3) is threaded from the dispatching
-    request; ``None`` falls back to the configured dev workspace. ``storage`` (D4) is likewise
-    the dispatching app's byte backend — threaded rather than re-derived so a process holding an
+    promoted into a live asset, which is byte-identical and therefore the SAME key.
+    ``workspace_id`` (D2.3, REQUIRED since D5 Round C — no dev-workspace fallback) comes from
+    the dispatching request or the job's frozen envelope. ``storage`` (D4) is likewise the
+    dispatching app's byte backend — threaded rather than re-derived so a process holding an
     injected backend cannot stage an upload in one place and read it from another.
+    ``expected_generation`` (D5 Round C) fences every job write against a takeover.
     """
-    store = IngestionJobStore(workspace_id=workspace_id)
+    store = IngestionJobStore(
+        workspace_id=workspace_id, expected_generation=expected_generation
+    )
     repo = HybridRepository(workspace_id=workspace_id)
     blobs = DesignBlobStore(storage or storage_from_settings(), workspace_id)
     core = _RecordingCore(_core_client(), blobs, engine_cache_dir)
@@ -943,12 +964,15 @@ def run_asset_ingestion(
     analyze: _AnalyzeUploadsCallable = _default_analyze_uploads,
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
-    workspace_id: str | None = None,
+    workspace_id: str,
     storage: StorageBackend | None = None,
+    expected_generation: int | None = None,
 ) -> None:
     """Run an asset-upload ingestion job to a terminal state. Never raises.
 
-    Safe for ``BackgroundTasks``: builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
+    Self-contained by design (it was a ``BackgroundTasks`` target until D5 Round C moved it onto
+    the ``design_job`` fleet queue, and the property that made it safe there is what makes it
+    safe in a worker thread now): it builds its own ``IngestionJobStore`` (Postgres, D2.5B: no
     SQLite connection to open or close) and hands the work to ``run_ingestion_job`` (which
     captures any exception onto the job row). ``engine_cache_dir`` (D4) is the DISPATCHING
     REQUEST's per-workspace engine materialization cache — a transient mirror, never a store;
@@ -957,10 +981,13 @@ def run_asset_ingestion(
     storage by the digests the route staged at ``request["files"][*]["staged_digest"]``
     (R-D4-5), and each staged blob is cleaned up before the job reaches a terminal state —
     unless it was promoted into a live asset, which is byte-identical and therefore the SAME
-    key. ``workspace_id`` (D2.3) is threaded from the
-    dispatching request; ``None`` falls back to the configured dev workspace.
+    key. ``workspace_id`` (D2.3, REQUIRED since D5 Round C — no dev-workspace fallback) comes
+    from the dispatching request or the job's frozen envelope; ``expected_generation``
+    (D5 Round C) fences every job write against a takeover.
     """
-    store = IngestionJobStore(workspace_id=workspace_id)
+    store = IngestionJobStore(
+        workspace_id=workspace_id, expected_generation=expected_generation
+    )
     repo = HybridRepository(workspace_id=workspace_id)
     blobs = DesignBlobStore(storage or storage_from_settings(), workspace_id)
     core = _RecordingCore(_core_client(), blobs, engine_cache_dir)

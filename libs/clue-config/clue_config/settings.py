@@ -181,6 +181,20 @@ class Settings(BaseSettings):
     # not authorize a provider. Exa/Sumble/channel switches above remain independent hard gates.
     # Env: ``CLUE_ENTITY_RESEARCH_RUNTIME_ENABLED``.
     entity_research_runtime_enabled: bool = False
+    # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
+    # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
+    # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is
+    # what drains it in development. Off by default because a platform worker without the design
+    # app installed cannot execute a design turn — registering the handler there would claim work
+    # it must then fail. Env: ``CLUE_DESIGN_RUNTIME_ENABLED``.
+    design_runtime_enabled: bool = False
+    # Part II D5 Round C: how often the stranded-design-work reaper sweeps, in seconds. Gated by
+    # ``design_runtime_enabled`` (a deployment that does not drain design work must not re-offer
+    # it); ``<= 0`` disables the sweep entirely, the ``storage_orphan_sweep_interval_s``
+    # convention. Sized well above the fleet lease TTL and task-staleness window so a pass never
+    # races a worker that is merely between heartbeats.
+    # Env: ``CLUE_DESIGN_REAPER_INTERVAL_S``.
+    design_reaper_interval_s: float = 300.0
     # R9 requires a positive worst-case monetary reservation even when a subscription provider
     # reports credits while ``sumble_cents_per_credit`` is intentionally zero. This admission
     # floor is released after settlement and is never recorded as spend. It is policy, not an

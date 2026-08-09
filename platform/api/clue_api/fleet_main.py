@@ -51,6 +51,7 @@ from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
 from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.contact_research_fleet_launch import ContactResearchSelectionApprover
+from clue_api.design_fleet import build_design_job_handler, start_design_reaper
 from clue_api.entity_research_launch_tools import EntityResearchLaunchServices
 from clue_api.entity_research_parallel import EntityResearchBatchWakeService
 from clue_api.entity_research_provider_wiring import build_production_entity_research_fleet
@@ -580,9 +581,17 @@ async def _serve() -> None:
             entity_research_handler=(
                 entity_research.handler if entity_research is not None else None
             ),
+            # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
+            design_handler=build_design_job_handler(enabled=settings.design_runtime_enabled),
             queue=work_queue,
         )
         sweep = _start_orphan_sweep(settings, storage)
+        # Part II D5 Round C: the stranded-design-work reaper, beside the orphan-blob sweep it
+        # copies. Only a design-draining deployment runs it (same switch as the handler above).
+        design_reaper = start_design_reaper(
+            enabled=settings.design_runtime_enabled,
+            interval_s=settings.design_reaper_interval_s,
+        )
         if agent_workspace_factory is None and settings.agent_workspace_root is not None:
             agent_workspace_factory = build_agent_workspace_factory(
                 storage=storage,
@@ -615,6 +624,7 @@ async def _serve() -> None:
         finally:
             for background in (
                 sweep,
+                design_reaper,
                 agent_cleanup,
                 exa_discovery,
                 exa_targeted_enrichment,

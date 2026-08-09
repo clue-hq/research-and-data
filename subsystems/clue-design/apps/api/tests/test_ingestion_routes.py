@@ -22,7 +22,7 @@ from typing import Any, Callable, Optional
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client
+from conftest import make_client, wait_for_ingestion_job
 
 from lumen_api import main as main_module
 from lumen_api.design_store import HybridRepository
@@ -73,17 +73,22 @@ def _install_stub_pipeline(
         seen.append(("Capturing your colors…", 0.65))
         return _load_evidence()
 
-    def _runner(engine_cache_dir, job_id, *, workspace_id=None, storage=None):
+    def _runner(
+        engine_cache_dir, job_id, *, workspace_id, storage=None, expected_generation=None
+    ):
         run_website_ingestion(
             engine_cache_dir,
             job_id,
             capture=capture,
             build_evidence=build_evidence or _build_evidence,
-            # D2.3: the route hands the worker the request's workspace so the kit it
-            # publishes satisfies the job's composite result FK.
+            # D2.3: the dispatcher hands the worker the job's workspace so the kit it
+            # publishes satisfies the job's composite result FK. D5 Round C: it arrives from
+            # the job's frozen envelope and is required, not defaulted.
             workspace_id=workspace_id,
             # D4: and its byte backend, so custody lands where the app can read it.
             storage=storage,
+            # D5 Round C: the claiming worker's lease generation (fences a taken-over attempt).
+            expected_generation=expected_generation,
         )
 
     monkeypatch.setattr(main_module, "run_website_ingestion", _runner)
@@ -139,6 +144,7 @@ def test_ingest_website_happy_path_persists_kit_and_report(
     assert job["status"] == "queued", job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}")
     assert got.status_code == 200, got.text
     got_job = got.json()["job"]
@@ -184,6 +190,7 @@ def test_ingested_kit_attaches_to_document(
     )
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
     brand_kit_id = got_job["brand_kit_id"]
@@ -224,6 +231,7 @@ def test_capture_failure_marks_job_failed_no_kit(
     assert job["status"] == "queued", job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert got["brand_kit_id"] is None
@@ -252,6 +260,7 @@ def test_stage_progression_reaches_preparing_before_success(
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "succeeded"
     # The pipeline's final reporter stage before persist is the "Preparing…"
@@ -302,6 +311,7 @@ def test_live_e2e_ingests_real_site(client: TestClient) -> None:
     deadline = time.time() + 120
     status = None
     while time.time() < deadline:
+        wait_for_ingestion_job(client, job_id)
         job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
         status = job["status"]
         if status in ("succeeded", "failed"):

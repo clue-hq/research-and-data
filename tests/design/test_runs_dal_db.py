@@ -2,8 +2,11 @@
 
 Covers the semantics the port either preserves or deliberately changes:
 
-* **the ported round trip** — create → append events → terminal result, with the
-  ``agent_run_from_row`` / ``run_event_from_row`` shapes the endpoints serve.
+* **the ported round trip** — create → claim → append events → terminal result, with the
+  ``agent_run_from_row`` / ``run_event_from_row`` shapes the endpoints serve. Since D5 a run is
+  born ``queued`` and only the claim CAS moves it to ``running``; the pre-fleet in-process path
+  does both back to back (``HybridRepository.create_run``), which is what :func:`_start`
+  reproduces here.
 * **race-free seq allocation** — two concurrent appenders (separate connections, real
   transactions) serialize on the parent run's ``FOR UPDATE`` lock and produce 1 and 2, never a
   duplicate that would trip ``design_run_event_seq_unique``.
@@ -21,6 +24,7 @@ All writes run in rolled-back transactions against the session-migrated DB.
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -55,6 +59,26 @@ async def _seed_document(conn: AsyncConnection, ws: str, *, doc_kind: str = "web
     return doc_id
 
 
+async def _start(
+    conn: AsyncConnection, ws: str, run_id: str, document_id: str | None = None
+) -> dict[str, Any]:
+    """Create a run and claim it — the pre-fleet in-process path, in one helper.
+
+    Tests written before D5 assumed ``create_run`` alone left a run in flight. It now leaves it
+    ``queued``; anything that means "a run someone is executing" must claim it, exactly as the
+    shipped daemon-thread path does.
+    """
+    await design_runs.create_run(conn, workspace_id=ws, run_id=run_id, document_id=document_id)
+    claimed = await design_runs.claim_run_for_execution(
+        conn,
+        work_id=design_runs.work_id_for_run(run_id),
+        worker_id="test-worker",
+        lease_generation=1,
+    )
+    assert claimed is not None
+    return claimed
+
+
 @pytest.mark.usefixtures("require_design_db")
 def test_run_round_trip_events_and_terminal_result() -> None:
     async def scenario() -> None:
@@ -68,11 +92,20 @@ def test_run_round_trip_events_and_terminal_result() -> None:
                 created = await design_runs.create_run(
                     conn, workspace_id=ws, run_id=run_id, document_id=doc_id
                 )
-                assert created["status"] == "running"
+                # D5: born queued — nobody is executing it yet.
+                assert created["status"] == "queued"
                 assert created["document_id"] == doc_id
                 assert created["result"] is None
                 # ISO strings, not datetimes — the shape the API has always served.
                 assert isinstance(created["created_at"], str)
+
+                claimed = await design_runs.claim_run_for_execution(
+                    conn,
+                    work_id=design_runs.work_id_for_run(run_id),
+                    worker_id="test-worker",
+                    lease_generation=1,
+                )
+                assert claimed is not None and claimed["status"] == "running"
 
                 first = await design_runs.append_run_event(
                     conn,
@@ -125,12 +158,8 @@ def test_running_runs_carry_their_document_kind() -> None:
                 web_doc = await _seed_document(conn, ws, doc_kind="web")
                 with_doc = f"run_{uuid4().hex}"
                 without_doc = f"run_{uuid4().hex}"
-                await design_runs.create_run(
-                    conn, workspace_id=ws, run_id=with_doc, document_id=web_doc
-                )
-                await design_runs.create_run(
-                    conn, workspace_id=ws, run_id=without_doc, document_id=None
-                )
+                await _start(conn, ws, with_doc, web_doc)
+                await _start(conn, ws, without_doc)
 
                 running = await design_runs.list_running_runs(conn, workspace_id=ws)
                 by_id = {row["run_id"]: row for row in running}
@@ -185,9 +214,7 @@ def test_reads_and_writes_are_fail_closed_across_workspaces() -> None:
                 owner = await _seed_ws(conn, "runown")
                 intruder = await _seed_ws(conn, "runint")
                 run_id = f"run_{uuid4().hex}"
-                await design_runs.create_run(
-                    conn, workspace_id=owner, run_id=run_id, document_id=None
-                )
+                await _start(conn, owner, run_id)
                 await design_runs.append_run_event(
                     conn, workspace_id=owner, run_id=run_id, event_type="progress", data={}
                 )
@@ -246,15 +273,9 @@ def test_the_orphan_sweep_read_spans_every_workspace() -> None:
                 run_a = f"run_{uuid4().hex}"
                 run_b = f"run_{uuid4().hex}"
                 finished = f"run_{uuid4().hex}"
-                await design_runs.create_run(
-                    conn, workspace_id=ws_a, run_id=run_a, document_id=None
-                )
-                await design_runs.create_run(
-                    conn, workspace_id=ws_b, run_id=run_b, document_id=None
-                )
-                await design_runs.create_run(
-                    conn, workspace_id=ws_b, run_id=finished, document_id=None
-                )
+                await _start(conn, ws_a, run_a)
+                await _start(conn, ws_b, run_b)
+                await _start(conn, ws_b, finished)
                 await design_runs.set_run_result(
                     conn,
                     workspace_id=ws_b,

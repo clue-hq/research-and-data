@@ -13,12 +13,17 @@ SQLite substrate itself.
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Protocol
+from uuid import UUID
 
 from clue_design import ingestion as design_ingestion
+from clue_design.errors import DesignJobFencedError
 from clue_design.ingestion import new_id as new_id  # re-exported: the ported public name
 from lumen_api.design_store import DesignStoreBridge, default_workspace_id
+from py_lumen_obs import get_logger
 
 JsonObject = Dict[str, Any]
+
+logger = get_logger("lumen_ingestion.jobs")
 
 
 class IngestionJobStore:
@@ -26,10 +31,23 @@ class IngestionJobStore:
 
     ``workspace_id`` defaults to the configured dev workspace, exactly like
     ``HybridRepository`` — request paths pass the resolved workspace explicitly.
+
+    ``expected_generation`` (D5 Round C) is the lease generation the caller holds. Set it and
+    EVERY write this store makes is fenced: once a takeover worker claims the job under a higher
+    generation, this store's writes raise
+    :class:`~clue_design.errors.DesignJobFencedError` rather than overwriting the live attempt's
+    progress or result. Left ``None`` (the direct/CLI callers, and every pre-fleet path) the
+    writes are unfenced exactly as before.
     """
 
-    def __init__(self, *, workspace_id: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        *,
+        workspace_id: Optional[str] = None,
+        expected_generation: Optional[int] = None,
+    ) -> None:
         self.workspace_id = workspace_id or default_workspace_id()
+        self.expected_generation = expected_generation
         self._bridge = DesignStoreBridge(self.workspace_id)
 
     def create(self, kind: str, request: JsonObject) -> JsonObject:
@@ -38,6 +56,63 @@ class IngestionJobStore:
                 conn, workspace_id=self.workspace_id, kind=kind, request=request
             )
         )
+
+    def create_and_offer(
+        self,
+        kind: str,
+        request: JsonObject,
+        *,
+        job_id: str,
+        work_id: UUID,
+        envelope: JsonObject,
+        priority: int = 0,
+    ) -> JsonObject:
+        """Create the job AND offer its ``design_job`` task to the fleet — ONE transaction.
+
+        The ingestion twin of ``HybridRepository.create_run_and_offer`` (R-D5-B5) and the same
+        ``launch_entity_research_run`` precedent. Split across two commits there are two ways to
+        be wrong and both are live failure modes: a job row with no task is an ingestion that
+        never starts and never fails (exactly the ``BackgroundTasks`` failure this replaces), and
+        a task with no job row is a worker that claims work it cannot find.
+
+        Both ids are minted by the CALLER because the envelope names the job: a server-side id
+        discovered only after the INSERT could not have ridden the task payload it was enqueued
+        with. The job's staged inputs (``request``) are already durable platform-storage digests
+        (D4), so a requeued worker recovers them with
+        :func:`~clue_design.ingestion.read_staged_request` and re-reads the same bytes.
+        """
+
+        # Lazy, exactly as ``design_store.create_run_and_offer`` is lazy, and for the same
+        # reason: ``import clue_fleet`` reaches clue_research.durable -> langgraph -> langsmith ->
+        # httpx, and ``lumen_ingestion.describe`` has a standing guard test that importing it
+        # drags in neither PIL nor httpx. Only this one method needs the queue.
+        from clue_core import ProjectRunId
+        from clue_fleet.enums import FleetTaskKind
+        from clue_fleet.queue import enqueue_task
+
+        async def _create_and_offer(conn: Any) -> JsonObject:
+            job = await design_ingestion.create_job(
+                conn,
+                workspace_id=self.workspace_id,
+                kind=kind,
+                request=request,
+                job_id=job_id,
+                work_id=work_id,
+            )
+            await enqueue_task(
+                conn,
+                kind=FleetTaskKind.DESIGN_JOB,
+                project_run_id=ProjectRunId(work_id),
+                dedup_key=str(work_id),
+                payload=envelope,
+                priority=priority,
+                # The work id is freshly minted per dispatch, so there is no terminal row to
+                # reopen; the reaper's re-offer is the one path that needs that flag.
+                reopen_terminal=False,
+            )
+            return job
+
+        return self._bridge._run(_create_and_offer)
 
     def update_request(self, job_id: str, request: JsonObject) -> JsonObject:
         """Replace the stored request_json for a job (e.g. to record the
@@ -77,7 +152,10 @@ class IngestionJobStore:
     def set_running(self, job_id: str) -> JsonObject:
         return self._bridge._run(
             lambda conn: design_ingestion.set_running(
-                conn, workspace_id=self.workspace_id, job_id=job_id
+                conn,
+                workspace_id=self.workspace_id,
+                job_id=job_id,
+                expected_generation=self.expected_generation,
             )
         )
 
@@ -89,6 +167,7 @@ class IngestionJobStore:
                 job_id=job_id,
                 stage=stage,
                 progress=progress,
+                expected_generation=self.expected_generation,
             )
         )
 
@@ -107,13 +186,18 @@ class IngestionJobStore:
                 brand_kit_id=brand_kit_id,
                 version=version,
                 evidence_json=evidence_json,
+                expected_generation=self.expected_generation,
             )
         )
 
     def fail(self, job_id: str, error: JsonObject) -> JsonObject:
         return self._bridge._run(
             lambda conn: design_ingestion.fail(
-                conn, workspace_id=self.workspace_id, job_id=job_id, error=error
+                conn,
+                workspace_id=self.workspace_id,
+                job_id=job_id,
+                error=error,
+                expected_generation=self.expected_generation,
             )
         )
 
@@ -135,21 +219,62 @@ def run_ingestion_job(
     ``(brand_kit_id, version, evidence_json)``. Any exception is captured into
     a ``failed`` row via ``store.fail`` — the job is always left in a terminal
     state and this function does not propagate.
+
+    **The one exception to "always terminal" is being FENCED** (D5 Round C). When ``store``
+    carries an ``expected_generation`` and a takeover worker has claimed the job under a newer
+    one, this attempt has already been replaced: its writes are refused with
+    :class:`~clue_design.errors.DesignJobFencedError` and the correct behaviour is to drop them
+    and stop, never to retry and never to stamp ``failed`` over the live attempt's work. So a
+    fence is caught, logged loudly (a zombie is visible in the logs) and returned from — the job
+    is terminalized by whoever actually owns it.
     """
-    store.set_running(job_id)
+    if not _fenced_guard(store.set_running, job_id, job_id=job_id, write="set_running"):
+        return
 
     def report(stage: str, progress: float) -> None:
-        store.set_stage(job_id, stage, progress)
+        # A fenced progress write is dropped, not raised: it must not become the ``work``
+        # exception that would then be recorded as a job failure below.
+        _fenced_guard(store.set_stage, job_id, stage, progress, job_id=job_id, write="set_stage")
 
     try:
         brand_kit_id, version, evidence_json = work(report)
     except Exception as error:  # noqa: BLE001 - failure must never escape
-        store.fail(
+        _fenced_guard(
+            store.fail,
             job_id,
             {
                 "code": "LUMI0401",
                 "message": f"{type(error).__name__}: {error}",
             },
+            job_id=job_id,
+            write="fail",
         )
         return
-    store.complete(job_id, brand_kit_id, version, evidence_json)
+    _fenced_guard(
+        store.complete,
+        job_id,
+        brand_kit_id,
+        version,
+        evidence_json,
+        job_id=job_id,
+        write="complete",
+    )
+
+
+def _fenced_guard(
+    write_fn: Callable[..., Any], *args: Any, job_id: str, write: str
+) -> bool:
+    """Call one store write; ``False`` when it was refused because this attempt was taken over."""
+    try:
+        write_fn(*args)
+    except DesignJobFencedError as fenced:
+        logger.warning(
+            "ingestion_job.write_fenced",
+            job_id=job_id,
+            write=write,
+            expected_generation=fenced.expected_generation,
+            current_generation=fenced.current_generation,
+            detail="a takeover worker owns this job; the abandoned attempt's write was dropped",
+        )
+        return False
+    return True

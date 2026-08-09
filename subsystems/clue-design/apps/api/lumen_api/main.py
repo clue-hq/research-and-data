@@ -15,10 +15,9 @@ import re
 # See the import comment in design_store.py. Renaming it to a design-native error is a
 # follow-up, not part of the deletion slice.
 import sqlite3
-import sys
-import threading
 import time
 import zipfile
+import contextlib
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -26,7 +25,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from fastapi import (
-    BackgroundTasks,
     Depends,
     FastAPI,
     File,
@@ -43,7 +41,6 @@ from fastapi.responses import (
     Response,
     StreamingResponse,
 )
-from starlette.concurrency import run_in_threadpool
 
 from . import image_cache, image_provider, web_export
 from .asset_custody import (
@@ -86,8 +83,6 @@ from .database import (
 from .design_store import (
     DesignBlobStore,
     HybridRepository,
-    default_workspace_id,
-    list_orphaned_runs_across_workspaces,
     read_public_design_blob,
     resolve_stream_workspace_id,
     resolve_workspace_id,
@@ -161,12 +156,17 @@ from .models import (
 from lumen_ingestion.capture.uploads import sniff_mime
 from lumen_ingestion.describe import DescriptionStore
 from lumen_ingestion.jobs import IngestionJobStore
+from lumen_ingestion.jobs import new_id as ingestion_new_id
 from lumen_ingestion.pipeline import (
     run_asset_ingestion,
     run_pdf_ingestion,
     run_website_ingestion,
 )
+from clue_db import db_lifespan, get_engine
 from clue_design import storage as design_storage
+from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
+from clue_design.enums import DesignIngestionKind
+from clue_design.runs import work_id_for_run as design_work_id_for_run
 from clue_design.storage import location_digest
 from clue_storage import StorageBackend, storage_from_settings
 
@@ -302,53 +302,118 @@ def conflicted_web_turn_response(
     }
 
 
-def _fail_orphaned_runs() -> None:
-    """Fail every run left 'running' by a previous API process.
+# D5 Round B: the startup orphan sweep (``_fail_orphaned_runs``) is DELETED with the daemon
+# threads it existed for. Turns ran inside this process, so a restart silently killed every
+# in-flight one and left its row ``running`` forever; the sweep failed them at boot so the
+# editor's SSE stream would settle instead of hanging. Leased fleet work needs none of it: a dead
+# worker's lease expires, and a takeover worker re-claims the SAME run through the D5 CAS and
+# runs it. Keeping the sweep would now actively destroy recoverable work at every deploy.
 
-    Agent/web turns execute on daemon threads inside THIS process; a server
-    restart kills them silently, so at startup any 'running' row is an orphan
-    by construction (live failure 2026-07-29: an API bounce orphaned two
-    in-flight website turns, which sat 'running' for hours while the editor
-    saw only a dead stream). Each orphan gets a terminal result plus an
-    `error` run-event so open SSE pollers settle to `done` immediately.
+
+def _build_embedded_fleet_worker(app: FastAPI) -> Any:
+    """The design API's own :class:`~clue_fleet.work_worker.LeasedWorkWorker`, or ``None``.
+
+    Registers ONLY the design handler — the API drains design work and nothing else; project
+    runs and recipe executions remain the platform worker's business. The handler reads its host
+    capabilities from ``app.state`` at execution time (not construction time), so a test that
+    installs an ``agent_turn_runner`` stub after the app is built is still honoured.
+
+    Returns ``None`` when the switch is off, or when the fleet/handler imports are unavailable —
+    the same degradation contract the agent runtime itself has: a machine missing the extras gets
+    an API that serves everything except turns, never an import crash at startup.
     """
-    # D2.5A: runs live on Postgres. The sweep runs at app CONSTRUCTION, before any request
-    # exists to name a tenant — and a restart orphans every workspace's runs, not just the dev
-    # one — so the listing is the DAL's one deliberately unscoped read
-    # (design_store.list_orphaned_runs_across_workspaces). Each orphan is then failed through a
-    # store built for ITS OWN workspace, so no write ever crosses a tenant boundary.
-    orphans = list_orphaned_runs_across_workspaces()
-    stores: Dict[str, HybridRepository] = {}
-    for run in orphans:
-        workspace_id = run["workspace_id"]
-        if workspace_id not in stores:
-            # ensure_workspace=False: the row demonstrably exists (its run references it).
-            stores[workspace_id] = HybridRepository(
-                workspace_id=workspace_id, ensure_workspace=False
-            )
-        store = stores[workspace_id]
-        failed = failed_agent_turn_response(
-            "agent_runtime.orphaned",
-            "The turn was interrupted by an API server restart and did not finish.",
-            f"run {run['run_id']} was still 'running' at startup; "
-            "worker threads do not survive a restart",
-        )
-        if run["doc_kind"] == "web":
-            failed["doc_kind"] = "web"
-        store.complete_run(
-            run["run_id"],
-            "failed",
-            failed,
-            "error",
-            {"message": "orphaned by server restart"},
-        )
-    if orphans:
+    if not settings.lumen_embedded_fleet_worker:
+        return None
+    try:
+        from clue_fleet.work_worker import LeasedWorkWorker
+
+        from .fleet_handler import DesignTurnHost, build_design_job_handler
+    except Exception:
         log_event(
             api_logger,
             logging.WARNING,
-            "orphaned_runs_failed",
-            run_ids=[run["run_id"] for run in orphans],
+            "embedded_fleet_worker_unavailable",
+            detail="design fleet dependencies are not importable; turns will not be drained",
         )
+        return None
+
+    def host() -> Any:
+        return DesignTurnHost(
+            agent_turn_runner=app.state.agent_turn_runner,
+            web_turn_runner=app.state.web_turn_runner,
+            core=app.state.core,
+            compiler_node_bin=app.state.custom_component_compiler_node_bin,
+            compiler_worker=app.state.custom_component_compiler_worker,
+            compiler_timeout_seconds=(
+                app.state.custom_component_compiler_timeout_seconds
+            ),
+            storage=app.state.storage,
+            # D5 Round C: the app's engine-cache tree, so worker-path materialization mirrors
+            # into the SAME place the request paths read (a suite that builds the app with an
+            # explicit root would otherwise have its worker writing into the settings default).
+            engine_cache_root=app.state.engine_cache_root,
+        )
+
+    worker = LeasedWorkWorker(
+        handlers=(build_design_job_handler(host_provider=host),),
+        # Poll briskly: a human is watching an SSE stream for this turn to start, and the drain
+        # is one indexed query. The lease TTL/heartbeat keep the platform defaults' 2:1 ratio.
+        poll_interval=0.1,
+        worker_id=f"lumen-api-embedded:{uuid4()}",
+    )
+    log_event(
+        api_logger,
+        logging.INFO,
+        "embedded_fleet_worker_started",
+        worker_id=worker.worker_id,
+    )
+    return worker
+
+
+def _offer_ingestion_job(
+    repo: HybridRepository, kind: str, request: JsonObject
+) -> JsonObject:
+    """Create ONE brand-kit ingestion job and offer its ``design_job`` task — one transaction.
+
+    The ingestion half of the D5 switch (Round C), and the exact shape of the turn half
+    (``HybridRepository.create_run_and_offer``, R-D5-B5): the row and its task are written
+    together or not at all, because a job row with no task never starts and never fails, and a
+    task with no job row is a worker that claims work it cannot find.
+
+    Both ids are minted HERE rather than server-side inside the INSERT, because the frozen
+    envelope names the job it dispatches — an id discovered only after the insert could not have
+    ridden the payload it was enqueued with. The envelope carries no copy of ``request``: the
+    staged inputs already live durably on the job row (``design_ingestion_job.request_json``,
+    platform-storage digests since D4), and :func:`clue_design.ingestion.read_staged_request` is
+    the side-effect-free read a requeued worker recovers them with. Duplicating them into the
+    task payload would create a second, divergeable copy of the same truth.
+    """
+    job_id = ingestion_new_id("ingest")
+    work_id = uuid4()
+    envelope = DesignIngestionEnvelope(
+        work_id=work_id,
+        workspace_id=repo.workspace_id,
+        kind="ingestion",
+        job_id=job_id,
+        ingestion_kind=DesignIngestionKind(kind),
+    ).model_dump(mode="json")
+    job = IngestionJobStore(workspace_id=repo.workspace_id).create_and_offer(
+        kind,
+        request,
+        job_id=job_id,
+        work_id=work_id,
+        envelope=envelope,
+    )
+    log_event(
+        api_logger,
+        logging.INFO,
+        "ingestion_job_offered",
+        job_id=job_id,
+        work_id=str(work_id),
+        kind=kind,
+        workspace_id=repo.workspace_id,
+    )
+    return job
 
 
 def create_app(
@@ -367,7 +432,54 @@ def create_app(
         # uvicorn has configured its own logging by the time lifespan startup
         # runs; fold its loggers into the shared bridge so there is one stream.
         _bridge_uvicorn_loggers()
-        yield
+        # D5 Round B (R-D5-B5): the embedded design fleet worker. Turns are leased fleet work
+        # now, so without a drain an offered turn would sit `queued` forever. In production the
+        # detached clue_api.fleet_main worker drains it; in development (and under this suite)
+        # there is no second process, so the API runs the SAME handler on its own event loop.
+        # One execution path, two hosts.
+        #
+        # Started as a lifespan task, so it exists only while the app is serving: FastAPI runs
+        # lifespan only under `with TestClient(...)`, which is exactly the boundary a test wants
+        # — a test that never enters the context manager gets no worker and no background DB
+        # traffic. Cancelled on shutdown and awaited, so nothing outlives the app.
+        worker = _build_embedded_fleet_worker(_app)
+        async with contextlib.AsyncExitStack() as stack:
+            task = None
+            reaper = None
+            if worker is not None:
+                # The fleet queue/lease repositories read the PROCESS-GLOBAL engine
+                # (``clue_db.transaction``), which only ``db_lifespan`` installs. The design
+                # store deliberately does not use it (``DesignStoreBridge`` owns a private
+                # engine per call — the O5 rule), so the design API has never entered it. The
+                # embedded worker is the first thing here that needs it.
+                #
+                # Entered conditionally because ``db_lifespan`` refuses re-entry: a process that
+                # already has an engine (a platform host embedding this app) keeps its own.
+                try:
+                    get_engine()
+                except RuntimeError:
+                    await stack.enter_async_context(db_lifespan())
+                task = asyncio.create_task(worker.run())
+                # D5 Round C: the stranded-work reaper rides with the embedded worker — same
+                # process-global engine, same "in development nothing else is running" argument.
+                # Gated on the worker existing rather than on its own switch alone: a reaper with
+                # no drain could re-offer work that nothing would then claim.
+                from .fleet_reaper import start_reaper
+
+                reaper = start_reaper(interval_s=settings.lumen_design_reaper_interval_s)
+            try:
+                yield
+            finally:
+                if reaper is not None:
+                    from .fleet_reaper import stop_reaper
+
+                    await stop_reaper(reaper)
+                if task is not None:
+                    assert worker is not None
+                    worker.stop()
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
 
     app = FastAPI(title="ABM Design Engine Persistence API", lifespan=lifespan)
     app.add_middleware(
@@ -413,7 +525,6 @@ def create_app(
     # to scripts/web_static_css.mjs with it. A test overrides this (e.g. "false")
     # to exercise the honest compile-failure path.
     app.state.web_export_node_bin = "node"
-    _fail_orphaned_runs()
 
     @app.middleware("http")
     async def structured_request_logging(request: Request, call_next):
@@ -799,7 +910,6 @@ def create_app(
     @app.post("/brand-kits/ingest/website")
     async def ingest_website(
         payload: IngestWebsiteRequest,
-        background_tasks: BackgroundTasks,
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         guard = _resolve_guard_url()
@@ -808,31 +918,22 @@ def create_app(
         except Exception as error:  # CaptureError / ValueError from the guard
             raise ingest_url_rejected(payload.url, error) from error
 
-        # This is the one ASYNC ingestion endpoint (it awaits the SSRF guard), and the D2.3
-        # store is a sync facade over ``asyncio.run`` — calling it inline would blow up on
-        # "asyncio.run() cannot be called from a running event loop". A worker thread gives
-        # the bridge its own loop, exactly as the sync endpoints get from FastAPI's threadpool.
-        job = await run_in_threadpool(
-            IngestionJobStore(workspace_id=repo.workspace_id).create,
-            "website",
-            payload.model_dump(),
-        )
-        background_tasks.add_task(
-            run_website_ingestion,
-            request_cache_dir(repo),
-            job["job_id"],
-            # D2.3: the worker must publish its kit/assets into the SAME workspace the job row
-            # lives in — the job's result FK is composite on (kit, version, workspace).
-            workspace_id=repo.workspace_id,
-            # D4: and against THIS app's byte backend, so a staged upload is read back from
-            # where it was staged rather than from a re-derived default.
-            storage=app.state.storage,
-        )
+        # D5 Round C: the ingestion is OFFERED, not started. The route creates the job row and
+        # its ``design_job`` fleet task in ONE transaction and returns; a leased worker (detached
+        # or embedded) claims and executes it. This replaces ``BackgroundTasks``, which ran the
+        # pipeline inside the API process — so a restart silently killed it and left the job
+        # ``running`` forever, with nothing to re-offer it.
+        #
+        # The ``run_in_threadpool`` dance that used to wrap the store call is gone with it: it
+        # existed because this is the one ASYNC ingestion endpoint and the sync store facade
+        # cannot ``asyncio.run`` inside a live loop. ``DesignStoreBridge._run_isolated`` has
+        # handled exactly that since D2.3 by handing the coroutine to a one-shot worker thread,
+        # so the extra hop was doing nothing the bridge does not already do.
+        job = _offer_ingestion_job(repo, "website", payload.model_dump())
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
     @app.post("/brand-kits/ingest/pdf")
     def ingest_pdf(
-        background_tasks: BackgroundTasks,
         file: UploadFile = File(...),
         name: Optional[str] = Form(None),
         brand_kit_id: Optional[str] = Form(None),
@@ -870,43 +971,35 @@ def create_app(
         # materialization cache was the one place these bytes could not safely live. The job
         # request carries the staged DIGEST; `run_pdf_ingestion` reads it back through the blob
         # store and the `finally` cleanup deletes it unless it was promoted to a live asset.
-        job = IngestionJobStore(workspace_id=repo.workspace_id).create(
-            "pdf",
-            {
-                "filename": file.filename,
-                "name": name,
-                "brand_kit_id": brand_kit_id,
-                "size_bytes": len(data),
-            },
-        )
+        #
+        # D5 Round C reorders this: the bytes are staged BEFORE the job row exists, so the row
+        # can be created with its complete request AND its fleet task in one transaction. Under
+        # ``BackgroundTasks`` the order had to be create → stage → update_request → dispatch,
+        # which left a job row briefly claiming inputs it did not yet have; staging first is
+        # free (the register is content-addressed and idempotent, and an abandoned staged blob
+        # is exactly what the orphan sweep already collects).
         blobs = blob_store(repo)
         blobs.register(
             data,
             media_type="application/pdf",
             source_key=design_storage.SOURCE_KEY_INGEST_STAGING,
         )
-
-        request = dict(job["request"])
-        request["staged_digest"] = hashlib.sha256(data).hexdigest()
-        request["media_type"] = "application/pdf"
-        job = IngestionJobStore(workspace_id=repo.workspace_id).update_request(job["job_id"], request)
-
-        background_tasks.add_task(
-            run_pdf_ingestion,
-            request_cache_dir(repo),
-            job["job_id"],
-            # D2.3: the worker must publish its kit/assets into the SAME workspace the job row
-            # lives in — the job's result FK is composite on (kit, version, workspace).
-            workspace_id=repo.workspace_id,
-            # D4: and against THIS app's byte backend, so a staged upload is read back from
-            # where it was staged rather than from a re-derived default.
-            storage=app.state.storage,
+        job = _offer_ingestion_job(
+            repo,
+            "pdf",
+            {
+                "filename": file.filename,
+                "name": name,
+                "brand_kit_id": brand_kit_id,
+                "size_bytes": len(data),
+                "staged_digest": hashlib.sha256(data).hexdigest(),
+                "media_type": "application/pdf",
+            },
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
     @app.post("/brand-kits/ingest/assets")
     def ingest_assets(
-        background_tasks: BackgroundTasks,
         files: List[UploadFile] = File(...),
         name: Optional[str] = Form(None),
         brand_kit_id: Optional[str] = Form(None),
@@ -965,14 +1058,8 @@ def create_app(
         # why a tmp file under the engine cache is not a safe home for a background job's
         # input). The job request carries each file's staged DIGEST; `run_asset_ingestion` reads
         # them back through the blob store and cleans up the ones that were not promoted.
-        job = IngestionJobStore(workspace_id=repo.workspace_id).create(
-            "asset_upload",
-            {
-                "name": name,
-                "brand_kit_id": brand_kit_id,
-                "file_count": len(payloads),
-            },
-        )
+        # D5 Round C: staged first, then the job row and its fleet task in ONE transaction — see
+        # the PDF route for why the order flipped.
         blobs = blob_store(repo)
 
         file_specs: List[JsonObject] = []
@@ -992,20 +1079,15 @@ def create_app(
                 }
             )
 
-        request = dict(job["request"])
-        request["files"] = file_specs
-        job = IngestionJobStore(workspace_id=repo.workspace_id).update_request(job["job_id"], request)
-
-        background_tasks.add_task(
-            run_asset_ingestion,
-            request_cache_dir(repo),
-            job["job_id"],
-            # D2.3: the worker must publish its kit/assets into the SAME workspace the job row
-            # lives in — the job's result FK is composite on (kit, version, workspace).
-            workspace_id=repo.workspace_id,
-            # D4: and against THIS app's byte backend, so a staged upload is read back from
-            # where it was staged rather than from a re-derived default.
-            storage=app.state.storage,
+        job = _offer_ingestion_job(
+            repo,
+            "asset_upload",
+            {
+                "name": name,
+                "brand_kit_id": brand_kit_id,
+                "file_count": len(payloads),
+                "files": file_specs,
+            },
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
@@ -2052,84 +2134,58 @@ def create_app(
     def start_agent_turn(
         payload: AgentTurnPreviewRequest, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
-        # Async turn: start the run in a background thread and return its id
-        # immediately. The thread streams progress events into the durable
-        # run-event store (via the loop's event_sink) and writes the final
-        # result on completion; the editor subscribes over SSE. The synchronous
-        # /agent/turn-preview stays as-is for tests, CLI, and fixtures.
+        # D5 Round B: the turn is OFFERED, not started. The route creates the run row and its
+        # ``design_job`` fleet task in one transaction and returns; a leased fleet worker (the
+        # detached one, or the embedded one this app runs in development) claims and executes it.
+        # The editor's contract is unchanged — it POSTs, takes ``run_id``, and subscribes to the
+        # SSE stream, which polls the same durable run/event rows the worker writes through.
         #
-        # RC (adversarial-gate ship-blocker 1): validate + resolve reference
-        # attachments HERE, before the run row exists — inside the worker the
-        # catch-all would swallow the resolver's 422s into a generic
-        # agent_runtime.failed and the client would never see
-        # reference.asset_not_found / too_many / preview_unavailable. The
-        # resolved manifest rides into the worker so SVG rasterization is not
-        # paid twice.
+        # RC (adversarial-gate ship-blocker 1): validate + resolve reference attachments HERE,
+        # before the run row exists — inside the worker the catch-all would swallow the
+        # resolver's 422s into a generic agent_runtime.failed and the client would never see
+        # reference.asset_not_found / too_many / preview_unavailable. The resolved manifest rides
+        # into the envelope so SVG rasterization is not paid twice.
         resolved_reference_assets = resolve_agent_turn_references(payload, blob_store(repo))
         run_id = f"run_{uuid4().hex}"
-        repo.create_run(run_id, payload.document_id)
-        root = repo_root()
-        override = app.state.agent_turn_runner
-        # D2.2: the worker's store must carry the request's workspace (document domain = PG).
-        workspace_id = repo.workspace_id
-
-        def worker() -> None:
-            store = HybridRepository(workspace_id=workspace_id)
-
-            def sink(event_type: str, data: JsonObject) -> None:
-                try:
-                    store.append_run_event(run_id, event_type, data)
-                except Exception:
-                    pass
-
-            try:
-                if override is not None:
-                    response = override(payload, root)
-                else:
-                    response = run_agent_turn_preview(
-                        payload,
-                        root,
-                        event_sink=sink,
-                        resolved_reference_assets=resolved_reference_assets,
-                        workspace_id=workspace_id,
-                    )
-                status = (
-                    "failed"
-                    if response.get("status") in ("failed", "error")
-                    else "succeeded"
-                )
-                # Result + terminal marker in one write: a snapshot poller must never catch
-                # a run that is terminal but has no marker event (D2.5A).
-                store.complete_run(
-                    run_id,
-                    status,
-                    response,
-                    "result",
-                    {"status": response.get("status")},
-                )
-            except Exception as error:  # pragma: no cover - defensive
-                failed = failed_agent_turn_response(
-                    "agent_runtime.failed",
-                    "Agent turn crashed before returning a proposal.",
-                    str(error),
-                )
-                store.complete_run(
-                    run_id, "failed", failed, "error", {"message": str(error)}
-                )
-
-        threading.Thread(
-            target=worker, name=f"agent-turn-{run_id}", daemon=True
-        ).start()
+        work_id = design_work_id_for_run(run_id)
+        # The FROZEN by-value work description. It captures exactly what the pre-D5 worker
+        # closure captured (the request, the resolved references, the workspace) so a takeover
+        # worker replays the same turn instead of re-reading state that has since moved. Brand
+        # kit, fonts and the engine cache are resolved from it inside the runner, exactly as
+        # before — they were never closure state.
+        envelope = DesignTurnEnvelope(
+            work_id=work_id,
+            workspace_id=repo.workspace_id,
+            kind="agent_turn",
+            run_id=run_id,
+            # The D5 ruling: the design run IS the LangGraph thread.
+            checkpoint_thread_id=run_id,
+            document_id=payload.document_id,
+            config={
+                "request": payload.model_dump(mode="json"),
+                "reference_assets": resolved_reference_assets,
+            },
+        ).model_dump(mode="json")
+        repo.create_run_and_offer(
+            run_id,
+            payload.document_id,
+            kind="agent_turn",
+            envelope=envelope,
+            work_id=work_id,
+        )
         log_event(
             api_logger,
             logging.INFO,
-            "agent_turn_started",
+            "agent_turn_offered",
             run_id=run_id,
+            work_id=str(work_id),
             document_id=payload.document_id,
             active_page_id=payload.active_page_id,
             target_node_ids=payload.target_node_ids,
         )
-        return {"schema_version": 1, "run_id": run_id, "status": "running"}
+        # ``queued`` is the honest status of a run nobody has claimed yet. The editor's
+        # agentRunner.ts reads only ``run_id`` from this response, so no client behaviour changes.
+        return {"schema_version": 1, "run_id": run_id, "status": "queued"}
 
     @app.get("/agent/runs/{run_id}")
     def get_agent_run(
@@ -2170,9 +2226,11 @@ def create_app(
             #
             # POLL COST (accepted, interim): the O5 bridge builds a private engine per call — so
             # a 4 Hz stream pays two engine setups per second per subscriber. Accepted for the
-            # bridge's lifetime; it dies at D5 with the bridge (and the whole polling loop dies
-            # at D7, when design events move onto the platform run-event stream and this becomes
-            # a subscription rather than a poll).
+            # bridge's lifetime — which, per the D5 Round C ruling in ``design_store``, runs to
+            # the SURFACE work (Part IV / Part-I Step-2) rather than ending at D5: D5 made the
+            # WORKER path async-native, not the request paths. The whole polling loop dies at D7
+            # anyway, when design events move onto the platform run-event stream and this becomes
+            # a subscription rather than a poll.
             store = HybridRepository(workspace_id=workspace_id)
             events = store.list_run_events(run_id, after_seq=after_seq)
             needs_run = (not events) or any(
@@ -2248,10 +2306,12 @@ def create_app(
         payload: WebTurnRequest,
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
-        # Async website-mode turn: mirror start_agent_turn's worker shape, but
-        # the web worker OWNS the persist — on an applied result it replaces the
-        # stored WebDoc through update_web_document (the scene path defers the
-        # write to a separate Accept). Gate to web docs up front.
+        # D5 Round B: offered, not started (see start_agent_turn). The web EXECUTOR still owns
+        # the persist — on an applied result it replaces the stored WebDoc through
+        # update_web_document (the scene path defers the write to a separate Accept) — but it now
+        # runs on a fleet worker instead of a daemon thread. Gate to web docs up front: every
+        # check below happens before the run row exists, so a bad request still 4xx's the caller
+        # rather than dying inside a worker where only a failed envelope would reach the editor.
         document = require_document(repo, document_id)
         require_web_document(document)
         require_draft_document(document, "start an AI turn")
@@ -2278,189 +2338,39 @@ def create_app(
                 "notes": account["notes"],
             }
         run_id = f"run_{uuid4().hex}"
-        repo.create_run(run_id, document_id)
-        root = repo_root()
-        override = app.state.web_turn_runner
-        prompt = payload.prompt
-        model = payload.model
-        target_node_ids = payload.target_node_ids
-        base_version = payload.base_version
-        # D2.2: the web-turn worker persists the document (PG) — carry the workspace.
-        workspace_id = repo.workspace_id
-
-        def worker() -> None:
-            store = HybridRepository(workspace_id=workspace_id)
-
-            def sink(event_type: str, data: JsonObject) -> None:
-                try:
-                    store.append_run_event(run_id, event_type, data)
-                except Exception:
-                    pass
-
-            try:
-                doc = store.require_document(document_id)
-                if doc["current_version"] != base_version:
-                    response = conflicted_web_turn_response(
-                        base_version, doc["current_version"]
-                    )
-                elif override is not None:
-                    # Backward-compatible seam: existing stubs take four
-                    # positional args; only pass the scoped-target ids when
-                    # the request carried them (a five-arg stub), and only
-                    # pass account_card as a keyword when the turn is
-                    # personalized (so the un-personalized 4/5-arg stubs are
-                    # untouched).
-                    account_kwargs = (
-                        {"account_card": account_card} if account_card else {}
-                    )
-                    if target_node_ids:
-                        response = override(
-                            doc, prompt, model, root, target_node_ids,
-                            **account_kwargs,
-                        )
-                    else:
-                        response = override(
-                            doc, prompt, model, root, **account_kwargs
-                        )
-                else:
-                    asset_library = workspace_asset_library_manifest(store)
-                    component_account_id = doc.get("account_id")
-                    custom_component_registry = (
-                        DurableAgentCustomComponentRegistry(
-                            blobs=blob_store(repo),
-                            account_id=component_account_id,
-                            document_id=document_id,
-                            node_binary=(
-                                app.state.custom_component_compiler_node_bin
-                            ),
-                            worker_path=Path(
-                                app.state.custom_component_compiler_worker
-                            ),
-                            timeout_seconds=(
-                                app.state
-                                .custom_component_compiler_timeout_seconds
-                            ),
-                            compile_fn=compile_custom_component,
-                        )
-                        if isinstance(component_account_id, str)
-                        and component_account_id
-                        else None
-                    )
-                    response = run_web_agent_turn(
-                        doc,
-                        prompt,
-                        model,
-                        root,
-                        event_sink=sink,
-                        target_node_ids=target_node_ids,
-                        account_card=account_card,
-                        asset_library=asset_library,
-                        custom_component_registry=custom_component_registry,
-                        workspace_id=workspace_id,
-                    )
-                if response.get("status") == "applied":
-                    operations = response.get("operations")
-                    if not isinstance(operations, list):
-                        response = failed_agent_turn_response(
-                            "web_turn.operations_missing",
-                            "The AI turn did not return a replayable operation history.",
-                            "The candidate document was not committed.",
-                        )
-                    elif not operations:
-                        if response.get("web_doc") != doc["scene"]:
-                            response = failed_agent_turn_response(
-                                "web_turn.operations_incomplete",
-                                "The AI turn's operation history did not describe its result.",
-                                "The candidate document was not committed.",
-                            )
-                    else:
-                        try:
-                            replay = app.state.core.web_apply_ops(
-                                doc["scene"], operations, raise_on_error=False
-                            )
-                        except CoreError as error:
-                            response = failed_agent_turn_response(
-                                "web_turn.operations_replay_failed",
-                                "The AI turn's operations could not be replayed.",
-                                error.message,
-                            )
-                        else:
-                            if (
-                                not replay.get("ok")
-                                or replay.get("web_doc") != response.get("web_doc")
-                            ):
-                                response = failed_agent_turn_response(
-                                    "web_turn.operations_incomplete",
-                                    "The AI turn's operation history did not reproduce its result.",
-                                    "The candidate document was not committed.",
-                                )
-                            else:
-                                try:
-                                    updated = store.update_web_document(
-                                        document_id,
-                                        replay["web_doc"],
-                                        intent=prompt[:120],
-                                        checkpoint_label="Website turn",
-                                        operations=operations,
-                                        inverse_operations=replay.get(
-                                            "inverse_operations"
-                                        ),
-                                        expected_base_version=base_version,
-                                    )
-                                except WebDocumentVersionConflict as conflict:
-                                    response = conflicted_web_turn_response(
-                                        conflict.expected, conflict.current
-                                    )
-                                except CustomComponentReferenceError as error:
-                                    response = failed_agent_turn_response(
-                                        error.code,
-                                        error.message,
-                                        (
-                                            f"Node {error.node_id} references "
-                                            f"artifact {error.artifact_id}."
-                                        ),
-                                    )
-                                else:
-                                    response["current_version"] = updated[
-                                        "current_version"
-                                    ]
-                status = (
-                    "succeeded"
-                    if response.get("status") == "applied"
-                    else "failed"
-                )
-                store.complete_run(
-                    run_id,
-                    status,
-                    {**response, "doc_kind": "web"},
-                    "result",
-                    {"status": response.get("status")},
-                )
-            except Exception as error:  # pragma: no cover - defensive
-                failed = failed_agent_turn_response(
-                    "agent_runtime.failed",
-                    "Website turn crashed before returning a result.",
-                    str(error),
-                )
-                store.complete_run(
-                    run_id,
-                    "failed",
-                    {**failed, "doc_kind": "web"},
-                    "error",
-                    {"message": str(error)},
-                )
-
-        threading.Thread(
-            target=worker, name=f"web-turn-{run_id}", daemon=True
-        ).start()
+        work_id = design_work_id_for_run(run_id)
+        # Same frozen-envelope discipline as the scene turn. ``account_card`` rides by value
+        # because it was resolved (and 404'd) BEFORE the run row existed and must not be re-read
+        # by a takeover worker; ``base_version`` rides because the turn is defined against one
+        # exact stored revision and a retry must still refuse to clobber newer human edits.
+        envelope = DesignTurnEnvelope(
+            work_id=work_id,
+            workspace_id=repo.workspace_id,
+            kind="web_turn",
+            run_id=run_id,
+            checkpoint_thread_id=run_id,
+            document_id=document_id,
+            config={
+                "request": payload.model_dump(mode="json"),
+                "account_card": account_card,
+            },
+        ).model_dump(mode="json")
+        repo.create_run_and_offer(
+            run_id,
+            document_id,
+            kind="web_turn",
+            envelope=envelope,
+            work_id=work_id,
+        )
         log_event(
             api_logger,
             logging.INFO,
-            "web_turn_started",
+            "web_turn_offered",
             run_id=run_id,
+            work_id=str(work_id),
             document_id=document_id,
         )
-        return {"schema_version": 1, "run_id": run_id, "status": "running"}
+        return {"schema_version": 1, "run_id": run_id, "status": "queued"}
 
     @app.get("/documents/{document_id}/web/render")
     def render_web_document(
@@ -6631,16 +6541,30 @@ def run_agent_turn_preview(
     root: Path,
     event_sink=None,
     resolved_reference_assets=_REFERENCES_UNRESOLVED,
-    workspace_id: Optional[str] = None,
+    *,
+    workspace_id: str,
+    blobs: Optional[DesignBlobStore] = None,
+    engine_cache_root: Optional[Path] = None,
+    checkpointer: Any = None,
+    thread_id: Optional[str] = None,
 ) -> JsonObject:
-    # D4: the turn's tenant, threaded from the dispatching request. It decides which engine
-    # materialization cache the runtime reads and writes — and the accept seam that gives those
-    # bytes durable custody looks in the REQUEST's cache, so a turn pointed at the wrong
-    # workspace would silently lose everything it generated. Defaults to the dev workspace for
-    # the direct callers (CLI, fixtures) that have no request, mirroring the D2.5A residual on
-    # the by-value resolvers below.
-    turn_workspace_id = workspace_id or default_workspace_id()
-    ensure_agent_runtime_path(root)
+    # D4: the turn's tenant. It decides which engine materialization cache the runtime reads and
+    # writes — and the accept seam that gives those bytes durable custody looks in that same
+    # cache, so a turn pointed at the wrong workspace would silently lose everything it
+    # generated. D5 Round C made it REQUIRED: the old `workspace_id or default_workspace_id()`
+    # meant a caller that simply forgot ran against the dev tenant instead of failing.
+    #
+    # `blobs` / `engine_cache_root` (D5 Round C) are the dispatching app's byte backend and
+    # engine-cache tree. Omitted (the CLI and direct callers) they are re-derived from settings,
+    # which is exactly what a detached fleet worker has; the embedded worker passes the app's,
+    # so an injected backend cannot stage bytes in one place and read them from another.
+    turn_workspace_id = workspace_id
+    turn_blobs = blobs if blobs is not None else api_blob_store(turn_workspace_id)
+    turn_cache_root = (
+        engine_cache_root
+        if engine_cache_root is not None
+        else api_engine_cache_root(turn_workspace_id)
+    )
     try:
         from lumen_agent.config import AgentRuntimeConfig
         from lumen_agent.harness import run_deepagent_turn
@@ -6660,7 +6584,7 @@ def run_agent_turn_preview(
     # a worker-thread 422 would be swallowed by its catch-all; adversarial-gate
     # ship-blocker 1) and hands the manifest in via resolved_reference_assets.
     if resolved_reference_assets is _REFERENCES_UNRESOLVED:
-        reference_assets = resolve_agent_turn_references(payload, api_blob_store(turn_workspace_id))
+        reference_assets = resolve_agent_turn_references(payload, turn_blobs)
     else:
         reference_assets = resolved_reference_assets
 
@@ -6678,11 +6602,9 @@ def run_agent_turn_preview(
             # there, and anything the turn generates lands there and is given durable custody at
             # the accept seam (the scene-persist backstop). Pointing the runtime anywhere else
             # fails seeded imagery with LUME0210. LUMEN_AGENT_ASSET_STORE still overrides.
-            config = replace(
-                config, asset_store_root=api_engine_cache_root(turn_workspace_id)
-            )
+            config = replace(config, asset_store_root=turn_cache_root)
         brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
-            resolve_agent_turn_brand_kit(payload, api_blob_store(turn_workspace_id))
+            resolve_agent_turn_brand_kit(payload, turn_blobs)
         )
         if brand_kit is not None:
             # K0 (kit application): the document's attached kit rides the run
@@ -6722,7 +6644,7 @@ def run_agent_turn_preview(
             config = replace(
                 config,
                 reference_assets=reference_assets,
-                asset_store_root=api_engine_cache_root(turn_workspace_id),
+                asset_store_root=turn_cache_root,
             )
         # Slice 2 D4: the loop is mandatory-multimodal (Director + reviewer attach
         # images every turn). Fail LOUDLY here, before the run authors, if the
@@ -6750,6 +6672,11 @@ def run_agent_turn_preview(
             initial_scene=agent_seed_scene(payload),
             event_sink=event_sink,
             clarification_already_requested=clarification_already_requested,
+            # D5 Round B: durable graph state keyed on the DESIGN RUN. Both are None on every
+            # non-fleet path (CLI, fixtures, the synchronous /agent/turn-preview route), which
+            # keeps those turns byte-identical to pre-D5.
+            checkpointer=checkpointer,
+            thread_id=thread_id,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -6839,7 +6766,12 @@ def run_web_agent_turn(
     account_card: Optional[JsonObject] = None,
     asset_library: Optional[JsonObject] = None,
     custom_component_registry: Any = None,
-    workspace_id: Optional[str] = None,
+    *,
+    workspace_id: str,
+    blobs: Optional[DesignBlobStore] = None,
+    engine_cache_root: Optional[Path] = None,
+    checkpointer: Any = None,
+    thread_id: Optional[str] = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
@@ -6865,7 +6797,6 @@ def run_web_agent_turn(
     brand/assets it is not passed by value because source/compile operations
     must be durable between runs; the runtime receives typed methods, never
     database/store paths."""
-    ensure_agent_runtime_path(root)
     try:
         from lumen_agent.config import AgentRuntimeConfig
         from lumen_agent.harness_web import run_deepagent_web_turn
@@ -6876,12 +6807,25 @@ def run_web_agent_turn(
             str(error),
         )
 
-    # D4: see run_agent_turn_preview — the turn's tenant picks its engine cache. The registry
-    # capability already carries a workspace, so prefer its (they must not disagree).
-    turn_workspace_id = (
-        workspace_id
-        or getattr(getattr(custom_component_registry, "blobs", None), "workspace_id", None)
-        or default_workspace_id()
+    # D4: see run_agent_turn_preview — the turn's tenant picks its engine cache. REQUIRED since
+    # D5 Round C; the old fallback chain ended at the dev workspace, which meant a caller that
+    # forgot silently read and wrote another tenant's data. The custom-component registry carries
+    # a workspace of its own and the two must not disagree — assert rather than prefer one, so a
+    # mismatch is a loud bug instead of a silent re-scope.
+    registry_workspace_id = getattr(
+        getattr(custom_component_registry, "blobs", None), "workspace_id", None
+    )
+    if registry_workspace_id is not None and registry_workspace_id != workspace_id:
+        raise ValueError(
+            "web turn workspace disagrees with its custom-component registry's: "
+            f"{workspace_id!r} vs {registry_workspace_id!r}"
+        )
+    turn_workspace_id = workspace_id
+    turn_blobs = blobs if blobs is not None else api_blob_store(turn_workspace_id)
+    turn_cache_root = (
+        engine_cache_root
+        if engine_cache_root is not None
+        else api_engine_cache_root(turn_workspace_id)
     )
     web_doc = document["scene"]
     if target_node_ids:
@@ -6893,9 +6837,7 @@ def run_web_agent_turn(
         if config.asset_store_root is None:
             # D4: generated imagery must land in (and export from) the request workspace's
             # engine cache, exactly as the scene path pins it.
-            config = replace(
-                config, asset_store_root=api_engine_cache_root(turn_workspace_id)
-            )
+            config = replace(config, asset_store_root=turn_cache_root)
         if asset_library is not None:
             config = replace(config, asset_library=asset_library)
         if custom_component_registry is not None:
@@ -6914,7 +6856,7 @@ def run_web_agent_turn(
                 config, turn_target_node_ids=list(target_node_ids)
             )
         brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
-            resolve_web_turn_brand_kit(web_doc, api_blob_store(turn_workspace_id))
+            resolve_web_turn_brand_kit(web_doc, turn_blobs)
         )
         if brand_kit is not None:
             config = replace(
@@ -6953,6 +6895,9 @@ def run_web_agent_turn(
             config=config,
             initial_web_doc=web_doc,
             event_sink=event_sink,
+            # D5 Round B: see run_agent_turn_preview.
+            checkpointer=checkpointer,
+            thread_id=thread_id,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -6976,18 +6921,316 @@ def run_web_agent_turn(
     }
 
 
+# --- fleet turn executors (D5 Round B) --------------------------------------------------------
+#
+# These are the pre-D5 daemon-thread worker closures, promoted to module functions and driven
+# from the frozen envelope instead of from captured locals. They live HERE, in main.py, because
+# every by-value resolver they need (brand kit, fonts, references, the asset library, the engine
+# cache root, the custom-component registry) already lives here; ``fleet_handler`` imports them
+# lazily to avoid the import cycle that direction would otherwise create.
+#
+# Contract: return ``(run_status, response, event_type, event_data)`` and NEVER raise — the caller
+# lands all four in one fenced ``complete_run``. An executor that raised would leave a claimed run
+# with no terminal row, which is the one failure the whole slice exists to make impossible.
+
+
+def _turn_blob_store(host: Any, workspace_id: str) -> DesignBlobStore:
+    """The turn's byte store. Prefers the host's injected backend (a test's throwaway
+    ``FsStorage``) and falls back to the process-wide configured one, which is what a detached
+    fleet worker always has."""
+    return (
+        DesignBlobStore(host.storage, workspace_id)
+        if host.storage is not None
+        else api_blob_store(workspace_id)
+    )
+
+
+def _host_engine_cache_root(host: Any, workspace_id: str) -> Path:
+    """The job's engine materialization cache, preferring the dispatching app's tree.
+
+    D5 Round C closes the last "re-derived default" on the worker path. ``api_engine_cache_root``
+    resolves the root from ``settings``; an app built with an explicit ``engine_cache_root`` (the
+    whole design suite, and any deployment that overrides it) would then have its worker write
+    into a DIFFERENT tree from the one its request paths read. Byte custody is durable either way
+    since D4, but the mirror divergence is exactly the kind of invisible split this round exists
+    to remove — so when the host carries the app's root, that is the one used.
+    """
+    if host.engine_cache_root is not None:
+        path = Path(host.engine_cache_root) / workspace_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    return api_engine_cache_root(workspace_id)
+
+
+def _turn_core(host: Any) -> CoreClient:
+    """The Rust engine client. The detached fleet worker has no ``app.state`` to take one from,
+    so it builds the same client ``create_app`` would."""
+    return host.core if host.core is not None else CoreClient()
+
+
+def execute_agent_turn_job(
+    envelope: Any,
+    *,
+    store: HybridRepository,
+    host: Any,
+    event_sink: Any,
+    checkpointer: Any = None,
+) -> Tuple[str, JsonObject, str, JsonObject]:
+    """One scene-mode turn, executed from its frozen envelope.
+
+    ``store`` is unused here and used heavily by the web executor: the two share a signature so
+    the handler can select one by kind and call it identically.
+    """
+    payload = AgentTurnPreviewRequest.model_validate(envelope.config.get("request") or {})
+    # An explicit None means "resolved: this turn has no references" — distinct from the
+    # _REFERENCES_UNRESOLVED sentinel, which would make the runner resolve them a second time.
+    reference_assets = envelope.config.get("reference_assets")
+    override = host.agent_turn_runner
+    root = repo_root()
+    try:
+        if override is not None:
+            response = override(payload, root)
+        else:
+            response = run_agent_turn_preview(
+                payload,
+                root,
+                event_sink=event_sink,
+                resolved_reference_assets=reference_assets,
+                workspace_id=envelope.workspace_id,
+                # D5 Round C: the dispatching app's byte backend + engine-cache tree, so an
+                # injected backend cannot stage bytes in one place and read them from another.
+                blobs=_turn_blob_store(host, envelope.workspace_id),
+                engine_cache_root=_host_engine_cache_root(host, envelope.workspace_id),
+                checkpointer=checkpointer,
+                thread_id=envelope.checkpoint_thread_id,
+            )
+        status = "failed" if response.get("status") in ("failed", "error") else "succeeded"
+        return status, response, "result", {"status": response.get("status")}
+    except Exception as error:  # pragma: no cover - defensive; the runner already folds failures
+        failed = failed_agent_turn_response(
+            "agent_runtime.failed",
+            "Agent turn crashed before returning a proposal.",
+            str(error),
+        )
+        return "failed", failed, "error", {"message": str(error)}
+
+
+def execute_web_turn_job(
+    envelope: Any,
+    *,
+    store: HybridRepository,
+    host: Any,
+    event_sink: Any,
+    checkpointer: Any = None,
+) -> Tuple[str, JsonObject, str, JsonObject]:
+    """One website-mode turn, executed from its frozen envelope.
+
+    Unlike the scene path this executor OWNS the persist: an applied result is replayed against
+    the stored document and committed under the envelope's ``base_version``, so a turn that took
+    minutes can never silently clobber a human edit made while it ran.
+    """
+    request = envelope.config.get("request") or {}
+    payload = WebTurnRequest.model_validate(request)
+    account_card = envelope.config.get("account_card")
+    document_id = envelope.document_id
+    prompt = payload.prompt
+    model = payload.model
+    target_node_ids = payload.target_node_ids
+    base_version = payload.base_version
+    override = host.web_turn_runner
+    root = repo_root()
+    workspace_id = envelope.workspace_id
+    try:
+        doc = store.require_document(document_id)
+        if doc["current_version"] != base_version:
+            response = conflicted_web_turn_response(base_version, doc["current_version"])
+        elif override is not None:
+            # Backward-compatible seam: existing stubs take four positional args; only pass the
+            # scoped-target ids when the request carried them (a five-arg stub), and only pass
+            # account_card as a keyword when the turn is personalized (so the un-personalized
+            # 4/5-arg stubs are untouched).
+            account_kwargs = {"account_card": account_card} if account_card else {}
+            if target_node_ids:
+                response = override(
+                    doc, prompt, model, root, target_node_ids, **account_kwargs
+                )
+            else:
+                response = override(doc, prompt, model, root, **account_kwargs)
+        else:
+            asset_library = workspace_asset_library_manifest(store)
+            component_account_id = doc.get("account_id")
+            custom_component_registry = (
+                DurableAgentCustomComponentRegistry(
+                    blobs=_turn_blob_store(host, workspace_id),
+                    account_id=component_account_id,
+                    document_id=document_id,
+                    node_binary=host.compiler_node_bin,
+                    # The host's compiler knobs are None off-request; the fallbacks are exactly
+                    # what `create_app` assigns when nothing is injected, so the two hosts run
+                    # the same compiler.
+                    worker_path=Path(
+                        host.compiler_worker
+                        if host.compiler_worker is not None
+                        else default_compiler_worker_path()
+                    ),
+                    timeout_seconds=(
+                        host.compiler_timeout_seconds
+                        if host.compiler_timeout_seconds is not None
+                        else DEFAULT_COMPILER_TIMEOUT_SECONDS
+                    ),
+                    compile_fn=compile_custom_component,
+                )
+                if isinstance(component_account_id, str) and component_account_id
+                else None
+            )
+            response = run_web_agent_turn(
+                doc,
+                prompt,
+                model,
+                root,
+                event_sink=event_sink,
+                target_node_ids=target_node_ids,
+                account_card=account_card,
+                asset_library=asset_library,
+                custom_component_registry=custom_component_registry,
+                workspace_id=workspace_id,
+                # D5 Round C: see the scene executor.
+                blobs=_turn_blob_store(host, workspace_id),
+                engine_cache_root=_host_engine_cache_root(host, workspace_id),
+                checkpointer=checkpointer,
+                thread_id=envelope.checkpoint_thread_id,
+            )
+        if response.get("status") == "applied":
+            operations = response.get("operations")
+            if not isinstance(operations, list):
+                response = failed_agent_turn_response(
+                    "web_turn.operations_missing",
+                    "The AI turn did not return a replayable operation history.",
+                    "The candidate document was not committed.",
+                )
+            elif not operations:
+                if response.get("web_doc") != doc["scene"]:
+                    response = failed_agent_turn_response(
+                        "web_turn.operations_incomplete",
+                        "The AI turn's operation history did not describe its result.",
+                        "The candidate document was not committed.",
+                    )
+            else:
+                try:
+                    replay = _turn_core(host).web_apply_ops(
+                        doc["scene"], operations, raise_on_error=False
+                    )
+                except CoreError as error:
+                    response = failed_agent_turn_response(
+                        "web_turn.operations_replay_failed",
+                        "The AI turn's operations could not be replayed.",
+                        error.message,
+                    )
+                else:
+                    if not replay.get("ok") or replay.get("web_doc") != response.get("web_doc"):
+                        response = failed_agent_turn_response(
+                            "web_turn.operations_incomplete",
+                            "The AI turn's operation history did not reproduce its result.",
+                            "The candidate document was not committed.",
+                        )
+                    else:
+                        try:
+                            updated = store.update_web_document(
+                                document_id,
+                                replay["web_doc"],
+                                intent=prompt[:120],
+                                checkpoint_label="Website turn",
+                                operations=operations,
+                                inverse_operations=replay.get("inverse_operations"),
+                                expected_base_version=base_version,
+                            )
+                        except WebDocumentVersionConflict as conflict:
+                            response = conflicted_web_turn_response(
+                                conflict.expected, conflict.current
+                            )
+                        except CustomComponentReferenceError as error:
+                            response = failed_agent_turn_response(
+                                error.code,
+                                error.message,
+                                (
+                                    f"Node {error.node_id} references "
+                                    f"artifact {error.artifact_id}."
+                                ),
+                            )
+                        else:
+                            response["current_version"] = updated["current_version"]
+        status = "succeeded" if response.get("status") == "applied" else "failed"
+        return (
+            status,
+            {**response, "doc_kind": "web"},
+            "result",
+            {"status": response.get("status")},
+        )
+    except Exception as error:  # pragma: no cover - defensive
+        failed = failed_agent_turn_response(
+            "agent_runtime.failed",
+            "Website turn crashed before returning a result.",
+            str(error),
+        )
+        return "failed", {**failed, "doc_kind": "web"}, "error", {"message": str(error)}
+
+
+def execute_ingestion_job(
+    envelope: Any,
+    *,
+    host: Any,
+    expected_generation: Optional[int] = None,
+) -> str:
+    """One brand-kit ingestion, executed from its frozen envelope. Returns the job's status.
+
+    The ingestion sibling of :func:`execute_agent_turn_job` / :func:`execute_web_turn_job`, and
+    it lives here for the same two reasons: the workspace-scoped engine-cache root it needs is a
+    ``main`` concern, and the three ``run_*_ingestion`` names are resolved from THIS module's
+    namespace at call time — which is the seam the ingestion route suites patch to inject their
+    capture/extract/analyze stubs. Calling ``lumen_ingestion.pipeline`` directly from the handler
+    would silently bypass every one of those tests.
+
+    Never raises: the pipeline drives the job to a terminal row itself (``run_ingestion_job``
+    captures any exception onto it) and a fenced write is dropped rather than propagated. The
+    status is read back afterwards so the fleet's ``WorkResult`` reports the real outcome instead
+    of assuming success.
+    """
+    workspace_id = envelope.workspace_id
+    kind = DesignIngestionKind(envelope.ingestion_kind)
+    runner = {
+        DesignIngestionKind.WEBSITE: run_website_ingestion,
+        DesignIngestionKind.PDF: run_pdf_ingestion,
+        DesignIngestionKind.ASSET_UPLOAD: run_asset_ingestion,
+    }[kind]
+    runner(
+        str(_host_engine_cache_root(host, workspace_id)),
+        envelope.job_id,
+        # The tenant is the envelope's, never a re-derived default: a worker-path write that
+        # silently picks a workspace is the D2.5A residual this round closes.
+        workspace_id=workspace_id,
+        # The dispatching app's byte backend when there is one (the embedded worker + the design
+        # suite); the detached worker has none and falls back to the configured backend, which is
+        # what staged the upload in that deployment anyway.
+        storage=host.storage,
+        expected_generation=expected_generation,
+    )
+    job = IngestionJobStore(workspace_id=workspace_id).get(envelope.job_id)
+    return str((job or {}).get("status") or "unknown")
+
+
 def sse_frame(seq: int, event: str, data: Any) -> str:
     """One Server-Sent Events frame. `id:` carries the monotonic run-event
     seq so the browser's EventSource replays from it via Last-Event-ID."""
     return f"id: {seq}\nevent: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-def ensure_agent_runtime_path(root: Path) -> None:
-    agent_runtime_path = str(root / "apps" / "agent_runtime")
-    api_path = str(root / "apps" / "api")
-    for path in [agent_runtime_path, api_path, str(root)]:
-        if path not in sys.path:
-            sys.path.insert(0, path)
+# D5 Round B (R-D5-B1): ``ensure_agent_runtime_path`` is DELETED. It inserted
+# apps/agent_runtime, apps/api and the design-tree root into ``sys.path`` at call time so the
+# lazy ``lumen_agent`` import below could resolve. That trick is unavailable to an out-of-process
+# fleet worker, which is why ``lumen-agent-runtime``, ``py-lumen-obs`` and ``py-lumen-config`` are
+# now installed uv workspace members. The lazy import and its ``agent_runtime.unavailable``
+# degradation stay exactly as they were — a machine without the runtime extras must still get an
+# honest failure envelope rather than an import crash at module load.
 
 
 def api_engine_cache_root(workspace_id: str) -> Path:
@@ -7003,23 +7246,29 @@ def api_engine_cache_root(workspace_id: str) -> Path:
     return path
 
 
-def api_blob_store(workspace_id: Optional[str] = None) -> DesignBlobStore:
+def api_blob_store(workspace_id: str) -> DesignBlobStore:
     """A design blob-store handle for code that has no request to take one from.
 
-    Carries the SAME D2.5A residual the ``HybridRepository()`` constructions beside it do: off
-    the request thread there is no header to read, so it falls back to the configured dev
-    workspace. Row store and byte store therefore name the same tenant, which is the property
-    that matters; D5 threads the turn's real workspace through both at once. It also takes the
-    process-wide backend from settings rather than ``app.state.storage``, so a suite that
-    injects a throwaway backend into ``create_app`` and then drives THIS path must point
-    ``CLUE_STORAGE_FS_ROOT`` at the same place (the conftest fixture does).
+    D5 Round C closed the D2.5A residual this carried: ``workspace_id`` was optional and fell
+    back to the configured dev workspace, so any off-request caller that simply forgot to thread
+    a tenant read and wrote the dev tenant's bytes instead of failing. It is now REQUIRED, and
+    every worker-path caller passes the job's own workspace out of its frozen envelope.
+
+    What SURVIVES, deliberately: the backend comes from ``settings``, not ``app.state.storage``,
+    because this function has no app handle by construction — its callers are the ones with no
+    request. On the worker path that residual is gone a different way: the executors pass the
+    host's ``DesignBlobStore`` (built from ``app.state.storage`` for the embedded worker) into
+    the turn/ingestion runners, so this function is reached only by the CLI, fixtures, and the
+    off-request resolver defaults. A suite that injects a throwaway backend into ``create_app``
+    and then drives one of THOSE paths must point ``CLUE_STORAGE_FS_ROOT`` at the same place
+    (the conftest fixture does).
     """
     return DesignBlobStore(storage_from_settings(), workspace_id)
 
 
 def resolve_agent_turn_brand_kit(
     payload: AgentTurnPreviewRequest,
-    blobs: Optional[DesignBlobStore] = None,
+    blobs: DesignBlobStore,
 ) -> Tuple[
     Optional[JsonObject], Optional[str], Optional[JsonObject], Optional[JsonObject]
 ]:
@@ -7043,9 +7292,9 @@ def resolve_agent_turn_brand_kit(
     if not isinstance(ref, dict) or not ref.get("id"):
         return None, None, None, None
     try:
-        # D2.5A residual (unchanged by D2.5B): this runs off the request thread, so the store
-        # falls back to the configured dev workspace. D5 threads the turn's workspace through.
-        blobs = blobs if blobs is not None else api_blob_store()
+        # D5 Round C: `blobs` is REQUIRED and names the caller's tenant. It used to default to
+        # `api_blob_store()` — the configured dev workspace — which meant an off-request caller
+        # that forgot to thread a workspace resolved another tenant's kit.
         repo = HybridRepository(blobs.workspace_id)
         record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
         brand_kit = record["brand_kit"]
@@ -7188,7 +7437,7 @@ def build_web_font_face_css(
 
 
 def resolve_web_turn_brand_kit(
-    web_doc: JsonObject, blobs: Optional[DesignBlobStore] = None
+    web_doc: JsonObject, blobs: DesignBlobStore
 ) -> Tuple[
     Optional[JsonObject], Optional[str], Optional[JsonObject], Optional[JsonObject]
 ]:
@@ -7202,15 +7451,14 @@ def resolve_web_turn_brand_kit(
     unreadable database all return (None, None, None, None) and the pipeline
     falls back to the platform default kit — the same silent-fallback contract
     the scene path has. `blobs` (D4) is the tenant's byte store, used to materialize the kit's
-    font faces into the engine cache; omitted (the off-request-thread callers), it falls back to
-    the dev workspace exactly as the row store beside it does."""
+    font faces into the engine cache; REQUIRED since D5 Round C, because a defaulted one named
+    the dev workspace and quietly resolved the wrong tenant's kit."""
     theme = web_doc.get("theme") if isinstance(web_doc, dict) else None
     ref = theme.get("brand_kit") if isinstance(theme, dict) else None
     if not isinstance(ref, dict) or not ref.get("id"):
         return None, None, None, None
     try:
-        # D2.5A residual (unchanged by D2.5B): off the request thread, so the dev workspace.
-        blobs = blobs if blobs is not None else api_blob_store()
+        # D5 Round C: `blobs` is REQUIRED and names the caller's tenant — see the scene twin.
         repo = HybridRepository(blobs.workspace_id)
         record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
         brand_kit = record["brand_kit"]
@@ -7268,7 +7516,7 @@ def account_values(
 
 
 def resolve_account_assets(
-    account_card: JsonObject, workspace_id: Optional[str] = None
+    account_card: JsonObject, workspace_id: str
 ) -> Optional[JsonObject]:
     """The account-logo manifest a personalized turn hands the runtime BY VALUE
     (mirrors resolve_web_turn_brand_kit / brand_kit_asset_manifest): the account
@@ -7281,8 +7529,8 @@ def resolve_account_assets(
     if not logo_asset_id:
         return None
     try:
-        # D2.3: the asset registry lives on Postgres. `workspace_id` is the turn's tenant
-        # (None → the dev workspace, the same D2.5A residual as the resolvers above).
+        # D2.3: the asset registry lives on Postgres. `workspace_id` is the turn's tenant, and
+        # REQUIRED since D5 Round C — a None used to mean the dev workspace.
         repo = HybridRepository(workspace_id)
         record = repo.require_asset_record(str(logo_asset_id))
         return {str(logo_asset_id): {"record": record.get("asset") or record}}
@@ -7312,7 +7560,11 @@ def workspace_asset_library_manifest(repo: HybridRepository) -> JsonObject:
         if (row.get("asset") or {}).get("id")
     ]
     try:
-        descriptions = DescriptionStore().get_many(asset_ids)
+        # D5 Round C: workspace-scoped. `DescriptionStore()` defaulted to the DEV workspace, so
+        # every tenant's asset-library manifest was annotated from the dev tenant's description
+        # rows (in practice: no descriptions at all, silently). The registry read beside it has
+        # always been correctly scoped, which is what hid the split.
+        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(asset_ids)
     except Exception:
         descriptions = {}
 
@@ -7433,7 +7685,7 @@ def resolve_reference_images_for_generate(
 
 
 def resolve_agent_turn_references(
-    payload: AgentTurnPreviewRequest, blobs: Optional[DesignBlobStore] = None
+    payload: AgentTurnPreviewRequest, blobs: DesignBlobStore
 ) -> Optional[JsonObject]:
     """RC (D2): the user-attached references for THIS turn, resolved from the
     asset library into a by-value manifest so the runtime never reads the API
@@ -7445,8 +7697,8 @@ def resolve_agent_turn_references(
     asset_ids = _dedupe_and_cap_reference_ids(payload.reference_asset_ids)
     if not asset_ids:
         return None
-    # D2.5A residual (unchanged by D2.5B): off the request thread, so the dev workspace.
-    blobs = blobs if blobs is not None else api_blob_store()
+    # D5 Round C: `blobs` is REQUIRED and names the caller's tenant (it defaulted to the dev
+    # workspace, which made an unthreaded call read another tenant's library).
     return reference_asset_manifest(
         HybridRepository(blobs.workspace_id),
         blobs,
@@ -7479,7 +7731,8 @@ def reference_asset_manifest(
     from lumen_ingestion.pipeline import make_rasterize_svg
 
     try:
-        descriptions = DescriptionStore().get_many(asset_ids)
+        # D5 Round C: workspace-scoped — see workspace_asset_library_manifest for the same fix.
+        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(asset_ids)
     except Exception:
         descriptions = {}
 

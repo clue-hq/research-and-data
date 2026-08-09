@@ -85,9 +85,30 @@ class DesignPublishStatus(StrEnum):
     UNPUBLISHED = "unpublished"
 
 
-class DesignRunStatus(StrEnum):
-    """``design_run_status`` — agent-run lifecycle (temporary shape; reshaped at D5)."""
+class DesignRunKind(StrEnum):
+    """``design_run_kind`` — which design runtime executes a run (PD D5).
 
+    The fleet sees ONE mechanical kind (``FleetTaskKind.DESIGN_JOB``); this column plus the
+    by-value ``design_agent_run.payload`` envelope carry the real discriminant, the same shape
+    the two M8D research subject types share under ``entity_research_job``.
+    """
+
+    AGENT_TURN = "agent_turn"
+    WEB_TURN = "web_turn"
+
+
+class DesignRunStatus(StrEnum):
+    """``design_run_status`` — design-run lifecycle (PD D5).
+
+    ``QUEUED`` is first in definition order because the D5 migration REBUILDS the type rather
+    than appending with ``ALTER TYPE … ADD VALUE`` — the lifecycle reads in order, and rebuilding
+    is what makes the widening reversible (PostgreSQL cannot drop an enum label). A run is born
+    ``QUEUED`` by the API and stamped ``RUNNING`` by the worker that claims it.
+
+    Suspension / HITL states are deliberately absent: D5 keeps the status vocabulary minimal.
+    """
+
+    QUEUED = "queued"
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -127,6 +148,7 @@ DESIGN_PG_ENUMS: dict[str, type[StrEnum]] = {
     "design_brand_kit_source": DesignBrandKitSource,
     "design_description_origin": DesignDescriptionOrigin,
     "design_publish_status": DesignPublishStatus,
+    "design_run_kind": DesignRunKind,
     "design_run_status": DesignRunStatus,
     "design_ingestion_kind": DesignIngestionKind,
     "design_ingestion_status": DesignIngestionStatus,

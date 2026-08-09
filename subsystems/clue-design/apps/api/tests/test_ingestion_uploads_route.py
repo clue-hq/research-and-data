@@ -24,7 +24,7 @@ from typing import Any, Callable, Optional
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_blob_store, make_client
+from conftest import make_blob_store, make_client, wait_for_ingestion_job
 
 from lumen_api import main as main_module
 from lumen_api.design_store import HybridRepository
@@ -160,7 +160,9 @@ def _install_stub_pipeline(
     mirroring how ``pipeline.py`` lazily resolves ``capture.uploads`` /
     ``describe`` so no Agent A file is imported."""
 
-    def _runner(engine_cache_dir, job_id, *, workspace_id=None, storage=None):
+    def _runner(
+        engine_cache_dir, job_id, *, workspace_id, storage=None, expected_generation=None
+    ):
         run_asset_ingestion(
             engine_cache_dir,
             job_id,
@@ -168,6 +170,7 @@ def _install_stub_pipeline(
             apply_descriptions=apply_descriptions,
             workspace_id=workspace_id,
             storage=storage,
+            expected_generation=expected_generation,
         )
 
     monkeypatch.setattr(main_module, "run_asset_ingestion", _runner)
@@ -232,6 +235,7 @@ def test_ingest_assets_happy_path_persists_kit_and_report(
     assert job["status"] == "queued", job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}")
     assert got.status_code == 200, got.text
     got_job = got.json()["job"]
@@ -267,6 +271,7 @@ def test_ingest_assets_name_default_when_absent(
     post = _post_assets(client)  # no name form field
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 
@@ -318,6 +323,7 @@ def test_ingest_assets_mixed_supported_passes_through(
     )
     assert resp.status_code == 200, resp.text
     job_id = resp.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 
@@ -330,6 +336,7 @@ def test_ingest_assets_cleans_staged_bytes_after_success(
     post = _post_assets(client)
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 
@@ -351,6 +358,7 @@ def test_ingest_assets_failure_marks_job_failed_and_cleans_staged_bytes(
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert got["brand_kit_id"] is None
@@ -375,8 +383,12 @@ def test_ingest_assets_missing_staged_bytes_fails_cleanly(
 
     post = _post_assets(client)
     job_id = post.json()["job"]["job_id"]
-    # After the (synchronous) happy background run the staged blobs are already
-    # discarded; re-run the pipeline against the same job to prove the handling.
+    # D5 Round C: the happy pass now runs on the embedded FLEET worker, so it has to be waited
+    # for before the second, direct pass — otherwise the two race and the worker's success
+    # overwrites the direct run's failure (which is the thing under test).
+    assert wait_for_ingestion_job(client, job_id)["status"] == "succeeded"
+    # After the happy pass the staged blobs are already discarded; re-run the pipeline against
+    # the same job to prove the missing-input handling.
     run_asset_ingestion(
         str(Path(client.app.state.engine_cache_root) / os.environ["LUMEN_DEV_WORKSPACE_ID"]),
         job_id,
@@ -384,6 +396,7 @@ def test_ingest_assets_missing_staged_bytes_fails_cleanly(
         workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
         storage=client.app.state.storage,
     )
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert "LUMI0605" in got["error"]["message"], got["error"]
@@ -418,6 +431,7 @@ def test_ingest_assets_describer_hook_stamps_descriptions(
     post = _post_assets(client, name="Described Assets")
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
     assert seen.get("called") is True
@@ -441,6 +455,7 @@ def test_ingest_assets_null_describer_is_noop(
 
     post = _post_assets(client)
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 

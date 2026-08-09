@@ -27,6 +27,14 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-09-part2-d5-close.md` — **Part II D5 CLOSED:** design turns + ingestion are leased
+  fleet work (`design_job`, envelope-discriminated); daemon threads + orphan sweep gone;
+  generation-fenced zombie writes; Postgres checkpointer with honest resume-as-restart;
+  stranded-work reaper (re-offer once, then fail); shims + agent_runtime are real uv members
+  (deepagents 0.6.12 treaty); O5 bridge survives by corrected ruling; suite 501/9/0.
+- `2026-08-09-part2-d5a-durable-foundation.md` / `…-d5b-turns-on-the-fleet.md` /
+  `…-d5c-ingestion-reaper.md` — D5 round detail (schema+CAS+envelopes; handler+checkpointer+API
+  switch+kill-and-resume; ingestion+reaper+workspace debts).
 - `2026-08-09-part2-d4-close.md` — **Part II D4 CLOSED:** every design asset byte durably on
   platform `clue_storage` (`{ws}/design/{sha}` keys, row-before-blob); Rust engine keeps a
   transient per-ws materialization cache (write-back + read-through); migration `13cd5078d697`

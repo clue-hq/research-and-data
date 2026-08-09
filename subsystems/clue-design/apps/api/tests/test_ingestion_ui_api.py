@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client
+from conftest import make_client, wait_for_ingestion_job
 
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
@@ -350,7 +350,7 @@ def test_pipeline_ingested_assets_get_db_records(
     monkeypatch.setattr(
         main_module,
         "run_website_ingestion",
-        lambda cache_dir, job_id, *, workspace_id=None, storage=None: (
+        lambda cache_dir, job_id, *, workspace_id, storage=None, expected_generation=None: (
             run_website_ingestion(
                 cache_dir,
                 job_id,
@@ -358,6 +358,7 @@ def test_pipeline_ingested_assets_get_db_records(
                 build_evidence=fake_build_evidence,
                 workspace_id=workspace_id,
                 storage=storage,
+                expected_generation=expected_generation,
             )
         ),
     )
@@ -367,6 +368,7 @@ def test_pipeline_ingested_assets_get_db_records(
     )
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert job["status"] == "succeeded", job
 
