@@ -192,9 +192,7 @@ def test_confirmed_direction_compiles_exact_account_fleet_without_provider_or_co
             assert job.account_run_id == UUID(str(account_runs[0].id))
             assert account_runs[0].research_directive == pin
             assert account_runs[0].budget_cap_cents == Decimal("300")
-            stored_job = await DbEntityResearchJobStore(conn_factory=connection).get_job(
-                job.job_id
-            )
+            stored_job = await DbEntityResearchJobStore(conn_factory=connection).get_job(job.job_id)
             assert stored_job is not None
             assert await DbAccountResearchJobContextResolver(
                 conn_factory=connection

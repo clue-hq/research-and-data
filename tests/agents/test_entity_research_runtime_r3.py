@@ -992,9 +992,7 @@ def test_full_graph_terminates_when_the_model_never_stops_calling_tools_after_fi
         )
         journal = Journal()
         finalizer = Finalizer()
-        factory = EntityResearchAgentFactory(
-            models=Models(model), journal=journal, guard=Guard()
-        )
+        factory = EntityResearchAgentFactory(models=Models(model), journal=journal, guard=Guard())
         runtime = EntityResearchAgentRuntime(
             factory=factory,
             checkpointers=Checkpointers(),
@@ -1007,9 +1005,7 @@ def test_full_graph_terminates_when_the_model_never_stops_calling_tools_after_fi
         assert outcome.proposal == proposal
         assert finalizer.proposals == [proposal]
         model_rounds = sum(
-            1
-            for event in journal.events
-            if event.kind is EntityAgentJournalEventKind.MODEL_STARTED
+            1 for event in journal.events if event.kind is EntityAgentJournalEventKind.MODEL_STARTED
         )
         assert model_rounds == 1
         assert not any(

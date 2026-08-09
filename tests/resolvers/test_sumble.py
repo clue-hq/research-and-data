@@ -362,9 +362,7 @@ def test_jobs_normalization_is_an_explicit_engineering_activity_proxy() -> None:
 
     assert [item.value for item in resolved] == [4]
     assert resolved[0].evidence_span == '"total":4'
-    assert resolved[0].evidence_span in json.dumps(
-        payload, sort_keys=True, separators=(",", ":")
-    )
+    assert resolved[0].evidence_span in json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
 def test_tech_normalization_uses_only_confirmed_primary_technologies() -> None:
@@ -378,9 +376,7 @@ def test_tech_normalization_uses_only_confirmed_primary_technologies() -> None:
         ["Amazon Web Services", "Kubernetes", "Salesforce"]
     ]
     assert '"business_functions":' in resolved[0].evidence_span
-    assert resolved[0].evidence_span in json.dumps(
-        payload, sort_keys=True, separators=(",", ":")
-    )
+    assert resolved[0].evidence_span in json.dumps(payload, sort_keys=True, separators=(",", ":"))
     assert (
         normalize_tech_stack(
             _fixture("tech_stack_empty.json"),
