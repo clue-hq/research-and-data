@@ -444,7 +444,10 @@ class ComposingRunDriver:
             )
             committee_reader = build_production_handoff_committee_reader(contact_eligibility)
             real_handoff = build_handoff_phase_handler(
-                assembler=build_handoff_assembler(committee_reader=committee_reader),
+                assembler=build_handoff_assembler(
+                    committee_reader=committee_reader,
+                    verification_enabled=self._settings.verification_enabled,
+                ),
                 conn_factory=self._session_factory,
                 product_id=row.product_id,
             )

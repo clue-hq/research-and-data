@@ -31,7 +31,10 @@ committee persona it:
 4. synthesizes one grounded argument via the gateway, writes it as a tier-4 ``llm_synthesis``
    ``account.value_narrative`` claim (stamped ``TENANT_PRIVATE``) + its ``claim_support`` row,
    then runs the faithfulness judge — which promotes a grounded argument to ``verified`` and
-   leaves an ungrounded one un-promoted (M12.1 AC2).
+   leaves an ungrounded one un-promoted (M12.1 AC2). With the runtime verification toggle off no
+   judge exists (``judge=None`` — FI-M12 toggle compat §3-A): the claim is written and left at its
+   born status, and the skip is recorded (``research.narrative.judge_skipped``); the disabled-mode
+   effective merge policy is what serves it.
 
 Re-running on the same ``(account, icp, persona)`` **supersedes** the prior narrative rather than
 duplicating it (append-only + supersede; M12.1 AC7) — *within one project*. Since FI-2 §6.4 the
@@ -119,6 +122,10 @@ ATTR_N_NARRATIVES = "narrative.n_narratives"
 ATTR_N_COVERAGE_GAPS = "narrative.n_coverage_gaps"
 METRIC_NARRATIVES_PRODUCED = "research.narrative.produced"
 METRIC_NARRATIVE_COVERAGE_GAP = "research.narrative.coverage_gap"
+# Emitted when a narrative is written with no judge constructed (``judge=None`` — the runtime
+# verification toggle is off; FI-M12 toggle compat §3-A). The claim stays at its born
+# (unverified) status; the merge serves it only under the disabled-mode effective policy.
+METRIC_NARRATIVE_JUDGE_SKIPPED = "research.narrative.judge_skipped"
 
 # Why a persona produced no narrative (returned for observability; the durable signal is simply the
 # absence of a narrative claim for a committee persona, which M12.2 reads as low coverage).
@@ -195,7 +202,7 @@ class Positioner:
         gateway: LLMGateway,
         retriever: ClientKnowledgeRetriever,
         committee_reader: CommitteeReader,
-        judge: FaithfulnessJudge,
+        judge: FaithfulnessJudge | None,
         policy: PositioningPolicy = DEFAULT_POSITIONING_POLICY,
         conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
@@ -460,7 +467,15 @@ class Positioner:
             )
 
         # (f) faithfulness gate: promotes a grounded argument, leaves an ungrounded one un-promoted.
-        verdict = await self._judge.judge(claim)
+        #     ``judge=None`` (the runtime verification toggle is off — FI-M12 toggle compat §3-A):
+        #     the claim stands at its born unverified status, provenance above is already written,
+        #     and the skip is recorded so disabled-mode narratives are observable.
+        if self._judge is not None:
+            verdict = await self._judge.judge(claim)
+            judge_verdict = verdict.verdict.value
+        else:
+            judge_verdict = None
+            self._emit_judge_skipped(persona)
         self._emit_produced(persona)
         ref = ValueNarrativeRef(
             claim_id=new_id,
@@ -468,7 +483,7 @@ class Positioner:
             angle_label=angle.angle_label,
             account_evidence_ids=tuple(account_evidence_ids),
             client_knowledge_ids=tuple(client_knowledge_ids),
-            judge_verdict=verdict.verdict.value,
+            judge_verdict=judge_verdict,
         )
         return ref, None, cost
 
@@ -549,6 +564,10 @@ class Positioner:
             ):
                 result.append(claim)
         return result
+
+    def _emit_judge_skipped(self, persona: Persona) -> None:
+        sink = self._sink or get_metric_sink()
+        sink.add(METRIC_NARRATIVE_JUDGE_SKIPPED, 1, {"persona": persona.value})
 
     def _emit_gap(self, persona: Persona, reason: str) -> None:
         sink = self._sink or get_metric_sink()

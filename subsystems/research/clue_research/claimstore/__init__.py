@@ -65,6 +65,7 @@ from clue_research.claimstore.merge import (
     DEFAULT_MERGE_POLICY,
     FreshnessMode,
     MergePolicy,
+    active_merge_policy,
     current_value,
     current_values,
     merge_claims,
@@ -163,6 +164,7 @@ __all__ = [
     "MergePolicy",
     "FreshnessMode",
     "DEFAULT_MERGE_POLICY",
+    "active_merge_policy",
     "canonical_json",
     # entailment-question identity (PC-C8 §6c-b) — one definition three packages agree on
     "ENTAILMENT_JUDGMENT_NAMESPACE",

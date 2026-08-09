@@ -539,3 +539,30 @@ def test_default_resume_run_writes_a_phase_ledger_row() -> None:
                     registry.register(handler)
 
     run_async(scenario())
+
+
+def test_composed_handoff_assembler_follows_the_verification_toggle() -> None:
+    """FI-M12 toggle compat §3-A: the composed HANDOFF assembler mirrors
+    ``Settings.verification_enabled`` — VERIFIED-only by default, relaxed (non-REJECTED admitted,
+    status carried) when the toggle is off — so the root constructs cleanly in both states."""
+
+    async def scenario() -> None:
+        enabled = await _driver({("ws", "a", 1): _spec("a")}).composed(_row("a"))
+        handoff = enabled.registry.get(ProjectPhase.HANDOFF)
+        assert isinstance(handoff, RetentionSweepHandoffHandler)
+        assert handoff._inner._assembler._verification_enabled is True  # type: ignore[attr-defined]
+
+        settings = load_settings(
+            gateway_allow_stub=True,
+            c7_production_handoff_enabled=True,
+            verification_enabled=False,
+            _env_file=None,
+        )
+        disabled = await _driver({("ws", "a", 1): _spec("a")}, settings=settings).composed(
+            _row("a")
+        )
+        relaxed = disabled.registry.get(ProjectPhase.HANDOFF)
+        assert isinstance(relaxed, RetentionSweepHandoffHandler)
+        assert relaxed._inner._assembler._verification_enabled is False  # type: ignore[attr-defined]
+
+    run_async(scenario())

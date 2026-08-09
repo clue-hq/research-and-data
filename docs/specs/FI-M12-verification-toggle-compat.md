@@ -1,6 +1,11 @@
 # FI — M12 / Lane-E compatibility with the runtime verification toggle
 
-**Status: RATIFIED 2026-08-08 (founder; spec review complete same day) — ready for implementation.**
+**Status: RATIFIED 2026-08-08 (founder; spec review complete same day) — IMPLEMENTED 2026-08-09**
+(primary integration worktree, per §7; context `_memory/2026-08-09-ab-verification-toggle-compat.md`.
+§3-B landed as `claimstore.active_merge_policy()`; §3-A as `Positioner(judge=None)` +
+`research.narrative.judge_skipped`, `HandoffAssembler(verification_enabled=...)` with the actual
+status carried on `AssembledHandoff.narrative_verification`, threaded from the composition root.
+The Positioner still has no production constructor — Lane E E3 composes it against this contract.)
 Date: 2026-08-08. Branch: `platform/frontend-integration`.
 Parent: the temporary M9 runtime toggle `CLUE_VERIFICATION_ENABLED` (`Settings.verification_enabled`, default `true`; commit `784fb662`; context `_memory/2026-08-08-m9-runtime-verification-toggle.md`). Sibling: `docs/specs/FI-lane-E-on-completion-synthesis.md` (ratified same day — its E1/E2/E3 writers are first consumers of this contract).
 
