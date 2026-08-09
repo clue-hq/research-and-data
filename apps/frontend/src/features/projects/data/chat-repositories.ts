@@ -1,4 +1,5 @@
 import { FIXTURE_TRANSPORT, type ChatTransport } from "./chat-api";
+import { createFixtureChatState } from "./chat-fixture-state";
 import {
   createFixtureChatGatesRepository,
   createHttpChatGatesRepository,
@@ -54,12 +55,15 @@ export function createChatRepositories(
       stream: createHttpChatStreamRepository(transport),
     };
   }
+  // One shared fixture state, so the four adapters agree with each other the
+  // way the one backend they stand in for does.
+  const state = createFixtureChatState();
   return {
     transport,
     threads: createFixtureChatThreadsRepository(),
     messages: createFixtureChatMessagesRepository(),
-    turns: createFixtureChatTurnsRepository(),
-    gates: createFixtureChatGatesRepository(),
-    stream: createFixtureChatStreamRepository(),
+    turns: createFixtureChatTurnsRepository(state),
+    gates: createFixtureChatGatesRepository(state),
+    stream: createFixtureChatStreamRepository(state),
   };
 }

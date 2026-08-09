@@ -7,6 +7,7 @@ import {
   type TurnSubmission,
 } from "../model/chat-turn";
 import { chatRequest, type ChatTransport } from "./chat-api";
+import type { FixtureChatState } from "./chat-fixture-state";
 import { fixtureTurns } from "./chat.fixture";
 
 /**
@@ -89,7 +90,9 @@ export function createHttpChatTurnsRepository(
  * turn is immediately visible as `queued`, because that is what makes a queued
  * turn renderable at all under the two-phase turn identity.
  */
-export function createFixtureChatTurnsRepository(): ChatTurnsRepository {
+export function createFixtureChatTurnsRepository(
+  state: FixtureChatState,
+): ChatTurnsRepository {
   const turns = ChatTurnListResponseSchema.parse({
     data: fixtureTurns,
     meta: {},
@@ -105,10 +108,24 @@ export function createFixtureChatTurnsRepository(): ChatTurnsRepository {
         ),
       };
     },
-    async submit({ projectId, threadId, idempotencyKey }) {
+    async submit({ projectId, threadId, submission, idempotencyKey }) {
       const existing = accepted.get(idempotencyKey);
       if (existing) return { ...existing, replayed: true };
       const turnId = `local-turn-${turns.length + 1}`;
+      if (submission.kind === "gate_response") {
+        // The gate answer and the turn are one act, exactly as the real route
+        // records them in one transaction.
+        state.gateAnswers.set(submission.response.gateId, {
+          turnId,
+          decision: submission.response.decision,
+        });
+        state.scripts.set(
+          turnId,
+          submission.response.decision === "approved" ? "launch" : "turn",
+        );
+      } else {
+        state.scripts.set(turnId, "turn");
+      }
       const record: AcceptedTurn = {
         turnId,
         threadId,

@@ -11,6 +11,7 @@ import {
   refusalOf,
   type ChatTransport,
 } from "./chat-api";
+import type { FixtureChatState } from "./chat-fixture-state";
 import { fixtureLaunchEvents, fixtureTurnEvents } from "./chat.fixture";
 
 /**
@@ -234,17 +235,20 @@ function delay(ms: number): Promise<void> {
  * — nothing here advances a phase because time passed, which is precisely the
  * Figma doc's rule that prototype timeouts must not become the lifecycle.
  */
-export function createFixtureChatStreamRepository({
-  frameDelayMs = 45,
-}: { frameDelayMs?: number } = {}): ChatStreamRepository {
-  const launched = new Set<string>();
+export function createFixtureChatStreamRepository(
+  state: FixtureChatState,
+  { frameDelayMs = 45 }: { frameDelayMs?: number } = {},
+): ChatStreamRepository {
   return {
     attach(attachment) {
       let closed = false;
-      const script = launched.has(attachment.turnId)
-        ? fixtureLaunchEvents(attachment.turnId)
-        : fixtureTurnEvents(attachment.turnId);
-      launched.add(attachment.turnId);
+      // Which script a turn plays is decided by what was *submitted*, never by
+      // how many times it has been attached: a replayed backlog must reproduce
+      // the same frames, or reconnect would be a different conversation.
+      const script =
+        state.scripts.get(attachment.turnId) === "launch"
+          ? fixtureLaunchEvents(attachment.turnId)
+          : fixtureTurnEvents(attachment.turnId);
 
       void (async () => {
         for (const payload of script) {

@@ -258,7 +258,14 @@ test("the scripted fixture turn produces a gate card and a complete text part", 
   assert.ok(turn);
   assert.equal(turn.state, "awaiting_input");
   const kinds = turn.parts.map((entry) => entry.part.kind);
-  assert.deepEqual(kinds, ["reasoning", "agent_activity", "tool", "text", "gate"]);
+  assert.deepEqual(kinds, [
+    "reasoning",
+    "agent_activity",
+    "tool",
+    "text",
+    "gate",
+    "sources",
+  ]);
   const text = turn.parts.find((entry) => entry.part.kind === "text")?.part as ChatTextPart;
   assert.match(text.text, /Shall I take the deep pass\?$/);
   assert.equal(text.streaming, false);

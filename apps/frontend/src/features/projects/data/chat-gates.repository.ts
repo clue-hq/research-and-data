@@ -1,5 +1,6 @@
 import { ChatGateListResponseSchema, type ChatGate } from "../model/chat-gate";
 import { ClueChatApiError, chatRequest, type ChatTransport } from "./chat-api";
+import type { FixtureChatState } from "./chat-fixture-state";
 import { fixtureGates } from "./chat.fixture";
 
 /**
@@ -70,7 +71,9 @@ export function createHttpChatGatesRepository(
   };
 }
 
-export function createFixtureChatGatesRepository(): ChatGatesRepository {
+export function createFixtureChatGatesRepository(
+  state: FixtureChatState,
+): ChatGatesRepository {
   const gates = new Map<string, ChatGate>();
   for (const gate of ChatGateListResponseSchema.parse({ data: fixtureGates })) {
     gates.set(gate.gateId, gate);
@@ -79,38 +82,38 @@ export function createFixtureChatGatesRepository(): ChatGatesRepository {
     async list({ threadId }) {
       return {
         available: true,
-        gates: [...gates.values()].filter((gate) => gate.threadId === threadId),
+        gates: [...gates.values()]
+          .filter((gate) => gate.threadId === threadId)
+          .map((gate) => {
+            // "Open" is the absence of an answer record, here as on the wire:
+            // the answer was written by the turn endpoint, not by this read.
+            const answered = state.gateAnswers.get(gate.gateId);
+            if (!answered) return gate;
+            return {
+              ...gate,
+              answer: {
+                turnId: answered.turnId,
+                actionRef: `turn-action:${answered.turnId}`,
+                decision: answered.decision,
+                answeredByUserId: gate.addresseeUserId,
+                answeredAt: new Date().toISOString(),
+              },
+              launches:
+                answered.decision === "approved"
+                  ? [
+                      {
+                        researchRunId: "5b1d2c30-0000-4000-8000-000000000200",
+                        runKind: "account_research",
+                        runState: "running",
+                        sourceActionRef: `turn-action:${answered.turnId}`,
+                        approvalRefs: [`turn-action:${answered.turnId}`],
+                      },
+                    ]
+                  : [],
+            };
+          }),
         reason: null,
       };
     },
-  };
-}
-
-/** Record a locally-answered gate so the fixture card leaves a durable record. */
-export function answerFixtureGate(
-  read: ChatGateRead,
-  {
-    gateId,
-    decision,
-    turnId,
-    userId = "usr_demo",
-  }: { gateId: string; decision: string; turnId: string; userId?: string },
-): ChatGateRead {
-  return {
-    ...read,
-    gates: read.gates.map((gate) =>
-      gate.gateId === gateId && gate.answer === null
-        ? {
-            ...gate,
-            answer: {
-              turnId,
-              actionRef: `turn-action:${turnId}`,
-              decision,
-              answeredByUserId: userId,
-              answeredAt: new Date().toISOString(),
-            },
-          }
-        : gate,
-    ),
   };
 }

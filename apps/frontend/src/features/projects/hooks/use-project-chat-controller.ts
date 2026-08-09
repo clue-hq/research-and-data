@@ -7,10 +7,7 @@ import {
   newIdempotencyKey,
 } from "../data/chat-api";
 import type { ChatStreamHandle } from "../data/chat-stream.repository";
-import {
-  answerFixtureGate,
-  type ChatGateRead,
-} from "../data/chat-gates.repository";
+import type { ChatGateRead } from "../data/chat-gates.repository";
 import { useChatRepositories } from "../data/projects-transport";
 import type { ChatMessage } from "../model/chat-message";
 import type { ChatGatePart, GateDecision } from "../model/chat-parts";
@@ -107,6 +104,12 @@ export function useProjectChatController({
   const [submitting, setSubmitting] = useState(false);
 
   const attachments = useRef(new Map<string, ChatStreamHandle>());
+  //: Turns this thread has already been attached to, kept **after** the handle
+  //: closes. A turn's backlog is replayed exactly once per thread visit: the
+  //: durable read that follows a close changes `turns` by identity, so without
+  //: this a closed attachment would be re-opened on every reload — an endless
+  //: mint-token / replay-backlog loop against a real backend.
+  const attached = useRef(new Set<string>());
   const mounted = useRef(true);
   useEffect(() => {
     const open = attachments.current;
@@ -198,7 +201,8 @@ export function useProjectChatController({
 
   const attach = useCallback(
     (threadId: string, turnId: string) => {
-      if (attachments.current.has(turnId)) return;
+      if (attachments.current.has(turnId) || attached.current.has(turnId)) return;
+      attached.current.add(turnId);
       const handle = repositories.stream.attach({
         projectId,
         threadId,
@@ -322,13 +326,8 @@ export function useProjectChatController({
           idempotencyKey: newIdempotencyKey(`gate:${card.gateId}:${decision}`),
         });
         if (!mounted.current) return;
-        setGateRead((current) =>
-          answerFixtureGate(current, {
-            gateId: card.gateId,
-            decision,
-            turnId: accepted.turnId,
-          }),
-        );
+        // The answer is durable the moment the turn was accepted; the reload
+        // below reads it back rather than the client asserting it locally.
         attach(activeThreadId, accepted.turnId);
         await loadConversation(activeThreadId);
       } catch (failure) {
@@ -486,6 +485,7 @@ export function useProjectChatController({
       if (threadId === activeThreadId) return;
       for (const handle of attachments.current.values()) handle.close();
       attachments.current.clear();
+      attached.current.clear();
       // Switching threads is a real switch: the previous conversation's
       // projections do not belong to the next one.
       setStream(emptyTranscriptState());

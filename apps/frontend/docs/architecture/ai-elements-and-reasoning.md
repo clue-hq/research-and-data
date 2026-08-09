@@ -100,81 +100,85 @@ does not merely mean the agent is thinking.
 
 | Responsibility | File |
 | --- | --- |
-| Runtime message schemas | `src/features/projects/model/project-workspace.ts` |
-| Fixture-to-message adapter | `src/features/projects/data/build-project-messages.ts` |
-| Message timeline | `src/features/projects/components/project-message-timeline.tsx` |
-| Part renderer | `src/features/projects/components/project-message-part.tsx` |
-| Reasoning adapter | `src/features/projects/components/reasoning.tsx` |
-| Activity-trace adapter | `src/features/projects/components/chain-of-thought.tsx` |
-| Tool adapter | `src/features/projects/components/project-tool-activity.tsx` |
-| Task adapter | `src/features/projects/components/generation-progress.tsx` |
-| Plan adapter | `src/features/projects/components/project-plan-summary.tsx` |
-| Confirmation adapter | `src/features/projects/components/plan-approval.tsx` |
-| Sources adapter | `src/features/projects/components/project-sources.tsx` |
+| Runtime part schemas | `src/features/projects/model/chat-parts.ts` |
+| Turn-event schema + SSE reader | `src/features/projects/model/chat-events.ts` |
+| Event-to-transcript reducer | `src/features/projects/model/chat-transcript.ts` |
+| Stream transport | `src/features/projects/data/chat-stream.repository.ts` |
+| Message timeline | `src/features/projects/components/chat-transcript.tsx` |
+| Part renderer | `src/features/projects/components/chat-message-part.tsx` |
+| Reasoning + activity adapters | `src/features/projects/components/chat-agent-activity.tsx` |
+| Tool adapter | `src/features/projects/components/chat-tool-call.tsx` |
+| Task adapter | `src/features/projects/components/chat-research-task.tsx` |
+| Confirmation (gate) adapter | `src/features/projects/components/chat-gate-card.tsx` |
+| Markdown renderer | `src/components/ai-elements/message-response.tsx` |
 | Reading-position behavior | `src/features/projects/hooks/use-transcript-auto-scroll.ts` |
 
-Visual TSX files receive typed props and callbacks. Phase-to-message assembly
-lives in the data adapter, not inside the page component. Fixtures and HTTP
+Visual TSX files receive typed props and callbacks. Fixtures and HTTP
 repositories remain outside presentation code.
+
+**As-built, Lane D slice D5 (2026-08-09).** The fixture-to-message adapter
+(`build-project-messages.ts`) that assembled a transcript from a six-value phase
+enum is deleted, along with the components that consumed its shape. The
+transcript is now the durable message read plus the turn stream, reduced by
+`chat-transcript.ts`.
 
 ## Ordered message-part contract
 
-`ProjectMessageSchema` validates the transcript structure. Every message has a
-stable ID, role, optional assistant label, and ordered parts. The current union
-contains:
+`chat-parts.ts` validates each part snapshot; every part carries a stable
+`partId` and a `revision` that increases per emission, so a consumer replaces by
+part id and never merges two half-cards. The union is:
 
 ```ts
-type ProjectMessagePart =
-  | TextPart
-  | ReasoningPart
-  | ActionPart
-  | ToolPart
-  | PlanPart
-  | TaskPart
-  | SourcesPart;
+type ChatPart =
+  | ChatTextPart        // accumulated from text.start / text.delta / text.end
+  | ChatReasoningPart   // a safe per-round status, never raw model reasoning
+  | ChatActivityPart    // ordered, durably-recorded observed steps
+  | ChatToolPart        // toolName, toolCallId, structured input/output/error
+  | ChatTaskPart        // one detached run as one visible task
+  | ChatPlanPart        // a plan/directive snapshot plus its ref and revision
+  | ChatGatePart        // the durable confirmation snapshot
+  | ChatSourcesPart;    // real message-scoped source items
 ```
 
-The frontend fixture adapter produces the current Figma preview sequence. The
-backend can later return the same ordered structure or stream compatible part
-events without changing the visual adapters.
+`PartKind.ACTION` exists in the backend enum with no payload model and no
+emitter, so no `action` part is accepted here — a schema for it would be
+invented rather than mirrored.
 
-Every tool and source record is fixture/repository data. Components do not
+Every tool, task, gate and source record is repository data. Components do not
 manufacture parameters, results, URLs, titles, or lifecycle states.
 
 ## Lifecycle ownership
 
-The preview phases remain:
+The backend owns message IDs, turn IDs, ordering, tool states, gate state, run
+progress, source records, failure recovery, and timestamps. The frontend owns
+words, icons, and motion.
+
+The six-value phase enum survives only as the `?phase=` **artifact-side preview
+parameter** documented in `docs/api-contracts/projects.md`; no message, part, or
+status is derived from it, and the timers that used to advance it are deleted.
+
+The streaming envelope is no longer a recommendation: it is the shipped §3.2
+turn-event contract, read by `chat-events.ts`.
 
 ```text
-conversation
-  -> questionnaire
-  -> agent-running
-  -> planning
-  -> generating
-  -> complete
+schema_version, event_id, sequence, occurred_at,
+project_id, thread_id, turn_id, generation_attempt_id,
+message_id?, part_id?, run_id?, delta_index?,
+type, part?, delta?, error?
+
+turn.accepted | turn.started | turn.awaiting_input | turn.completed |
+turn.failed | turn.cancelled | turn.retrying |
+part.created | part.updated | part.completed | part.failed | part.reset |
+text.start | text.delta | text.end | stream.hello | stream.reset
 ```
 
-Preview timers demonstrate Figma states only. In production, the backend owns
-message IDs, run IDs, ordering, tool states, approval state, progress, source
-records, failure recovery, and timestamps.
-
-Recommended streaming event envelope:
-
-```ts
-interface ProjectMessagePartEvent {
-  messageId: string;
-  part: ProjectMessagePart;
-  partId: string;
-  runId?: string;
-  sequence: number;
-  threadId: string;
-  type: "part.created" | "part.updated" | "part.completed" | "part.failed";
-}
-```
+`event_id` is the `Last-Event-ID` cursor and the deduplication key; `sequence`
+is monotone within one turn. Part lifecycle events carry a full snapshot;
+`text.delta` is append-only and index-ordered.
 
 The UI exposes user-visible activity summaries. It does not require or display
-private raw model chain-of-thought. The product label may say “Thought” while
-the backend contract uses `ReasoningTrace` or `AgentActivity`.
+private raw model chain-of-thought, and the backend sends none: the `reasoning`
+part carries no text at all.
 
 ## Disclosure and scroll behavior
 

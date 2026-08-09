@@ -55,7 +55,12 @@ export function ChatTranscript({
             {message.parts.map((part) => (
               <ChatMessagePartView actions={actions} key={part.partId} part={part} />
             ))}
-            {message.state === "queued" && message.parts.length === 0 ? (
+            {message.role === "assistant" &&
+            message.state === "queued" &&
+            message.parts.length === 0 ? (
+              // The assistant owes an answer and no worker has claimed the turn
+              // yet. A queued turn is visible because the submissions union
+              // makes it visible — it is never silently dropped.
               <p className={styles.reasoningStatus} role="status">
                 Queued
               </p>
