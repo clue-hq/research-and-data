@@ -356,3 +356,174 @@ test("an optimistic user turn shows immediately and is retired by the durable re
   assert.equal(settled.filter((message) => message.role === "user").length, 1);
   assert.equal(settled[0].optimistic, false);
 });
+
+/**
+ * Rule 6 — the dev-lens raw reasoning trace.
+ *
+ * The lens reuses `text.delta` targeting the *reasoning* part's id, so the
+ * reducer's routing is the only thing standing between "a collapsible
+ * diagnostic beside a model round" and "the model's private thoughts spliced
+ * into the assistant's answer". These are that guard.
+ */
+
+function reasoningPart(state: TranscriptState, partId: string) {
+  const turn = state.turns.get(TURN);
+  assert.ok(turn, "expected a projected turn");
+  const entry = turn.parts.find((item) => item.part.partId === partId);
+  assert.ok(entry, `expected a part ${partId}`);
+  assert.equal(entry.part.kind, "reasoning");
+  return entry.part as Extract<(typeof entry)["part"], { kind: "reasoning" }>;
+}
+
+function reasoningSnapshot(extra: Record<string, unknown> = {}) {
+  return {
+    part_id: "reasoning:a:1",
+    kind: "reasoning",
+    revision: 1,
+    state: "active",
+    round_ordinal: 1,
+    requested_tool_calls: 0,
+    started_at: "2026-08-09T00:00:00Z",
+    ...extra,
+  };
+}
+
+test("a reasoning delta accumulates on its round's card, never as assistant text", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.created",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot(),
+    }),
+    frame({ type: "text.start", part_id: "text:a", part_kind: "text" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 0, delta: "Hello" }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 0,
+      delta: "The user ",
+    }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 1,
+      delta: "is fishing.",
+    }),
+  ]);
+
+  // The two streams stayed apart: the answer is untouched by the trace.
+  assert.equal(textOf(state), "Hello");
+  const reasoning = reasoningPart(state, "reasoning:a:1");
+  assert.equal(reasoning.text, "The user is fishing.");
+  assert.equal(reasoning.textEphemeral, true);
+  // And the round is still one card, not a card plus a stray text part.
+  const turn = state.turns.get(TURN);
+  assert.ok(turn);
+  assert.equal(turn.parts.filter((entry) => entry.part.kind === "text").length, 1);
+  assert.equal(turn.parts.filter((entry) => entry.part.kind === "reasoning").length, 1);
+});
+
+test("a reasoning delta is idempotent and order-insensitive, like every other delta", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.created",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot(),
+    }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 1,
+      delta: "second",
+    }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 0,
+      delta: "first ",
+    }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 0,
+      delta: "first ",
+    }),
+  ]);
+  assert.equal(reasoningPart(state, "reasoning:a:1").text, "first second");
+});
+
+test("the round's closing snapshot still replaces the locally accumulated trace", () => {
+  // Regression guard for the reason `upsertReasoningText` does not bump
+  // `revision`: if it did, rule 2 ("never backwards") would make the local copy
+  // outrank the server's `part.completed` and the authoritative trace would be
+  // silently dropped.
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.created",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot(),
+    }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 0,
+      delta: "partial",
+    }),
+    frame({
+      type: "part.completed",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot({
+        revision: 2,
+        state: "complete",
+        requested_tool_calls: 1,
+        completed_at: "2026-08-09T00:00:02Z",
+        text: "partial trace, whole",
+        text_ephemeral: true,
+      }),
+    }),
+  ]);
+  const reasoning = reasoningPart(state, "reasoning:a:1");
+  assert.equal(reasoning.state, "complete");
+  assert.equal(reasoning.text, "partial trace, whole");
+  assert.equal(reasoning.textEphemeral, true);
+});
+
+test("a summary-mode reasoning card carries no text at all", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.completed",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot({ revision: 2, state: "complete" }),
+    }),
+  ]);
+  const reasoning = reasoningPart(state, "reasoning:a:1");
+  assert.equal(reasoning.text, null);
+  assert.equal(reasoning.textEphemeral, false);
+});
+
+test("a reasoning delta with no card to belong to invents nothing", () => {
+  // A frame out of order must not conjure a model round that never started.
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 0,
+      delta: "orphan",
+    }),
+  ]);
+  const turn = state.turns.get(TURN);
+  assert.ok(turn);
+  assert.equal(turn.parts.length, 0);
+});

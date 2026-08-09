@@ -4,8 +4,10 @@ import { useMemo } from "react";
 import type { ProjectWorkspace } from "../model/project-workspace";
 import type { ProjectChatController } from "../hooks/use-project-chat-controller";
 import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
+import { useTurnInspector } from "../hooks/use-turn-inspector";
 import { CanvasInspector } from "./canvas-inspector";
 import { ChatTranscript } from "./chat-transcript";
+import { ChatTurnInspector } from "./chat-turn-inspector";
 import { ProjectComposer } from "./project-composer";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
@@ -28,14 +30,22 @@ import styles from "./project-flow.module.css";
 export function ConversationPane({
   chat,
   controller,
+  projectId,
   workspace,
 }: {
   chat: ProjectChatController;
   controller: ReturnType<
     typeof import("../hooks/use-project-workspace-controller").useProjectWorkspaceController
   >;
+  projectId: string;
   workspace: ProjectWorkspace;
 }) {
+  // The dev-lens turn inspector. Its own controller, not part of `chat`: it
+  // reads nothing the conversation needs and the conversation needs nothing from
+  // it, so a debugging affordance never joins the state machine that drives real
+  // turns. `available` is false in every deployment that did not register the
+  // routes, which is every production deployment.
+  const turnInspector = useTurnInspector({ projectId, threadId: chat.activeThreadId });
   const { transcriptScrollRef } = useTranscriptAutoScroll({
     revision: chat.transcript.reduce(
       (total, message) => total + message.parts.length + (message.body ? 1 : 0),
@@ -181,8 +191,13 @@ export function ConversationPane({
       ))}
 
       <div className={styles.transcriptScroll} ref={transcriptScrollRef}>
-        <ChatTranscript actions={partActions} messages={chat.transcript} />
+        <ChatTranscript
+          actions={partActions}
+          messages={chat.transcript}
+          onInspectTurn={turnInspector.available ? turnInspector.open : undefined}
+        />
       </div>
+      <ChatTurnInspector inspector={turnInspector} />
 
       <div className={styles.workspaceComposer}>
         {chat.busy ? (

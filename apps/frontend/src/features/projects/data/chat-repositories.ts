@@ -6,6 +6,11 @@ import {
   type ChatGatesRepository,
 } from "./chat-gates.repository";
 import {
+  createFixtureChatInspectorRepository,
+  createHttpChatInspectorRepository,
+  type ChatInspectorRepository,
+} from "./chat-inspector.repository";
+import {
   createFixtureChatMessagesRepository,
   createHttpChatMessagesRepository,
   type ChatMessagesRepository,
@@ -40,6 +45,12 @@ export interface ChatRepositories {
   turns: ChatTurnsRepository;
   gates: ChatGatesRepository;
   stream: ChatStreamRepository;
+  /**
+   * The dev-lens turn-context inspector. Present on both transports, but the
+   * HTTP adapter's own probe reports it unavailable against any deployment that
+   * did not register the routes — which is every production deployment.
+   */
+  inspector: ChatInspectorRepository;
 }
 
 export function createChatRepositories(
@@ -53,6 +64,7 @@ export function createChatRepositories(
       turns: createHttpChatTurnsRepository(transport),
       gates: createHttpChatGatesRepository(transport),
       stream: createHttpChatStreamRepository(transport),
+      inspector: createHttpChatInspectorRepository(transport),
     };
   }
   // One shared fixture state, so the four adapters agree with each other the
@@ -65,5 +77,6 @@ export function createChatRepositories(
     turns: createFixtureChatTurnsRepository(state),
     gates: createFixtureChatGatesRepository(state),
     stream: createFixtureChatStreamRepository(state),
+    inspector: createFixtureChatInspectorRepository(),
   };
 }

@@ -12,7 +12,8 @@ import type { ChatTurn } from "./chat-turn";
  * the reconnect, duplicate-delivery, replacement, reset and attempt-isolation
  * cases can be tested against synthetic streams with no browser in sight.
  *
- * The five rules, each from charter §§3.2/3.3/3.6:
+ * The six rules — the first five from charter §§3.2/3.3/3.6, the sixth from the
+ * dev-lens mini-slice that reuses `text.delta` for a second kind of text:
  *
  * 1. **Dedup by `event_id`** (§3.6, at-least-once delivery). A frame already
  *    applied is a no-op, so a reconnect that replays the backlog byte for byte
@@ -30,6 +31,12 @@ import type { ChatTurn } from "./chat-turn";
  *    turn's projected parts are dropped and `rehydrate` is raised, so the
  *    consumer re-reads the canonical durable message instead of trusting a
  *    projection that could not prove itself.
+ * 6. **A delta belongs to the part it names.** `text.delta` is the accumulation
+ *    frame, not the assistant-prose frame: the dev-only raw reasoning lens
+ *    streams a round's trace on the same frame type, targeting the `reasoning`
+ *    part's id. The frame's `part_kind` decides which accumulator runs, so the
+ *    trace can never be spliced into the answer — and after a reload it is
+ *    simply gone, because unlike prose it has no durable counterpart.
  */
 
 export interface TranscriptPartEntry {
@@ -212,6 +219,18 @@ export function applyChatStreamEvent(
       const deltas = new Map(turn.deltas.get(event.partId) ?? new Map<number, string>());
       deltas.set(event.deltaIndex ?? deltas.size, event.delta);
       turn.deltas.set(event.partId, deltas);
+      // Rule 6: a delta belongs to whichever part it names, not necessarily to a
+      // text part. The dev-only raw reasoning lens streams a round's trace as
+      // `text.delta` frames carrying the *reasoning* part's id — the same frame
+      // type, because indexed accumulation is exactly what it needs and a second
+      // vocabulary would have bought nothing. Routing by the frame's own
+      // `part_kind` is what keeps the two apart: without it, the accumulator
+      // below would replace the round's status card with a text part and the
+      // trace would be spliced into the assistant's answer.
+      if (isReasoningDelta(turn, event)) {
+        upsertReasoningText(turn, event.partId, joinDeltas(deltas));
+        return state;
+      }
       upsertText(turn, event.partId, event.generationAttemptId, {
         text: joinDeltas(deltas),
         streaming: true,
@@ -292,6 +311,48 @@ function upsertText(
   const next: ChatTextPart = { ...current, ...patch, revision: current.revision + 1 };
   if (index === -1) turn.parts.push({ part: next, attemptId });
   else turn.parts[index] = { part: next, attemptId };
+}
+
+/**
+ * Whether this `text.delta` carries a reasoning trace rather than assistant prose.
+ *
+ * The frame's own `partKind` is the authority — it is what the backend stamps —
+ * and the part already in the turn is the fallback, for a consumer that attached
+ * mid-round and has the card but not the frame that opened it.
+ */
+function isReasoningDelta(
+  turn: TranscriptTurn,
+  event: ChatStreamEvent,
+): boolean {
+  if (event.partKind === "reasoning") return true;
+  const existing = turn.parts.find((entry) => entry.part.partId === event.partId);
+  return existing?.part.kind === "reasoning";
+}
+
+/**
+ * Fold a reasoning trace into the round's existing card.
+ *
+ * Two deliberate differences from `upsertText`. It **never creates** a part: a
+ * trace with no round to belong to is a frame out of order, and inventing a
+ * reasoning card for it would show a round that never started. And it **does not
+ * bump `revision`** — the round's own `part.completed` snapshot arrives with the
+ * next revision and carries the whole accumulated trace, so incrementing here
+ * would make the local copy outrank the server's closing state and rule 2 would
+ * silently drop it.
+ */
+function upsertReasoningText(
+  turn: TranscriptTurn,
+  partId: string,
+  text: string,
+): void {
+  const index = turn.parts.findIndex((entry) => entry.part.partId === partId);
+  if (index === -1) return;
+  const current = turn.parts[index];
+  if (current.part.kind !== "reasoning") return;
+  turn.parts[index] = {
+    ...current,
+    part: { ...current.part, text, textEphemeral: true },
+  };
 }
 
 function markStreamingTextFailed(turn: TranscriptTurn, reason: string | null): void {

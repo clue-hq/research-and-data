@@ -4,6 +4,11 @@ import {
   ChainOfThoughtHeader,
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "@/components/ai-elements/reasoning";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import type { ChatActivityPart, ChatReasoningPart } from "../model/chat-parts";
 import type { ProjectIconName } from "../config/project-icon-sources";
@@ -89,37 +94,79 @@ export function ChatAgentActivity({
   );
 }
 
+function reasoningLabel(part: ChatReasoningPart): string {
+  if (part.state === "active") return "Thinking";
+  if (part.state === "error") return "Round failed";
+  if (part.requestedToolCalls > 0) {
+    return `Planned ${part.requestedToolCalls} tool ${
+      part.requestedToolCalls === 1 ? "call" : "calls"
+    }`;
+  }
+  return "Round complete";
+}
+
 /**
- * A model round's safe status line.
+ * A model round.
  *
- * The part carries no text at all — what the model privately "thought" is not a
- * platform output — so the copy is the adapter's, and there is no
- * backend-authored "Thought for 5 seconds" anywhere in this component.
+ * In every production deployment the part carries no text — what the model
+ * privately "thought" is not a platform output — and this renders the status
+ * line it always has, with the copy chosen here rather than sent by the backend.
+ *
+ * When the **dev-only** raw-reasoning lens is configured the part additionally
+ * carries a streamed trace, and the row becomes the vendored `Reasoning`
+ * disclosure so the text can be read and collapsed. The switch is *payload
+ * presence*, not a frontend flag: this component has no way to know what the
+ * server is configured to send, and pretending otherwise would mean a client
+ * env var and a server env var that could disagree. `isStreaming` is the part's
+ * own `active` state, so the shimmer and the auto-open are derived from what is
+ * happening rather than from a duration the backend guessed at.
+ *
+ * The trace is labelled as not-durable because it is not: `textEphemeral` says
+ * so on the wire, and a reload will not bring it back.
  */
 export function ChatReasoning({ part }: { part: ChatReasoningPart }) {
   const active = part.state === "active";
-  const label = active
-    ? "Thinking"
-    : part.state === "error"
-      ? "Round failed"
-      : part.requestedToolCalls > 0
-        ? `Planned ${part.requestedToolCalls} tool ${
-            part.requestedToolCalls === 1 ? "call" : "calls"
-          }`
-        : "Round complete";
-
-  return (
-    <div
-      aria-live={active ? "polite" : undefined}
-      className={`${styles.reasoningTrigger} ${styles.reasoningStatus}`}
-      role={active ? "status" : undefined}
-    >
+  const label = reasoningLabel(part);
+  const status = (
+    <>
       {active ? (
         <ProjectIcon className={styles.rotatingLoader} name="loader" size={13} />
       ) : (
         <ProjectIcon className={styles.statusCheck} name="status-check" size={13} />
       )}
       {active ? <Shimmer duration={1.4}>{label}</Shimmer> : <span>{label}</span>}
-    </div>
+    </>
+  );
+
+  if (!part.text) {
+    return (
+      <div
+        aria-live={active ? "polite" : undefined}
+        className={`${styles.reasoningTrigger} ${styles.reasoningStatus}`}
+        role={active ? "status" : undefined}
+      >
+        {status}
+      </div>
+    );
+  }
+
+  return (
+    <Reasoning
+      className={styles.reasoningTrace}
+      data-ephemeral={part.textEphemeral || undefined}
+      isStreaming={active}
+    >
+      <ReasoningTrigger
+        className={`${styles.reasoningTrigger} ${styles.reasoningStatus}`}
+        getThinkingMessage={() => status}
+      />
+      <ReasoningContent className={styles.reasoningTraceContent}>
+        <p className={styles.reasoningTraceNote}>
+          Raw model reasoning — development lens only, and not part of the saved
+          conversation.
+        </p>
+        <pre className={styles.reasoningTraceText}>{part.text}</pre>
+      </ReasoningContent>
+    </Reasoning>
   );
 }

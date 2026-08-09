@@ -411,3 +411,261 @@ export function fixtureLaunchEvents(turnId: string): Record<string, unknown>[] {
     frame({ type: "turn.completed", status: "completed", replayed: false }),
   ];
 }
+
+// --- the dev-lens turn-context inspector -----------------------------------
+//
+// Wire-shaped like everything else here, so the fixture adapter parses through
+// the same schemas the HTTP adapter does. The values are deliberately *typical*
+// rather than tidy: one included body and one budget-dropped body, one dropped
+// context ref, a plan whose proposal has a step its validated form does not, and
+// a turn ledger carrying a `plan_rejected` refusal that no per-operation row can
+// express. A fixture that showed only the happy shape would let the drawer be
+// built without ever rendering the cases it exists to surface.
+
+const FIXTURE_INSPECTOR_BUDGET = 512_000;
+
+export function fixtureInspectorContext(turnId: string) {
+  return {
+    data: {
+      turn_id: turnId,
+      context_bundle_id: "8c4a0b1e-0000-4000-8000-0000000000d1",
+      schema_version: "1",
+      policy_version: "conversation-v3",
+      token_counter_version: "tc-2026-07",
+      aggregate_sha256: FIXTURE_SHA,
+      assembled_at: "2026-08-09T09:59:58Z",
+      budget_bytes: FIXTURE_INSPECTOR_BUDGET,
+      truncated: true,
+      layers: [
+        {
+          ordinal: 1,
+          layer: "l1_identity",
+          token_budget: 2000,
+          token_count: 384,
+          included_count: 1,
+          excluded_count: 0,
+          refs: [
+            {
+              disposition: "included",
+              ordinal: 0,
+              ref_kind: "artifact",
+              artifact_key: `ws-fixture/${FIXTURE_SHA}`,
+              artifact_sha256: FIXTURE_SHA,
+              content_sha256: FIXTURE_SHA,
+              materialized_path: "identity/system.md",
+              token_count: 384,
+              body: {
+                artifact_key: `ws-fixture/${FIXTURE_SHA}`,
+                sha256: FIXTURE_SHA,
+                text:
+                  "You are the Head of ABM for this workspace. You never fetch " +
+                  "external sources on this surface.",
+              },
+            },
+          ],
+        },
+        {
+          ordinal: 4,
+          layer: "l4_memory",
+          token_budget: 3000,
+          token_count: 2960,
+          included_count: 1,
+          excluded_count: 0,
+          refs: [
+            {
+              disposition: "included",
+              ordinal: 0,
+              ref_kind: "artifact",
+              artifact_key: "ws-fixture/" + "a".repeat(64),
+              artifact_sha256: "a".repeat(64),
+              content_sha256: "a".repeat(64),
+              token_count: 2960,
+              body: {
+                artifact_key: "ws-fixture/" + "a".repeat(64),
+                sha256: "a".repeat(64),
+                text: null,
+                omitted_reason: "budget",
+              },
+            },
+          ],
+        },
+        {
+          ordinal: 6,
+          layer: "l6_conversation",
+          token_budget: 8000,
+          token_count: 7940,
+          included_count: 0,
+          excluded_count: 1,
+          refs: [
+            {
+              disposition: "excluded",
+              ordinal: 0,
+              ref_kind: "domain",
+              object_type: "agent_thread_message",
+              object_id: "8c4a0b1e-0000-4000-8000-00000000000f",
+              object_version: 1,
+              exclusion_reason_code: "layer_budget_exhausted",
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+export function fixtureInspectorRounds() {
+  return {
+    data: [
+      {
+        model_call_id: "8c4a0b1e-0000-4000-8000-0000000000e1",
+        sequence: 1,
+        requested_model: "openai/gpt-5.6-terra",
+        answering_model: "openai/gpt-5.6-terra",
+        status: "completed",
+        input_tokens: 11_482,
+        output_tokens: 612,
+        cost_millicredits: 143,
+        latency_ms: 2841.5,
+        started_at: "2026-08-09T10:00:00Z",
+        completed_at: "2026-08-09T10:00:03Z",
+      },
+      {
+        model_call_id: "8c4a0b1e-0000-4000-8000-0000000000e2",
+        sequence: 2,
+        requested_model: "openai/gpt-5.6-terra",
+        answering_model: "anthropic/claude-sonnet-4",
+        status: "completed",
+        input_tokens: 12_004,
+        output_tokens: 288,
+        cost_millicredits: 97,
+        latency_ms: 1920.25,
+        started_at: "2026-08-09T10:00:04Z",
+        completed_at: "2026-08-09T10:00:06Z",
+      },
+    ],
+  };
+}
+
+export function fixtureInspectorPlan(turnId: string) {
+  return {
+    data: {
+      turn_id: turnId,
+      budget_bytes: FIXTURE_INSPECTOR_BUDGET,
+      truncated: false,
+      plans: [
+        {
+          plan_id: "8c4a0b1e-0000-4000-8000-0000000000f1",
+          role: "head_of_abm",
+          resource_manifest_sha256: FIXTURE_SHA,
+          max_parallelism: 4,
+          estimated_cost_millicents: 120,
+          budget_limit_millicents: 5000,
+          validated_at: "2026-08-09T10:00:03Z",
+          proposal: {
+            artifact_key: `ws-fixture/${FIXTURE_SHA}`,
+            sha256: FIXTURE_SHA,
+            text: JSON.stringify(
+              {
+                steps: [
+                  { node_key: "agent_draft_directive_01", tool: "draft_account_research_directive@2" },
+                  { node_key: "agent_fetch_page_02", tool: "fetch_page@1" },
+                ],
+              },
+              null,
+              2,
+            ),
+          },
+          validated: {
+            artifact_key: "ws-fixture/" + "b".repeat(64),
+            sha256: "b".repeat(64),
+            text: JSON.stringify(
+              {
+                steps: [
+                  { node_key: "agent_draft_directive_01", tool: "draft_account_research_directive@2" },
+                ],
+              },
+              null,
+              2,
+            ),
+          },
+          operations: [
+            {
+              node_key: "agent_draft_directive_01",
+              ordinal: 0,
+              operation_id: "8c4a0b1e-0000-4000-8000-000000000101",
+              kind: "tool",
+              address: "draft_account_research_directive@2",
+              estimated_cost_millicents: 120,
+              authority_sha256: "c".repeat(64),
+              validation: "admitted",
+            },
+          ],
+          events: [{ status: "validated", created_at: "2026-08-09T10:00:03Z" }],
+        },
+      ],
+      turn_events: [
+        { status: "requested", created_at: "2026-08-09T09:59:57Z" },
+        { status: "context_ready", created_at: "2026-08-09T09:59:58Z" },
+        {
+          status: "failed",
+          reason_code: "plan_rejected",
+          created_at: "2026-08-09T10:00:02Z",
+        },
+        { status: "completed", created_at: "2026-08-09T10:00:07Z" },
+      ],
+    },
+  };
+}
+
+export function fixtureInspectorTools(turnId: string) {
+  return {
+    data: {
+      turn_id: turnId,
+      budget_bytes: FIXTURE_INSPECTOR_BUDGET,
+      truncated: false,
+      calls: [
+        {
+          plan_id: "8c4a0b1e-0000-4000-8000-0000000000f1",
+          node_key: "agent_draft_directive_01",
+          operation_id: "8c4a0b1e-0000-4000-8000-000000000101",
+          kind: "tool",
+          address: "draft_account_research_directive@2",
+          estimated_cost_millicents: 120,
+          arguments: {
+            artifact_key: "ws-fixture/" + "d".repeat(64),
+            sha256: "d".repeat(64),
+            text: JSON.stringify({ project_id: FIXTURE_PROJECT_ID, account_count: 2 }, null, 2),
+          },
+          result: {
+            artifact_key: "ws-fixture/" + "e".repeat(64),
+            sha256: "e".repeat(64),
+            text: JSON.stringify({ references: { research_directive_id: "rd-1" } }, null, 2),
+          },
+          replayed: false,
+          reference_count: 1,
+          completed_at: "2026-08-09T10:00:05Z",
+        },
+        {
+          plan_id: "8c4a0b1e-0000-4000-8000-0000000000f1",
+          node_key: "agent_resolve_committee_02",
+          operation_id: "8c4a0b1e-0000-4000-8000-000000000102",
+          kind: "tool",
+          address: "resolve_committee@1",
+          estimated_cost_millicents: 60,
+          arguments: {
+            artifact_key: "ws-fixture/" + "f".repeat(64),
+            sha256: "f".repeat(64),
+            text: JSON.stringify({ account_id: "acc-1" }, null, 2),
+          },
+          // Admitted and never completed: the honest shape for a governed call
+          // that failed after validation, and precisely the row a developer
+          // opens this tab to find.
+          result: null,
+          replayed: null,
+          reference_count: null,
+          completed_at: null,
+        },
+      ],
+    },
+  };
+}

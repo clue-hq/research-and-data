@@ -152,6 +152,24 @@ export interface ChatToolPart {
 
 // --- reasoning -----------------------------------------------------------
 
+/**
+ * A model round's status card.
+ *
+ * `text` is absent in every production deployment: charter §3.3's ratified
+ * contract is that what streams as reasoning is a safe activity summary and
+ * never provider reasoning content, and the backend refuses to start with the
+ * raw lens configured outside a developer's own deployment. It is optional here
+ * for exactly that lens — `CLUE_CHAT_REASONING_TRACE_MODE=raw`, a prompt/skill
+ * tuning affordance — and **payload presence alone decides whether it renders**.
+ * No frontend flag: a client cannot know whether the server sent a trace by
+ * reading its own environment, only by looking at what arrived.
+ *
+ * `text_ephemeral` is the backend saying the load-bearing thing about that
+ * text: unlike assistant prose it has no durable counterpart, so it exists for
+ * as long as the stream held it and cannot be re-fetched after a reload or a
+ * `stream.reset`. The adapter renders it as a live diagnostic, never as part of
+ * the transcript.
+ */
 const ReasoningPartWireSchema = z.object({
   ...partBase,
   kind: z.literal("reasoning"),
@@ -160,6 +178,8 @@ const ReasoningPartWireSchema = z.object({
   requested_tool_calls: z.number().int().min(0).default(0),
   started_at: z.string(),
   completed_at: z.string().nullable().optional(),
+  text: z.string().nullable().optional(),
+  text_ephemeral: z.boolean().nullable().optional(),
 });
 
 export interface ChatReasoningPart {
@@ -171,6 +191,10 @@ export interface ChatReasoningPart {
   requestedToolCalls: number;
   startedAt: string;
   completedAt: string | null;
+  /** The dev-lens raw trace, when one was streamed. `null` is the normal case. */
+  text: string | null;
+  /** True whenever `text` is set: this text is not part of the durable turn. */
+  textEphemeral: boolean;
 }
 
 // --- agent activity ------------------------------------------------------
@@ -457,6 +481,8 @@ export const ChatPartSnapshotSchema = z
           requestedToolCalls: wire.requested_tool_calls,
           startedAt: wire.started_at,
           completedAt: wire.completed_at ?? null,
+          text: wire.text ?? null,
+          textEphemeral: wire.text_ephemeral ?? false,
         };
       case "agent_activity":
         return {

@@ -17,10 +17,21 @@ export function ChatTranscript({
   actions,
   assistantName = "Clue",
   messages,
+  onInspectTurn,
 }: {
   actions: ChatPartActions;
   assistantName?: string;
   messages: readonly TranscriptMessage[];
+  /**
+   * The dev-lens affordance, or absent.
+   *
+   * `undefined` is the production shape and the default: the capability probe
+   * 404s against any deployment that did not register the inspector routes, so
+   * the caller passes nothing and no button is rendered. No component here reads
+   * an environment variable to decide — a client flag could disagree with the
+   * server's, and asking cannot.
+   */
+  onInspectTurn?: (turnId: string) => void;
 }) {
   return (
     <div className={styles.transcript} role="log">
@@ -36,6 +47,16 @@ export function ChatTranscript({
             <div className={styles.assistantAttribution}>
               <ProjectIcon name="clue" size={13} />
               {assistantName}
+              {onInspectTurn && !message.optimistic ? (
+                <button
+                  aria-label={`Inspect turn ${message.turnId}`}
+                  className={styles.turnLensTrigger}
+                  onClick={() => onInspectTurn(message.turnId)}
+                  type="button"
+                >
+                  Inspect
+                </button>
+              ) : null}
             </div>
           ) : null}
           <div className={styles.messageParts}>

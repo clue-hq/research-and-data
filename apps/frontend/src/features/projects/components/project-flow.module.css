@@ -2630,6 +2630,245 @@
   cursor: default;
 }
 
+/*
+ * The dev-lens raw reasoning disclosure. It exists only when the backend sent a
+ * trace, which only a development deployment can be configured to do, so it is
+ * deliberately styled as a diagnostic — monospaced, muted, dashed — and never as
+ * part of the conversation.
+ */
+.reasoningTrace {
+  margin: 0;
+}
+
+.reasoningTrace .reasoningStatus {
+  cursor: pointer;
+}
+
+.reasoningTraceContent {
+  margin-top: 6px;
+  border-left: 2px dashed var(--clue-ds-color-border-subtle);
+  padding-left: 10px;
+}
+
+.reasoningTraceNote {
+  margin: 0 0 6px;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+/*
+ * The dev-lens turn inspector. Named `turnLens*` rather than `inspector*`
+ * because `.inspector*` is already the canvas inspector's — two unrelated
+ * surfaces sharing a prefix is how a stylesheet starts lying about what it
+ * styles.
+ *
+ * Styled as a developer tool throughout: monospace addresses, muted notes, a
+ * dashed frame. It is never rendered in a production deployment, because the
+ * affordance that opens it is not rendered when the capability probe 404s.
+ */
+.turnLensTrigger {
+  margin-left: auto;
+  border: 0.5px dashed var(--clue-ds-color-border-subtle);
+  border-radius: 4px;
+  background: transparent;
+  padding: 1px 6px;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.turnLensPanel {
+  display: flex;
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  flex-direction: column;
+  width: min(460px, 100%);
+  border-left: 0.5px solid var(--clue-ds-color-border-subtle);
+  background: var(--clue-ds-color-surface-neutral, #fff);
+}
+
+.turnLensHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 0.5px solid var(--clue-ds-color-border-subtle);
+  padding: 10px 12px;
+}
+
+.turnLensHeader button {
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.turnLensTabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 0.5px solid var(--clue-ds-color-border-subtle);
+  padding: 6px 8px;
+}
+
+.turnLensTabs button {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  padding: 3px 8px;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.turnLensTabs button[data-active] {
+  background: var(--clue-ds-color-surface-subtle, rgb(0 0 0 / 5%));
+  color: var(--clue-ds-color-content-neutral);
+}
+
+.turnLensContent {
+  flex: 1;
+  padding: 10px 12px 16px;
+  overflow-y: auto;
+}
+
+.turnLensSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.turnLensRow,
+.turnLensLayer {
+  border: 0.5px solid var(--clue-ds-color-border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.turnLensLayer > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.turnLensMeter {
+  flex: 1;
+  min-width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--clue-ds-color-surface-subtle, rgb(0 0 0 / 8%));
+}
+
+.turnLensMeter > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--clue-ds-color-content-subtle);
+}
+
+.turnLensCount,
+.turnLensNote,
+.turnLensAddress {
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.turnLensAddress {
+  margin: 2px 0 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.turnLensNote {
+  margin: 4px 0 0;
+}
+
+.turnLensRefHead,
+.turnLensSubhead {
+  margin: 8px 0 2px;
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.turnLensMeta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.turnLensMeta dt {
+  color: var(--clue-ds-color-content-subtle);
+}
+
+.turnLensMeta dd {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  overflow-wrap: anywhere;
+}
+
+.turnLensList {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.turnLensRef {
+  margin-top: 6px;
+  border-left: 2px solid var(--clue-ds-color-border-subtle);
+  padding-left: 8px;
+}
+
+.turnLensRef[data-disposition="excluded"] {
+  border-left-style: dashed;
+}
+
+.turnLensBody {
+  margin-top: 4px;
+}
+
+.turnLensPre {
+  margin: 0;
+  border-radius: 4px;
+  background: var(--clue-ds-color-surface-subtle, rgb(0 0 0 / 4%));
+  padding: 6px 8px;
+  max-height: 260px;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.reasoningTraceText {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 17px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .reasoning[data-state="open"] .reasoningChevron,
 .chainOfThought:has([data-state="open"]) .reasoningChevron,
 .toolActivity[data-state="open"] .reasoningChevron,
