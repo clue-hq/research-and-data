@@ -113,8 +113,11 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
 
     # The two proposal v1 addresses remain installed only for historical recipe replay. They add
     # inventory entries but cannot enter the current model surface; only propose_field@2 carries
-    # the dynamic Client-KB authority.
-    assert len(by_address) == 55
+    # the dynamic Client-KB authority. Lane E E1's `synthesize_entity_prose@1` likewise adds an
+    # inventory entry with no role grant (machine-invoked only), so it is disclosed as unavailable
+    # to every surface — 55 → 56 addresses, `available` unchanged.
+    assert len(by_address) == 56
+    assert by_address["synthesize_entity_prose@1"].status is not AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {

@@ -100,6 +100,10 @@ from clue_api.proposal_tools import (
     ProposeFieldTool,
     ProposeSourceTool,
 )
+from clue_api.prose_synthesis_tools import (
+    ProseSynthesisServices,
+    build_prose_synthesis_tools,
+)
 from clue_api.research_directive_tools import build_research_directive_tools
 from clue_api.research_view_tools import build_research_view_tools
 from clue_api.stage0_inspection_tools import build_stage0_inspection_tools
@@ -2580,6 +2584,7 @@ def build_toolbelt(
     independent_contact_research: IndependentContactResearchRunner | None = None,
     contact_content_handoff: ContactContentHandoffService | None = None,
     entity_research_launches: EntityResearchLaunchServices | None = None,
+    prose_synthesis: ProseSynthesisServices | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -2819,6 +2824,16 @@ def build_toolbelt(
         snapshot_compose_enabled=resolved_settings.c7_snapshot_compose_enabled,
         recheck_enabled=resolved_settings.c7_recheck_enabled,
         admitted_workspace_ids=frozenset(resolved_settings.c7_workspace_canary_ids),
+    ):
+        registry.register(tool, make_default=True)
+    # Lane E E1. The tool registers in EVERY composition — including the gateway-less HTTP process
+    # — so the registered name set (and therefore the C6 authority check) is identical everywhere;
+    # an uncomposed process simply refuses `prose_synthesis_not_composed` / `gateway_required`
+    # rather than being silently absent.
+    for tool in build_prose_synthesis_tools(
+        prose_synthesis,
+        gateway=gateway,
+        conn_factory=conn_factory,
     ):
         registry.register(tool, make_default=True)
     return registry

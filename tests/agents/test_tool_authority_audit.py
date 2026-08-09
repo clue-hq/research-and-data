@@ -39,7 +39,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Every addition must have a reviewed role decision here. O2 added the account-deep launch
     # boundary; M8D R10 retires it from every active role (exact historical replay only) and
     # promotes the separately confirmed account/contact entity-research launch and read tools.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 48
+    # Lane E E1 adds `synthesize_entity_prose`, machine-invoked only: the fleet step offers a
+    # finalized job to it, and no model surface may reach for it.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 49
+    assert C6_AGENT_TOOL_AUTHORITY["synthesize_entity_prose"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)

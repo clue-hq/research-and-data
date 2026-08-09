@@ -86,6 +86,8 @@ from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
     Recipe1ProjectExecutionRouter,
 )
+from clue_api.prose_synthesis_step import ProseSynthesisStep
+from clue_api.prose_synthesis_tools import ProseSynthesisServices
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
     build_recipe_pin_registry,
@@ -115,6 +117,8 @@ from clue_fleet import DbTaskQueue, DbWorkQueue, run_worker
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
 from clue_research.adapters.exa_websets import ExaWebsetsClient
+from clue_research.narrative import ProseSynthesizer
+from clue_research.verification import FaithfulnessJudgeImpl
 from clue_storage import StorageBackend
 from clue_toolbelt import DbIdempotencyStore
 
@@ -418,6 +422,10 @@ async def _serve() -> None:
         gateway = build_platform_gateway(settings)
         gateway_config = default_gateway_config()
         pre_spend_gate = build_pre_spend_gate(conn_factory=transaction)
+        # Lane E E1. Constructed here because the fleet composition needs it, but it cannot be
+        # handed an invoker yet: the fleet's launch services feed `build_toolbelt` below, and
+        # the invoker is built from the resulting registry. It is bound after that (`:bind`).
+        prose_step = ProseSynthesisStep()
         entity_research = build_production_entity_research_fleet(
             settings=settings,
             secrets=secrets,
@@ -431,6 +439,7 @@ async def _serve() -> None:
             gateway_config=gateway_config,
             pre_spend_gate=pre_spend_gate,
             conn_factory=transaction,
+            prose_step=prose_step,
         )
         entity_research_launches = (
             EntityResearchLaunchServices(
@@ -460,6 +469,17 @@ async def _serve() -> None:
             if settings.c7_production_handoff_enabled and research_views is not None
             else None
         )
+        # Lane E E1. The judge follows the runtime verification toggle exactly as the project-run
+        # composition does: with verification off there is no judge, the prose claim stays at its
+        # born `unverified` status, and the disabled-mode effective merge policy is what serves it.
+        prose_judge = (
+            FaithfulnessJudgeImpl(gateway=gateway, conn_factory=transaction)
+            if settings.verification_enabled
+            else None
+        )
+        prose_synthesis = ProseSynthesisServices(
+            account=ProseSynthesizer(gateway=gateway, judge=prose_judge)
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -477,6 +497,7 @@ async def _serve() -> None:
             research_view_recheck=(research_views.recheck if research_views is not None else None),
             contact_content_handoff=contact_content_handoff,
             entity_research_launches=entity_research_launches,
+            prose_synthesis=prose_synthesis,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -498,6 +519,7 @@ async def _serve() -> None:
             storage=storage,
             settings=settings,
         )
+        prose_step.bind(tool_invoker)
         if research_views is not None:
             research_views.bind_tool_invoker(tool_invoker)
         deferred_supervisor_actions.bind(

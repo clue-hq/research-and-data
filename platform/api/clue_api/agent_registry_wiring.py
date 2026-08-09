@@ -108,6 +108,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "submit_onboarding_input": (AgentRole.HEAD_OF_ABM,),
     "submit_project_checkpoint": (),
     "submit_tier_checkpoint": (),
+    # Lane E E1. Machine-invoked only: the post-finalize fleet step offers a just-terminal research
+    # job to it. It is deliberately absent from every model surface — an agent that could summarize
+    # on demand could spend on prose for a job the research engine never finished.
+    "synthesize_entity_prose": (),
     "synthesize_icps": (AgentRole.HEAD_OF_ABM,),
 }
 

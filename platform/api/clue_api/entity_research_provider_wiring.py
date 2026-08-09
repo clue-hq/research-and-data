@@ -51,6 +51,7 @@ from clue_api.exa_entity_research_tools import (
     ExaContactSemanticResearchAction,
     ExaEntityResearchProjectionBuilder,
 )
+from clue_api.prose_synthesis_step import ProseSynthesisStep
 from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
 from clue_api.sumble_committee_acquisition import SumbleCommitteeAcquisitionCoordinator
 from clue_api.sumble_committee_inputs import DurableSumbleCommitteeInputResolver
@@ -596,6 +597,7 @@ def build_production_entity_research_fleet(
     pre_spend_gate: PreSpendGate,
     channel_coordinator: ExaContactChannelCoordinator | None = None,
     conn_factory: ConnFactory = transaction,
+    prose_step: ProseSynthesisStep | None = None,
 ) -> EntityResearchFleetComposition | None:
     """Promote one shared entity fleet only under its independent R10 deployment switch."""
 
@@ -640,6 +642,9 @@ def build_production_entity_research_fleet(
             temperature=0,
         ),
         conn_factory=conn_factory,
+        # Lane E E1: the fleet process is the only one with a real gateway, so it is the only
+        # process that composes a step at all.
+        prose_step=prose_step,
     )
 
 
