@@ -30,6 +30,26 @@ and generation runs belong to a Thread. Artifacts belong to the Project, so
 they stay visible in the Gallery when the user changes threads. Origin IDs keep
 every output traceable to the request and run that produced it.
 
+### Ratified first-interaction behavior (2026-08-10)
+
+- The Home submission creates the project with the initial title **`Untitled
+  project`**. Its first thread receives a short title derived from the user's
+  first message; it is not called `New chat` unless no usable message is
+  available.
+- Creation is one user action: the project, first thread, first user message,
+  and first platform-Deep-Agent turn are accepted atomically. The frontend then
+  opens that real thread and begins rendering the response without requiring a
+  second Send.
+- A new project with no artifacts opens on **Gallery** with an explicit empty
+  state. It never borrows fixture artifacts or another project's outputs.
+- If a same-thread model turn is active, later user submissions are durably
+  accepted in order and shown as **queued**. The composer does not silently
+  discard them or disable the product's conversation flow.
+- On desktop, hovering the project-header hamburger temporarily overlays the
+  expanded main sidebar without resizing the project workspace. Clicking the
+  hamburger pins the sidebar open and reflows the workspace; clicking again
+  returns it to the collapsed state. Mobile keeps the separate drawer behavior.
+
 ## Read endpoints
 
 ### `GET /api/v1/projects/sidebar`
@@ -141,8 +161,10 @@ place rather than append duplicate status UI.
 
 ## Write endpoints
 
-- `POST /api/v1/projects` — atomically create a Project, its first Thread, the
-  first Message, and optionally a Generation run.
+- `POST /api/v1/projects` — atomically create an `Untitled project`, its first
+  Thread (short title derived from the first user message), the first Message,
+  and the first platform-Deep-Agent turn. Return the real project/thread/turn
+  identities needed to open the conversation and stream immediately.
 - `POST /api/v1/projects/:projectId/threads` — create another thread inside the
   existing Project.
 - `PATCH /api/v1/projects/:projectId` — rename the project or update its pinned
