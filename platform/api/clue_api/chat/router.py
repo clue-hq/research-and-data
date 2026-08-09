@@ -27,15 +27,24 @@ from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import ValidationError
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from clue_api.agent_gate import (
+    KIND_DIRECTIVE_CONFIRMATION,
+    AgentGateRow,
+    GateAlreadyAnswered,
+    get_gate,
+    insert_gate_answer,
+)
 from clue_api.agent_turn_submission import (
     SubmissionConflict,
     dispatch_next_thread_turn,
@@ -53,6 +62,7 @@ from clue_api.chat.principal import (
 )
 from clue_api.chat.schemas import (
     CreateThreadRequest,
+    GateResponseRequest,
     MessageListResponse,
     PageMeta,
     SubmitTurnRequest,
@@ -61,14 +71,16 @@ from clue_api.chat.schemas import (
     TurnAcceptedResponse,
     TurnAcceptedWire,
     UpdateThreadRequest,
+    gate_response_message,
     message_list_response,
     thread_wire,
     thread_wire_from_references,
 )
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
 from clue_api.thread_store import get_thread
+from clue_api.turn_action import derive_turn_action_ref
 from clue_config import Settings
-from clue_core import operation_id_from_key
+from clue_core import OperationId, operation_id_from_key
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_projections import (
@@ -77,6 +89,7 @@ from clue_projections import (
     MAX_THREAD_MESSAGE_PAGE_SIZE,
     MAX_THREAD_PAGE_SIZE,
     InvalidCursorError,
+    open_gate_kinds_for_threads,
     thread_messages,
     threads_for_project,
 )
@@ -274,6 +287,24 @@ def _refuse(*, status_code: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code, "message": message})
 
 
+def _gate_response(body: SubmitTurnRequest) -> GateResponseRequest:
+    """Narrow the mutually-exclusive body once, where the type checker can see it.
+
+    ``SubmitTurnRequest`` guarantees exactly one of the two fields, but that guarantee lives in a
+    validator, so every read still has to prove it. Doing it here keeps the route free of repeated
+    ``assert``s and makes the impossible branch a loud error rather than an ``Optional`` leaking
+    into the capture path.
+    """
+
+    if body.gate_response is None:  # pragma: no cover - the validator forbids it
+        raise _refuse(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="supply exactly one of message or gate_response",
+        )
+    return body.gate_response
+
+
 def build_chat_router(
     *,
     settings: Settings,
@@ -318,22 +349,36 @@ def build_chat_router(
         *,
         who: RequestPrincipal,
         idempotency_key: str | None,
+        action_ref: str | None = None,
+        operation_id: OperationId | None = None,
     ) -> dict[str, Any]:
-        """Invoke one governed thread tool and return its references.
+        """Invoke one governed tool and return its references.
 
         ``actor_id`` is the principal's internal ``platform_user.user_id`` — ambient, never a
         request field. ``operation_id`` is derived from the caller's ``Idempotency-Key`` when there
         is one, so a retried create lands on the same thread instead of a second one.
+
+        ``action_ref`` is the *human receipt* a gated tool needs (charter §3-P2): the canonical
+        ``turn-action:`` reference for the turn this request has just persisted. It is supplied here
+        and never accepted from the client — the two together are what let a human-only tool run
+        outside the model surface with authority the server derived. A caller that passes an
+        ``operation_id`` gets replay identity of its own choosing, which the gate path uses so a
+        retried approval replays the same confirmation instead of colliding with it.
         """
 
         ctx = ToolContext(
             workspace_id=who.workspace_id,
             actor="human",
             conn_factory=conn_factory,
-            operation_id=operation_id_from_key(
-                who.workspace_id, f"chat:{name}:{idempotency_key or uuid4().hex}"
+            operation_id=(
+                operation_id
+                if operation_id is not None
+                else operation_id_from_key(
+                    who.workspace_id, f"chat:{name}:{idempotency_key or uuid4().hex}"
+                )
             ),
             actor_id=who.user_id,
+            action_ref=action_ref,
         )
         try:
             result = await tool_invoker.invoke(name, body, ctx, idempotency_key=idempotency_key)
@@ -391,8 +436,19 @@ def build_chat_router(
             )
         except InvalidCursorError as exc:
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
+        # One anti-join for the whole page (FI Lane D D4): the sidebar's approval / needs-input
+        # badge is derived from unanswered gates, and a per-row read would cost a query per
+        # conversation to answer "is anyone waiting on me?".
+        open_gates = await open_gate_kinds_for_threads(
+            workspace_id=who.workspace_id,
+            thread_ids=tuple(item.thread_id for item in page.items),
+            conn_factory=conn_factory,
+        )
         return ThreadListResponse(
-            data=tuple(thread_wire(item) for item in page.items),
+            data=tuple(
+                thread_wire(item, open_gate_kinds=open_gates.get(item.thread_id, ()))
+                for item in page.items
+            ),
             meta=PageMeta(next_cursor=page.next_cursor),
         )
 
@@ -469,7 +525,86 @@ def build_chat_router(
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
         return message_list_response(page, thread_id=thread_id)
 
-    # --- turn submission (D2) -----------------------------------------------------------------
+    # --- turn submission (D2) + the structured gate response (D4) ------------------------------
+
+    async def _checked_gate(
+        conn: AsyncConnection,
+        response: GateResponseRequest,
+        *,
+        who: RequestPrincipal,
+        project_id: str,
+        thread_id: str,
+        turn_id: UUID,
+    ) -> AgentGateRow:
+        """Prove this answer may be applied to this gate, or refuse with no side effects.
+
+        Every check charter §5's adversarial matrix names lives here, and all of them run *before*
+        anything is written. The advisory lock is taken first and is a **transaction** lock, so the
+        "is it still unanswered?" read and the answer insert later in the same transaction are one
+        atomic decision — two sessions clicking Approve at the same instant serialize, and the
+        second finds the first's answer rather than racing past it.
+
+        The one case that is not a refusal is the *same* turn answering again: that is a retried
+        request, not a second decision, and the caller turns it into the idempotent replay.
+        """
+
+        try:
+            gate_id = UUID(response.gate_id)
+        except ValueError as exc:
+            raise _refuse(
+                status_code=422,
+                code="GATE_ID_MALFORMED",
+                message="a gate response must name one gate by its canonical identifier",
+            ) from exc
+        await conn.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+            {"scope": f"agent-gate-answer:{who.workspace_id}:{gate_id}"},
+        )
+        view = await get_gate(conn, workspace_id=who.workspace_id, gate_id=gate_id)
+        # A gate of another workspace, project, or thread is *not found* rather than forbidden:
+        # a 403 would confirm it exists to somebody who cannot see it.
+        if view is None or view.gate.project_id != project_id or view.gate.thread_id != thread_id:
+            raise _refuse(
+                status_code=404,
+                code="GATE_NOT_FOUND",
+                message="no such gate in this thread",
+            )
+        if view.gate.kind != KIND_DIRECTIVE_CONFIRMATION:
+            raise _refuse(
+                status_code=422,
+                code="GATE_KIND_UNSUPPORTED",
+                message=f"this surface cannot answer a {view.gate.kind} gate",
+            )
+        # Addressee, not membership: a colleague with a perfectly valid session and a perfectly
+        # valid turn of their own still may not answer somebody else's gate.
+        if view.gate.addressee_user_id != who.user_id:
+            raise _refuse(
+                status_code=403,
+                code="GATE_FORBIDDEN",
+                message="this gate was addressed to somebody else",
+            )
+        if view.answer is not None and view.answer.turn_id != turn_id:
+            raise _refuse(
+                status_code=409,
+                code="GATE_ALREADY_ANSWERED",
+                message="this gate has already been answered",
+            )
+        # The two staleness checks. They are what make "Approve" mean the card that was on the
+        # screen: a directive redrafted since, or an amount recomputed since, cannot be approved by
+        # a click aimed at the previous one.
+        if response.expected_subject_sha256 != view.gate.expected_subject_sha256:
+            raise _refuse(
+                status_code=409,
+                code="GATE_SUBJECT_STALE",
+                message="the reviewed subject revision differs from the current gate",
+            )
+        if response.expected_estimated_cost_cents != view.gate.max_spend_cents:
+            raise _refuse(
+                status_code=409,
+                code="GATE_AMOUNT_STALE",
+                message="the reviewed maximum spend differs from the current gate",
+            )
+        return view.gate
 
     if artifacts is not None:
 
@@ -481,7 +616,7 @@ def build_chat_router(
             who: PrincipalDep,
             idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
         ) -> TurnAcceptedResponse:
-            """Accept one human turn: capture it durably, queue it, and answer ``202``.
+            """Accept one human turn — an ordinary message or a structured gate answer.
 
             This endpoint deliberately does **not** run the turn (ratified §6-D1). It writes what
             it can prove — the user's exact bytes, their capture record, and who submitted them —
@@ -493,6 +628,22 @@ def build_chat_router(
             submission, then offer the work. A crash anywhere before the enqueue leaves a captured
             message and no execution — recoverable and honest; a crash after leaves a queued turn
             whose identity is already durable.
+
+            **The gate path (charter §3-P5(c)) adds three steps between those two**, and their
+            order is the whole design:
+
+            1. the gate is checked before a byte is written, so every refusal is side-effect free;
+            2. the answer's canonical bytes are captured as *the turn's message*, so a decision is a
+               visible transcript record and capture-before-effect holds exactly as it does for a
+               sentence somebody typed;
+            3. the once-only answer is recorded and — only for ``approved`` — the human-only
+               ``confirm_account_research_directive@2`` runs with the ambient ``actor_id`` and the
+               ``turn-action:`` receipt this request has just made durable.
+
+            All of it is one transaction. A confirmation that cannot be applied therefore leaves no
+            answer, no capture and no queued turn, instead of a gate burned by a transient failure;
+            and because the confirmation's ``operation_id`` is derived from ``(gate, turn)``, a
+            retry replays the same confirmation rather than colliding with it.
             """
 
             _require(who, PERMISSION_THREAD_WRITE)
@@ -507,7 +658,13 @@ def build_chat_router(
                 thread_id=thread_id,
                 idempotency_key=idempotency_key,
             )
-            digest = content_address(body.message.encode())
+            # A gate response is captured as its canonical bytes: one act, one message, one digest.
+            message = (
+                body.message
+                if body.message is not None
+                else gate_response_message(_gate_response(body))
+            )
+            digest = content_address(message.encode())
             async with conn_factory() as conn:
                 thread = await get_thread(
                     conn,
@@ -535,6 +692,20 @@ def build_chat_router(
                         code="PROJECT_NOT_FOUND",
                         message="no such project in this workspace",
                     )
+                # The gate is proved before anything is written — including before the replay read,
+                # so a stale or foreign answer never even reaches the capture path.
+                gate = (
+                    None
+                    if body.gate_response is None
+                    else await _checked_gate(
+                        conn,
+                        body.gate_response,
+                        who=who,
+                        project_id=project_id,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                    )
+                )
                 # Replay is decided before anything is written: a retry must not persist a second
                 # artifact, and a *different* message under a used key must be refused rather than
                 # answered with the first one's turn.
@@ -575,7 +746,7 @@ def build_chat_router(
                     product_id=project.product_id,
                     project_id=project_id,
                     turn_id=turn_id,
-                    message=body.message,
+                    message=message,
                     client_entity_id=await project_client_entity_id(
                         conn,
                         workspace_id=who.workspace_id,
@@ -604,6 +775,49 @@ def build_chat_router(
                         code="IDEMPOTENCY_CONFLICT",
                         message=str(exc),
                     ) from exc
+                if gate is not None:
+                    response = _gate_response(body)
+                    # The receipt is derived from the turn this request just made durable — the
+                    # client never supplies it and never could (§3.5).
+                    action_ref = derive_turn_action_ref(turn_id)
+                    try:
+                        await insert_gate_answer(
+                            conn,
+                            gate_id=gate.gate_id,
+                            workspace_id=who.workspace_id,
+                            turn_id=turn_id,
+                            action_ref=action_ref,
+                            decision=response.decision,
+                            answered_by_user_id=who.user_id,
+                        )
+                    except GateAlreadyAnswered as exc:
+                        # Only reachable when a concurrent session slipped between the lock and
+                        # here; the insert-once primary key is the backstop the check above is not.
+                        raise _refuse(
+                            status_code=409,
+                            code="GATE_ALREADY_ANSWERED",
+                            message="this gate has already been answered",
+                        ) from exc
+                    if response.decision == "approved":
+                        # Human-only, invoked outside the model surface with server-derived
+                        # authority. Rejection and revision deliberately confirm nothing: they are
+                        # durable records of a decision, and the agent answers them in its turn.
+                        await _invoke(
+                            "confirm_account_research_directive",
+                            {
+                                "directive_id": str(gate.subject_snapshot["research_directive_id"]),
+                                "expected_sha256": gate.expected_subject_sha256,
+                            },
+                            who=who,
+                            idempotency_key=None,
+                            action_ref=action_ref,
+                            # Derived from (gate, turn) so a retried approval *replays* the same
+                            # confirmation instead of being refused as a second one.
+                            operation_id=operation_id_from_key(
+                                who.workspace_id,
+                                f"gate-answer:{gate.gate_id}:{turn_id}",
+                            ),
+                        )
                 await dispatch_next_thread_turn(
                     conn,
                     workspace_id=who.workspace_id,

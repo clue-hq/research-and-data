@@ -55,6 +55,13 @@ from clue_projections.dtos import (
     RunOverview,
 )
 from clue_projections.events import ReplayPlan, plan_replay
+from clue_projections.gates import (
+    GateAnswerView,
+    GateLaunchView,
+    GateView,
+    open_gate_kinds_for_threads,
+    thread_gates,
+)
 from clue_projections.ingestion import IngestionStatusView, ingestion_status
 from clue_projections.manifest import (
     MANIFEST_OP_TOOLS,
@@ -166,6 +173,12 @@ __all__ = [
     "ThreadPage",
     "ThreadView",
     "USER_MESSAGE_FLAVORS",
+    # FI Lane D D4 gate substrate projections
+    "GateAnswerView",
+    "GateLaunchView",
+    "GateView",
+    "open_gate_kinds_for_threads",
+    "thread_gates",
     "flavors_for_message_role",
     "thread_messages",
     "threads_for_project",

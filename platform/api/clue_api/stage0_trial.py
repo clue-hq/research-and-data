@@ -803,10 +803,16 @@ class Stage0Trial:
             outcome.finalization_ref is not None
             and outcome.status is AgentExecutionStatus.COMPLETED
         ):
+            # ``actor='human'`` matches the gate's declared authority in ``recipe0-stage0`` — the
+            # human who submitted the turn is the one whose interaction just ended. This read
+            # ``'agent'`` until FI Lane D D4: a latent mismatch against a HUMAN-authority gate that
+            # the production runner (``agent_turn_fleet_wiring``) never inherited, kept alive only
+            # because ``decide_gate`` is the trial's last step and its ``ExecutionConflict`` was
+            # never reached in a passing run. Reconciled here so one gate has one authority.
             await self._executor.decide_gate(
                 execution_id=execution_id,
                 node_key="stage0_interactions",
-                actor="agent",
+                actor="human",
                 decision="complete",
             )
             completed = await self._drive(execution_id)

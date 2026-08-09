@@ -12,6 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 
 from clue_api.account_entity_research_composition import account_research_profile_sha256
+from clue_api.account_research_estimate import (
+    AccountTierCheckpointMissing,
+    compute_account_research_estimate,
+)
 from clue_api.account_research_fleet import (
     AccountResearchFleetError,
     AccountResearchFleetPolicy,
@@ -21,7 +25,6 @@ from clue_api.account_research_fleet import (
 from clue_core import (
     EntityId,
     EntityScope,
-    ExtractionMethod,
     ProjectRunId,
     ResearchDirectiveId,
     ResearchDirectiveStatus,
@@ -41,8 +44,8 @@ from clue_core.entity_research import (
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet import EntityResearchJobEnvelope, EntityResearchRunEnvelope
-from clue_research.claimstore import WorkspaceScope, claims_for, record_run_lineage
-from clue_research.directives import effective_account_research_directive, get_research_directive
+from clue_research.claimstore import record_run_lineage
+from clue_research.directives import get_research_directive
 from clue_research.durable import (
     ensure_account_run,
     get_project_run,
@@ -80,7 +83,6 @@ _SUPPORTED_FIELD_SOURCES = frozenset(
         TECH_STACK_SOURCE_KEY,
     }
 )
-_TIER_FIELD = "account.scoring.tier"
 
 
 class AccountResearchFleetLaunchError(RuntimeError):
@@ -198,40 +200,26 @@ class AccountResearchFleetLauncher:
                     "directive policy does not authorize account research"
                 )
 
-            effective_by_account = {}
-            pins_by_account = {}
-            estimated_cost = Decimal(0)
-            for account_id in account_ids:
-                effective = await effective_account_research_directive(
+            # FI Lane D D4 (§3-P5(b), ratified §6-D5): the Σ per-account budget-cap loop moved to
+            # ``clue_api.account_research_estimate`` verbatim so the directive-confirmation gate
+            # can write **the same number** this launcher then verifies. One computation, two
+            # callers; the exact-match verification below is unchanged and stays the launcher's.
+            try:
+                estimate = await compute_account_research_estimate(
                     conn,
                     workspace_id=request.workspace_id,
+                    project_run_id=ProjectRunId(request.project_run_id),
                     directive_id=directive.directive_id,
-                    account_id=account_id,
+                    account_ids=account_ids,
                 )
-                matching_tiers = []
-                for claim in await claims_for(
-                    conn,
-                    account_id,
-                    _TIER_FIELD,
-                    scope=WorkspaceScope.for_workspace(request.workspace_id),
-                ):
-                    value = claim.value_json
-                    if (
-                        isinstance(value, dict)
-                        and claim.extraction_method is ExtractionMethod.HUMAN
-                        and claim.source_tier == 1
-                        and value.get("project_run_id") == str(request.project_run_id)
-                        and value.get("tier") == effective.effort_policy.tier
-                        and value.get("disposition") == "selected"
-                    ):
-                        matching_tiers.append(claim)
-                if len(matching_tiers) != 1:
-                    raise AccountResearchFleetLaunchError(
-                        f"account {account_id} lacks one exact human-approved selected tier"
-                    )
-                effective_by_account[account_id] = effective
-                pins_by_account[account_id] = effective.pin
-                estimated_cost += effective.effort_policy.budget_cap_cents
+            except AccountTierCheckpointMissing as exc:
+                raise AccountResearchFleetLaunchError(str(exc)) from exc
+            effective_by_account = estimate.effective_by_account
+            pins_by_account = {
+                account_id: effective.pin
+                for account_id, effective in effective_by_account.items()
+            }
+            estimated_cost = estimate.total_cents
             if estimated_cost != request.expected_estimated_cost_cents:
                 raise AccountResearchFleetLaunchError(
                     "approved estimate differs from the current effective directives"

@@ -63,6 +63,7 @@ from uuid import UUID
 from pydantic import Field, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.agent_gate_wiring import register_agent_gate_tools
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.composition import build_pre_spend_gate
@@ -2779,6 +2780,9 @@ def build_toolbelt(
     # durable state (Doc A — the toolbelt is the only write path), registered from its own wiring
     # module per the chokepoint protocol.
     register_thread_tools(registry, conn_factory=conn_factory)
+    # FI Lane D D4 / §3-P5(a): the durable confirmation gate is opened through a governed tool for
+    # the same reason, and from its own wiring module for the same one.
+    register_agent_gate_tools(registry, conn_factory=conn_factory)
     for tool in stage0_tools(
         conn_factory=conn_factory,
         policy=DEFAULT_STAGE0_POLICY,

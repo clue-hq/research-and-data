@@ -22,18 +22,23 @@ The two substantive shape decisions:
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from decimal import Decimal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from clue_api.agent_gate import money_text
 from clue_projections import ThreadMessagePage, ThreadMessageSummary, ThreadView
 
 __all__ = [
     "ArchiveThreadResponse",
     "CreateThreadRequest",
+    "GateResponseRequest",
     "MessageListResponse",
     "PageMeta",
     "SubmitTurnRequest",
+    "gate_response_message",
     "ThreadListResponse",
     "ThreadMessageWire",
     "ThreadResponse",
@@ -91,33 +96,83 @@ class UpdateThreadRequest(_Request):
         return self
 
 
-class SubmitTurnRequest(_Request):
-    """``POST /api/v1/projects/:projectId/threads/:threadId/turns`` — ``{"message": "..."}``.
+class GateResponseRequest(_Request):
+    """A structured answer to one durable ``agent_gate`` (charter §3.5, §3-P5(c)).
 
-    Exactly one field today. Charter §3.5 gives this endpoint a second, **mutually exclusive** body
-    — ``gate_response={gate_id, decision, expected_subject_sha256, expected_estimated_cost_cents}``
-    — but that shape depends on the durable ``agent_gate`` substrate ratified in §6-D3, which is
-    D4's to build. Accepting a placeholder for it now would mean shipping a field the server cannot
-    honour, so the seam is named here and left unbuilt.
+    The two ``expected_*`` fields are the client's statement of *what it was looking at* when the
+    user clicked, and the server refuses the answer unless they match the immutable gate. That is
+    what makes "approve" mean the thing on the screen: a directive redrafted since the card was
+    rendered, or a maximum spend recomputed since, cannot be silently approved.
+
+    Note what is absent and always will be: any way to name the actor, the action, the addressee, or
+    the amount to *use*. The client says which amount it believes it saw; the server spends the
+    amount it stored.
+    """
+
+    gate_id: str = Field(min_length=1, max_length=64)
+    decision: Literal["approved", "rejected", "revised"]
+    expected_subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_estimated_cost_cents: Decimal = Field(ge=0)
+
+
+class SubmitTurnRequest(_Request):
+    """``POST /api/v1/projects/:projectId/threads/:threadId/turns``.
+
+    Exactly one of two bodies (charter §3.5): an ordinary ``{"message": "..."}``, or the structured
+    ``{"gate_response": {...}}`` D4 added. Mutually exclusive rather than merged, because they are
+    different acts: one is something the user said, the other is a decision about a specific durable
+    object, and a body that could be read as either would make "did the user approve?" a parsing
+    question.
+
+    Both are captured the same way, though — a gate response is serialized to canonical bytes
+    (:func:`gate_response_message`) and captured as *the turn's message*, so capture-before-effect
+    holds identically and the transcript shows what was decided rather than a gap where a click was.
 
     What this body will never carry, on any slice: ``actor_id`` or ``action_ref`` (§3.5). Authority
     is ambient and server-derived — a client that could name its own actor could approve its own
     spend.
     """
 
-    message: str = Field(min_length=1, max_length=32_000)
+    message: str | None = Field(default=None, min_length=1, max_length=32_000)
+    gate_response: GateResponseRequest | None = None
 
     @model_validator(mode="after")
-    def message_is_not_blank(self) -> SubmitTurnRequest:
-        """Whitespace is not a message.
+    def exactly_one_body(self) -> SubmitTurnRequest:
+        """One act per turn, and whitespace is not a message.
 
         The length bound alone would let ``"   "`` through to the capture path, which refuses it —
         a 500 for what is plainly a bad request. Refusing here makes it the 422 it is.
         """
 
-        if not self.message.strip():
+        if (self.message is None) == (self.gate_response is None):
+            raise ValueError("supply exactly one of message or gate_response")
+        if self.message is not None and not self.message.strip():
             raise ValueError("message must contain something other than whitespace")
         return self
+
+
+def gate_response_message(response: GateResponseRequest) -> str:
+    """The canonical bytes a gate response is captured as.
+
+    Deterministic (sorted keys, compact separators, one spelling of the amount) because these bytes
+    *are* the turn's captured message: they back the artifact digest, the ``onboarding_input``
+    record, and therefore the ``turn-action:`` receipt the confirmation is attributed to. A retried
+    click must produce byte-identical capture or the idempotent replay would look like a different
+    message under a used key.
+    """
+
+    return json.dumps(
+        {
+            "kind": "gate_response",
+            "gate_id": response.gate_id,
+            "decision": response.decision,
+            "expected_subject_sha256": response.expected_subject_sha256,
+            "expected_estimated_cost_cents": money_text(response.expected_estimated_cost_cents),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
 
 
 # --- responses ---------------------------------------------------------------------------------
@@ -129,16 +184,47 @@ def thread_href(*, project_id: str, thread_id: str) -> str:
     return f"/projects/{project_id}?thread={thread_id}"
 
 
-def thread_status(*, status: str) -> str:
+def thread_status(
+    *,
+    status: str,
+    open_gate_kinds: tuple[str, ...] = (),
+    running: bool = False,
+) -> str:
     """The conversation status the sidebar renders.
 
-    D0 knows only the thread's own lifecycle. ``archived`` is honest and outside the authored
-    five-value vocabulary; ``idle`` is the authored value for "nothing is running". Deriving
-    ``running``/``review``/``approval``/``needs-input`` needs the latest turn's status and the open
-    gates, which D2 and D4 introduce — inventing them here would be a lie the UI would render.
+    Derived, never stored — the one place the authored five-value vocabulary
+    (``idle | running | review | approval | needs-input``) is produced, plus the honest sixth,
+    ``archived``, which is outside it because a thread really can be closed.
+
+    D4 supplies the gate half: an unanswered ``directive_confirmation`` is an **approval** the user
+    owes, and any other unanswered gate kind is generic ``needs-input``. Both are computed from the
+    absence of an answer record (ratified §6-D3), so a badge can never claim a decision is pending
+    after it was made. ``open_gate_kinds`` defaults to empty so a caller that has not read the gates
+    — every non-listing caller today — keeps its previous answer rather than guessing.
+
+    ``running`` (the latest turn still executing) is D3's half of this same derivation and lands
+    alongside; the two are independent inputs to one function on purpose, so the two vocabularies
+    the charter complains never meet (§2) meet exactly here.
+
+    D3 supplies ``running`` from the **submissions-union**: a thread is running when it holds a
+    submission that has neither reached a terminal turn event nor a terminal fleet task. That union
+    is what makes a *queued* turn visible at all — the two-phase turn identity ratified after D2
+    means a turn that has not started executing exists only as a submission row, so a status
+    derived from ``agent_turn`` alone would report a thread with three turns waiting as ``idle``.
+
+    An open gate outranks ``running``: a gate is something the *user* must do, and a badge that
+    says "running" while the conversation is actually blocked on them is the one wrong answer here.
     """
 
-    return "archived" if status == "archived" else "idle"
+    if status == "archived":
+        return "archived"
+    if "directive_confirmation" in open_gate_kinds:
+        return "approval"
+    if open_gate_kinds:
+        return "needs-input"
+    if running:
+        return "running"
+    return "idle"
 
 
 class ThreadWire(_Wire):
@@ -164,6 +250,12 @@ class ThreadMessageWire(_Wire):
     role: str
     body_artifact_key: str
     body_sha256: str
+    #: Present only on the D3 hydrated cold-load read (``…/messages/bodies``); ``None`` on the
+    #: body-free listing. When a hydrated page could not serve a body, ``body`` stays ``None`` and
+    #: ``body_unavailable_reason`` says why (``unavailable``/``digest_mismatch``/``not_text``/
+    #: ``budget``) — an empty string would render as a message nobody wrote.
+    body: str | None = None
+    body_unavailable_reason: str | None = None
     created_at: str
     refs: tuple[dict[str, Any], ...]
 
@@ -210,12 +302,12 @@ class TurnAcceptedResponse(_Wire):
     data: TurnAcceptedWire
 
 
-def thread_wire(view: ThreadView) -> ThreadWire:
+def thread_wire(view: ThreadView, *, open_gate_kinds: tuple[str, ...] = ()) -> ThreadWire:
     return ThreadWire(
         id=view.thread_id,
         title=view.title,
         href=thread_href(project_id=view.project_id, thread_id=view.thread_id),
-        status=thread_status(status=view.status),
+        status=thread_status(status=view.status, open_gate_kinds=open_gate_kinds),
         pinned=view.pinned,
         project_id=view.project_id,
         created_at=view.created_at.isoformat(),
@@ -245,7 +337,21 @@ def thread_wire_from_references(references: dict[str, Any]) -> ThreadWire:
     )
 
 
-def message_wire(item: ThreadMessageSummary, *, thread_id: str) -> ThreadMessageWire:
+def message_wire(
+    item: ThreadMessageSummary,
+    *,
+    thread_id: str,
+    body: str | None = None,
+    body_unavailable_reason: str | None = None,
+) -> ThreadMessageWire:
+    """One message on the wire; ``body`` is present only on the D3 hydrated cold-load read.
+
+    Body-free stays the default (D0's decision): a listing carries the content *address*, and the
+    words are fetched deliberately. ``body_unavailable_reason`` exists so a hydrated page can be
+    honest about a body it could not serve — erased, too large, not text — instead of returning an
+    empty string that renders as a message the user never sent.
+    """
+
     return ThreadMessageWire(
         id=str(item.message_id),
         turn_id=str(item.turn_id),
@@ -254,6 +360,8 @@ def message_wire(item: ThreadMessageSummary, *, thread_id: str) -> ThreadMessage
         role=item.role,
         body_artifact_key=item.body_artifact_key,
         body_sha256=item.body_sha256,
+        body=body,
+        body_unavailable_reason=body_unavailable_reason,
         created_at=item.created_at.isoformat(),
         refs=tuple(ref.model_dump(mode="json") for ref in item.refs),
     )
