@@ -49,6 +49,7 @@ from clue_api.agent_platform_wiring import (
 )
 from clue_api.agent_runtime_wiring import CompletionGuard
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.head_of_abm_wiring import (
     HeadOfAbmStage0Runtime,
     build_head_of_abm_stage0_execution,
@@ -75,6 +76,11 @@ __all__ = [
 #: callable tools for the same role, discovered only at the first refused plan.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 CONVERSATION_RECIPE_VERSION = 5
+
+#: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
+#: closed set: an unknown object type is *not* projected, because a card whose contents the surface
+#: cannot describe is worse than no card. D4's directive/gate objects extend this.
+_PLAN_OBJECT_TYPES: frozenset[str] = frozenset({"research_directive", "agent_plan", "plan"})
 
 
 class DelegationWithheld:
@@ -161,6 +167,7 @@ class ConversationTurnEngine:
         completion_guard: CompletionGuard | None = None,
         submitted_by_user_id: str | None = None,
         submitted_via_membership_id: str | None = None,
+        stream: TurnStreamEmitter | None = None,
     ) -> ConversationTurnResult:
         """Run one turn, honouring the committed-outcome replay short-circuit.
 
@@ -174,6 +181,10 @@ class ConversationTurnEngine:
         History is appended around that short-circuit rather than inside it, so a replayed turn
         re-projects the same two thread messages by their derived ids (``uuid5(turn_id, role)``)
         instead of duplicating them.
+
+        ``stream`` (FI Lane D D3, charter §3-P4) is the live projection of this turn onto the
+        durable event outbox. It is optional and never authoritative: every emission is best-effort
+        by construction, and a turn's committed outcome is identical whether anybody was watching.
         """
 
         constitution = request.constitution
@@ -200,6 +211,8 @@ class ConversationTurnEngine:
             turn_id=request.turn_id,
             workspace_id=workspace_id,
         )
+        if stream is not None:
+            await stream.turn_started()
         if committed is None:
             context = await self._contexts.assemble(
                 request=request,
@@ -227,10 +240,12 @@ class ConversationTurnEngine:
                 lease=lease,
                 execution=execution,
                 completion_guard=completion_guard,
+                stream=stream,
             )
         else:
             outcome = committed
         assistant_message: str | None = None
+        envelope: AgentFinalizeEnvelope | None = None
         if outcome.finalization_ref is not None:
             envelope = AgentFinalizeEnvelope.model_validate_json(
                 await self.components.artifacts.read(outcome.finalization_ref)
@@ -247,10 +262,58 @@ class ConversationTurnEngine:
                     role="assistant",
                     body_ref=envelope.user_message_artifact_ref,
                 )
+        if stream is not None:
+            await self._project_turn_close(
+                stream=stream,
+                outcome=outcome,
+                envelope=envelope,
+                assistant_message=assistant_message,
+                replayed=committed is not None,
+            )
         return ConversationTurnResult(
             outcome=outcome,
             assistant_message=assistant_message,
             replayed=committed is not None,
+        )
+
+    async def _project_turn_close(
+        self,
+        *,
+        stream: TurnStreamEmitter,
+        outcome: AgentTurnOutcome,
+        envelope: AgentFinalizeEnvelope | None,
+        assistant_message: str | None,
+        replayed: bool,
+    ) -> None:
+        """Project the finalization's durable refs, reconcile the text, then close the turn.
+
+        Order is the contract a consumer relies on: the cards a message carries arrive before the
+        message is declared finished, and the text is either proved byte-identical (``text.end``) or
+        loudly disowned (``stream.reset``) before the terminal event lands.
+
+        A **replayed** turn streams nothing and says so: no delta of this attempt exists, so the
+        honest instruction is "re-fetch the canonical message", not a fabricated replay of text the
+        model produced in an earlier process.
+        """
+
+        if envelope is not None:
+            for ref in envelope.open_gate_refs:
+                await stream.emit_gate_part(ref=ref, gate_kind=ref.object_type)
+            for ref in envelope.domain_refs:
+                if ref.object_type in _PLAN_OBJECT_TYPES:
+                    await stream.emit_plan_part(
+                        ref=ref,
+                        title=ref.object_type.replace("_", " "),
+                        revision_label=None if ref.version is None else str(ref.version),
+                    )
+        if replayed:
+            await stream.rehydrate(reason="turn_replayed")
+        else:
+            await stream.reconcile_text(assistant_message=assistant_message)
+        await stream.turn_finished(
+            status=outcome.status.value,
+            failure_code=outcome.failure_code,
+            replayed=replayed,
         )
 
 

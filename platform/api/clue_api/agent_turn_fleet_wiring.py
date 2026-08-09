@@ -31,11 +31,14 @@ Two authority rules this module exists to keep:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 from dataclasses import dataclass
 from uuid import UUID
 
 from pydantic import JsonValue
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import (
@@ -53,11 +56,15 @@ from clue_api.agent_execution_wiring import FreshWakeChildRunner
 from clue_api.agent_platform_wiring import AgentPlatformComponents
 from clue_api.agent_registry_wiring import PROJECT_CONVERSATION_SURFACE
 from clue_api.agent_turn_submission import (
+    AGENT_TURN_DEDUP_PREFIX,
     AgentTurnSubmissionRow,
     dispatch_next_thread_turn,
     get_submission,
     message_artifact_ref,
 )
+from clue_api.chat.turn_controls import stop_requested
+from clue_api.chat.turn_events import prune_turn_events
+from clue_api.chat.turn_stream import TurnStreamEmitter, TurnStreamPolicy
 from clue_api.conversation_capture import (
     CONVERSATION_CONTEXT_BINDING_KIND,
     project_client_entity_id,
@@ -103,10 +110,12 @@ __all__ = [
     "PROJECT_CONVERSATION_CARD_MEDIA_TYPE",
     "AgentTurnWorkHandler",
     "ProjectConversationTurnRunner",
+    "TurnStopped",
     "UnknownTurnSubmission",
     "build_agent_turn_work_handler",
     "project_conversation_card_payload",
     "project_conversation_context_policy",
+    "sweep_thread_dispatch",
 ]
 
 #: This surface's L3 card — one card per surface (PC-C8 §10). Deliberately not the Stage-0 project
@@ -127,6 +136,16 @@ _DRIVER_WORKER_ID = "agent-turn-recipe-driver"
 
 class UnknownTurnSubmission(LookupError):
     """The task named a turn with no durable submission — nothing here may be invented."""
+
+
+class TurnStopped(RuntimeError):
+    """This generation attempt was cancelled by a durable stop request (charter §3.5).
+
+    Not a failure: the platform did exactly what its user asked. It is raised so the surrounding
+    handler stops treating the turn as in-flight, and it is finalized as a *done* task with a
+    ``cancelled`` outcome — a ``FAILED`` task would misreport a deliberate stop as an error and
+    invite an operator requeue of a turn nobody wants run.
+    """
 
 
 class ProjectConversationScopeError(ValueError):
@@ -231,6 +250,9 @@ class ProjectConversationTurnRunner:
         starter: DbExecutionStarter,
         parameters: ExecutionParameterStore,
         conn_factory: ConnFactory = transaction,
+        streaming: bool = True,
+        stream_policy: TurnStreamPolicy | None = None,
+        stop_poll_interval_s: float = 0.25,
     ) -> None:
         self._engine = engine
         self._executor = executor
@@ -238,6 +260,11 @@ class ProjectConversationTurnRunner:
         self._starter = starter
         self._parameters = parameters
         self._conn_factory = conn_factory
+        # D3 streaming is on for the production conversation and switchable off in one place, so a
+        # deployment that must fall back to non-streaming turns changes a flag, not a code path.
+        self._streaming = streaming
+        self._stream_policy = stream_policy
+        self._stop_poll_interval_s = stop_poll_interval_s
 
     async def run(self, *, turn_id: UUID, workspace_id: str) -> ConversationTurnResult:
         async with self._conn_factory() as conn:
@@ -248,6 +275,21 @@ class ProjectConversationTurnRunner:
                 )
             scope = await self._load_scope(conn, submission)
             user_message_ref = await message_artifact_ref(conn, submission)
+        # FI Lane D D3: open this attempt's stream *before* anything runs. The outbox itself decides
+        # the attempt ordinal, so a re-claimed task after a crash opens a distinct attempt and
+        # resets whatever the dead one left open — never splicing two generations (§3.3(6)).
+        stream = (
+            None
+            if not self._streaming
+            else await TurnStreamEmitter.open(
+                workspace_id=workspace_id,
+                project_id=scope.project_id,
+                thread_id=submission.thread_id,
+                turn_id=turn_id,
+                conn_factory=self._conn_factory,
+                policy=self._stream_policy,
+            )
+        )
 
         execution_id = ExecutionId(operation_id_from_key(str(turn_id), _EXECUTION_NAMESPACE_KEY))
         revision = await self._recipes.get_by_identity(
@@ -357,16 +399,97 @@ class ProjectConversationTurnRunner:
             focus_refs=(focus_ref,),
             requested_at=submission.requested_at,
         )
-        result = await self._engine.execute(
+        result = await self._execute_watched(
             request=request,
             lease=lease,
-            budget_limit_millicents=PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
-            submitted_by_user_id=submission.submitted_by_user_id,
-            submitted_via_membership_id=submission.submitted_via_membership_id,
+            submission=submission,
+            stream=stream,
         )
         if result.outcome.status is AgentExecutionStatus.COMPLETED:
             await self._complete_recipe(execution_id)
         return result
+
+    async def _execute_watched(
+        self,
+        *,
+        request: AgentTurnRequest,
+        lease: object,
+        submission: AgentTurnSubmissionRow,
+        stream: TurnStreamEmitter | None,
+    ) -> ConversationTurnResult:
+        """Run the turn, racing it against a durable **stop** request (charter §3.5).
+
+        Stop cannot be an interrupt from the web process — by ratified §6-D1 that process does not
+        even compose the model plane — so it is a durable row plus a bounded observation here. The
+        cancellation window is therefore one poll interval plus whatever the in-flight ``await``
+        takes to unwind, and it is deliberately narrow in scope:
+
+        * only **this** generation attempt is cancelled;
+        * governed tool effects that already committed stay committed — they are receipts of things
+          that really happened, and "undo" is not a property this platform claims;
+        * a detached research run keeps running (suspending one is the supervisor tool's job);
+        * the partial text stays in the outbox for audit, and no ``text.end`` is ever emitted for
+          it, so a stopped attempt can never be mistaken for a finished answer (§3.3(8)).
+        """
+
+        async def _execute() -> ConversationTurnResult:
+            return await self._engine.execute(
+                request=request,
+                lease=lease,  # type: ignore[arg-type]
+                budget_limit_millicents=PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
+                submitted_by_user_id=submission.submitted_by_user_id,
+                submitted_via_membership_id=submission.submitted_via_membership_id,
+                stream=stream,
+            )
+
+        if stream is None or self._stop_poll_interval_s <= 0:
+            return await _execute()
+
+        turn = asyncio.create_task(_execute())
+        watcher = asyncio.create_task(
+            self._await_stop(
+                workspace_id=submission.workspace_id,
+                turn_id=request.turn_id,
+                generation_attempt_id=stream.generation_attempt_id,
+            )
+        )
+        done, _pending = await asyncio.wait({turn, watcher}, return_when=asyncio.FIRST_COMPLETED)
+        if turn in done:
+            watcher.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watcher
+            return turn.result()
+        turn.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await turn
+        await stream.turn_cancelled()
+        log.info(
+            "agent_turn.stopped",
+            turn_id=str(request.turn_id),
+            workspace_id=submission.workspace_id,
+            generation_attempt_id=str(stream.generation_attempt_id),
+        )
+        raise TurnStopped("this generation attempt was stopped by its submitter")
+
+    async def _await_stop(
+        self,
+        *,
+        workspace_id: str,
+        turn_id: UUID,
+        generation_attempt_id: UUID,
+    ) -> None:
+        """Poll the durable control table until this attempt is asked to stop."""
+
+        while True:
+            await asyncio.sleep(self._stop_poll_interval_s)
+            async with self._conn_factory() as conn:
+                if await stop_requested(
+                    conn,
+                    workspace_id=workspace_id,
+                    turn_id=turn_id,
+                    generation_attempt_id=generation_attempt_id,
+                ):
+                    return
 
     async def _complete_recipe(self, execution_id: ExecutionId) -> None:
         """Close this turn's interaction gate so its execution reaches a terminal state.
@@ -505,6 +628,13 @@ class AgentTurnWorkHandler:
         references: dict[str, JsonValue] = {"turn_id": str(turn_id)}
         try:
             result = await self._runner.run(turn_id=turn_id, workspace_id=workspace_id)
+        except TurnStopped:
+            # A stop is an executed instruction, not an error: the task is DONE, the turn carries
+            # its own ``turn.cancelled`` event, and the thread moves on to its next turn.
+            log.info("agent_turn.cancelled", turn_id=str(turn_id), workspace_id=workspace_id)
+            outcome = "cancelled"
+            status = FleetTaskStatus.DONE
+            references["status"] = "cancelled"
         except Exception as error:  # noqa: BLE001 — recorded as a failed task, never swallowed
             log.exception(
                 "agent_turn.failed",
@@ -544,6 +674,85 @@ class AgentTurnWorkHandler:
         return WorkResult(outcome=outcome, references=references, task_finalized=True)
 
 
+_SWEEP_THREADS_SQL = text(
+    """
+    SELECT DISTINCT s.workspace_id, s.thread_id
+    FROM agent_turn_submission s
+    WHERE NOT EXISTS (
+        SELECT 1 FROM fleet_task f
+        WHERE f.kind = CAST('agent_turn' AS fleet_task_kind)
+          AND f.dedup_key = :prefix || s.turn_id::text
+    )
+    ORDER BY s.workspace_id, s.thread_id
+    LIMIT :thread_limit
+    """
+)
+
+
+async def sweep_thread_dispatch(
+    conn_factory: ConnFactory = transaction,
+    *,
+    thread_limit: int = 200,
+) -> int:
+    """Offer the next turn of every thread holding an **undispatched** submission. Returns how many.
+
+    The self-heal for the narrow gap the D2 review recorded: the handler finalizes its own task and
+    *then* dispatches the thread's next turn, so a process death between those two steps leaves a
+    queued submission with no task, waiting until that thread's next POST. Dispatch-on-attach (the
+    stream surface) covers a user who is looking at the conversation; this covers the one who is
+    not.
+
+    Safe to call at any cadence and from any process: :func:`dispatch_next_thread_turn` takes the
+    per-thread advisory lock and refuses when a task is already in flight, so a sweep racing a POST
+    or a worker cannot produce a second live turn on one thread.
+    """
+
+    async with conn_factory() as conn:
+        rows = (
+            (
+                await conn.execute(
+                    _SWEEP_THREADS_SQL,
+                    {"prefix": AGENT_TURN_DEDUP_PREFIX, "thread_limit": thread_limit},
+                )
+            )
+            .mappings()
+            .all()
+        )
+    dispatched = 0
+    for row in rows:
+        async with conn_factory() as conn:
+            offered = await dispatch_next_thread_turn(
+                conn,
+                workspace_id=str(row["workspace_id"]),
+                thread_id=str(row["thread_id"]),
+            )
+        if offered is not None:
+            dispatched += 1
+            log.info(
+                "agent_turn.dispatch_swept",
+                workspace_id=str(row["workspace_id"]),
+                thread_id=str(row["thread_id"]),
+                turn_id=str(offered),
+            )
+    return dispatched
+
+
+async def sweep_turn_stream_retention(
+    conn_factory: ConnFactory = transaction,
+    *,
+    retention_s: float,
+) -> int:
+    """Prune the turn outbox past its replay window (§3.3(7)). Returns the frames deleted.
+
+    Only whole *terminal* turns are pruned, so a live attempt is never truncated under an attached
+    consumer, and nothing durable is lost: a consumer whose cursor aged out is told to re-fetch the
+    canonical message, which is where the truth lived all along.
+    """
+
+    async with conn_factory() as conn:
+        return await prune_turn_events(conn, retention_s=retention_s)
+
+
 def build_agent_turn_work_handler(
     *,
     components: AgentPlatformComponents,
@@ -558,6 +767,9 @@ def build_agent_turn_work_handler(
     queue: WorkQueue,
     child_runner: FreshWakeChildRunner | None = None,
     conn_factory: ConnFactory = transaction,
+    streaming: bool = True,
+    stream_policy: TurnStreamPolicy | None = None,
+    stop_poll_interval_s: float = 0.25,
 ) -> AgentTurnWorkHandler:
     """Compose the ``AGENT_TURN`` handler **once**, at worker startup.
 
@@ -588,6 +800,9 @@ def build_agent_turn_work_handler(
             starter=starter,
             parameters=parameters,
             conn_factory=conn_factory,
+            streaming=streaming,
+            stream_policy=stream_policy,
+            stop_poll_interval_s=stop_poll_interval_s,
         ),
         queue=queue,
         conn_factory=conn_factory,

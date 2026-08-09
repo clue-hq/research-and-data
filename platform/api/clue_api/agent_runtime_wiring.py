@@ -56,6 +56,7 @@ from clue_api.agent_turn_wiring import (
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
 )
+from clue_api.chat.turn_stream import TurnStreamCallbackHandler, TurnStreamEmitter
 from clue_api.turn_binding import trusted_turn_fields
 from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
@@ -606,6 +607,7 @@ class GovernedAgentToolFactory:
         artifacts: DurableAgentArtifactStore,
         required_output_path: str | None = None,
         completion_guard: CompletionGuard | None = None,
+        stream: TurnStreamEmitter | None = None,
     ) -> None:
         self._request = request
         self._resolved_profile = resolved_profile
@@ -615,6 +617,11 @@ class GovernedAgentToolFactory:
         self._artifacts = artifacts
         self._required_output_path = required_output_path
         self._completion_guard = completion_guard
+        # FI Lane D D3: the live projection of this turn's tool cards. Optional, and absent
+        # everywhere but the production conversation — a tool part is a projection of the durable
+        # plan operation and its receipt, so it can only ever be emitted from here, where both
+        # identities exist.
+        self._stream = stream
         # Per-turn state: the factory is constructed once per turn, next to the turn's execution
         # adapter, so this budget is shared across every governed tool the model may call.
         self._tool_failures = 0
@@ -660,12 +667,30 @@ class GovernedAgentToolFactory:
                 ),
                 proposed_at=self._request.requested_at,
             )
+            if self._stream is not None:
+                await self._stream.tool_started(
+                    node_key=node_key,
+                    tool_name=pin.name,
+                    tool_version=pin.version,
+                    tool_call_id=tool_call_id,
+                    arguments=_json_arguments(kwargs),
+                )
             try:
                 validated = await self._execution.validate_plan(
                     plan=plan,
                     constitution=self._request.constitution,
                 )
             except AgentPlanRejected as rejected:
+                await self._stream_tool_failed(
+                    node_key=node_key,
+                    pin=pin,
+                    tool_call_id=tool_call_id,
+                    error_code="plan_rejected",
+                    reasons=tuple(
+                        f"{issue.location}: {issue.code}: {issue.message}"
+                        for issue in rejected.review.issues
+                    ),
+                )
                 return self._tool_failure(
                     error="plan_rejected",
                     address=pin.address,
@@ -682,6 +707,15 @@ class GovernedAgentToolFactory:
                 final_progress = progress
             if final_progress is None or final_progress.status != "completed":
                 failures = final_progress.failures if final_progress is not None else ()
+                await self._stream_tool_failed(
+                    node_key=node_key,
+                    pin=pin,
+                    tool_call_id=tool_call_id,
+                    error_code="operation_failed",
+                    reasons=tuple(
+                        f"{failure.error_type}: {failure.message}" for failure in failures
+                    ),
+                )
                 return self._tool_failure(
                     error="operation_failed",
                     address=pin.address,
@@ -712,6 +746,19 @@ class GovernedAgentToolFactory:
             )
             if receipt is None:
                 raise RuntimeError("completed governed operation has no durable receipt")
+            if self._stream is not None:
+                # The card is the receipt — structured refs, never pre-rendered prose (§3.4).
+                await self._stream.tool_finished(
+                    node_key=node_key,
+                    tool_name=pin.name,
+                    tool_version=pin.version,
+                    tool_call_id=tool_call_id,
+                    operation_id=getattr(receipt, "operation_id", None),
+                    output=cast(
+                        dict[str, JsonValue],
+                        receipt.model_dump(mode="json", exclude_none=True),
+                    ),
+                )
             return receipt.model_dump_json(exclude_none=True)
 
         invoke.__name__ = name
@@ -727,6 +774,32 @@ class GovernedAgentToolFactory:
                 descriptor.input_model,
                 name=f"{descriptor.input_model.__name__}AgentRuntime",
             ),
+        )
+
+    async def _stream_tool_failed(
+        self,
+        *,
+        node_key: str,
+        pin: Any,
+        tool_call_id: str,
+        error_code: str,
+        reasons: tuple[str, ...],
+    ) -> None:
+        """Project a refused governed invocation onto its tool card, if a stream is attached.
+
+        A refusal is a *durable* fact (the operation's failure record was written and nothing
+        committed), so the card must say so rather than sit forever at ``input-available``.
+        """
+
+        if self._stream is None:
+            return
+        await self._stream.tool_failed(
+            node_key=node_key,
+            tool_name=pin.name,
+            tool_version=pin.version,
+            tool_call_id=tool_call_id,
+            error_code=error_code,
+            reasons=reasons,
         )
 
     def _tool_failure(
@@ -1065,6 +1138,7 @@ class DurableDeepAgentTurnRunner:
         context: AssembledAgentContext,
         lease: AgentWorkspaceLease,
         tools: Sequence[BaseTool],
+        stream: TurnStreamEmitter | None = None,
     ) -> AgentTurnOutcome:
         workspace_id = request.constitution.workspace_id
         await self._turns.mark_running(
@@ -1078,6 +1152,12 @@ class DurableDeepAgentTurnRunner:
             artifacts=self._artifacts,
             turns=self._turns,
         )
+        # FI Lane D D3: attaching the stream handler is also what opts *this* turn into the model's
+        # streaming path (the handler is structurally a LangChain streaming consumer). With no
+        # stream attached the callback tuple, and therefore the model path, is exactly what it was.
+        callbacks: tuple[AsyncCallbackHandler, ...] = (model_calls,)
+        if stream is not None:
+            callbacks = (*callbacks, TurnStreamCallbackHandler(emitter=stream))
         try:
             outcome = await self._runtime.run(
                 request=request,
@@ -1085,7 +1165,7 @@ class DurableDeepAgentTurnRunner:
                 context=context,
                 backend=lease.backend,
                 governed_tools=tools,
-                callbacks=(model_calls,),
+                callbacks=callbacks,
             )
         except BaseException:
             await self._turns.mark_unfinalized(
