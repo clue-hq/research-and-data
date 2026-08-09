@@ -92,6 +92,24 @@ from clue_research.narrative.prompts import (
     fact_to_text,
     parse_positioning_response,
 )
+from clue_research.narrative.prose import (
+    ACCOUNT_SUMMARY_PROMPT_VERSION,
+    DEFAULT_PROSE_POLICY,
+    GAP_INSUFFICIENT_FACTS,
+    GAP_UNGROUNDED_SYNTHESIS,
+    METRIC_PROSE_COVERAGE_GAP,
+    METRIC_PROSE_FAILED,
+    METRIC_PROSE_JUDGE_SKIPPED,
+    METRIC_PROSE_PRODUCED,
+    PROSE_ACCOUNT_FIELDS,
+    PROSE_PROMPTS,
+    SPAN_PROSE_SYNTHESIS,
+    ProseOutcome,
+    ProsePolicy,
+    ProseSynthesizer,
+    build_account_summary_messages,
+    parse_prose_response,
+)
 from clue_research.narrative.prose_fields import (
     ACCOUNT_SUMMARY,
     CONTACT_OVERVIEW,
@@ -198,6 +216,23 @@ __all__ = [
     "PROSE_PACK",
     "PROSE_FIELD_KEYS",
     "load_prose_pack",
+    # Lane E prose synthesizer (E1) — the on-completion synthesis unit + its prompt-as-data
+    "ProseSynthesizer",
+    "ProseOutcome",
+    "ProsePolicy",
+    "DEFAULT_PROSE_POLICY",
+    "PROSE_ACCOUNT_FIELDS",
+    "PROSE_PROMPTS",
+    "ACCOUNT_SUMMARY_PROMPT_VERSION",
+    "build_account_summary_messages",
+    "parse_prose_response",
+    "GAP_INSUFFICIENT_FACTS",
+    "GAP_UNGROUNDED_SYNTHESIS",
+    "SPAN_PROSE_SYNTHESIS",
+    "METRIC_PROSE_PRODUCED",
+    "METRIC_PROSE_COVERAGE_GAP",
+    "METRIC_PROSE_JUDGE_SKIPPED",
+    "METRIC_PROSE_FAILED",
     # reuse stamping
     "NARRATIVE_REUSE_POLICY",
     # C7.3 deterministic account/contact research views
