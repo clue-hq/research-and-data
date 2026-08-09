@@ -25,12 +25,18 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ValidationError
 
 import clue_obs
 from clue_agents import AgentProfileRegistry
+from clue_api.auth_tool_context import tool_context_for_principal
+from clue_api.auth_wiring import (
+    authenticated_route_resolvers,
+    install_auth_wiring,
+    principal_from_request,
+)
 from clue_api.frontend_read import (
     frontend_read_workspace_resolver,
     install_frontend_read_surface,
@@ -51,6 +57,7 @@ from clue_api.research_view_api import (
 )
 from clue_api.research_view_owner_refs import ProductionOwnerReferenceResolver
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
+from clue_auth import MembershipStateChanged, PrincipalService
 from clue_config import Settings, load_settings
 from clue_core import (
     EntityId,
@@ -66,7 +73,7 @@ from clue_core import (
 from clue_core.ingestion import IngestionJobId
 from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
-from clue_execution import OperationConflict
+from clue_execution import OperationConflict, ToolAuthorityStateChanged
 from clue_projections import (
     MANIFEST_OP_TOOLS,
     PROJECTIONS_SCHEMA_VERSION,
@@ -108,8 +115,8 @@ from clue_toolbelt import (
 # Served on every projection/tool response so a consumer can confirm the shape it negotiated.
 PROJECTIONS_SCHEMA_HEADER = "X-Projections-Schema-Version"
 
-WorkspaceResolver = Callable[..., str]
-ActorResolver = Callable[..., Actor]
+WorkspaceResolver = Callable[..., str | Awaitable[str]]
+ActorResolver = Callable[..., Actor | Awaitable[Actor]]
 
 
 def header_workspace_resolver(
@@ -486,22 +493,41 @@ def create_projections_router(
         name: str,
         body: dict[str, Any],
         *,
+        request: Request,
         workspace_id: str,
         actor: Actor,
         quality_mode: str | None,
         idempotency_key: str | None,
     ) -> ToolResult:
-        ctx = ToolContext(
-            workspace_id=workspace_id,
-            actor=actor,
-            conn_factory=conn_factory,
-            operation_id=(
-                operation_id_from_key(workspace_id, f"tool:{name}:{idempotency_key}")
-                if idempotency_key is not None
-                else new_operation_id()
-            ),
-            quality_mode=quality_mode,
+        operation_id = (
+            operation_id_from_key(workspace_id, f"tool:{name}:{idempotency_key}")
+            if idempotency_key is not None
+            else new_operation_id()
         )
+        principal = principal_from_request(request)
+        if principal is not None:
+            if name.startswith(("launch_", "run_deep_")):
+                principal.require("research.launch")
+            elif name.startswith(("confirm_", "approve_", "override_", "decide_")):
+                principal.require("research.approve_spend")
+            elif name.startswith("estimate_"):
+                principal.require("research.estimate")
+            elif not name.startswith(("read_", "get_")):
+                principal.require("thread.write")
+            ctx = tool_context_for_principal(
+                principal,
+                conn_factory=conn_factory,
+                operation_id=operation_id,
+                quality_mode=quality_mode,
+            )
+        else:
+            ctx = ToolContext(
+                workspace_id=workspace_id,
+                actor=actor,
+                conn_factory=conn_factory,
+                operation_id=operation_id,
+                quality_mode=quality_mode,
+            )
         try:
             return await tool_invoker.invoke(
                 name,
@@ -536,9 +562,14 @@ def create_projections_router(
                 status_code=409,
                 detail={"error": "idempotency_conflict", "reason": "operation"},
             ) from exc
+        except ToolAuthorityStateChanged as exc:
+            raise MembershipStateChanged(
+                "workspace membership changed before the tool effect was journaled"
+            ) from exc
 
     @router.post("/tools/{name}")
     async def post_tool(
+        request: Request,
         name: str,
         body: dict[str, Any],
         workspace_id: WorkspaceDep,
@@ -549,6 +580,7 @@ def create_projections_router(
         result = await _invoke(
             name,
             body,
+            request=request,
             workspace_id=workspace_id,
             actor=actor,
             quality_mode=quality_mode,
@@ -560,6 +592,7 @@ def create_projections_router(
 
     @router.patch("/project_runs/{project_run_id}/manifest")
     async def patch_manifest(
+        request: Request,
         project_run_id: UUID,
         op_request: ManifestOpRequest,
         workspace_id: WorkspaceDep,
@@ -593,6 +626,7 @@ def create_projections_router(
         result = await _invoke(
             tool_name,
             tool_body,
+            request=request,
             workspace_id=workspace_id,
             actor=actor,
             quality_mode=None,
@@ -698,7 +732,12 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
         startup_check = getattr(_app.state, "startup_check", None)
         if startup_check is not None:
             await startup_check()
-        yield
+        try:
+            yield
+        finally:
+            auth_closer = getattr(_app.state, "auth_closer", None)
+            if auth_closer is not None:
+                await auth_closer()
 
 
 def create_projections_app(
@@ -720,6 +759,8 @@ def create_projections_app(
     research_view_owner_references: ProductionOwnerReferenceResolver | None = None,
     startup_check: Callable[[], Awaitable[None]] | None = None,
     discovery_webhook_router: APIRouter | None = None,
+    auth_service: PrincipalService | None = None,
+    auth_closer: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -730,12 +771,15 @@ def create_projections_app(
     ``sse_live_tail=False`` makes the SSE stream replay-then-close (deterministic for tests);
     production leaves it ``True`` (an open live stream)."""
     resolved = settings if settings is not None else load_settings()
+    if resolved.auth_environment == "production" and auth_service is None:
+        raise RuntimeError("production projections require the authenticated principal service")
     app = FastAPI(
         title="Clue-HQ platform — projections + toolbelt + SSE",
         version=PROJECTIONS_SCHEMA_VERSION,
         lifespan=_projections_lifespan if manage_db_lifespan else None,
     )
     app.state.startup_check = startup_check
+    app.state.auth_closer = auth_closer
 
     # Review F3: actually serve the declared schema header on EVERY response (JSON routes and the
     # SSE stream alike — response headers precede the streamed body), so a consumer can confirm the
@@ -750,6 +794,10 @@ def create_projections_app(
     # and the process's CORS policy. Both halves are default-off (flag / empty origins), so an
     # unconfigured deployment is byte-identical to the pre-FI-2 app.
     install_frontend_read_surface(app, settings=resolved, conn_factory=conn_factory)
+    if auth_service is not None:
+        install_auth_wiring(app, service=auth_service)
+        if workspace_resolver is None and actor_resolver is None:
+            workspace_resolver, actor_resolver = authenticated_route_resolvers(auth_service)
 
     if workspace_resolver is not None:
         app.dependency_overrides[header_workspace_resolver] = workspace_resolver

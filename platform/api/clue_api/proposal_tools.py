@@ -11,6 +11,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from clue_api.auth_tool_context import require_human_authority
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer, MaterializedFieldRefs
 from clue_api.tool_outputs import (
     FieldProposalDecisionOutput,
@@ -280,11 +281,13 @@ class DecideFieldProposalTool(_ProposalTool):
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, DecideFieldProposalInput)
-        if ctx.actor != "human":
-            return _failure(
-                "insufficient_proposal_authority",
-                "field proposal decisions require a human actor or the policy service",
-            )
+        authority = require_human_authority(
+            ctx,
+            reason_code="insufficient_proposal_authority",
+            message="field proposal decisions require authenticated human authority",
+        )
+        if authority:
+            return authority
         proposal_id = _field_id(inputs.field_proposal_id)
         if proposal_id is None:
             return _failure("proposal_not_found", "no such field proposal")
@@ -441,11 +444,13 @@ class DecideSourceProposalTool(_ProposalTool):
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, DecideSourceProposalInput)
-        if ctx.actor != "human":
-            return _failure(
-                "insufficient_proposal_authority",
-                "source proposal decisions require a human actor or the policy service",
-            )
+        authority = require_human_authority(
+            ctx,
+            reason_code="insufficient_proposal_authority",
+            message="source proposal decisions require authenticated human authority",
+        )
+        if authority:
+            return authority
         proposal_id = _source_id(inputs.source_proposal_id)
         if proposal_id is None:
             return _failure("proposal_not_found", "no such source proposal")

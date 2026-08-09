@@ -44,6 +44,7 @@ from clue_db import ConnFactory
 
 __all__ = [
     "Actor",
+    "PrincipalKind",
     "ExternalReplayBoundary",
     "JournalParameterPolicy",
     "ToolContext",
@@ -62,6 +63,7 @@ __all__ = [
 
 # REQ-20 human↔agent parity: every invocation is one or the other, stamped on the span.
 Actor = Literal["human", "agent"]
+PrincipalKind = Literal["human", "service"]
 
 
 class ToolInput(BaseModel):
@@ -231,16 +233,21 @@ class ToolContext:
     * ``quality_mode`` — the A8 slot (D9): recorded/journaled, not resolved. ``None`` ⇒ unset.
     * ``operation_id`` — the stable logical-operation identity reused by every retry. Tool bodies
       derive durable row/run ids from it instead of minting fresh identities on each attempt.
-    * ``actor_id`` / ``action_ref`` — authenticated invocation identity and captured UI/turn action.
-      Human gates derive receipts from these ambient values; caller-authored tool arguments never
-      get to choose who approved an operation or which action carried the approval.
+    * ``principal_kind`` / ``actor_id`` / ``membership_id`` — authenticated internal authority.
+      Human principals carry a Clue user and membership; service principals carry a distinct
+      machine id and may only use the agent actor class.
+    * ``action_ref`` — captured UI/turn action. Human gates derive receipts from this ambient value;
+      caller-authored tool arguments never choose who approved an operation or which action carried
+      the approval.
     """
 
     workspace_id: str
     actor: Actor
     conn_factory: ConnFactory
     operation_id: OperationId
+    principal_kind: PrincipalKind | None = None
     actor_id: str | None = None
+    membership_id: str | None = None
     action_ref: str | None = None
     quality_mode: str | None = None
     execution_id: ExecutionId | None = None
@@ -251,6 +258,20 @@ class ToolContext:
     lease_generation: int | None = None
 
     def __post_init__(self) -> None:
+        if self.principal_kind is None:
+            if self.membership_id is not None:
+                raise ValueError("legacy tool context cannot carry an authenticated membership")
+        elif self.actor_id is None:
+            raise ValueError("authenticated tool context requires an actor id")
+        elif self.principal_kind == "human":
+            if self.actor != "human":
+                raise ValueError("a human principal may only invoke with the human actor class")
+            if self.membership_id is None or not self.membership_id.strip():
+                raise ValueError("human tool context requires a membership id")
+        elif self.actor != "agent":
+            raise ValueError("a service principal may only invoke with the agent actor class")
+        elif self.membership_id is not None:
+            raise ValueError("service tool context cannot carry a human membership")
         if self.actor_id is not None and not self.actor_id.strip():
             raise ValueError("tool context actor id must be non-empty when supplied")
         if self.action_ref is not None and not self.action_ref.strip():

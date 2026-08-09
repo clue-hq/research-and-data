@@ -6,6 +6,7 @@ import uvicorn
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from clue_api.auth_wiring import build_principal_service
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import load_research_packs
 from clue_api.exa_targeted_enrichment import build_production_exa_targeted_starter
@@ -85,11 +86,25 @@ def build_application(
         if resolved.c7_recheck_enabled and not research_views.deferred_requester.is_bound:
             raise RuntimeError("C7 recheck is enabled but its governed requester is unbound")
     budget = BudgetEngine(store=DbBudgetStore())
+    auth_service = None
+    auth_closer = None
+    if resolved.auth_enabled:
+        auth_service, auth_closer = build_principal_service(
+            settings=resolved,
+            conn_factory=transaction,
+        )
 
     async def startup_check() -> None:
-        if resolved.projections_auth_mode != "local_header":
+        if resolved.projections_auth_mode == "service":
             raise RuntimeError(
                 "service authentication mode is selected but no service-auth resolver is wired"
+            )
+        if (
+            resolved.projections_auth_mode == "authenticated_principal"
+            and not resolved.auth_enabled
+        ):
+            raise RuntimeError(
+                "authenticated-principal projections mode requires CLUE_AUTH_ENABLED=true"
             )
         async with transaction() as conn:
             await conn.execute(text("SELECT 1"))
@@ -164,6 +179,8 @@ def build_application(
             if resolved_secrets.exa_websets_webhook_secret is not None
             else None
         ),
+        auth_service=auth_service,
+        auth_closer=auth_closer,
     )
 
 

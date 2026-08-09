@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
@@ -17,6 +17,13 @@ from clue_api import (
     StorageParameterArtifactStore,
     build_tool_invoker,
 )
+from clue_api.auth_tool_context import tool_context_for_principal, tool_context_for_service
+from clue_auth import (
+    RequestPrincipal,
+    ServicePrincipal,
+    create_platform_user,
+)
+from clue_auth.store import create_workspace_membership
 from clue_config import Settings
 from clue_core import ExecutionId, new_execution_id, new_operation_id
 from clue_execution import (
@@ -26,6 +33,7 @@ from clue_execution import (
     OperationConflict,
     ParameterArtifactState,
     StaleCursor,
+    ToolAuthorityStateChanged,
     get_cursor,
     rebuild_cursor,
     resolve_parameter_body,
@@ -296,6 +304,129 @@ def test_success_replay_parameter_erasure_views_and_sse_replay() -> None:
     run_async(scenario())
 
 
+def test_authenticated_authority_is_durable_and_cannot_change_on_replay() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            workspace_id = await seed_workspace(conn, "ws-b4-authority")
+            user = await create_platform_user(conn, display_name="Authenticated human")
+            membership = await create_workspace_membership(
+                conn,
+                workspace_id=workspace_id,
+                user_id=user.user_id,
+                role_key="operator",
+            )
+            principal = RequestPrincipal(
+                user_id=user.user_id,
+                membership_id=membership.membership_id,
+                workspace_id=workspace_id,
+                role_key="operator",
+                permissions=frozenset({"thread.write"}),
+                authenticated_at=datetime.now(UTC),
+            )
+            operation_id = new_operation_id()
+            context = tool_context_for_principal(
+                principal,
+                conn_factory=conn_session_factory(conn),
+                operation_id=operation_id,
+                action_ref="turn-action:turn-b4-authority",
+            )
+            tool = _JournalEcho()
+            invoker, _ = _invoker(conn, tool=tool)
+
+            await invoker.invoke(tool.name, {"value": 8}, context)
+            view = await DbExecutionRunViewReader(
+                conn_factory=conn_session_factory(conn)
+            ).read_execution(
+                workspace_id=workspace_id,
+                execution_id=ExecutionId(operation_id),
+            )
+            assert view is not None
+            node = view.nodes[0]
+            assert node.invocation_actor == "human"
+            assert node.principal_kind == "human"
+            assert node.authority_workspace_id == workspace_id
+            assert node.actor_id == user.user_id
+            assert node.membership_id == membership.membership_id
+            assert node.action_ref == "turn-action:turn-b4-authority"
+
+            other_user = await create_platform_user(conn, display_name="Different human")
+            other_membership = await create_workspace_membership(
+                conn,
+                workspace_id=workspace_id,
+                user_id=other_user.user_id,
+                role_key="operator",
+            )
+            other_principal = principal.model_copy(
+                update={
+                    "user_id": other_user.user_id,
+                    "membership_id": other_membership.membership_id,
+                }
+            )
+            with pytest.raises(OperationConflict, match="authority"):
+                await invoker.invoke(
+                    tool.name,
+                    {"value": 8},
+                    tool_context_for_principal(
+                        other_principal,
+                        conn_factory=conn_session_factory(conn),
+                        operation_id=operation_id,
+                        action_ref="turn-action:turn-b4-authority",
+                    ),
+                )
+
+            malformed_operation_id = new_operation_id()
+            malformed_principal = principal.model_copy(
+                update={"membership_id": other_membership.membership_id}
+            )
+            with pytest.raises(ToolAuthorityStateChanged):
+                await invoker.invoke(
+                    tool.name,
+                    {"value": 10},
+                    tool_context_for_principal(
+                        malformed_principal,
+                        conn_factory=conn_session_factory(conn),
+                        operation_id=malformed_operation_id,
+                        action_ref="turn-action:turn-b4-malformed",
+                    ),
+                )
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM execution WHERE id = :id"),
+                    {"id": ExecutionId(malformed_operation_id)},
+                )
+            ).scalar_one() == 0
+
+            service_operation_id = new_operation_id()
+            service_context = tool_context_for_service(
+                ServicePrincipal(
+                    service_id="svc_agent_turn_worker",
+                    workspace_id=workspace_id,
+                    permissions=frozenset({"thread.write"}),
+                    authenticated_at=datetime.now(UTC),
+                ),
+                conn_factory=conn_session_factory(conn),
+                operation_id=service_operation_id,
+                action_ref="turn-action:turn-b4-authority",
+            )
+            await invoker.invoke(tool.name, {"value": 9}, service_context)
+            service_view = await DbExecutionRunViewReader(
+                conn_factory=conn_session_factory(conn)
+            ).read_execution(
+                workspace_id=workspace_id,
+                execution_id=ExecutionId(service_operation_id),
+            )
+            assert service_view is not None
+            service_node = service_view.nodes[0]
+            assert service_node.invocation_actor == "agent"
+            assert service_node.principal_kind == "service"
+            assert service_node.authority_workspace_id == workspace_id
+            assert service_node.actor_id == "svc_agent_turn_worker"
+            assert service_node.membership_id is None
+            assert service_node.action_ref == "turn-action:turn-b4-authority"
+
+    run_async(scenario())
+
+
 def test_failed_attempt_retries_and_failure_payload_is_redacted() -> None:
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -466,6 +597,45 @@ def test_operation_conflict_and_snapshot_failure_create_no_orphan_invocation() -
                     )
                 )
             ).scalar_one() == 0
+
+    run_async(scenario())
+
+
+def test_pre_b4_node_without_authority_remains_replayable() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            workspace_id = await seed_workspace(conn, "ws-c5-pre-b4-replay")
+            tool = _JournalEcho()
+            invoker, _ = _invoker(conn, tool=tool)
+            context = _ctx(conn, workspace_id)
+            first = await invoker.invoke(tool.name, {"value": 7}, context)
+            execution_id = ExecutionId(context.operation_id)
+
+            # Reproduce a node that predates the B4 authority table: the completed operation and
+            # attempt exist, but the additive authority row does not.
+            await conn.execute(
+                text(
+                    "ALTER TABLE execution_node_authority "
+                    "DISABLE TRIGGER execution_node_authority_append_only"
+                )
+            )
+            try:
+                await conn.execute(
+                    text("DELETE FROM execution_node_authority WHERE execution_id = :execution_id"),
+                    {"execution_id": execution_id},
+                )
+            finally:
+                await conn.execute(
+                    text(
+                        "ALTER TABLE execution_node_authority "
+                        "ENABLE TRIGGER execution_node_authority_append_only"
+                    )
+                )
+            replay = await invoker.invoke(tool.name, {"value": 7}, context)
+
+            assert first.replayed is False
+            assert replay.replayed is True
+            assert tool.invocations == [7]
 
     run_async(scenario())
 

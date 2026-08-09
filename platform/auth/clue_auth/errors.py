@@ -21,3 +21,56 @@ class MembershipPermissionError(AuthIdentityError):
 
 class InvitationUnavailableError(AuthIdentityError):
     """An invitation is absent, expired, revoked, accepted by another user, or mismatched."""
+
+
+class PrincipalError(AuthIdentityError):
+    """Stable authentication/authorization failure safe to expose at an HTTP edge."""
+
+    code = "AUTHENTICATION_REQUIRED"
+    status_code = 401
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class AuthenticationRequired(PrincipalError):
+    code = "AUTHENTICATION_REQUIRED"
+    status_code = 401
+
+
+class SessionInvalid(PrincipalError):
+    code = "SESSION_INVALID"
+    status_code = 401
+
+
+class AuthenticationUnavailable(PrincipalError):
+    """The configured identity provider cannot currently verify otherwise-usable sessions."""
+
+    code = "AUTHENTICATION_UNAVAILABLE"
+    status_code = 503
+
+
+class IdentityNotProvisioned(PrincipalError):
+    code = "IDENTITY_NOT_PROVISIONED"
+    status_code = 403
+
+
+class UserDisabled(PrincipalError):
+    code = "USER_DISABLED"
+    status_code = 403
+
+
+class WorkspaceForbidden(PrincipalError):
+    code = "WORKSPACE_FORBIDDEN"
+    status_code = 403
+
+
+class PermissionDenied(PrincipalError):
+    code = "PERMISSION_DENIED"
+    status_code = 403
+
+
+class MembershipStateChanged(PrincipalError):
+    code = "MEMBERSHIP_STATE_CHANGED"
+    status_code = 409

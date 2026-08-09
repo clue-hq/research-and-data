@@ -16,7 +16,7 @@ import json
 from decimal import Decimal
 from typing import Annotated, Any, Final, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Canonical fallback when ``CLUE_SYNTHESIS_MODEL`` is unset — keep in sync with GatewayConfig docs.
@@ -38,6 +38,11 @@ _CORS_WILDCARD_ERROR: Final = (
     "wildcard-plus-credentials combination — it echoes back whichever Origin asked, which would "
     "make every browser origin a credentialed caller of the whole app. List the exact origins "
     "(https://app.example,http://localhost:3000)"
+)
+
+_AUTH_PARTIES_FORMAT_ERROR: Final = (
+    'CLUE_AUTH_CLERK_AUTHORIZED_PARTIES must be a JSON array (["https://app.example"]) or a '
+    "comma-separated list (https://app.example,http://localhost:3000)"
 )
 
 
@@ -306,6 +311,22 @@ class Settings(BaseSettings):
     # Env: ``CLUE_FRONTEND_CORS_ALLOW_ORIGINS``.
     frontend_cors_allow_origins: Annotated[tuple[str, ...], NoDecode] = ()
 
+    # --- Lane B authenticated principal ----------------------------------------------------
+    # Provider authentication is an adapter choice; Clue-owned users/memberships remain the
+    # authorization substrate in every mode. The local fixture adapter still resolves a real
+    # ``auth_identity`` row and is construction-time forbidden in production.
+    # Env: ``CLUE_AUTH_ENVIRONMENT`` / ``CLUE_AUTH_MODE``.
+    auth_enabled: bool = False
+    auth_environment: Literal["local", "test", "production"] | None = None
+    auth_mode: Literal["local_fixture", "clerk"] = "local_fixture"
+    # Clerk JWT verification metadata. No Clerk secret is required at the FastAPI edge: the
+    # short-lived session JWT is verified against the instance JWKS. All are deployment settings,
+    # not domain identity. Env: ``CLUE_AUTH_CLERK_*``.
+    auth_clerk_jwks_url: str | None = None
+    auth_clerk_issuer: str | None = None
+    auth_clerk_audience: str | None = None
+    auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
+
     # --- local Clue Trial canary ------------------------------------------------------------
     # The Sumble-only founder acceptance surface is never part of the default production app.
     # It must be enabled explicitly and binds to loopback by default. Env:
@@ -323,7 +344,9 @@ class Settings(BaseSettings):
     # Header tenancy is explicitly local/manual-test only; service auth must be wired before that
     # mode can be selected in production.
     # Env: ``CLUE_PROJECTIONS_AUTH_MODE``.
-    projections_auth_mode: Literal["local_header", "service"] = "local_header"
+    projections_auth_mode: Literal["local_header", "authenticated_principal", "service"] = (
+        "local_header"
+    )
 
     # --- scrape backend (Phase B2.4, founder addition) ---
     # Which ScrapeBackend the tier-2 HTML→markdown adapter uses when none is injected:
@@ -398,6 +421,36 @@ class Settings(BaseSettings):
         ):
             raise ValueError(_CORS_WILDCARD_ERROR)
         return parsed
+
+    @field_validator("auth_clerk_authorized_parties", mode="before")
+    @classmethod
+    def _parse_auth_clerk_authorized_parties(cls, value: Any) -> Any:
+        return _parse_string_list(value, _AUTH_PARTIES_FORMAT_ERROR)
+
+    @field_validator("auth_mode")
+    @classmethod
+    def _refuse_local_fixture_auth_in_production(cls, value: str, info: Any) -> str:
+        if info.data.get("auth_environment") == "production" and value == "local_fixture":
+            raise ValueError(
+                "production must use Clerk authentication; local fixture auth is forbidden"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_enabled_auth_environment(self) -> Settings:
+        if self.auth_enabled and self.auth_environment is None:
+            raise ValueError(
+                "CLUE_AUTH_ENVIRONMENT must be set explicitly when CLUE_AUTH_ENABLED=true"
+            )
+        if self.auth_environment == "production" and self.auth_mode == "local_fixture":
+            raise ValueError(
+                "production must use Clerk authentication; local fixture auth is forbidden"
+            )
+        if self.auth_environment == "production" and self.projections_auth_mode == "local_header":
+            raise ValueError(
+                "production authentication forbids the local-header projections resolver"
+            )
+        return self
 
 
 def load_settings(**kwargs: Any) -> Settings:
