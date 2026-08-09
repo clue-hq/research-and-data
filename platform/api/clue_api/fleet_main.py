@@ -586,41 +586,16 @@ async def _serve() -> None:
             event_emitter=build_run_event_emitter(),
             project_execution_router=project_execution_router,
         )
-        register_execution_control_tools(
-            ExecutionControlServices(
-                starter=starter,
-                executor=executor,
-                parameters=execution_parameters,
-                recipes=recipe_repository,
-                run_machine=driver,
-                queue=work_queue,
-                conn_factory=transaction,
-                registry=registry,
-                controls=controls,
-            )
-        )
-        await seed_system_recipes(
-            repository=recipe_repository,
-            lifecycle=build_recipe_lifecycle(
-                tool_registry=registry,
-                conn_factory=transaction,
-                pin_registry=pin_registry,
-            ),
-        )
-        project_execution_router.bind(
-            Recipe1ProjectExecutionRouter(
-                settings=settings,
-                recipes=recipe_reader,
-                starter=starter,
-                executor=executor,
-                parameters=execution_parameters,
-                compatibility=compatibility,
-                queue=work_queue,
-            )
-        )
         # FI Lane D D2: the production conversation turn executor, composed ONCE here (§3-P3) and
         # reused by every turn. Only when chat is enabled — nothing enqueues ``agent_turn`` tasks
         # otherwise, and an unused composition would still resolve a profile and a manifest at boot.
+        # ORDERING IS LOAD-BEARING: this must compose BEFORE ``register_execution_control_tools``
+        # widens the shared registry. ``build_agent_platform_components`` audits the registry
+        # against ``C6_AGENT_TOOL_AUTHORITY``, whose reviewed surface is exactly the model-facing
+        # toolbelt (``build_toolbelt`` names — pinned by ``test_tool_authority_audit``); the
+        # run-control tools registered below are the human/API run-control plane sharing this
+        # registry object, not model-surface tools, and composing after them fails the audit
+        # at boot.
         agent_turn_handler = (
             build_agent_turn_work_handler(
                 components=build_agent_platform_components(
@@ -652,6 +627,38 @@ async def _serve() -> None:
             )
             if settings.chat_enabled
             else None
+        )
+        register_execution_control_tools(
+            ExecutionControlServices(
+                starter=starter,
+                executor=executor,
+                parameters=execution_parameters,
+                recipes=recipe_repository,
+                run_machine=driver,
+                queue=work_queue,
+                conn_factory=transaction,
+                registry=registry,
+                controls=controls,
+            )
+        )
+        await seed_system_recipes(
+            repository=recipe_repository,
+            lifecycle=build_recipe_lifecycle(
+                tool_registry=registry,
+                conn_factory=transaction,
+                pin_registry=pin_registry,
+            ),
+        )
+        project_execution_router.bind(
+            Recipe1ProjectExecutionRouter(
+                settings=settings,
+                recipes=recipe_reader,
+                starter=starter,
+                executor=executor,
+                parameters=execution_parameters,
+                compatibility=compatibility,
+                queue=work_queue,
+            )
         )
         worker = build_multi_work_worker(
             settings,
