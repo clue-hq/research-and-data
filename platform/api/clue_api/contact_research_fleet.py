@@ -8,7 +8,7 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import TYPE_CHECKING, Annotated, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -26,6 +26,9 @@ from clue_core.entity_research import (
 from clue_fleet import EntityResearchJobError, EntityResearchJobWorkHandler, EntityResearchRunState
 from clue_fleet.enums import FleetTaskKind
 from clue_fleet.work_worker import WorkContext, WorkResult
+
+if TYPE_CHECKING:  # pragma: no cover - the step imports this module's projection
+    from clue_api.prose_synthesis_step import ProseSynthesisStep
 
 ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 NonEmptyStr = Annotated[str, Field(min_length=1)]
@@ -391,9 +394,11 @@ class ContactResearchFleetWorkHandler:
         *,
         inner: EntityResearchJobWorkHandler,
         fleets: ContactResearchFleetService,
+        prose_step: ProseSynthesisStep | None = None,
     ) -> None:
         self._inner = inner
         self._fleets = fleets
+        self._prose_step = prose_step
 
     async def handle(self, context: WorkContext) -> WorkResult:
         raw_job_id = context.payload.get("job_id")
@@ -405,6 +410,14 @@ class ContactResearchFleetWorkHandler:
             raise EntityResearchJobError("contact fleet job is absent or not a contact")
         result = await self._inner.handle(context)
         projection = await self._fleets.project(run_id)
+        if self._prose_step is not None:
+            # Lane E E2. This handler has no suspend-on-error try, so the call is deliberately
+            # naked: the step's own never-raises guarantee is the entire containment, and wrapping
+            # it here would only hide a bug in that guarantee. It takes the INNER result, whose
+            # references carry the finalized-this-cycle receipt ref.
+            await self._prose_step.after_contact_job(
+                job_id=job_id, result=result, projection=projection
+            )
         return WorkResult(
             outcome=result.outcome,
             references={

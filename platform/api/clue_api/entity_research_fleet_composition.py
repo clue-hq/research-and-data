@@ -157,7 +157,9 @@ def build_entity_research_fleet_composition(
         provider_actions=account_provider_actions,
         model_policy=model_policy,
         conn_factory=conn_factory,
-        # Lane E E1 rides the account lane only: contact prose (`contact.overview`) is E2.
+        # Lane E: ONE step instance serves both lanes. The step authorizes nothing and holds no
+        # per-lane state — its operation id is already field-parameterized (`{job}:{field_key}`),
+        # so a second instance would disambiguate nothing and merely double the binds to remember.
         prose_step=prose_step,
     )
     contacts = build_contact_research_fleet_composition(
@@ -167,6 +169,7 @@ def build_entity_research_fleet_composition(
         channel_actions=contact_channel_actions,
         model_policy=model_policy,
         conn_factory=conn_factory,
+        prose_step=prose_step,
     )
     return EntityResearchFleetComposition(
         accounts=accounts,

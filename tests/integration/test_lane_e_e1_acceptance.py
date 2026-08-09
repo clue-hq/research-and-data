@@ -556,13 +556,14 @@ def _compose_step(
         if verification_enabled
         else None
     )
+    # E2 made `contact` required; production composes one instance as both fields, so this suite
+    # composes it the same way. Nothing in E1's ACs touches the contact species.
+    synthesizer = ProseSynthesizer(gateway=cast(Any, gateway), judge=judge, conn_factory=cf)
     registry = build_toolbelt(
         storage=None,
         gateway=cast(Any, gateway),
         conn_factory=cf,
-        prose_synthesis=ProseSynthesisServices(
-            account=ProseSynthesizer(gateway=cast(Any, gateway), judge=judge, conn_factory=cf)
-        ),
+        prose_synthesis=ProseSynthesisServices(account=synthesizer, contact=synthesizer),
     )
     invoker = build_tool_invoker(
         registry=registry,

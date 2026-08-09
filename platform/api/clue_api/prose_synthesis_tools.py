@@ -53,9 +53,9 @@ SYNTHESIZABLE_OUTCOMES = frozenset(
     {ResearchFinalizationOutcome.COMPLETED, ResearchFinalizationOutcome.NEEDS_REVIEW}
 )
 
-#: The registered Lane E prose fields. ``contact.overview`` is registered by E0 but its synthesizer
-#: lands in E2, hence the separate ``field_not_composed`` refusal below: an unregistered key and an
-#: unbuilt one are different mistakes and get different reason codes.
+#: The registered Lane E prose fields, both composed as of E2. The separate ``field_not_composed``
+#: refusal below survives as a per-field check: an unregistered key and an uncomposed one are
+#: different mistakes and get different reason codes.
 _PROSE_FIELDS = (ACCOUNT_SUMMARY, CONTACT_OVERVIEW)
 
 
@@ -69,11 +69,15 @@ class EntityResearchJobReader(Protocol):
 class ProseSynthesisServices:
     """The composed synthesizers, one per prose field species.
 
-    Only ``account`` exists in E1; E2 adds the contact overview synthesizer as a second field here
-    rather than a second tool, so the governed surface and its authority decision stay singular.
+    E2 adds the contact overview as a second *field* here rather than a second tool, so the governed
+    surface and its authority decision stay singular. Both fields are required: production composes
+    one :class:`ProseSynthesizer` instance and passes it as both, and the split exists so the two
+    species can later be composed differently (a different policy, model, or judge) — not because
+    either is optional.
     """
 
     account: ProseSynthesizer
+    contact: ProseSynthesizer
 
 
 class SynthesizeEntityProseInput(ToolInput):
@@ -164,7 +168,7 @@ class SynthesizeEntityProseTool(Tool):
             )
         if inputs.field_key not in _PROSE_FIELDS:
             return _fail("invalid_field_key", "field key is not a Lane E prose field")
-        if inputs.field_key != ACCOUNT_SUMMARY:
+        if self._synthesizer_for(inputs.field_key) is None:
             return _fail(
                 "field_not_composed",
                 f"no synthesizer is composed for {inputs.field_key}",
@@ -201,13 +205,30 @@ class SynthesizeEntityProseTool(Tool):
         job = await self._load_job(inputs.job_id, ctx)
         if job is None or job.finalization_outcome is None:
             raise RuntimeError("prose synthesis lost its entity research job after preconditions")
-        outcome = await self._services.account.synthesize_account_summary(
-            account_entity_id=EntityId(job.subject_entity_id),
-            workspace_id=job.workspace_id,
-            research_run_id=RunId(job.research_run_id),
-            job_id=job.job_id,
-            research_outcome=job.finalization_outcome.value,
-        )
+        # The *field key* selects the species, not the job's subject type: the two are consistent in
+        # production (the account lane asks for `account.summary`, the contact lane for
+        # `contact.overview`), and reading the field the caller named keeps this branch honest about
+        # what was actually requested.
+        if inputs.field_key == ACCOUNT_SUMMARY:
+            outcome = await self._services.account.synthesize_account_summary(
+                account_entity_id=EntityId(job.subject_entity_id),
+                workspace_id=job.workspace_id,
+                research_run_id=RunId(job.research_run_id),
+                job_id=job.job_id,
+                research_outcome=job.finalization_outcome.value,
+            )
+        else:
+            # Employer context is optional garnish, and `parent_account_id` is nullable on the job
+            # row — a parentless contact synthesizes with less material, never a refusal.
+            parent = job.parent_account_id
+            outcome = await self._services.contact.synthesize_contact_overview(
+                contact_entity_id=EntityId(job.subject_entity_id),
+                workspace_id=job.workspace_id,
+                research_run_id=RunId(job.research_run_id),
+                job_id=job.job_id,
+                research_outcome=job.finalization_outcome.value,
+                parent_account_id=None if parent is None else EntityId(parent),
+            )
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -221,6 +242,15 @@ class SynthesizeEntityProseTool(Tool):
                 "research_outcome": job.finalization_outcome.value,
             },
         )
+
+    def _synthesizer_for(self, field_key: str) -> ProseSynthesizer | None:
+        """Per-field composition, so a partially composed services object refuses only its own
+        missing species. Both dataclass fields are required, so this is unreachable from the
+        production composition — it stays because "composed" is a property of a *field*, and a
+        blanket refusal keyed on the field name would go stale the moment a third species lands."""
+        if self._services is None:
+            return None
+        return self._services.account if field_key == ACCOUNT_SUMMARY else self._services.contact
 
     async def _load_job(self, raw_id: str, ctx: ToolContext) -> EntityResearchJobRow | None:
         """Fail-closed job→workspace guard: a missing, malformed, or other-workspace job all

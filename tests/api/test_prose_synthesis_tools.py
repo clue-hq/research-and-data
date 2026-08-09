@@ -59,6 +59,7 @@ class _FakeJob:
     state: ResearchJobState
     finalization_outcome: ResearchFinalizationOutcome | None
     subject_type: ResearchSubjectType = ResearchSubjectType.ACCOUNT
+    parent_account_id: UUID | None = None
 
 
 @dataclass
@@ -75,6 +76,7 @@ class _FakeSynthesizer:
         default_factory=lambda: ProseOutcome(kind="coverage_gap", gap_reason="insufficient_facts")
     )
     calls: list[dict[str, Any]] = field(default_factory=list)
+    contact_calls: list[dict[str, Any]] = field(default_factory=list)
     error: Exception | None = None
 
     async def synthesize_account_summary(
@@ -99,6 +101,30 @@ class _FakeSynthesizer:
             raise self.error
         return self.outcome
 
+    async def synthesize_contact_overview(
+        self,
+        *,
+        contact_entity_id: EntityId,
+        workspace_id: str,
+        research_run_id: RunId,
+        job_id: UUID,
+        research_outcome: str,
+        parent_account_id: EntityId | None,
+    ) -> ProseOutcome:
+        self.contact_calls.append(
+            {
+                "contact_entity_id": contact_entity_id,
+                "workspace_id": workspace_id,
+                "research_run_id": research_run_id,
+                "job_id": job_id,
+                "research_outcome": research_outcome,
+                "parent_account_id": parent_account_id,
+            }
+        )
+        if self.error is not None:
+            raise self.error
+        return self.outcome
+
 
 class _FakeGateway:
     def complete(self, *, model: str, messages: Any) -> Any:  # pragma: no cover - never called
@@ -110,6 +136,8 @@ def _terminal_job(
     workspace_id: str = _WS,
     outcome: ResearchFinalizationOutcome | None = ResearchFinalizationOutcome.COMPLETED,
     state: ResearchJobState = ResearchJobState.TERMINAL,
+    subject_type: ResearchSubjectType = ResearchSubjectType.ACCOUNT,
+    parent_account_id: UUID | None = None,
 ) -> _FakeJob:
     return _FakeJob(
         job_id=uuid4(),
@@ -118,6 +146,20 @@ def _terminal_job(
         workspace_id=workspace_id,
         state=state,
         finalization_outcome=outcome,
+        subject_type=subject_type,
+        parent_account_id=parent_account_id,
+    )
+
+
+def _contact_job(
+    *,
+    parent_account_id: UUID | None = None,
+    outcome: ResearchFinalizationOutcome = ResearchFinalizationOutcome.COMPLETED,
+) -> _FakeJob:
+    return _terminal_job(
+        outcome=outcome,
+        subject_type=ResearchSubjectType.CONTACT,
+        parent_account_id=parent_account_id,
     )
 
 
@@ -145,10 +187,18 @@ def _tool(
     )
 
 
-def _services(synthesizer: _FakeSynthesizer) -> Any:
+#: "compose the contact field with the same synthesizer" — distinct from an explicit ``None``,
+#: which is the hand-built partial services object the per-field refusal exists for.
+_SAME = object()
+
+
+def _services(synthesizer: _FakeSynthesizer, *, contact: Any = _SAME, account: Any = _SAME) -> Any:
     from clue_api.prose_synthesis_tools import ProseSynthesisServices
 
-    return ProseSynthesisServices(account=cast(Any, synthesizer))
+    return ProseSynthesisServices(
+        account=cast(Any, synthesizer if account is _SAME else account),
+        contact=cast(Any, synthesizer if contact is _SAME else contact),
+    )
 
 
 async def _codes(tool: Any, body: dict[str, object], ctx: ToolContext) -> tuple[str, ...]:
@@ -193,13 +243,43 @@ def test_an_unregistered_field_key_is_refused() -> None:
     run_async(scenario())
 
 
-def test_contact_overview_is_refused_as_not_yet_composed() -> None:
-    """E1 ships the account synthesizer only; ``contact.overview`` is E2's."""
+def test_the_services_object_requires_both_prose_synthesizers() -> None:
+    """E2 composes both species. Making ``contact`` required is what turns "the contact overview
+    is not built yet" from a runtime refusal into a composition-time impossibility — production
+    passes one synthesizer instance as both fields, and the two fields stay the seam for composing
+    them differently later."""
+    from clue_api.prose_synthesis_tools import ProseSynthesisServices
+
+    with pytest.raises(TypeError):
+        ProseSynthesisServices(account=cast(Any, _FakeSynthesizer()))
+
+
+def test_contact_overview_is_composed_and_has_no_unmet_preconditions() -> None:
+    """The E1 ``field_not_composed`` refusal for ``contact.overview`` is what E2 retires."""
 
     async def scenario() -> None:
-        tool = _tool(services=_services(_FakeSynthesizer()))
-        body = {"job_id": str(uuid4()), "field_key": CONTACT_OVERVIEW}
+        job = _contact_job()
+        tool = _tool(services=_services(_FakeSynthesizer()), jobs=_FakeJobReader({job.job_id: job}))
+        body = {"job_id": str(job.job_id), "field_key": CONTACT_OVERVIEW}
+        assert await _codes(tool, body, _ctx()) == ()
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize("field_key", [ACCOUNT_SUMMARY, CONTACT_OVERVIEW])
+def test_a_field_whose_own_synthesizer_is_missing_is_refused_alone(field_key: str) -> None:
+    """The refusal survives E2 as a *per-field* check rather than a blanket one: a partial services
+    object refuses only its own missing species, and the composed sibling still passes."""
+
+    async def scenario() -> None:
+        job = _contact_job()
+        reader = _FakeJobReader({job.job_id: job})
+        sibling = ACCOUNT_SUMMARY if field_key == CONTACT_OVERVIEW else CONTACT_OVERVIEW
+        missing = {"contact": None} if field_key == CONTACT_OVERVIEW else {"account": None}
+        tool = _tool(services=_services(_FakeSynthesizer(), **missing), jobs=reader)
+        body = {"job_id": str(job.job_id), "field_key": field_key}
         assert await _codes(tool, body, _ctx()) == ("field_not_composed",)
+        assert await _codes(tool, {**body, "field_key": sibling}, _ctx()) == ()
 
     run_async(scenario())
 
@@ -314,6 +394,53 @@ def test_invoke_hands_the_synthesizer_the_jobs_own_identity() -> None:
                 "research_outcome": "needs_review",
             }
         ]
+
+    run_async(scenario())
+
+
+def test_invoke_routes_a_contact_field_to_the_contact_synthesizer_only() -> None:
+    """The field key — not the caller, and not the job's subject type — selects the species, and
+    the two synthesizers are separately composable, so the branch must be real."""
+
+    async def scenario() -> None:
+        parent = uuid4()
+        job = _contact_job(parent_account_id=parent)
+        accounts, contacts = _FakeSynthesizer(), _FakeSynthesizer()
+        tool = _tool(
+            services=_services(accounts, contact=contacts),
+            jobs=_FakeJobReader({job.job_id: job}),
+        )
+        result = await tool.invoke(
+            tool.input_model(job_id=str(job.job_id), field_key=CONTACT_OVERVIEW), _ctx()
+        )
+        assert accounts.calls == []
+        assert contacts.contact_calls == [
+            {
+                "contact_entity_id": EntityId(job.subject_entity_id),
+                "workspace_id": _WS,
+                "research_run_id": RunId(job.research_run_id),
+                "job_id": job.job_id,
+                "research_outcome": "completed",
+                "parent_account_id": EntityId(parent),
+            }
+        ]
+        assert result.references["field_key"] == CONTACT_OVERVIEW
+
+    run_async(scenario())
+
+
+def test_a_contact_job_with_no_parent_account_passes_no_employer_context() -> None:
+    """``parent_account_id`` is nullable on the job row; account context is optional garnish, so a
+    parentless contact synthesizes without it rather than failing."""
+
+    async def scenario() -> None:
+        job = _contact_job(parent_account_id=None)
+        synthesizer = _FakeSynthesizer()
+        tool = _tool(services=_services(synthesizer), jobs=_FakeJobReader({job.job_id: job}))
+        await tool.invoke(
+            tool.input_model(job_id=str(job.job_id), field_key=CONTACT_OVERVIEW), _ctx()
+        )
+        assert synthesizer.contact_calls[0]["parent_account_id"] is None
 
     run_async(scenario())
 
@@ -631,6 +758,222 @@ def test_an_unbound_step_fails_soft_rather_than_breaking_the_fleet() -> None:
     run_async(scenario())
 
 
+# --- the fail-soft fleet step, contact lane (E2) ------------------------------------------------
+#
+# The contact lane's step is a mirror of the account one, and the mirror is the point: the same two
+# cheap declines, the same content-addressed operation id (with the contact FIELD in it, so the two
+# lanes can never collide on an id), and the same never-raises catch-all. The contact fleet handler
+# has NO suspend-on-error try of its own, so here the step's catch-all is the *only* containment.
+
+
+def _contact_summary(
+    job_id: UUID,
+    *,
+    contact_id: UUID | None = None,
+    outcome: ResearchFinalizationOutcome | None = ResearchFinalizationOutcome.COMPLETED,
+) -> Any:
+    from clue_api.contact_research_fleet import ContactResearchJobSummary
+
+    return ContactResearchJobSummary(
+        job_id=job_id,
+        contact_entity_id=contact_id or uuid4(),
+        parent_account_id=uuid4(),
+        state=ResearchJobState.TERMINAL,
+        finalization_outcome=outcome,
+        finalization_receipt_ref=f"entity-research-finalization:{uuid4()}",
+        coverage_ref=None,
+        completed_field_keys=(),
+        unresolved_field_keys=(),
+        result_refs=(),
+        facet_refs=(),
+        channel_operation_refs=(),
+        review_item_refs=(),
+        spent_cents=Decimal("1.00"),
+    )
+
+
+def _contact_projection(*summaries: Any, workspace_id: str = _WS) -> Any:
+    from clue_api.contact_research_fleet import (
+        ContactResearchFleetProjection,
+        ContactResearchFleetState,
+    )
+
+    return ContactResearchFleetProjection(
+        research_run_id=uuid4(),
+        workspace_id=workspace_id,
+        project_id="prj-lane-e",
+        product_id="prod-lane-e",
+        project_run_id=uuid4(),
+        account_entity_id=uuid4(),
+        contact_selection_id=uuid4(),
+        fleet_state=ContactResearchFleetState.TERMINAL,
+        selected_contact_ids=tuple(item.contact_entity_id for item in summaries),
+        jobs=summaries,
+        completed_count=len(summaries),
+        needs_review_count=0,
+        waiting_count=0,
+        terminal_count=len(summaries),
+        result_refs=(),
+        review_item_refs=(),
+        provider_operation_count=0,
+        account_tool_request_count=0,
+        unselected_contact_request_count=0,
+    )
+
+
+def _contact_failed_counts(sink: Any) -> float:
+    from clue_research.narrative import METRIC_PROSE_FAILED
+
+    return cast(float, sink.counter(METRIC_PROSE_FAILED, field_key=CONTACT_OVERVIEW))
+
+
+def test_the_contact_step_invokes_the_tool_with_its_own_field_and_operation_id() -> None:
+    """One job = one synthesis, per field: the contact operation id carries ``contact.overview``,
+    so an account job and a contact job can never collapse onto each other's A9 identity."""
+
+    async def scenario() -> None:
+        job_id = uuid4()
+        invoker = _FakeInvoker()
+        step = _step()
+        step.bind(cast(Any, invoker))
+        projection = _contact_projection(_contact_summary(job_id))
+        await step.after_contact_job(job_id=job_id, result=_work_result(), projection=projection)
+        assert len(invoker.calls) == 1
+        name, body, ctx = invoker.calls[0]
+        assert name == "synthesize_entity_prose"
+        assert body == {"job_id": str(job_id), "field_key": CONTACT_OVERVIEW}
+        assert ctx.workspace_id == projection.workspace_id
+        assert ctx.actor == "agent"
+        assert ctx.actor_id is None and ctx.action_ref is None
+        assert ctx.operation_id == operation_id_from_key(
+            "lane_e_prose", f"{job_id}:{CONTACT_OVERVIEW}"
+        )
+        assert ctx.operation_id != operation_id_from_key(
+            "lane_e_prose", f"{job_id}:{ACCOUNT_SUMMARY}"
+        )
+
+    run_async(scenario())
+
+
+def test_a_redelivered_already_terminal_contact_task_never_synthesizes() -> None:
+    async def scenario() -> None:
+        job_id = uuid4()
+        invoker = _FakeInvoker()
+        step = _step()
+        step.bind(cast(Any, invoker))
+        await step.after_contact_job(
+            job_id=job_id,
+            result=_work_result(finalized=False),
+            projection=_contact_projection(_contact_summary(job_id)),
+        )
+        assert invoker.calls == []
+
+    run_async(scenario())
+
+
+def test_a_contact_job_absent_from_the_projection_never_synthesizes() -> None:
+    """The contact projection carries the whole selected cohort; only the job that just finalized
+    may synthesize, never its siblings."""
+
+    async def scenario() -> None:
+        invoker = _FakeInvoker()
+        step = _step()
+        step.bind(cast(Any, invoker))
+        await step.after_contact_job(
+            job_id=uuid4(),
+            result=_work_result(),
+            projection=_contact_projection(_contact_summary(uuid4())),
+        )
+        assert invoker.calls == []
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        ResearchFinalizationOutcome.EXHAUSTED,
+        ResearchFinalizationOutcome.BUDGET_STOPPED,
+        ResearchFinalizationOutcome.CANCELLED,
+        ResearchFinalizationOutcome.FAILED,
+        None,
+    ],
+)
+def test_the_contact_step_reapplies_the_outcome_gate_before_spending(
+    outcome: ResearchFinalizationOutcome | None,
+) -> None:
+    async def scenario() -> None:
+        job_id = uuid4()
+        invoker = _FakeInvoker()
+        step = _step()
+        step.bind(cast(Any, invoker))
+        await step.after_contact_job(
+            job_id=job_id,
+            result=_work_result(),
+            projection=_contact_projection(_contact_summary(job_id, outcome=outcome)),
+        )
+        assert invoker.calls == []
+
+    run_async(scenario())
+
+
+def test_a_contact_synthesis_that_raises_is_swallowed_and_counted_under_its_own_field() -> None:
+    """The contact handler has no suspend-on-error try at all — this catch-all is the whole story,
+    and the failure metric is attributed to ``contact.overview``, not to the account field."""
+
+    async def scenario() -> None:
+        job_id = uuid4()
+        sink = _sink()
+        invoker = _FakeInvoker(error=RuntimeError("gateway exploded"))
+        step = _step(sink=sink)
+        step.bind(cast(Any, invoker))
+        await step.after_contact_job(
+            job_id=job_id,
+            result=_work_result(),
+            projection=_contact_projection(_contact_summary(job_id)),
+        )
+        assert _contact_failed_counts(sink) == 1
+        assert _failed_counts(sink) == 0
+
+    run_async(scenario())
+
+
+def test_a_contact_precondition_refusal_is_not_a_failure() -> None:
+    async def scenario() -> None:
+        from clue_toolbelt import PreconditionFailed, PreconditionFailure
+
+        job_id = uuid4()
+        sink = _sink()
+        refusal = PreconditionFailed(
+            (PreconditionFailure(reason_code="job_not_terminal", message="not yet"),)
+        )
+        step = _step(sink=sink)
+        step.bind(cast(Any, _FakeInvoker(error=refusal)))
+        await step.after_contact_job(
+            job_id=job_id,
+            result=_work_result(),
+            projection=_contact_projection(_contact_summary(job_id)),
+        )
+        assert _contact_failed_counts(sink) == 0
+
+    run_async(scenario())
+
+
+def test_an_unbound_step_fails_soft_on_the_contact_lane_too() -> None:
+    async def scenario() -> None:
+        job_id = uuid4()
+        sink = _sink()
+        step = _step(sink=sink)
+        await step.after_contact_job(
+            job_id=job_id,
+            result=_work_result(),
+            projection=_contact_projection(_contact_summary(job_id)),
+        )
+        assert _contact_failed_counts(sink) == 1
+
+    run_async(scenario())
+
+
 # --- the handler seam ------------------------------------------------------------------------
 
 
@@ -671,9 +1014,13 @@ class _FakeInner:
 @dataclass
 class _RecordingStep:
     seen: list[tuple[UUID, Any, Any]] = field(default_factory=list)
+    contact_seen: list[tuple[UUID, Any, Any]] = field(default_factory=list)
 
     async def after_account_job(self, *, job_id: UUID, result: Any, projection: Any) -> None:
         self.seen.append((job_id, result, projection))
+
+    async def after_contact_job(self, *, job_id: UUID, result: Any, projection: Any) -> None:
+        self.contact_seen.append((job_id, result, projection))
 
 
 def _work_context(job_id: UUID) -> Any:
@@ -736,6 +1083,69 @@ def test_the_handler_hands_the_step_the_inner_result_after_reconcile() -> None:
         assert result.outcome == "completed"
         assert len(step.seen) == 1
         seen_job, seen_result, seen_projection = step.seen[0]
+        assert seen_job == job_id
+        assert seen_result is inner_result
+        assert seen_projection is fleets.projection
+
+    run_async(scenario())
+
+
+@dataclass
+class _FakeContactFleets:
+    projection: Any
+
+    async def run_id_for_job(self, job_id: UUID) -> UUID:
+        return cast(UUID, self.projection.research_run_id)
+
+    async def project(self, research_run_id: UUID) -> Any:
+        return self.projection
+
+
+def test_the_contact_handler_without_a_prose_step_is_byte_identical_to_today() -> None:
+    """The contact lane's default composition must be provably unchanged."""
+
+    async def scenario() -> None:
+        from clue_api.contact_research_fleet import ContactResearchFleetWorkHandler
+
+        job_id = uuid4()
+        inner_result = _work_result()
+        fleets = _FakeContactFleets(projection=_contact_projection(_contact_summary(job_id)))
+        handler = ContactResearchFleetWorkHandler(
+            inner=cast(Any, _FakeInner(result=inner_result)), fleets=cast(Any, fleets)
+        )
+        result = await handler.handle(_work_context(job_id))
+        assert result.outcome == inner_result.outcome
+        assert result.references["research_run_id"] == str(fleets.projection.research_run_id)
+        assert result.references["contact_fleet_state"] == fleets.projection.fleet_state.value
+        assert (
+            result.references["finalization_receipt_ref"]
+            == inner_result.references["finalization_receipt_ref"]
+        )
+
+    run_async(scenario())
+
+
+def test_the_contact_handler_hands_the_step_the_inner_result_after_the_projection() -> None:
+    """The step sees the INNER result (whose references carry the receipt ref) and the projection
+    the handler just built — and the handler still returns its own composed result unchanged."""
+
+    async def scenario() -> None:
+        from clue_api.contact_research_fleet import ContactResearchFleetWorkHandler
+
+        job_id = uuid4()
+        inner_result = _work_result()
+        fleets = _FakeContactFleets(projection=_contact_projection(_contact_summary(job_id)))
+        step = _RecordingStep()
+        handler = ContactResearchFleetWorkHandler(
+            inner=cast(Any, _FakeInner(result=inner_result)),
+            fleets=cast(Any, fleets),
+            prose_step=cast(Any, step),
+        )
+        result = await handler.handle(_work_context(job_id))
+        assert result.references["contact_fleet_state"] == fleets.projection.fleet_state.value
+        assert step.seen == []
+        assert len(step.contact_seen) == 1
+        seen_job, seen_result, seen_projection = step.contact_seen[0]
         assert seen_job == job_id
         assert seen_result is inner_result
         assert seen_projection is fleets.projection
@@ -806,7 +1216,42 @@ def test_the_account_fleet_composition_defaults_to_no_prose_step() -> None:
     assert composition.handler._prose_step is None
 
 
-def test_the_entity_fleet_composition_forwards_the_prose_step_to_the_account_lane() -> None:
+def test_the_contact_fleet_composition_threads_the_prose_step_to_the_handler() -> None:
+    from clue_api.contact_research_fleet_composition import (
+        build_contact_research_fleet_composition,
+    )
+
+    step = _step()
+    composition = build_contact_research_fleet_composition(
+        storage=cast(Any, None),
+        models=cast(Any, None),
+        provider_actions=cast(Any, _StubProviderActions()),
+        channel_actions=cast(Any, _StubChannelActions()),
+        model_policy=_model_policy(),
+        prose_step=cast(Any, step),
+    )
+    assert composition.handler._prose_step is step
+
+
+def test_the_contact_fleet_composition_defaults_to_no_prose_step() -> None:
+    from clue_api.contact_research_fleet_composition import (
+        build_contact_research_fleet_composition,
+    )
+
+    composition = build_contact_research_fleet_composition(
+        storage=cast(Any, None),
+        models=cast(Any, None),
+        provider_actions=cast(Any, _StubProviderActions()),
+        channel_actions=cast(Any, _StubChannelActions()),
+        model_policy=_model_policy(),
+    )
+    assert composition.handler._prose_step is None
+
+
+def test_the_entity_fleet_composition_forwards_ONE_step_instance_to_BOTH_lanes() -> None:
+    """E2's composition ruling: one step object serves both lanes. Two instances would mean two
+    metric sinks, two binds, and a second thing to remember to wire — the operation id is already
+    field-parameterized, so there is nothing for a second instance to disambiguate."""
     from clue_api.entity_research_fleet_composition import (
         build_entity_research_fleet_composition,
     )
@@ -822,6 +1267,7 @@ def test_the_entity_fleet_composition_forwards_the_prose_step_to_the_account_lan
         prose_step=cast(Any, step),
     )
     assert composition.accounts.handler._prose_step is step
+    assert composition.contacts.handler._prose_step is step
 
 
 def test_the_production_entity_fleet_wiring_forwards_the_prose_step() -> None:

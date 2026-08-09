@@ -477,8 +477,12 @@ async def _serve() -> None:
             if settings.verification_enabled
             else None
         )
+        # One synthesizer instance serves both prose species (E2). The two service fields are the
+        # seam for composing them differently later — a different policy, model, or judge per
+        # species — not an obligation to build two objects today.
+        prose_synthesizer = ProseSynthesizer(gateway=gateway, judge=prose_judge)
         prose_synthesis = ProseSynthesisServices(
-            account=ProseSynthesizer(gateway=gateway, judge=prose_judge)
+            account=prose_synthesizer, contact=prose_synthesizer
         )
         registry = build_toolbelt(
             storage=storage,
