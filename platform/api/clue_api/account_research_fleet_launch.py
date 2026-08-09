@@ -219,8 +219,7 @@ class AccountResearchFleetLauncher:
                 raise AccountResearchFleetLaunchError(str(exc)) from exc
             effective_by_account = estimate.effective_by_account
             pins_by_account = {
-                account_id: effective.pin
-                for account_id, effective in effective_by_account.items()
+                account_id: effective.pin for account_id, effective in effective_by_account.items()
             }
             estimated_cost = estimate.total_cents
             # FI-2 §6.2 estimate netting (spec §11 open item 3, a "should-have"): the estimate is

@@ -201,9 +201,7 @@ def upgrade() -> None:
         "once-only rule is a constraint, not a convention.'"
     )
     # "Which gate did this turn answer?" — the gate-answer resolver's exact lookup.
-    op.execute(
-        "CREATE INDEX agent_gate_answer_turn ON agent_gate_answer (workspace_id, turn_id)"
-    )
+    op.execute("CREATE INDEX agent_gate_answer_turn ON agent_gate_answer (workspace_id, turn_id)")
 
     # Immutable by trigger, like the 13 agent-plane receipt tables (migration 7e9269ed8a81) and
     # D2's submission table. A presented gate and a recorded decision are receipts; nothing in the

@@ -297,8 +297,9 @@ class _EnvelopeRoute(APIRoute):
                 return _envelope(request, status_code=exc.status_code, code=code, message=message)
             except PrincipalError as exc:
                 # Lane B's authentication/authorization refusals already carry the contract §6 code
-                # and status (AUTHENTICATION_REQUIRED / SESSION_INVALID / IDENTITY_NOT_PROVISIONED /
-                # USER_DISABLED / WORKSPACE_FORBIDDEN / PERMISSION_DENIED / MEMBERSHIP_STATE_CHANGED).
+                # and status (AUTHENTICATION_REQUIRED / SESSION_INVALID /
+                # IDENTITY_NOT_PROVISIONED / USER_DISABLED / WORKSPACE_FORBIDDEN /
+                # PERMISSION_DENIED / MEMBERSHIP_STATE_CHANGED).
                 # They are raised inside dependency resolution, which happens *inside* the route
                 # handler — so without this clause the generic catch below would turn a correct 403
                 # into a 500 and the client could not tell "no access" from "we broke".
