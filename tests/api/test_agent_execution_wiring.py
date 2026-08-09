@@ -718,13 +718,22 @@ def test_authority_the_constitution_does_not_carry_is_not_synthesized() -> None:
 
 
 def test_every_agent_tool_context_carries_the_turns_actor_and_derived_receipt() -> None:
-    """Lane D D1 §3-P2: ambient identity is derived from the bound turn, at both C5 seams.
+    """Lane D D1 §3-P2 × Lane B §7: ambient identity is derived from the bound turn, at both seams.
 
     ``actor_id`` comes from the trusted constitution and ``action_ref`` from this turn's canonical
     ``turn-action:<turn_id>``; neither is a plan argument, a model-visible field, or a caller
     parameter. Deriving the ref here (rather than accepting one) is what makes a human gate's
     receipt un-forgeable: the only ref that can reach a tool is the one for the turn actually
     executing.
+
+    The two seams answer differently on *who invoked*, and that is the Lane B join rather than an
+    inconsistency. The executor seam still receives the turn's ``actor_id`` as data (the executor
+    decides per node whether that is the invoker or whether the worker's service identity is —
+    ``tests/execution/test_executor.py`` owns that). **Pin resolution** has no such choice: it is
+    the execution service's own read while it validates a plan the model proposed, performed before
+    any node runs and on nobody's behalf. So it runs as ``svc_agent_execution`` — carrying the
+    turn's receipt as evidence, because a pin derived for a gated step must see it, but never
+    wearing the user's id (Lane B ruling 8).
     """
 
     pins = _PinProvider()
@@ -746,6 +755,7 @@ def test_every_agent_tool_context_carries_the_turns_actor_and_derived_receipt() 
             "action_ref": expected_ref,
         }
     ]
-    assert [(ctx.actor_id, ctx.action_ref) for ctx in pins.contexts] == [
-        (trusted.actor_id, expected_ref)
-    ]
+    assert [
+        (ctx.principal_kind, ctx.actor_id, ctx.membership_id, ctx.action_ref)
+        for ctx in pins.contexts
+    ] == [("service", "svc_agent_execution", None, expected_ref)]
