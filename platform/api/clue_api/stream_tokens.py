@@ -48,6 +48,77 @@ _CONSUME_SQL = text(
 )
 
 
+#: The FI Lane D D3 turn-stream pair. Same table, same single-use semantics, a **different scope
+#: column** (migration ``98a5ddafa21b`` adds ``turn_id`` plus a CHECK that at most one of
+#: ``run_id``/``turn_id`` is set). Carrying a turn id in the ``run_id`` column would have been one
+#: fewer migration and a permanent lie to every future reader of this table.
+_MINT_TURN_SQL = text(
+    """
+    INSERT INTO stream_token (workspace_id, turn_id, expires_at)
+    VALUES (:workspace_id, :turn_id, now() + make_interval(secs => :ttl_s))
+    RETURNING token
+    """
+)
+
+_CONSUME_TURN_SQL = text(
+    """
+    UPDATE stream_token
+    SET used_at = now()
+    WHERE token = :token
+      AND workspace_id = :workspace_id
+      AND used_at IS NULL
+      AND expires_at > now()
+      AND turn_id = :turn_id
+    RETURNING token
+    """
+)
+
+
+async def mint_turn_stream_token(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+    ttl_s: float,
+) -> UUID:
+    """Mint a single-use token that opens **one turn's** stream, once, within ``ttl_s``.
+
+    Lane B contract §5.5 in one function: an already-authenticated request mints a short-lived,
+    single-use, principal-scoped, workspace-scoped, turn-scoped token; no bearer credential ever
+    travels in a URL, and the token's expiry or replay cannot extend anybody's domain authority —
+    it authorises *opening a stream*, and the stream serves only rows of the workspace and turn the
+    token names.
+    """
+
+    token = (
+        await conn.execute(
+            _MINT_TURN_SQL,
+            {"workspace_id": workspace_id, "turn_id": turn_id, "ttl_s": ttl_s},
+        )
+    ).scalar_one()
+    return UUID(str(token))
+
+
+async def consume_turn_stream_token(
+    conn: AsyncConnection, *, token: UUID, workspace_id: str, turn_id: UUID
+) -> bool:
+    """Atomically consume a turn-stream token: ``True`` iff live, this tenant's, and this turn's.
+
+    ``False`` — indistinguishably — for a used, expired, cross-tenant, wrong-turn, run-scoped, or
+    unknown token, so a probe learns nothing about which of those it was. Reconnect re-mints; the
+    ``Last-Event-ID`` cursor carries replay state independently, so single-use never costs a
+    gapless reconnect.
+    """
+
+    row = (
+        await conn.execute(
+            _CONSUME_TURN_SQL,
+            {"token": token, "workspace_id": workspace_id, "turn_id": turn_id},
+        )
+    ).one_or_none()
+    return row is not None
+
+
 async def mint_stream_token(
     conn: AsyncConnection,
     *,

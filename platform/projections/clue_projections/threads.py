@@ -14,6 +14,7 @@ cross-workspace read returns an empty page, never another tenant's row.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -31,6 +32,7 @@ from clue_projections.thread_refs import (
 )
 
 __all__ = [
+    "AGENT_TURN_TASK_DEDUP_PREFIX",
     "DEFAULT_THREAD_PAGE_SIZE",
     "DEFAULT_THREAD_MESSAGE_PAGE_SIZE",
     "MAX_THREAD_PAGE_SIZE",
@@ -38,15 +40,24 @@ __all__ = [
     "ThreadMessagePage",
     "ThreadMessageSummary",
     "ThreadPage",
+    "ThreadTurnView",
     "ThreadView",
     "thread_messages",
+    "thread_turns",
     "threads_for_project",
+    "threads_running",
 ]
 
 DEFAULT_THREAD_PAGE_SIZE = 50
 MAX_THREAD_PAGE_SIZE = 200
 DEFAULT_THREAD_MESSAGE_PAGE_SIZE = 50
 MAX_THREAD_MESSAGE_PAGE_SIZE = 200
+
+#: The ``fleet_task.dedup_key`` prefix one ``AGENT_TURN`` task is named by. It is *authored* in
+#: ``clue_api.agent_turn_submission``; this package may not import that one (projections import no
+#: composition root), so the value is restated here and a test asserts the two never drift. A
+#: silently divergent prefix would make every turn look permanently queued.
+AGENT_TURN_TASK_DEDUP_PREFIX = "agent-turn:"
 
 
 class _View(BaseModel):
@@ -68,6 +79,36 @@ class ThreadView(_View):
 class ThreadPage(_View):
     items: tuple[ThreadView, ...]
     next_cursor: str | None = None
+
+
+class ThreadTurnView(_View):
+    """One turn of a thread — the **submissions-union** the ratified two-phase identity requires.
+
+    After D2's accepted deviation a turn's identity lands in two halves: the
+    ``agent_turn_submission`` row the HTTP route writes before it enqueues anything, and the
+    ``agent_turn`` row the worker writes once it has an execution. A read surface built on
+    ``agent_turn`` alone therefore cannot see a *queued* turn at all — the exact turns a user most
+    wants to see, because they are the ones that have not answered yet. So this view is anchored on
+    the submission and enriched with whatever execution evidence exists: the turn's own terminal
+    event, or its fleet task's state.
+
+    ``state`` is derived, never stored:
+
+    * ``queued`` — a submission with no execution evidence yet;
+    * ``running`` — its generation has started (a ``turn.started`` frame) or its task is claimed;
+    * ``completed`` / ``awaiting_input`` / ``failed`` / ``cancelled`` — its terminal turn event, or,
+      when the stream frames have been pruned, the terminal state of its fleet task.
+    """
+
+    turn_id: UUID
+    thread_id: str
+    project_id: str
+    state: str
+    requested_at: AwareDatetime
+    submitted_by_user_id: str
+    #: The stream cursor a client should attach after, when frames for this turn still exist.
+    last_event_id: int | None = None
+    generation_attempts: int = 0
 
 
 class ThreadMessageSummary(_View):
@@ -171,6 +212,162 @@ async def threads_for_project(
         else None
     )
     return ThreadPage(items=items, next_cursor=next_cursor)
+
+
+# --- the submissions-union ---------------------------------------------------------------------
+
+# One statement, anchored on the submission (the durable half that always exists) and enriched by
+# two lateral reads: the turn's stream frames, and its fleet task. Both are LEFT joins because both
+# are legitimately absent — a queued turn has neither, and a turn whose frames were pruned past the
+# retention window still has its task.
+_TURN_UNION_SELECT = """
+    SELECT
+        s.turn_id,
+        s.thread_id,
+        s.project_id,
+        s.requested_at,
+        s.submitted_by_user_id,
+        e.terminal_event,
+        e.started,
+        e.last_event_id,
+        e.attempts,
+        f.status AS task_status
+    FROM agent_turn_submission s
+    LEFT JOIN LATERAL (
+        SELECT
+            max(event_id) AS last_event_id,
+            count(DISTINCT generation_attempt_id) AS attempts,
+            bool_or(event_type = 'turn.started') AS started,
+            (ARRAY_REMOVE(ARRAY_AGG(
+                CASE WHEN event_type IN ('turn.completed', 'turn.failed', 'turn.cancelled',
+                                         'turn.awaiting_input')
+                     THEN event_type END
+                ORDER BY event_id DESC), NULL))[1] AS terminal_event
+        FROM agent_turn_event_stream v
+        WHERE v.workspace_id = s.workspace_id AND v.turn_id = s.turn_id
+    ) e ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT t.status
+        FROM fleet_task t
+        WHERE t.kind = CAST('agent_turn' AS fleet_task_kind)
+          AND t.dedup_key = :dedup_prefix || s.turn_id::text
+        LIMIT 1
+    ) f ON TRUE
+    WHERE s.workspace_id = :workspace_id
+"""
+
+_THREAD_TURNS = text(
+    f"{_TURN_UNION_SELECT} AND s.thread_id = :thread_id "
+    "ORDER BY s.requested_at, s.turn_id LIMIT :row_limit"
+)
+
+# "Which of these threads is busy?" — the same union, reduced to a per-thread boolean, so the
+# thread listing answers it in one statement instead of one per row.
+_THREADS_RUNNING = text(
+    f"""
+    SELECT u.thread_id
+    FROM ({_TURN_UNION_SELECT} AND s.thread_id = ANY(CAST(:thread_ids AS text[]))) u
+    WHERE u.terminal_event IS NULL
+      AND (u.task_status IS NULL OR u.task_status NOT IN ('done', 'failed'))
+    GROUP BY u.thread_id
+    """
+)
+
+#: ``turn.<x>`` event → the ``state`` a turn view reports.
+_TERMINAL_STATES: dict[str, str] = {
+    "turn.completed": "completed",
+    "turn.failed": "failed",
+    "turn.cancelled": "cancelled",
+    "turn.awaiting_input": "awaiting_input",
+}
+
+
+def _turn_state(row: dict[str, object]) -> str:
+    terminal = row.get("terminal_event")
+    if terminal is not None:
+        return _TERMINAL_STATES.get(str(terminal), "completed")
+    task_status = row.get("task_status")
+    if task_status in {"done", "failed"}:
+        # The frames aged out of the outbox but the task remembers. Reporting ``queued`` here would
+        # resurrect a finished turn every time retention caught up with it.
+        return "completed" if task_status == "done" else "failed"
+    if bool(row.get("started")) or task_status == "claimed":
+        return "running"
+    return "queued"
+
+
+async def thread_turns(
+    *,
+    workspace_id: str,
+    thread_id: str,
+    limit: int = MAX_THREAD_PAGE_SIZE,
+    conn_factory: ConnFactory = transaction,
+) -> tuple[ThreadTurnView, ...]:
+    """Every turn of one thread in submission order — queued ones included.
+
+    Read-only and workspace-scoped in SQL, like everything here. Bounded by ``limit`` rather than
+    paginated: a thread's *turn* count is small (its messages are the thing that grows), and the
+    caller that needs a page of history reads :func:`thread_messages`.
+    """
+
+    async with conn_factory() as conn:
+        rows = (
+            (
+                await conn.execute(
+                    _THREAD_TURNS,
+                    {
+                        "workspace_id": workspace_id,
+                        "thread_id": thread_id,
+                        "dedup_prefix": AGENT_TURN_TASK_DEDUP_PREFIX,
+                        "row_limit": limit,
+                    },
+                )
+            )
+            .mappings()
+            .all()
+        )
+    return tuple(
+        ThreadTurnView(
+            turn_id=row["turn_id"],
+            thread_id=row["thread_id"],
+            project_id=row["project_id"],
+            state=_turn_state(dict(row)),
+            requested_at=row["requested_at"],
+            submitted_by_user_id=row["submitted_by_user_id"],
+            last_event_id=(None if row["last_event_id"] is None else int(row["last_event_id"])),
+            generation_attempts=int(row["attempts"] or 0),
+        )
+        for row in rows
+    )
+
+
+async def threads_running(
+    *,
+    workspace_id: str,
+    thread_ids: Sequence[str],
+    conn_factory: ConnFactory = transaction,
+) -> frozenset[str]:
+    """Which of ``thread_ids`` hold a turn that is queued or executing (the ``running`` badge).
+
+    One statement for a whole page of threads. "Queued" counts as running on purpose: from the
+    user's side a turn they submitted thirty seconds ago that has not been claimed yet is the
+    conversation working, not the conversation idle.
+    """
+
+    if not thread_ids:
+        return frozenset()
+    async with conn_factory() as conn:
+        rows = (
+            await conn.execute(
+                _THREADS_RUNNING,
+                {
+                    "workspace_id": workspace_id,
+                    "thread_ids": list(thread_ids),
+                    "dedup_prefix": AGENT_TURN_TASK_DEDUP_PREFIX,
+                },
+            )
+        ).scalars()
+    return frozenset(str(value) for value in rows)
 
 
 def _parse_timestamp(position: str) -> datetime:

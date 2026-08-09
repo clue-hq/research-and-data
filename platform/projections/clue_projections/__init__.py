@@ -127,6 +127,7 @@ from clue_projections.thread_refs import (
     flavors_for_message_role,
 )
 from clue_projections.threads import (
+    AGENT_TURN_TASK_DEDUP_PREFIX,
     DEFAULT_THREAD_MESSAGE_PAGE_SIZE,
     DEFAULT_THREAD_PAGE_SIZE,
     MAX_THREAD_MESSAGE_PAGE_SIZE,
@@ -134,9 +135,12 @@ from clue_projections.threads import (
     ThreadMessagePage,
     ThreadMessageSummary,
     ThreadPage,
+    ThreadTurnView,
     ThreadView,
     thread_messages,
+    thread_turns,
     threads_for_project,
+    threads_running,
 )
 
 __all__ = [
@@ -181,7 +185,11 @@ __all__ = [
     "thread_gates",
     "flavors_for_message_role",
     "thread_messages",
+    "AGENT_TURN_TASK_DEDUP_PREFIX",
+    "ThreadTurnView",
+    "thread_turns",
     "threads_for_project",
+    "threads_running",
     # M8B O3 main-agent account-deep steering context
     "ACCOUNT_DEEP_STEERING_CARD_MEDIA_TYPE",
     "AccountDeepSteeringAccount",

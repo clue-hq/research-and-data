@@ -32,6 +32,7 @@ from pydantic import BaseModel, ValidationError
 import clue_obs
 from clue_agents import AgentProfileRegistry
 from clue_api.chat import PrincipalResolver, chat_workspace_resolver, install_chat_surface
+from clue_api.chat.stream import install_chat_stream_surface
 from clue_api.frontend_read import (
     frontend_read_workspace_resolver,
     install_frontend_read_surface,
@@ -735,6 +736,7 @@ def create_projections_app(
     startup_check: Callable[[], Awaitable[None]] | None = None,
     discovery_webhook_router: APIRouter | None = None,
     chat_principal_resolver: PrincipalResolver | None = None,
+    chat_stream_live_tail: bool = True,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -745,7 +747,8 @@ def create_projections_app(
     ``chat_principal_resolver`` injects Lane B's authenticated ``RequestPrincipal`` into the chat
     surface; without one, the surface may only run under ``local_header`` auth mode.
     ``sse_live_tail=False`` makes the SSE stream replay-then-close (deterministic for tests);
-    production leaves it ``True`` (an open live stream)."""
+    production leaves it ``True`` (an open live stream). ``chat_stream_live_tail`` is the same
+    switch for FI Lane D D3's turn stream."""
     resolved = settings if settings is not None else load_settings()
     app = FastAPI(
         title="Clue-HQ platform — projections + toolbelt + SSE",
@@ -780,6 +783,16 @@ def create_projections_app(
         # D2's turn submission captures the user's bytes as a durable artifact before enqueueing.
         # The same backend the ingestion surface already uses; nothing model-shaped is added here.
         storage=ingestion_storage,
+    )
+
+    # FI Lane D D3: the turn stream (attach/stop/retry/hydrated cold load), behind the same
+    # default-off flag and governed by the same principal resolver the chat surface installed.
+    install_chat_stream_surface(
+        app,
+        settings=resolved,
+        conn_factory=conn_factory,
+        storage=ingestion_storage,
+        live_tail=chat_stream_live_tail,
     )
 
     if workspace_resolver is not None:

@@ -302,12 +302,29 @@ class TurnAcceptedResponse(_Wire):
     data: TurnAcceptedWire
 
 
-def thread_wire(view: ThreadView, *, open_gate_kinds: tuple[str, ...] = ()) -> ThreadWire:
+def thread_wire(
+    view: ThreadView,
+    *,
+    open_gate_kinds: tuple[str, ...] = (),
+    running: bool = False,
+) -> ThreadWire:
+    """One thread on the wire.
+
+    Both derivation inputs default to "nothing known" so a caller that has read neither the gates
+    nor the submissions-union gets the honest ``idle``/``archived`` answer rather than a guess:
+    ``open_gate_kinds`` from :func:`~clue_projections.open_gate_kinds_for_threads` (D4) and
+    ``running`` from :func:`~clue_projections.threads_running` (D3).
+    """
+
     return ThreadWire(
         id=view.thread_id,
         title=view.title,
         href=thread_href(project_id=view.project_id, thread_id=view.thread_id),
-        status=thread_status(status=view.status, open_gate_kinds=open_gate_kinds),
+        status=thread_status(
+            status=view.status,
+            open_gate_kinds=open_gate_kinds,
+            running=running,
+        ),
         pinned=view.pinned,
         project_id=view.project_id,
         created_at=view.created_at.isoformat(),
