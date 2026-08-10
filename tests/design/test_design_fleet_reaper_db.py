@@ -29,6 +29,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from lumen_api import run_stream
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -39,6 +40,7 @@ from clue_design import runs as design_runs
 from clue_design.enums import DesignIngestionKind, DesignRunKind
 from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
 from clue_design.errors import DesignNotFoundError
+from clue_execution.run_events import DESIGN_RUN_SUBJECT_KIND, list_subject_run_events
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
 from clue_fleet.lease import WorkId, acquire_work_lease
 from clue_fleet.queue import enqueue_task
@@ -312,8 +314,8 @@ def test_a_handler_exception_terminalizes_the_run_instead_of_stranding_it() -> N
 
             # And the SSE-visible stream carries its terminal marker, so a subscriber settles.
             async with transaction() as conn:
-                events = await design_runs.list_run_events(
-                    conn, workspace_id=workspace_id, run_id=run_id, after_seq=0
+                events = await run_stream.run_snapshot_events(
+                    conn, workspace_id=workspace_id, run_id=run_id
                 )
             assert [event["type"] for event in events][-1] == "error"
             await _purge_work(work_id)
@@ -370,11 +372,22 @@ def test_the_reaper_reoffers_a_stranded_run_once_then_terminalizes_it() -> None:
             assert row["reoffer_count"] == 1
 
             async with transaction() as conn:
-                events = await design_runs.list_run_events(
-                    conn, workspace_id=workspace_id, run_id=run_id, after_seq=0
+                events = await run_stream.run_snapshot_events(
+                    conn, workspace_id=workspace_id, run_id=run_id
+                )
+                rows = await list_subject_run_events(
+                    conn,
+                    workspace_id=workspace_id,
+                    subject_kind=DESIGN_RUN_SUBJECT_KIND,
+                    subject_id=run_id,
                 )
             assert events[-1]["type"] == "error"
             assert STRANDED_CODE in events[-1]["data"]["message"]
+            # D7 (R-D7-B2): the reaper's terminal event is SELF-CONTAINED — it carries the stranded
+            # result envelope in its own payload, so the SSE ``done`` frame is built from the event
+            # alone and never re-reads the run row after a terminal.
+            assert rows[-1].topic == run_stream.FAILED_TOPIC
+            assert rows[-1].payload["result"]["error"]["code"] == STRANDED_CODE
 
             # --- pass 3 leaves it alone: a terminal row is never re-judged.
             await run_reaper_pass(transaction, stranded_after_s=0)

@@ -8,6 +8,7 @@ import os
 import shutil
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1386,15 +1387,25 @@ def test_a_restart_leaves_an_unclaimed_run_recoverable(tmp_path: Path) -> None:
     assert finished["result"] == {"status": "applied"}
 
 
+def _open_stream(client: TestClient, run_id: str, **kwargs) -> str:
+    """Open the run's SSE stream the way a client must since D7: mint a token, then present it.
+
+    The mint is header-authenticated (the ``client`` fixture sends ``X-Workspace-Id``); the GET
+    carries no workspace at all. That handshake IS the auth change, so every stream test goes
+    through it rather than reaching past it."""
+    token = client.post(f"/agent/runs/{run_id}/stream-token").json()["stream_token"]
+    return client.get(f"/agent/runs/{run_id}/events?stream_token={token}", **kwargs).text
+
+
 def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
     # Drive the store directly to assert SSE framing deterministically (no
     # dependence on background-thread timing): a progress event replays, then
-    # the terminal marker closes the stream with the stored result.
+    # the terminal event closes the stream with the run's result.
 
     run_id = unique_run_id("sse")
     repo = HybridRepository()
     repo.create_run(run_id, None)
-    repo.append_run_event(run_id, "dsl_block_produced", {"iteration": 1})
+    seq = repo.emit_run_event(run_id, "dsl_block_produced", {"iteration": 1})
     repo.complete_run(
         run_id,
         "succeeded",
@@ -1403,26 +1414,103 @@ def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
         {"status": "proposed"},
     )
 
-    body = client.get(f"/agent/runs/{run_id}/events").text
+    body = _open_stream(client, run_id)
     assert "event: progress" in body
     assert "dsl_block_produced" in body
     assert "event: done" in body
     assert '"summary":"done"' in body or '"summary": "done"' in body
-    # Last-Event-ID replay: subscribing after seq 1 skips the progress event.
-    resumed = client.get(
-        f"/agent/runs/{run_id}/events", headers={"Last-Event-ID": "1"}
-    ).text
+    # Last-Event-ID replay: subscribing after the progress event's seq skips it. The seq is the
+    # platform outbox's global sequence now, so the cursor comes from the write, not from "1".
+    resumed = _open_stream(client, run_id, headers={"Last-Event-ID": str(seq)})
     assert "event: progress" not in resumed
     assert "event: done" in resumed
+    # A fresh connect with no cursor replays the whole run from the beginning.
+    assert "event: progress" in _open_stream(client, run_id)
+
+
+def test_the_stream_token_is_single_use_and_carries_the_workspace(client: TestClient) -> None:
+    """R-D7-B4: one token, one connect, and no ``?workspace_id=`` anywhere.
+
+    The four refusals — replayed token, unknown token, malformed token, and a token minted for a
+    DIFFERENT run — are one indistinguishable 401, so the refusal cannot be used to probe which
+    runs exist.
+    """
+    run_id = unique_run_id("tok")
+    other_run = unique_run_id("tok2")
+    repo = HybridRepository()
+    repo.create_run(run_id, None)
+    repo.create_run(other_run, None)
+    repo.complete_run(run_id, "succeeded", {"status": "proposed"}, "result", {})
+
+    token = client.post(f"/agent/runs/{run_id}/stream-token").json()["stream_token"]
+    first = client.get(f"/agent/runs/{run_id}/events?stream_token={token}")
+    assert first.status_code == 200 and "event: done" in first.text
+    # Replaying the same token is refused: consumption stamps used_at atomically.
+    assert client.get(f"/agent/runs/{run_id}/events?stream_token={token}").status_code == 401
+    assert (
+        client.get(f"/agent/runs/{run_id}/events?stream_token={uuid4()}").status_code == 401
+    )
+    assert client.get(f"/agent/runs/{run_id}/events?stream_token=not-a-uuid").status_code == 401
+    # A token minted for another run does not open this one.
+    foreign = client.post(f"/agent/runs/{other_run}/stream-token").json()["stream_token"]
+    assert client.get(f"/agent/runs/{run_id}/events?stream_token={foreign}").status_code == 401
+    # And the stream refuses to be opened without a token at all.
+    assert client.get(f"/agent/runs/{run_id}/events").status_code == 422
+
+
+def test_the_done_frame_is_built_from_the_terminal_event_not_the_run_row(
+    client: TestClient,
+) -> None:
+    """R-D7-B2, proved by removal: blank the run row's stored result and the stream still serves it.
+
+    The pre-D7 stream read ``run["result"]`` the moment it saw a terminal marker — a second read,
+    in a second transaction, of a row the marker only *implied* was ready. D7 puts the whole result
+    envelope inside the terminal event, so the serve layer never looks at the run row again. If
+    that were still a lie, this test would stream ``null``.
+    """
+    import asyncio
+
+    from clue_db import create_engine
+    from sqlalchemy import text
+
+    run_id = unique_run_id("selfcontained")
+    repo = HybridRepository()
+    repo.create_run(run_id, None)
+    repo.complete_run(
+        run_id, "succeeded", {"status": "proposed", "summary": "from the event"}, "result", {}
+    )
+
+    async def blank_the_row() -> None:
+        engine = create_engine()
+        try:
+            async with engine.connect() as conn, conn.begin():
+                await conn.execute(
+                    text("UPDATE design_agent_run SET result_json = NULL WHERE run_id = :r"),
+                    {"r": run_id},
+                )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(blank_the_row())
+
+    body = _open_stream(client, run_id)
+    assert "event: done" in body
+    assert "from the event" in body
+
+
+def test_minting_a_token_for_an_unknown_run_is_a_404(client: TestClient) -> None:
+    assert client.post("/agent/runs/run_never_created/stream-token").status_code == 404
 
 
 def test_run_event_enriched_with_operations_round_trips_and_streams(
     client: TestClient,
 ) -> None:
     # Live-design-streaming S0 (D1/D2): the sink stores whatever dict it is
-    # handed (append_run_event → data_json) untouched, so an authoring event
-    # enriched with its applied `operations` list round-trips through the
-    # run_events row AND rides the SSE progress frame the editor consumes.
+    # handed untouched, so an authoring event enriched with its applied
+    # `operations` list round-trips through the durable row AND rides the SSE
+    # progress frame the editor consumes. D7 swapped the row's table; the
+    # payload envelope (`{event_type, data}`) is unwrapped on the way out, so
+    # this contract is byte-identical.
 
     run_id = unique_run_id("ops")
     repo = HybridRepository()
@@ -1438,17 +1526,17 @@ def test_run_event_enriched_with_operations_round_trips_and_streams(
             {"kind": "insert_node", "node_id": "headline", "parent_id": "page_hero"},
         ],
     }
-    repo.append_run_event(run_id, "dsl_compiled", enriched)
+    repo.emit_run_event(run_id, "dsl_compiled", enriched)
 
     # (e-i) the durable row round-trips the enriched dict verbatim.
-    rows = repo.list_run_events(run_id, after_seq=0)
+    rows = repo.list_run_events(run_id)
     assert rows[-1]["data"] == enriched
     repo.complete_run(
         run_id, "succeeded", {"status": "proposed"}, "result", {"status": "proposed"}
     )
 
     # (e-ii) the SSE progress frame carries the operations to the client.
-    body = client.get(f"/agent/runs/{run_id}/events").text
+    body = _open_stream(client, run_id)
     assert "event: progress" in body
     assert "dsl_compiled" in body
     assert "add_page" in body and "page_hero" in body
@@ -1457,11 +1545,18 @@ def test_run_event_enriched_with_operations_round_trips_and_streams(
 
 def test_run_events_sse_cadence_constants_pinned() -> None:
     # D2: poll fast (250ms) so authoring batches land promptly; keepalive slow
-    # (~1s) so a quiet run does not spam a comment every poll.
+    # (~1s) so a quiet run does not spam a comment every poll. D7 moved these
+    # next to the loop they pace (``run_stream``) and made the override of the
+    # platform's 1.0s default explicit; the values are unchanged, because the
+    # editor's reveal pacing depends on them.
     from lumen_api import main as api_main
+    from lumen_api import run_stream
 
-    assert api_main._RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS == 0.25
-    assert api_main._RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS == 1.0
+    assert run_stream.POLL_INTERVAL_SECONDS == 0.25
+    assert run_stream.KEEPALIVE_INTERVAL_SECONDS == 1.0
+    # The polled stream's machinery left main.py with them: one seam, one home.
+    assert not hasattr(api_main, "sse_frame")
+    assert not hasattr(api_main, "_RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS")
 
 
 def write_iteration_compile(trace_dir, index: int, operations: list) -> None:

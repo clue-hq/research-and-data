@@ -107,6 +107,22 @@ from clue_execution.recipes import (
     RecipeVersionConflict,
     load_recipe_definition,
 )
+from clue_execution.run_events import (
+    DESIGN_RUN_EVENT_TOPICS,
+    DESIGN_RUN_SUBJECT_KIND,
+    PROJECT_RUN_SUBJECT_KIND,
+    InvalidRunEventSubject,
+    SubjectReplayPlan,
+    emit_design_run_event,
+    list_subject_run_events,
+    plan_subject_replay,
+    subject_event_created_at,
+)
+from clue_execution.stream_tokens import (
+    consume_stream_token,
+    consume_subject_stream_token,
+    mint_stream_token,
+)
 from clue_execution.supervisor import (
     DiagnosisActionCandidate,
     SupervisorDiagnosis,
@@ -155,6 +171,26 @@ __all__ = [
     "ControlPolicyViolation",
     "DbRunControlStore",
     "EffectiveEnvelope",
+    # D7 — the non-project-run half of the run_event stream (see clue_execution.run_events for why
+    # it lives here). ``RunEventRow`` is deliberately NOT re-exported at package level: it is
+    # field-identical to ``clue_research.durable.RunEventRow`` and the composition root imports
+    # both, so the name stays qualified (``from clue_execution.run_events import RunEventRow``).
+    "DESIGN_RUN_EVENT_TOPICS",
+    "DESIGN_RUN_SUBJECT_KIND",
+    "PROJECT_RUN_SUBJECT_KIND",
+    "InvalidRunEventSubject",
+    "SubjectReplayPlan",
+    "emit_design_run_event",
+    "list_subject_run_events",
+    "plan_subject_replay",
+    "subject_event_created_at",
+    # D7 Round B — the single-use stream-token store, relocated here from ``clue_api`` so the
+    # design API can mint/consume the SAME token species (``clue_api.stream_tokens`` re-exports).
+    # ``PROJECT_RUN_SUBJECT_KIND`` is deliberately not re-listed: run_events already exports the
+    # one constant, and a parity test binds the token module's copy to it.
+    "consume_stream_token",
+    "consume_subject_stream_token",
+    "mint_stream_token",
     "DiagnosisActionCandidate",
     "SupervisorDiagnosis",
     "SupervisorEngine",

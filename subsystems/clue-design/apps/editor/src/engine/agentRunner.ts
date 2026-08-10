@@ -1,6 +1,7 @@
 import type { Diagnostic, NodeId, Operation, PageId, Scene } from "./contracts";
 import { diagnosticSeverity, diagnosticSubject, isRecord } from "./brandDiagnostics";
-import { lumenFetch, runEventsUrl } from "./editorConfig";
+import { lumenFetch } from "./editorConfig";
+import { openRunEventStream, type RunStreamTarget } from "./runEventStream";
 
 /** One progress event streamed from an async agent run (2b show-work). The
  * server persists these to a durable store; the editor renders a curated
@@ -41,22 +42,25 @@ export interface EditorAgentRequest {
   onEvent?: (event: AgentRunEvent) => void;
 }
 
-/** The minimal EventSource surface we depend on — injectable so jsdom tests
- * (no global EventSource) drive the stream with a fake, and so the browser
- * API is never stored bare (docs/frontend-practices.md rule 8). */
+/** The minimal event-stream surface we depend on — injectable so jsdom tests
+ * drive the stream with a fake, and so the browser API is never stored bare
+ * (docs/frontend-practices.md rule 8).
+ *
+ * D7: the default is no longer the native `EventSource`. The stream is opened
+ * with a single-use token minted over a header-authenticated POST, which
+ * `EventSource` cannot make — so the factory now takes the run's ADDRESS
+ * (base url + run id) rather than a ready-made url, and `openRunEventStream`
+ * owns the mint → connect → reconnect handshake behind this same interface. */
 export interface EventSourceLike {
   addEventListener(type: string, listener: (event: { data: string }) => void): void;
   close(): void;
   onerror: ((event: unknown) => void) | null;
 }
 
-export type EventSourceFactory = (url: string) => EventSourceLike;
+export type EventSourceFactory = (target: RunStreamTarget) => EventSourceLike;
 
-function defaultEventSourceFactory(url: string): EventSourceLike {
-  if (typeof EventSource === "undefined") {
-    throw new Error("EventSource is unavailable in this environment.");
-  }
-  return new EventSource(url) as unknown as EventSourceLike;
+function defaultEventSourceFactory(target: RunStreamTarget): EventSourceLike {
+  return openRunEventStream(target);
 }
 
 export interface EditorAgentTrace {
@@ -206,8 +210,9 @@ export interface SubscribeToAgentRunOptions {
  * connect the server replays every event from seq 0, so this doubles as the
  * resume path: rejoining an in-flight (or already-finished) run after a tab
  * reload replays the checklist and then either streams live ticks or resolves
- * immediately from the stored result. EventSource auto-reconnects on transient
- * drops, re-requesting via Last-Event-ID — we never reject on a stream error.
+ * immediately from the stored result. The stream client auto-reconnects on
+ * transient drops (re-minting its token and resuming from Last-Event-ID) — we
+ * never reject on a stream error.
  */
 export function subscribeToAgentRun({
   apiBaseUrl,
@@ -218,9 +223,9 @@ export function subscribeToAgentRun({
   return new Promise((resolve, reject) => {
     let source: EventSourceLike;
     try {
-      // EventSource cannot set request headers, so the workspace rides the query string —
-      // the API resolves it just as strictly as X-Workspace-Id (401 when neither is present).
-      source = eventSourceFactory(runEventsUrl(apiBaseUrl, runId));
+      // The workspace is NOT in this url: it is proven on the token mint and read back off the
+      // token row (D7). The stream client owns that handshake.
+      source = eventSourceFactory({ apiBaseUrl, runId });
     } catch (error) {
       reject(error instanceof Error ? error : new Error(String(error)));
       return;
@@ -244,8 +249,8 @@ export function subscribeToAgentRun({
       source.close();
       resolve(result);
     });
-    // Transient errors are handled by EventSource's own reconnect (Last-Event-ID
-    // replays missed events); a terminal run always ends with a `done` frame.
+    // Transient errors are handled by the stream client's own reconnect (it re-mints and
+    // replays missed events from Last-Event-ID); a terminal run always ends with a `done` frame.
   });
 }
 

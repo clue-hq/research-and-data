@@ -358,7 +358,11 @@ from clue_research.durable.recursion import (
     SpawnGuard,
 )
 from clue_research.durable.run_events import (
+    DESIGN_RUN_EVENT_TOPICS,
+    DESIGN_RUN_SUBJECT_KIND,
     NARRATIVE_EMIT_SKIPPED_KEY,
+    PROJECT_RUN_SUBJECT_KIND,
+    RUN_EVENT_SUBJECT_KINDS,
     RUN_EVENT_TOPICS,
     RunEventRow,
     RunEventTopic,
@@ -725,9 +729,13 @@ __all__ = [
     "upsert_checkpoint",
     "insert_adjustment",
     "list_adjustments",
-    # run_event SSE outbox (PB-B4 slice 3, D8)
+    # run_event SSE outbox (PB-B4 slice 3, D8; subject-widened at Part II D7)
     "RunEventTopic",
     "RUN_EVENT_TOPICS",
+    "DESIGN_RUN_EVENT_TOPICS",
+    "RUN_EVENT_SUBJECT_KINDS",
+    "PROJECT_RUN_SUBJECT_KIND",
+    "DESIGN_RUN_SUBJECT_KIND",
     "RunEventRow",
     "emit_run_event",
     "list_run_events",

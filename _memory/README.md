@@ -27,6 +27,12 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-10-part2-d7-close.md` — **Part II D7 CLOSED:** one durable stream serves design —
+  run_event/stream_token widened with generic subject_kind/subject_id (a02cbcb6e641),
+  design_run_event dropped (eb9c5b963f40); lease-fenced emitter, self-contained terminals,
+  single-use subject-bound tokens with workspace-from-token; editor on a fetch-stream client,
+  wire contract byte-preserved; suite 548/9/0. D8 backlog inventoried.
+- `2026-08-10-part2-d7a-subject-widening.md` / `…-d7b-stream-unification.md` — D7 round detail.
 - `2026-08-10-part2-d6-close.md` — **Part II D6 CLOSED:** 49 design_* tools (classes in
   lumen_api/toolbelt/, clue_api lazy-registers; always-present, refusing when runtime off);
   one ToolInvoker write path for REST + agent over the shared A9/journal tables; no-bypass

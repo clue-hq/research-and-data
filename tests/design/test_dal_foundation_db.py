@@ -21,13 +21,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from clue_db import db_lifespan
-from clue_design import runs as design_runs
 from clue_design.errors import DesignNotFoundError
-from clue_design.sequences import (
-    allocate_envelope_seq,
-    allocate_operation_sequence,
-    allocate_run_event_seq,
-)
+from clue_design.sequences import allocate_envelope_seq, allocate_operation_sequence
 from tests.design.conftest import run_async
 
 
@@ -99,28 +94,25 @@ def test_allocator_refuses_foreign_and_absent_parents_identically(
     run_async(_check())
 
 
-def test_run_event_allocator_locks_the_run_row(require_design_db: None) -> None:
+def test_the_run_event_allocator_is_gone_with_its_table(require_design_db: None) -> None:
+    """D7 deleted ``allocate_run_event_seq`` along with ``design_run_event``.
+
+    A design run's stream ids are the platform ``run_event`` outbox's own global identity column
+    now — assigned by the database, so there is nothing to allocate and no parent row to lock. The
+    two surviving allocators (documents' envelopes and op-log) are unaffected; this test pins the
+    deletion so the allocator cannot quietly come back without its table.
+    """
+    import clue_design.sequences as sequences
+
+    assert not hasattr(sequences, "allocate_run_event_seq")
+    assert sequences.__all__ == ["allocate_envelope_seq", "allocate_operation_sequence"]
+
     async def _check() -> None:
-        ws, run = _ws("runev"), f"run_{uuid4().hex}"
         async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
-            await conn.execute(
-                text("INSERT INTO workspace (workspace_id, name) VALUES (:w, :w)"),
-                {"w": ws},
-            )
-            await conn.execute(
-                text(
-                    # D5 columns are NOT NULL; this raw insert stands in for a run the DAL
-                    # would have created, so it derives its work id the same way create_run
-                    # does and makes the checkpoint thread the run id.
-                    "INSERT INTO design_agent_run"
-                    " (run_id, workspace_id, work_id, checkpoint_thread_id, kind, status)"
-                    " VALUES (:r, :w, :work_id, :r, 'agent_turn', 'running')"
-                ),
-                {"r": run, "w": ws, "work_id": design_runs.work_id_for_run(run)},
-            )
-            assert await allocate_run_event_seq(conn, run_id=run, workspace_id=ws) == 1
-            with pytest.raises(DesignNotFoundError):
-                await allocate_run_event_seq(conn, run_id=f"run_{uuid4().hex}", workspace_id=ws)
+            present = (
+                await conn.execute(text("SELECT to_regclass('public.design_run_event')"))
+            ).scalar_one()
+            assert present is None, "design_run_event survived the D7 migration"
             await txn.rollback()
 
     run_async(_check())

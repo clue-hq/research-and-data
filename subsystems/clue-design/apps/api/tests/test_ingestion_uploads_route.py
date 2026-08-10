@@ -232,7 +232,10 @@ def test_ingest_assets_happy_path_persists_kit_and_report(
     assert body["schema_version"] == 1
     job = body["job"]
     assert job["kind"] == "asset_upload"
-    assert job["status"] == "queued", job
+    # `queued` OR `running`: the POST re-reads the job after create-and-offer, and the
+    # embedded fleet worker (0.1s poll) may already have claimed it — a pure scheduling race,
+    # and both are snapshots of a successfully-created job (D5: `queued` is alive, not idle).
+    assert job["status"] in {"queued", "running"}, job
     job_id = job["job_id"]
 
     wait_for_ingestion_job(client, job_id)

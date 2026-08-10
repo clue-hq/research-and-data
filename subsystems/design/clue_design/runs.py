@@ -1,12 +1,17 @@
-"""Agent-run DAL (Part II slices D2.5A + D5) — the design API's ``agent_runs`` / ``run_events``
-domain, now also the design **durable-job** surface.
+"""Agent-run DAL (Part II slices D2.5A + D5 + D7) — the design API's ``agent_runs`` domain, and
+the design **durable-job** surface.
 
-Faithful port of ``lumen_api.database.Repository``'s run methods onto ``design_agent_run`` +
-``design_run_event`` (PD contract §5 rows 16–17). D5 reshapes the run row onto the durable job
-pattern (``work_id``, ``checkpoint_thread_id``, ``kind``, the frozen ``payload`` envelope, lease
-observability) and adds the claim CAS the fleet worker drives it through; ``design_run_event``
-still keeps its **temporary shape** and is retired at D7 in favour of ``design.*`` topics on the
-platform ``run_event`` stream.
+Faithful port of ``lumen_api.database.Repository``'s run methods onto ``design_agent_run``
+(PD contract §5 row 16). D5 reshapes the run row onto the durable job pattern (``work_id``,
+``checkpoint_thread_id``, ``kind``, the frozen ``payload`` envelope, lease observability) and adds
+the claim CAS the fleet worker drives it through.
+
+**D7 retired the run's event log from this module.** ``design_run_event`` (PD row 17, always
+labelled temporary) is dropped; leg activity is now ``design.*`` topics on the platform
+``run_event`` stream. ``append_run_event`` / ``list_run_events`` / ``complete_run`` are gone with
+it, and so is the boot-sweep read ``list_running_runs_across_workspaces`` (caller-less since D5
+Round B). What stays here is the run ROW — including the two facts the stream write is fenced and
+clocked by, :func:`run_lease_generation` and :func:`touch_run`.
 
 The D5 additions, in one place:
 
@@ -15,10 +20,10 @@ The D5 additions, in one place:
   frozen turn envelope.
 * :func:`claim_run_for_execution` — the generation-fenced CAS a worker claims a run through.
 * :func:`get_run_by_work_id` — the fleet-plane read that resolves a work id back to its run.
-* ``expected_generation=`` on :func:`set_run_result` / :func:`complete_run` /
-  :func:`append_run_event` (D5 Round B) — the zombie fence. A synchronous turn body abandoned by
-  a fenced-out worker must not overwrite the takeover's run; the guard refuses those writes with
-  :class:`~clue_design.errors.DesignRunFencedError` instead.
+* ``expected_generation=`` on :func:`set_run_result` (D5 Round B) — the zombie fence. A synchronous
+  turn body abandoned by a fenced-out worker must not overwrite the takeover's run; the guard
+  refuses those writes with :class:`~clue_design.errors.DesignRunFencedError` instead. Since D7 the
+  same fence guards the run's stream writes, one level up, off :func:`run_lease_generation`.
 * :func:`list_dispatched_running_runs` / :func:`reoffer_stranded_run` / :func:`fail_stranded_run`
   (D5 Round C) — the stranded-work surface. A run whose worker died without landing ANY terminal
   row would otherwise sit ``running`` forever; the reaper hands it back to ``queued`` once and
@@ -30,13 +35,6 @@ What the port changes, and why:
 * **Fail-closed tenancy.** Every read and write is keyed ``(run_id, workspace_id)``, so a run
   belonging to another tenant is indistinguishable from one that does not exist
   (:class:`DesignNotFoundError` either way — the D2 error-taxonomy rule).
-* **Race-free sequence allocation.** SQLite assigned ``run_events.seq`` with
-  ``SELECT COALESCE(MAX(seq),0)+1``, race-free only under its single-writer assumption; the
-  comment at that call site ("only the run's own background thread appends") was already fragile,
-  and the orphan sweep appends from a *different* thread than the worker. :func:`append_run_event`
-  now allocates through :func:`clue_design.sequences.allocate_run_event_seq`, which takes a
-  ``FOR UPDATE`` lock on the parent run row — **inside the caller's single transaction**, the
-  binding O5 atomicity rule. Allocation and insert can never be split across bridge calls.
 * **``document_id`` is a real FK, so a dangling id is stored as NULL.**
   ``design_agent_run_document_fk`` references ``design_document (id, workspace_id)`` (SQLite
   deliberately had no FK). The live ``POST /agent/turns`` route passes the *editor's* document id
@@ -49,8 +47,7 @@ What the port changes, and why:
   reshape owns the real answer: subject columns instead of a document pointer.)
 
 Callers own the transaction (one logical operation = one transaction — the O5 rule); nothing
-here commits. Mappers reproduce ``agent_run_from_row`` / ``run_event_from_row`` exactly, with
-ISO-string timestamps.
+here commits. Mappers reproduce ``agent_run_from_row`` exactly, with ISO-string timestamps.
 """
 
 from __future__ import annotations
@@ -66,7 +63,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_design._codec import JsonObject, dump_json, dump_json_opt, iso, load_json, load_json_opt
 from clue_design.enums import DesignRunKind
 from clue_design.errors import DesignNotFoundError, DesignRunFencedError
-from clue_design.sequences import allocate_run_event_seq
 
 #: The shipped run-id shape (``run_<uuid4 hex>``), which :func:`work_id_for_run` inverts exactly.
 #: Byte-identical to the D5 migration's backfill regex, deliberately — see that function.
@@ -116,7 +112,7 @@ def _agent_run_job_from_row(row: Any) -> JsonObject:
 
     Carries ``workspace_id`` because its readers are fleet-plane: they resolve a work id first
     and only then know which tenant's store to work in (the same reason
-    :func:`list_running_runs_across_workspaces` returns it).
+    :func:`list_dispatched_running_runs` returns it).
     """
     return {
         "run_id": row.run_id,
@@ -133,15 +129,6 @@ def _agent_run_job_from_row(row: Any) -> JsonObject:
         "leased_at": iso(row.leased_at),
         "created_at": iso(row.created_at),
         "updated_at": iso(row.updated_at),
-    }
-
-
-def _run_event_from_row(row: Any) -> JsonObject:
-    return {
-        "seq": row.seq,
-        "type": row.event_type,
-        "data": load_json(row.data_json),
-        "created_at": iso(row.created_at),
     }
 
 
@@ -236,7 +223,7 @@ async def get_run_by_work_id(conn: AsyncConnection, *, work_id: UUID) -> JsonObj
     """Resolve a fleet work id to its run's durable-job view, or ``None``.
 
     Deliberately **not** workspace-scoped — the second read in this module that is not, and for
-    the same structural reason as :func:`list_running_runs_across_workspaces`: a worker pulling a
+    the same structural reason as :func:`list_dispatched_running_runs`: a worker pulling a
     task off the queue holds a work id and nothing else, so the workspace is what this read is
     *for*, not a predicate it could already supply. ``work_id`` is globally unique
     (``design_agent_run_work_id_unique``) and unguessable, and the returned row carries
@@ -380,55 +367,6 @@ async def set_run_result(
         raise DesignRunFencedError(run_id, expected_generation, current)
 
 
-async def complete_run(
-    conn: AsyncConnection,
-    *,
-    workspace_id: str,
-    run_id: str,
-    status: str,
-    result: JsonObject | None,
-    event_type: str,
-    event_data: JsonObject | None = None,
-    expected_generation: int | None = None,
-) -> int:
-    """Land a run's terminal result AND its terminal marker event in ONE transaction.
-
-    Every caller that finishes a run does both writes back to back — the worker on success
-    ('result'), the worker's catch-all on failure ('error'), and the restart sweep. Under SQLite
-    those were two fast local commits, so the window in which a reader could see a terminal
-    *status* with no terminal *event* was invisible; on Postgres, through the O5 bridge, each
-    call is its own engine + round trip and the window is milliseconds wide — wide enough that
-    a run-snapshot poller reliably caught the half-finished state (found by the async-turn test
-    at D2.5A: status ``succeeded``, events ``[]``).
-
-    Fusing them removes the interleaving rather than narrowing it: a reader sees the run either
-    entirely running or entirely finished. Order inside the transaction matters too — the result
-    is written BEFORE the marker, so the SSE stream, which reads the run row the moment it sees a
-    terminal event, can never read a result that has not been committed yet.
-
-    ``expected_generation`` (D5) fences BOTH writes at once — see :func:`set_run_result`. Because
-    the result write comes first and raises :class:`DesignRunFencedError` before the marker is
-    appended, a fenced-out zombie adds neither a result nor an event: the SSE stream a takeover
-    worker is feeding never sees a terminal-then-more-events sequence from the dead run.
-    """
-    await set_run_result(
-        conn,
-        workspace_id=workspace_id,
-        run_id=run_id,
-        status=status,
-        result=result,
-        expected_generation=expected_generation,
-    )
-    return await append_run_event(
-        conn,
-        workspace_id=workspace_id,
-        run_id=run_id,
-        event_type=event_type,
-        data=event_data,
-        expected_generation=expected_generation,
-    )
-
-
 async def list_running_runs(conn: AsyncConnection, *, workspace_id: str) -> list[JsonObject]:
     """Runs still 'running' in this workspace, each with its document's ``doc_kind`` (NULL when
     the run has no document) — the ported LEFT JOIN, now a real join in one query."""
@@ -450,48 +388,6 @@ async def list_running_runs(conn: AsyncConnection, *, workspace_id: str) -> list
     ]
 
 
-async def list_running_runs_across_workspaces(conn: AsyncConnection) -> list[JsonObject]:
-    """Every 'running' run in the DATABASE, with its owning ``workspace_id``.
-
-    Deliberately **not** workspace-scoped — the one read in this module that is not, and the
-    reason is structural rather than a relaxation of the tenancy rule: its only caller is the
-    API's startup orphan sweep, and a process restart orphans the in-flight turns of *every*
-    workspace the dead process was serving (turns run on daemon threads inside that process, so
-    at startup every 'running' row is an orphan by construction). A workspace-scoped sweep would
-    leave every other tenant's runs stuck 'running' forever, which is the exact live failure
-    (2026-07-29) the sweep exists to prevent.
-
-    The rows carry ``workspace_id`` precisely so the caller fails each run through a
-    workspace-CORRECT store; nothing here writes, and no run payload is returned.
-    (Its CALLER died at D5 Round B — a leased durable job needs no restart sweep, and a boot
-    sweep would now destroy recoverable work. The function itself survives as an unwired
-    operator/diagnostic read; the D5 Round C reaper deliberately does NOT use it, because judging
-    a stranded row needs the lease columns and the re-offer counter, which
-    :func:`list_dispatched_running_runs` returns and this one does not.)
-    """
-    rows = (
-        await conn.execute(
-            text(
-                "SELECT r.run_id, r.workspace_id, r.document_id, d.doc_kind"
-                " FROM design_agent_run r"
-                " LEFT JOIN design_document d"
-                "   ON d.id = r.document_id AND d.workspace_id = r.workspace_id"
-                " WHERE r.status = 'running'"
-                " ORDER BY r.created_at ASC, r.run_id ASC"
-            )
-        )
-    ).fetchall()
-    return [
-        {
-            "run_id": row.run_id,
-            "workspace_id": row.workspace_id,
-            "document_id": row.document_id,
-            "doc_kind": row.doc_kind,
-        }
-        for row in rows
-    ]
-
-
 # --- the stranded-work surface (D5 Round C) ----------------------------------------------------
 #
 # S4 boundary: these three read and write the DESIGN row only. Whether a stranded-looking run's
@@ -504,8 +400,8 @@ async def list_dispatched_running_runs(conn: AsyncConnection) -> list[JsonObject
     """Every ``running`` run in the DATABASE with its lease facts — the reaper's input.
 
     Unscoped by workspace for the same structural reason as
-    :func:`list_running_runs_across_workspaces`: a stranded run belongs to whichever tenant owns
-    it, and a per-tenant sweep would leave every other tenant's runs stuck ``running`` forever.
+    :func:`get_run_by_work_id`: a stranded run belongs to whichever tenant owns it, and a
+    per-tenant sweep would leave every other tenant's runs stuck ``running`` forever.
     Nothing here writes and no turn payload is returned — only the identifiers and lease facts the
     reaper needs to decide.
 
@@ -578,9 +474,9 @@ async def fail_stranded_run(
 
     Guarded on ``status = 'running'`` so a run that finished between the reaper's read and its
     write is left alone — the reaper never overwrites a real outcome with ``stranded``. The
-    terminal marker event is NOT appended here: the reaper lands it in the same transaction
-    through :func:`append_run_event`, which is what keeps the SSE stream's terminal contract
-    (result committed before the event that announces it) intact.
+    terminal marker event is NOT emitted here: the reaper lands it in the same transaction
+    through ``lumen_api.run_stream.fenced_emit``, which is what keeps the stream's terminal
+    contract (result committed before the event that announces it) intact.
     """
     row = (
         await conn.execute(
@@ -597,75 +493,42 @@ async def fail_stranded_run(
     return None if row is None else _agent_run_job_from_row(row)
 
 
-# --- run events (the polled SSE log; dies at D7) -----------------------------------------------
+# --- the run's activity stream: the fence primitives it is written under (D7) ------------------
+#
+# ``design_run_event`` and its DAL (``append_run_event`` / ``list_run_events``) are GONE. Design
+# leg activity is now ``design.*`` topics on the platform ``run_event`` stream, written through
+# ``clue_execution.run_events`` — which ``clue_design`` may not import (the design substrate imports
+# only core + db + config + obs + storage). So the *stream* write lives at the composition root
+# (``lumen_api.run_stream.fenced_emit``) and the two design-row facts that write depends on — the
+# lease fence and the staleness clock — are exported here, where the run row lives.
 
 
-async def append_run_event(
-    conn: AsyncConnection,
-    *,
-    workspace_id: str,
-    run_id: str,
-    event_type: str,
-    data: JsonObject | None,
-    expected_generation: int | None = None,
-) -> int:
-    """Append one event and bump the run's ``updated_at``; returns the allocated ``seq``.
+async def run_lease_generation(
+    conn: AsyncConnection, *, workspace_id: str, run_id: str
+) -> int | None:
+    """This run's current ``lease_generation`` (``None`` = never claimed).
 
-    The seq comes from :func:`allocate_run_event_seq` under a ``FOR UPDATE`` lock on the parent
-    run row, **in this same transaction** as the INSERT that consumes it (the O5 rule) — so
-    concurrent appenders serialize instead of colliding on
-    ``design_run_event_seq_unique (run_id, seq)``. The allocator is also the existence/tenancy
-    gate: an unknown or cross-workspace run raises :class:`DesignNotFoundError` before anything
-    is written.
-
-    ``expected_generation`` (D5) is the same zombie fence :func:`set_run_result` documents, applied
-    to the progress stream: a worker that has been taken over must stop polluting the run's event
-    log with the dead attempt's progress. Checked BEFORE the seq is allocated, so a fenced writer
-    neither consumes a sequence number nor holds the run row's ``FOR UPDATE`` lock.
+    The public form of the fence read :func:`set_run_result` uses internally. Its caller is
+    ``lumen_api.run_stream.fenced_emit``, which must refuse a taken-over worker's stream write
+    exactly as ``append_run_event`` did — BEFORE anything is written, so a fenced writer leaves no
+    trace at all. Raises :class:`DesignNotFoundError` for an unknown or cross-workspace run.
     """
-    if expected_generation is not None:
-        current = await _current_lease_generation(conn, workspace_id=workspace_id, run_id=run_id)
-        if current is not None and current > expected_generation:
-            raise DesignRunFencedError(run_id, expected_generation, current)
-    seq = await allocate_run_event_seq(conn, run_id=run_id, workspace_id=workspace_id)
-    await conn.execute(
-        text(
-            "INSERT INTO design_run_event (workspace_id, run_id, seq, event_type, data_json)"
-            " VALUES (:w, :r, :seq, :t, CAST(:data AS jsonb))"
-        ),
-        {
-            "w": workspace_id,
-            "r": run_id,
-            "seq": seq,
-            "t": event_type,
-            "data": dump_json(data or {}),
-        },
-    )
+    return await _current_lease_generation(conn, workspace_id=workspace_id, run_id=run_id)
+
+
+async def touch_run(conn: AsyncConnection, *, workspace_id: str, run_id: str) -> None:
+    """Bump the run's ``updated_at`` — the side effect ``append_run_event`` used to carry.
+
+    Not cosmetic: ``updated_at`` is the **reaper's staleness clock**
+    (:func:`list_dispatched_running_runs` orders by it and ``_old_enough`` gates on it), so a long
+    turn that only ever emits progress
+    events must keep proving it is alive. Losing this with the old table would have made a healthy
+    but chatty run look stranded. Silent on an unknown run: the caller has already established
+    existence through :func:`run_lease_generation`.
+    """
     await conn.execute(
         text(
             "UPDATE design_agent_run SET updated_at = now() WHERE run_id = :r AND workspace_id = :w"
         ),
         {"r": run_id, "w": workspace_id},
     )
-    return seq
-
-
-async def list_run_events(
-    conn: AsyncConnection, *, workspace_id: str, run_id: str, after_seq: int = 0
-) -> list[JsonObject]:
-    """The SSE replay read: this run's events after ``after_seq``, oldest first.
-
-    Fail-closed by construction — the workspace predicate means a cross-tenant ``run_id`` reads
-    an empty list, the same answer an unknown run gives.
-    """
-    rows = (
-        await conn.execute(
-            text(
-                "SELECT * FROM design_run_event"
-                " WHERE run_id = :r AND workspace_id = :w AND seq > :after"
-                " ORDER BY seq ASC"
-            ),
-            {"r": run_id, "w": workspace_id, "after": after_seq},
-        )
-    ).fetchall()
-    return [_run_event_from_row(row) for row in rows]

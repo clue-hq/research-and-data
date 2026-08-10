@@ -148,13 +148,20 @@ _GOVERNED: dict[str, tuple[str, tuple[str, ...]]] = {
 #: construction*, not a backlog:
 #:
 #: the durable RUN LIFECYCLE (``create_run`` / ``set_run_result`` / ``complete_run`` /
-#: ``append_run_event``) is the EXECUTION plane. Those writes are made by a leased fleet worker
+#: ``emit_run_event``) is the EXECUTION plane. Those writes are made by a leased fleet worker
 #: driving a run it already owns, and they are fenced by the ``work_lease`` generation (the D5
 #: contract) — not by an idempotency key a caller supplies. Putting them behind the toolbelt
 #: would add a second, weaker authority over writes the lease already arbitrates, and would
 #: mean a worker journaling an invocation for every progress event of a run that is itself a
 #: journaled invocation. The one caller-initiated half — the ENQUEUE — is governed
 #: (``create_run_and_offer``, ``create_and_offer``).
+#:
+#: **D7 renamed one member and changed nothing else about the category.** ``append_run_event``
+#: (the private ``design_run_event`` log) became ``emit_run_event`` (a ``design.run.event`` on the
+#: platform outbox). The exemption argument is unchanged and, if anything, stronger: the emit is
+#: now the *projection* of an already-governed durable write, so routing it through the toolbelt
+#: would journal an invocation whose only effect is to announce another invocation. The set stays
+#: closed at four, asserted by equality below.
 #:
 #: Two facade methods were DELETED rather than governed, because nothing called them:
 #: ``set_document_account`` (the derive path sets the account inside ``create_web_document``) and
@@ -165,7 +172,7 @@ UNCONVERTED_MUTATIONS: frozenset[str] = frozenset(
         "create_run",
         "set_run_result",
         "complete_run",
-        "append_run_event",
+        "emit_run_event",
     }
 )
 
@@ -255,7 +262,9 @@ def test_unconverted_domains_are_explicitly_listed() -> None:
     Round C closed the last scheduled domain, so this list is now an exhaustive statement of an
     EXEMPTION rather than a backlog: the execution plane's run-lifecycle writes, fenced by the
     fleet lease. The equality assertion is the point — a future round cannot quietly park a new
-    ungoverned write here without changing this test.
+    ungoverned write here without changing this test. (D7 renamed ``append_run_event`` to
+    ``emit_run_event`` when the private event log became a subject on the platform outbox; the
+    category, and its size, are unchanged.)
     """
     from lumen_api.design_store import HybridRepository
 
@@ -263,7 +272,7 @@ def test_unconverted_domains_are_explicitly_listed() -> None:
         assert hasattr(HybridRepository, name), f"{name} is no longer a store method"
     assert not (set(_GOVERNED) & UNCONVERTED_MUTATIONS)
     assert UNCONVERTED_MUTATIONS == frozenset(
-        {"create_run", "set_run_result", "complete_run", "append_run_event"}
+        {"create_run", "set_run_result", "complete_run", "emit_run_event"}
     )
 
 

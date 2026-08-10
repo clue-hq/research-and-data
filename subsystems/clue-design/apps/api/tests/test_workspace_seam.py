@@ -13,8 +13,13 @@ The exemptions are exactly three, each because the caller *cannot* send a header
 * ``/w/{workspace_id}/...`` — the O6b public serving group, which names its tenant in the PATH
   because an anonymous visitor sends no headers at all.
 
-Plus one near-exemption: ``GET /agent/runs/{id}/events`` accepts ``?workspace_id=`` because
-``EventSource`` cannot set request headers — same strictness, different carrier.
+There used to be a fourth, near-exemption: ``GET /agent/runs/{id}/events`` accepted
+``?workspace_id=`` because ``EventSource`` cannot set request headers. **D7 closed it.** The stream
+is now opened with a single-use token, minted through a header-authenticated ``POST
+/agent/runs/{id}/stream-token``, and the tenant is read off the token row. So the events GET is
+headerless-but-*token-gated* (not exempt: it is authenticated, just not by a header it cannot
+send), and the mint POST is inside the seam like everything else. The two tests at the bottom pin
+exactly that.
 """
 
 from __future__ import annotations
@@ -103,7 +108,7 @@ def test_the_public_publish_group_is_exempt(bare: TestClient, workspace_id: str)
     assert bare.get("/w/ws_not_a_tenant/p/seam-page").status_code == 404
 
 
-def test_the_run_event_stream_accepts_a_query_workspace_because_eventsource_cannot_send_headers(
+def test_the_run_event_stream_is_token_gated_and_takes_no_workspace_parameter(
     client: TestClient, bare: TestClient, workspace_id: str
 ) -> None:
     from lumen_api.design_store import HybridRepository
@@ -115,13 +120,20 @@ def test_the_run_event_stream_accepts_a_query_workspace_because_eventsource_cann
         run_id, "succeeded", {"status": "proposed"}, "result", {"status": "proposed"}
     )
 
-    # No header at all is still a 401 — strictness is not relaxed, only the carrier changes.
-    assert bare.get(f"/agent/runs/{run_id}/events").status_code == 401
-    streamed = bare.get(f"/agent/runs/{run_id}/events?workspace_id={workspace_id}")
+    # The MINT is inside the seam: no header, no token.
+    assert bare.post(f"/agent/runs/{run_id}/stream-token").status_code == 401
+    minted = client.post(f"/agent/runs/{run_id}/stream-token")
+    assert minted.status_code == 200
+    token = minted.json()["stream_token"]
+
+    # The GET needs no header — but a naked GET buys nothing, and neither does naming a workspace.
+    assert bare.get(f"/agent/runs/{run_id}/events").status_code == 422
+    assert (
+        bare.get(f"/agent/runs/{run_id}/events?workspace_id={workspace_id}").status_code == 422
+    )
+    streamed = bare.get(f"/agent/runs/{run_id}/events?stream_token={token}")
     assert streamed.status_code == 200
     assert "event: done" in streamed.text
-    # A header-carrying (non-browser) client needs no query param.
-    assert "event: done" in client.get(f"/agent/runs/{run_id}/events").text
 
 
 def test_the_stream_is_fail_closed_against_another_tenants_run(
@@ -133,9 +145,7 @@ def test_the_stream_is_fail_closed_against_another_tenants_run(
     repo = HybridRepository(workspace_id="ws_seam_owner")
     repo.create_run(run_id, None)
 
-    # Naming someone else's workspace in the query string buys nothing you did not already have:
-    # the run is simply absent from the caller's own tenant.
-    assert (
-        bare.get(f"/agent/runs/{run_id}/events?workspace_id=ws_seam_intruder").status_code
-        == 404
-    )
+    # The intruder holds a valid workspace header — and still cannot reach another tenant's run:
+    # the mint 404s (indistinguishable from absent), so no token for that stream can ever exist.
+    intruder = TestClient(client.app, headers={"X-Workspace-Id": "ws_seam_intruder"})
+    assert intruder.post(f"/agent/runs/{run_id}/stream-token").status_code == 404

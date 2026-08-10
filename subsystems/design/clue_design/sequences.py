@@ -1,12 +1,15 @@
 """Per-parent sequence allocation for the design history tables (Part II slice D2.1).
 
-The merged design subsystem assigned ``operation_log.sequence`` / ``edit_envelopes.seq`` /
-``run_events.seq`` with ``SELECT COALESCE(MAX(..),0)+1`` — race-free only under SQLite's
+The merged design subsystem assigned ``operation_log.sequence`` / ``edit_envelopes.seq``
+with ``SELECT COALESCE(MAX(..),0)+1`` — race-free only under SQLite's
 single-writer assumption. The D1 contract (PD §4) replaces that with allocation under a
 ``SELECT … FOR UPDATE`` row lock on the parent (``design_document`` / ``design_agent_run``):
 concurrent allocators serialize on the parent row, so each transaction sees the true MAX and
-sequences stay gapless and per-parent monotonic — the property the undo substrate and the SSE
-event ids rely on.
+sequences stay gapless and per-parent monotonic — the property the undo substrate relies on.
+
+(A third allocator, ``allocate_run_event_seq``, died at D7 with ``design_run_event``: the design
+run's stream ids are now the platform ``run_event`` table's own global ``seq``, which the database
+assigns — nothing to allocate, and nothing to lock the run row for.)
 
 Contract (O5 atomicity rule, binding): **the allocation and the insert that uses it must live
 in ONE transaction on ONE connection** — the returned number is only safe while the parent
@@ -27,7 +30,6 @@ from clue_design.errors import DesignNotFoundError
 __all__ = [
     "allocate_envelope_seq",
     "allocate_operation_sequence",
-    "allocate_run_event_seq",
 ]
 
 
@@ -98,23 +100,4 @@ async def allocate_operation_sequence(
         child_table="design_operation_log",
         child_fk="document_id",
         seq_column="sequence",
-    )
-
-
-async def allocate_run_event_seq(conn: AsyncConnection, *, run_id: str, workspace_id: str) -> int:
-    """Next ``design_run_event.seq`` for an agent run, under the run row lock.
-
-    (Temporary with its table — dies at D7 when design events move to the platform
-    ``run_event`` stream.)
-    """
-    return await _allocate(
-        conn,
-        parent_table="design_agent_run",
-        parent_pk="run_id",
-        parent_kind="design_agent_run",
-        parent_id=run_id,
-        workspace_id=workspace_id,
-        child_table="design_run_event",
-        child_fk="run_id",
-        seq_column="seq",
     )

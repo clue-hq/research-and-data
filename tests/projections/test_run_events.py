@@ -18,6 +18,7 @@ from clue_api.run_events_wiring import DbRunEventEmitter, plan_phase_events
 from clue_core import ProjectPhase, new_project_run_id
 from clue_projections import plan_replay
 from clue_research.durable import (
+    PROJECT_RUN_SUBJECT_KIND,
     RUN_EVENT_TOPICS,
     ProjectRunStatus,
     RunEventTopic,
@@ -125,6 +126,10 @@ def test_run_event_seq_is_monotone_and_tenant_scoped() -> None:
             )
             # Monotone per workspace (a strictly-increasing subsequence of the global seq).
             assert e1.seq < e2.seq < e3.seq
+            # D7: the signature and semantics of emit_run_event did not change — it stamps the
+            # project-run subject itself, so no existing call site had to learn the new columns.
+            assert e1.subject_kind == PROJECT_RUN_SUBJECT_KIND
+            assert e1.subject_id == str(run_a) and e1.run_id == run_a
             ws_events = await list_run_events(conn, workspace_id=_WS)
             assert [e.seq for e in ws_events] == sorted(e.seq for e in ws_events)
             assert {e.seq for e in ws_events} == {e1.seq, e2.seq, e3.seq}

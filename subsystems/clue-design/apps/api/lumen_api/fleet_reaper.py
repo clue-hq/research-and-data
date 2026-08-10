@@ -80,6 +80,8 @@ from py_lumen_obs import get_logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from . import run_stream
+
 JsonObject = Dict[str, Any]
 
 logger = get_logger("lumen_api.fleet_reaper")
@@ -218,16 +220,21 @@ async def sweep_stranded_runs(
         if terminal is None:
             skipped_queued += 1
             continue
-        # The terminal marker event, in the SAME transaction as the result — the run-event
-        # contract ``complete_run`` holds for the worker path (result committed before the event
-        # that announces it) must hold for the reaper's terminal write too, or the editor's SSE
-        # stream would sit on a finished run forever waiting for an event that never came.
-        await design_runs.append_run_event(
+        # The terminal stream event, in the SAME transaction as the result — the contract
+        # ``run_stream.complete_run_and_emit`` holds for the worker path (result committed before
+        # the event that announces it) must hold for the reaper's terminal write too, or the
+        # editor's SSE stream would sit on a finished run forever waiting for an event that never
+        # came. D7: it is a ``design.run.failed`` on the platform outbox now, and it carries the
+        # stranded result envelope IN its payload — so the stream serves the reaper's ``done``
+        # frame from the event alone, with no read-back of the run row.
+        await run_stream.fenced_emit(
             conn,
             workspace_id=row["workspace_id"],
             run_id=row["run_id"],
-            event_type="error",
-            data={"message": f"{STRANDED_CODE}: {reason}"},
+            topic=run_stream.FAILED_TOPIC,
+            payload=run_stream.terminal_payload(
+                "error", {"message": f"{STRANDED_CODE}: {reason}"}, terminal["result"]
+            ),
         )
         failed += 1
         logger.error(

@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import (
     Depends,
@@ -80,11 +80,11 @@ from .database import (
     WebPublishRevisionConflict,
     utc_now,
 )
+from . import run_stream
 from .design_store import (
     DesignBlobStore,
     HybridRepository,
     read_public_design_blob,
-    resolve_stream_workspace_id,
     resolve_workspace_id,
 )
 from .font_library import manifest as font_library_manifest
@@ -177,7 +177,7 @@ from clue_execution import OperationConflict
 from clue_toolbelt import IdempotencyConflict, PreconditionFailed
 from pydantic import ValidationError
 
-from .toolbelt.wiring import DesignToolInvocations, design_tool_host
+from .toolbelt.wiring import DesignRunSubject, DesignToolInvocations, design_tool_host
 from .observability import (
     REQUEST_ID_HEADER,
     artifact_summary,
@@ -211,13 +211,9 @@ def _bridge_uvicorn_loggers() -> None:
 
 _AGENT_RELEVANT_PREFIXES = ("/agent", "/documents")
 
-# Run-events SSE idle cadence (live-design-streaming D2). Poll the durable
-# run_events table fast so authoring batches (compile/asset-placement ops) land
-# on the canvas promptly; emit the keepalive comment slowly so a quiet run does
-# not spam a comment every poll. Keepalive fires once every
-# ~ceil(KEEPALIVE / POLL) idle polls. Replay semantics are unchanged.
-_RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS = 0.25
-_RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS = 1.0
+# The run-event SSE cadence constants moved to ``lumen_api.run_stream`` at D7, with the rest of the
+# stream: it is one seam now (emit, auth, replay, frame), and a cadence knob two modules away from
+# the loop it paces is how the two drift.
 
 
 def _is_agent_relevant(path: str) -> bool:
@@ -749,8 +745,9 @@ def create_app(
         # (content-addressed public bytes the PUBLISHED page and the origin-"null" preview
         # iframe load — a custom header there would fail CORS preflight), and the
         # /w/{workspace_id}/... public serving group, which names its tenant in the path (O6b).
-        # The run-event SSE stream names its tenant in the query string (EventSource cannot send
-        # headers) and is equally strict.
+        # The run-event SSE stream WAS a fourth ("?workspace_id=", because EventSource cannot send
+        # headers); D7 closed it — the stream is opened with a single-use token minted through this
+        # very dependency, and its workspace is read off the token row.
         return HybridRepository(workspace_id=resolve_workspace_id(request))
 
     def public_repository(workspace_id: str) -> HybridRepository:
@@ -2885,98 +2882,90 @@ def create_app(
             "schema_version": 1,
             "run_id": run_id,
             "status": run["status"],
-            "events": repo.list_run_events(run_id, after_seq=0),
+            "events": repo.list_run_events(run_id),
             "result": run["result"],
         }
 
-    @app.get("/agent/runs/{run_id}/events")
-    async def stream_agent_run_events(run_id: str, request: Request):
-        # The one route whose tenant cannot come from X-Workspace-Id: EventSource cannot set
-        # request headers, so the workspace rides the query string and is resolved just as
-        # strictly (same 401, same `workspace.header_required` code). Same shape as O6b's
-        # path-scoped public routes; dies with the polled stream at D7.
-        workspace_id = resolve_stream_workspace_id(request)
+    @app.post("/agent/runs/{run_id}/stream-token")
+    def mint_agent_run_stream_token(
+        run_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Mint the single-use token that opens this run's event stream (D7, R-D7-B4).
 
-        def read_run() -> Optional[JsonObject]:
-            return HybridRepository(workspace_id=workspace_id).get_run(run_id)
+        Header-authenticated like every other design route — that is the whole point. The stream
+        itself cannot carry ``X-Workspace-Id`` (the browser opens it with a bare GET), and until
+        D7 it took ``?workspace_id=`` instead: a tenant *claim* in a query string, strict about
+        being present but unable to be strict about being true. Now the tenant is proven HERE,
+        recorded on the token row, and read back out of it when the stream opens.
 
-        def poll_once(
-            after_seq: int,
-        ) -> tuple[List[JsonObject], Optional[JsonObject]]:
-            # One store per poll iteration: read the new events and, only when the caller needs
-            # it (an idle poll, or a terminal event just arrived), the run row — reusing the SAME
-            # store rather than building a second one for a separate read_run. Replay semantics
-            # are unchanged: events still drive `last_seq`, and the run row supplies the terminal
-            # result exactly as before.
-            #
-            # POLL COST (accepted, interim): the O5 bridge builds a private engine per call — so
-            # a 4 Hz stream pays two engine setups per second per subscriber. Accepted for the
-            # bridge's lifetime — which, per the D5 Round C ruling in ``design_store``, runs to
-            # the SURFACE work (Part IV / Part-I Step-2) rather than ending at D5: D5 made the
-            # WORKER path async-native, not the request paths. The whole polling loop dies at D7
-            # anyway, when design events move onto the platform run-event stream and this becomes
-            # a subscription rather than a poll.
-            store = HybridRepository(workspace_id=workspace_id)
-            events = store.list_run_events(run_id, after_seq=after_seq)
-            needs_run = (not events) or any(
-                event["type"] in ("result", "error") for event in events
-            )
-            run = store.get_run(run_id) if needs_run else None
-            return events, run
-
-        # Resume point: EventSource re-sends Last-Event-ID on auto-reconnect;
-        # an explicit ?after= (used by resume-on-mount after a snapshot fetch)
-        # takes precedence.
-        header_id = request.headers.get("last-event-id")
-        after_param = request.query_params.get("after")
-        try:
-            start_seq = int(after_param if after_param is not None else header_id or 0)
-        except (TypeError, ValueError):
-            start_seq = 0
-
-        if await asyncio.to_thread(read_run) is None:
+        404 on an unknown or cross-tenant run, indistinguishable — the same posture as the run
+        snapshot above, and it is what stops an authenticated caller from holding open live tails
+        against arbitrary ids.
+        """
+        if repo.get_run(run_id) is None:
             raise HTTPException(
                 status_code=404, detail=f"agent_run {run_id} was not found"
             )
+        return {
+            "schema_version": 1,
+            "stream_token": repo.mint_run_stream_token(run_id),
+        }
 
-        async def event_stream():
-            last_seq = start_seq
-            yield "retry: 1000\n\n"
-            # Emit the keepalive comment only once every ~1s of idle polling
-            # even though we poll every 250ms (D2: poll fast, keepalive slow).
-            polls_per_keepalive = max(
-                1,
-                round(
-                    _RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS
-                    / _RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS
-                ),
+    @app.get("/agent/runs/{run_id}/events")
+    async def stream_agent_run_events(
+        run_id: str,
+        request: Request,
+        stream_token: str = Query(...),
+    ):
+        """This run's activity, as Server-Sent Events. Token-gated; NO workspace parameter.
+
+        The token is consumed up front — single-use, subject-bound, and the only statement of
+        tenancy this route accepts. A used / expired / wrong-run / unknown token is one 401 with
+        one message: they must be indistinguishable, or the refusal itself becomes an oracle for
+        which runs exist.
+
+        Framing is unchanged from the polled era (R-D7-B1): ``progress`` frames carrying
+        ``{seq, type, data, created_at}`` and one terminal ``done`` frame carrying the run's result
+        envelope. ``?after=`` still wins over ``Last-Event-ID``; both are now cursors into the
+        platform outbox's global seq rather than a per-run counter.
+        """
+        try:
+            token = UUID(stream_token)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "code": "stream.token_invalid",
+                    "message": "A valid single-use stream token is required.",
+                },
+            ) from exc
+        workspace_id = await run_stream.consume_run_stream_token_isolated(
+            token=token, run_id=run_id
+        )
+        if workspace_id is None:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "code": "stream.token_invalid",
+                    "message": "A valid single-use stream token is required.",
+                },
             )
-            idle_polls = 0
-            while True:
-                if await request.is_disconnected():
-                    return
-                events, run = await asyncio.to_thread(poll_once, last_seq)
-                for event in events:
-                    last_seq = event["seq"]
-                    if event["type"] in ("result", "error"):
-                        yield sse_frame(event["seq"], "done", (run or {}).get("result"))
-                        return
-                    yield sse_frame(event["seq"], "progress", event)
-                if not events:
-                    # Terminal with no terminal event yet (defensive): the run
-                    # finished but the marker append lost the race — close out.
-                    if run and run["status"] in ("succeeded", "failed"):
-                        yield sse_frame(last_seq, "done", run.get("result"))
-                        return
-                    if idle_polls % polls_per_keepalive == 0:
-                        yield ": keepalive\n\n"
-                    idle_polls += 1
-                    await asyncio.sleep(_RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS)
-                else:
-                    idle_polls = 0
+
+        # Resume point: the streaming client re-sends Last-Event-ID on reconnect; an explicit
+        # ?after= (resume-on-mount after a snapshot fetch) still takes precedence.
+        header_id = request.headers.get("last-event-id")
+        after_param = request.query_params.get("after")
+        try:
+            cursor: Optional[int] = int(
+                after_param if after_param is not None else header_id or 0
+            )
+        except (TypeError, ValueError):
+            cursor = 0
 
         return StreamingResponse(
-            event_stream(),
+            run_stream.stream_run_events(
+                workspace_id=workspace_id, run_id=run_id, cursor=cursor
+            ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -7735,7 +7724,9 @@ def _turn_blob_store(host: Any, workspace_id: str) -> DesignBlobStore:
     )
 
 
-def _turn_design_tools(host: Any) -> DesignToolInvocations:
+def _turn_design_tools(
+    host: Any, subject: Optional[DesignRunSubject] = None
+) -> DesignToolInvocations:
     """The governed design write path for one turn (Part II D6, ruling R-D6-5).
 
     The deep agent's two durable component writes (source + compile) go through the SAME tools
@@ -7744,6 +7735,10 @@ def _turn_design_tools(host: Any) -> DesignToolInvocations:
     here is whichever one is driving the turn (the live ``app.state`` under the embedded worker,
     the fleet handler's frozen turn host under a detached one), so a test's injected storage and
     stubbed compiler reach the tools unchanged.
+
+    ``subject`` (D7) names the run these invocations belong to and the lease generation they are
+    fenced by, so each one's journal events also reach that run's event stream. It is ``None`` for
+    any caller with no run in flight — the tools then journal exactly as before and emit nothing.
     """
     storage = host.storage if host.storage is not None else storage_from_settings()
     return DesignToolInvocations(
@@ -7766,6 +7761,7 @@ def _turn_design_tools(host: Any) -> DesignToolInvocations:
             compile_fn=lambda: compile_custom_component,
         ),
         storage=storage,
+        run_subject=subject,
     )
 
 
@@ -7799,11 +7795,14 @@ def execute_agent_turn_job(
     host: Any,
     event_sink: Any,
     checkpointer: Any = None,
+    lease_generation: Optional[int] = None,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One scene-mode turn, executed from its frozen envelope.
 
     ``store`` is unused here and used heavily by the web executor: the two share a signature so
-    the handler can select one by kind and call it identically.
+    the handler can select one by kind and call it identically. ``lease_generation`` (D7) is part
+    of that shared signature for the same reason — the scene path makes no governed tool calls of
+    its own, so it has nothing to fence with it.
     """
     payload = AgentTurnPreviewRequest.model_validate(envelope.config.get("request") or {})
     # An explicit None means "resolved: this turn has no references" — distinct from the
@@ -7846,13 +7845,20 @@ def execute_web_turn_job(
     host: Any,
     event_sink: Any,
     checkpointer: Any = None,
+    lease_generation: Optional[int] = None,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One website-mode turn, executed from its frozen envelope.
 
     Unlike the scene path this executor OWNS the persist: an applied result is replayed against
     the stored document and committed under the envelope's ``base_version``, so a turn that took
     minutes can never silently clobber a human edit made while it ran.
+
+    ``lease_generation`` (D7) fences the run-event side of this turn's governed tool invocations,
+    exactly as it fences the executor's progress sink and its terminal write.
     """
+    run_subject = DesignRunSubject(
+        run_id=envelope.run_id, lease_generation=lease_generation
+    )
     request = envelope.config.get("request") or {}
     payload = WebTurnRequest.model_validate(request)
     account_card = envelope.config.get("account_card")
@@ -7891,7 +7897,7 @@ def execute_web_turn_job(
                     # D6 (R-D6-5): the registry's two durable writes route through the governed
                     # design tools. The compiler knobs it used to hold are now the tool host's
                     # thunks, resolved the same way off-request as on it.
-                    invocations=_turn_design_tools(host),
+                    invocations=_turn_design_tools(host, run_subject),
                 )
                 if isinstance(component_account_id, str) and component_account_id
                 else None
@@ -7954,7 +7960,7 @@ def execute_web_turn_job(
                             # `base_version` as the CAS. The operation-replay verification
                             # above stays HERE and stays loud: it is a precondition on trusting
                             # the agent's own history, and it needs the engine.
-                            _turn_design_tools(host).invoke(
+                            _turn_design_tools(host, run_subject).invoke(
                                 "design_apply_web_operations",
                                 {
                                     "document_id": document_id,
@@ -8046,12 +8052,6 @@ def execute_ingestion_job(
     )
     job = IngestionJobStore(workspace_id=workspace_id).get(envelope.job_id)
     return str((job or {}).get("status") or "unknown")
-
-
-def sse_frame(seq: int, event: str, data: Any) -> str:
-    """One Server-Sent Events frame. `id:` carries the monotonic run-event
-    seq so the browser's EventSource replays from it via Last-Event-ID."""
-    return f"id: {seq}\nevent: {event}\ndata: {json.dumps(data)}\n\n"
 
 
 # D5 Round B (R-D5-B1): ``ensure_agent_runtime_path`` is DELETED. It inserted

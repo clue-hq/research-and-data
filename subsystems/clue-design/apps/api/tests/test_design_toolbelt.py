@@ -30,7 +30,7 @@ from clue_toolbelt import PreconditionFailed
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from conftest import make_client
+from conftest import make_client, unique_run_id
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 from test_web_export import find_node, get_document, seed_document
@@ -353,3 +353,107 @@ def test_a_refused_write_is_journaled_as_blocked_and_never_cached(app: Any) -> N
         {"w": workspace()},
     )
     assert len(blocked) == 1, "a refused design write is a durably visible blocked node"
+
+
+# --- 4. D7: a run-bound invocation reaches the run's event stream -----------------------------
+
+
+def _run_stream_rows(run_id: str) -> list[dict[str, Any]]:
+    return query(
+        "SELECT topic, payload FROM run_event WHERE workspace_id = :w "
+        "AND subject_kind = 'design_run' AND subject_id = :r ORDER BY seq",
+        {"w": workspace(), "r": run_id},
+    )
+
+
+def test_a_request_path_invocation_emits_nothing_to_any_run_stream(app: Any) -> None:
+    """No run in flight, no subject — so the transport writes nothing rather than inventing one.
+
+    This is the honest half of D7's transport change: a human on a REST route is not part of any
+    run, and stamping their invocation onto some run's stream (or minting a fake subject for it)
+    would put events on a timeline they do not belong to. The JOURNAL still records everything.
+    """
+    # Delta, not absolute: the design suite shares one workspace, so another test's run-bound
+    # invocation must not be able to make this one pass or fail.
+    before = query(
+        "SELECT count(*) AS n FROM run_event WHERE workspace_id = :w AND subject_kind = "
+        "'design_run'",
+        {"w": workspace()},
+    )[0]["n"]
+    invoke(app, "design_create_web_account", {"account_id": "acc_no_run", "name": "Loose"})
+    after = query(
+        "SELECT count(*) AS n FROM run_event WHERE workspace_id = :w AND subject_kind = "
+        "'design_run'",
+        {"w": workspace()},
+    )[0]["n"]
+    assert after == before
+
+
+def _claim(run_id: str, generation: int) -> None:
+    """Move the run's lease generation forward — a takeover, in one statement."""
+
+    async def run() -> None:
+        engine = create_engine()
+        try:
+            async with engine.connect() as conn, conn.begin():
+                await conn.execute(
+                    text(
+                        # The whole lease trio, or the design_agent_run_lease_shape CHECK
+                        # (all-or-nothing, D5) refuses the row.
+                        "UPDATE design_agent_run SET lease_generation = :g, leased_by = 'takeover',"
+                        " leased_at = now(), status = CAST('running' AS design_run_status)"
+                        " WHERE run_id = :r"
+                    ),
+                    {"g": generation, "r": run_id},
+                )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(run())
+
+
+def test_a_run_bound_invocation_streams_its_journal_events_and_is_lease_fenced(
+    app: Any,
+) -> None:
+    """The D6 residual closed: a governed design write made *during a turn* is now visible to
+    whoever is watching that turn, and a fenced-out worker's writes are not."""
+    from lumen_api.toolbelt.wiring import DesignRunSubject
+
+    repo = HybridRepository(workspace())
+    run_id = unique_run_id("toolstream")
+    repo.create_run(run_id, None)
+
+    bound = app.state.design_tools.bound_to(
+        DesignRunSubject(run_id=run_id, lease_generation=None)
+    )
+    bound.invoke(
+        "design_create_web_account",
+        {"account_id": "acc_in_run", "name": "Bound"},
+        workspace_id=workspace(),
+    )
+
+    rows = _run_stream_rows(run_id)
+    assert rows, "a run-bound invocation must reach the run it belongs to"
+    assert {row["topic"] for row in rows} == {"design.run.event"}
+    # The design ``event_type`` slot carries the JOURNAL's vocabulary here — the invocation's own
+    # lifecycle — which is the honest thing for a tool call to put on a run's timeline.
+    kinds = [row["payload"]["event_type"] for row in rows]
+    assert kinds[-1] == "execution.completed"
+    assert "node.completed" in kinds
+
+    # Now fence the run out from under a stale worker: a generation-1 holder writing after the
+    # row moved to generation 5 emits nothing, and the journal still commits its invocation.
+    _claim(run_id, 5)
+    before = len(rows)
+    stale = app.state.design_tools.bound_to(
+        DesignRunSubject(run_id=run_id, lease_generation=1)
+    )
+    stale.invoke(
+        "design_create_web_account",
+        {"account_id": "acc_zombie", "name": "Zombie"},
+        workspace_id=workspace(),
+    )
+    assert len(_run_stream_rows(run_id)) == before, "a fenced worker must not pollute the stream"
+    assert HybridRepository(workspace()).get_web_account("acc_zombie") is not None, (
+        "the fence guards the STREAM, never the governed write itself"
+    )

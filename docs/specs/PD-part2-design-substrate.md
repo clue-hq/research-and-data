@@ -102,7 +102,31 @@ no-bypass guard (`test_write_path_governance.py`) enforces the gate mechanically
 mutation callable only from the toolbelt, the exemption set (the four fleet-lease-fenced run
 lifecycle writes) closed by equality. Gates: design-API suite **543/9/0**; `tests/design`+
 `tests/fleet`+registry/guard suites 206; agent-runtime 551/2; offline 2199; db-smoke green;
-single head `2711924d1e29`; mypy 592; 25/25 contracts). Next: D7 (events), then D8 (closeout). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
+single head `2711924d1e29`; mypy 592; 25/25 contracts).
+**D7 EXECUTED 2026-08-10** (two migrations: `a02cbcb6e641` widens `run_event` + `stream_token`
+with a generic `subject_kind`/`subject_id` pair; `eb9c5b963f40` **drops `design_run_event`**).
+The design leg is now a subject on the platform outbox — `design.run.event` / `.completed` /
+`.failed`, the free `event_type` vocabulary riding in the payload — written through ONE lease-fenced
+emitter (`lumen_api/run_stream.py::fenced_emit`, which also carries `append_run_event`'s
+`updated_at` side effect, the reaper's staleness clock). The terminal event is **self-contained**
+(it carries the full result envelope), so the SSE `done` frame needs no read-back of the run row.
+**One auth model:** `?workspace_id=` is gone — the stream is opened with a single-use,
+subject-bound `stream_token` minted through a header-authenticated
+`POST /agent/runs/{id}/stream-token` (404 on an unknown/cross-tenant run), and the workspace is
+derived from the token row; the token DAL moved to `clue_execution.stream_tokens` (re-exported by
+`clue_api.stream_tokens`) because `lumen_api` may not import the app layer. The D6 no-op tool
+run-event transport is now real: a governed write made *during a turn* reaches that run's stream,
+lease-fenced; a REST-path invocation still emits nothing (no subject to key it on). Deleted: the
+polled SSE route + cadence constants + `sse_frame`, `allocate_run_event_seq`, `append_run_event` /
+`list_run_events` / `complete_run` in `clue_design.runs`, `list_running_runs_across_workspaces`,
+`resolve_stream_workspace_id`. The editor's wire contract is preserved byte-for-byte (two event
+names, `{seq, type, data, created_at}` progress bodies, `?after=`, 0.25s live-tail); its native
+`EventSource` is replaced by a ~180-line fetch-stream client that owns the mint → connect →
+re-mint-and-resume-from-`Last-Event-ID` handshake. Gates: design-API suite **548/9/0** (543 baseline + 5 new);
+six-suite set 206 + `tests/durable`+`tests/projections`+`test_run_event_subjects` 246 = **452/1s**;
+agent-runtime **551/2**; offline **2204/1537**; editor `tsc` clean + vitest **993/101**; db-smoke
+green through both migrations; single head `eb9c5b963f40`; mypy 594; 25/25 contracts.
+Next: D8 (closeout). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
 by the founder 2026-08-07** (with refinements — see §6); **O6b RATIFIED 2026-08-08: option
 (a)**. **PENDING FOUNDER RATIFICATION (D2.2 field decision):** migration `7a9881f9717a`
 extended O6's workspace-locality to every design id namespace that is client-supplied
@@ -228,7 +252,7 @@ chained off `c6d84aa84b79`, one head throughout.
 | 14 | `instance_batches` | `design_instance_batch` | PK `batch_id text`; composite FK → revision; `status` enum, `binding_set_ids_json`/`export_formats_json jsonb`, `chunk_size`/`cursor int` (resume seam — superseded by fleet in D5 but ported as-is), `counts_json`/`manifest_json`/`diagnostics_json jsonb`, `export_profile_json jsonb NULL`, timestamps. |
 | 15 | `repair_queue` | `design_repair_request` | PK `repair_id text` (deterministic `rep_…` — kept); composite FKs → revision, binding set, instance (SET NULL); `slot_key`, `node_id`, `reason`, `status` enum, timestamps. |
 | 16 | `agent_runs` | `design_agent_run` | **Temporary shape** (reshaped in D5 onto the fleet job pattern: `lease_generation`, `checkpoint_thread_id`, subject columns — the `entity_research_job` precedent). D1/D2 port: PK `run_id text` (`run_…`); `status` enum (`running`\|`succeeded`\|`failed`); `document_id` composite FK SET NULL (real FK now); `result_json jsonb`; timestamps. |
-| 17 | `run_events` | `design_run_event` | **Explicitly temporary — dies in D7** (replaced by `design.*` topics on the platform `run_event` stream; subject widening follows the C5.1 precedent: nullable design-subject FK column + partial index, NOT a repurposed `run_id`). D1/D2 port: PK `id bigint identity`; composite FK → `design_agent_run` CASCADE; `seq int` UNIQUE `(run_id, seq)` via parent-row lock; `event_type text` (free vocabulary preserved), `data_json jsonb`, `created_at`. |
+| 17 | `run_events` | ~~`design_run_event`~~ → `run_event` (`subject_kind='design_run'`) | **DROPPED at D7** (migration `eb9c5b963f40`), exactly as this row always said it would be. Design leg activity is now `design.run.event` / `.completed` / `.failed` on the platform `run_event` outbox, with the free `event_type` vocabulary riding *in* the payload. **Deviation from this row's original sketch, deliberate:** the widening is the master plan's *generic* `subject_kind`/`subject_id` pair (D7 Round A, migration `a02cbcb6e641`), not a "nullable design-subject FK column + partial index". A generic subject grows to Part-III's taxonomy without a schema change; the price, stated plainly, is that `subject_id` **cannot carry an FK**, so a design run id in `run_event` has no referential integrity to `design_agent_run` and no CASCADE. Retention/pruning is unbuilt and is D8's (see the capacity note in `lumen_api/run_stream`). Event ids are the outbox's global `seq`, so the per-run `FOR UPDATE` allocator died with the table. |
 | 18 | `ingestion_jobs` | `design_ingestion_job` | PK `job_id text` (`ingest_…`); `kind` enum (`website`\|`pdf`\|`asset_upload`), `status` enum (`queued`\|`running`\|`succeeded`\|`failed`), `stage`, `progress real` (0–1 CHECK), `request_json jsonb` (staged-file `tmp_path`s move to platform storage keys in D4), `evidence_json jsonb`, result pointer `(brand_kit_id, brand_kit_version)` composite FK SET NULL (real now), `error_json jsonb`, timestamps. Index `(workspace_id, status, created_at)`. Execution → fleet in D5 (fixes the no-orphan-sweep restart hole). |
 | 19 | `web_publishes` | `design_web_publish` | **PK `(workspace_id, slug)` — O6 RATIFIED** (slugs workspace-local; global URL uniqueness is a serving-layer concern; interim `/p/{slug}` ambiguity rule = O6b, ratify at D2). `document_id` composite FK; `doc_version int`, `html`/`previous_html text` (one-step rollback buffer), `previous_doc_version`, `runtime_version`, `status` enum (`active`\|`unpublished`), `publish_id`/`previous_publish_id` FKs → `design_web_publish_revision` (real now), timestamps NOT NULL. Index `(workspace_id, document_id, updated_at DESC)` (fixes the unindexed lookup). |
 | 20 | `web_publish_revisions` | `design_web_publish_revision` | PK `publish_id text` (`webpub_<package_digest>` — content-hash, shape CHECK); `slug`, composite doc FK; `doc_version`, `html text`, `html_digest`, `manifest_json jsonb`, `manifest_digest`, `package_digest`, `runtime_version`, `created_at`. Immutable: no-UPDATE **and** no-DELETE triggers. Indexes `(workspace_id, slug, created_at DESC)`, `(workspace_id, document_id, created_at DESC)`. |

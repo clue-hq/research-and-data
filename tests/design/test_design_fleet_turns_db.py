@@ -30,6 +30,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from lumen_api import run_stream
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -126,10 +127,10 @@ async def _read_run(workspace_id: str, run_id: str) -> dict[str, Any]:
 
 
 async def _read_events(workspace_id: str, run_id: str) -> list[dict[str, Any]]:
+    """The run's stream in the editor's row shape — since D7 that is the platform ``run_event``
+    outbox filtered to this run's subject, read back through the same mapper the SSE route uses."""
     async with transaction() as conn:
-        return await design_runs.list_run_events(
-            conn, workspace_id=workspace_id, run_id=run_id, after_seq=0
-        )
+        return await run_stream.run_snapshot_events(conn, workspace_id=workspace_id, run_id=run_id)
 
 
 async def _await_condition(probe: Any, *, timeout: float = 15.0, label: str = "") -> Any:
@@ -348,7 +349,7 @@ def test_the_generation_fence_refuses_stale_terminal_writes_and_stale_events() -
 
             # The abandoned generation-1 writer is refused on BOTH durable surfaces.
             with pytest.raises(DesignRunFencedError) as terminal_error:
-                await design_runs.complete_run(
+                await run_stream.complete_run_and_emit(
                     conn,
                     workspace_id=workspace_id,
                     run_id=run_id,
@@ -361,7 +362,7 @@ def test_the_generation_fence_refuses_stale_terminal_writes_and_stale_events() -
             assert terminal_error.value.current_generation == 5
 
             with pytest.raises(DesignRunFencedError):
-                await design_runs.append_run_event(
+                await run_stream.emit_progress(
                     conn,
                     workspace_id=workspace_id,
                     run_id=run_id,
@@ -370,19 +371,19 @@ def test_the_generation_fence_refuses_stale_terminal_writes_and_stale_events() -
                     expected_generation=1,
                 )
 
-            # Refused, not partially applied: no result, no status change, no event.
+            # Refused, not partially applied: no result, no status change, no event. D7 keeps this
+            # exact guarantee on the shared outbox — ``fenced_emit`` checks the generation BEFORE
+            # it writes, so a fenced-out zombie leaves the stream completely unpolluted.
             run = await design_runs.require_run(conn, workspace_id=workspace_id, run_id=run_id)
             assert run["status"] == "running"
             assert run["result"] is None
             assert (
-                await design_runs.list_run_events(
-                    conn, workspace_id=workspace_id, run_id=run_id, after_seq=0
-                )
+                await run_stream.run_snapshot_events(conn, workspace_id=workspace_id, run_id=run_id)
                 == []
             )
 
             # The LIVE holder writes through the same fence unimpeded.
-            await design_runs.complete_run(
+            await run_stream.complete_run_and_emit(
                 conn,
                 workspace_id=workspace_id,
                 run_id=run_id,

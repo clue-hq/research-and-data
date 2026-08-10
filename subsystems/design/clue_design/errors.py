@@ -63,8 +63,9 @@ class DesignArtifactConflictError(DesignStoreError):
 class DesignRunFencedError(DesignStoreError):
     """A terminal write was refused: the run's lease generation has moved past the writer's.
 
-    Raised by the D5 terminal-write guards (``set_run_result`` / ``complete_run`` /
-    ``append_run_event`` under an ``expected_generation``). It names the ONE hazard the fleet
+    Raised by the D5 terminal-write guard (``set_run_result`` under an ``expected_generation``)
+    and, since D7, by the run's stream writer (``lumen_api.run_stream.fenced_emit``, which is what
+    ``complete_run_and_emit`` and the progress sink go through). It names the ONE hazard the fleet
     switch introduces: the design turn body is synchronous and is executed under
     ``asyncio.to_thread``, so a worker that loses its lease can only stop *cooperatively* — it
     returns immediately, but the thread it abandoned keeps running and may still try to write a

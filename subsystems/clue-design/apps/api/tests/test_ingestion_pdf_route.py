@@ -185,9 +185,10 @@ def test_ingest_pdf_happy_path_persists_kit_and_report(
     assert body["schema_version"] == 1
     job = body["job"]
     assert job["kind"] == "pdf"
-    # POST returns the queued job; the background task runs after the response
-    # is serialized (TestClient runs it synchronously before unblocking).
-    assert job["status"] == "queued", job
+    # `queued` OR `running`: the POST re-reads the job after create-and-offer, and the
+    # embedded fleet worker (0.1s poll) may already have claimed it — a pure scheduling race,
+    # and both are snapshots of a successfully-created job (D5: `queued` is alive, not idle).
+    assert job["status"] in {"queued", "running"}, job
     job_id = job["job_id"]
 
     wait_for_ingestion_job(client, job_id)
@@ -249,7 +250,10 @@ def test_ingest_pdf_failure_marks_job_failed_and_cleans_tmp(
     post = _post_pdf(client)
     assert post.status_code == 200, post.text
     job = post.json()["job"]
-    assert job["status"] == "queued", job
+    # `queued` OR `running`: the POST re-reads the job after create-and-offer, and the
+    # embedded fleet worker (0.1s poll) may already have claimed it — a pure scheduling race,
+    # and both are snapshots of a successfully-created job (D5: `queued` is alive, not idle).
+    assert job["status"] in {"queued", "running"}, job
     job_id = job["job_id"]
 
     wait_for_ingestion_job(client, job_id)

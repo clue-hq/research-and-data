@@ -23,15 +23,17 @@ layer). Two things therefore differ from ``clue_api.execution_wiring.build_tool_
    ``design_store``). So each invocation owns a private engine for its own event loop, and the
    factory hands the journal/idempotency/artifact writers independent transactions from it.
    Every one of those writers still commits independently, exactly as on the platform.
-2. **The run-event transport is a documented no-op.** ``build_tool_invoker`` wires
-   ``ExecutionRunEventWriter`` → ``clue_research.durable.emit_run_event``, i.e. the platform's
-   per-workspace SSE outbox. A design subsystem must not import research internals (the seam
-   discipline), and a design invocation has no ``project_run`` to key that stream on. The
-   *journal* — the durable, authoritative part — is written in full; only the outbox projection
-   is skipped, because design already has its own ``design_run_event`` stream. **D7 retires that
-   stream and unifies the two** (the master plan's ``subject_kind``/``subject_id`` widening);
-   until then, minting a second design-specific event transport would be exactly the thing D7
-   has to unpick.
+2. **The run-event transport is subject-keyed, not project-run-keyed (D7).** ``build_tool_invoker``
+   wires ``ExecutionRunEventWriter`` → ``clue_research.durable.emit_run_event``, which stamps a
+   ``project_run`` subject. A design invocation has no project run, and a design subsystem must not
+   import research internals anyway — so the design composition wires
+   :class:`_DesignRunEventTransport`, which emits the SAME rows onto the SAME ``run_event`` outbox
+   under ``subject_kind='design_run'``. At D6 this was a documented no-op ("design already has its
+   own ``design_run_event`` stream"); D7 dropped that stream, so the no-op became the last hole in
+   the unified one — a governed design write was journaled but invisible to anyone watching the
+   run. It now reaches the stream, fenced by the run's lease exactly like the turn's own progress.
+   A REST invocation (a human on a route, no run in flight) still writes nothing: there is no
+   subject to key it on, and inventing one would be worse than silence.
 
 The public surface is deliberately SYNCHRONOUS (:meth:`DesignToolInvocations.invoke`): design
 routes are ``def``, not ``async def``, and the deep agent's component registry is called from a
@@ -45,6 +47,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -59,6 +62,7 @@ from clue_execution import (
     ParameterArtifactStore,
     StoredParameterArtifact,
 )
+from clue_design.errors import DesignNotFoundError, DesignRunFencedError
 from clue_storage import StorageBackend, get_artifact, record_artifact
 from clue_toolbelt import (
     Actor,
@@ -69,17 +73,22 @@ from clue_toolbelt import (
     ToolRegistry,
     ToolResult,
 )
+from py_lumen_obs import get_logger
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from ..design_store import _ensure_workspace
+from ..run_stream import PROGRESS_TOPIC, fenced_emit, progress_payload
 from .base import DesignToolHost
 from .factory import build_design_tools
 
 __all__ = [
+    "DesignRunSubject",
     "DesignToolInvocations",
     "design_operation_id",
     "design_tool_host",
 ]
+
+logger = get_logger("lumen_api.toolbelt")
 
 #: How long an A9 record stays replayable. Mirrors the platform default
 #: (``Settings.toolbelt_idempotency_ttl_s``) without importing ``clue_config`` settings into a
@@ -164,8 +173,37 @@ class _DesignParameterArtifactStore(ParameterArtifactStore):
         )
 
 
-class _NoRunEventTransport:
-    """The documented no-op outbox writer (see the module docstring, point 2)."""
+@dataclass(frozen=True, slots=True)
+class DesignRunSubject:
+    """The run a batch of tool invocations belongs to, plus the lease generation it is fenced by.
+
+    Present only on the WORKER path: a turn executing under a fleet lease knows both. A REST route
+    knows neither (there is no run), which is exactly why the transport below no-ops without one.
+    """
+
+    run_id: str
+    lease_generation: int | None = None
+
+
+class _DesignRunEventTransport:
+    """Journal → ``run_event`` outbox, keyed on the design run subject (see docstring point 2).
+
+    The journal calls this for every execution event it records, handing it the execution's
+    ``project_run_id`` — or, for design, the execution id standing in for one. That id is NOT the
+    design run, so it is deliberately discarded: the subject comes from the invoker's own
+    :class:`DesignRunSubject`, which is the only thing that knows which turn is driving.
+
+    Two refusals are swallowed rather than propagated, because the JOURNAL is the authoritative
+    record and the outbox is a projection of it — a stream problem must never lose an invocation:
+
+    * ``DesignRunFencedError`` — a taken-over worker's tool call. ``fenced_emit`` raises BEFORE it
+      writes anything, so the journal transaction is untouched and still commits.
+    * ``DesignNotFoundError`` — the run row is gone (or the invocation names a run in another
+      tenant). Same reasoning; logged, not raised.
+    """
+
+    def __init__(self, subject: DesignRunSubject | None) -> None:
+        self._subject = subject
 
     async def append(
         self,
@@ -177,7 +215,27 @@ class _NoRunEventTransport:
         topic: str,
         payload: dict[str, Any],
     ) -> None:
-        del conn, workspace_id, run_id, execution_id, topic, payload
+        del run_id  # the execution's project-run stand-in; a design leg has no project run.
+        subject = self._subject
+        if subject is None:
+            return
+        try:
+            await fenced_emit(
+                conn,
+                workspace_id=workspace_id,
+                run_id=subject.run_id,
+                topic=PROGRESS_TOPIC,
+                payload=progress_payload(topic, dict(payload)),
+                expected_generation=subject.lease_generation,
+                execution_id=execution_id,
+            )
+        except (DesignNotFoundError, DesignRunFencedError):
+            logger.warning(
+                "design_tool.run_event_skipped",
+                run_id=subject.run_id,
+                execution_id=str(execution_id),
+                topic=topic,
+            )
 
 
 def _run_isolated[T](coro: Awaitable[T]) -> T:
@@ -234,16 +292,33 @@ class DesignToolInvocations:
         host: DesignToolHost,
         storage: StorageBackend,
         idempotency_ttl_s: float = DEFAULT_IDEMPOTENCY_TTL_S,
+        run_subject: DesignRunSubject | None = None,
     ) -> None:
+        self._host = host
         self._registry = ToolRegistry()
         for tool in build_design_tools(host):
             self._registry.register(tool, make_default=True)
         self._storage = storage
         self._idempotency_ttl_s = idempotency_ttl_s
+        # D7: present on the worker path (a turn is driving), absent on the request path.
+        self._run_subject = run_subject
 
     @property
     def registry(self) -> ToolRegistry:
         return self._registry
+
+    def bound_to(self, subject: DesignRunSubject) -> "DesignToolInvocations":
+        """The same tools, with their invocations streamed onto ``subject``'s run (D7).
+
+        A cheap re-composition rather than a mutable field: the run subject is fixed for the life
+        of a turn, and an invoker whose subject could change under it would be a race waiting to
+        happen. The registry is rebuilt from the same host, so the tools are identical."""
+        return DesignToolInvocations(
+            host=self._host,
+            storage=self._storage,
+            idempotency_ttl_s=self._idempotency_ttl_s,
+            run_subject=subject,
+        )
 
     def tool(self, name: str) -> Tool:
         return self._registry.get(name)
@@ -302,7 +377,9 @@ class DesignToolInvocations:
                 ),
                 journal=DbInvocationJournal(
                     conn_factory=conn_factory,
-                    repository=DbExecutionJournal(transport=_NoRunEventTransport()),
+                    repository=DbExecutionJournal(
+                        transport=_DesignRunEventTransport(self._run_subject)
+                    ),
                 ),
                 idempotency_store=DbIdempotencyStore(conn_factory=conn_factory),
                 idempotency_ttl_s=self._idempotency_ttl_s,

@@ -24,8 +24,9 @@ checkpoint cannot be short-circuited: the outcome it produced lives in the dead 
 
 Therefore, when a thread already carries state, this module **deletes the thread and re-invokes
 the frozen envelope from the top** — same run, same ``thread_id``, same immutable work
-description, and the run's prior ``design_run_event`` rows are left untouched so the editor's SSE
-stream keeps its history. Every restart is logged loudly (``turn.checkpoint_restart``).
+description, and the run's prior stream events are left untouched so the editor's SSE stream keeps
+its history (``design_run_event`` rows until D7; ``design.run.*`` rows on the platform
+``run_event`` outbox since). Every restart is logged loudly (``turn.checkpoint_restart``).
 
 WHY WIRE THE CHECKPOINTER AT ALL, THEN? Three reasons, all real today:
 1. The graph state becomes durable and inspectable per run — an operator can see how far a dead

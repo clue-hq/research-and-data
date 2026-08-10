@@ -396,7 +396,10 @@ def _execute_turn(
 
     def sink(event_type: str, data: JsonObject) -> None:
         try:
-            store.append_run_event(
+            # D7: the run's progress now lands on the platform ``run_event`` outbox as a
+            # ``design.run.event`` under this run's subject. Same fence, same best-effort
+            # semantics, same call shape — only the substrate underneath changed.
+            store.emit_run_event(
                 envelope.run_id, event_type, data, expected_generation=generation
             )
         except DesignRunFencedError:
@@ -428,6 +431,9 @@ def _execute_turn(
             host=host,
             event_sink=sink,
             checkpointer=checkpointer,
+            # D7: the turn's governed tool invocations reach the same stream, fenced by the same
+            # lease generation (see ``lumen_api.toolbelt.wiring._DesignRunEventTransport``).
+            lease_generation=generation,
         )
 
     try:

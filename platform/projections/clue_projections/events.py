@@ -13,6 +13,12 @@ replayable (backlog of ``seq > cursor``) or is older than the horizon and must b
 client re-fetches the projection, then resumes live). The ``clue_api`` SSE endpoint wraps this with
 the transport concerns — ``stream.hello`` / ``stream.reset`` framing, the live tail loop, and
 single-use stream tokens.
+
+**Subjects (Part II D7).** The outbox is keyed on ``(subject_kind, subject_id)``, not on a project
+run, so a design leg is a first-class stream subject. :func:`plan_replay` is subject-capable; the
+``clue_api`` SSE endpoint stays project-run-scoped this round (it passes ``run_id=`` as before) and
+the design leg mounts its own stream in Round B. The design *emitter* is not reachable from here —
+it lives in ``clue_execution.run_events`` for the import-contract reason documented in that module.
 """
 
 from __future__ import annotations
@@ -47,13 +53,21 @@ async def plan_replay(
     conn: AsyncConnection,
     *,
     workspace_id: str,
-    run_id: ProjectRunId | None,
+    run_id: ProjectRunId | None = None,
+    subject_kind: str | None = None,
+    subject_id: str | None = None,
     last_event_id: int | None,
     horizon_s: float,
     now: datetime | None = None,
     limit: int = 1000,
 ) -> ReplayPlan:
     """Plan a reconnecting consumer's replay from ``last_event_id`` (the ``Last-Event-ID`` cursor).
+
+    The stream is keyed on a **subject** since D7. Name it either way — ``run_id=`` (the
+    project-run stream, exactly as before, which is what the ``clue_api`` SSE endpoint passes) or
+    ``subject_kind=``/``subject_id=`` (the general form, which a design leg's stream uses). Passing
+    neither plans over the whole workspace stream. The horizon/reset decision is subject-agnostic:
+    it is a property of the cursor's row, so the semantics below hold identically for every kind.
 
     * No cursor (a fresh connect) → no reset; backlog is every event so far (``seq > 0``).
     * A cursor whose event is **within** the horizon → no reset; backlog is ``seq > cursor``
@@ -80,6 +94,12 @@ async def plan_replay(
         reset = cursor_ts is None or cursor_ts < cutoff
     effective_cursor = 0 if reset else cursor
     backlog = await list_run_events(
-        conn, workspace_id=workspace_id, run_id=run_id, after_seq=effective_cursor, limit=limit
+        conn,
+        workspace_id=workspace_id,
+        run_id=run_id,
+        subject_kind=subject_kind,
+        subject_id=subject_id,
+        after_seq=effective_cursor,
+        limit=limit,
     )
     return ReplayPlan(reset=reset, backlog=tuple(backlog), effective_cursor=effective_cursor)

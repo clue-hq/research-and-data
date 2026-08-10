@@ -59,18 +59,19 @@ tenant's* data, and every request-path bug of that shape is invisible until it i
 incident. ``default_workspace_id()`` survives only for DIRECT store constructions (scripts, the
 startup sweep, tests) that have no request to read a header from.
 
-Two surfaces genuinely cannot send a header, and both name their tenant in the URL instead:
+One surface genuinely cannot send a header, and names its tenant in the URL instead:
 
 * **Public publish serving** — an anonymous visitor sends no headers at all. O6b (ratified:
   option (a)) puts the workspace in the PATH (``/w/{workspace_id}/p/{slug}``), served through
   main.py's ``public_repository`` dependency, which builds this store with
   ``ensure_workspace=False`` (an anonymous GET must never write) and therefore 404s on an
   unknown tenant through the fail-closed workspace-scoped reads.
-* **The run-event SSE stream** — the browser's ``EventSource`` API cannot set request headers
-  (by specification), so ``GET /agent/runs/{id}/events`` takes ``?workspace_id=`` and resolves it
-  with :func:`resolve_stream_workspace_id`, which is equally strict (same 401, same code). Same
-  reasoning as O6b, same disposability: D7 moves design events onto the platform run-event
-  stream and this special case goes with it.
+
+(The run-event SSE stream used to be a second: ``EventSource`` cannot set request headers, so
+``GET /agent/runs/{id}/events`` took ``?workspace_id=``. **D7 closed it.** The stream is now opened
+with a single-use token minted through a normal header-authenticated ``POST
+/agent/runs/{id}/stream-token``, and the workspace is read off the token row — so the one route
+that could not carry a header no longer carries a *claim* either. See ``lumen_api.run_stream``.)
 
 The dev workspace row is ensured lazily (once per process per workspace) — Part-IV auth deletes
 that scaffolding, and Part-IV item 5 deletes the interim ``/w/{workspace_id}/p/...`` route.
@@ -176,22 +177,20 @@ def resolve_workspace_id(request: Request) -> str:
     return workspace_id
 
 
-def resolve_stream_workspace_id(request: Request) -> str:
-    """The SSE analogue of :func:`resolve_workspace_id`: header **or** ``?workspace_id=``.
+def _run_stream() -> Any:
+    """``lumen_api.run_stream``, imported lazily — deliberately, for import weight.
 
-    ``EventSource`` cannot send custom headers (by specification), so the run-event stream also
-    accepts its tenant in the query string — the same "no header possible, put it in the URL"
-    move O6b makes for the public publish routes, and just as disposable (D7 retires this
-    stream). The header still wins when a non-browser client sends one; what is NOT relaxed is
-    the strictness — neither source present is the same 401 as everywhere else, never a silent
-    dev-workspace fall-back.
+    ``run_stream`` reaches the platform outbox through ``clue_execution.run_events``, and importing
+    any ``clue_execution`` submodule executes that package's ``__init__``, which pulls the fleet
+    worker → ``clue_fleet`` → ``clue_research.durable`` → LangGraph → ``httpx``. This module is the
+    design API's most-imported one (``lumen_ingestion.describe`` imports it, and has a hygiene test
+    pinning that a describe import pulls neither PIL nor httpx), so a module-level import here would
+    make every design process — and every light tool that only wants the store — pay for LangGraph
+    at import time. The three run-stream methods below are the only users; they pay on first call.
     """
-    workspace_id = request.headers.get(_WORKSPACE_HEADER) or request.query_params.get(
-        "workspace_id"
-    )
-    if not workspace_id:
-        raise _workspace_required()
-    return workspace_id
+    from . import run_stream
+
+    return run_stream
 
 
 def _run_isolated[T](coro: "Awaitable[T]") -> T:
@@ -1582,9 +1581,13 @@ class HybridRepository:
         ``expected_generation`` (D5 Round B) is the zombie fence: an abandoned turn thread whose
         worker has been taken over gets :class:`~clue_design.errors.DesignRunFencedError` here
         instead of overwriting the live attempt's result. Callers with no lease (tests, direct
-        scripts) omit it and keep the unfenced behaviour."""
+        scripts) omit it and keep the unfenced behaviour.
+
+        D7 moved the composition up a layer (``run_stream.complete_run_and_emit``): the terminal
+        event now lands on the platform ``run_event`` outbox, which ``clue_design`` may not import.
+        The transaction, the ordering (result first) and the fence are unchanged."""
         return self._bridge._run(
-            lambda conn: design_runs.complete_run(
+            lambda conn: _run_stream().complete_run_and_emit(
                 conn,
                 workspace_id=self.workspace_id,
                 run_id=run_id,
@@ -1596,7 +1599,7 @@ class HybridRepository:
             )
         )
 
-    def append_run_event(
+    def emit_run_event(
         self,
         run_id: str,
         event_type: str,
@@ -1604,15 +1607,16 @@ class HybridRepository:
         *,
         expected_generation: Optional[int] = None,
     ) -> int:
-        """The seq allocation and the insert are ONE DAL coroutine — hence one transaction with
-        the parent run's ``FOR UPDATE`` lock still held (the O5 rule). ``next_run_event_seq`` is
-        therefore deliberately NOT overridden: exposing the allocation as its own bridge call
-        would be exactly the split O5 forbids, and nothing outside this method uses it.
+        """One progress event onto the run's durable stream; returns the outbox seq.
+
+        The D7 successor to ``append_run_event``. The fence check, the emit and the ``updated_at``
+        bump the reaper clocks on are ONE transaction (``run_stream.fenced_emit``) — no seq to
+        allocate any more, because the platform outbox's identity column assigns it.
 
         ``expected_generation`` fences a taken-over attempt's progress events — see
         :meth:`complete_run`."""
         return self._bridge._run(
-            lambda conn: design_runs.append_run_event(
+            lambda conn: _run_stream().emit_progress(
                 conn,
                 workspace_id=self.workspace_id,
                 run_id=run_id,
@@ -1622,13 +1626,28 @@ class HybridRepository:
             )
         )
 
-    def list_run_events(self, run_id: str, after_seq: int = 0) -> List[JsonObject]:
+    def mint_run_stream_token(self, run_id: str) -> str:
+        """Mint this run's single-use SSE token (D7). Header-authenticated by construction: the
+        store is built from the request's ``X-Workspace-Id``, so the token row records a *proven*
+        tenant, which is what lets the stream route derive its workspace from the token instead of
+        trusting a query parameter."""
+        return str(
+            self._bridge._run(
+                lambda conn: _run_stream().mint_run_stream_token(
+                    conn, workspace_id=self.workspace_id, run_id=run_id
+                )
+            )
+        )
+
+    def list_run_events(self, run_id: str) -> List[JsonObject]:
+        """This run's whole stream in the shape ``design_run_event`` served (``{seq, type, data,
+        created_at}``) — the run-snapshot endpoint's ``events`` key, unchanged across the swap.
+
+        The pre-D7 ``after_seq`` parameter is gone: its only caller was the polled SSE loop, which
+        D7 replaced with ``run_stream.stream_run_events``' cursor-driven replay."""
         return self._bridge._run(
-            lambda conn: design_runs.list_run_events(
-                conn,
-                workspace_id=self.workspace_id,
-                run_id=run_id,
-                after_seq=after_seq,
+            lambda conn: _run_stream().run_snapshot_events(
+                conn, workspace_id=self.workspace_id, run_id=run_id
             )
         )
 

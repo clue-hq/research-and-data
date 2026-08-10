@@ -32,17 +32,25 @@ export function editorWorkspaceId(): string {
  * request into a preflight the wildcard CORS response cannot satisfy.
  */
 /**
- * The run-event SSE url, workspace included.
+ * The run-stream handshake pair (design-integration Part II, D7).
  *
- * `EventSource` cannot set request headers (by specification), so this one
- * route takes its tenant in the query string; the API resolves it exactly as
- * strictly as the header (401 when neither is present). The header is not an
- * option here, so the URL is — the same move the public publish routes make
- * with their path.
+ * The stream used to carry its tenant in the query string, because `EventSource`
+ * cannot set request headers — strict about the parameter being present, but
+ * unable to be strict about it being *true*. D7 replaces that with a single-use
+ * token: mint it through a normal header-authenticated POST (`lumenFetch`), then
+ * present it on the GET. The workspace is read off the token row the mint wrote,
+ * so no client-supplied tenant is ever trusted.
  */
-export function runEventsUrl(apiBaseUrl: string, runId: string): string {
+export function runStreamTokenUrl(apiBaseUrl: string, runId: string): string {
+  return new URL(
+    `/agent/runs/${encodeURIComponent(runId)}/stream-token`,
+    apiBaseUrl
+  ).toString();
+}
+
+export function runEventsUrl(apiBaseUrl: string, runId: string, streamToken: string): string {
   const url = new URL(`/agent/runs/${encodeURIComponent(runId)}/events`, apiBaseUrl);
-  url.searchParams.set("workspace_id", editorWorkspaceId());
+  url.searchParams.set("stream_token", streamToken);
   return url.toString();
 }
 
