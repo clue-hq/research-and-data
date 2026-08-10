@@ -60,6 +60,10 @@ the same `surviving_ids` call as the claims. This is the one edit outside F4's s
   `test_agent_turn_wiring_db::test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed`).
 - `tests/integration` — identical failure set before and after the change (6, all Lane E E1/E2/E3).
 - ruff (format + check), mypy (630 files), `lint-imports` (25 contracts) all clean.
+- Whole-repo `pytest`: 20 failures, none F4's — the 6 baseline-matched ones above, 8 that pass in
+  isolation on the changed tree (`tests/sources/test_waterfall.py`, `tests/fleet/test_b4_composed_run_db.py`
+  — whole-run DB-ordering artifacts), and 6 in `tests/discovery_scoring` / `tests/durable` that fail
+  at the pre-F4 tree too (8 there). Those packages cannot import `clue_api` (contract-enforced).
 - No migration. No gateway/judge dependency and no toggle branch in the bridge.
 
 ## Notes / follow-ups
