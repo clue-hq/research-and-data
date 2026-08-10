@@ -73,8 +73,36 @@ the O5 bridge ruling corrected in place — the bridge survives D5 (worker path 
 request paths synchronous by design; retirement owned by Part IV / Step-2). Gates: design-API
 suite 501/9/0; `tests/design`+`tests/fleet` 171; agent-runtime 551/2 with NO path shims; editor
 tsc clean + 989/101; offline platform suite 2199; db-smoke green; single head `ad332dc38f36`;
-mypy 590; 25/25 contracts). Next: D6 (toolbelt),
-then D7 (events), D8 (closeout). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
+mypy 590; 25/25 contracts). **D6 EXECUTED 2026-08-10** (three rounds — every design mutation
+behind a registered, precondition-checked, idempotency-keyed tool. Foundation: **49 design
+tools** (`design_*`) whose classes + operation cores live in `lumen_api/toolbelt/`
+({base,wiring,factory,publishes,accounts,components,documents,web_documents,turns,brand,
+ingestion,assets,personalization}.py); `clue_api.design_tools.build_design_tools` lazy-registers
+them into the platform registry (always present, refusing `design_runtime_not_configured` when
+the runtime is off — the C6 authority audit is an exact-equality gate, so absent-when-disabled
+would make it environment-dependent); the design API composes the platform's own `ToolInvoker`
+over the SAME durable tables (`tool_invocation` A9 idempotency, the C5.1 execution journal,
+artifact-backed parameter snapshots) with two documented differences: per-invocation engine (the
+O5 rule) and a no-op run-event transport (D7 unifies the streams; a design transport now would
+be what D7 unpicks). REST routes and the agent registry call the same tool cores through the
+same invoker — one write path, both actors. Registration ripples: every tool authority-mapped
+`()` with reserved reason `design_agent_not_wired_until_part_iii` (Part III grants); the
+platform registry grew 48→97 default names / 55→104 exact addresses across the three rounds,
+each bump asserted by the count tests. Correctness fixes shipped en route: the scene-path CAS drop closed
+(`expected_base_version` now enforced in the DAL transaction — every scene write was
+last-writer-wins across the engine round-trip); three duplicate-id 500s → typed 409s; the
+brand-kit RMW version bumps serialized; the asset-description unlocked read-merge-write → SQL
+merge; batch resume gained cursor-CAS single-flight (both families); the reaper re-offer
+brand-kit collision → per-job adopt semantics; the publish-revision bare `ValueError` → typed
+409; QR assets content-derived ids; **the generation ledger moved to Postgres**
+(`design_generation_result`, migration `2711924d1e29` — workspace-scoped, keyed on
+`generation_key`, CASCADE FK to `design_asset` so a cached pointer to a deleted asset is
+unrepresentable; the agent-runtime half deliberately stays file-local, a Part-III residual). The
+no-bypass guard (`test_write_path_governance.py`) enforces the gate mechanically: every governed
+mutation callable only from the toolbelt, the exemption set (the four fleet-lease-fenced run
+lifecycle writes) closed by equality. Gates: design-API suite **543/9/0**; `tests/design`+
+`tests/fleet`+registry/guard suites 206; agent-runtime 551/2; offline 2199; db-smoke green;
+single head `2711924d1e29`; mypy 592; 25/25 contracts). Next: D7 (events), then D8 (closeout). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
 by the founder 2026-08-07** (with refinements — see §6); **O6b RATIFIED 2026-08-08: option
 (a)**. **PENDING FOUNDER RATIFICATION (D2.2 field decision):** migration `7a9881f9717a`
 extended O6's workspace-locality to every design id namespace that is client-supplied

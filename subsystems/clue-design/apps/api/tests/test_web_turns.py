@@ -546,6 +546,22 @@ def test_web_turn_account_card_reaches_runner(client: TestClient) -> None:
     }
 
 
+def _plant_document_account(document_id: str, account_id: str) -> None:
+    """Set a document's account column directly (test scaffolding — see the caller)."""
+    from clue_design import documents as design_documents
+    from lumen_api.design_store import DesignStoreBridge
+
+    store = HybridRepository()
+    DesignStoreBridge(store.workspace_id)._run(
+        lambda conn: design_documents.set_document_account(
+            conn,
+            workspace_id=store.workspace_id,
+            document_id=document_id,
+            account_id=account_id,
+        )
+    )
+
+
 def test_web_turn_uses_document_account_when_request_omits_it(client: TestClient) -> None:
     document = create_web_document(client)
     content_doc = ingest_content(client, document["id"])
@@ -553,8 +569,12 @@ def test_web_turn_uses_document_account_when_request_omits_it(client: TestClient
 
     # A derived doc carries its account_id on the row (the B2 derive path would
     # set this; here we set it directly since derive is out of B1 scope).
-    store = HybridRepository()
-    store.set_document_account(document["id"], account_id)
+    #
+    # Straight to the DAL: D6 Round C deleted ``HybridRepository.set_document_account`` because
+    # this scaffold was its ONLY caller in the whole tree, and the D6 gate's choice for a write
+    # nothing performs is to remove it, not to mint a governed tool for it. A test may reach the
+    # DAL; production code may not reach the store without a tool.
+    _plant_document_account(document["id"], account_id)
 
     received: dict = {}
     client.app.state.web_turn_runner = applied_stub_capturing_account(content_doc, received)

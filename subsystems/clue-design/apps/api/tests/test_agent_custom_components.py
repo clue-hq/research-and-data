@@ -60,13 +60,13 @@ export default function AccountMetric({
 
 
 def make_gateway(app, *, account_id: str, document_id: str):
+    # D6 (R-D6-5): the gateway's two durable writes run through the app's governed design
+    # invoker, so an agent write is journaled and A9-keyed exactly like an HTTP one.
     return DurableAgentCustomComponentRegistry(
         blobs=make_blob_store(app),
         account_id=account_id,
         document_id=document_id,
-        node_binary=app.state.custom_component_compiler_node_bin,
-        worker_path=Path(app.state.custom_component_compiler_worker),
-        timeout_seconds=app.state.custom_component_compiler_timeout_seconds,
+        invocations=app.state.design_tools,
     )
 
 

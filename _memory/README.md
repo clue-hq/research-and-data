@@ -27,6 +27,13 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-10-part2-d6-close.md` — **Part II D6 CLOSED:** 49 design_* tools (classes in
+  lumen_api/toolbelt/, clue_api lazy-registers; always-present, refusing when runtime off);
+  one ToolInvoker write path for REST + agent over the shared A9/journal tables; no-bypass
+  guard with equality-closed exemptions; scene CAS drop + 8 more correctness debts paid;
+  generation ledger → Postgres (2711924d1e29); suite 543/9/0; registry 97/104.
+- `2026-08-10-part2-d6a-toolbelt-foundation.md` / `…-d6b-documents-domain.md` /
+  `…-d6c-assets-brand-personalization.md` — D6 round detail.
 - `2026-08-09-part2-d5-close.md` — **Part II D5 CLOSED:** design turns + ingestion are leased
   fleet work (`design_job`, envelope-discriminated); daemon threads + orphan sweep gone;
   generation-fenced zombie writes; Postgres checkpointer with honest resume-as-restart;

@@ -44,7 +44,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, iso, load_json
-from clue_design.errors import DesignNotFoundError
+from clue_design.errors import DesignArtifactConflictError, DesignNotFoundError
 
 # The columns the ported equal-content check compares when a publish id is re-registered.
 _REVISION_COMPARABLE = (
@@ -164,7 +164,11 @@ async def register_web_publish_revision(
     expected = {key: revision.get(key) for key in _REVISION_COMPARABLE}
     expected["publish_id"] = publish_id
     if {key: stored.get(key) for key in _REVISION_COMPARABLE} != expected:
-        raise ValueError(f"publish id {publish_id} already exists with different content")
+        # D6 Round C: this was a bare ``ValueError`` nothing caught — a 500 for what is a
+        # perfectly describable domain refusal. It is the same species the component registry
+        # already names (a content-addressed id re-used with different content), so it raises the
+        # same taxonomy error and the API turns it into a 409 rather than a database.error.
+        raise DesignArtifactConflictError("web_publish_revision", publish_id)
     return stored
 
 

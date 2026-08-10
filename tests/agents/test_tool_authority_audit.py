@@ -39,7 +39,19 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Every addition must have a reviewed role decision here. O2 added the account-deep launch
     # boundary; M8D R10 retires it from every active role (exact historical replay only) and
     # promotes the separately confirmed account/contact entity-research launch and read tools.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 48
+    # Part II D6 Round A: the design subsystem's eight governed write tools join the audit with
+    # NO role — registered so the platform's write-authority surface is complete, granted to
+    # nobody until Part III wires the design deepagent (48 -> 56). Round B adds the documents /
+    # history / diagnostics plane, the website-mode documents and the two turn enqueues on the
+    # same terms (56 -> 76). Round C adds the last twenty-one — brand kits x4, ingestion
+    # enqueues x3, the asset registry x7 and personalization + both batch families x7
+    # (76 -> 97), which empties UNCONVERTED_MUTATIONS on the design side.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 97
+    assert all(
+        C6_AGENT_TOOL_AUTHORITY[name] == ()
+        for name in C6_AGENT_TOOL_AUTHORITY
+        if name.startswith("design_")
+    )
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)

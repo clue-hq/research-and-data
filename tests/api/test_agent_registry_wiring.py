@@ -112,7 +112,67 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # The two proposal v1 addresses remain installed only for historical recipe replay. They add
     # inventory entries but cannot enter the current model surface; only propose_field@2 carries
     # the dynamic Client-KB authority.
-    assert len(by_address) == 55
+    # Part II D6 Round A registers the design subsystem's eight governed write tools; they are
+    # RESERVED on every model surface until Part III wires the design deepagent (55 -> 63).
+    # Round B adds twenty more (documents/history/diagnostics, website documents, turn
+    # enqueues), reserved identically (63 -> 83); Round C adds the final twenty-one
+    # (83 -> 104), completing the design write surface.
+    assert len(by_address) == 104
+    assert {
+        address
+        for address, item in by_address.items()
+        if item.reason_code == "design_agent_not_wired_until_part_iii"
+    } == {
+        "design_apply_edits@1",
+        "design_apply_operations@1",
+        "design_apply_web_operations@1",
+        "design_attach_brand_kit@1",
+        "design_compile_component@1",
+        "design_create_document@1",
+        "design_create_snapshot@1",
+        "design_create_web_account@1",
+        "design_create_web_template@1",
+        "design_delete_web_account@1",
+        "design_derive_web_document@1",
+        "design_finalize_document@1",
+        "design_persist_preflight@1",
+        "design_publish_web@1",
+        "design_record_diagnostics@1",
+        "design_redo_document@1",
+        "design_redo_web_document@1",
+        "design_replace_scene@1",
+        "design_rollback_web_publish@1",
+        "design_set_agent_instructions@1",
+        "design_set_layout_managed_editing@1",
+        "design_start_agent_turn@1",
+        "design_start_web_turn@1",
+        "design_advance_instance_batch@1",
+        "design_advance_web_batch@1",
+        "design_create_brand_compatibility_report@1",
+        "design_create_brand_kit@1",
+        "design_create_instance_batch@1",
+        "design_create_web_batch@1",
+        "design_delete_asset@1",
+        "design_delete_binding_set@1",
+        "design_derive_instance@1",
+        "design_ingest_assets@1",
+        "design_ingest_pdf@1",
+        "design_ingest_website@1",
+        "design_publish_brand_kit_version@1",
+        "design_register_asset_record@1",
+        "design_register_captured_assets@1",
+        "design_register_generated_asset@1",
+        "design_register_qr_asset@1",
+        "design_set_asset_description@1",
+        "design_set_asset_status@1",
+        "design_set_brand_kit_approval@1",
+        "design_upsert_binding_set@1",
+        "design_undo_document@1",
+        "design_undo_web_document@1",
+        "design_unpublish_web@1",
+        "design_update_web_account@1",
+        "design_write_component_source@1",
+    }
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {

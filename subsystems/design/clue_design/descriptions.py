@@ -107,6 +107,62 @@ async def put_ai(
     )
 
 
+async def merge_human(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    asset_id: str,
+    title: str | None,
+    description: str | None,
+    usage: str | None,
+    tags: list[str] | None,
+) -> None:
+    """Patch one human-authored description: ``None`` means *keep whatever is stored*.
+
+    Part II slice D6 Round C. ``PUT /assets/{id}/description`` is a PARTIAL patch, and it used to
+    perform the merge in Python — read the row through :func:`get_many`, substitute the caller's
+    non-``None`` fields, then call :func:`put_human` with the whole record. That is a
+    read-modify-write with no lock across two separate transactions (the O5 bridge is one
+    transaction per store call), so two concurrent patches of *different* fields each wrote the
+    view they had read and the later writer silently reverted the earlier one's field.
+
+    The merge is one statement now: the ``COALESCE(:field, <existing column>)`` in the
+    ``ON CONFLICT DO UPDATE`` is evaluated against the conflicting row under the upsert's own row
+    lock, so interleaved patches compose instead of clobbering. The semantics are exactly the
+    ported ones — a supplied field wins, an omitted field is preserved, and on a first write
+    (no existing row) an omitted field is stored NULL / an omitted tag list is stored ``[]``.
+
+    :func:`put_human` remains the unconditional whole-record write (the shape the describe
+    pipeline and any future full replace want); this is the patch shape.
+    """
+    await conn.execute(
+        text(
+            f"""
+            INSERT INTO design_asset_description ({_UPSERT_COLUMNS})
+            VALUES (:a, :w, :title, :description, :usage,
+                    COALESCE(CAST(:tags AS jsonb), '[]'::jsonb),
+                    CAST('human' AS design_description_origin), NULL)
+            ON CONFLICT (asset_id, workspace_id) DO UPDATE SET
+              title = COALESCE(:title, design_asset_description.title),
+              description = COALESCE(:description, design_asset_description.description),
+              usage = COALESCE(:usage, design_asset_description.usage),
+              tags_json = COALESCE(CAST(:tags AS jsonb), design_asset_description.tags_json),
+              origin = CAST('human' AS design_description_origin),
+              model = NULL,
+              updated_at = now()
+            """  # noqa: S608 - the column list is a module constant, never caller input
+        ),
+        {
+            "a": asset_id,
+            "w": workspace_id,
+            "title": title,
+            "description": description,
+            "usage": usage,
+            "tags": None if tags is None else dump_json(list(tags)),
+        },
+    )
+
+
 async def put_human(
     conn: AsyncConnection,
     *,

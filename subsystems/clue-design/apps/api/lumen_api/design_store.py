@@ -102,6 +102,7 @@ from clue_design import brand as design_brand
 from clue_design import components as design_components
 from clue_design import diagnostics as design_diagnostics
 from clue_design import documents as design_documents
+from clue_design import generation as design_generation
 from clue_design import history as design_history
 from clue_design import personalization as design_personalization
 from clue_design import publishes as design_publishes
@@ -124,8 +125,10 @@ from .database import (
     CustomComponentArtifactConflict,
     CustomComponentReferenceError,
     CustomComponentSourceVersionConflict,
+    DesignResourceVersionConflict,
     NotFoundError,
     WebDocumentVersionConflict,
+    WebPublishRevisionConflict,
     custom_component_artifact_candidate,
     custom_component_nodes,
     custom_component_props_schema_issue,
@@ -243,13 +246,24 @@ class DesignStoreBridge:
         except DesignNotFoundError as exc:
             raise NotFoundError(exc.kind, exc.key) from exc
         except DesignVersionConflictError as exc:
-            raise WebDocumentVersionConflict(
-                exc.key, exc.expected_version, exc.current_version
+            # D6 Round C: the DAL has always named the resource ``kind``; documents keep their
+            # own exception type (every existing handler catches it), and the round's two new CAS
+            # sites — brand-kit version allocation and the batch cursor single-flight — surface
+            # as the kind-carrying sibling rather than pretending to be a document.
+            if exc.kind == "document":
+                raise WebDocumentVersionConflict(
+                    exc.key, exc.expected_version, exc.current_version
+                ) from exc
+            raise DesignResourceVersionConflict(
+                exc.kind, exc.key, exc.expected_version, exc.current_version
             ) from exc
         except DesignArtifactConflictError as exc:
             # D2.4B: the immutable custom-component registry's two conflict species keep the
             # exact exception types main.py registers handlers for (409 DTOs), so the port is
-            # invisible above this seam.
+            # invisible above this seam. D6 Round C adds the publish-revision species, which
+            # shares the taxonomy error but not the component DTO.
+            if exc.kind == "web_publish_revision":
+                raise WebPublishRevisionConflict(exc.key) from exc
             raise CustomComponentArtifactConflict(exc.key) from exc
         except DesignSourceVersionConflictError as exc:
             raise CustomComponentSourceVersionConflict(
@@ -466,8 +480,17 @@ class HybridRepository:
         )
 
     def replace_scene(
-        self, document_id: str, scene: JsonObject, diagnostics: List[JsonObject]
+        self,
+        document_id: str,
+        scene: JsonObject,
+        diagnostics: List[JsonObject],
+        expected_base_version: Optional[int] = None,
     ) -> JsonObject:
+        # D6 Round B (R-D6-B1): `expected_base_version` is FORWARDED (it used to be droppable
+        # because this facade never accepted it). PUT /documents/{id}/scene carries no
+        # base_version in its request contract, so its caller passes None and that route keeps
+        # its documented last-writer-wins window; every caller that DOES hold a base version
+        # gets the in-transaction CAS the DAL has always implemented.
         return self._bridge._run(
             lambda conn: design_documents.replace_scene(
                 conn,
@@ -475,6 +498,7 @@ class HybridRepository:
                 document_id=document_id,
                 scene=scene,
                 diagnostics=diagnostics,
+                expected_base_version=expected_base_version,
             )
         )
 
@@ -490,7 +514,16 @@ class HybridRepository:
         diagnostic_kind: str,
         effective_brand: Optional[Tuple[str, Optional[JsonObject], Optional[JsonObject]]],
         envelope: Optional[JsonObject] = None,
+        expected_base_version: Optional[int] = None,
     ) -> JsonObject:
+        # D6 Round B (R-D6-B1) — THE scene-path CAS closure. `clue_design.documents
+        # .update_document_state` has accepted `expected_base_version` since D2.2 and checks it
+        # under the row lock (`_check_cas`), but this facade never took the argument, so every
+        # scene write silently degraded to last-writer-wins: the routes' handler-level
+        # `require_base_version` pre-check reads the version, then the engine round-trip runs
+        # (100s of ms), and only then does the write land — a concurrent writer landing inside
+        # that window was lost without a trace. The pre-check stays (it is fast and gives the
+        # friendly 409 body); this is the in-transaction truth behind it.
         ops = list(operations)
         return self._bridge._run(
             lambda conn: design_documents.update_document_state(
@@ -506,6 +539,7 @@ class HybridRepository:
                 diagnostic_kind=diagnostic_kind,
                 effective_brand=effective_brand,
                 envelope=envelope,
+                expected_base_version=expected_base_version,
             )
         )
 
@@ -590,15 +624,11 @@ class HybridRepository:
             lambda conn: design_documents.list_web_templates(conn, workspace_id=self.workspace_id)
         )
 
-    def set_document_account(self, document_id: str, account_id: Optional[str]) -> JsonObject:
-        return self._bridge._run(
-            lambda conn: design_documents.set_document_account(
-                conn,
-                workspace_id=self.workspace_id,
-                document_id=document_id,
-                account_id=account_id,
-            )
-        )
+    # D6 Round C: ``set_document_account`` is DELETED. It was dead facade surface — no route,
+    # worker, agent or pipeline ever called it (the derive path sets the account inside
+    # ``create_web_document``), so the D6 gate had a choice between minting a tool for a write
+    # nothing performs or removing the write. The DAL function survives for the derive path and
+    # for the one test that needs to plant a document's account directly.
 
     def count_documents_referencing(self, needle: str) -> int:
         return self._bridge._run(
@@ -627,6 +657,35 @@ class HybridRepository:
                 brand_summary=brand_summary,
                 diagnostics=diagnostics,
                 source=source,
+                brand_id=brand_id,
+            )
+        )
+
+    def publish_next_brand_kit_version(
+        self,
+        brand_kit: JsonObject,
+        brand_summary: JsonObject,
+        diagnostics: List[JsonObject],
+        source: str,
+        *,
+        expected_base_version: int,
+        brand_id: Optional[str] = None,
+    ) -> JsonObject:
+        """Publish the NEXT version of an existing kit, allocated under a lock (D6 Round C).
+
+        The human-curation routes (logo, describe-assets) used to compute ``version + 1`` in
+        Python between two transactions. See the DAL for why the lock is taken on the kit's
+        lowest-version row and why ``expected_base_version`` is required.
+        """
+        return self._bridge._run(
+            lambda conn: design_brand.publish_next_brand_kit_version(
+                conn,
+                workspace_id=self.workspace_id,
+                brand_kit=brand_kit,
+                brand_summary=brand_summary,
+                diagnostics=diagnostics,
+                source=source,
+                expected_base_version=expected_base_version,
                 brand_id=brand_id,
             )
         )
@@ -694,6 +753,33 @@ class HybridRepository:
             )
         )
 
+    def create_asset_records(self, records: List[JsonObject]) -> List[str]:
+        """Register many asset records in ONE transaction; returns their ids (D6 Round C).
+
+        The ingestion worker promotes every asset a capture produced in one gesture. Looping the
+        single-record facade would be one transaction — and, once governed, one private engine
+        and one journal execution — per captured image.
+        """
+        deduped: List[JsonObject] = []
+        seen: set = set()
+        for record in records:
+            asset_id = str(record["id"])
+            if asset_id in seen:
+                continue
+            seen.add(asset_id)
+            deduped.append(record)
+
+        async def _write(conn: AsyncConnection) -> List[str]:
+            written: List[str] = []
+            for record in deduped:
+                stored = await design_assets.create_asset_record(
+                    conn, workspace_id=self.workspace_id, record=record
+                )
+                written.append(str(stored["asset"]["id"]))
+            return written
+
+        return self._bridge._run(_write)
+
     def require_asset_record(self, asset_id: str) -> JsonObject:
         return self._bridge._run(
             lambda conn: design_assets.get_asset_record(
@@ -747,13 +833,35 @@ class HybridRepository:
             )
         )
 
-    def register_scene_assets(self, scene: JsonObject, commit: bool = True) -> int:
-        """The scene-persist paths call the DAL version in-transaction (D2.3); this override
-        exists for the flows that promote a scene's assets on their own."""
-        del commit  # SQLite-era knob; the bridge is one transaction per call.
+    # D6 Round C: ``register_scene_assets`` is DELETED from the facade for the same reason as
+    # ``set_document_account`` — it had zero callers anywhere in the tree. Every scene-persist
+    # path calls ``clue_design.assets.register_scene_assets`` IN-TRANSACTION (D2.3), which is
+    # where scene asset promotion belongs; the facade wrapper was a second, unused way to do it
+    # in its own transaction. The DAL function is untouched.
+
+    def get_generation_result(self, generation_key: str) -> Optional[JsonObject]:
+        """The pre-spend generation-cache probe (D6 Round C): a hit's LIVE asset, or ``None``.
+
+        A read, so it is deliberately NOT a tool: the route consults it BEFORE calling a paid
+        provider, and the write that claims the key is governed by
+        ``design_register_generated_asset``.
+        """
         return self._bridge._run(
-            lambda conn: design_assets.register_scene_assets(
-                conn, workspace_id=self.workspace_id, scene=scene
+            lambda conn: design_generation.get_generation_result(
+                conn, workspace_id=self.workspace_id, generation_key=generation_key
+            )
+        )
+
+    def record_generation_result(
+        self, generation_key: str, record: JsonObject
+    ) -> JsonObject:
+        """Register a generated asset AND claim its ledger key — ONE transaction (D6 Round C)."""
+        return self._bridge._run(
+            lambda conn: design_generation.record_generation_result(
+                conn,
+                workspace_id=self.workspace_id,
+                generation_key=generation_key,
+                record=record,
             )
         )
 
@@ -841,7 +949,9 @@ class HybridRepository:
         counts: JsonObject,
         manifest: List[JsonObject],
         diagnostics: List[JsonObject],
+        expected_cursor: Optional[int] = None,
     ) -> JsonObject:
+        """One chunk's progress. ``expected_cursor`` is the D6 Round C single-flight CAS."""
         return self._bridge._run(
             lambda conn: design_personalization.update_instance_batch_progress(
                 conn,
@@ -852,6 +962,7 @@ class HybridRepository:
                 counts=counts,
                 manifest=manifest,
                 diagnostics=diagnostics,
+                expected_cursor=expected_cursor,
             )
         )
 
@@ -956,8 +1067,14 @@ class HybridRepository:
         )
 
     def update_web_batch_progress(
-        self, batch_id: str, cursor: int, status: str, manifest: List[JsonObject]
+        self,
+        batch_id: str,
+        cursor: int,
+        status: str,
+        manifest: List[JsonObject],
+        expected_cursor: Optional[int] = None,
     ) -> JsonObject:
+        """One chunk's progress. ``expected_cursor`` is the D6 Round C single-flight CAS."""
         return self._bridge._run(
             lambda conn: design_accounts.update_web_batch_progress(
                 conn,
@@ -966,6 +1083,7 @@ class HybridRepository:
                 cursor=cursor,
                 status=status,
                 manifest=manifest,
+                expected_cursor=expected_cursor,
             )
         )
 

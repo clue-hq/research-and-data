@@ -3352,16 +3352,26 @@ def upload_logo(client: TestClient, **form) -> "object":
 
 
 def store_files(tmp_path: Path) -> list[Path]:
-    """This test's DURABLE design blobs (D4).
+    """This test's DURABLE design blobs (D4) — the ``{workspace}/design/{sha256}`` namespace.
 
     The API-local `asset-store/` tree is gone: bytes live in platform storage, which the
     conftest fixture roots at `tmp_path/default-storage` for every non-injecting app. Counting
     the physical blobs there is the same property these assertions always asserted — how many
-    byte objects one logical asset costs, and whether the GC actually destroyed them."""
+    byte objects one logical asset costs, and whether the GC actually destroyed them.
+
+    D6 Round C narrowed the glob to the ``design/`` segment. The same backend now also holds the
+    governed toolbelt's canonical PARAMETER SNAPSHOTS (`{workspace}/{sha256}`, source_key
+    `tool_parameters`), which are journal evidence, not asset bytes — counting them made a
+    second upload look like it had cost two extra byte objects. The narrowing restores exactly
+    the property the docstring describes; it does not weaken it."""
     store_root = tmp_path / "default-storage"
     if not store_root.exists():
         return []
-    return [path for path in store_root.rglob("*") if path.is_file()]
+    return [
+        path
+        for path in store_root.rglob("*")
+        if path.is_file() and path.parent.name == "design"
+    ]
 
 
 def test_asset_upload_stores_content_addressed_bytes(

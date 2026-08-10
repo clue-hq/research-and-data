@@ -38,7 +38,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, dump_json_opt, iso, load_json, load_json_opt
-from clue_design.errors import DesignNotFoundError
+from clue_design.errors import DesignNotFoundError, DesignVersionConflictError
 
 
 def _binding_set_from_row(row: Any) -> JsonObject:
@@ -366,10 +366,26 @@ async def update_instance_batch_progress(
     counts: JsonObject,
     manifest: list[JsonObject],
     diagnostics: list[JsonObject],
+    expected_cursor: int | None = None,
 ) -> JsonObject:
     """Persist one chunk's progress (row-locked; the SQLite original raised the same
-    not-found afterwards, on its read-back)."""
-    await get_instance_batch(conn, workspace_id=workspace_id, batch_id=batch_id, for_update=True)
+    not-found afterwards, on its read-back).
+
+    ``expected_cursor`` (Part II slice D6 Round C) is the batch single-flight. Two concurrent
+    ``POST /batches/{id}/resume`` calls both read ``cursor`` and both derive the same chunk; the
+    row lock made the two WRITES serial but not exclusive, so the loser appended a duplicate
+    manifest slice and rewound/advanced the cursor to its own view. Passing the cursor the caller
+    started the chunk from turns that into a compare-and-set under the same lock: the stale
+    resumer's write is refused with :class:`DesignVersionConflictError` (expected vs current
+    cursor) and its caller stops with the *current* progress instead of corrupting it.
+    """
+    current = await get_instance_batch(
+        conn, workspace_id=workspace_id, batch_id=batch_id, for_update=True
+    )
+    if expected_cursor is not None and int(current["cursor"]) != expected_cursor:
+        raise DesignVersionConflictError(
+            "instance_batch", batch_id, expected_cursor, int(current["cursor"])
+        )
     await conn.execute(
         text(
             """

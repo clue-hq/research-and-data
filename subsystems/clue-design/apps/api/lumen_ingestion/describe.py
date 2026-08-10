@@ -117,6 +117,33 @@ class DescriptionStore:
             )
         )
 
+    def merge_human(
+        self,
+        asset_id: str,
+        title: str | None,
+        description: str | None,
+        usage: str | None,
+        tags: list[str] | None,
+    ) -> None:
+        """Patch a human description: ``None`` keeps whatever is stored (Part II D6 Round C).
+
+        The merge is ONE statement in the DAL. ``PUT /assets/{id}/description`` used to read the
+        row, substitute in Python and write the whole record back through :meth:`put_human` —
+        two transactions with no lock between them, so two concurrent patches of different fields
+        each reverted the other's.
+        """
+        self._bridge._run(
+            lambda conn: design_descriptions.merge_human(
+                conn,
+                workspace_id=self.workspace_id,
+                asset_id=asset_id,
+                title=title,
+                description=description,
+                usage=usage,
+                tags=None if tags is None else list(tags),
+            )
+        )
+
     def put_human(
         self,
         asset_id: str,

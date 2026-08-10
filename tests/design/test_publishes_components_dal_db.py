@@ -34,7 +34,11 @@ from clue_design import accounts as design_accounts
 from clue_design import components as design_components
 from clue_design import documents as design_documents
 from clue_design import publishes as design_publishes
-from clue_design.errors import DesignNotFoundError, DesignSourceVersionConflictError
+from clue_design.errors import (
+    DesignArtifactConflictError,
+    DesignNotFoundError,
+    DesignSourceVersionConflictError,
+)
 from tests.design.conftest import run_async
 
 
@@ -304,8 +308,13 @@ def test_publish_revisions_are_append_only_and_content_addressed(
             )
             assert again == stored
 
-            # The same package digest carrying different content is a loud refusal.
-            with pytest.raises(ValueError, match="already exists with different content"):
+            # The same package digest carrying different content is a loud refusal. D6 Round C
+            # made it a TYPED one: it used to be a bare ``ValueError`` nothing caught, so the API
+            # answered 500; it is now the same taxonomy error the component registry raises for
+            # the same species of collision, and the API answers 409.
+            with pytest.raises(
+                DesignArtifactConflictError, match="already exists with different content"
+            ):
                 await design_publishes.register_web_publish_revision(
                     conn, workspace_id=ws, revision={**revision, "html": "<html>tampered</html>"}
                 )

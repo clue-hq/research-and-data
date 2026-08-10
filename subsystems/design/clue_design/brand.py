@@ -34,7 +34,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, iso, load_json
-from clue_design.errors import DesignNotFoundError
+from clue_design.errors import DesignNotFoundError, DesignVersionConflictError
 from clue_design.joins import resolve_brand_id
 
 
@@ -143,6 +143,82 @@ async def create_brand_kit(
     )
     return await get_brand_kit(
         conn, workspace_id=workspace_id, brand_kit_id=brand_kit_id, version=version
+    )
+
+
+async def publish_next_brand_kit_version(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    brand_kit: JsonObject,
+    brand_summary: JsonObject,
+    diagnostics: list[JsonObject],
+    source: str,
+    expected_base_version: int,
+    brand_id: str | None = None,
+) -> JsonObject:
+    """Allocate this kit's NEXT version under a lock and publish it (Part II slice D6 Round C).
+
+    The two human-curation routes (``POST /brand-kits/{id}/logo``,
+    ``POST /brand-kits/{id}/describe-assets``) read the latest version, mutate the kit JSON,
+    compute ``version + 1`` **in Python**, and insert. Two concurrent curations therefore both
+    computed the same next version and the loser died on the composite primary key — a raw
+    ``IntegrityError`` surfacing as a duplicate-kit 409 that named the wrong cause, or (worse) a
+    silent lost update if the versions happened not to collide.
+
+    This closes it with two mechanisms, both required:
+
+    * **Serialized allocation.** The lock is taken on the kit's *lowest-version* row, not its
+      latest. A ``SELECT … ORDER BY version DESC LIMIT 1 FOR UPDATE`` would be useless here:
+      under READ COMMITTED the blocked allocator re-checks only the row it already locked, and a
+      competitor's new version arrives as an INSERT (a phantom) that its ``ORDER BY … LIMIT 1``
+      never re-evaluates — so both would allocate the same number. The anchor row is the one row
+      of the lineage that no publish can insert around, so every allocator serializes on the same
+      physical row and the ``MAX(version)`` read *after* the lock sees every committed sibling.
+    * **A compare-and-set on the content's base.** The caller built its kit JSON from the version
+      it read; if another curation landed in between, publishing on top of it would silently
+      discard that curation's edits. ``expected_base_version`` makes that a typed
+      :class:`DesignVersionConflictError` (the route's 409) instead of a lost update.
+
+    The allocated number is stamped into ``brand_kit["version"]`` before the insert, so the row
+    and the persisted kit JSON can never disagree about which version this is.
+    """
+    brand_kit_id = str(brand_kit["id"])
+    anchor = (
+        await conn.execute(
+            text(
+                "SELECT version FROM design_brand_kit"
+                " WHERE brand_kit_id = :b AND workspace_id = :w"
+                " ORDER BY version ASC LIMIT 1 FOR UPDATE"
+            ),
+            {"b": brand_kit_id, "w": workspace_id},
+        )
+    ).first()
+    if anchor is None:
+        raise DesignNotFoundError("brand_kit", brand_kit_id)
+    current = int(
+        (
+            await conn.execute(
+                text(
+                    "SELECT MAX(version) FROM design_brand_kit"
+                    " WHERE brand_kit_id = :b AND workspace_id = :w"
+                ),
+                {"b": brand_kit_id, "w": workspace_id},
+            )
+        ).scalar_one()
+    )
+    if current != expected_base_version:
+        raise DesignVersionConflictError("brand_kit", brand_kit_id, expected_base_version, current)
+    published = dict(brand_kit)
+    published["version"] = current + 1
+    return await create_brand_kit(
+        conn,
+        workspace_id=workspace_id,
+        brand_kit=published,
+        brand_summary=brand_summary,
+        diagnostics=diagnostics,
+        source=source,
+        brand_id=brand_id,
     )
 
 

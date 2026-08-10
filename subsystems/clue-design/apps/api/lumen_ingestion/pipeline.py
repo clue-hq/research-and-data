@@ -73,6 +73,96 @@ def _core_client() -> Any:
     return CoreClient()
 
 
+# --- D6 Round C: the ingestion worker's governed write path ---------------------------------- #
+
+
+def _worker_design_tools(storage: StorageBackend) -> Any:
+    """The design toolbelt as the ingestion WORKER sees it.
+
+    The pipeline's two durable design writes — promoting a capture's assets into the library and
+    publishing the kit it produced — are the same writes the HTTP routes make, so D6 routes them
+    through the same tools with ``actor="agent"`` (REQ-20 parity). The host needs only the row
+    store and the byte store: nothing here calls the engine from inside a tool (R-D6-B4 — the
+    validate/summarize round-trip happens in this module, before the invocation).
+    """
+    from lumen_api.toolbelt.wiring import DesignToolInvocations, design_tool_host
+
+    def _unavailable(name: str) -> Any:
+        raise RuntimeError(f"the ingestion worker's design tool host has no {name}")
+
+    return DesignToolInvocations(
+        host=design_tool_host(
+            storage=storage,
+            core=lambda: _unavailable("engine core"),
+            web_export_node_bin=lambda: _unavailable("web export node binary"),
+            compiler_node_bin=lambda: _unavailable("component compiler"),
+            compiler_worker_path=lambda: _unavailable("component compiler worker"),
+            compiler_timeout_seconds=lambda: _unavailable("component compiler timeout"),
+            compile_fn=lambda: _unavailable("component compiler"),
+        ),
+        storage=storage,
+    )
+
+
+def _register_captured_assets(
+    tools: Any, workspace_id: str, records: "list[JsonObject]"
+) -> None:
+    """Promote one capture's asset records into the library, through the governed tool."""
+    if not records:
+        return
+    tools.invoke(
+        "design_register_captured_assets",
+        {"records": records},
+        workspace_id=workspace_id,
+        actor="agent",
+    )
+
+
+def _publish_ingested_kit(
+    tools: Any,
+    repo: HybridRepository,
+    *,
+    brand_kit: JsonObject,
+    brand_summary: JsonObject,
+    diagnostics: "list[JsonObject]",
+    source: str,
+    job_derived_id: bool,
+) -> JsonObject:
+    """Publish the kit one ingestion produced, adopting its own earlier attempt's row.
+
+    **The re-offer hole this closes.** The D5 Round C reaper re-offers a job whose worker died
+    between publishing the kit and terminalizing the job row. The kit id is already per-job
+    deterministic — ``brand_kit_ing_<job suffix>`` at version 1 — so the second attempt's INSERT
+    collided on the composite primary key and the job failed with a database error instead of
+    completing with the result it had already produced.
+
+    ``on_conflict='adopt'`` makes that create a no-op that returns the existing row, which is
+    safe *because* the id is derived from the job id: the only writer that can have filled that
+    slot is an earlier attempt of this same job. When the CLIENT supplied the kit id
+    (``job_derived_id=False``) the slot is not the job's to adopt, so the collision stays the
+    loud refusal it has always been.
+    """
+    ref = tools.invoke(
+        "design_create_brand_kit",
+        {
+            "brand_kit": brand_kit,
+            "brand_summary": brand_summary,
+            "diagnostics": diagnostics,
+            "source": source,
+            "on_conflict": "adopt" if job_derived_id else "refuse",
+        },
+        workspace_id=repo.workspace_id,
+        actor="agent",
+    ).references
+    if not ref["created"]:
+        logger.info(
+            "ingestion job adopted the brand kit its earlier attempt already published: %s v%s",
+            ref["brand_kit_id"],
+            ref["version"],
+        )
+    return repo.require_brand_kit(ref["brand_kit_id"], ref["version"])
+
+
 class _RecordingCore:
     """Proxy over CoreClient that captures ingest_asset records — and, since D4, the ONE
     write-back chokepoint for the whole ingestion lane.
@@ -91,7 +181,7 @@ class _RecordingCore:
 
     ingest_asset may run in worker threads (list.append is GIL-atomic; the write-back is one
     self-contained bridged transaction per call); persistence happens on the pipeline thread via
-    `persist_records`.
+    `persist_records`, which since D6 Round C goes through the governed design toolbelt.
     """
 
     def __init__(self, inner: Any, blobs: DesignBlobStore, cache_dir: str) -> None:
@@ -119,14 +209,15 @@ class _RecordingCore:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
 
-    def persist_records(self, repo: HybridRepository) -> None:
-        seen: set[str] = set()
-        for record in self.records:
-            asset_id = str(record["id"])
-            if asset_id in seen:
-                continue
-            seen.add(asset_id)
-            repo.create_asset_record(record)
+    def persist_records(self, register: "Callable[[list[JsonObject]], None]") -> None:
+        """Hand every captured record to the governed bulk registration (D6 Round C).
+
+        It used to call ``repo.create_asset_record`` per record. The write is governed now, so
+        it goes out as ONE ``design_register_captured_assets`` invocation: a capture is one
+        gesture, the ids are content-derived (so a re-offered job converges), and a per-record
+        invocation would cost a private engine and a journal execution per captured image.
+        """
+        register(list(self.records))
 
 
 def _read_staged(blobs: DesignBlobStore, digest: Any) -> "bytes | None":
@@ -541,8 +632,10 @@ def run_website_ingestion(
         workspace_id=workspace_id, expected_generation=expected_generation
     )
     repo = HybridRepository(workspace_id=workspace_id)
-    blobs = DesignBlobStore(storage or storage_from_settings(), workspace_id)
+    resolved_storage = storage or storage_from_settings()
+    blobs = DesignBlobStore(resolved_storage, workspace_id)
     core = _RecordingCore(_core_client(), blobs, engine_cache_dir)
+    tools = _worker_design_tools(resolved_storage)
 
     def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
         return _ingest(
@@ -550,6 +643,7 @@ def run_website_ingestion(
             repo=repo,
             core=core,
             blobs=blobs,
+            tools=tools,
             cache_dir=engine_cache_dir,
             job_id=job_id,
             reporter=reporter,
@@ -568,6 +662,7 @@ def _ingest(
     repo: HybridRepository,
     core: Any,
     blobs: DesignBlobStore,
+    tools: Any,
     cache_dir: str,
     job_id: str,
     reporter: StageReporter,
@@ -595,7 +690,9 @@ def _ingest(
     # bytes through ``repo.require_asset_record`` and now writes rows that are FK'd 1:1 to the
     # registry row, so describing before persisting could resolve nothing (every asset a
     # LUMI0805) and could not persist a caption at all.
-    getattr(core, "persist_records", lambda _repo: None)(repo)
+    getattr(core, "persist_records", lambda _register: None)(
+        partial(_register_captured_assets, tools, repo.workspace_id)
+    )
 
     describe_diagnostics: list = []
     evidence = _maybe_describe(
@@ -652,7 +749,15 @@ def _ingest(
         + describe_diagnostics
     )
 
-    record = repo.create_brand_kit(validated_kit, summary, diagnostics, "website")
+    record = _publish_ingested_kit(
+        tools,
+        repo,
+        brand_kit=validated_kit,
+        brand_summary=summary,
+        diagnostics=diagnostics,
+        source="website",
+        job_derived_id=requested_kit_id is None,
+    )
 
     evidence_json = _evidence_dump(evidence)
     return (record["brand_kit_id"], int(record["version"]), evidence_json)
@@ -754,8 +859,10 @@ def run_pdf_ingestion(
         workspace_id=workspace_id, expected_generation=expected_generation
     )
     repo = HybridRepository(workspace_id=workspace_id)
-    blobs = DesignBlobStore(storage or storage_from_settings(), workspace_id)
+    resolved_storage = storage or storage_from_settings()
+    blobs = DesignBlobStore(resolved_storage, workspace_id)
     core = _RecordingCore(_core_client(), blobs, engine_cache_dir)
+    tools = _worker_design_tools(resolved_storage)
 
     def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
         return _ingest_pdf(
@@ -763,6 +870,7 @@ def run_pdf_ingestion(
             repo=repo,
             core=core,
             blobs=blobs,
+            tools=tools,
             cache_dir=engine_cache_dir,
             job_id=job_id,
             reporter=reporter,
@@ -780,6 +888,7 @@ def _ingest_pdf(
     repo: HybridRepository,
     core: Any,
     blobs: DesignBlobStore,
+    tools: Any,
     cache_dir: str,
     job_id: str,
     reporter: StageReporter,
@@ -820,7 +929,9 @@ def _ingest_pdf(
     # bytes through ``repo.require_asset_record`` and now writes rows that are FK'd 1:1 to the
     # registry row, so describing before persisting could resolve nothing (every asset a
     # LUMI0805) and could not persist a caption at all.
-    getattr(core, "persist_records", lambda _repo: None)(repo)
+    getattr(core, "persist_records", lambda _register: None)(
+        partial(_register_captured_assets, tools, repo.workspace_id)
+    )
 
     describe_diagnostics: list = []
     evidence = _maybe_describe(
@@ -875,7 +986,15 @@ def _ingest_pdf(
         + describe_diagnostics
     )
 
-    record = repo.create_brand_kit(validated_kit, summary, diagnostics, "pdf")
+    record = _publish_ingested_kit(
+        tools,
+        repo,
+        brand_kit=validated_kit,
+        brand_summary=summary,
+        diagnostics=diagnostics,
+        source="pdf",
+        job_derived_id=requested_kit_id is None,
+    )
 
     evidence_json = _evidence_dump(evidence)
     return (record["brand_kit_id"], int(record["version"]), evidence_json)
@@ -989,8 +1108,10 @@ def run_asset_ingestion(
         workspace_id=workspace_id, expected_generation=expected_generation
     )
     repo = HybridRepository(workspace_id=workspace_id)
-    blobs = DesignBlobStore(storage or storage_from_settings(), workspace_id)
+    resolved_storage = storage or storage_from_settings()
+    blobs = DesignBlobStore(resolved_storage, workspace_id)
     core = _RecordingCore(_core_client(), blobs, engine_cache_dir)
+    tools = _worker_design_tools(resolved_storage)
 
     def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
         return _ingest_assets(
@@ -998,6 +1119,7 @@ def run_asset_ingestion(
             repo=repo,
             core=core,
             blobs=blobs,
+            tools=tools,
             cache_dir=engine_cache_dir,
             job_id=job_id,
             reporter=reporter,
@@ -1015,6 +1137,7 @@ def _ingest_assets(
     repo: HybridRepository,
     core: Any,
     blobs: DesignBlobStore,
+    tools: Any,
     cache_dir: str,
     job_id: str,
     reporter: StageReporter,
@@ -1070,7 +1193,9 @@ def _ingest_assets(
     # bytes through ``repo.require_asset_record`` and now writes rows that are FK'd 1:1 to the
     # registry row, so describing before persisting could resolve nothing (every asset a
     # LUMI0805) and could not persist a caption at all.
-    getattr(core, "persist_records", lambda _repo: None)(repo)
+    getattr(core, "persist_records", lambda _register: None)(
+        partial(_register_captured_assets, tools, repo.workspace_id)
+    )
 
     describe_diagnostics: list = []
     evidence = _maybe_describe(
@@ -1125,7 +1250,15 @@ def _ingest_assets(
         + describe_diagnostics
     )
 
-    record = repo.create_brand_kit(validated_kit, summary, diagnostics, "asset_upload")
+    record = _publish_ingested_kit(
+        tools,
+        repo,
+        brand_kit=validated_kit,
+        brand_summary=summary,
+        diagnostics=diagnostics,
+        source="asset_upload",
+        job_derived_id=requested_kit_id is None,
+    )
 
     evidence_json = _evidence_dump(evidence)
     return (record["brand_kit_id"], int(record["version"]), evidence_json)

@@ -42,7 +42,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, iso, load_json
-from clue_design.errors import DesignNotFoundError
+from clue_design.errors import DesignNotFoundError, DesignVersionConflictError
 from clue_design.joins import normalize_domain, resolve_account_entity_id
 
 
@@ -297,10 +297,25 @@ async def update_web_batch_progress(
     cursor: int,
     status: str,
     manifest: list[JsonObject],
+    expected_cursor: int | None = None,
 ) -> JsonObject:
     """Persist one chunk's progress (row-locked; the SQLite original raised the same
-    not-found afterwards, on its read-back)."""
-    await require_web_batch(conn, workspace_id=workspace_id, batch_id=batch_id, for_update=True)
+    not-found afterwards, on its read-back).
+
+    ``expected_cursor`` (Part II slice D6 Round C) is the batch single-flight — see
+    :func:`clue_design.personalization.update_instance_batch_progress` for the full reasoning.
+    It matters more here than on the instance side: a duplicate instance derivation converges
+    (``inst_<rev>_<bind>`` is deterministic and the write is an upsert), but a duplicate web
+    derivation mints a fresh ``doc_`` id and may publish a second slug, so an un-fenced double
+    resume left real garbage behind.
+    """
+    current = await require_web_batch(
+        conn, workspace_id=workspace_id, batch_id=batch_id, for_update=True
+    )
+    if expected_cursor is not None and int(current["cursor"]) != expected_cursor:
+        raise DesignVersionConflictError(
+            "web_batch", batch_id, expected_cursor, int(current["cursor"])
+        )
     await conn.execute(
         text(
             """

@@ -55,6 +55,39 @@ class WebDocumentVersionConflict(RuntimeError):
         self.current = current
 
 
+class DesignResourceVersionConflict(RuntimeError):
+    """A NON-document compare-and-set write lost its race (Part II slice D6 Round C).
+
+    The DAL's ``DesignVersionConflictError`` has always carried the resource ``kind``; the API
+    only had :class:`WebDocumentVersionConflict` to translate it into, whose ``document_id``
+    attribute would be a lie for the two CAS sites D6 Round C adds — the brand-kit version
+    allocator (``kind='brand_kit'``) and the batch cursor single-flight
+    (``kind='instance_batch'`` / ``'web_batch'``). Documents keep their own type so every
+    existing handler and every ``except WebDocumentVersionConflict`` is untouched.
+    """
+
+    def __init__(self, kind: str, key: str, expected: int, current: int) -> None:
+        super().__init__(f"{kind} {key} expected {expected}, current is {current}")
+        self.kind = kind
+        self.key = key
+        self.expected = expected
+        self.current = current
+
+
+class WebPublishRevisionConflict(RuntimeError):
+    """A ``webpub_<digest>`` id was re-registered with different stored content.
+
+    The publish twin of :class:`CustomComponentArtifactConflict` (Part II slice D6 Round C).
+    ``clue_design.publishes.register_web_publish_revision`` used to raise a bare ``ValueError``
+    that nothing caught, so a content-addressing collision surfaced as a 500; it is a describable
+    domain refusal and now answers 409.
+    """
+
+    def __init__(self, publish_id: str) -> None:
+        super().__init__(f"publish {publish_id} already exists with different content")
+        self.publish_id = publish_id
+
+
 class CustomComponentArtifactConflict(RuntimeError):
     """An immutable artifact id was reused with different stored metadata."""
 

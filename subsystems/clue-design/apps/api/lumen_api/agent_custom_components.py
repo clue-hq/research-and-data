@@ -10,22 +10,15 @@ successful compilation record.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
-from .custom_component_compiler import (
-    compile_and_persist_custom_component,
-    compile_custom_component,
-)
-from .custom_components import (
-    persist_custom_component_source_revision,
-    resolve_custom_component_source_snapshot,
-)
+from .custom_components import resolve_custom_component_source_snapshot
 from .database import (
     NotFoundError,
     custom_component_props_schema_issue,
 )
 from .design_store import DesignBlobStore, HybridRepository
+from .toolbelt.wiring import DesignToolInvocations
 
 
 JsonObject = Dict[str, Any]
@@ -55,10 +48,7 @@ class DurableAgentCustomComponentRegistry:
         blobs: DesignBlobStore,
         account_id: str,
         document_id: str,
-        node_binary: str,
-        worker_path: Path,
-        timeout_seconds: float,
-        compile_fn: Callable[..., JsonObject] = compile_custom_component,
+        invocations: DesignToolInvocations,
     ) -> None:
         if not account_id:
             raise ValueError("custom-component agent registry requires an account")
@@ -70,10 +60,13 @@ class DurableAgentCustomComponentRegistry:
         self.blobs = blobs
         self.account_id = account_id
         self.document_id = document_id
-        self.node_binary = node_binary
-        self.worker_path = Path(worker_path)
-        self.timeout_seconds = timeout_seconds
-        self.compile_fn = compile_fn
+        # D6 (R-D6-5): the ONE governed design write path. The registry used to hold the
+        # compiler's node binary / worker path / timeout and call the orchestration functions
+        # directly; those collaborators now live on the tool host, and the agent's two durable
+        # writes are journaled, A9-keyed invocations stamped `actor="agent"` — the same envelope
+        # a human's HTTP write goes through (REQ-20 parity). Full GovernedAgentToolFactory
+        # integration is Part III; this is the substrate it will bind to.
+        self.invocations = invocations
 
     def _repository(self) -> HybridRepository:
         # Postgres via clue_design (D2.5B: no SQLite handle to open or close). The row store and
@@ -241,6 +234,16 @@ class DurableAgentCustomComponentRegistry:
             "components": components,
         }
 
+    def _invoke(self, name: str, body: JsonObject) -> JsonObject:
+        """Run one governed design tool as the agent. Refusals raise, they never return empty."""
+        result = self.invocations.invoke(
+            name,
+            body,
+            workspace_id=self.blobs.workspace_id,
+            actor="agent",
+        )
+        return dict(result.references)
+
     def write_source(
         self,
         *,
@@ -249,40 +252,55 @@ class DurableAgentCustomComponentRegistry:
         files: Dict[str, str],
         provenance: JsonObject,
     ) -> JsonObject:
-        repository = self._repository()
-        revision = persist_custom_component_source_revision(
-            repository,
-            self.blobs,
-            account_id=self.account_id,
-            slug=slug,
-            expected_version=expected_version,
-            files=files,
-            provenance=provenance,
+        written = self._invoke(
+            "design_write_component_source",
+            {
+                "account_id": self.account_id,
+                "slug": slug,
+                "expected_version": expected_version,
+                "files": dict(files),
+                "provenance": provenance,
+            },
         )
+        repository = self._repository()
         return {
             "schema_version": 1,
             "component": repository.require_custom_component(
                 self.account_id, slug
             ),
-            "source": revision,
+            "source": repository.require_custom_component_source_revision(
+                self.account_id, written["revision_id"]
+            ),
         }
 
     def compile_once(
         self, *, slug: str, source_version: int, actor: JsonObject
     ) -> JsonObject:
-        repository = self._repository()
-        return compile_and_persist_custom_component(
-            repository=repository,
-            blobs=self.blobs,
-            node_binary=self.node_binary,
-            worker_path=self.worker_path,
-            timeout_seconds=self.timeout_seconds,
-            account_id=self.account_id,
-            slug=slug,
-            source_version=source_version,
-            actor=actor,
-            compile_fn=self.compile_fn,
+        compiled = self._invoke(
+            "design_compile_component",
+            {
+                "account_id": self.account_id,
+                "slug": slug,
+                "source_version": source_version,
+                "actor": actor,
+            },
         )
+        repository = self._repository()
+        artifact_id = compiled["artifact_id"]
+        return {
+            "schema_version": 1,
+            "compile_status": compiled["compile_status"],
+            "compilation": repository.require_custom_component_compilation(
+                self.account_id, compiled["compilation_id"]
+            ),
+            "artifact": (
+                repository.require_custom_component_artifact(
+                    self.account_id, artifact_id
+                )
+                if artifact_id is not None
+                else None
+            ),
+        }
 
     def resolve_attachable(
         self, *, slug: str, artifact_id: str, props: Optional[JsonObject]

@@ -9,17 +9,26 @@ the same way — one hero is generated once and re-placed). This closes that gap
 maps a generation request to the asset produced the first time, so a repeat request
 re-places the same asset for free.
 
-Persisted as a small JSON sidecar at `{engine_cache_root}/{workspace_id}/.generation-cache.json`
-(D4 / R-D4-8), so the cache lives and dies with the engine materialization cache it sits beside
-and is shared by every caller pointed at that workspace's dir — the API route and the agent loop.
+**The key is shared; the storage is not (Part II slice D6 Round C).** :func:`generation_key` is
+the ONE definition of "the same generation request", and both halves of the platform compute it
+here. What differs is where the resulting map lives:
 
-**LOUD WARNING (D4).** This file is *mutable JSON*, NOT asset bytes. It is the one thing under
-the engine cache root that is deliberately EXEMPT from `StorageBackend` custody: platform storage
-is content-addressed and immutable-by-construction, which is exactly wrong for a
-last-writer-wins index that is rewritten on every generation. Losing it costs money (a repeat
+* **The design API** persists it in Postgres — ``design_generation_result``, behind
+  ``clue_design.generation`` and the governed ``design_register_generated_asset`` tool. That is
+  the durable, multi-process, FK-backed home this docstring used to promise, and
+  :func:`lookup` / :func:`store` below are **no longer on that path**.
+* **The design AGENT RUNTIME** (``lumen_agent.tools.substrate``) still uses the JSON sidecar at
+  ``{engine_cache_root}/{workspace_id}/.generation-cache.json`` (D4 / R-D4-8). It holds no
+  database handle by design — it is trace- and cache-local, and giving it one is Part-III work,
+  not D6's. So :func:`lookup` and :func:`store` survive for that caller alone.
+
+**LOUD WARNING (D4), still true of the sidecar.** That file is *mutable JSON*, NOT asset bytes.
+It is the one thing under the engine cache root deliberately EXEMPT from `StorageBackend`
+custody: platform storage is content-addressed and immutable-by-construction, which is exactly
+wrong for a last-writer-wins index rewritten on every generation. Losing it costs money (a repeat
 prompt re-pays the model) but loses no data — every asset it points at has durable custody of its
-own — so a wiped cache is a correct, self-healing state. **Its real home is Postgres, and that is
-D5's to build.** Until then: do not "fix" this by registering it as a blob.
+own — so a wiped cache is a correct, self-healing state. Do not "fix" it by registering it as a
+blob; the fix is the Postgres ledger, which the runtime half inherits at Part III.
 """
 
 from __future__ import annotations
