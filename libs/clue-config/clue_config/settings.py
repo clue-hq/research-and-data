@@ -106,6 +106,23 @@ class Settings(BaseSettings):
     # Env: ``CLUE_VERIFICATION_ENABLED``.
     verification_enabled: bool = True
 
+    # Pilot master switch for budget/cost *controls* (FI-pilot-budget-controls, ratified
+    # 2026-08-11). True is today's behavior. False is the pilot posture: users are never shown a
+    # cost or budget number and **nothing on the platform stops a pre-approved action on budget
+    # grounds** — hard spend control lives at the provider consoles instead. Specifically, when
+    # False: (a) the directive-confirmation gate still computes and durably stores
+    # ``max_spend_cents`` (audit + approval integrity) but the amount leaves every model- and
+    # human-visible surface; (b) the R9 atomic tool-batch admission, the M7.5 project-run budget
+    # pre-gate, and the launchers' economic equality/headroom checks admit instead of refusing.
+    # Spend **recording** is untouched in both modes — reservations, settlements, ``spent_cents``,
+    # and the M13.4 cost observability all keep accumulating honestly, so a pilot deployment
+    # over-spends visibly rather than silently. Structural controls stay on in both modes:
+    # depth/fanout caps, the exact human-approved account selection, canary/quality suspension, the
+    # M9.1 pre-spend *authority* gate, and the gate's directive-digest binding.
+    # Deployment-scoped, not pinned per run (the same accepted caveat as ``verification_enabled``).
+    # Env: ``CLUE_BUDGET_CONTROLS_ENABLED``.
+    budget_controls_enabled: bool = True
+
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
     fleet_poll_interval_s: float = 1.0
