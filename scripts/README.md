@@ -20,6 +20,7 @@ don't pass one).
 | 09 | `09_exa_websets_d2_canary.py` | Bounded live/replay Exa Websets D2 submit | `DurableExaWebsetSubmitter` |
 | 10 | `10_exa_websets_d4_materialization.py` | Zero-provider-call D4 materialization/replay | `ExaWebsetsD4Materializer` |
 | 11 | `11_exa_websets_d6_acceptance.py` | Bounded live/replay D6 production composition | `ComposingRunDriver` + durable Exa slices |
+| 14 | `14_seed_insight_health_browser_fixture.py` | Authenticated Insight Health browser onboarding | `trial.browser_fixture.seed_insight_health_browser_fixture` |
 
 ## One-time setup
 
@@ -147,6 +148,27 @@ Script 07 is intentionally different: it never seeds data and never performs acq
 the exact workspace/project/project-run/account-or-contact IDs produced by a normal governed
 research run. It then composes the persisted state through the same production readers used by the
 API. See `docs/runbooks/research-views.md` for the Exa-first inspection sequence.
+
+## Insight Health authenticated browser fixture
+
+Script 14 first provisions the signed-in Clerk subject, its active owner membership, the Insight
+Health workspace and brand, and the Aura AI product. Without a project id it deliberately creates
+no project, Client KB, ICP, or research run. After Home creates the project, pass ``--project-id``
+to materialize the recorded official-site Client KB that completed onboarding would have produced:
+
+```bash
+uv run python scripts/14_seed_insight_health_browser_fixture.py \
+  --database-url postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_lane_f_browser \
+  --provider-subject user_from_the_authenticated_browser \
+  --project-id prj_created_from_home
+```
+
+With ``--project-id``, the script captures four bounded Insight Health official-page artifacts,
+writes seven evidence-backed product-scoped Client-KB claims through ``reverse_profile``, and
+appends website/client/product onboarding receipts to that project. The original captured turn
+remains immutable. It still creates no ICP or research run, so ICP synthesis and locking remain the
+browser journey under test. Repeating the command with the same subject/project is a zero-change
+replay. A stable fixture id that already names incompatible state fails loudly.
 
 ## Insight Health/Aura discovery fixture
 

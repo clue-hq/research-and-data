@@ -150,6 +150,79 @@ class OfficialSitePage(BaseModel):
     markdown: str
 
 
+def recorded_insight_health_pages() -> dict[str, OfficialSitePage]:
+    """Return the bounded official-page snapshots used by local Insight Health fixtures.
+
+    The excerpts are the already-harvested evidence inputs for the fixture, not a live fetch. They
+    intentionally contain only the spans needed to support the seven Client-KB claims below.
+    """
+
+    return {
+        HOME_URL: OfficialSitePage(
+            url=HOME_URL,
+            title="Insight Health AI",
+            markdown=(
+                "# The AI referral coordinator for specialty practices.\n\n"
+                "MagicDocs reads inbound referrals and routes each to the right EHR work queue "
+                "so nothing stalls on the fax machine.\n\n"
+                "## Pricing\n\n"
+                "Pay by the month or the year, and cancel at any time\n\n"
+                "Free Forever\n\n"
+                "Save 2+ hours every day. The quickest and easiest way to try AuraTM Scribe.\n\n"
+                "Pro\n\n$49.99\n\nPer clinician\n\nEnterprise\n\nCustom\n\n"
+                "Includes Virtual Care Assistant (VCA) + AuraTM AI Scribe."
+            ),
+        ),
+        AMBIENT_URL: OfficialSitePage(
+            url=AMBIENT_URL,
+            title="Aura AI scribe for clinical notes",
+            markdown=(
+                "## Fully Customizable Note Format\n\n"
+                "AuraTM AI Scribe offers unlimited customization beyond APSO, SOAP, and H&P "
+                "formats.\n\n"
+                "## Integrated ICD-10 and CPT Coding\n\n"
+                "AuraTM AI Scribe recommends appropriate ICD-10 diagnosis codes and CPT "
+                "procedure codes.\n\n"
+                "## iOS App and Chrome Extension\n\n"
+                "The Chrome extension stays within the same browser window as your EHR, "
+                "providing an integrated view between your AI scribe notes and web-based EHR "
+                "system without disruptive switching between applications."
+            ),
+        ),
+        AURA_ANYWHERE_URL: OfficialSitePage(
+            url=AURA_ANYWHERE_URL,
+            title="Aura Anywhere",
+            markdown=(
+                "### Ambient Documentation\n\n"
+                "AuraTM listens to patient-provider conversations and generates structured "
+                "clinical notes in real time. Providers focus on the patient while documentation "
+                "happens in the background.\n\n"
+                "### Multi-Tenant Architecture\n\n"
+                "Each organization operates in isolation with their own configurations, "
+                "templates, and data boundaries."
+            ),
+        ),
+        NEUROSURGERY_URL: OfficialSitePage(
+            url=NEUROSURGERY_URL,
+            title="Neurosurgery Referral Management",
+            markdown=(
+                "## Case Study: 15-Provider Neurosurgery Practice\n\n"
+                "Key Challenges\n\n"
+                "High volume of patient referrals (500+/month)\n\n"
+                "Staff spending 20+ hours/week on phone screenings\n\n"
+                "Inappropriate referrals consuming surgeon time\n\n"
+                "20% no-show rate causing scheduling inefficiency\n\n"
+                "Solution Implementation\n\n"
+                "Results\n\n$350k\n\nAnnual Overhead Savings\n\n15 min\n\n"
+                "Saved Per Consultation\n\n12x+\n\nReturn on Investment\n\n"
+                '"For the first time my notes are actually done by the time my clinic is done. '
+                'The Virtual Care Assistant has transformed our referral process."\n\n'
+                "\\- Neurosurgeon, The Oregon Clinic"
+            ),
+        ),
+    }
+
+
 class InsightHealthDiscoveryFixtureResult(BaseModel):
     """Stable references emitted for the subsequent discovery acceptance run."""
 
@@ -255,7 +328,9 @@ class _ClaimSource:
     confidence: float = 0.92
 
 
-def _claim_sources(pages: Mapping[str, OfficialSitePage]) -> dict[str, _ClaimSource]:
+def claim_sources_for_pages(
+    pages: Mapping[str, OfficialSitePage],
+) -> dict[str, _ClaimSource]:
     """Compile the seven supported Client-KB facts and validate their exact evidence spans."""
 
     home = pages[HOME_URL].markdown
@@ -375,7 +450,7 @@ def _claim_sources(pages: Mapping[str, OfficialSitePage]) -> dict[str, _ClaimSou
     return {source.field_key: source for source in sources}
 
 
-class _OfficialSiteFixtureResolver:
+class OfficialSiteFixtureResolver:
     """Tier-2 resolver over immutable harvested pages; it performs no network call."""
 
     tier = 2
@@ -385,9 +460,11 @@ class _OfficialSiteFixtureResolver:
         *,
         sources: Mapping[str, _ClaimSource],
         artifact_keys_by_url: Mapping[str, str],
+        run_id: RunId = STAGE0_RUN_ID,
     ) -> None:
         self._sources = sources
         self._artifact_keys_by_url = artifact_keys_by_url
+        self._run_id = run_id
 
     def resolve(self, entity: Entity, field: FieldDef) -> list[Any]:
         source = self._sources.get(field.field_key)
@@ -400,7 +477,7 @@ class _OfficialSiteFixtureResolver:
             source_tier=2,
             extraction_method=ExtractionMethod.SCRAPE,
             confidence=source.confidence,
-            run_id=STAGE0_RUN_ID,
+            run_id=self._run_id,
             research_mode=ResearchMode.ACCOUNT_PROFILING,
             source_url=source.source_url,
             evidence_span=source.evidence_span,
@@ -485,13 +562,17 @@ async def _load_fixture_registries(conn: AsyncConnection) -> None:
     await seed_source_manifests(conn)
 
 
-async def _capture_pages(
+async def capture_insight_health_pages(
     conn: AsyncConnection,
     *,
     pages: Mapping[str, OfficialSitePage],
     storage: StorageBackend,
+    workspace_id: str = WORKSPACE_ID,
+    fixture_version: str = FIXTURE_COMPILER_VERSION,
 ) -> dict[str, str]:
-    sink = SnapshotSink(workspace_id=WORKSPACE_ID)
+    """Persist the four recorded official-site pages under one fixture workspace."""
+
+    sink = SnapshotSink(workspace_id=workspace_id)
     keys: dict[str, str] = {}
     for url in REQUIRED_URLS:
         page = pages[url]
@@ -502,7 +583,7 @@ async def _capture_pages(
                 content=page.markdown.encode("utf-8"),
                 metadata={
                     "title": page.title,
-                    "fixture": FIXTURE_COMPILER_VERSION,
+                    "fixture": fixture_version,
                     "harvested_at": HARVESTED_AT.isoformat(),
                 },
             ),
@@ -666,16 +747,18 @@ async def seed_insight_health_discovery_fixture(
     missing = [url for url in REQUIRED_URLS if url not in pages]
     if missing:
         raise FixtureInputError(f"required Insight Health pages are missing: {missing}")
-    claim_sources = _claim_sources(pages)  # validate every evidence marker before mutating state
+    claim_sources = claim_sources_for_pages(
+        pages
+    )  # validate every evidence marker before mutating state
 
     _, brand, product, project = await _ensure_spine(conn)
     await _load_fixture_registries(conn)
-    artifact_keys = await _capture_pages(conn, pages=pages, storage=storage)
+    artifact_keys = await capture_insight_health_pages(conn, pages=pages, storage=storage)
 
     prior_resolver = get_resolver(SOURCE_KEY) if is_resolver_bound(SOURCE_KEY) else None
     bind_resolver(
         SOURCE_KEY,
-        _OfficialSiteFixtureResolver(
+        OfficialSiteFixtureResolver(
             sources=claim_sources,
             artifact_keys_by_url=artifact_keys,
         ),
@@ -960,13 +1043,17 @@ __all__ = [
     "ICP_KEY",
     "InsightHealthDiscoveryFixtureResult",
     "NEUROSURGERY_URL",
+    "OfficialSiteFixtureResolver",
     "OfficialSitePage",
     "PRODUCT_ID",
     "PROJECT_ID",
     "PROJECT_RUN_ID",
     "REQUIRED_URLS",
     "WORKSPACE_ID",
+    "capture_insight_health_pages",
+    "claim_sources_for_pages",
     "load_firecrawl_search_pages",
     "load_insight_health_discovery_fixture",
+    "recorded_insight_health_pages",
     "seed_insight_health_discovery_fixture",
 ]
