@@ -271,16 +271,11 @@ async def _external_research_wake_loop(
         await sleep(settings.external_research_wake_worker_interval_s)
 
 
-def _start_external_research_wake(settings: Settings) -> asyncio.Task[None] | None:
-    if not any(
-        (
-            settings.sumble_committee_acquisition_enabled,
-            settings.exa_contact_deep_acquisition_enabled,
-            settings.contact_channel_enrichment_enabled,
-        )
-    ):
-        log.info("fleet.external_research.wake_disabled")
-        return None
+def _start_external_research_wake(settings: Settings) -> asyncio.Task[None]:
+    # The loop always runs (R11.2): the compiled registry always carries the DEEP fleet source,
+    # because the R11.1 DEEP bridge is composed for every project run and a run parked at a DEEP
+    # ``waiting_external`` checkpoint is only re-entered by a wake.  The three provider sources
+    # stay flag-gated, so with every provider off this loop scans exactly one query.
     entity_wakes = (
         EntityResearchBatchWakeService() if settings.entity_research_runtime_enabled else None
     )
