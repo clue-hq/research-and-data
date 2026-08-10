@@ -53,13 +53,14 @@ the same `surviving_ids` call as the claims. This is the one edit outside F4's s
 
 ## Verification (throwaway DB `clue_f4`)
 
-- `tests/api/test_r11_committee_bridge.py` — 14 tests, green.
+- `tests/api/test_r11_committee_bridge.py` — 16 tests, green (incl. a toggle-parametrized case
+  pinning the bridged committee identical under `CLUE_VERIFICATION_ENABLED` true/false).
 - `tests/api` + `tests/architecture` — green except two failures reproduced identically at baseline
   (`test_agent_registry_wiring::test_resolved_snapshot_materializes_through_c61_backend`,
   `test_agent_turn_wiring_db::test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed`).
 - `tests/integration` — identical failure set before and after the change (6, all Lane E E1/E2/E3).
 - ruff (format + check), mypy (630 files), `lint-imports` (25 contracts) all clean.
-- No migration. No gateway/judge dependency, so the resolver stays toggle-invariant.
+- No migration. No gateway/judge dependency and no toggle branch in the bridge.
 
 ## Notes / follow-ups
 
@@ -75,3 +76,6 @@ the same `surviving_ids` call as the claims. This is the one edit outside F4's s
   exposure is bounded, but a cross-project fleet row would describe the committee.
 - The two pre-existing `tests/api` failures and the six `tests/integration` ones predate F4 and are
   unowned by this lane.
+
+Commits: `51b80e88` (read-helper extraction), `bf2129ff` (the bridge), `9131f7ee` (docstring),
+`da5e4150` (toggle-invariance test). Local only; nothing pushed.
