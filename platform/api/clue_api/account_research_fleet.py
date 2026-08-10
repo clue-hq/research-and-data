@@ -281,6 +281,35 @@ async def _read_fleet(
     return None if row is None else _fleet_row(row)
 
 
+async def read_latest_account_fleet_for_project_run(
+    conn: AsyncConnection,
+    project_run_id: UUID,
+    *,
+    workspace_id: str,
+) -> AccountResearchFleetRow | None:
+    """The **current** account-research fleet run bound to ``project_run_id``, or ``None``.
+
+    R11 §6c (ratified): the current run is the latest launch — every fleet row is human-confirmed by
+    construction, because :meth:`AccountResearchFleetService.launch` requires a durable
+    ``source_action_ref``.  Earlier runs stay visible history and never drive the DEEP phase.
+    Read-only and workspace-scoped: a fleet run belonging to another workspace reads as absent.
+    """
+
+    research_run_id = (
+        await conn.execute(
+            text(
+                "SELECT research_run_id FROM entity_research_account_fleet "
+                "WHERE project_run_id=:project_run_id AND workspace_id=:workspace_id "
+                "ORDER BY created_at DESC, research_run_id DESC LIMIT 1"
+            ),
+            {"project_run_id": project_run_id, "workspace_id": workspace_id},
+        )
+    ).scalar_one_or_none()
+    if research_run_id is None:
+        return None
+    return await _read_fleet(conn, UUID(str(research_run_id)))
+
+
 async def _event(
     conn: AsyncConnection,
     *,
@@ -1444,4 +1473,5 @@ __all__ = [
     "AccountResearchFleetState",
     "AccountResearchFleetWorkHandler",
     "AccountResearchJobSummary",
+    "read_latest_account_fleet_for_project_run",
 ]

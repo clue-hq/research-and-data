@@ -13,17 +13,19 @@ per-run :class:`~clue_research.durable.PhaseHandlerRegistry` + a per-run ``Proje
 one :class:`BudgetEngine`). The state-machine object is cheap; the durable state is shared, so two
 ICPs on one worker never collide on a phase slot.
 
-**M8D R1 — the entity-research slot is quarantined.** The valid phase, storage, discovery,
-verification, and handoff substrates remain composed per run. ``DEEP`` is intentionally bound to
-one fail-loud handler, however: it raises ``entity_research_agent_not_composed`` before the former
-account scheduler, provider preparation, committee preparation, or contact progression can run.
-R2–R5 replace that empty slot with the subject-neutral fleet and ``create_agent()`` entity units.
+**M8D R11.1 — the entity-research slot joins the fleet.** The valid phase, storage, discovery,
+verification, and handoff substrates remain composed per run. ``DEEP`` holds the join-only
+:class:`~clue_api.entity_research_deep_phase.EntityResearchDeepPhaseHandler`, which reads the
+project run's latest R6 account-research fleet run and maps its state onto the phase result. It
+launches nothing (launch authority stays with the human-confirmed ``launch_account_research@1``)
+and owns no spend, so the former account scheduler, provider preparation, committee preparation and
+contact progression stay retired behind the untouched R1 quarantine.
 
 **Composed phase set (per registry):**
 
 * REVERSE_PROFILING / ICP_CONFIRMED / DISCOVERY / SCORING / TIER_CHECKPOINT — via
   :mod:`clue_api.phase_wiring`, snapshot-wrapped (D3).
-* DEEP — the M8D R1 active-path quarantine; no legacy entity-research work is scheduled.
+* DEEP — the M8D R11.1 join-only fleet bridge; no legacy entity-research work is scheduled.
 * VERIFICATION — :func:`build_verification_phase_handler` over the shared gateway + the high-tier
   resolver.
 * REVIEW — folded in from :func:`register_boot_handlers` (the process-wide-composable handler set).
@@ -57,10 +59,7 @@ from clue_api.discovery_seal import (
     DiscoveryBatchStarter,
     DiscoveryRequiredFieldResolver,
 )
-from clue_api.entity_research_quarantine import (
-    EntityResearchQuarantineComposition,
-    EntityResearchQuarantinePhaseHandler,
-)
+from clue_api.entity_research_deep_phase import EntityResearchDeepPhaseHandler
 from clue_api.fleet_wiring import register_boot_handlers
 from clue_api.handoff_retention import build_retention_sweeping_handoff_handler
 from clue_api.handoff_wiring import build_handoff_phase_handler
@@ -143,16 +142,15 @@ class ClientInputProviderMissing(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class ComposedRun:
     """One composed, cached per-project-run unit: the ``ProjectRun`` the worker advances, its
-    isolated ``PhaseHandlerRegistry``, the ``ICPSpec`` it was composed against, the DEEP-phase
-    composition bundle (so a test can read the DEEP handler's *own* spec + assert the composed
-    scheduler is the fleet queue), and the set of phases it can drive. The
-    ``spec``/``registry``/``deep`` are exposed so a test can assert two concurrent runs never
-    cross-talk (the D1 race gate) without reaching into private attributes."""
+    isolated ``PhaseHandlerRegistry``, the ``ICPSpec`` it was composed against, the R11.1 join-only
+    DEEP handler, and the set of phases it can drive. The ``spec``/``registry``/``deep`` are exposed
+    so a test can assert two concurrent runs never cross-talk (the D1 race gate) without reaching
+    into private attributes."""
 
     run: ProjectRun
     registry: PhaseHandlerRegistry
     spec: ICPSpec
-    deep: EntityResearchQuarantineComposition
+    deep: EntityResearchDeepPhaseHandler
     phases: frozenset[ProjectPhase]
 
 
@@ -418,11 +416,13 @@ class ComposingRunDriver:
             register=registry.register,
         )
 
-        # M8D R1: DEEP is intentionally uncomposed until the governed ``create_agent()`` entity
-        # runtime lands.  Crucially, this composition contains no scheduler, provider preparer,
-        # mechanical account profiler, committee walker, or contact fan-out to fall back to.
-        deep = EntityResearchQuarantineComposition(handler=EntityResearchQuarantinePhaseHandler())
-        registry.register(deep.handler)
+        # M8D R11.1: DEEP is the join-only bridge onto the R6 account-research fleet. It reads the
+        # project run's latest fleet run and maps its state to a phase result — it launches nothing
+        # (launch authority stays with the human-confirmed ``launch_account_research@1``), owns no
+        # spend, and holds no scheduler, provider preparer, mechanical account profiler, committee
+        # walker or contact fan-out. The R1 quarantine over the retired orchestration is untouched.
+        deep = EntityResearchDeepPhaseHandler(conn_factory=self._session_factory)
+        registry.register(deep)
 
         # VERIFICATION — the same high-tier resolver instance as DEEP.
         verification = build_verification_phase_handler(
@@ -473,7 +473,7 @@ class ComposingRunDriver:
             icp_key=row.icp_key,
             icp_version=row.icp_version,
             phases=sorted(phase.value for phase in phases),
-            entity_research=deep.reason_code,
+            entity_research="m8d_r11_fleet_bridge",
             handoff_narrative_emit=self._settings.c7_production_handoff_enabled,
         )
         return ComposedRun(run=run, registry=registry, spec=spec, deep=deep, phases=phases)

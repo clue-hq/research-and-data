@@ -25,6 +25,7 @@ from tests._workspace import seed_project, seed_workspace
 from tests.api.test_storage_wiring import FakeStorage
 from tests.fleet.conftest import run_async
 
+from clue_api.entity_research_deep_phase import REASON_FLEET_NOT_LAUNCHED
 from clue_api.run_composition import ComposingRunDriver
 from clue_config import GatewayConfig, load_settings
 from clue_core import ICPCreatedFrom, PhaseContext, ProjectPhase
@@ -34,9 +35,11 @@ from clue_gateway import build_gateway
 from clue_research.claimstore import CORE_PACK, load_core_pack
 from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.durable import (
+    REENTRANT_HOLD_KEY,
     BudgetEngine,
     DbIdempotencyStore,
     DbProjectRunStore,
+    PhaseCheckpointStatus,
     ProjectRun,
     ProjectRunStatus,
 )
@@ -168,21 +171,27 @@ def test_composed_worker_drives_to_human_checkpoint_then_deep_quarantines() -> N
                 after_pause = await _ledger_phase_count()
                 assert after_pause > before
 
-                # Approve the checkpoint (resume), then drive #2. M8D quarantined the outer DEEP
-                # phase: a composed run reaching it fails loudly (entity_research_agent_not_
-                # composed) instead of running the retired account→committee→contact pipeline.
-                # Account/contact research is now a separately confirmed entity-research launch,
-                # so the outer run parks at DEEP — it never silently completes, never reaches
-                # HANDOFF, and never auto-launches a fleet.
+                # Approve the checkpoint (resume), then drive #2. M8D R11.1 made DEEP the join-only
+                # bridge onto the account-research fleet: this run has no confirmed
+                # ``launch_account_research@1`` behind it, so DEEP holds the run durably
+                # (``entity_research_fleet_not_launched``) rather than researching anything. The
+                # outer run parks at DEEP — it never silently completes, never reaches HANDOFF, and
+                # never auto-launches a fleet.
                 composed = await driver.composed(await driver.status(run_id))
                 await composed.run.submit_checkpoint(run_id, decision={"action": "approve"})
                 await enqueue_drive(queue, run_id)  # reopen_terminal: re-drive the paused run
                 await worker.drain_once()
                 run = await machine.status(run_id)
                 assert run.phase is ProjectPhase.DEEP, run.phase
-                assert run.status is ProjectRunStatus.ACTIVE, run.status
+                assert run.status is ProjectRunStatus.PAUSED, run.status
+                checkpoint = await machine.await_checkpoint(run_id)
+                assert checkpoint is not None
+                assert checkpoint.status is PhaseCheckpointStatus.AWAITING_INPUT
+                assert checkpoint.payload["reason_code"] == REASON_FLEET_NOT_LAUNCHED
+                assert checkpoint.payload[REENTRANT_HOLD_KEY] is True
+                # The hold is an honest stop, not a driver error: the drive task finishes cleanly.
                 async with transaction() as conn:
-                    failed_drive = (
+                    last_drive = (
                         (
                             await conn.execute(
                                 text(
@@ -196,11 +205,10 @@ def test_composed_worker_drives_to_human_checkpoint_then_deep_quarantines() -> N
                         .mappings()
                         .one()
                     )
-                assert str(failed_drive["status"]) == "failed", dict(failed_drive)
-                assert '"error"' in str(failed_drive["result_ref_json"])
+                assert str(last_drive["status"]) != "failed", dict(last_drive)
                 # The re-drive finalized exactly one more phase — the human tier checkpoint's
-                # resume — and nothing after it: the quarantined DEEP raise can never record a
-                # succeeded phase finalize for deep/verification/handoff.
+                # resume — and nothing after it: a DEEP hold records no phase finalize, so nothing
+                # charges for deep/verification/handoff.
                 assert await _ledger_phase_count() == after_pause + 1
             finally:
                 # ``field_definition`` is a GLOBAL-by-key registry; leaving the committed core pack

@@ -124,6 +124,13 @@ def finalization_receipt(
         if outcome is ResearchFinalizationOutcome.COMPLETED
         else ()
     )
+    # A ``needs_review`` proposal is only well-formed with durable review flags, so the helper
+    # supplies one rather than leaving that outcome unusable for callers.
+    review_flags = (
+        (f"{subject_type.value}.needs_review",)
+        if outcome is ResearchFinalizationOutcome.NEEDS_REVIEW
+        else ()
+    )
     proposal = ResearchFinalizationProposal(
         proposal_id=uuid4(),
         subject_type=subject_type,
@@ -135,6 +142,7 @@ def finalization_receipt(
         spend_reconciliation_ref=f"spend:{job_id}",
         identity_use_verification_ref=f"identity-use:{job_id}",
         completed_field_keys=completed,
+        review_flags=review_flags,
     )
     return ResearchFinalizationReceipt(
         receipt_id=uuid4(),

@@ -16,11 +16,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from clue_api.entity_research_quarantine import (
-    ENTITY_RESEARCH_AGENT_NOT_COMPOSED,
-    EntityResearchAgentNotComposed,
-    EntityResearchQuarantinePhaseHandler,
-)
+from clue_api.entity_research_deep_phase import EntityResearchDeepPhaseHandler
 from clue_api.handoff_retention import RetentionSweepHandoffHandler
 from clue_api.handoff_wiring import HandoffPhaseHandler
 from clue_api.review.composition import ProjectRunResumeHook, _default_resume_run
@@ -172,27 +168,38 @@ def test_verification_switch_prevents_reverse_profiling_judge_construction() -> 
     assert driver._rp_judge is None
 
 
-def test_composed_run_uses_loud_entity_research_quarantine() -> None:
+def test_composed_run_uses_the_m8d_join_only_deep_bridge() -> None:
+    """M8D R11.1 replaced the fail-loud quarantine handler in the DEEP slot with the join-only
+    fleet bridge. The R1 quarantine over the retired tool addresses is untouched (that gate lives
+    in ``tests/api/test_m8d_r1_entity_research_quarantine.py``)."""
+
     async def scenario() -> None:
         row = _row("a")
         composed = await _driver({("ws", "a", 1): _spec("a")}).composed(row)
         handler = composed.registry.get(ProjectPhase.DEEP)
-        assert isinstance(handler, EntityResearchQuarantinePhaseHandler)
-        assert composed.deep.handler is handler
-        assert composed.deep.reason_code == ENTITY_RESEARCH_AGENT_NOT_COMPOSED
-        with pytest.raises(EntityResearchAgentNotComposed) as excinfo:
-            await handler.run(
-                PhaseContext(
-                    project_run_id=row.id,
-                    project_id=row.project_id,
-                    brand_id=row.brand_id,
-                    phase=ProjectPhase.DEEP,
-                    workspace_id=row.workspace_id,
-                    icp_key=row.icp_key,
-                    icp_version=row.icp_version,
-                )
-            )
-        assert excinfo.value.reason_code == ENTITY_RESEARCH_AGENT_NOT_COMPOSED
+        assert isinstance(handler, EntityResearchDeepPhaseHandler)
+        assert composed.deep is handler
+        assert handler.phase is ProjectPhase.DEEP
+
+    run_async(scenario())
+
+
+def test_composed_deep_bridge_needs_no_gateway_or_judge() -> None:
+    """R11 §1a: the bridge must compose identically under ``CLUE_VERIFICATION_ENABLED`` true and
+    false, so it may take no gateway/judge dependency."""
+
+    settings = load_settings(
+        gateway_allow_stub=True,
+        c7_production_handoff_enabled=True,
+        verification_enabled=False,
+        _env_file=None,
+    )
+
+    async def scenario() -> None:
+        driver = _driver({("ws", "a", 1): _spec("a")}, settings=settings)
+        assert driver._rp_judge is None
+        composed = await driver.composed(_row("a"))
+        assert isinstance(composed.registry.get(ProjectPhase.DEEP), EntityResearchDeepPhaseHandler)
 
     run_async(scenario())
 
@@ -286,7 +293,7 @@ def test_two_icps_compose_isolated_registries_no_cross_talk() -> None:
         assert a.spec.icp_key == "a" and b.spec.icp_key == "b"
         assert a.spec is not b.spec
         assert a.spec.field_keys != b.spec.field_keys
-        assert a.deep.reason_code == b.deep.reason_code == ENTITY_RESEARCH_AGENT_NOT_COMPOSED
+        assert a.deep is deep_a and b.deep is deep_b
 
     run_async(scenario())
 
