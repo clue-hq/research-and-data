@@ -270,12 +270,17 @@ class ExaWebsetsDiscoveryStarter:
         policy: ExaDiscoveryAcquisitionPolicy = DEFAULT_EXA_DISCOVERY_ACQUISITION_POLICY,
         pricing: ExaWebsetsPricingPolicy = DEFAULT_EXA_WEBSETS_PRICING,
         conn_factory: ConnFactory = transaction,
+        enforce_budget: bool = True,
     ) -> None:
         self._transport_factory = transport_factory
         self._storage = storage
         self._policy = policy
         self._pricing = pricing
         self._conn_factory = conn_factory
+        # FI pilot budget-controls, threaded from ``Settings.budget_controls_enabled`` at the
+        # composition root. False means this path never refuses on budget grounds; every
+        # durable row it writes is unchanged.
+        self._enforce_budget = enforce_budget
 
     async def preflight(self, ctx: PhaseContext) -> ExaDiscoveryPreflight:
         async with self._conn_factory() as conn:
@@ -297,7 +302,11 @@ class ExaWebsetsDiscoveryStarter:
             policy=self._policy,
             pricing=self._pricing,
         )
-        if run.budget_cap_cents is not None:
+        # FI pilot budget-controls: the discovery preflight's remaining-headroom refusal is a
+        # pre-action stop on budget grounds, so it goes inert with the switch off. The bound on
+        # *how much* this discovery may buy is unchanged — it is the plan's own
+        # ``maximum_cost_cents``, a structural fan-out cap, and it still rides the plan row.
+        if self._enforce_budget and run.budget_cap_cents is not None:
             remaining = run.budget_cap_cents - run.spent_cents
             if result.maximum_cost_cents > remaining:
                 raise DiscoveryBudgetExceeded(
@@ -335,6 +344,7 @@ class ExaWebsetsDiscoveryStarter:
                     storage=self._storage,
                     pricing=self._pricing,
                     conn_factory=self._conn_factory,
+                    enforce_budget=self._enforce_budget,
                 )
                 submissions.append(
                     await submitter.submit(

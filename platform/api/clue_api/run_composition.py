@@ -398,7 +398,10 @@ class ComposingRunDriver:
         rp: PhaseHandler
         if self._client_input_provider is not None:
             rp = _ClientInputThreadingHandler(
-                inner=build_reverse_profiling_handler(judge=self._rp_judge),
+                inner=build_reverse_profiling_handler(
+                    judge=self._rp_judge,
+                    enforce_budget=self._enforce_budget,
+                ),
                 provider=self._client_input_provider,
             )
         else:

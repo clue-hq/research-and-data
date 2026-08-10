@@ -380,6 +380,7 @@ def _build_exa_discovery_starter(
     return ExaWebsetsDiscoveryStarter(
         transport_factory=lambda: ExaWebsetsClient(api_key=api_key, lookup_attempts=1),
         storage=storage,
+        enforce_budget=settings.budget_controls_enabled,
     )
 
 
@@ -399,6 +400,7 @@ async def _exa_targeted_enrichment_loop(
             coordinator=ExaTargetedEnrichmentCoordinator(
                 transport=client,
                 storage=storage,
+                enforce_budget=settings.budget_controls_enabled,
             )
         )
         while True:

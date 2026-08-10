@@ -115,6 +115,7 @@ class CommitteeEligibilityService:
         sources: Sequence[CommitteeEnumerationSource],
         conn_factory: ConnFactory = transaction,
         policy: CommitteeEligibilityPolicy = DEFAULT_COMMITTEE_ELIGIBILITY_POLICY,
+        enforce_budget: bool = True,
     ) -> None:
         if not sources or len(sources) != len({item.source_key for item in sources}):
             raise ValueError("committee eligibility requires unique bounded enumeration sources")
@@ -123,6 +124,10 @@ class CommitteeEligibilityService:
         self._sources = tuple(sources)
         self._conn_factory = conn_factory
         self._policy = policy
+        # FI pilot budget-controls: threaded from ``Settings.budget_controls_enabled`` at
+        # the composition root and passed to the durable reservation, which stops raising
+        # on the project-run cap while writing every ledger row unchanged.
+        self._enforce_budget = enforce_budget
 
     async def evaluate(
         self,
@@ -385,6 +390,7 @@ class CommitteeEligibilityService:
                     ),
                     allowed_phases=frozenset({ProjectPhase.DEEP}),
                     entity_research_job_id=request.entity_research_job_id,
+                    enforce_budget=self._enforce_budget,
                 )
             governance_evidence.extend(
                 (

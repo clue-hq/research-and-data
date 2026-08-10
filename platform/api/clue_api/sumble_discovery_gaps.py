@@ -163,6 +163,7 @@ class SumbleDiscoveryGapResolver:
         conn_factory: ConnFactory = transaction,
         policy: SumbleDiscoveryGapPolicy = DEFAULT_SUMBLE_DISCOVERY_GAP_POLICY,
         client_factory: Callable[[int, Decimal], SumbleClient] | None = None,
+        enforce_budget: bool = True,
     ) -> None:
         if enabled and api_key is None:
             raise ValueError("enabled Sumble discovery gaps require an API key")
@@ -174,6 +175,10 @@ class SumbleDiscoveryGapResolver:
         self._policy = policy
         self._client_factory = client_factory
         self._materializer = SumbleClaimMaterializer(conn_factory=conn_factory)
+        # FI pilot budget-controls: threaded from ``Settings.budget_controls_enabled`` at
+        # the composition root and passed to the durable reservation, which stops raising
+        # on the project-run cap while writing every ledger row unchanged.
+        self._enforce_budget = enforce_budget
 
     async def ensure_terminal(
         self, ctx: PhaseContext, batch_id: DiscoveryBatchId
@@ -668,7 +673,9 @@ class SumbleDiscoveryGapResolver:
                 provider_units_reserved=Decimal(request.provider_credit_cap),
                 cost_cents_reserved=request.money_budget_cap_cents,
             )
-            stored, created = await reserve_discovery_gap_operation(conn, operation=operation)
+            stored, created = await reserve_discovery_gap_operation(
+                conn, operation=operation, enforce_budget=self._enforce_budget
+            )
             await self._bind(conn, stored, key, "sumble_discovery_gap_request")
             return stored, created
 
@@ -1008,6 +1015,7 @@ def build_production_sumble_discovery_gap_resolver(
         storage=storage,
         cents_per_credit=settings.sumble_cents_per_credit,
         conn_factory=conn_factory,
+        enforce_budget=settings.budget_controls_enabled,
     )
 
 

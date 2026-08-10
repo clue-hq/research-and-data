@@ -278,8 +278,15 @@ async def compile_sumble_account_gap_preflight(
     conn_factory: ConnFactory = transaction,
     policy: SumbleAccountGapPolicy = DEFAULT_SUMBLE_ACCOUNT_GAP_POLICY,
     entity_research_job_id: UUID | None = None,
+    enforce_budget: bool = True,
 ) -> SumbleAccountGapPreflight:
-    """Compile only documented native fields with an evidence-backed gap and explicit value."""
+    """Compile only documented native fields with an evidence-backed gap and explicit value.
+
+    ``enforce_budget`` is the FI pilot budget-controls switch. The capacity probe below is
+    dual-purpose: it proves the run/job *authority* (which holds in both modes) and, with a
+    zero proposal, would still refuse when prior spend already exceeds the cap. Only that
+    money half goes inert when controls are off.
+    """
 
     if cents_per_credit < 0:
         raise SumbleAccountGapEligibilityError("Sumble cents-per-credit cannot be negative")
@@ -327,6 +334,7 @@ async def compile_sumble_account_gap_preflight(
                     proposed_cents=Decimal(0),
                     allowed_phases=frozenset({ProjectPhase.DEEP}),
                     entity_research_job_id=entity_research_job_id,
+                    enforce_budget=enforce_budget,
                 )
         except ProviderSpendGuardError as exc:
             raise SumbleAccountGapEligibilityError(
@@ -510,6 +518,7 @@ class SumbleAccountGapCoordinator:
         policy: SumbleAccountGapPolicy = DEFAULT_SUMBLE_ACCOUNT_GAP_POLICY,
         in_flight_grace_seconds: int = 60,
         client_factory: Callable[[int, Decimal], SumbleClient] | None = None,
+        enforce_budget: bool = True,
     ) -> None:
         self._api_key = api_key
         self._storage = storage
@@ -525,6 +534,10 @@ class SumbleAccountGapCoordinator:
             )
         )
         self._materializer = SumbleClaimMaterializer(conn_factory=conn_factory)
+        # FI pilot budget-controls: threaded from ``Settings.budget_controls_enabled`` at
+        # the composition root and passed to the durable reservation, which stops raising
+        # on the project-run cap while writing every ledger row unchanged.
+        self._enforce_budget = enforce_budget
 
     async def start(
         self,
@@ -824,7 +837,10 @@ class SumbleAccountGapCoordinator:
                 ),
             )
             stored, created = await reserve_account_gap_operation(
-                conn, operation=operation, snapshots=(org_snapshot,)
+                conn,
+                operation=operation,
+                snapshots=(org_snapshot,),
+                enforce_budget=self._enforce_budget,
             )
             for key, kind in (
                 (input_key, "sumble_gap_request"),
@@ -1393,12 +1409,17 @@ class SumbleAccountGapStarter:
         cents_per_credit: Decimal,
         conn_factory: ConnFactory = transaction,
         policy: SumbleAccountGapPolicy = DEFAULT_SUMBLE_ACCOUNT_GAP_POLICY,
+        enforce_budget: bool = True,
     ) -> None:
         self._coordinator = coordinator
         self._storage = storage
         self._cents_per_credit = cents_per_credit
         self._conn_factory = conn_factory
         self._policy = policy
+        # FI pilot budget-controls, threaded from ``Settings.budget_controls_enabled`` at the
+        # composition root. False means this path never refuses on budget grounds; every
+        # durable row it writes is unchanged.
+        self._enforce_budget = enforce_budget
 
     async def start(
         self,
@@ -1473,6 +1494,7 @@ class SumbleAccountGapStarter:
             conn_factory=self._conn_factory,
             policy=self._policy,
             entity_research_job_id=entity_research_job_id,
+            enforce_budget=self._enforce_budget,
         )
         return await self._coordinator.start(preflight, before_dispatch=before_dispatch)
 
@@ -1495,12 +1517,14 @@ def build_production_sumble_account_gap_starter(
         storage=storage,
         cents_per_credit=settings.sumble_cents_per_credit,
         conn_factory=conn_factory,
+        enforce_budget=settings.budget_controls_enabled,
     )
     return SumbleAccountGapStarter(
         coordinator=coordinator,
         storage=storage,
         cents_per_credit=settings.sumble_cents_per_credit,
         conn_factory=conn_factory,
+        enforce_budget=settings.budget_controls_enabled,
     )
 
 

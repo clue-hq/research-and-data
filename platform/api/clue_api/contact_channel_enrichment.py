@@ -448,6 +448,7 @@ class ExaContactChannelCoordinator:
         poll_after_seconds: int = 15,
         validation_lease_seconds: int = 300,
         budget: BudgetEngine | None = None,
+        enforce_budget: bool = True,
     ) -> None:
         if poll_after_seconds < 1 or validation_lease_seconds < 1:
             raise ValueError("contact channel poll and validation lease must be positive")
@@ -461,6 +462,10 @@ class ExaContactChannelCoordinator:
         self._poll_after = timedelta(seconds=poll_after_seconds)
         self._validation_lease = timedelta(seconds=validation_lease_seconds)
         self._budget = budget or BudgetEngine(store=DbBudgetStore(conn_factory=conn_factory))
+        # FI pilot budget-controls: threaded from ``Settings.budget_controls_enabled`` at
+        # the composition root and passed to the durable reservation, which stops raising
+        # on the project-run cap while writing every ledger row unchanged.
+        self._enforce_budget = enforce_budget
 
     async def start(
         self,
@@ -1738,6 +1743,7 @@ class ExaContactChannelCoordinator:
                 request=preflight.request,
                 input_artifact_key=input_key,
                 csv_artifact_key=csv_key,
+                enforce_budget=self._enforce_budget,
             )
             for key, kind in ((input_key, "request"), (csv_key, "profile_import")):
                 await bind_discovery_artifact_subject(

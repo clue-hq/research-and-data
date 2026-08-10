@@ -237,6 +237,7 @@ class ProductionAccountResearchProviderActions:
                 CommitteeEnumerationSource(source_key=PEOPLE_SOURCE_KEY, source_tier=SourceTier(1)),
             ),
             conn_factory=conn_factory,
+            enforce_budget=settings.budget_controls_enabled,
         )
 
     async def resolve(self, job: EntityResearchJobRow) -> dict[str, ProviderActionBinding]:
@@ -294,6 +295,7 @@ class ProductionAccountResearchProviderActions:
                     ),
                     storage=self._storage,
                     conn_factory=self._conn_factory,
+                    enforce_budget=self._settings.budget_controls_enabled,
                 ),
                 snapshots=ExaDeepSnapshotResolverProvider(
                     storage=self._storage,
@@ -377,6 +379,7 @@ class ProductionAccountResearchProviderActions:
                 cents_per_credit=self._settings.sumble_cents_per_credit,
                 conn_factory=self._conn_factory,
                 poll_after_seconds=self._settings.sumble_committee_poll_after_s,
+                enforce_budget=self._settings.budget_controls_enabled,
             ),
             storage=self._storage,
             conn_factory=self._conn_factory,
@@ -473,6 +476,7 @@ class ProductionContactResearchProviderActions:
                 transport=ExaDeepHttpAcquisitionTransport(config=config, secrets=self._secrets),
                 storage=self._storage,
                 conn_factory=self._conn_factory,
+                enforce_budget=self._settings.budget_controls_enabled,
             )
             action = ExaContactSemanticResearchAction(
                 intent=intent,

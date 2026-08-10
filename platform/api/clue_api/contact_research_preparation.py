@@ -774,6 +774,7 @@ def build_production_contact_channel_coordinator(
     storage: StorageBackend,
     pre_spend_gate: PreSpendGate,
     conn_factory: ConnFactory = transaction,
+    enforce_budget: bool = True,
 ) -> ExaContactChannelCoordinator:
     """Compose the real C5 transport with an explicitly deployed independent validator."""
 
@@ -784,6 +785,7 @@ def build_production_contact_channel_coordinator(
         pre_spend_gate=pre_spend_gate,
         storage=storage,
         conn_factory=conn_factory,
+        enforce_budget=enforce_budget,
     )
 
 
@@ -813,6 +815,7 @@ def build_production_contact_research_preparer(
         transport=ExaDeepHttpAcquisitionTransport(config=config, secrets=secrets),
         storage=storage,
         conn_factory=conn_factory,
+        enforce_budget=settings.budget_controls_enabled,
     )
     acquisition = ExaDeepContactAcquisitionService(
         coordinator=coordinator,

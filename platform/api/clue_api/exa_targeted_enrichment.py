@@ -545,6 +545,7 @@ class ExaTargetedEnrichmentCoordinator:
         poll_after_seconds: int = 15,
         in_flight_grace_seconds: int = 60,
         budget: BudgetEngine | None = None,
+        enforce_budget: bool = True,
     ) -> None:
         if poll_after_seconds < 1 or in_flight_grace_seconds < 1:
             raise ValueError("targeted enrichment timing values must be positive")
@@ -555,6 +556,10 @@ class ExaTargetedEnrichmentCoordinator:
         self._poll_after = timedelta(seconds=poll_after_seconds)
         self._in_flight_grace = timedelta(seconds=in_flight_grace_seconds)
         self._budget = budget or BudgetEngine(store=DbBudgetStore(conn_factory=conn_factory))
+        # FI pilot budget-controls: threaded from ``Settings.budget_controls_enabled`` at
+        # the composition root and passed to the durable reservation, which stops raising
+        # on the project-run cap while writing every ledger row unchanged.
+        self._enforce_budget = enforce_budget
 
     async def start(self, preflight: ExaTargetedPreflight) -> ExaTargetedResult:
         request = preflight.request
@@ -832,7 +837,9 @@ class ExaTargetedEnrichmentCoordinator:
                 provider_units_reserved=preflight.maximum_provider_credits,
                 cost_cents_reserved=preflight.maximum_cost_cents,
             )
-            stored, created = await reserve_targeted_enrichment_operation(conn, operation=operation)
+            stored, created = await reserve_targeted_enrichment_operation(
+                conn, operation=operation, enforce_budget=self._enforce_budget
+            )
             for artifact_key, reference_kind in (
                 (stored.input_artifact_key, "targeted_enrichment_request"),
                 (stored.csv_artifact_key, "targeted_enrichment_csv"),
@@ -1554,12 +1561,17 @@ class ExaTargetedEnrichmentStarter:
         conn_factory: ConnFactory = transaction,
         policy: ExaTargetedEnrichmentPolicy = DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY,
         pricing: ExaWebsetsPricingPolicy = DEFAULT_EXA_WEBSETS_PRICING,
+        enforce_budget: bool = True,
     ) -> None:
         self._transport_factory = transport_factory
         self._storage = storage
         self._conn_factory = conn_factory
         self._policy = policy
         self._pricing = pricing
+        # FI pilot budget-controls, threaded from ``Settings.budget_controls_enabled`` at the
+        # composition root. False means this path never refuses on budget grounds; every
+        # durable row it writes is unchanged.
+        self._enforce_budget = enforce_budget
 
     async def start(
         self,
@@ -1586,6 +1598,7 @@ class ExaTargetedEnrichmentStarter:
                 storage=self._storage,
                 conn_factory=self._conn_factory,
                 pricing=self._pricing,
+                enforce_budget=self._enforce_budget,
             )
             return await coordinator.start(preflight)
 
@@ -1644,6 +1657,7 @@ def build_production_exa_targeted_starter(
     return ExaTargetedEnrichmentStarter(
         transport_factory=lambda: ExaWebsetsClient(api_key=api_key, lookup_attempts=1),
         storage=storage,
+        enforce_budget=settings.budget_controls_enabled,
     )
 
 
