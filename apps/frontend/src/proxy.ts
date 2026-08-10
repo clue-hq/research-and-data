@@ -5,13 +5,20 @@ import {
   isAuthenticationEnabled,
   requireAuthenticationConfiguration,
 } from "@/auth/config";
+import { normalizeClerkProxyResponse } from "@/auth/clerk-proxy-response";
 
 const clerkProxy = clerkMiddleware();
 
-export default function proxy(request: NextRequest, event: NextFetchEvent) {
+export default async function proxy(
+  request: NextRequest,
+  event: NextFetchEvent,
+) {
   if (!isAuthenticationEnabled()) return NextResponse.next();
   requireAuthenticationConfiguration();
-  return clerkProxy(request, event);
+  return normalizeClerkProxyResponse(
+    request.url,
+    await clerkProxy(request, event),
+  );
 }
 
 export const config = {

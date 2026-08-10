@@ -26,7 +26,10 @@ Branch: `platform/pilot-budget-controls` at Lane F head `642064e6`.
   definitions. Focused DB tests pass (`4 passed`) for browser and discovery fixtures.
 - Frontend auth required a compatibility wrapper around Clerk middleware: local Clerk/Next returned a
   same-URL middleware rewrite that recursively hung. Removing only that rewrite while retaining Clerk
-  request headers restored authenticated operation. This still needs a dedicated regression test.
+  request headers restored authenticated operation. The final seam preserves the auth-disabled mode,
+  normalizes only an exact self-rewrite, and has pure regression coverage for auth-header retention and
+  real-rewrite preservation. Frontend unit suite: 142 passed; lint passed; live project/API reloads
+  continue to return 200 through `proxy.ts`.
 
 ## Browser evidence
 
