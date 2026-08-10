@@ -164,7 +164,15 @@ def build_contact_research_fleet_composition(
     conn_factory: ConnFactory = transaction,
     checkpointers: EntityResearchCheckpointerFactory | None = None,
     prose_step: ProseSynthesisStep | None = None,
+    enforce_budget: bool = True,
 ) -> ContactResearchFleetComposition:
+    """Compose the production contact fleet.
+
+    ``enforce_budget`` carries ``Settings.budget_controls_enabled`` down to the shared R9 batch
+    coordinator (FI pilot budget-controls). It is a parameter rather than a settings read so this
+    root stays the only place the deployment switch is consulted for the contact fleet.
+    """
+
     if isinstance(provider_actions, StaticContactResearchProviderActions) or isinstance(
         channel_actions, StaticContactResearchChannelActions
     ):
@@ -198,7 +206,10 @@ def build_contact_research_fleet_composition(
             models=models,
             journal=journal,
             guard=ContactResearchExecutionGuard(conn_factory=conn_factory),
-            batches=DbEntityResearchToolBatchCoordinator(conn_factory=conn_factory),
+            batches=DbEntityResearchToolBatchCoordinator(
+                conn_factory=conn_factory,
+                enforce_budget=enforce_budget,
+            ),
         ),
         checkpointers=checkpointer_factory,
         journal=journal,
@@ -220,7 +231,10 @@ def build_contact_research_fleet_composition(
     )
     fleets = ContactResearchFleetService(conn_factory=conn_factory)
     return ContactResearchFleetComposition(
-        launcher=ContactResearchFleetLauncher(conn_factory=conn_factory),
+        launcher=ContactResearchFleetLauncher(
+            conn_factory=conn_factory,
+            enforce_budget=enforce_budget,
+        ),
         fleets=fleets,
         handler=ContactResearchFleetWorkHandler(inner=inner, fleets=fleets, prose_step=prose_step),
     )

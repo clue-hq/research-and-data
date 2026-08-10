@@ -44,6 +44,7 @@ from clue_core.entity_research import (
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet import EntityResearchJobEnvelope, EntityResearchRunEnvelope
+from clue_obs import get_logger
 from clue_research.claimstore import record_run_lineage
 from clue_research.directives import get_research_directive
 from clue_research.durable import (
@@ -66,6 +67,8 @@ from clue_research.sources import (
     load_effective_source_plan,
     plan_sources,
 )
+
+log = get_logger("clue_api.account_research_fleet_launch")
 
 Money = Annotated[Decimal, Field(ge=0)]
 
@@ -125,16 +128,28 @@ def _sha(value: object) -> str:
 
 
 class AccountResearchFleetLauncher:
-    """Validate, persist, compile, and offer one exact account research run."""
+    """Validate, persist, compile, and offer one exact account research run.
+
+    ``enforce_budget`` is ``Settings.budget_controls_enabled`` (FI pilot budget-controls). With it
+    False the three *economic* admission checks below — the caller's estimate echo, the approved cap
+    vs the estimate, and the remaining project headroom — are skipped, because the pilot's ruling is
+    that nothing stops a pre-approved action on budget grounds and, with the amount withheld from
+    every surface, the caller has no number to echo in the first place. Every *structural* check is
+    untouched in both modes: the directive must still be the current human-confirmed one, its
+    lineage must still match the run, its privacy policy must still authorize the research, and each
+    job is still launched with the directive's own per-account ``budget_cap_cents``, so spend is
+    still fully attributed and recorded."""
 
     def __init__(
         self,
         *,
         fleets: AccountResearchFleetService,
         conn_factory: ConnFactory = transaction,
+        enforce_budget: bool = True,
     ) -> None:
         self._fleets = fleets
         self._conn_factory = conn_factory
+        self._enforce_budget = enforce_budget
 
     async def launch(
         self,
@@ -248,20 +263,38 @@ class AccountResearchFleetLauncher:
             # answerable from data — per-job spend on the job row, and the coverage ledger's
             # per-field ``…:existing_claim_fresh`` skip reasons.  Netting belongs with an estimate
             # *proposal* surface, so both sides of the equality can move together.
-            if estimated_cost != request.expected_estimated_cost_cents:
-                raise AccountResearchFleetLaunchError(
-                    "approved estimate differs from the current effective directives"
-                )
-            if request.approved_budget_cap_cents < estimated_cost:
-                raise AccountResearchFleetLaunchError(
-                    "approved account-fleet budget is below the reviewed estimate"
-                )
-            if project_run.budget_cap_cents is not None:
-                remaining = max(Decimal(0), project_run.budget_cap_cents - project_run.spent_cents)
-                if request.approved_budget_cap_cents > remaining:
+            if self._enforce_budget:
+                if estimated_cost != request.expected_estimated_cost_cents:
                     raise AccountResearchFleetLaunchError(
-                        "approved account-fleet budget exceeds remaining project headroom"
+                        "approved estimate differs from the current effective directives"
                     )
+                if request.approved_budget_cap_cents < estimated_cost:
+                    raise AccountResearchFleetLaunchError(
+                        "approved account-fleet budget is below the reviewed estimate"
+                    )
+                if project_run.budget_cap_cents is not None:
+                    remaining = max(
+                        Decimal(0), project_run.budget_cap_cents - project_run.spent_cents
+                    )
+                    if request.approved_budget_cap_cents > remaining:
+                        raise AccountResearchFleetLaunchError(
+                            "approved account-fleet budget exceeds remaining project headroom"
+                        )
+            else:
+                # FI pilot budget-controls: the estimate is still recomputed above (it is what the
+                # per-account job caps and the durable launch identity are built from) and is logged
+                # here so the record of what this launch was priced at survives, even though no
+                # caller-supplied number gates it.
+                log.info(
+                    "account_research.launch.budget_controls_disabled",
+                    workspace_id=request.workspace_id,
+                    project_run_id=str(request.project_run_id),
+                    directive_ref=directive.directive_ref,
+                    account_count=len(account_ids),
+                    recomputed_estimate_cents=str(estimated_cost),
+                    caller_expected_cents=str(request.expected_estimated_cost_cents),
+                    approved_budget_cap_cents=str(request.approved_budget_cap_cents),
+                )
             first = effective_by_account[account_ids[0]]
             common_authority = (
                 tuple(str(value) for value in first.field_keys),
@@ -533,7 +566,15 @@ class AccountResearchFleetLauncher:
             envelope = EntityResearchRunEnvelope(
                 lifecycle=lifecycle,
                 jobs=tuple(jobs),
-                budget_cap_cents=request.approved_budget_cap_cents,
+                # With budget controls off the caller's approved cap is an ignored courier field, so
+                # honouring it here would be incoherent: it can be smaller than the per-account caps
+                # this launch just handed out, and the envelope's own invariant ("a job budget
+                # cannot exceed its run-wide cap") would then reject the launch with a validation
+                # error — enforcement by the back door. The run-level cap becomes the server's
+                # recomputed Σ instead: the honest record of the authority actually issued.
+                budget_cap_cents=(
+                    request.approved_budget_cap_cents if self._enforce_budget else estimated_cost
+                ),
                 concurrency_limit=request.concurrency_limit,
             )
             try:

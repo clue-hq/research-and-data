@@ -253,12 +253,17 @@ def build_tier_checkpoint_handler(
     *,
     sealed_account_reader: SealedDiscoveryAccountReader | None = None,
     session_factory: ConnFactory = transaction,
+    enforce_budget: bool = True,
 ) -> TierCheckpointPhaseHandler:
     """The TIER_CHECKPOINT handler (M6.4): tier the stored Pass-A scores, estimate Pass-B cost, and
-    run the durable human gate. Config defaults to its production constants."""
+    run the durable human gate. Config defaults to its production constants.
+
+    ``enforce_budget`` is ``Settings.budget_controls_enabled`` (FI pilot budget-controls); False
+    stops a projected-over-cap estimate from overriding a human ``approve``."""
     return TierCheckpointPhaseHandler(
         sealed_account_reader=sealed_account_reader,
         session_factory=session_factory,
+        enforce_budget=enforce_budget,
     )
 
 
@@ -268,6 +273,7 @@ def register_tier_checkpoint_handler(
     sealed_account_reader: SealedDiscoveryAccountReader | None = None,
     session_factory: ConnFactory = transaction,
     register: _Register = register_phase_handler,
+    enforce_budget: bool = True,
 ) -> PhaseHandler:
     """Build + register the TIER_CHECKPOINT handler. The phase does **not** fetch (it tiers stored
     scores), so the snapshot wrapper is harmless — applied only for uniformity when ``storage`` is
@@ -276,6 +282,7 @@ def register_tier_checkpoint_handler(
         build_tier_checkpoint_handler(
             sealed_account_reader=sealed_account_reader,
             session_factory=session_factory,
+            enforce_budget=enforce_budget,
         ),
         storage=storage,
     )

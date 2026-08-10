@@ -153,12 +153,17 @@ def build_account_research_fleet_composition(
     conn_factory: ConnFactory = transaction,
     checkpointers: EntityResearchCheckpointerFactory | None = None,
     prose_step: ProseSynthesisStep | None = None,
+    enforce_budget: bool = True,
 ) -> AccountResearchFleetComposition:
     """Compose one production-capable account fleet without provider branches in the fleet.
 
     The same connection factory is threaded through requests, causation, lineage, agent state,
     finalization, and R2 job transitions.  A result can therefore be exposed to the model only
     after its provider-owned and provider-neutral durability surfaces agree.
+
+    ``enforce_budget`` carries ``Settings.budget_controls_enabled`` down to the shared R9 batch
+    coordinator (FI pilot budget-controls). It is a parameter rather than a settings read so this
+    root stays the only place the deployment switch is consulted for the account fleet.
     """
 
     if isinstance(provider_actions, StaticAccountResearchProviderActions):
@@ -198,7 +203,10 @@ def build_account_research_fleet_composition(
         conn_factory=conn_factory,
         require_atomic_admission=True,
     )
-    batches = DbEntityResearchToolBatchCoordinator(conn_factory=conn_factory)
+    batches = DbEntityResearchToolBatchCoordinator(
+        conn_factory=conn_factory,
+        enforce_budget=enforce_budget,
+    )
     runtime = EntityResearchAgentRuntime(
         factory=EntityResearchAgentFactory(
             models=models,
@@ -220,7 +228,11 @@ def build_account_research_fleet_composition(
     fleets = AccountResearchFleetService(conn_factory=conn_factory)
     return AccountResearchFleetComposition(
         fleets=fleets,
-        launcher=AccountResearchFleetLauncher(fleets=fleets, conn_factory=conn_factory),
+        launcher=AccountResearchFleetLauncher(
+            fleets=fleets,
+            conn_factory=conn_factory,
+            enforce_budget=enforce_budget,
+        ),
         handler=AccountResearchFleetWorkHandler(
             inner=inner,
             fleets=fleets,

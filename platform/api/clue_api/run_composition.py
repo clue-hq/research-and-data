@@ -297,7 +297,16 @@ class ComposingRunDriver:
         )
         # A probe machine over the SHARED store for status reads (its registry is unused for status;
         # advance always runs on the composed per-run machine).
-        self._probe = ProjectRun(store=self._store, budget_engine=self._budget, ledger=self._ledger)
+        # FI pilot budget-controls: the deployment switch reaches every ``ProjectRun`` this driver
+        # builds. The engine stays wired in both modes (burn-down/estimate reads and every
+        # ``record`` charge are unaffected); only the pre-phase graceful-stop gate is disabled.
+        self._enforce_budget = self._settings.budget_controls_enabled
+        self._probe = ProjectRun(
+            store=self._store,
+            budget_engine=self._budget,
+            ledger=self._ledger,
+            enforce_budget=self._enforce_budget,
+        )
         self._cache_size = (
             cache_size if cache_size is not None else self._settings.composer_registry_cache_size
         )
@@ -423,6 +432,7 @@ class ComposingRunDriver:
             sealed_account_reader=sealed_discovery_reader,
             session_factory=self._session_factory,
             register=registry.register,
+            enforce_budget=self._enforce_budget,
         )
 
         # M8D R11.1: DEEP is the join-only bridge onto the R6 account-research fleet. It reads the
@@ -479,6 +489,7 @@ class ComposingRunDriver:
             registry=registry,
             budget_engine=self._budget,
             ledger=self._ledger,
+            enforce_budget=self._enforce_budget,
         )
         phases = registry.phases()
         # One structured log per composition (cache fill), not per advance.

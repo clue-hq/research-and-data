@@ -416,10 +416,19 @@ class ProjectRun:
         budget_engine: BudgetEngine | None = None,
         ledger: IdempotencyStore | None = None,
         phase_stale_after: timedelta = DEFAULT_PHASE_STALE_AFTER,
+        enforce_budget: bool = True,
     ) -> None:
         self._store: ProjectRunStore = store if store is not None else DbProjectRunStore()
         self._registry = registry if registry is not None else default_phase_handler_registry()
         self._budget = budget_engine
+        # FI pilot budget-controls (ratified 2026-08-11), threaded from
+        # ``Settings.budget_controls_enabled`` at the composition roots. False disables *only* the
+        # pre-phase graceful-stop gate in :meth:`_budget_graceful_stop`; the engine itself stays
+        # wired, so :meth:`pre_run_estimate` / :meth:`burn_down` (reads, and the M13.4 cost
+        # observability behind them) keep working and every ``BudgetEngine.record`` charge is still
+        # written. Passing no engine at all would silently break those reads with
+        # :class:`BudgetEngineNotConfigured`, which is why this is a separate knob.
+        self._enforce_budget = enforce_budget
         # The M7.4 phase-idempotency ledger. An *injected collaborator* (like ``budget_engine``):
         # the api composition root wires a ``DbIdempotencyStore`` so a phase finalize commits its
         # checkpoint + records its charge exactly once on the ``(project_run, phase)`` key. When
@@ -907,8 +916,15 @@ class ProjectRun:
         the run cooperatively — status ``PAUSED``, **no** ``AWAITING_INPUT`` checkpoint — so a later
         :meth:`resume` re-enters the *same* phase once the cap is raised, distinct from the human
         ``tier_checkpoint`` gate (which commits-and-advances on approve). The engine records the
-        ``graceful_stop`` ``budget_event`` as part of the check."""
-        if self._budget is None or run.phase not in _BUDGET_GATED_PHASES:
+        ``graceful_stop`` ``budget_event`` as part of the check.
+
+        With the FI pilot budget-controls switch off (``enforce_budget=False``) this gate is not
+        consulted at all: no budget verdict may pause a phase, so a run whose recorded spend has
+        passed its cap advances through every budget-gated phase. The cap itself is still stored
+        and every charge is still recorded — the run simply over-spends visibly."""
+        if self._budget is None or not self._enforce_budget:
+            return False
+        if run.phase not in _BUDGET_GATED_PHASES:
             return False
         decision = await self._budget.check(
             scope=BudgetScope.RUN, projected_cents=Decimal(0), project_run_id=run.id

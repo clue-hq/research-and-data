@@ -2673,6 +2673,9 @@ def build_toolbelt(
             budget_engine=BudgetEngine(store=DbBudgetStore(conn_factory=conn_factory)),
             ledger=DbIdempotencyStore(conn_factory=conn_factory),
             registry=PhaseHandlerRegistry(),
+            # FI pilot budget-controls: the run-control tools' machine follows the same deployment
+            # switch as the driver's, so no surface can graceful-stop a run the other would advance.
+            enforce_budget=resolved_settings.budget_controls_enabled,
         )
     )
     gate = (
@@ -2821,7 +2824,11 @@ def build_toolbelt(
     register_thread_tools(registry, conn_factory=conn_factory)
     # FI Lane D D4 / §3-P5(a): the durable confirmation gate is opened through a governed tool for
     # the same reason, and from its own wiring module for the same one.
-    register_agent_gate_tools(registry, conn_factory=conn_factory)
+    register_agent_gate_tools(
+        registry,
+        conn_factory=conn_factory,
+        budget_controls_enabled=resolved_settings.budget_controls_enabled,
+    )
     for tool in stage0_tools(
         conn_factory=conn_factory,
         policy=DEFAULT_STAGE0_POLICY,

@@ -645,6 +645,8 @@ def build_production_entity_research_fleet(
         # Lane E E1: the fleet process is the only one with a real gateway, so it is the only
         # process that composes a step at all.
         prose_step=prose_step,
+        # FI pilot budget-controls: the one place the deployment switch enters the fleets.
+        enforce_budget=settings.budget_controls_enabled,
     )
 
 

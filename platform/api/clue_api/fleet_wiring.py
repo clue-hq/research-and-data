@@ -272,6 +272,7 @@ def build_fleet_run_driver(
     store: ProjectRunStore | None = None,
     ledger: IdempotencyStore | None = None,
     budget_engine: BudgetEngine | None = None,
+    enforce_budget: bool = True,
 ) -> RunDriver:
     """The durable-backed ``RunDriver`` the worker drives: a
     :class:`~clue_research.durable.ProjectRun` over the real M7 persistence
@@ -282,12 +283,17 @@ def build_fleet_run_driver(
     populate. The DEEP handler is **campaign-scoped** (one ICPSpec) and is registered per
     ``(client, icp)`` at run start — over the fleet :func:`build_fleet_deep_scheduler` for the
     worker deployment (``build_deep_phase_handler(scheduler=…)``) — exactly as the in-process path
-    already registers it at run start; the worker never composes handlers (spec §2.4, worker.py)."""
+    already registers it at run start; the worker never composes handlers (spec §2.4, worker.py).
+
+    ``enforce_budget`` is the FI pilot budget-controls switch — pass
+    ``Settings.budget_controls_enabled``. False disables only the M7.5 pre-phase graceful-stop gate;
+    the engine stays wired so burn-down/estimate reads and every recorded charge are unchanged."""
     return ProjectRun(
         store=store if store is not None else DbProjectRunStore(),
         registry=registry if registry is not None else default_phase_handler_registry(),
         budget_engine=budget_engine if budget_engine is not None else BudgetEngine(),
         ledger=ledger if ledger is not None else DbIdempotencyStore(),
+        enforce_budget=enforce_budget,
     )
 
 
