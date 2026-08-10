@@ -104,3 +104,40 @@ Branch: `platform/pilot-budget-controls` at Lane F head `642064e6`.
   editor ignores prop replacement; blur then writes its stale prompt back. The layout overlap is
   structural too: the whole workspace composer is fixed at 126 px while the editor alone may grow to
   120 px plus padding/footer, with overflow visible.
+
+## Full-repository verification triage
+
+- `make check` on a separately migrated scratch DB passed formatting (1,331 files), ruff, mypy (631
+  source files), and all 25 import contracts. Pytest completed with 4,352 passed, 23 skipped, and 35
+  failed.
+- Most failures are shared-database/order contamination rather than Lane-F regressions. Fresh-DB
+  reruns pass the complete source-waterfall file (27), migration file (3), and the isolated
+  discovery/durable/fleet groups that failed late in the root run.
+- Four standalone test-infrastructure defects remain: one materializer assertion still stats
+  `stage0-interview/v9` while the resolved profile is v10; the logging-discipline scan improperly
+  includes the root-toolchain-excluded design subsystem; a durable-turn test's generic L6 source does
+  not provide the exact current instruction required by the strengthened fail-closed invariant; and
+  Lane-E scripted gateways infer judge calls from a hard-coded `claude-3.5-sonnet` substring.
+- The last issue explains the apparent account/contact summary rejection and doubled value-narrative
+  completion counts under this `.env`, where both synthesis and judge are set to Terra. All 36 E1,
+  E2, and E3 acceptance tests pass unchanged when `CLUE_JUDGE_MODEL` is set to the id their fake
+  recognizes. Classify this as non-hermetic test scaffolding, not a demonstrated live synthesis
+  regression.
+- The full defect ledger now includes `LF-TEST-001` through `LF-TEST-005` so red-suite interpretation
+  remains explicit rather than being silently discarded.
+
+## Final frontend build verification
+
+- The Clerk self-rewrite normalizer originally accepted only `Response`; Next's middleware result
+  also legally includes `null`/`void`. Expanded the helper without changing normalization semantics
+  and added coverage for the pass-through results. Final frontend unit suite is 143/143 and ESLint is
+  green.
+- `next build --webpack` passes compilation, TypeScript, eight-page static generation, optimization,
+  and trace collection. The normal `npm run build` Turbopack path stalls silently in the compile stage
+  on two bounded attempts, including after the clean webpack build.
+- Both builders warn that Next infers the monorepo root from `/Users/aryankeshri/package-lock.json`
+  instead of the checkout because of multiple lockfiles. Record the persistent default-build problem
+  as `LF-BUILD-001`; the webpack control proves this is not a general TypeScript/application build
+  failure.
+- Live Next diagnostics also identify `/artifacts/insight-report.png` as the Account Artifact page's
+  LCP image without eager loading; recorded as `LF-PERF-001`.
