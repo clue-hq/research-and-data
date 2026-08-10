@@ -71,9 +71,10 @@ class BodyWire(_Wire):
 
     Exactly one of ``text``/``omitted_reason`` is set. The reason codes are
     :func:`~clue_api.chat.message_bodies.hydrate_message_bodies`'s: ``budget`` (the response's byte
-    budget was already spent), ``unavailable`` (erased, purged, tombstoned or absent),
-    ``digest_mismatch`` (the stored bytes no longer match what the receipt committed to), and
-    ``not_text`` (a binary artifact is not a prompt and never becomes one by being decoded).
+    budget was already spent), ``unavailable`` (erased, purged, tombstoned or no durable row),
+    ``artifact_missing`` (the row exists but the physical blob is gone), ``digest_mismatch`` (the
+    stored bytes no longer match what the receipt committed to), and ``not_text`` (a binary
+    artifact is not a prompt and never becomes one by being decoded).
     """
 
     artifact_key: str

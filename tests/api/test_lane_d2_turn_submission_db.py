@@ -49,7 +49,10 @@ from clue_api.agent_registry_wiring import (
     PROJECT_CONVERSATION_SURFACE,
     build_agent_profile_registry,
 )
-from clue_api.agent_turn_fleet_wiring import AgentTurnWorkHandler
+from clue_api.agent_turn_fleet_wiring import (
+    AgentTurnWorkHandler,
+    RequiredTurnArtifactMissing,
+)
 from clue_api.agent_turn_submission import (
     agent_turn_dedup_key,
     dispatch_next_thread_turn,
@@ -746,13 +749,16 @@ def test_detached_research_work_does_not_block_a_new_chat_turn(tmp_path: Path) -
 class _RecordingRunner:
     """A stand-in for the composed turn runner: records calls, optionally fails."""
 
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, error: Exception | None = None) -> None:
         self.calls: list[UUID] = []
         self._fail = fail
+        self._error = error
 
     async def run(self, *, turn_id: UUID, workspace_id: str) -> Any:
         del workspace_id
         self.calls.append(turn_id)
+        if self._error is not None:
+            raise self._error
         if self._fail:
             raise RuntimeError("the model round failed")
         return SimpleNamespace(
@@ -932,6 +938,63 @@ def test_a_failed_turn_is_recorded_failed_and_does_not_wedge_the_thread(tmp_path
                 )
             ]
             assert statuses == [FleetTaskStatus.FAILED.value, FleetTaskStatus.QUEUED.value]
+
+    run_async(scenario())
+
+
+def test_a_missing_required_artifact_is_not_retried_and_releases_the_next_turn(
+    tmp_path: Path,
+) -> None:
+    """Lost exact input is terminal for A; the handler still offers B in acceptance order."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d2-missing-input", name="D2 missing input")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="missing-input",
+            )
+            app = _app(conn, settings=_settings(), storage=FsStorage(tmp_path / "artifacts"))
+            async with _client(app) as client:
+                first = await _submit(
+                    client,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    message="The unrecoverable first prompt.",
+                    key="missing-1",
+                )
+                second = await _submit(
+                    client,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    message="The next prompt must still run.",
+                    key="missing-2",
+                )
+            runner = _RecordingRunner(
+                error=RequiredTurnArtifactMissing("required turn context is gone")
+            )
+            await _handle_next(
+                conn,
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                runner=runner,
+            )
+            first_id = UUID(first.json()["data"]["turn_id"])
+            second_id = UUID(second.json()["data"]["turn_id"])
+            assert runner.calls == [first_id]
+            tasks = await _tasks(
+                conn,
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+            )
+            assert [(task["dedup_key"], task["status"], task["attempts"]) for task in tasks] == [
+                (agent_turn_dedup_key(first_id), FleetTaskStatus.FAILED.value, 1),
+                (agent_turn_dedup_key(second_id), FleetTaskStatus.QUEUED.value, 0),
+            ]
 
     run_async(scenario())
 

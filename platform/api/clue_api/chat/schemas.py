@@ -314,8 +314,9 @@ class ThreadMessageWire(_Wire):
     body_sha256: str
     #: Present only on the D3 hydrated cold-load read (``…/messages/bodies``); ``None`` on the
     #: body-free listing. When a hydrated page could not serve a body, ``body`` stays ``None`` and
-    #: ``body_unavailable_reason`` says why (``unavailable``/``digest_mismatch``/``not_text``/
-    #: ``budget``) — an empty string would render as a message nobody wrote.
+    #: ``body_unavailable_reason`` says why (``unavailable``/``artifact_missing``/
+    #: ``digest_mismatch``/``not_text``/``budget``) — an empty string would render as a message
+    #: nobody wrote.
     body: str | None = None
     body_unavailable_reason: str | None = None
     created_at: str

@@ -46,7 +46,9 @@ from langchain_core.outputs import ChatGenerationChunk
 from sqlalchemy import text
 
 from clue_api.agent_turn_fleet_wiring import (
+    REQUIRED_CONTEXT_ARTIFACT_MISSING,
     ProjectConversationTurnRunner,
+    RequiredTurnArtifactMissing,
     TurnStopped,
     sweep_thread_dispatch,
     sweep_turn_stream_retention,
@@ -59,7 +61,7 @@ from clue_api.agent_turn_submission import (
     thread_work_id,
     turn_id_for_submission,
 )
-from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
 from clue_api.chat.finalize_stream import FINALIZE_TOOL_NAME
 from clue_api.chat.schemas import thread_status
@@ -88,7 +90,7 @@ from clue_projections import (
     thread_turns,
     threads_running,
 )
-from clue_storage import FsStorage
+from clue_storage import ArtifactNotFound, FsStorage, StorageError
 from clue_toolbelt import DbIdempotencyStore, ToolRegistry
 from tests._identity import seed_principal
 from tests._workspace import seed_project as _seed_project_row
@@ -1439,6 +1441,102 @@ class _SleepingEngine:
         raise AssertionError("the stopped turn should never have completed")
 
 
+class _MissingArtifactEngine:
+    """The exact-message read failed before any model call could legally begin."""
+
+    def __init__(self, *, turns: DbAgentTurnJournal) -> None:
+        self.components = SimpleNamespace(turns=turns)
+        self.calls = 0
+
+    async def execute(self, **kwargs: Any) -> Any:
+        del kwargs
+        self.calls += 1
+        raise ArtifactNotFound("the durable artifact row outlived its blob")
+
+
+def test_missing_required_artifact_is_a_terminal_failed_turn(tmp_path: Path) -> None:
+    """The model stays closed, the journal is terminal, and SSE closes with a stable code."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d3-missing-input", name="D3 missing input")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="mi",
+            )
+            storage = FsStorage(tmp_path / "artifacts")
+            turn_id = await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="bytes that later disappeared",
+                key="k-missing-input",
+                storage=storage,
+            )
+            await _agent_turn_row(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                turn_id=turn_id,
+            )
+            cf = conn_session_factory(conn)
+            journal = DbAgentTurnJournal(conn_factory=cf)
+            engine = _MissingArtifactEngine(turns=journal)
+            runner = ProjectConversationTurnRunner(
+                engine=engine,  # type: ignore[arg-type]
+                executor=None,  # type: ignore[arg-type]
+                recipes=None,  # type: ignore[arg-type]
+                starter=None,  # type: ignore[arg-type]
+                parameters=None,  # type: ignore[arg-type]
+                conn_factory=cf,
+                stop_poll_interval_s=0,
+            )
+            emitter = await _emitter(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                turn_id=turn_id,
+            )
+            submission = SimpleNamespace(
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                submitted_by_user_id=USER_ID,
+                submitted_via_membership_id=f"{MEMBERSHIP_ID}-{project.workspace_id}",
+            )
+            request = SimpleNamespace(turn_id=turn_id)
+            with pytest.raises(RequiredTurnArtifactMissing):
+                await runner._execute_watched(
+                    request=request,  # type: ignore[arg-type]
+                    lease=None,
+                    submission=submission,  # type: ignore[arg-type]
+                    stream=emitter,
+                )
+            assert engine.calls == 1
+
+            frames = await _frames(conn, workspace_id=project.workspace_id, turn_id=turn_id)
+            failed = _of_type(frames, TurnEventType.TURN_FAILED)
+            assert len(failed) == 1
+            assert failed[0].payload["failure_code"] == REQUIRED_CONTEXT_ARTIFACT_MISSING
+            latest = (
+                await conn.execute(
+                    text(
+                        "SELECT status, reason_code FROM agent_turn_event "
+                        "WHERE workspace_id=:workspace AND turn_id=:turn "
+                        "ORDER BY seq DESC LIMIT 1"
+                    ),
+                    {"workspace": project.workspace_id, "turn": turn_id},
+                )
+            ).mappings().one()
+            assert (latest["status"], latest["reason_code"]) == (
+                "failed",
+                REQUIRED_CONTEXT_ARTIFACT_MISSING,
+            )
+
+    run_async(scenario())
+
+
 def test_stop_cancels_the_active_attempt_and_cannot_look_like_a_finished_message(
     tmp_path: Path,
 ) -> None:
@@ -2026,6 +2124,7 @@ def test_include_bodies_hydrates_the_page_and_stays_bounded(tmp_path: Path) -> N
             cf = conn_session_factory(conn)
             artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=cf)
             messages = ["first question", "second question", "third question"]
+            stored_keys: list[str] = []
             for index, body in enumerate(messages):
                 turn_id = await _submit_turn(
                     conn,
@@ -2040,6 +2139,7 @@ def test_include_bodies_hydrates_the_page_and_stays_bounded(tmp_path: Path) -> N
                 ref = await artifacts.persist_body(
                     workspace_id=project.workspace_id, data=body.encode(), media_type="text/plain"
                 )
+                stored_keys.append(ref.artifact_key)
                 await conn.execute(
                     text(
                         "INSERT INTO agent_thread_message "
@@ -2058,6 +2158,10 @@ def test_include_bodies_hydrates_the_page_and_stays_bounded(tmp_path: Path) -> N
                     },
                 )
 
+            # Reproduce a database that outlived its disposable fs root: metadata and the other
+            # messages remain, but one exact physical blob is gone.
+            (tmp_path / "artifacts" / stored_keys[1]).unlink()
+
             app = _app(conn, settings=_settings(), storage=storage)
             path = f"/api/v1/projects/{project.project_id}/threads/{thread_id}/messages"
             headers = {"X-Workspace-Id": project.workspace_id}
@@ -2072,7 +2176,16 @@ def test_include_bodies_hydrates_the_page_and_stays_bounded(tmp_path: Path) -> N
             # The default listing stays body-free (D0's decision is unchanged).
             assert all(item["body"] is None for item in plain.json()["data"])
             assert hydrated.status_code == 200, hydrated.text
-            assert [item["body"] for item in hydrated.json()["data"]] == messages
+            assert [item["body"] for item in hydrated.json()["data"]] == [
+                messages[0],
+                None,
+                messages[2],
+            ]
+            assert [item["body_unavailable_reason"] for item in hydrated.json()["data"]] == [
+                None,
+                "artifact_missing",
+                None,
+            ]
             # Bounded by the page: the fan-out limit *is* the pagination limit.
             page = paged.json()
             assert len(page["data"]) == 2
@@ -2080,6 +2193,78 @@ def test_include_bodies_hydrates_the_page_and_stays_bounded(tmp_path: Path) -> N
             # An unknown ``include`` is a loud 422, never a silently ignored parameter.
             assert bogus.status_code == 422
             assert bogus.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    run_async(scenario())
+
+
+def test_include_bodies_reports_a_storage_outage_as_typed_503(tmp_path: Path) -> None:
+    """A backend outage is not evidence that one historical message is permanently missing."""
+
+    class _UnavailableStorage(FsStorage):
+        async def get(self, key: str) -> bytes:
+            del key
+            raise StorageError("storage service unavailable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d3-storage-down", name="D3 storage down")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="sd",
+            )
+            healthy = FsStorage(tmp_path / "healthy-artifacts")
+            await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="still durably recorded",
+                key="k-storage-down",
+                storage=healthy,
+                dispatch=False,
+            )
+            turn = await thread_turns(
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                conn_factory=conn_session_factory(conn),
+            )
+            await _agent_turn_row(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                turn_id=turn[0].turn_id,
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_thread_message "
+                    "(id, workspace_id, thread_id, turn_id, sequence, role, "
+                    " body_artifact_key, body_sha256, retention_class) "
+                    "VALUES (:id, :ws, :thread, :turn, 1, 'user', :key, :sha, 'standard')"
+                ),
+                {
+                    "id": uuid4(),
+                    "ws": project.workspace_id,
+                    "thread": thread_id,
+                    "turn": turn[0].turn_id,
+                    "key": turn[0].message_artifact_key,
+                    "sha": turn[0].message_sha256,
+                },
+            )
+            app = _app(
+                conn,
+                settings=_settings(),
+                storage=_UnavailableStorage(tmp_path / "unavailable"),
+            )
+            path = f"/api/v1/projects/{project.project_id}/threads/{thread_id}/messages"
+            async with _client(app) as client:
+                response = await client.get(
+                    path,
+                    params={"include": "bodies"},
+                    headers={"X-Workspace-Id": project.workspace_id},
+                )
+            assert response.status_code == 503, response.text
+            assert response.json()["error"]["code"] == "ARTIFACT_STORAGE_UNAVAILABLE"
 
     run_async(scenario())
 

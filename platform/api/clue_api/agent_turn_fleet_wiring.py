@@ -103,6 +103,7 @@ from clue_fleet import (
 from clue_obs import get_logger
 from clue_research.stage0 import current_kb_version
 from clue_spine import get_project
+from clue_storage import ArtifactNotFound
 from clue_toolbelt import ToolInvoker, ToolRegistry
 
 log = get_logger("clue_api.agent_turn_fleet")
@@ -112,6 +113,7 @@ __all__ = [
     "PROJECT_CONVERSATION_CARD_MEDIA_TYPE",
     "AgentTurnWorkHandler",
     "ProjectConversationTurnRunner",
+    "RequiredTurnArtifactMissing",
     "TurnStopped",
     "UnknownTurnSubmission",
     "build_agent_turn_work_handler",
@@ -134,6 +136,7 @@ PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS = 1_000_000
 
 _EXECUTION_NAMESPACE_KEY = "project-conversation@1"
 _DRIVER_WORKER_ID = "agent-turn-recipe-driver"
+REQUIRED_CONTEXT_ARTIFACT_MISSING = "required_context_artifact_missing"
 
 
 class UnknownTurnSubmission(LookupError):
@@ -147,6 +150,15 @@ class TurnStopped(RuntimeError):
     handler stops treating the turn as in-flight, and it is finalized as a *done* task with a
     ``cancelled`` outcome — a ``FAILED`` task would misreport a deliberate stop as an error and
     invite an operator requeue of a turn nobody wants run.
+    """
+
+
+class RequiredTurnArtifactMissing(RuntimeError):
+    """The exact current/history bytes required for this turn no longer exist.
+
+    This is terminal and non-retryable for the captured turn: a digest can verify recovered bytes
+    but cannot recreate them. The exception deliberately carries no artifact key into the task's
+    public result; the durable journal and SSE use one stable failure code instead.
     """
 
 
@@ -459,10 +471,38 @@ class ProjectConversationTurnRunner:
                 stream=stream,
             )
 
-        if stream is None or self._stop_poll_interval_s <= 0:
-            return await _execute()
+        async def _execute_with_artifact_boundary() -> ConversationTurnResult:
+            try:
+                return await _execute()
+            except ArtifactNotFound as error:
+                # Context and finalization artifacts are exact authority. Never invoke/continue
+                # the model with a guessed replacement, and never leave an attached browser on a
+                # non-terminal ``turn.started`` frame. The surrounding work handler will mark the
+                # fleet task failed and dispatch the next queued submission.
+                await self._engine.components.turns.mark_unfinalized(
+                    turn_id=request.turn_id,
+                    workspace_id=submission.workspace_id,
+                    reason_code=REQUIRED_CONTEXT_ARTIFACT_MISSING,
+                    abandoned=False,
+                )
+                if stream is not None:
+                    await stream.turn_finished(
+                        status="failed",
+                        failure_code=REQUIRED_CONTEXT_ARTIFACT_MISSING,
+                    )
+                log.warning(
+                    "agent_turn.required_artifact_missing",
+                    turn_id=str(request.turn_id),
+                    workspace_id=submission.workspace_id,
+                )
+                raise RequiredTurnArtifactMissing(
+                    "required turn context is no longer available; start a new thread"
+                ) from error
 
-        turn = asyncio.create_task(_execute())
+        if stream is None or self._stop_poll_interval_s <= 0:
+            return await _execute_with_artifact_boundary()
+
+        turn = asyncio.create_task(_execute_with_artifact_boundary())
         watcher = asyncio.create_task(
             self._await_stop(
                 workspace_id=submission.workspace_id,

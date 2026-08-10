@@ -85,3 +85,38 @@ port 8019, and isolated artifact/agent roots under `/private/tmp`.
   localhost/all-interface binding fixed it. Final handoff is frontend port
   3000 -> isolated API port 8019; `/sign-in` returns 200 and unauthenticated
   `/api/v1/home` returns the expected 403 workspace refusal.
+
+## Storage-lifecycle follow-up
+
+An additional defect report showed that historical test databases could outlive
+their disposable filesystem artifact roots. The content address retained in
+Postgres proves which bytes were accepted but cannot recreate missing bytes.
+
+- Transcript hydration now treats a missing physical blob as one bounded
+  `artifact_missing` message; other readable messages survive and the response
+  remains 200. A broader storage backend failure is the typed temporary error
+  `503 ARTIFACT_STORAGE_UNAVAILABLE`.
+- The worker catches a missing required current/history artifact at the composed
+  turn boundary, records terminal `failed` with
+  `required_context_artifact_missing`, emits `turn.failed`, fails the fleet
+  attempt without retrying incomplete context, and releases the next accepted
+  turn through the existing dispatcher.
+- The frontend renders actionable recovery copy telling the user to resend in a
+  new chat instead of printing the internal reason token.
+- API and worker now normalize and log the effective filesystem artifact root at
+  startup. `.env.example` and `docs/runbooks/local-production-chat-stack.md`
+  define the database + artifact backend as one lifecycle unit and require shared
+  persistent storage for production.
+
+Verification: the four new focused database regressions passed against
+`clue_r9_damascus_test_20260810`; the complete D2/D3/storage target set passed
+50 tests; the frontend unit suite passed 138 tests; Ruff, frontend lint,
+TypeScript, design-system build, Next production build, and `git diff --check`
+were green. The isolated API and worker both logged the identical normalized
+root `/private/tmp/clue-r9-damascus-artifacts-20260810`.
+
+The final in-app-browser pass was attempted only after restarting the final
+frontend/API/worker stack. Browser control refused both reload and DOM reads of
+the already-open localhost tab under its URL security policy. No alternate
+browser automation was used to bypass that control; visible recovery-path
+verification remains pending a user refresh/reopen of the local tab.

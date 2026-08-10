@@ -159,7 +159,7 @@ from clue_spine import (
     get_project_for_workspace,
     list_brands_for_workspace,
 )
-from clue_storage import StorageBackend, content_address
+from clue_storage import StorageBackend, StorageError, content_address
 from clue_toolbelt import IdempotencyConflict, PreconditionFailed, ToolInvoker
 
 log = get_logger("clue_api.chat")
@@ -409,6 +409,21 @@ class _EnvelopeRoute(APIRoute):
                     code="VALIDATION_ERROR",
                     message=_validation_message(exc),
                 )
+            except StorageError:
+                # A missing individual blob is translated by the bounded hydrator into
+                # ``artifact_missing``. Reaching here means the backend itself could not perform
+                # the read/write, so do not mislabel a wider outage as permanent message loss.
+                log.exception(
+                    "chat.artifact_storage_unavailable",
+                    path=request.url.path,
+                    request_id=resolved,
+                )
+                return _envelope(
+                    request,
+                    status_code=503,
+                    code="ARTIFACT_STORAGE_UNAVAILABLE",
+                    message="artifact storage is temporarily unavailable",
+                )
             except Exception:
                 # Swallowed deliberately: the traceback is logged with the request id the client
                 # is told, and the client gets a code it can report rather than an opaque failure.
@@ -433,6 +448,7 @@ _STATUS_CODES: dict[int, str] = {
     409: "CONFLICT",
     422: "VALIDATION_ERROR",
     500: "INTERNAL_ERROR",
+    503: "SERVICE_UNAVAILABLE",
 }
 
 

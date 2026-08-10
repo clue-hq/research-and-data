@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -87,6 +88,7 @@ def test_build_storage_backend_from_settings(tmp_path: object) -> None:
     settings = Settings(_env_file=None, storage_backend="fs", storage_fs_root=str(tmp_path))
     backend = build_storage_backend(settings, Secrets(_env_file=None))
     assert isinstance(backend, StorageBackend)
+    assert backend._root == Path(str(tmp_path)).resolve()  # type: ignore[attr-defined]  # noqa: SLF001
 
 
 def test_dsar_construction_injects_storage() -> None:

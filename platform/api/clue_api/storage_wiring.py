@@ -28,12 +28,14 @@ threads the resulting backend into the four B2 seams:
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_config import Secrets, Settings
 from clue_core import EntityId, PhaseContext, PhaseHandler, PhaseResult, ProjectPhase
 from clue_db import ConnFactory, transaction
+from clue_obs import get_logger
 from clue_obs.otel import MetricSink
 from clue_research.compliance import DataSubjectRightsImpl
 from clue_research.durable import stop_contact_research_operations
@@ -58,6 +60,7 @@ __all__ = [
 # The default reconciliation grace for the orphan-blob sweep — far beyond any transaction lifetime,
 # so the sweep never races an in-flight upload whose ``artifact`` row is inserted-but-not-committed.
 DEFAULT_ORPHAN_SWEEP_GRACE: timedelta = timedelta(hours=24)
+log = get_logger("clue_api.storage_wiring")
 
 
 class DurableContactResearchPrivacyStopper:
@@ -95,7 +98,26 @@ def build_storage_backend(
     same "build one concrete, inject it everywhere" shape the gateway/redis/session seams follow.
     ``CLUE_STORAGE_BACKEND=fs`` (default) or ``s3`` (needs ``CLUE_STORAGE_S3_BUCKET``; fails loud).
     """
-    return storage_from_settings(settings, secrets)
+    resolved = settings if settings is not None else Settings()
+    if resolved.storage_backend == "fs":
+        # Resolve once at composition so every later read/write uses the exact root reported at
+        # startup. A relative root interpreted under two different process working directories is
+        # otherwise indistinguishable from data loss when API and worker share a database.
+        fs_root = Path(resolved.storage_fs_root).expanduser().resolve()
+        resolved = resolved.model_copy(update={"storage_fs_root": str(fs_root)})
+        log.info(
+            "storage.backend.configured",
+            backend="fs",
+            fs_root=str(fs_root),
+        )
+    else:
+        log.info(
+            "storage.backend.configured",
+            backend="s3",
+            bucket=resolved.storage_s3_bucket,
+            region=resolved.storage_s3_region,
+        )
+    return storage_from_settings(resolved, secrets)
 
 
 class SnapshotBindingPhaseHandler:

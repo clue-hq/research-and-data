@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_storage import StorageBackend, content_address
+from clue_storage import ArtifactNotFound, StorageBackend, content_address
 
 __all__ = [
     "DEFAULT_BODY_BUDGET_BYTES",
@@ -55,7 +55,8 @@ class HydratedBody:
     artifact_key: str
     body: str | None
     #: ``None`` when the body is present; otherwise a stable reason code the UI can act on:
-    #: ``unavailable`` (erased/purged/absent), ``digest_mismatch``, ``not_text``, ``budget``.
+    #: ``unavailable`` (erased/purged/no durable row), ``artifact_missing`` (the durable row
+    #: exists but its physical bytes do not), ``digest_mismatch``, ``not_text``, ``budget``.
     reason: str | None = None
 
 
@@ -126,7 +127,18 @@ async def hydrate_message_bodies(
                 artifact_key=artifact_key, body=None, reason="budget"
             )
             continue
-        data = await storage.get(artifact_key)
+        try:
+            data = await storage.get(artifact_key)
+        except ArtifactNotFound:
+            # The durable row proves that bytes once existed, while the backend no longer has
+            # them. That is materially different from erased/purged metadata and must remain a
+            # per-message absence: one lost historical blob cannot make the whole thread a 500.
+            hydrated[artifact_key] = HydratedBody(
+                artifact_key=artifact_key,
+                body=None,
+                reason="artifact_missing",
+            )
+            continue
         if content_address(data) != sha256:
             hydrated[artifact_key] = HydratedBody(
                 artifact_key=artifact_key, body=None, reason="digest_mismatch"

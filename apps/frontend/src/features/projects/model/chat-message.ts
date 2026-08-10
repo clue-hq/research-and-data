@@ -123,6 +123,13 @@ export const ChatMessageListResponseSchema = z
 
 export type ChatMessagePage = z.infer<typeof ChatMessageListResponseSchema>;
 
+export function unavailableMessageBody(reason: string): string {
+  if (reason === "artifact_missing") {
+    return "This earlier message could not be recovered. Please resend it in a new chat.";
+  }
+  return `This message's text is unavailable (${reason}).`;
+}
+
 /** The gate ids an assistant message is waiting on, in durable order. */
 export function openGateIds(message: ChatMessage): readonly string[] {
   return message.refs

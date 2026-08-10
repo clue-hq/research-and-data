@@ -4,6 +4,7 @@ import { ChatPartSnapshotSchema } from "./chat-parts";
 import {
   ChatMessageListResponseSchema,
   openGateIds,
+  unavailableMessageBody,
 } from "./chat-message";
 import {
   ChatThreadListResponseSchema,
@@ -131,6 +132,29 @@ test("an unservable body is reported with its reason, never as empty text", () =
   });
   assert.equal(page.messages[0].body, null);
   assert.equal(page.messages[0].bodyUnavailableReason, "erased");
+});
+
+test("a physically missing historical artifact gives actionable recovery copy", () => {
+  const page = ChatMessageListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureMessages[0],
+        body: null,
+        body_unavailable_reason: "artifact_missing",
+      },
+    ],
+    meta: {},
+  });
+  const reason = page.messages[0].bodyUnavailableReason;
+  assert.equal(reason, "artifact_missing");
+  assert.equal(
+    unavailableMessageBody(reason ?? ""),
+    "This earlier message could not be recovered. Please resend it in a new chat.",
+  );
+  assert.equal(
+    unavailableMessageBody("budget"),
+    "This message's text is unavailable (budget).",
+  );
 });
 
 test("the submissions-union keeps queued turns and their attach cursor", () => {

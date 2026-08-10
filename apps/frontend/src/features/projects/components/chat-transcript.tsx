@@ -1,6 +1,7 @@
 "use client";
 
 import { MessageResponse } from "@/components/ai-elements/message-response";
+import { unavailableMessageBody } from "../model/chat-message";
 import type { TranscriptMessage } from "../model/chat-transcript";
 import type { ProjectEntity } from "../model/project-workspace";
 import { ChatMessagePartView, type ChatPartActions } from "./chat-message-part";
@@ -91,8 +92,7 @@ export function ChatTranscript({
               // An erased, oversized, or non-text body is reported. An empty
               // string here would render as a message nobody wrote.
               <p className={styles.messageText} role="note">
-                This message&rsquo;s text is unavailable (
-                {message.bodyUnavailableReason}).
+                {unavailableMessageBody(message.bodyUnavailableReason)}
               </p>
             ) : null}
             {message.parts.map((part) => (

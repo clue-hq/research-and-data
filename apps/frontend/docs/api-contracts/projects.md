@@ -154,6 +154,22 @@ network failure. Presentation components do not call the API directly.
   can pin the preview. Enter and Space invoke the same pin/collapse transition;
   Escape still dismisses an unpinned preview.
 
+### Post-R9 storage-lifecycle repair (2026-08-10)
+
+- A durable artifact row whose physical blob is gone is a per-message
+  `artifact_missing` state. The thread read remains `200`, preserves every
+  readable message, and tells the user to resend in a new chat; it never
+  invents bytes from a title, label, log, digest, or adjacent prompt.
+- A wider storage backend failure is `503 ARTIFACT_STORAGE_UNAVAILABLE`, not
+  `artifact_missing` and not a generic internal error.
+- If the missing blob is required current/history input, the worker records
+  terminal failure code `required_context_artifact_missing`, emits
+  `turn.failed`, does not invoke the model with incomplete context, marks the
+  fleet task failed, and dispatches the next accepted turn.
+- Local API and worker processes that share a database must also share one
+  explicit persistent artifact root. Both report the normalized root at
+  startup; database clones cannot be reused independently of their blobs.
+
 ## Ownership model
 
 ```text
