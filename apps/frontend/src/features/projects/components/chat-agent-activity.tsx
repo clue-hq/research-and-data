@@ -11,6 +11,7 @@ import {
 } from "@/components/ai-elements/reasoning";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import type { ChatActivityPart, ChatReasoningPart } from "../model/chat-parts";
+import type { TranscriptTurnState } from "../model/chat-transcript";
 import type { ProjectIconName } from "../config/project-icon-sources";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
@@ -38,11 +39,16 @@ export function ChatAgentActivity({
   onOpenChange,
   open,
   part,
+  turnState,
 }: {
   onOpenChange?: (open: boolean) => void;
   open?: boolean;
   part: ChatActivityPart;
+  turnState: TranscriptTurnState;
 }) {
+  const terminal = ["awaiting_input", "completed", "failed", "cancelled"].includes(
+    turnState,
+  );
   if (part.steps.length === 0) return null;
   return (
     <ChainOfThought
@@ -65,10 +71,18 @@ export function ChatAgentActivity({
             className={styles.traceStep}
             icon={
               <ProjectIcon
-                className={step.status === "active" ? styles.rotatingLoader : undefined}
+                className={
+                  step.status === "active" && !terminal
+                    ? styles.rotatingLoader
+                    : undefined
+                }
                 name={
-                  step.status === "active"
+                  step.status === "active" && !terminal
                     ? "loader"
+                    : step.status === "error" ||
+                        (step.status === "active" &&
+                          (turnState === "failed" || turnState === "cancelled"))
+                      ? "close"
                     : (STEP_ICONS[step.kind as keyof typeof STEP_ICONS] ?? "status-check")
                 }
                 size={14}
@@ -77,9 +91,10 @@ export function ChatAgentActivity({
             key={step.id}
             label={step.label}
             status={
-              step.status === "complete"
+              step.status === "complete" ||
+              (terminal && step.status === "active" && turnState !== "failed" && turnState !== "cancelled")
                 ? "complete"
-                : step.status === "active"
+                : step.status === "active" && !terminal
                   ? "active"
                   : "pending"
             }
@@ -94,8 +109,13 @@ export function ChatAgentActivity({
   );
 }
 
-function reasoningLabel(part: ChatReasoningPart): string {
-  if (part.state === "active") return "Thinking";
+function reasoningLabel(
+  part: ChatReasoningPart,
+  turnState: TranscriptTurnState,
+): string {
+  if (turnState === "cancelled") return "Stopped";
+  if (turnState === "failed") return "Round failed";
+  if (part.state === "active" && turnState === "running") return "Thinking";
   if (part.state === "error") return "Round failed";
   if (part.requestedToolCalls > 0) {
     return `Planned ${part.requestedToolCalls} tool ${
@@ -124,15 +144,25 @@ function reasoningLabel(part: ChatReasoningPart): string {
  * The trace is labelled as not-durable because it is not: `textEphemeral` says
  * so on the wire, and a reload will not bring it back.
  */
-export function ChatReasoning({ part }: { part: ChatReasoningPart }) {
-  const active = part.state === "active";
-  const label = reasoningLabel(part);
+export function ChatReasoning({
+  part,
+  turnState,
+}: {
+  part: ChatReasoningPart;
+  turnState: TranscriptTurnState;
+}) {
+  const active = part.state === "active" && turnState === "running";
+  const label = reasoningLabel(part, turnState);
   const status = (
     <>
       {active ? (
         <ProjectIcon className={styles.rotatingLoader} name="loader" size={13} />
       ) : (
-        <ProjectIcon className={styles.statusCheck} name="status-check" size={13} />
+        <ProjectIcon
+          className={styles.statusCheck}
+          name={turnState === "cancelled" || turnState === "failed" ? "close" : "status-check"}
+          size={13}
+        />
       )}
       {active ? <Shimmer duration={1.4}>{label}</Shimmer> : <span>{label}</span>}
     </>

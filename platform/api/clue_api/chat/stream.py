@@ -47,17 +47,19 @@ import contextlib
 import json
 from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from fastapi import APIRouter, Depends, FastAPI, Header, Query
 from fastapi.responses import StreamingResponse
 from pydantic import JsonValue
+from sqlalchemy import text
 
 from clue_api.agent_turn_submission import (
     dispatch_next_thread_turn,
     get_submission,
     insert_submission,
     submission_context_refs,
+    submission_context_refs_for_turns,
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
@@ -216,6 +218,7 @@ def build_chat_stream_router(
         project_id: str,
         thread_id: str,
         who: PrincipalDep,
+        include: Annotated[str | None, Query(pattern="^submission_bodies$")] = None,
     ) -> dict[str, JsonValue]:
         """Every turn of the thread in submission order — **queued ones included**.
 
@@ -233,6 +236,74 @@ def build_chat_stream_router(
             thread_id=thread_id,
             conn_factory=conn_factory,
         )
+        submission_messages: dict[UUID, dict[str, JsonValue]] = {}
+        if include is not None:
+            if storage is None:
+                raise _refuse(
+                    status_code=503,
+                    code="BODIES_UNAVAILABLE",
+                    message="this deployment has no artifact backend to hydrate submission bodies",
+                )
+            turn_ids = tuple(item.turn_id for item in turns)
+            async with conn_factory() as conn:
+                materialized = frozenset(
+                    UUID(str(value))
+                    for value in (
+                        await conn.execute(
+                            text(
+                                "SELECT DISTINCT turn_id FROM agent_thread_message "
+                                "WHERE workspace_id=:workspace_id AND thread_id=:thread_id "
+                                "AND role='user' AND turn_id=ANY(CAST(:turn_ids AS uuid[]))"
+                            ),
+                            {
+                                "workspace_id": who.workspace_id,
+                                "thread_id": thread_id,
+                                "turn_ids": [str(turn_id) for turn_id in turn_ids],
+                            },
+                        )
+                    ).scalars()
+                )
+                pending = tuple(item for item in turns if item.turn_id not in materialized)
+                bodies = await hydrate_message_bodies(
+                    conn,
+                    storage=storage,
+                    workspace_id=who.workspace_id,
+                    references=tuple(
+                        (item.message_artifact_key, item.message_sha256) for item in pending
+                    ),
+                )
+                context_by_turn = await submission_context_refs_for_turns(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    turn_ids=tuple(item.turn_id for item in pending),
+                )
+            for item in pending:
+                hydrated = bodies.get(item.message_artifact_key)
+                submission_messages[item.turn_id] = {
+                    "id": str(uuid5(item.turn_id, "user")),
+                    "turn_id": str(item.turn_id),
+                    "thread_id": item.thread_id,
+                    "sequence": 0,
+                    "role": "user",
+                    "body_artifact_key": item.message_artifact_key,
+                    "body_sha256": item.message_sha256,
+                    "body": None if hydrated is None else hydrated.body,
+                    "body_unavailable_reason": (
+                        "unavailable" if hydrated is None else hydrated.reason
+                    ),
+                    "created_at": item.requested_at.isoformat(),
+                    "refs": [
+                        {
+                            "flavor": "context",
+                            "workspace_id": ref.workspace_id,
+                            "object_type": ref.object_type,
+                            "object_id": ref.object_id,
+                            "version": ref.version,
+                            "ordinal": ordinal,
+                        }
+                        for ordinal, ref in enumerate(context_by_turn.get(item.turn_id, ()))
+                    ],
+                }
         return {
             "data": [
                 {
@@ -243,6 +314,7 @@ def build_chat_stream_router(
                     "requested_at": item.requested_at.isoformat(),
                     "last_event_id": item.last_event_id,
                     "generation_attempts": item.generation_attempts,
+                    "submission_message": submission_messages.get(item.turn_id),
                 }
                 for item in turns
             ],

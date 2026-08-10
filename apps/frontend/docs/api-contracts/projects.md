@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R8 implemented. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R9 implemented. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -131,6 +131,28 @@ network failure. Presentation components do not call the API directly.
   receipt endpoint. Both Home and project reads advertise `attachments=false`,
   the frontend hides the control in HTTP mode, and the backend refuses any
   attempted attachment receipt instead of accepting a browser-local URL.
+
+### R9 implementation status (2026-08-10)
+
+- L7 context assembly treats the accepted submission body as the one current
+  user instruction and places it last. Capture receipts and attachment
+  metadata are system context; queued turns cannot inherit a prior turn's
+  prompt as the model-facing instruction.
+- A user-requested Stop records a durable `cancelled` journal state after the
+  worker has stopped. The submissions-union read reconstructs that terminal
+  state after reload, and terminal rendering closes any still-active reasoning
+  or activity rows instead of leaving `Thinking` visible.
+- `GET …/turns?include=submission_bodies` projects a workspace-scoped
+  `submission_message` only until that turn's canonical user message exists.
+  Home and ordinary submissions therefore show the exact accepted text before
+  the detached worker materializes thread history, without rendering it twice.
+- Stream transitions update the selected thread summary immediately. Terminal
+  reconciliation refreshes messages, turns, threads, and the shared sidebar
+  catalog, so `running` and newly-created project summaries do not wait for a
+  browser reload.
+- The desktop sidebar trigger remains above its hover overlay, so pointer click
+  can pin the preview. Enter and Space invoke the same pin/collapse transition;
+  Escape still dismisses an unpinned preview.
 
 ## Ownership model
 
@@ -536,15 +558,23 @@ history row:
 GET /api/v1/projects/:projectId/threads/:threadId/turns?include=submission_bodies
 ```
 
-Each turn item then includes:
+Each not-yet-materialized turn item then includes the same user-message wire
+shape used by the canonical transcript read:
 
 ```json
 {
-  "submitted_message": {
+  "submission_message": {
+    "id": "...",
+    "turn_id": "...",
+    "thread_id": "...",
+    "sequence": 0,
+    "role": "user",
     "body_artifact_key": "sha256/...",
     "body_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "body": "Start an ABM project for Northstar Labs",
-    "body_unavailable_reason": null
+    "body_unavailable_reason": null,
+    "created_at": "2026-08-10T12:00:00Z",
+    "refs": []
   }
 }
 ```

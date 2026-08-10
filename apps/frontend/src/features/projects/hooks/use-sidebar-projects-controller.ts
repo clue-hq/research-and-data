@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useChatRepositories } from "../data/projects-transport";
 import type { SidebarProject } from "../model/sidebar-project";
+import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
 
 /**
  * The sidebar tree.
@@ -18,6 +19,7 @@ export function useSidebarProjectsController() {
   const pathname = usePathname();
   const router = useRouter();
   const repositories = useChatRepositories();
+  const catalogInvalidation = useProjectCatalogInvalidation();
   const sidebar = repositories.sidebar;
   const projectMutationsAvailable = repositories.transport.mode === "fixture";
   const [projects, setProjects] = useState<SidebarProject[]>([]);
@@ -39,7 +41,7 @@ export function useSidebarProjectsController() {
     return () => {
       cancelled = true;
     };
-  }, [pathname, sidebar]);
+  }, [catalogInvalidation.revision, pathname, sidebar]);
 
   const editProject = useMemo(
     () => projects.find((project) => project.id === editProjectId) ?? null,

@@ -33,6 +33,7 @@ import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -1415,6 +1416,18 @@ class _SleepingEngine:
 
     def __init__(self) -> None:
         self.cancelled = False
+        self.cancelled_turns: list[tuple[UUID, str]] = []
+        self.components = SimpleNamespace(
+            turns=SimpleNamespace(mark_cancelled=self._mark_cancelled)
+        )
+
+    async def _mark_cancelled(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+    ) -> None:
+        self.cancelled_turns.append((turn_id, workspace_id))
 
     async def execute(self, **kwargs: Any) -> Any:
         del kwargs
@@ -1513,6 +1526,7 @@ def test_stop_cancels_the_active_attempt_and_cannot_look_like_a_finished_message
                     stream=emitter,
                 )
             assert engine.cancelled is True
+            assert engine.cancelled_turns == [(turn_id, project.workspace_id)]
 
             frames = await _frames(conn, workspace_id=project.workspace_id, turn_id=turn_id)
             cancelled = _of_type(frames, TurnEventType.TURN_CANCELLED)

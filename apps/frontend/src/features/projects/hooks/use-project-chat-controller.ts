@@ -22,13 +22,16 @@ import {
   type TranscriptState,
 } from "../model/chat-transcript";
 import {
+  deriveThreadStatus,
   threadLabel,
   resolveProjectThreadRoute,
   type ChatThread,
   type ThreadStatus,
 } from "../model/chat-thread";
+import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
 import {
   applyTurnStateOverrides,
+  isTerminalTurnState,
   isTurnLive,
   MessageSubmissionGuard,
   reconcileTurnStateOverrides,
@@ -116,6 +119,8 @@ export function useProjectChatController({
   const router = useRouter();
   const routeQuery = useSearchParams().toString();
   const repositories = useChatRepositories();
+  const { invalidate: invalidateProjectCatalog } =
+    useProjectCatalogInvalidation();
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(
     initialThreadId ?? null,
@@ -147,6 +152,7 @@ export function useProjectChatController({
   //: mint-token / replay-backlog loop against a real backend.
   const attached = useRef(new Set<string>());
   const messageSubmissions = useRef(new MessageSubmissionGuard());
+  const turnsRef = useRef<ChatTurn[]>([]);
   const mounted = useRef(true);
   useEffect(() => {
     const open = attachments.current;
@@ -211,6 +217,7 @@ export function useProjectChatController({
       ]);
       if (!mounted.current) return;
       setMessages(messagePage.messages);
+      turnsRef.current = turnPage.turns;
       setTurns(turnPage.turns);
       setTurnStateOverrides((current) =>
         reconcileTurnStateOverrides(current, turnPage.turns),
@@ -218,7 +225,12 @@ export function useProjectChatController({
       setGateRead(gates);
       // A durable message for a turn means the optimistic stand-in has done its
       // job; keeping it would double the user's own sentence.
-      const durableTurns = new Set(messagePage.messages.map((m) => m.turnId));
+      const durableTurns = new Set([
+        ...messagePage.messages.map((message) => message.turnId),
+        ...turnPage.turns
+          .filter((turn) => turn.submissionMessage !== null)
+          .map((turn) => turn.turnId),
+      ]);
       setOptimistic((current) =>
         current.filter((item) => !durableTurns.has(item.turnId)),
       );
@@ -301,18 +313,44 @@ export function useProjectChatController({
             // Turn events are already durable authority. Reflect running and
             // terminal transitions on this render cycle so Stop appears for
             // the real attempt and cannot linger after it finishes.
-            setTurns((current) =>
-              current.map((turn) =>
-                turn.turnId === event.turnId
-                  ? { ...turn, state: streamedState }
-                  : turn,
-              ),
+            const nextTurns = turnsRef.current.map((turn) =>
+              turn.turnId === event.turnId
+                ? { ...turn, state: streamedState }
+                : turn,
             );
+            turnsRef.current = nextTurns;
+            setTurns(nextTurns);
             setTurnStateOverrides((current) => {
               const next = new Map(current);
               next.set(event.turnId, streamedState);
               return next;
             });
+            if (
+              streamedState === "running" ||
+              (isTerminalTurnState(streamedState) &&
+                streamedState !== "awaiting_input")
+            ) {
+              const running = selectTurnQueueState(nextTurns).threadBusy;
+              setThreads((current) =>
+                current.map((thread) =>
+                  thread.id !== threadId ||
+                  thread.status === "archived" ||
+                  thread.status === "approval" ||
+                  thread.status === "needs-input"
+                    ? thread
+                    : {
+                        ...thread,
+                        status: deriveThreadStatus({
+                          archived: false,
+                          running,
+                        }),
+                      },
+                ),
+              );
+            }
+            if (isTerminalTurnState(streamedState)) {
+              invalidateProjectCatalog();
+            }
           }
         },
         onWarning(reason) {
@@ -344,17 +382,29 @@ export function useProjectChatController({
             // only if this turn is still queued/running.
             attached.current.delete(turnId);
             resetReattach.current.add(turnId);
-            void loadConversation(threadId).catch(report);
+            void Promise.all([
+              loadConversation(threadId),
+              loadThreads(),
+            ]).catch(report);
             return;
           }
           // The turn is finished as far as the stream is concerned; the durable
           // read is what proves it, so go and get it.
-          void loadConversation(threadId).catch(report);
+          void Promise.all([loadConversation(threadId), loadThreads()]).catch(
+            report,
+          );
         },
       });
       attachments.current.set(turnId, handle);
     },
-    [loadConversation, projectId, repositories, report],
+    [
+      invalidateProjectCatalog,
+      loadConversation,
+      loadThreads,
+      projectId,
+      repositories,
+      report,
+    ],
   );
 
   useEffect(() => {
@@ -633,6 +683,7 @@ export function useProjectChatController({
       // projections do not belong to the next one.
       setStream(emptyTranscriptState());
       setMessages([]);
+      turnsRef.current = [];
       setTurns([]);
       setTurnStateOverrides(new Map());
       setOptimistic([]);

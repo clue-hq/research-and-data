@@ -123,6 +123,20 @@ const TURN_STATES: Partial<Record<string, TranscriptTurnState>> = {
   "turn.cancelled": "cancelled",
 };
 
+function transcriptStateOf(value: string): TranscriptTurnState {
+  switch (value) {
+    case "queued":
+    case "running":
+    case "awaiting_input":
+    case "completed":
+    case "failed":
+    case "cancelled":
+      return value;
+    default:
+      return "unknown";
+  }
+}
+
 /**
  * Apply one event. Returns a **new** state object (the map/array contents are
  * rebuilt only where they changed, so React sees a fresh reference per apply).
@@ -446,11 +460,15 @@ export function composeTranscript({
       .slice()
       .sort((a, b) => a.sequence - b.sequence);
     const projected = stream.turns.get(turnId);
+    const durableTurn = turns.find((turn) => turn.turnId === turnId);
     const pending = optimistic.find((item) => item.turnId === turnId);
 
     const durableUser = durable.find((message) => message.role === "user");
+    const acceptedUser = durableTurn?.submissionMessage;
     if (durableUser) {
       composed.push(userMessage(durableUser, false));
+    } else if (acceptedUser) {
+      composed.push(userMessage(acceptedUser, false));
     } else if (pending) {
       composed.push({
         id: `optimistic:${turnId}`,
@@ -471,8 +489,14 @@ export function composeTranscript({
     const durableAssistant = durable.find((message) => message.role === "assistant");
     const parts = livingParts(projected);
     const hasStreamedText = parts.some((part) => part.kind === "text");
-    if (durableAssistant || parts.length > 0 || projected) {
-      const state = projected?.state ?? (durableAssistant ? "completed" : "queued");
+    if (durableAssistant || parts.length > 0 || projected || durableTurn) {
+      // The turns read is the cold-reload authority. A stream projection may
+      // lead it during a live transition, but the absence of replay frames must
+      // never erase a durable cancelled/failed/queued assistant receipt.
+      const state =
+        projected?.state ??
+        (durableTurn ? transcriptStateOf(durableTurn.state) : undefined) ??
+        (durableAssistant ? "completed" : "queued");
       composed.push({
         id: durableAssistant?.id ?? projected?.messageId ?? `pending:${turnId}`,
         turnId,
@@ -511,7 +535,38 @@ function userMessage(message: ChatMessage, optimistic: boolean): TranscriptMessa
 
 function livingParts(turn: TranscriptTurn | undefined): ChatPart[] {
   if (!turn) return [];
-  return turn.parts.map((entry) => entry.part);
+  const terminal = ["awaiting_input", "completed", "failed", "cancelled"].includes(
+    turn.state,
+  );
+  if (!terminal) return turn.parts.map((entry) => entry.part);
+  return turn.parts.map(({ part }) => {
+    if (part.kind === "reasoning" && part.state === "active") {
+      return {
+        ...part,
+        state:
+          turn.state === "cancelled" || turn.state === "failed"
+            ? ("error" as const)
+            : ("complete" as const),
+      };
+    }
+    if (part.kind === "agent_activity") {
+      return {
+        ...part,
+        steps: part.steps.map((step) =>
+          step.status !== "active"
+            ? step
+            : {
+                ...step,
+                status:
+                  turn.state === "cancelled" || turn.state === "failed"
+                    ? ("error" as const)
+                    : ("complete" as const),
+              },
+        ),
+      };
+    }
+    return part;
+  });
 }
 
 /** Every gate id the transcript currently shows a card for. */

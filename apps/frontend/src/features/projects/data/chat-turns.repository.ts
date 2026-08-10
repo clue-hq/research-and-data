@@ -51,7 +51,9 @@ export function createHttpChatTurnsRepository(
   return {
     async list({ projectId, threadId }) {
       return ChatTurnListResponseSchema.parse(
-        await chatRequest(transport, turnsPath(projectId, threadId)),
+        await chatRequest(transport, turnsPath(projectId, threadId), {
+          query: { include: "submission_bodies" },
+        }),
       );
     },
     async submit({ projectId, threadId, submission, idempotencyKey }) {
@@ -141,6 +143,7 @@ export function createFixtureChatTurnsRepository(
         requestedAt: record.requestedAt,
         lastEventId: null,
         generationAttempts: 0,
+        submissionMessage: null,
       });
       return record;
     },
@@ -165,6 +168,7 @@ export function createFixtureChatTurnsRepository(
         requestedAt: record.requestedAt,
         lastEventId: null,
         generationAttempts: 0,
+        submissionMessage: null,
       });
       return record;
     },

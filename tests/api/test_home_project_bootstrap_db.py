@@ -285,6 +285,34 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                 f"/projects/{first['project']['id']}?thread={first['thread']['id']}"
             )
 
+            turns_path = (
+                f"/api/v1/projects/{first['project']['id']}/threads/"
+                f"{first['thread']['id']}/turns"
+            )
+            async with _client(app) as client:
+                pending_turns = await client.get(
+                    turns_path,
+                    params={"include": "submission_bodies"},
+                    headers={"X-Workspace-Id": "ws-home-create"},
+                )
+                materialized_messages = await client.get(
+                    turns_path.removesuffix("/turns") + "/messages",
+                    params={"include": "bodies"},
+                    headers={"X-Workspace-Id": "ws-home-create"},
+                )
+            assert pending_turns.status_code == 200, pending_turns.text
+            accepted_message = pending_turns.json()["data"][0]["submission_message"]
+            assert accepted_message["body"] == request_body["message"]
+            assert accepted_message["turn_id"] == first["turn"]["turn_id"]
+            assert [ref["object_id"] for ref in accepted_message["refs"]] == [
+                str(second_account),
+                str(first_account),
+            ]
+            # The worker has not claimed this turn, so canonical history is still empty. The
+            # submissions-union projection above is what makes Home's accepted message visible.
+            assert materialized_messages.status_code == 200, materialized_messages.text
+            assert materialized_messages.json()["data"] == []
+
             counts = {}
             for table in (
                 "project",

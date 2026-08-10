@@ -96,7 +96,12 @@ export function ChatTranscript({
               </p>
             ) : null}
             {message.parts.map((part) => (
-              <ChatMessagePartView actions={actions} key={part.partId} part={part} />
+              <ChatMessagePartView
+                actions={actions}
+                key={part.partId}
+                part={part}
+                turnState={message.state}
+              />
             ))}
             {message.role === "assistant" &&
             message.state === "queued" &&
@@ -106,6 +111,30 @@ export function ChatTranscript({
               // makes it visible — it is never silently dropped.
               <p className={styles.reasoningStatus} role="status">
                 Queued
+              </p>
+            ) : null}
+            {message.role === "assistant" &&
+            message.state === "cancelled" &&
+            message.body === null &&
+            !message.parts.some(
+              (part) =>
+                part.kind === "reasoning" ||
+                (part.kind === "text" && part.failed),
+            ) ? (
+              <p className={styles.reasoningStatus} role="status">
+                Stopped
+              </p>
+            ) : null}
+            {message.role === "assistant" &&
+            message.state === "failed" &&
+            message.body === null &&
+            !message.parts.some(
+              (part) =>
+                part.kind === "reasoning" ||
+                (part.kind === "text" && part.failed),
+            ) ? (
+              <p className={styles.reasoningStatus} role="status">
+                Response failed
               </p>
             ) : null}
             {message.failureCode ? (

@@ -17,6 +17,7 @@ import {
 import { MessageResponse } from "@/components/ai-elements/message-response";
 import type { ChatGatePart, ChatPart, GateDecision } from "../model/chat-parts";
 import type { GateCardModel } from "../model/chat-gate";
+import type { TranscriptTurnState } from "../model/chat-transcript";
 import { ChatAgentActivity, ChatReasoning } from "./chat-agent-activity";
 import { ChatGateCard } from "./chat-gate-card";
 import { ChatResearchTask } from "./chat-research-task";
@@ -40,9 +41,11 @@ export interface ChatPartActions {
 export function ChatMessagePartView({
   actions,
   part,
+  turnState,
 }: {
   actions: ChatPartActions;
   part: ChatPart;
+  turnState: TranscriptTurnState;
 }) {
   switch (part.kind) {
     case "text":
@@ -60,9 +63,9 @@ export function ChatMessagePartView({
         </div>
       );
     case "reasoning":
-      return <ChatReasoning part={part} />;
+      return <ChatReasoning part={part} turnState={turnState} />;
     case "agent_activity":
-      return <ChatAgentActivity part={part} />;
+      return <ChatAgentActivity part={part} turnState={turnState} />;
     case "tool":
       return <ChatToolCall part={part} />;
     case "task":

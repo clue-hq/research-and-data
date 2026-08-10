@@ -599,7 +599,7 @@
 }
 
 .projectHeader {
-  z-index: 40;
+  z-index: auto;
   display: flex;
   height: 48px;
   align-items: center;
@@ -630,6 +630,9 @@
 
 .projectHeader .desktopSidebarTrigger {
   display: none;
+  position: relative;
+  z-index: 60;
+  background: var(--clue-ds-color-bg-page);
 }
 
 .projectHeader .projectTitle {

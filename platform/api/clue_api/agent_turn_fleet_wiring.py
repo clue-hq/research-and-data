@@ -479,6 +479,14 @@ class ProjectConversationTurnRunner:
         turn.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await turn
+        # The cancelled task passed through the generic runtime unwinder, which cannot know
+        # whether cancellation meant a user Stop or a process/lease failure. This runner owns that
+        # distinction, so its later terminal journal event deliberately supersedes the generic
+        # abandoned marker with the durable truth.
+        await self._engine.components.turns.mark_cancelled(
+            turn_id=request.turn_id,
+            workspace_id=submission.workspace_id,
+        )
         await stream.turn_cancelled()
         log.info(
             "agent_turn.stopped",

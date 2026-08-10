@@ -103,6 +103,9 @@ class ContextCandidate(ContextValue):
     ref: ArtifactRef | DomainObjectRef
     body: str = Field(min_length=1)
     role: Literal["system", "user", "assistant", "tool"] = "system"
+    origin: Literal["trusted_context", "history", "current_user_instruction"] = (
+        "trusted_context"
+    )
     materialized_path: str | None = None
     required: bool = False
 
@@ -471,6 +474,7 @@ class HistoryLayerSource:
                     ref=item.body_ref,
                     body=body,
                     role=item.role,
+                    origin="history",
                 )
             )
         return result
@@ -524,29 +528,20 @@ class TurnLayerSource:
     ) -> Sequence[ContextCandidate]:
         del profile, history
         body = (await self._artifacts.read(request.user_message_artifact_ref)).decode("utf-8")
-        result = [
-            ContextCandidate(
-                stable_key="000-user-message",
-                ref=request.user_message_artifact_ref,
-                body=body,
-                role="user",
-                materialized_path="inputs/user-message.txt",
-                required=True,
-            )
-        ]
+        result: list[ContextCandidate] = []
         # Raw attachment bytes are never opening context. The agent gets only exact pointers and
         # may later use an authorized tool to inspect an allowed attachment.
         for index, ref in enumerate(request.attachment_refs):
             result.append(
                 ContextCandidate(
-                    stable_key=f"{index + 1:03d}-attachment:{ref.artifact_key}",
+                    stable_key=f"200-{index:06d}-attachment:{ref.artifact_key}",
                     ref=ref,
                     body=(
                         "Attachment reference only: "
                         f"artifact_key={ref.artifact_key} sha256={ref.sha256} "
                         f"media_type={ref.media_type} byte_count={ref.byte_count}"
                     ),
-                    role="user",
+                    role="system",
                 )
             )
         # The turn's own identity, so the model can *reference* this capture without authoring it.
@@ -560,7 +555,7 @@ class TurnLayerSource:
         if captured is not None:
             result.append(
                 ContextCandidate(
-                    stable_key="900-captured-turn",
+                    stable_key="100-captured-turn",
                     ref=request.user_message_artifact_ref,
                     body=(
                         "Captured turn reference only: this message is already a captured "
@@ -570,9 +565,23 @@ class TurnLayerSource:
                         f"artifact_key={captured.artifact_key} sha256={captured.sha256} "
                         f"byte_count={captured.byte_count}"
                     ),
-                    role="user",
+                    role="system",
                 )
             )
+        # The only user-authored message in L7 is deliberately last. Attachment and capture
+        # descriptions are platform-authored trusted context, not words the user typed, and may
+        # never become the model's most-recent human instruction.
+        result.append(
+            ContextCandidate(
+                stable_key="999-user-message",
+                ref=request.user_message_artifact_ref,
+                body=body,
+                role="user",
+                origin="current_user_instruction",
+                materialized_path="inputs/user-message.txt",
+                required=True,
+            )
+        )
         return result
 
 
@@ -663,6 +672,7 @@ class DeterministicAgentContextAssembler:
         messages: list[BaseMessage] = []
         materializations: list[ContextMaterialization] = []
         seen_paths: set[str] = set()
+        current_instructions: list[ContextCandidate] = []
 
         for layer in _ORDER:
             candidates = sorted(
@@ -678,6 +688,11 @@ class DeterministicAgentContextAssembler:
             for candidate in candidates:
                 if candidate.ref.workspace_id != request.constitution.workspace_id:
                     raise ValueError(f"{layer.value} emitted a cross-workspace context ref")
+                if (
+                    candidate.origin == "current_user_instruction"
+                    and layer is not ContextLayer.L7_TURN
+                ):
+                    raise ValueError("only l7_turn may emit the current user instruction")
             budget = self._policy.budget_for(layer)
             retained = self._retain(layer=layer, candidates=candidates, budget=budget)
             used = 0
@@ -716,6 +731,8 @@ class DeterministicAgentContextAssembler:
                         )
                     )
                 included.append(candidate)
+                if candidate.origin == "current_user_instruction":
+                    current_instructions.append(candidate)
                 hashes.append(digest)
                 messages.append(_message(candidate))
                 receipt_refs.append(
@@ -741,6 +758,18 @@ class DeterministicAgentContextAssembler:
                     exclusion_reason_codes=tuple("layer_budget_exceeded" for _ in excluded),
                 )
             )
+
+        if len(current_instructions) != 1:
+            raise ValueError("opening context requires exactly one current user instruction")
+        current_instruction = current_instructions[0]
+        if current_instruction.ref != request.user_message_artifact_ref:
+            raise ValueError("current user instruction differs from the turn message artifact")
+        if (
+            not messages
+            or not isinstance(messages[-1], HumanMessage)
+            or messages[-1].content != current_instruction.body
+        ):
+            raise ValueError("current user instruction must be the final opening-context message")
 
         aggregate_payload = {
             "schema_version": "1",

@@ -9,6 +9,7 @@ import {
 import { usePathname } from "next/navigation";
 import { DesignIcon } from "@/components/ui/design-icon";
 import { AppSidebar } from "./app-sidebar";
+import { ProjectCatalogInvalidationProvider } from "@/features/projects/model/project-catalog-invalidation";
 import {
   useDesktopSidebar,
   type DesktopSidebarController,
@@ -77,11 +78,12 @@ export function ApplicationShell({
   }
 
   return (
-    <ApplicationSidebarContext.Provider value={sidebar}>
-      <div
-        className="relative flex h-dvh min-h-0 w-full overflow-hidden bg-white"
-        data-sidebar-state={sidebar.state}
-      >
+    <ProjectCatalogInvalidationProvider>
+      <ApplicationSidebarContext.Provider value={sidebar}>
+        <div
+          className="relative flex h-dvh min-h-0 w-full overflow-hidden bg-white"
+          data-sidebar-state={sidebar.state}
+        >
         <div
           aria-hidden={overlayMode && desktopCollapsed ? true : undefined}
           className={
@@ -149,8 +151,11 @@ export function ApplicationShell({
           <DesignIcon name="sidebar-toggle" size={14} />
         </button>
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{children}</div>
-      </div>
-    </ApplicationSidebarContext.Provider>
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            {children}
+          </div>
+        </div>
+      </ApplicationSidebarContext.Provider>
+    </ProjectCatalogInvalidationProvider>
   );
 }

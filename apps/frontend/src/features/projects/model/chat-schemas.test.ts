@@ -145,6 +145,19 @@ test("the submissions-union keeps queued turns and their attach cursor", () => {
         requested_at: "2026-08-09T11:30:00Z",
         last_event_id: null,
         generation_attempts: 0,
+        submission_message: {
+          id: "accepted-message-1",
+          turn_id: "queued-1",
+          thread_id: "thread-primary",
+          sequence: 0,
+          role: "user",
+          body_artifact_key: "accepted-key",
+          body_sha256: "accepted-sha",
+          body: "Accepted before worker claim",
+          body_unavailable_reason: null,
+          created_at: "2026-08-09T11:30:00Z",
+          refs: [],
+        },
       },
     ],
     meta: { thread_status: "running" },
@@ -152,6 +165,10 @@ test("the submissions-union keeps queued turns and their attach cursor", () => {
   assert.equal(page.threadRunning, true);
   assert.equal(page.turns[0].lastEventId, 24);
   assert.equal(page.turns[1].state, "queued");
+  assert.equal(
+    page.turns[1].submissionMessage?.body,
+    "Accepted before worker claim",
+  );
 });
 
 test("durable stream events immediately refine queued/running/terminal turn state", () => {

@@ -1007,6 +1007,22 @@ class DbAgentTurnJournal:
             reason_code=reason_code,
         )
 
+    async def mark_cancelled(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+        reason_code: str = "stop_requested",
+    ) -> None:
+        """Record a deliberate terminal cancellation separately from a crash/abandonment."""
+
+        await self._mark_status(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            status=AgentTurnStatus.CANCELLED,
+            reason_code=reason_code,
+        )
+
     async def mark_running(self, *, turn_id: UUID, workspace_id: str) -> None:
         await self._mark_status(
             turn_id=turn_id,

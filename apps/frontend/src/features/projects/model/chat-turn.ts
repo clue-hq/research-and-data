@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { GateDecisionSchema } from "./chat-parts";
 import type { ChatStreamEventType } from "./chat-events";
+import {
+  ChatMessageWireSchema,
+  toChatMessage,
+  type ChatMessage,
+} from "./chat-message";
 
 /**
  * Turn submission and the submissions-union read (charter §3.5, as-built D2).
@@ -67,6 +72,7 @@ const TurnViewWireSchema = z.object({
   requested_at: z.string(),
   last_event_id: z.number().int().nullable().default(null),
   generation_attempts: z.number().int().min(0).default(0),
+  submission_message: ChatMessageWireSchema.nullable().default(null),
 });
 
 export interface ChatTurn {
@@ -78,6 +84,8 @@ export interface ChatTurn {
   /** The stream cursor to attach *after*, so a cold load never replays history. */
   lastEventId: number | null;
   generationAttempts: number;
+  /** Accepted user bytes not yet materialized into canonical thread history. */
+  submissionMessage: ChatMessage | null;
 }
 
 export const ChatTurnListResponseSchema = z
@@ -97,6 +105,10 @@ export const ChatTurnListResponseSchema = z
         requestedAt: item.requested_at,
         lastEventId: item.last_event_id,
         generationAttempts: item.generation_attempts,
+        submissionMessage:
+          item.submission_message === null
+            ? null
+            : toChatMessage(item.submission_message),
       }),
     ),
     threadRunning: wire.meta.thread_status === "running",

@@ -129,6 +129,8 @@ class ThreadTurnView(_View):
     state: str
     requested_at: AwareDatetime
     submitted_by_user_id: str
+    message_artifact_key: str
+    message_sha256: str
     #: The stream cursor a client should attach after, when frames for this turn still exist.
     last_event_id: int | None = None
     generation_attempts: int = 0
@@ -371,10 +373,13 @@ _TURN_UNION_SELECT = """
         s.project_id,
         s.requested_at,
         s.submitted_by_user_id,
+        s.message_artifact_key,
+        s.message_sha256,
         e.terminal_event,
         e.started,
         e.last_event_id,
         e.attempts,
+        j.status AS journal_status,
         f.status AS task_status
     FROM agent_turn_submission s
     LEFT JOIN LATERAL (
@@ -390,6 +395,13 @@ _TURN_UNION_SELECT = """
         FROM agent_turn_event_stream v
         WHERE v.workspace_id = s.workspace_id AND v.turn_id = s.turn_id
     ) e ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT v.status
+        FROM agent_turn_event v
+        WHERE v.workspace_id = s.workspace_id AND v.turn_id = s.turn_id
+        ORDER BY v.seq DESC
+        LIMIT 1
+    ) j ON TRUE
     LEFT JOIN LATERAL (
         SELECT t.status
         FROM fleet_task t
@@ -434,6 +446,11 @@ def _turn_state(row: dict[str, object]) -> str:
     terminal = row.get("terminal_event")
     if terminal is not None:
         return _TERMINAL_STATES.get(str(terminal), "completed")
+    journal_status = str(row.get("journal_status") or "")
+    if journal_status in {"completed", "awaiting_input", "failed", "cancelled"}:
+        return journal_status
+    if journal_status in {"abandoned", "privacy_tombstoned"}:
+        return "failed"
     task_status = row.get("task_status")
     if task_status in {"done", "failed"}:
         # The frames aged out of the outbox but the task remembers. Reporting ``queued`` here would
@@ -452,6 +469,8 @@ def _thread_turn_view(row: dict[str, object]) -> ThreadTurnView:
         state=_turn_state(row),
         requested_at=cast(datetime, row["requested_at"]),
         submitted_by_user_id=str(row["submitted_by_user_id"]),
+        message_artifact_key=str(row["message_artifact_key"]),
+        message_sha256=str(row["message_sha256"]),
         last_event_id=(
             None if row["last_event_id"] is None else int(str(row["last_event_id"]))
         ),

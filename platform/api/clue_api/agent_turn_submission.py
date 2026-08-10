@@ -57,6 +57,7 @@ __all__ = [
     "dispatch_next_thread_turn",
     "get_submission",
     "submission_context_refs",
+    "submission_context_refs_for_turns",
     "message_artifact_ref",
     "insert_submission",
     "submissions_for_thread",
@@ -313,6 +314,51 @@ async def submission_context_refs(
         )
         for item in receipts
     )
+
+
+async def submission_context_refs_for_turns(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_ids: Sequence[UUID],
+) -> dict[UUID, tuple[DomainObjectRef, ...]]:
+    """Batch ordered submission context for transcript/turn-list hydration."""
+
+    if not turn_ids:
+        return {}
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT turn_id, ordinal, object_type, object_id, object_version "
+                    "FROM agent_turn_submission_context_ref "
+                    "WHERE workspace_id=:workspace_id "
+                    "AND turn_id=ANY(CAST(:turn_ids AS uuid[])) "
+                    "ORDER BY turn_id, ordinal"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "turn_ids": [str(turn_id) for turn_id in turn_ids],
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    grouped: dict[UUID, list[DomainObjectRef]] = {}
+    for row in rows:
+        turn_id = UUID(str(row["turn_id"]))
+        grouped.setdefault(turn_id, []).append(
+            DomainObjectRef(
+                workspace_id=workspace_id,
+                object_type=str(row["object_type"]),
+                object_id=str(row["object_id"]),
+                version=(
+                    None if row["object_version"] is None else int(row["object_version"])
+                ),
+            )
+        )
+    return {turn_id: tuple(refs) for turn_id, refs in grouped.items()}
 
 
 async def message_artifact_ref(

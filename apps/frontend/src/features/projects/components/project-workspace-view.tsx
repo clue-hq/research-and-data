@@ -33,6 +33,14 @@ export function ProjectWorkspaceView({
             onBlur={sidebar.scheduleDismissal}
             onClick={(event) => sidebar.toggle(event.currentTarget)}
             onFocus={(event) => sidebar.preview(event.currentTarget)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              // Keep keyboard activation on the exact same state-machine edge
+              // as a pointer click. Preventing the native synthetic click also
+              // guarantees one transition, not a preview/pin double toggle.
+              event.preventDefault();
+              sidebar.toggle(event.currentTarget);
+            }}
             onPointerEnter={(event) => sidebar.preview(event.currentTarget)}
             onPointerLeave={sidebar.scheduleDismissal}
             type="button"

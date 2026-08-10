@@ -54,7 +54,7 @@ export type ChatMessageRole = z.infer<typeof ChatMessageRoleSchema>;
 /** Why a hydrated body could not be served. Open set — branch on what you know. */
 export const BodyUnavailableReasonSchema = z.string();
 
-const MessageWireSchema = z.object({
+export const ChatMessageWireSchema = z.object({
   id: z.string().min(1),
   turn_id: z.string().min(1),
   thread_id: z.string().min(1),
@@ -84,7 +84,9 @@ export interface ChatMessage {
   refs: readonly ChatMessageRef[];
 }
 
-function toMessage(wire: z.infer<typeof MessageWireSchema>): ChatMessage {
+export function toChatMessage(
+  wire: z.infer<typeof ChatMessageWireSchema>,
+): ChatMessage {
   return {
     id: wire.id,
     turnId: wire.turn_id,
@@ -109,13 +111,13 @@ function toMessage(wire: z.infer<typeof MessageWireSchema>): ChatMessage {
 
 export const ChatMessageListResponseSchema = z
   .object({
-    data: z.array(MessageWireSchema).default([]),
+    data: z.array(ChatMessageWireSchema).default([]),
     meta: z
       .object({ next_cursor: z.string().nullable().default(null) })
       .default({ next_cursor: null }),
   })
   .transform((wire) => ({
-    messages: wire.data.map(toMessage),
+    messages: wire.data.map(toChatMessage),
     nextCursor: wire.meta.next_cursor,
   }));
 

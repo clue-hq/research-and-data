@@ -208,6 +208,50 @@ test("a cancelled turn keeps its partial text, marked as stopped", () => {
   assert.equal(part.streaming, false, "a stopped attempt must not look like a live one");
 });
 
+test("a terminal turn cannot leave replayed reasoning or activity visibly active", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "turn.started" }),
+    frame({
+      type: "part.created",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot(),
+    }),
+    frame({
+      type: "part.created",
+      part_id: "activity:a",
+      part_kind: "agent_activity",
+      part: {
+        part_id: "activity:a",
+        kind: "agent_activity",
+        revision: 1,
+        title: "Agent activity",
+        steps: [
+          {
+            id: "round-1",
+            kind: "model_round",
+            status: "active",
+            label: "Model round",
+          },
+        ],
+      },
+    }),
+    frame({ type: "turn.cancelled", reason: "stop_requested" }),
+  ]);
+
+  const transcript = composeTranscript({ messages: [], turns: [], stream: state });
+  const assistant = transcript.find((message) => message.role === "assistant");
+  assert.ok(assistant);
+  assert.equal(assistant.state, "cancelled");
+  const reasoning = assistant.parts.find((part) => part.kind === "reasoning");
+  const activity = assistant.parts.find((part) => part.kind === "agent_activity");
+  assert.equal(reasoning?.kind === "reasoning" && reasoning.state, "error");
+  assert.equal(
+    activity?.kind === "agent_activity" && activity.steps[0]?.status,
+    "error",
+  );
+});
+
 test("a replayed terminal turn asks to be rehydrated rather than faking deltas", () => {
   const state = apply(emptyTranscriptState(), [
     frame({ type: "turn.completed", status: "completed", replayed: true }),
@@ -405,6 +449,88 @@ test("an optimistic user turn shows immediately and is retired by the durable re
   });
   assert.equal(settled.filter((message) => message.role === "user").length, 1);
   assert.equal(settled[0].optimistic, false);
+});
+
+test("an accepted submission renders before the worker materializes thread history", () => {
+  const acceptedMessage = {
+    id: "accepted-user-message",
+    turnId: TURN,
+    threadId: "t1",
+    sequence: 0,
+    role: "user" as const,
+    bodyArtifactKey: "accepted-key",
+    bodySha256: "accepted-sha",
+    body: "Home accepted this exact message",
+    bodyUnavailableReason: null,
+    createdAt: "2026-08-09T00:00:00Z",
+    refs: [],
+  };
+  const turns = [
+    {
+      turnId: TURN,
+      threadId: "t1",
+      projectId: "p1",
+      state: "queued",
+      requestedAt: acceptedMessage.createdAt,
+      lastEventId: null,
+      generationAttempts: 0,
+      submissionMessage: acceptedMessage,
+    },
+  ];
+  const pending = composeTranscript({
+    messages: [],
+    turns,
+    stream: apply(emptyTranscriptState(), [frame({ type: "turn.accepted" })]),
+  });
+  assert.equal(pending[0].role, "user");
+  assert.equal(pending[0].body, acceptedMessage.body);
+  assert.equal(pending[0].optimistic, false);
+
+  const materialized = composeTranscript({
+    messages: [{ ...acceptedMessage, sequence: 1 }],
+    turns,
+    stream: emptyTranscriptState(),
+  });
+  assert.equal(materialized.filter((message) => message.role === "user").length, 1);
+  assert.equal(materialized[0].id, acceptedMessage.id);
+});
+
+test("a cold cancelled turn keeps a visible terminal assistant receipt", () => {
+  const acceptedMessage = {
+    id: "cancelled-user-message",
+    turnId: TURN,
+    threadId: "t1",
+    sequence: 0,
+    role: "user" as const,
+    bodyArtifactKey: "cancelled-key",
+    bodySha256: "cancelled-sha",
+    body: "Stop this turn",
+    bodyUnavailableReason: null,
+    createdAt: "2026-08-09T00:00:00Z",
+    refs: [],
+  };
+  const cold = composeTranscript({
+    messages: [],
+    turns: [
+      {
+        turnId: TURN,
+        threadId: "t1",
+        projectId: "p1",
+        state: "cancelled",
+        requestedAt: acceptedMessage.createdAt,
+        lastEventId: null,
+        generationAttempts: 1,
+        submissionMessage: acceptedMessage,
+      },
+    ],
+    stream: emptyTranscriptState(),
+  });
+
+  assert.equal(cold.length, 2);
+  assert.equal(cold[1].role, "assistant");
+  assert.equal(cold[1].state, "cancelled");
+  assert.equal(cold[1].body, null);
+  assert.deepEqual(cold[1].parts, []);
 });
 
 /**
