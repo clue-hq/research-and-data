@@ -205,10 +205,13 @@ def _framed(*parts: str) -> str:
 def _home_project_id(*, workspace_id: str, idempotency_key: str) -> str:
     """The one project identity a workspace-scoped Home act may create."""
 
-    return "prj_" + uuid5(
-        _HOME_PROJECT_NAMESPACE,
-        _framed(workspace_id, idempotency_key),
-    ).hex
+    return (
+        "prj_"
+        + uuid5(
+            _HOME_PROJECT_NAMESPACE,
+            _framed(workspace_id, idempotency_key),
+        ).hex
+    )
 
 
 def _first_thread_title(message: str) -> str:
@@ -670,9 +673,7 @@ def build_chat_router(
             data=HomeWire(
                 brands=tuple({"id": brand.brand_id, "name": brand.name} for brand in brands),
                 default_brand_id=brands[0].brand_id if len(brands) == 1 else None,
-                context_entities=tuple(
-                    _context_entity_wire(entity) for entity in context_entities
-                ),
+                context_entities=tuple(_context_entity_wire(entity) for entity in context_entities),
                 agent_profiles=_agent_profile_options(),
                 default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
                 composer_capabilities=_composer_capabilities(),
@@ -785,10 +786,7 @@ def build_chat_router(
                     created_by_user_id=who.user_id,
                     created_via_membership_id=who.membership_id,
                 )
-                if (
-                    thread.project_id != project_id
-                    or thread.title != title
-                ):
+                if thread.project_id != project_id or thread.title != title:
                     raise _refuse(
                         status_code=409,
                         code="IDEMPOTENCY_CONFLICT",
@@ -934,9 +932,7 @@ def build_chat_router(
         except InvalidCursorError as exc:
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
 
-        thread_ids = tuple(
-            thread.thread_id for project in page.items for thread in project.threads
-        )
+        thread_ids = tuple(thread.thread_id for project in page.items for thread in project.threads)
         open_gates = await open_gate_kinds_for_threads(
             workspace_id=who.workspace_id,
             thread_ids=thread_ids,
@@ -1010,9 +1006,7 @@ def build_chat_router(
                 product_id=project.product_id,
                 status=project.status,
                 created_at=project.created_at.isoformat(),
-                context_entities=tuple(
-                    _context_entity_wire(entity) for entity in context_entities
-                ),
+                context_entities=tuple(_context_entity_wire(entity) for entity in context_entities),
                 agent_profiles=_agent_profile_options(),
                 default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
                 composer_capabilities=_composer_capabilities(),

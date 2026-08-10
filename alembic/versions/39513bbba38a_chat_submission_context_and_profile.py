@@ -27,9 +27,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "ALTER TABLE agent_turn_submission ADD COLUMN agent_profile_id text"
-    )
+    op.execute("ALTER TABLE agent_turn_submission ADD COLUMN agent_profile_id text")
     op.execute(
         "ALTER TABLE agent_turn_submission ADD CONSTRAINT "
         "agent_turn_submission_profile_nonempty CHECK ("

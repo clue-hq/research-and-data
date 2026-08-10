@@ -64,13 +64,16 @@ def test_context_validation_preserves_order_and_checks_contact_parent(
     monkeypatch.setattr(composer_context, "read_contact_profile", read_contact_profile)
 
     ordered = (_ref("contact", CONTACT_A, version=4), _ref("account", ACCOUNT_A, version=3))
-    assert asyncio.run(
-        validated_context_refs(
-            object(),  # type: ignore[arg-type]
-            workspace_id="ws-r8-context",
-            refs=ordered,
+    assert (
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=ordered,
+            )
         )
-    ) == ordered
+        == ordered
+    )
 
     with pytest.raises(ContextReferenceError) as mismatch:
         asyncio.run(

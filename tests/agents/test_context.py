@@ -101,9 +101,7 @@ def _sources(*, cross_workspace: bool = False) -> tuple[_Source, ...]:
                             if layer is ContextLayer.L7_TURN
                             else domain_ref(
                                 f"item-{index}",
-                                workspace_id=(
-                                    "ws-2" if cross_workspace and index == 4 else "ws-1"
-                                ),
+                                workspace_id=("ws-2" if cross_workspace and index == 4 else "ws-1"),
                             )
                         ),
                         body=f"layer {index}",
