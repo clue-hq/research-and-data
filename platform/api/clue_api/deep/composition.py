@@ -156,6 +156,13 @@ def build_high_tier_resolver(
     """The :data:`~clue_api.deep.handler.HighTierResolver` that reads the human-approved
     high-tier set from the claim store (D-B), mapping each to a ``durable.AccountSpec``.
 
+    **Superseded (M8D R11.3, 2026-08-10):** both production consumers — the composed VERIFICATION
+    registration and ``run_verification@1`` — now use
+    :func:`~clue_api.entity_research_verification_resolver.build_entity_research_account_resolver`,
+    because the ``account_deep_launch`` read below has no live writer (its only one is the
+    R1-quarantined ``launch_account_deep@1``) and therefore reported an empty account set as a clean
+    success on every M8D-researched run. Kept for the cleanup-PR inventory, not for new callers.
+
     The committed decision arrives two ways and we honour both: ``ctx.params["tier_cutoffs"]`` (the
     cutoffs the run advanced on — campaign.py threads them into every ``PhaseContext``) gives the
     *approved cutoff* and the band ordering; ``persist_tier`` wrote the per-account verdict as a

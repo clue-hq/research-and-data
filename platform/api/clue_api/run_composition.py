@@ -26,8 +26,9 @@ contact progression stay retired behind the untouched R1 quarantine.
 * REVERSE_PROFILING / ICP_CONFIRMED / DISCOVERY / SCORING / TIER_CHECKPOINT — via
   :mod:`clue_api.phase_wiring`, snapshot-wrapped (D3).
 * DEEP — the M8D R11.1 join-only fleet bridge; no legacy entity-research work is scheduled.
-* VERIFICATION — :func:`build_verification_phase_handler` over the shared gateway + the high-tier
-  resolver.
+* VERIFICATION — :func:`build_verification_phase_handler` over the shared gateway + the R11.3
+  researched-account resolver (the M8D fleet read that replaced the ``account_deep_launch``
+  high-tier resolver; it fails loud instead of reporting a silent ``accounts_processed=0``).
 * REVIEW — folded in from :func:`register_boot_handlers` (the process-wide-composable handler set).
 * HANDOFF — the M10.5 retention/objection sweep (the load-bearing tombstone-before-merge
   invariant) over the real M12 phase handler. C7.6 binds a production committee reader to the
@@ -53,13 +54,15 @@ from clue_api.contact_eligibility import (
     build_contact_eligibility_resolver,
     build_production_handoff_committee_reader,
 )
-from clue_api.deep.composition import build_high_tier_resolver
 from clue_api.discovery_seal import (
     DbSealedDiscoveryAccountManifestReader,
     DiscoveryBatchStarter,
     DiscoveryRequiredFieldResolver,
 )
 from clue_api.entity_research_deep_phase import EntityResearchDeepPhaseHandler
+from clue_api.entity_research_verification_resolver import (
+    build_entity_research_account_resolver,
+)
 from clue_api.fleet_wiring import register_boot_handlers
 from clue_api.handoff_retention import build_retention_sweeping_handoff_handler
 from clue_api.handoff_wiring import build_handoff_phase_handler
@@ -359,11 +362,17 @@ class ComposingRunDriver:
                 "or handoff against an ambiguous product"
             )
         registry = PhaseHandlerRegistry()
-        # One per-run high-tier resolver instance, SHARED by DEEP, VERIFICATION, and the HANDOFF
-        # retention sweep (each reads the same human-approved high-tier set from the claim store;
-        # the closure is stateless, so sharing is trivially safe and makes the "shared" contract
-        # true rather than three equivalent-but-separate closures).
-        high_tier_resolver = build_high_tier_resolver(spec=spec)
+        # M8D R11.3: one per-run researched-account resolver instance, SHARED by VERIFICATION and
+        # the HANDOFF retention sweep (DEEP no longer consumes it — the R11.1 adapter reads fleet
+        # state directly). Both need the same fact — which accounts this run actually researched —
+        # so they read the run's latest human-confirmed fleet run and its accepted terminal jobs.
+        # The closure is stateless, so sharing is trivially safe and makes the "shared" contract
+        # true rather than two equivalent-but-separate closures. It fails loud
+        # (``EntityResearchRunMissing``) when the run has no fleet run, where the superseded
+        # ``build_high_tier_resolver`` reported an empty set as a clean success.
+        researched_account_resolver = build_entity_research_account_resolver(
+            session_factory=self._session_factory
+        )
 
         # Process-wide-composable handlers (REVIEW today) folded into this per-run registry (D1).
         register_boot_handlers(
@@ -424,10 +433,10 @@ class ComposingRunDriver:
         deep = EntityResearchDeepPhaseHandler(conn_factory=self._session_factory)
         registry.register(deep)
 
-        # VERIFICATION — the same high-tier resolver instance as DEEP.
+        # VERIFICATION — the same researched-account resolver instance the HANDOFF sweep uses.
         verification = build_verification_phase_handler(
             gateway=self._gateway,
-            account_resolver=high_tier_resolver,
+            account_resolver=researched_account_resolver,
             verification_enabled=self._settings.verification_enabled,
         )
         registry.register(verification)
@@ -453,7 +462,7 @@ class ComposingRunDriver:
             )
             handoff = build_retention_sweeping_handoff_handler(
                 inner=real_handoff,
-                account_resolver=high_tier_resolver,
+                account_resolver=researched_account_resolver,
                 session_factory=self._session_factory,
                 storage=self._storage,
             )

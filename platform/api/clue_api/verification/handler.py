@@ -74,9 +74,9 @@ _FACET_PREFIX = "contact.facet."
 
 # --- injected seams ----------------------------------------------------------
 
-# Resolve the accounts to verify for this run — the SAME high-tier set the DEEP phase processed. The
-# api root passes the very ``HighTierResolver`` it built for ``DeepPhaseHandler`` (one source of the
-# account set); a fake is injected in tests.
+# Resolve the accounts to verify for this run — the SAME set the DEEP phase researched. Since M8D
+# R11.3 the api root passes the researched-account resolver over the run's account-research fleet
+# (one source of the account set, shared with the HANDOFF sweep); a fake is injected in tests.
 VerificationAccountResolver = Callable[[PhaseContext], Awaitable[Sequence[AccountSpec]]]
 
 # Load an entity's **live** claims across all fields (``claims_for(field_key=None)``), scoped.

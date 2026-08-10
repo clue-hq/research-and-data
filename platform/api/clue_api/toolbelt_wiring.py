@@ -63,6 +63,7 @@ from uuid import UUID
 from pydantic import Field, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.account_research_fleet import read_latest_account_fleet_for_project_run
 from clue_api.agent_gate_wiring import register_agent_gate_tools
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import require_human_authority
@@ -73,7 +74,6 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_tool,
     build_research_account_gaps_v2_tool,
 )
-from clue_api.deep.composition import build_high_tier_resolver
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
 from clue_api.entity_research_launch_tools import (
@@ -81,6 +81,9 @@ from clue_api.entity_research_launch_tools import (
     build_entity_research_launch_tools,
 )
 from clue_api.entity_research_quarantine import quarantine_entity_research_tool
+from clue_api.entity_research_verification_resolver import (
+    build_entity_research_account_resolver,
+)
 from clue_api.exa_targeted_enrichment import (
     DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY,
     ExaTargetedEligibilityError,
@@ -2212,32 +2215,53 @@ class RunVerificationTool(_CapabilityTool):
                 "icp_version_missing",
                 f"no pinned ICP {run.icp_key!r} v{run.icp_version} for this run",
             )
+        # M8D R11.3, defense in depth: refuse *before* the phase runs when the run has no
+        # account-research fleet run, so an operator gets an actionable refusal rather than the
+        # resolver's exception mid-phase — and never the pre-R11 silent ``accounts_processed=0``
+        # success. The resolver still raises on its own (a run whose fleet vanished between these
+        # two reads is a failure, not an empty success).
+        async with self._conn_factory() as conn:
+            fleet = await read_latest_account_fleet_for_project_run(
+                conn, UUID(str(run.id)), workspace_id=run.workspace_id
+            )
+        if fleet is None or fleet.project_id != run.project_id:
+            return _fail(
+                "entity_research_run_missing",
+                "no M8D account-research fleet run is bound to this project run; launch account "
+                "research through the confirmed launch_account_research@1 action, then verify",
+            )
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, RunVerificationInput)
         run = await self._load_run(inputs.project_run_id, ctx)
         assert run is not None
-        spec = await self._load_pinned_spec(run)
-        assert spec is not None
         handler = self._wrap_snapshots(
             build_verification_phase_handler(
                 gateway=self._gateway,
-                account_resolver=build_high_tier_resolver(
-                    spec=spec, session_factory=self._conn_factory
+                # R11.3: the researched-account set comes from the run's latest human-confirmed
+                # fleet run, not the quarantined ``account_deep_launch`` ledger.
+                account_resolver=build_entity_research_account_resolver(
+                    session_factory=self._conn_factory
                 ),
                 session_factory=self._conn_factory,
                 verification_enabled=self._settings.verification_enabled,
             )
         )
         result = await handler.run(self._phase_ctx(run, ProjectPhase.VERIFICATION))
+        # References must match ``PhaseAccountsOutput`` exactly (extras are a contract violation).
+        # This result used to add ``verification_enabled``, which the schema has never carried — an
+        # unreachable bug until R11.3 gave the tool an account set it could actually succeed on.
+        # The toggle state is still recorded on the phase result payload (and on the VERIFICATION
+        # checkpoint when the state machine drives it); surfacing it *here* needs a new pinned
+        # output schema — the reviewed agent profiles pin ``run_verification@1``'s
+        # ``output_schema_sha256`` — which is a governed change, not this slice's.
         return ToolResult(
             tool=self.name,
             version=self.version,
             references={
                 "status": result.status.value,
                 "accounts_processed": result.accounts_processed,
-                "verification_enabled": result.payload.get("verification_enabled", True),
             },
         )
 
