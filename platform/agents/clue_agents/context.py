@@ -103,9 +103,7 @@ class ContextCandidate(ContextValue):
     ref: ArtifactRef | DomainObjectRef
     body: str = Field(min_length=1)
     role: Literal["system", "user", "assistant", "tool"] = "system"
-    origin: Literal["trusted_context", "history", "current_user_instruction"] = (
-        "trusted_context"
-    )
+    origin: Literal["trusted_context", "history", "current_user_instruction"] = "trusted_context"
     materialized_path: str | None = None
     required: bool = False
 
@@ -438,9 +436,7 @@ class FocusLayerSource:
                     # The assembler sorts by stable key before budgeting and emission. Prefixing
                     # the durable submission order keeps the user's account/contact sequence
                     # intact all the way into L5 instead of silently alphabetizing it.
-                    stable_key=(
-                        f"{ordinal:06d}:{ref.object_type}:{ref.object_id}:{ref.version}"
-                    ),
+                    stable_key=(f"{ordinal:06d}:{ref.object_type}:{ref.object_id}:{ref.version}"),
                     ref=ref,
                     body=card.body,
                     materialized_path=_card_path("focus", ref),

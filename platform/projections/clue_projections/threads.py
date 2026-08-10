@@ -471,9 +471,7 @@ def _thread_turn_view(row: dict[str, object]) -> ThreadTurnView:
         submitted_by_user_id=str(row["submitted_by_user_id"]),
         message_artifact_key=str(row["message_artifact_key"]),
         message_sha256=str(row["message_sha256"]),
-        last_event_id=(
-            None if row["last_event_id"] is None else int(str(row["last_event_id"]))
-        ),
+        last_event_id=(None if row["last_event_id"] is None else int(str(row["last_event_id"]))),
         generation_attempts=int(str(row["attempts"] or 0)),
     )
 
@@ -680,9 +678,7 @@ async def _refs_by_turn(
                 workspace_id=workspace_id,
                 object_type=row["object_type"],
                 object_id=row["object_id"],
-                version=(
-                    None if row["object_version"] is None else int(row["object_version"])
-                ),
+                version=(None if row["object_version"] is None else int(row["object_version"])),
                 ordinal=int(row["ordinal"]),
             )
         )

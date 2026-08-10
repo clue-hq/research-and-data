@@ -1520,15 +1520,19 @@ def test_missing_required_artifact_is_a_terminal_failed_turn(tmp_path: Path) -> 
             assert len(failed) == 1
             assert failed[0].payload["failure_code"] == REQUIRED_CONTEXT_ARTIFACT_MISSING
             latest = (
-                await conn.execute(
-                    text(
-                        "SELECT status, reason_code FROM agent_turn_event "
-                        "WHERE workspace_id=:workspace AND turn_id=:turn "
-                        "ORDER BY seq DESC LIMIT 1"
-                    ),
-                    {"workspace": project.workspace_id, "turn": turn_id},
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT status, reason_code FROM agent_turn_event "
+                            "WHERE workspace_id=:workspace AND turn_id=:turn "
+                            "ORDER BY seq DESC LIMIT 1"
+                        ),
+                        {"workspace": project.workspace_id, "turn": turn_id},
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             assert (latest["status"], latest["reason_code"]) == (
                 "failed",
                 REQUIRED_CONTEXT_ARTIFACT_MISSING,

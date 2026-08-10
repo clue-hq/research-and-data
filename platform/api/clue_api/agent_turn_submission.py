@@ -353,9 +353,7 @@ async def submission_context_refs_for_turns(
                 workspace_id=workspace_id,
                 object_type=str(row["object_type"]),
                 object_id=str(row["object_id"]),
-                version=(
-                    None if row["object_version"] is None else int(row["object_version"])
-                ),
+                version=(None if row["object_version"] is None else int(row["object_version"])),
             )
         )
     return {turn_id: tuple(refs) for turn_id, refs in grouped.items()}
