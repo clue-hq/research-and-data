@@ -347,7 +347,7 @@ async def project_sidebar_page(
         ProjectSidebarProjectView(
             project_id=project_id,
             title=str(project_rows[project_id]["project_title"]),
-            created_at=project_rows[project_id]["project_created_at"],
+            created_at=cast(datetime, project_rows[project_id]["project_created_at"]),
             threads=tuple(threads[project_id]),
         )
         for project_id in selected_ids

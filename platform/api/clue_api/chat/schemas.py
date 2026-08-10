@@ -246,12 +246,17 @@ def thread_href(*, project_id: str, thread_id: str) -> str:
     return f"/projects/{project_id}?thread={thread_id}"
 
 
+#: The one authored conversation-status vocabulary (five values + the honest ``archived``); every
+#: wire that carries a thread status shares this alias so the vocabularies cannot drift apart.
+ThreadStatusValue = Literal["idle", "running", "approval", "needs-input", "archived"]
+
+
 def thread_status(
     *,
     status: str,
     open_gate_kinds: tuple[str, ...] = (),
     running: bool = False,
-) -> str:
+) -> ThreadStatusValue:
     """The conversation status the sidebar renders.
 
     Derived, never stored — the one place the authored five-value vocabulary
@@ -295,7 +300,7 @@ class ThreadWire(_Wire):
     id: str
     title: str | None
     href: str
-    status: str
+    status: ThreadStatusValue
     pinned: bool
     project_id: str
     created_at: str
@@ -463,7 +468,7 @@ class SidebarConversationWire(_Wire):
     id: str
     title: str | None
     href: str
-    status: Literal["idle", "running", "approval", "needs-input", "archived"]
+    status: ThreadStatusValue
     pinned: bool
     updated_at: str
 
