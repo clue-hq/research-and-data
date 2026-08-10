@@ -329,6 +329,7 @@ from clue_research.durable.project import (
     ProjectRunError,
     ProjectRunNotFound,
     ProjectRunStore,
+    ReentrantHoldNotSubmittable,
     next_phase,
 )
 from clue_research.durable.project_run import (
@@ -713,6 +714,7 @@ __all__ = [
     "ProjectRunNotFound",
     "NoPhaseHandlerRegistered",
     "CheckpointNotAwaiting",
+    "ReentrantHoldNotSubmittable",
     "BudgetEngineNotConfigured",
     # project_run / checkpoint / journal repository (M7.3)
     "ProjectRunRow",

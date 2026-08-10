@@ -57,6 +57,7 @@ from clue_research.durable import (
     PhaseHandlerRegistry,
     ProjectRun,
     ProjectRunStatus,
+    ReentrantHoldNotSubmittable,
 )
 from tests._workspace import seed_project, seed_run
 from tests.api.test_account_research_fleet_r6_db import _claim_begin_finalize
@@ -423,6 +424,88 @@ def test_a_terminal_fleet_completes_deep_with_its_counts_and_settled_spend() -> 
             assert committed is not None
             assert committed.status is PhaseCheckpointStatus.COMMITTED
             assert await _account_deep_launches(conn) == 0
+
+    run_async(scenario())
+
+
+# --- a hold is not an approvable gate -----------------------------------------------------------
+
+
+def test_the_not_launched_hold_refuses_an_approve_and_still_resumes() -> None:
+    """A DEEP hold has nothing to submit. Approving it would finalize a phase that researched
+    nothing, so the machine refuses with a typed, actionable error and changes nothing; clearing
+    the hold's cause and resuming still re-runs the handler."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            scope = await _seed_scope(conn)
+            machine = await _machine(conn, scope)
+            run = await machine.advance(scope.project_run_id)
+            assert run.status is ProjectRunStatus.PAUSED
+            held = await machine.await_checkpoint(scope.project_run_id)
+            assert held is not None
+            assert held.payload["reason_code"] == REASON_FLEET_NOT_LAUNCHED
+
+            with pytest.raises(ReentrantHoldNotSubmittable) as excinfo:
+                await machine.submit_checkpoint(
+                    scope.project_run_id, decision={"action": "approve"}
+                )
+            assert REASON_FLEET_NOT_LAUNCHED in str(excinfo.value)
+            assert "resume" in str(excinfo.value)
+
+            # Nothing moved and nothing was written: the run is still held at DEEP with the exact
+            # same checkpoint, and it certainly did not advance to VERIFICATION.
+            after = await machine.status(scope.project_run_id)
+            assert (after.phase, after.status) == (ProjectPhase.DEEP, ProjectRunStatus.PAUSED)
+            assert await machine.await_checkpoint(scope.project_run_id) == held
+
+            # The real action still works: launch research, resume, and the handler re-runs.
+            await _launch(conn, scope)
+            await machine.resume(scope.project_run_id)
+            run = await machine.advance(scope.project_run_id)
+            assert (run.phase, run.status) == (ProjectPhase.DEEP, ProjectRunStatus.ACTIVE)
+            resumed = await machine.await_checkpoint(scope.project_run_id)
+            assert resumed is not None
+            assert resumed.status is PhaseCheckpointStatus.WAITING_EXTERNAL
+
+    run_async(scenario())
+
+
+def test_the_suspended_fleet_hold_refuses_an_approve_and_still_resumes() -> None:
+    """Approving a suspension would silently bypass the operator's decision about it."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            scope = await _seed_scope(conn)
+            envelope = await _launch(conn, scope)
+            suspended_job = envelope.jobs[0].authorization.job_id
+            await _service(conn).pause_job(
+                suspended_job,
+                workspace_id=scope.workspace_id,
+                actor="user:owner",
+                reason_code="operator_hold",
+            )
+            machine = await _machine(conn, scope)
+            run = await machine.advance(scope.project_run_id)
+            assert run.status is ProjectRunStatus.PAUSED
+            held = await machine.await_checkpoint(scope.project_run_id)
+            assert held is not None
+            assert held.payload["reason_code"] == REASON_FLEET_SUSPENDED
+
+            with pytest.raises(ReentrantHoldNotSubmittable):
+                await machine.submit_checkpoint(
+                    scope.project_run_id, decision={"action": "approve"}
+                )
+            after = await machine.status(scope.project_run_id)
+            assert (after.phase, after.status) == (ProjectPhase.DEEP, ProjectRunStatus.PAUSED)
+            assert await machine.await_checkpoint(scope.project_run_id) == held
+
+            await _service(conn).resume_job(
+                suspended_job, workspace_id=scope.workspace_id, actor="user:owner"
+            )
+            await machine.resume(scope.project_run_id)
+            run = await machine.advance(scope.project_run_id)
+            assert (run.phase, run.status) == (ProjectPhase.DEEP, ProjectRunStatus.ACTIVE)
 
     run_async(scenario())
 

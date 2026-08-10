@@ -144,6 +144,18 @@ class BudgetEngineNotConfigured(ProjectRunError):
     supplies the cost math); none was injected."""
 
 
+class ReentrantHoldNotSubmittable(ProjectRunError):
+    """:meth:`ProjectRun.submit_checkpoint` was aimed at a **re-entrant hold**, not a decision gate.
+
+    A hold has nothing to submit: the phase suspended on durable state it re-reads (M8D R11.1's DEEP
+    bridge holds until a confirmed account-research launch exists, or until a suspended fleet is
+    resumed), so committing its checkpoint would finalize — and advance past — a phase that did no
+    work. Clear the hold's cause and :meth:`ProjectRun.resume` the run instead; the handler re-runs
+    and re-evaluates. Distinct from :class:`CheckpointNotAwaiting` so a caller (or a UI that
+    mistakes the hold for an approvable gate card) can tell "nothing is awaiting input" apart from
+    "this is awaiting the world, not you"."""
+
+
 # --- re-entrant holds (R11 §6b) ---------------------------------------------------------------
 
 #: Reserved :class:`~clue_core.PhaseResult` payload key marking a ``PAUSED`` result as a *plain*
@@ -689,7 +701,9 @@ class ProjectRun:
         are additionally diff-guarded — applied only when they actually change the run — so a
         re-submit of the same decision does not append a duplicate audit-journal row. Together they
         close the crash window between the adjust and the commit that the diff guard alone could
-        only partially cover. Raises :class:`CheckpointNotAwaiting` if nothing is awaiting input."""
+        only partially cover. Raises :class:`CheckpointNotAwaiting` if nothing is awaiting input,
+        and :class:`ReentrantHoldNotSubmittable` if the suspension is a re-entrant hold rather than
+        a decision gate (nothing to decide — clear its cause and :meth:`resume`)."""
         run = await self.status(project_run_id)
         phase = run.phase
         checkpoint = await self._store.get_checkpoint(project_run_id, phase)
@@ -711,6 +725,16 @@ class ProjectRun:
             )
         if checkpoint is None or checkpoint.status != PhaseCheckpointStatus.AWAITING_INPUT:
             raise CheckpointNotAwaiting(f"{project_run_id}:{phase.value}")
+        # Fail closed BEFORE any adjustment or commit: a re-entrant hold is not an approvable gate,
+        # so an approve aimed at one must leave the run PAUSED and the checkpoint untouched rather
+        # than finalize a phase that did no work (R11 §6b).
+        if checkpoint.payload.get(REENTRANT_HOLD_KEY):
+            reason = checkpoint.payload.get("reason_code")
+            raise ReentrantHoldNotSubmittable(
+                f"{project_run_id}:{phase.value} is held on external state"
+                f"{'' if reason is None else f' ({reason})'}, not on a decision to submit; "
+                "clear the hold's cause and resume the run so the phase re-runs"
+            )
 
         # Apply only the edits that actually change the run, so re-submitting the same decision (a
         # UI retry, or a crash between this adjust and the commit below) does not append a duplicate

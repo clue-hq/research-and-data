@@ -48,6 +48,7 @@ from clue_research.durable import (
     ProjectRunNotFound,
     ProjectRunStatus,
     ProjectRunStore,
+    ReentrantHoldNotSubmittable,
 )
 from tests.db.conftest import run_async
 from tests.durable.conftest import (
@@ -949,6 +950,18 @@ def test_a_reentrant_hold_reruns_its_handler_after_an_explicit_resume() -> None:
         await machine.resume(run_id)
         run = await machine.advance(run_id)
         assert (run.phase, run.status) == (ProjectPhase.DEEP, ProjectRunStatus.PAUSED)
+        assert holding.calls == 2
+
+        # A hold is not an approvable gate: submitting at one is refused, distinguishably, and
+        # leaves the run PAUSED with its checkpoint untouched.
+        held = await store.get_checkpoint(run_id, ProjectPhase.DEEP)
+        assert held is not None
+        with pytest.raises(ReentrantHoldNotSubmittable) as excinfo:
+            await machine.submit_checkpoint(run_id, decision={"action": "approve"})
+        assert "resume" in str(excinfo.value)
+        run = await machine.status(run_id)
+        assert (run.phase, run.status) == (ProjectPhase.DEEP, ProjectRunStatus.PAUSED)
+        assert await store.get_checkpoint(run_id, ProjectPhase.DEEP) == held
         assert holding.calls == 2
 
         # Once the external condition clears, the resumed run advances normally.
