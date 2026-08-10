@@ -319,6 +319,26 @@ class ReuseScope(StrEnum):
     TENANT_PRIVATE = "tenant_private"
 
 
+class ResearchScope(StrEnum):
+    """Field **species** — is this field's value a world-fact or a project-relative answer?
+    (contract-delta 2026-08-08, FI-2 slice 0; spec ``FI-2-workspace-account-layer.md`` §4/§5.)
+
+    * ``PROJECT_NEUTRAL`` — the value is a fact about the account/contact in the world, invariant
+      to which client product, ICP, or campaign is asking. Readable in every project lens; spend is
+      TTL-governed (fresh ⇒ skip, and the refresh benefits every project).
+    * ``PROJECT_RELATIVE`` — the value is defined *relative to* an ICP/product/campaign (a score, a
+      targeting decision, an argument). Read through the run-lineage filter, always researched per
+      project (never skipped because another project's answer is fresh), and superseded only within
+      its own project.
+
+    Orthogonal to :class:`ReuseScope`: species drives economics and lens membership, never privacy
+    — a neutral fact still respects every governance gate (§5.3). Persisted as ``text`` (not a DB
+    enum) on ``field_definition`` / ``workspace_field_definition`` behind a named CHECK."""
+
+    PROJECT_NEUTRAL = "project_neutral"
+    PROJECT_RELATIVE = "project_relative"
+
+
 class Persona(StrEnum):
     """Buying-committee personas/roles (conventions §3)."""
 

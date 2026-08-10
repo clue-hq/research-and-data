@@ -20,7 +20,12 @@ import pytest
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import EntityType, OnboardingInputKind, VolunteeredStatementId
+from clue_core import (
+    EntityType,
+    OnboardingInputKind,
+    ResearchScope,
+    VolunteeredStatementId,
+)
 from clue_core.proposals import ProposalStatus
 from clue_research.proposals import ProposalScope, get_field_proposal
 from clue_research.stage0 import (
@@ -605,6 +610,81 @@ def test_out_of_registry_icp_concept_becomes_durable_proposal_ref() -> None:
                 synthesis_model="fake/model",
             )
             assert repeated.field_proposal_refs == result.field_proposal_refs
+
+    run_async(_run())
+
+
+def test_a_pack_concept_without_a_species_is_rejected_not_staged() -> None:
+    """FI-2 P3: the species must-declare rule reaches the synthesis path too.
+
+    A ``<pack>.*`` concept that declares its reuse scope but no ``research_scope`` is durably
+    preserved as a REJECTED proposal (its raw input kept for audit), never staged as a frozen
+    payload a human could approve and the registry could then never promote. A concept that
+    declares both rides through as a normal proposal — which is why the prompt asks for both.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            ref = await build_client_kb(
+                conn, workspace_id=_CLIENT, suffix="species", asserted=_ASSERTED
+            )
+            brand = await create_brand(conn, workspace_id=_CLIENT, name="Species brand")
+            scope = ProposalScope(workspace_id=_CLIENT, brand_id=brand.brand_id)
+            response = json.dumps(
+                {
+                    "icps": [
+                        {
+                            "icp_key": "species",
+                            "new_field_concepts": [
+                                {
+                                    "field_key": "new_vertical.speciesless_signal",
+                                    "value_type": "str",
+                                    "pass_kind": "deep",
+                                    "reuse_scope": "tenant_private",
+                                    "rationale": "A pack field with no declared species.",
+                                },
+                                {
+                                    "field_key": "new_vertical.declared_signal",
+                                    "value_type": "str",
+                                    "pass_kind": "deep",
+                                    "reuse_scope": "tenant_private",
+                                    "research_scope": "project_relative",
+                                    "rationale": "A pack field that declares its species.",
+                                },
+                            ],
+                        }
+                    ]
+                }
+            )
+            result = await synthesize_icps_with_proposals(
+                conn,
+                ref,
+                workspace_id=_CLIENT,
+                proposal_scope=scope,
+                proposed_by_actor="agent",
+                proposed_by_ref="thread:stage0",
+                gateway=FakeGateway(response),
+                synthesis_model="fake/model",
+            )
+
+            assert len(result.field_proposal_refs) == 2
+            rejected_ref = next(
+                r for r in result.field_proposal_refs if r.status is ProposalStatus.REJECTED
+            )
+            rejected = await get_field_proposal(
+                conn, rejected_ref.proposal_id, workspace_id=_CLIENT
+            )
+            assert rejected is not None
+            assert rejected.decision_reason is not None
+            assert "research_scope" in rejected.decision_reason
+
+            proposed_ref = next(
+                r for r in result.field_proposal_refs if r.status is ProposalStatus.PROPOSED
+            )
+            assert proposed_ref.field_key == "new_vertical.declared_signal"
+            stored = await get_field_proposal(conn, proposed_ref.proposal_id, workspace_id=_CLIENT)
+            assert stored is not None
+            assert stored.payload.field_def.research_scope is ResearchScope.PROJECT_RELATIVE
 
     run_async(_run())
 

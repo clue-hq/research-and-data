@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import FieldClass, FieldDef, PassKind, ReuseScope
+from clue_core import FieldClass, FieldDef, PassKind, ResearchScope, ReuseScope
 from clue_research.claimstore import SeedField
 from clue_research.icp.catalog import Pack, PackSourceSlot, register_pack_catalog
 from clue_research.icp.source_profile import SourceWeight, WeightedSource
@@ -39,6 +39,7 @@ def _field(
     freshness_ttl: timedelta | None = None,
     gate: str | None = None,
     reuse_scope: ReuseScope | None = None,
+    research_scope: ResearchScope | None = None,
     value_schema: dict[str, Any] | None = None,
     corroboration_min: int = 1,
     description: str | None = None,
@@ -47,8 +48,10 @@ def _field(
     ``None`` for a shared canonical contribution (e.g. an ``account.resonance.*`` field; Doc C §2).
 
     A ``<pack>.*`` field MUST set ``reuse_scope`` (no safe default; ENG-165 W5 — enforced at
-    authoring). A canonical contribution (``pack=None``) may leave it ``None`` and inherit the
-    class default (e.g. an ``account.resonance.*`` field resolves to tenant_private).
+    authoring) and ``research_scope`` (no ratified species default; FI-2 P3 — enforced by
+    ``register_field``). A canonical contribution (``pack=None``) may leave both ``None`` and
+    inherit the class/ratified defaults (e.g. an ``account.resonance.*`` field resolves to
+    tenant_private and project_neutral).
     """
     return SeedField(
         field_def=FieldDef(
@@ -59,6 +62,7 @@ def _field(
             pass_kind=pass_kind,
             gate=gate,
             reuse_scope=reuse_scope,
+            research_scope=research_scope,
         ),
         value_schema=value_schema,
         corroboration_min=corroboration_min,
@@ -97,6 +101,8 @@ FRONTIER_AI = Pack(
             freshness_ttl=timedelta(days=30),
             # Public research footprint about the company (arXiv volume) — amortizes across clients.
             reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
+            # A world-fact about the company's research output — neutral (FI-2 §5.2).
+            research_scope=ResearchScope.PROJECT_NEUTRAL,
             value_schema={"type": "integer"},
             description="Recent research-paper volume on arXiv / Semantic Scholar (intent proxy).",
         ),
@@ -146,6 +152,8 @@ HEALTHCARE_PRACTICE = Pack(
             freshness_ttl=timedelta(days=180),
             # A public registry identifier (NPI) — a public-footprint fact about the provider.
             reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
+            # A public registry identifier — a world-fact; neutral (FI-2 §5.2).
+            research_scope=ResearchScope.PROJECT_NEUTRAL,
             value_schema={"type": "string"},
             description="National Provider Identifier (deterministic registry id; tier-1).",
         ),
@@ -180,6 +188,8 @@ DATA_INFRA = Pack(
             gate="deep-pass",
             # A technographic signal about the company's public engineering footprint — public.
             reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
+            # A technographic world-fact about the company — neutral (FI-2 §5.2).
+            research_scope=ResearchScope.PROJECT_NEUTRAL,
             value_schema={"type": "string"},
             description="Synthesized infra migration/architecture signal (technographic).",
         ),

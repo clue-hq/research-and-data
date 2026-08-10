@@ -46,12 +46,21 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # same terms (56 -> 76). Round C adds the last twenty-one — brand kits x4, ingestion
     # enqueues x3, the asset registry x7 and personalization + both batch families x7
     # (76 -> 97), which empties UNCONVERTED_MUTATIONS on the design side.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 97
+    # FI Lane D D0 added the four REQ-21 thread tools, all ungranted: they are invocable by the
+    # authenticated chat surface but sit on no model surface, and they are not human-only either.
+    # FI Lane D D4 added `open_directive_confirmation_gate`, granted to the Head of ABM: asking the
+    # human for authority is that role's own act, and the tool cannot address a gate to anybody but
+    # the human whose turn it is answering. (97 + 5 = 102 at the integration merge.)
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 102
     assert all(
         C6_AGENT_TOOL_AUTHORITY[name] == ()
         for name in C6_AGENT_TOOL_AUTHORITY
         if name.startswith("design_")
     )
+    assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["archive_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)

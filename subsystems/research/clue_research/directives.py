@@ -53,6 +53,7 @@ from clue_research.claimstore.registry import get_field
 from clue_research.durable.scheduler import AccountSpec
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account
+from clue_research.membership import ensure_project_account
 from clue_research.sources.authority import load_effective_source_plan
 from clue_research.sources.registry import get_source
 from clue_research.sources.source_profile import resolve_allowed_set
@@ -829,6 +830,17 @@ async def draft_research_directive(
                 "selection_ref": body.account_scope.sealed_selection_ref,
             },
         )
+        # FI-2 P1 (spec §2): scoping an account into a directive is a project claiming it as a
+        # target, so the membership lands in the directive's own transaction. Idempotent and
+        # first-add-wins: an account discovered for this project earlier keeps ``added_via
+        # ='discovered'``, and a successor directive re-scoping the same account is a no-op.
+        await ensure_project_account(
+            conn,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            account_entity_id=account_id,
+            added_via="directive",
+        )
     await conn.execute(
         text(
             "INSERT INTO account_research_directive_event "
@@ -1048,7 +1060,16 @@ async def effective_account_research_directive(
     directive_id: ResearchDirectiveId,
     account_id: EntityId,
     expected_pin: ResearchDirectivePin | None = None,
+    allow_draft: bool = False,
 ) -> EffectiveAccountResearchDirective:
+    """Compose one account's effective direction.
+
+    ``allow_draft`` is FI Lane D D4's pricing relaxation (see
+    :func:`clue_core.compose_account_research_directive`): the confirmation gate prices the draft it
+    presents with this same composition, so the gate's number and the launcher's verified number
+    cannot drift. Every execution path leaves it ``False``.
+    """
+
     directive = await get_research_directive(conn, directive_id, workspace_id=workspace_id)
     if directive is None:
         raise ResearchDirectiveNotFound(str(directive_id))
@@ -1079,6 +1100,7 @@ async def effective_account_research_directive(
         account_id=account_id,
         override=override,
         allow_superseded=expected_pin is not None,
+        allow_draft=allow_draft,
     )
     if expected_pin is not None and effective.pin != expected_pin:
         raise ResearchDirectiveConflict("stored directive content differs from the execution pin")

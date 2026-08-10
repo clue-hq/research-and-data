@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import pytest
 from pydantic import SecretStr
+from sqlalchemy import text
 
 from clue_api.entity_research_quarantine import EntityResearchAgentNotComposed
 from clue_api.run_composition import ComposingRunDriver
@@ -41,6 +42,7 @@ from clue_research.icp import (
     rubric_to_slot,
 )
 from clue_research.icp.rubric import TierBand, TierCutoffs
+from clue_research.membership import accounts_for_project, projects_for_accounts
 from clue_research.profiling import AccountProfileResult
 from clue_research.resolvers.sumble import (
     JOBS_SOURCE_KEY,
@@ -236,6 +238,48 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
                 scope=WorkspaceScope.for_workspace(state.workspace_id),
             )
         by_field = {claim.field_key: claim for claim in account_claims}
+        # FI-2 P2: the trial admits under the shared discovery run id without ever driving the
+        # DISCOVERY phase, so the trial itself must register it — every claim it wrote back-joins.
+        async with transaction() as conn:
+            unattributed = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM claim WHERE entity_id = :account_id "
+                        "AND run_id NOT IN (SELECT run_id FROM run_lineage "
+                        "WHERE workspace_id = :workspace_id AND project_id = :project_id)"
+                    ),
+                    {
+                        "account_id": account_id,
+                        "workspace_id": state.workspace_id,
+                        "project_id": state.project_id,
+                    },
+                )
+            ).scalar_one()
+        assert unattributed == 0
+        # FI-2 P1 (spec §2): the human-added trial account is a target of the trial's project, and
+        # the admission recorded it. ``added_via`` records *how the account joined the project* — a
+        # human typing a domain is the 'manual' channel. The candidate's reserved ``import``
+        # matched_channel is the gate's resolution-path label, not join provenance.
+        async with transaction() as conn:
+            assert await accounts_for_project(
+                conn, workspace_id=state.workspace_id, project_id=state.project_id
+            ) == (account_id,)
+            assert await projects_for_accounts(
+                conn, workspace_id=state.workspace_id, account_ids=[account_id]
+            ) == {account_id: (state.project_id,)}
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT added_via FROM project_account WHERE workspace_id = :workspace_id "
+                        "AND project_id = :project_id AND account_entity_id = :account_id"
+                    ),
+                    {
+                        "workspace_id": state.workspace_id,
+                        "project_id": state.project_id,
+                        "account_id": account_id,
+                    },
+                )
+            ).scalar_one() == "manual"
         # The paid organization attribute is written as a real, evidence-backed value — not an
         # empty account produced by a silently discarded match.
         headcount = by_field["core.employee_count"]

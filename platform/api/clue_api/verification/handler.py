@@ -30,6 +30,10 @@ then records the per-field tier-4 verification-health (Doc C §6,
 failed and the batch continues (coverage-confidence, not all-or-nothing), like the DEEP handler.
 The result is references-only (counts + cost). Construct and register at the api composition root.
 
+``verification_enabled=False`` is the temporary deployment bypass: steps 1–2 and their health
+recording make zero calls, while the M10 use gate remains active. The phase still commits explicitly
+as skipped so durable progression and audit output stay honest; it never promotes unverified claims.
+
 **Coverage:** each account is verified together with its committee *contact* entities (resolved via
 the injected ``contact_resolver`` → ``identity.contact_ids_for_account``), so the account-level
 synthesis claims **and** the contacts' ``contact.facet.*`` hooks are governed in one pass — the
@@ -131,8 +135,9 @@ class VerificationPhaseHandler:
         *,
         account_resolver: VerificationAccountResolver,
         load_claims: ClaimLoader,
-        corroborator: ClaimCorroborator,
-        judge: FaithfulnessJudge,
+        corroborator: ClaimCorroborator | None,
+        judge: FaithfulnessJudge | None,
+        verification_enabled: bool = True,
         contact_resolver: ContactResolver | None = None,
         use_gate_provider: UseGateProvider | None = None,
         health_sink: MetricSink | None = None,
@@ -141,9 +146,14 @@ class VerificationPhaseHandler:
         self._load_claims = load_claims
         self._corroborator = corroborator
         self._judge = judge
+        self._verification_enabled = verification_enabled
         self._contact_resolver = contact_resolver
         self._use_gate_provider = use_gate_provider
         self._health_sink = health_sink
+        if verification_enabled and (corroborator is None or judge is None):
+            raise ValueError(
+                "enabled verification requires both a corroborator and a faithfulness judge"
+            )
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         """Verify every high-tier account's deep claims, isolated per account, then aggregate.
@@ -158,7 +168,12 @@ class VerificationPhaseHandler:
                 status=PhaseStatus.COMPLETED,
                 accounts_processed=0,
                 cost_cents=Decimal(0),
-                payload={"verified_accounts": 0, "accounts_failed": 0},
+                payload={
+                    "verification_enabled": self._verification_enabled,
+                    "verified_accounts": 0,
+                    "accounts_skipped": 0,
+                    "accounts_failed": 0,
+                },
             )
 
         scope = WorkspaceScope.for_workspace(ctx.workspace_id)
@@ -181,7 +196,12 @@ class VerificationPhaseHandler:
             status=PhaseStatus.COMPLETED,
             accounts_processed=processed,
             cost_cents=cost,
-            payload={"verified_accounts": processed, "accounts_failed": failed},
+            payload={
+                "verification_enabled": self._verification_enabled,
+                "verified_accounts": processed if self._verification_enabled else 0,
+                "accounts_skipped": 0 if self._verification_enabled else processed,
+                "accounts_failed": failed,
+            },
         )
 
     async def _verify_isolated(
@@ -214,27 +234,37 @@ class VerificationPhaseHandler:
     ) -> CostCents:
         """Run the gate chain over an account + its committee contacts' live claims; return judge
         spend."""
+        # With the M9 runtime pass disabled and no M10 use gate wired, this account is an explicit
+        # zero-work skip: do not even load claims. This proves the switch cannot accidentally reach
+        # either verifier through a side path.
+        if not self._verification_enabled and use_gate is None:
+            return Decimal(0)
+
         entity_ids = await self._entities_for(account_entity_id)
         claims = await self._load_all(entity_ids, scope)
 
         # 1. corroboration (M9.2) — once per distinct (entity, field); promotes tier≤3.
-        corroborated: set[tuple[EntityId, str]] = set()
-        for claim in claims:
-            key = (claim.entity_id, str(claim.field_key))
-            if key in corroborated:
-                continue
-            corroborated.add(key)
-            await self._corroborator.evaluate(
-                claim.entity_id, claim.field_key, scope=scope, entity_type=claim.entity_type
-            )
+        if self._verification_enabled:
+            assert self._corroborator is not None
+            corroborated: set[tuple[EntityId, str]] = set()
+            for claim in claims:
+                key = (claim.entity_id, str(claim.field_key))
+                if key in corroborated:
+                    continue
+                corroborated.add(key)
+                await self._corroborator.evaluate(
+                    claim.entity_id, claim.field_key, scope=scope, entity_type=claim.entity_type
+                )
 
         # 2. faithfulness (M9.3) — direct tier-4 claims only. C7 derived claims carry their own
         # bounded entailment verdict and must not be judged again against a nonexistent span.
         cost = Decimal(0)
-        for claim in claims:
-            if claim.source_tier == 4 and claim.claim_flavor is not ClaimFlavor.DERIVED:
-                result = await self._judge.judge(claim)
-                cost += result.cost_cents
+        if self._verification_enabled:
+            assert self._judge is not None
+            for claim in claims:
+                if claim.source_tier == 4 and claim.claim_flavor is not ClaimFlavor.DERIVED:
+                    result = await self._judge.judge(claim)
+                    cost += result.cost_cents
 
         # 3. identity-binding (M9.4) is structural (born immutable at insert) — no runtime step.
 
@@ -245,9 +275,13 @@ class VerificationPhaseHandler:
                     await use_gate.evaluate(claim)
 
         # 5. verification-health (Doc C §6) — per-field tier-4 pass-rate over the POST-judge claims
-        #    (reload so the status reflects the verdicts just written).
-        fresh = await self._load_all(entity_ids, scope)
-        record_synthesis_health([c for c in fresh if c.source_tier == 4], sink=self._health_sink)
+        #    (reload so the status reflects the verdicts just written). A disabled pass emits no
+        #    misleading health observations; the phase payload records the explicit skip instead.
+        if self._verification_enabled:
+            fresh = await self._load_all(entity_ids, scope)
+            record_synthesis_health(
+                [c for c in fresh if c.source_tier == 4], sink=self._health_sink
+            )
         return cost
 
 

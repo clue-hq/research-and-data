@@ -76,10 +76,7 @@ class ProductionResearchViewComposer:
         evaluator = CurrentStatementGovernanceEvaluator(
             conn,
             member_entity_ids=scope.canonical_member_entity_ids,
-            allowed_run_ids=(
-                str(request.project_run_id),
-                str(scope.account_run.id),
-            ),
+            allowed_run_ids=scope.allowed_run_ids,
         )
         composer = build_research_view_composer(
             subjects=DbCanonicalSubjectReader(scope),

@@ -56,7 +56,8 @@ from clue_research.review import (
     finalized_review_account_ids,
 )
 from clue_spine import create_brand, create_product
-from tests._workspace import seed_workspace
+from tests._run_lineage import assert_written_claims_are_attributable
+from tests._workspace import seed_run, seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -176,6 +177,55 @@ def test_correction_wins_current_value_and_original_stays_queryable() -> None:
             assert cv.provenance.source_tier == 1  # tier-1 human provenance
             hist = await claims_for(conn, acct, _PAIN, include_superseded=True, scope=_SCOPE)
             assert any(c.id == orig.id for c in hist)  # original remains queryable (append-only)
+            # FI-2 P2: the human action's one-claim run is registered as `manual`. This session's
+            # project_run has no row (the soft FK permits it), so it degrades to a workspace-level
+            # run rather than failing the correction.
+            await assert_written_claims_are_attributable(
+                conn,
+                (await claims_by_ids(conn, [outcome.superseding_claim_id], scope=_SCOPE))[
+                    outcome.superseding_claim_id
+                ].run_id,
+                kind="manual",
+                workspace_id=_CLIENT,
+                project_id=None,
+            )
+
+    run_async(_run())
+
+
+def test_human_action_run_is_attributed_to_the_sessions_project() -> None:
+    """FI-2 P2: with a real project_run behind the session, the manual run carries its project."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            acct = await _account(conn)
+            orig = _orig(acct)
+            await insert_claim(conn, orig)
+            project_run_id = new_project_run_id()
+            project_id = await seed_run(conn, project_run_id=project_run_id, workspace_id=_CLIENT)
+            surface = _surface(conn)
+            session = await surface.open_session(
+                account_entity_id=acct, project_run_id=project_run_id, workspace_id=_CLIENT
+            )
+            outcome = await surface.apply_action(
+                session_id=session.session_id,
+                claim_id=orig.id,
+                action=ReviewAction.CORRECT,
+                actor="reviewer",
+                corrected_value_json="corrected pain",
+            )
+            assert outcome.superseding_claim_id is not None
+            superseding = (await claims_by_ids(conn, [outcome.superseding_claim_id], scope=_SCOPE))[
+                outcome.superseding_claim_id
+            ]
+            await assert_written_claims_are_attributable(
+                conn,
+                superseding.run_id,
+                kind="manual",
+                workspace_id=_CLIENT,
+                project_id=project_id,
+                project_run_id=project_run_id,
+            )
 
     run_async(_run())
 

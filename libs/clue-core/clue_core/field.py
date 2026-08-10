@@ -23,7 +23,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, JsonValue
 
-from clue_core.enums import PassKind, ReuseScope
+from clue_core.enums import PassKind, ResearchScope, ReuseScope
 
 # --- canonical field-key namespaces (conventions §3) -----------------------
 NS_CORE = "core"  # commodity facts: employee_count, primary_domain, work_email...
@@ -113,9 +113,7 @@ def account_axis_field_keys(keys: Sequence[str]) -> tuple[str, ...]:
     """
 
     return tuple(
-        dict.fromkeys(
-            key for key in keys if classify_field_key(key) in ACCOUNT_AXIS_FIELD_CLASSES
-        )
+        dict.fromkeys(key for key in keys if classify_field_key(key) in ACCOUNT_AXIS_FIELD_CLASSES)
     )
 
 
@@ -178,6 +176,15 @@ class FieldDef(BaseModel):
     # declare one (the classifier consults this before the prefix heuristic; the write boundary is
     # fail-closed on it). An additive extension of the field_definition contract (conventions §4).
     reuse_scope: ReuseScope | None = None
+    # Field **species** declared at the field (contract-delta 2026-08-08, FI-2 slice 0 — mirrors
+    # ``reuse_scope`` exactly). ``None`` means "fall back to the ratified default"
+    # (:func:`default_research_scope`); a ``<pack>.*`` field must declare one — fail-loud at pack
+    # authoring, at field-proposal validation, and at registration alike (``client.*`` excepted —
+    # it is neutral by construction and workspace-scoped). Drives
+    # economics (may a fresh claim from another project be reused?) and project-lens membership,
+    # never privacy — that stays ``reuse_scope``'s job. An additive extension of the
+    # field_definition contract (conventions §4).
+    research_scope: ResearchScope | None = None
 
     @property
     def field_class(self) -> FieldClass:
@@ -226,4 +233,69 @@ def resolve_reuse_scope(field: FieldDef) -> ReuseScope | None:
         field.reuse_scope
         if field.reuse_scope is not None
         else default_reuse_scope(field.field_class)
+    )
+
+
+# --- field species (FI-2 P3; contract-delta 2026-08-08) ---------------------
+# The founder-ratified species table (FI-2 spec §5.2) as data, kept in ``core`` so the registry,
+# the account/contact research economics, and the two-lens read layer all read one definition
+# without importing each other. Everything not named here is a world-fact about the account or
+# contact and is therefore ``PROJECT_NEUTRAL`` — including ``account.operational_pain`` /
+# ``.strategic_moves`` and ``account.resonance.*`` (ratified neutral: the *facts* are account
+# truth; the campaign-relative angle lives in the value narrative).
+_PROJECT_RELATIVE_PREFIXES: tuple[str, ...] = ("account.scoring.",)  # fit / intent / tier + kin
+_PROJECT_RELATIVE_KEYS: frozenset[str] = frozenset(
+    {
+        "account.value_narrative",  # the per-persona argument: product + ICP + campaign flavored
+        "contact.persona",  # the buying committee is a per-project targeting decision
+        "contact.role_on_committee",
+    }
+)
+
+
+def default_research_scope(field_class: FieldClass, field_key: str) -> ResearchScope:
+    """The default :class:`ResearchScope` (species) of a field (FI-2 §5.2).
+
+    ``PROJECT_RELATIVE`` for the ratified relative families — ``account.scoring.*``,
+    ``account.value_narrative``, ``contact.persona``, ``contact.role_on_committee``; every other
+    field is ``PROJECT_NEUTRAL``, the safe species (a neutral read is a superset read; the
+    economics consequence of a wrong neutral is a skipped re-spend, never a leaked or
+    mis-attributed claim). A ``<pack>.*`` field has no *authored* default — pack authoring and the
+    registry both refuse one that declares nothing (``client.*`` excepted) — so the neutral answer
+    here only ever serves ``client.*`` and legacy rows. The per-field declaration
+    (``FieldDef.research_scope``) overrides this (see :func:`resolve_research_scope`).
+
+    The **field key alone decides**: this function *is* the ratified rule, so it cannot return a
+    different species than §5.2 for a given key. ``field_class`` is accepted for symmetry with
+    :func:`default_reuse_scope` (and so a caller that already classified the key can pass it), but
+    it deliberately does not participate — a mismatched pair could otherwise silently downgrade a
+    relative key to neutral.
+    """
+    del field_class  # documented above: the key is the rule; the class must not change the answer
+    if field_key in _PROJECT_RELATIVE_KEYS or field_key.startswith(_PROJECT_RELATIVE_PREFIXES):
+        return ResearchScope.PROJECT_RELATIVE
+    return ResearchScope.PROJECT_NEUTRAL
+
+
+def resolve_research_scope(field: FieldDef) -> ResearchScope:
+    """The effective species of a field: its **declared** scope if set, else the ratified default.
+
+    The single place "is this field's value project-relative?" is decided, so the read lens, the
+    fresh-skip economics, and the supersede predicates never re-derive it differently.
+
+    **Asymmetry with** :func:`resolve_reuse_scope`, deliberate: that one returns ``None`` for an
+    undeclared ``PACK`` field and every caller fails closed, while this one always answers, folding
+    an undeclared field into the safe ``PROJECT_NEUTRAL`` species. There is no fail-closed branch
+    here because a field cannot *reach* this function undeclared once it is DB-resident: both
+    registration gates — ``clue_research.claimstore.registry.register_field`` and the pack-catalog
+    loader — reject a ``<pack>.*`` field that declares no ``research_scope`` (``client.*``
+    excepted, and legacy rows predate the column). So the neutral answer only ever serves those two
+    already-vetted cases, and neutral is the safe direction anyway: a wrong neutral costs a skipped
+    re-spend, never a leaked or mis-attributed claim. Slice-3 economics callers therefore read this
+    result directly and do **not** need an undeclared-field guard of their own.
+    """
+    return (
+        field.research_scope
+        if field.research_scope is not None
+        else default_research_scope(field.field_class, field.field_key)
     )

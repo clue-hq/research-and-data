@@ -16,7 +16,7 @@ import json
 from decimal import Decimal
 from typing import Annotated, Any, Final, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Canonical fallback when ``CLUE_SYNTHESIS_MODEL`` is unset — keep in sync with GatewayConfig docs.
@@ -26,6 +26,49 @@ _ALLOWLIST_FORMAT_ERROR: Final = (
     'CLUE_AGENT_WORKSPACE_ALLOWLIST must be a JSON array (["ws-a","ws-b"]) or a comma-separated '
     "list (ws-a,ws-b)"
 )
+
+_CORS_ORIGINS_FORMAT_ERROR: Final = (
+    'CLUE_FRONTEND_CORS_ALLOW_ORIGINS must be a JSON array (["https://app.example"]) or a '
+    "comma-separated list (https://app.example,http://localhost:3000)"
+)
+
+_CORS_WILDCARD_ERROR: Final = (
+    'CLUE_FRONTEND_CORS_ALLOW_ORIGINS must not contain "*": the platform sends credentials and '
+    "authorizes tenants from a trusted X-Workspace-Id header, and Starlette does not refuse the "
+    "wildcard-plus-credentials combination — it echoes back whichever Origin asked, which would "
+    "make every browser origin a credentialed caller of the whole app. List the exact origins "
+    "(https://app.example,http://localhost:3000)"
+)
+
+_AUTH_PARTIES_FORMAT_ERROR: Final = (
+    'CLUE_AUTH_CLERK_AUTHORIZED_PARTIES must be a JSON array (["https://app.example"]) or a '
+    "comma-separated list (https://app.example,http://localhost:3000)"
+)
+
+
+def _parse_string_list(value: Any, format_error: str) -> Any:
+    """Accept a JSON array *or* a plain comma-separated list for a ``tuple[str, ...]`` setting.
+
+    Both spellings survive the ways these values actually reach a process (a JSON array in a
+    ``.env`` file; a bare comma-separated list that a shell ``source`` cannot mangle). A value that
+    is neither fails as *its own* field, with a message naming both accepted formats, rather than
+    aborting the construction of every other setting (see the ``NoDecode`` note at the call sites).
+    """
+
+    if not isinstance(value, str):
+        return value
+    raw = value.strip()
+    if not raw:
+        return ()
+    if raw.startswith("["):
+        try:
+            decoded = json.loads(raw)
+        except ValueError as exc:
+            raise ValueError(format_error) from exc
+        if not isinstance(decoded, list):
+            raise ValueError(format_error)
+        return decoded
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
 class Settings(BaseSettings):
@@ -52,6 +95,16 @@ class Settings(BaseSettings):
     # deployment decision, so it gets the same env seam ``synthesis_model`` already has rather than
     # a rewritten constant.
     judge_model: str | None = None
+
+    # Temporary master switch for M9 runtime verification. False keeps the canonical VERIFICATION
+    # phase in the durable state-machine sequence, but skips deterministic corroboration and
+    # prevents the API composition roots from constructing the M9.3 faithfulness judge (including
+    # the earlier reverse-profiling and toolbelt entailment call sites). Structural controls outside
+    # that runtime pass (pre-spend authorization, born contact identity binding,
+    # freshness/retention, and M10's use gate) remain active. Unverified tier-4 claims remain
+    # excluded by the merge policy.
+    # Env: ``CLUE_VERIFICATION_ENABLED``.
+    verification_enabled: bool = True
 
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
@@ -256,6 +309,135 @@ class Settings(BaseSettings):
     # Env: ``CLUE_C7_WORKSPACE_CANARY_IDS``.
     c7_workspace_canary_ids: tuple[str, ...] = ()
 
+    # --- FI-2 frontend-read layer (slice 1) -------------------------------------------------
+    # One default-off gate over the whole ``/frontend/v1`` router — the workspace-scoped, Band-2
+    # read surface the frontend's accounts flow binds to. Off means the routes are never
+    # registered (a request 404s exactly as it does today) and this router's error envelope /
+    # request-id handlers are never installed, so no existing surface changes shape. Same posture
+    # as the C7 block above: activation is a deployment decision, rollback disables routes only.
+    # Env: ``CLUE_FRONTEND_READ_ENABLED``.
+    frontend_read_enabled: bool = False
+    # Browser origins allowed to call this process cross-origin. Empty (the default) adds **no**
+    # CORS middleware at all — same-origin only, which is what a Next.js proxy deployment wants;
+    # a value opts the whole app into standard ``CORSMiddleware`` for exactly those origins. Read
+    # only at app construction. ``NoDecode`` + the validator below accept a JSON array *or* a bare
+    # comma-separated list, for the same shell-``source`` reason as the agent allowlist.
+    # Env: ``CLUE_FRONTEND_CORS_ALLOW_ORIGINS``.
+    frontend_cors_allow_origins: Annotated[tuple[str, ...], NoDecode] = ()
+
+    # --- FI Lane D production chat surface --------------------------------------------------
+    # One default-off gate over the whole ``/api/v1`` chat router (REQ-21's thread shell today;
+    # turns, gates, and the token stream in later slices). Off means the routes are never
+    # registered and a request 404s exactly as it does today. Same posture as the two blocks
+    # above: activation is a deployment decision, rollback disables routes only — the durable
+    # ``agent_thread`` rows stay readable after reactivation.
+    # Env: ``CLUE_CHAT_ENABLED``.
+    chat_enabled: bool = False
+    # The internal ids the **development** principal carries while Lane B's real authentication
+    # (B2/B3) is in flight. They are Clue-owned — a ``platform_user.user_id`` and a
+    # ``workspace_membership.membership_id`` — never a provider (Clerk) value, and they are
+    # readable only when ``projections_auth_mode='local_header'``; a production process refuses
+    # the dev principal outright rather than trusting these. Since the B1 join they name **real
+    # rows**: ``clue_api.chat.dev_fixture.provision_dev_principal`` idempotently provisions them
+    # through Lane B's own CRUD at startup and fails the process loudly when it cannot (contract
+    # §4 — even a dev adapter resolves a real user/membership fixture from Postgres).
+    # Env: ``CLUE_CHAT_DEV_PRINCIPAL_USER_ID`` / ``CLUE_CHAT_DEV_PRINCIPAL_MEMBERSHIP_ID``.
+    chat_dev_principal_user_id: str = "usr_local_dev"
+    chat_dev_principal_membership_id: str = "wsm_local_dev"
+    # The one workspace the development principal is a member of. A membership grants access to a
+    # single workspace (contract §3.3), so this cannot be derived from the request's tenant
+    # selector: it is named up front and every other requested workspace is refused 403
+    # ``WORKSPACE_FORBIDDEN`` by the router's existing principal/workspace re-check. Empty (the
+    # default) means "no development principal is provisionable" — enabling the chat surface
+    # without it fails at startup rather than serving an identity that owns no membership.
+    # Env: ``CLUE_CHAT_DEV_PRINCIPAL_WORKSPACE_ID``.
+    chat_dev_principal_workspace_id: str = ""
+
+    # --- FI Lane D D3 turn streaming (charter §§3.2-3.6) -------------------------------------
+    # Whether a production conversation turn streams. On by default *within* the chat surface,
+    # which is itself default-off, so an unconfigured deployment is unchanged; switching it off
+    # leaves turns fully functional and merely unobserved (the durable outcome never depends on
+    # the stream). Env: ``CLUE_CHAT_TURN_STREAMING_ENABLED``.
+    chat_turn_streaming_enabled: bool = True
+    # The bounded micro-batching of §3.3(3). A batch may reduce frame count but may never wait for
+    # model completion: the first delta of a part is always flushed immediately, and thereafter a
+    # batch closes at whichever of these two bounds is reached first. Env:
+    # ``CLUE_CHAT_TURN_STREAM_BATCH_MAX_CHARS`` / ``CLUE_CHAT_TURN_STREAM_BATCH_INTERVAL_S``.
+    chat_turn_stream_batch_max_chars: int = Field(default=256, ge=1)
+    chat_turn_stream_batch_interval_s: float = Field(default=0.05, ge=0.0)
+    # How often the worker observes the durable stop-request table while a generation is running
+    # (§3.5). This is the cancellation latency bound; ``0`` disables stop observation entirely.
+    # Env: ``CLUE_CHAT_TURN_STOP_POLL_INTERVAL_S``.
+    chat_turn_stop_poll_interval_s: float = 0.25
+    # The explicit replay-retention policy of §3.3(7): how long a *terminal* turn's frames stay in
+    # the outbox before the worker's sweep deletes them. Should be >= CLUE_SSE_REPLAY_HORIZON_S —
+    # pruning inside the replay horizon promises a replay the table can no longer serve (still
+    # correct, because the cursor then resets and the client re-fetches, just needlessly often).
+    # A live turn is never pruned at any age. Env: ``CLUE_CHAT_TURN_EVENT_RETENTION_S``.
+    chat_turn_event_retention_s: float = 86400.0  # 24h
+    # Cadence of the worker's two chat sweeps: the turn-outbox retention prune, and the
+    # stranded-dispatch self-heal (a thread whose queued submission lost its dispatch to a process
+    # death between task-finalize and dispatch-next). ``0`` disables both.
+    # Env: ``CLUE_CHAT_SWEEP_INTERVAL_S``.
+    chat_sweep_interval_s: float = 60.0
+    # How long a single-use *turn* stream token is valid for. Separate from the B4 run-stream TTL
+    # because a turn stream is opened by a browser the instant a 202 lands, while a run stream may
+    # be opened long after. Env: ``CLUE_CHAT_STREAM_TOKEN_TTL_S``.
+    chat_stream_token_ttl_s: float = 300.0  # 5m
+    # SSE poll cadence of the turn stream's live tail. The outbox is the buffer (§3.3(7)); a slow
+    # or absent consumer never touches model execution. Env: ``CLUE_CHAT_STREAM_POLL_INTERVAL_S``.
+    chat_stream_poll_interval_s: float = 0.25
+
+    # --- FI Lane D "dev-lens" mini-slice (prompt/skill tuning; DEV-ONLY BY CONSTRUCTION) ------
+    # Two developer lenses onto a turn. Both are refused at process start outside a dev/local
+    # deployment by :meth:`_refuse_dev_lens_in_production` below — the same predicate the dev
+    # principal and the ``local_header`` projections resolver are refused by — so the production
+    # contract they would weaken cannot be reached by a configuration mistake, only by editing the
+    # refusal itself.
+    #
+    # (1) What the ``reasoning`` part carries. ``summary`` (the default, and the ONLY value a
+    # production process may hold) is charter §3.3's ratified contract byte for byte: the part is a
+    # safe status surface — a round is running, it asked for N governed calls — and no provider
+    # reasoning token reaches the wire. ``raw`` additionally asks the provider for whatever
+    # reasoning trace it is willing to expose and streams it onto that same part, so a developer
+    # tuning a prompt can see how the model reacted to it. What arrives is provider-dependent and
+    # frequently a *summary of* rather than the actual private chain-of-thought; see
+    # ``clue_gateway.agent_model._reasoning_request`` for the honest per-provider account.
+    # Env: ``CLUE_CHAT_REASONING_TRACE_MODE``.
+    chat_reasoning_trace_mode: Literal["summary", "raw"] = "summary"
+    # Optional thinking budget requested alongside ``raw``. ``None`` (the default) asks for the
+    # provider's own default depth. It is a *request*: a model with no extended-thinking mode
+    # ignores it, and no platform behaviour depends on it being honoured.
+    # Env: ``CLUE_CHAT_REASONING_THINKING_BUDGET_TOKENS``.
+    chat_reasoning_thinking_budget_tokens: int | None = Field(default=None, ge=1)
+    # (2) The turn-context inspector: four dev-only read routes under the chat surface that serve
+    # the C6 receipts a turn already wrote (the seven-layer context bundle and its included bytes,
+    # the model rounds, the authored/validated plan, the tool invocations and their refusals). It
+    # adds no storage and writes nothing; it is dev-only because it hands one HTTP caller the exact
+    # bytes that were put in front of a model, which is a debugging affordance and not a product
+    # surface. Off means the routes are never registered and a request 404s.
+    # Env: ``CLUE_CHAT_DEV_INSPECTOR_ENABLED``.
+    chat_dev_inspector_enabled: bool = False
+    # Cumulative byte budget one inspector response may spend hydrating content-addressed bodies.
+    # Over-budget bodies come back as refs plus a ``budget`` truncation marker — never silently
+    # shortened text. Env: ``CLUE_CHAT_DEV_INSPECTOR_BUDGET_BYTES``.
+    chat_dev_inspector_budget_bytes: int = Field(default=512_000, ge=1)
+    # --- Lane B authenticated principal ----------------------------------------------------
+    # Provider authentication is an adapter choice; Clue-owned users/memberships remain the
+    # authorization substrate in every mode. The local fixture adapter still resolves a real
+    # ``auth_identity`` row and is construction-time forbidden in production.
+    # Env: ``CLUE_AUTH_ENVIRONMENT`` / ``CLUE_AUTH_MODE``.
+    auth_enabled: bool = False
+    auth_environment: Literal["local", "test", "production"] | None = None
+    auth_mode: Literal["local_fixture", "clerk"] = "local_fixture"
+    # Clerk JWT verification metadata. No Clerk secret is required at the FastAPI edge: the
+    # short-lived session JWT (Clerk's default session token — no JWT template, no audience
+    # claim) is verified against the instance JWKS. All are deployment settings, not domain
+    # identity. Env: ``CLUE_AUTH_CLERK_*``.
+    auth_clerk_jwks_url: str | None = None
+    auth_clerk_issuer: str | None = None
+    auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
+
     # --- local Clue Trial canary ------------------------------------------------------------
     # The Sumble-only founder acceptance surface is never part of the default production app.
     # It must be enabled explicitly and binds to loopback by default. Env:
@@ -273,7 +455,9 @@ class Settings(BaseSettings):
     # Header tenancy is explicitly local/manual-test only; service auth must be wired before that
     # mode can be selected in production.
     # Env: ``CLUE_PROJECTIONS_AUTH_MODE``.
-    projections_auth_mode: Literal["local_header", "service"] = "local_header"
+    projections_auth_mode: Literal["local_header", "authenticated_principal", "service"] = (
+        "local_header"
+    )
 
     # --- scrape backend (Phase B2.4, founder addition) ---
     # Which ScrapeBackend the tier-2 HTML→markdown adapter uses when none is injected:
@@ -350,28 +534,85 @@ class Settings(BaseSettings):
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod
     def _parse_agent_workspace_allowlist(cls, value: Any) -> Any:
-        """Accept a JSON array *or* a plain comma-separated list of workspace ids.
+        """Accept a JSON array *or* a plain comma-separated list of workspace ids."""
 
-        Both spellings survive the ways this value actually reaches a process (a JSON array in a
-        ``.env`` file; a bare comma-separated list that a shell ``source`` cannot mangle). A value
-        that is neither fails as *this* field, with a message naming the variable and both accepted
-        formats, rather than aborting the construction of every other setting.
+        return _parse_string_list(value, _ALLOWLIST_FORMAT_ERROR)
+
+    @field_validator("frontend_cors_allow_origins", mode="before")
+    @classmethod
+    def _parse_frontend_cors_allow_origins(cls, value: Any) -> Any:
+        """Accept a JSON array *or* a plain comma-separated list of browser origins, and refuse
+        ``"*"`` outright — see :data:`_CORS_WILDCARD_ERROR`. The refusal lives here rather than at
+        the middleware so a wildcard fails at process start, loudly, instead of silently widening
+        an already-running deployment."""
+
+        parsed = _parse_string_list(value, _CORS_ORIGINS_FORMAT_ERROR)
+        if isinstance(parsed, list | tuple) and any(
+            isinstance(item, str) and item.strip() == "*" for item in parsed
+        ):
+            raise ValueError(_CORS_WILDCARD_ERROR)
+        return parsed
+
+    @field_validator("auth_clerk_authorized_parties", mode="before")
+    @classmethod
+    def _parse_auth_clerk_authorized_parties(cls, value: Any) -> Any:
+        return _parse_string_list(value, _AUTH_PARTIES_FORMAT_ERROR)
+
+    @field_validator("auth_mode")
+    @classmethod
+    def _refuse_local_fixture_auth_in_production(cls, value: str, info: Any) -> str:
+        if info.data.get("auth_environment") == "production" and value == "local_fixture":
+            raise ValueError(
+                "production must use Clerk authentication; local fixture auth is forbidden"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_enabled_auth_environment(self) -> Settings:
+        if self.auth_enabled and self.auth_environment is None:
+            raise ValueError(
+                "CLUE_AUTH_ENVIRONMENT must be set explicitly when CLUE_AUTH_ENABLED=true"
+            )
+        if self.auth_environment == "production" and self.auth_mode == "local_fixture":
+            raise ValueError(
+                "production must use Clerk authentication; local fixture auth is forbidden"
+            )
+        if self.auth_environment == "production" and self.projections_auth_mode == "local_header":
+            raise ValueError(
+                "production authentication forbids the local-header projections resolver"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _refuse_dev_lens_in_production(self) -> Settings:
+        """Refuse both dev-lens halves at process start in a production deployment.
+
+        This is the whole "dev-only by construction" claim, and it is deliberately a *startup*
+        refusal rather than a request-time check: a production process holding either value does
+        not start, so there is no running deployment in which a later code path could be reached
+        with the flag on. Same predicate, same place, and the same failure mode as the two refusals
+        immediately above (production must not carry the local-fixture auth adapter or the
+        local-header projections resolver).
+
+        ``raw`` reasoning would put provider reasoning content on a wire the ratified contract says
+        carries only a safe activity summary; the inspector would serve the exact assembled context
+        bytes over HTTP. Neither is a product surface, so neither may exist outside a developer's
+        own deployment.
         """
 
-        if not isinstance(value, str):
-            return value
-        raw = value.strip()
-        if not raw:
-            return ()
-        if raw.startswith("["):
-            try:
-                decoded = json.loads(raw)
-            except ValueError as exc:
-                raise ValueError(_ALLOWLIST_FORMAT_ERROR) from exc
-            if not isinstance(decoded, list):
-                raise ValueError(_ALLOWLIST_FORMAT_ERROR)
-            return decoded
-        return tuple(item.strip() for item in raw.split(",") if item.strip())
+        if self.auth_environment != "production":
+            return self
+        if self.chat_reasoning_trace_mode != "summary":
+            raise ValueError(
+                "production forbids CLUE_CHAT_REASONING_TRACE_MODE=raw: what streams as reasoning "
+                "is a safe activity summary, never provider reasoning content"
+            )
+        if self.chat_dev_inspector_enabled:
+            raise ValueError(
+                "production forbids CLUE_CHAT_DEV_INSPECTOR_ENABLED: the turn-context inspector "
+                "serves the exact assembled context bytes and is a development lens only"
+            )
+        return self
 
 
 def load_settings(**kwargs: Any) -> Settings:

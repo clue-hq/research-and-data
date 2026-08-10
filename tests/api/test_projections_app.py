@@ -36,6 +36,16 @@ from clue_api import (
     create_projections_app,
     mint_stream_token,
 )
+from clue_auth import (
+    DatabaseAuthorizer,
+    DatabaseIdentityResolver,
+    DatabaseMembershipLoader,
+    LocalFixtureAuthenticator,
+    PrincipalService,
+    create_platform_user,
+    link_auth_identity,
+)
+from clue_auth.store import create_workspace_membership, revoke_workspace_membership
 from clue_config import load_settings
 from clue_core import (
     NARRATIVE_EMIT_SKIPPED_KEY,
@@ -96,8 +106,10 @@ def _app(
     conn,
     *,
     registry: ToolRegistry | None = None,
+    settings=None,
     sse_live_tail: bool = False,
     expose_agent_registry: bool = False,
+    auth_service: PrincipalService | None = None,
 ):
     cf = conn_session_factory(conn)
     resolved_registry = (
@@ -107,28 +119,58 @@ def _app(
             build_toolbelt(storage=None, gateway=None) if expose_agent_registry else ToolRegistry()
         )
     )
-    settings = _settings()
+    resolved_settings = settings if settings is not None else _settings()
     return create_projections_app(
         surface=build_surface(conn),
         tool_invoker=build_tool_invoker(
             registry=resolved_registry,
             idempotency_store=DbIdempotencyStore(conn_factory=cf),
             storage=_MemoryStorage(),
-            settings=settings,
+            settings=resolved_settings,
             conn_factory=cf,
         ),
-        settings=settings,
+        settings=resolved_settings,
         conn_factory=cf,
         sse_live_tail=sse_live_tail,
         manage_db_lifespan=False,
         agent_registry=(
             build_agent_profile_registry(resolved_registry) if expose_agent_registry else None
         ),
+        auth_service=auth_service,
     )
+
+
+def test_production_app_construction_requires_authenticated_principal_service() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            settings = load_settings(
+                _env_file=None,
+                auth_enabled=False,
+                auth_environment="production",
+                auth_mode="clerk",
+                projections_auth_mode="authenticated_principal",
+            )
+            with pytest.raises(
+                RuntimeError,
+                match="production projections require the authenticated principal service",
+            ):
+                _app(conn, settings=settings)
+
+    run_async(_run())
 
 
 def _client(app) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
+
+
+def _auth_service(conn) -> PrincipalService:
+    factory = conn_session_factory(conn)
+    return PrincipalService(
+        authenticator=LocalFixtureAuthenticator(),
+        identity_resolver=DatabaseIdentityResolver(conn_factory=factory),
+        authorizer=DatabaseAuthorizer(conn_factory=factory),
+        memberships_for_user=DatabaseMembershipLoader(conn_factory=factory),
+    )
 
 
 def _frames(body: str) -> list[dict]:
@@ -560,6 +602,233 @@ def test_tool_route_precondition_422_replay_and_conflict() -> None:
                 )
                 assert conflict.status_code == 409
                 assert conflict.json()["detail"]["error"] == "idempotency_conflict"
+
+    run_async(_run())
+
+
+def test_authenticated_tool_route_ignores_actor_header_and_journals_internal_principal() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            await seed_workspace(conn, _WS)
+            user = await create_platform_user(conn)
+            await link_auth_identity(
+                conn,
+                user_id=user.user_id,
+                provider_key="local_fixture",
+                provider_subject="tool-user",
+            )
+            membership = await create_workspace_membership(
+                conn,
+                workspace_id=_WS,
+                user_id=user.user_id,
+                role_key="operator",
+            )
+            registry = ToolRegistry()
+            registry.register(EchoTool(), make_default=True)
+            app = _app(conn, registry=registry, auth_service=_auth_service(conn))
+            async with _client(app) as client:
+                response = await client.post(
+                    "/tools/echo",
+                    json={"value": 8},
+                    headers={
+                        "X-Clue-Local-Auth-Subject": "tool-user",
+                        "X-Clue-Workspace-Id": _WS,
+                        "X-Actor": "agent",
+                    },
+                )
+            assert response.status_code == 200
+            authority = (
+                await conn.execute(
+                    text(
+                        "SELECT invocation_actor, principal_kind, actor_id, membership_id "
+                        "FROM execution_node_authority ORDER BY created_at DESC LIMIT 1"
+                    )
+                )
+            ).one()
+            assert authority == ("human", "human", user.user_id, membership.membership_id)
+
+    run_async(_run())
+
+
+def test_authenticated_selector_cannot_cross_workspace_or_write() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            await seed_workspace(conn, _WS)
+            await seed_workspace(conn, _OTHER)
+            user = await create_platform_user(conn)
+            await link_auth_identity(
+                conn,
+                user_id=user.user_id,
+                provider_key="local_fixture",
+                provider_subject="workspace-bound-user",
+            )
+            await create_workspace_membership(
+                conn,
+                workspace_id=_WS,
+                user_id=user.user_id,
+                role_key="operator",
+            )
+            registry = ToolRegistry()
+            registry.register(EchoTool(), make_default=True)
+            app = _app(conn, registry=registry, auth_service=_auth_service(conn))
+            before = int(
+                (
+                    await conn.execute(text("SELECT count(*) FROM execution_node_authority"))
+                ).scalar_one()
+            )
+            async with _client(app) as client:
+                tool_response = await client.post(
+                    "/tools/echo",
+                    json={"value": 8},
+                    headers={
+                        "X-Clue-Local-Auth-Subject": "workspace-bound-user",
+                        "X-Clue-Workspace-Id": _OTHER,
+                        "X-Workspace-Id": _WS,
+                        "Idempotency-Key": "cross-workspace-attempt",
+                    },
+                )
+                launch_response = await client.post(
+                    "/tools/launch_account_research",
+                    json={},
+                    headers={
+                        "X-Clue-Local-Auth-Subject": "workspace-bound-user",
+                        "X-Clue-Workspace-Id": _OTHER,
+                    },
+                )
+                stream_response = await client.post(
+                    f"/project_runs/{new_project_run_id()}/stream_token",
+                    headers={
+                        "X-Clue-Local-Auth-Subject": "workspace-bound-user",
+                        "X-Clue-Workspace-Id": _OTHER,
+                    },
+                )
+            after = int(
+                (
+                    await conn.execute(text("SELECT count(*) FROM execution_node_authority"))
+                ).scalar_one()
+            )
+            for response in (tool_response, launch_response, stream_response):
+                assert response.status_code == 403
+                assert response.json()["error"]["code"] == "WORKSPACE_FORBIDDEN"
+            assert after == before
+
+    run_async(_run())
+
+
+def test_membership_revocation_blocks_the_next_request_without_a_new_write() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            await seed_workspace(conn, _WS)
+            user = await create_platform_user(conn)
+            await link_auth_identity(
+                conn,
+                user_id=user.user_id,
+                provider_key="local_fixture",
+                provider_subject="revoked-user",
+            )
+            membership = await create_workspace_membership(
+                conn,
+                workspace_id=_WS,
+                user_id=user.user_id,
+                role_key="operator",
+            )
+            registry = ToolRegistry()
+            registry.register(EchoTool(), make_default=True)
+            app = _app(conn, registry=registry, auth_service=_auth_service(conn))
+            async with _client(app) as client:
+                accepted = await client.post(
+                    "/tools/echo",
+                    json={"value": 1},
+                    headers={
+                        "X-Clue-Local-Auth-Subject": "revoked-user",
+                        "X-Clue-Workspace-Id": _WS,
+                        "Idempotency-Key": "before-revocation",
+                    },
+                )
+                assert accepted.status_code == 200
+                before = int(
+                    (
+                        await conn.execute(text("SELECT count(*) FROM execution_node_authority"))
+                    ).scalar_one()
+                )
+                await revoke_workspace_membership(conn, membership.membership_id)
+                refused = await client.post(
+                    "/tools/echo",
+                    json={"value": 2},
+                    headers={
+                        "X-Clue-Local-Auth-Subject": "revoked-user",
+                        "X-Clue-Workspace-Id": _WS,
+                        "Idempotency-Key": "after-revocation",
+                    },
+                )
+            after = int(
+                (
+                    await conn.execute(text("SELECT count(*) FROM execution_node_authority"))
+                ).scalar_one()
+            )
+            assert refused.status_code == 403
+            assert refused.json()["error"]["code"] == "WORKSPACE_FORBIDDEN"
+            assert after == before
+
+    run_async(_run())
+
+
+def test_provider_swap_keeps_the_same_durable_actor_and_membership() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            await seed_workspace(conn, _WS)
+            user = await create_platform_user(conn)
+            await link_auth_identity(
+                conn,
+                user_id=user.user_id,
+                provider_key="local_fixture",
+                provider_subject="provider-subject-one",
+            )
+            await link_auth_identity(
+                conn,
+                user_id=user.user_id,
+                provider_key="local_fixture",
+                provider_subject="provider-subject-two",
+            )
+            membership = await create_workspace_membership(
+                conn,
+                workspace_id=_WS,
+                user_id=user.user_id,
+                role_key="operator",
+            )
+            registry = ToolRegistry()
+            registry.register(EchoTool(), make_default=True)
+            app = _app(conn, registry=registry, auth_service=_auth_service(conn))
+            async with _client(app) as client:
+                for index, subject in enumerate(
+                    ("provider-subject-one", "provider-subject-two"), start=1
+                ):
+                    response = await client.post(
+                        "/tools/echo",
+                        json={"value": index},
+                        headers={
+                            "X-Clue-Local-Auth-Subject": subject,
+                            "X-Clue-Workspace-Id": _WS,
+                            "Idempotency-Key": f"provider-swap-{index}",
+                        },
+                    )
+                    assert response.status_code == 200
+            authority = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT actor_id, membership_id FROM execution_node_authority "
+                            "ORDER BY created_at DESC LIMIT 2"
+                        )
+                    )
+                )
+                .tuples()
+                .all()
+            )
+            assert authority == [
+                (user.user_id, membership.membership_id),
+                (user.user_id, membership.membership_id),
+            ]
 
     run_async(_run())
 

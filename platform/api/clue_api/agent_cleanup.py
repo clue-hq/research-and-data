@@ -53,7 +53,7 @@ class AgentWorkspaceCleanupJob:
                     "JOIN LATERAL (SELECT status, created_at FROM agent_turn_event "
                     " WHERE turn_id=t.id ORDER BY seq DESC LIMIT 1) latest ON true "
                     "WHERE latest.status IN "
-                    "('completed', 'failed', 'abandoned', 'privacy_tombstoned') "
+                    "('completed', 'failed', 'cancelled', 'abandoned', 'privacy_tombstoned') "
                     "AND latest.created_at <= :cutoff "
                     "AND NOT EXISTS (SELECT 1 FROM agent_workspace_cleanup_event c "
                     " WHERE c.turn_id=t.id AND c.action='terminal_retention_purge') "

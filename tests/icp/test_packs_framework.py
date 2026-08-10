@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from clue_core import FieldClass, FieldDef, PassKind, ReuseScope
+from clue_core import FieldClass, FieldDef, PassKind, ResearchScope, ReuseScope
 from clue_research.claimstore import SeedField, get_field, list_fields
 from clue_research.icp import (
     DATA_INFRA,
@@ -352,6 +352,44 @@ def test_validate_pack_names_unknown_source_key() -> None:
     run_async(_run())
 
 
+def test_pack_field_must_declare_research_scope() -> None:
+    """FI-2 P3: a <pack>.* field with no declared species is rejected at authoring too, so
+    ``validate_pack`` never returns clean for a pack ``register_field`` would refuse."""
+
+    def _pack(research_scope: ResearchScope | None) -> Pack:
+        return Pack(
+            pack_key="speciespack",
+            namespace="speciespack",
+            title="Species pack",
+            field_set=(
+                SeedField(
+                    field_def=FieldDef(
+                        field_key="speciespack.metric",
+                        value_type="int",
+                        pass_kind=PassKind.SCORING,
+                        reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
+                        research_scope=research_scope,
+                    ),
+                    pack="speciespack",
+                ),
+            ),
+        )
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            with pytest.raises(PackValidationError, match="research_scope"):
+                await validate_pack(conn, _pack(None))
+            with pytest.raises(PackValidationError, match="research_scope"):
+                await register_pack_catalog(conn, _pack(None))
+            # declaring a species lets it through
+            await register_pack_catalog(conn, _pack(ResearchScope.PROJECT_NEUTRAL))
+            stored = await get_field(conn, "speciespack.metric")
+            assert stored is not None
+            assert stored.research_scope is ResearchScope.PROJECT_NEUTRAL
+
+    run_async(_run())
+
+
 def test_pack_field_must_declare_reuse_scope() -> None:
     """ENG-165 W5: a <pack>.* field with no declared reuse_scope is rejected at authoring (no safe
     default for a pack namespace); declaring it lets the pack register."""
@@ -368,6 +406,9 @@ def test_pack_field_must_declare_reuse_scope() -> None:
                         value_type="int",
                         pass_kind=PassKind.SCORING,
                         reuse_scope=reuse_scope,
+                        # Species is orthogonal (FI-2 P3) and equally must-declare for a pack
+                        # field; declared here so this test exercises the reuse_scope guard alone.
+                        research_scope=ResearchScope.PROJECT_NEUTRAL,
                     ),
                     pack="scopepack",
                 ),

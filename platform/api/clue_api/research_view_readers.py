@@ -35,6 +35,7 @@ from clue_research.claimstore import (
     derivation_supports_batch,
     list_research_view_routes,
     live_derived_claims_for_research_view,
+    runs_for_project_run,
 )
 from clue_research.coverage import list_attempts, list_decisions
 from clue_research.discovery_scoring import (
@@ -78,6 +79,17 @@ class ResolvedResearchViewScope:
     canonical_member_entity_ids: tuple[EntityId, ...]
     routes: tuple[ResearchViewFieldRoute, ...]
     account_entity_id: EntityId
+    #: Every run attributed to this project run (FI-2 P2 ``run_lineage``) — the one input the
+    #: ``context_scope='project_run_pinned'`` routes filter on. Resolved once per request here so
+    #: the direct-claim reader, the derived-claim reader, the governance evaluator, and the
+    #: evidence-access authorizer all pin against *the same* set from *one* query. Replaces the
+    #: hand-assembled ``(project_run_id, account_run.id)`` tuple those four sites each wrote out:
+    #: that tuple was a second, incomplete attribution mechanism — it could not see the
+    #: per-tool-call derived runs M8D actually stamps on its claims (FI-2 slice 2, spec §9).
+    #: Deliberately has **no default**: an omitted supply would make every pinned route filter on
+    #: an empty set, which the read family reads as "pin against nothing" — a silent behaviour
+    #: change no caller should be able to introduce by forgetting an argument.
+    allowed_run_ids: tuple[str, ...]
 
     @property
     def workspace_scope(self) -> WorkspaceScope:
@@ -192,6 +204,18 @@ class ResearchViewScopeResolver:
             entity_type=subject_type,
             view_schema_version=request.schema_version,
         )
+        # FI-2 slice 2: one lineage read supplies every pinned-route filter in this request.
+        # A resolvable scope always has its ``account_run`` row (asserted above), and that row's
+        # mint site registers its lineage, so the set is non-empty for any view that can be served
+        # — except on rows that predate FI-2, which ``scripts/backfill_fi2_slice0.py`` repairs.
+        allowed_run_ids = tuple(
+            str(run_id)
+            for run_id in await runs_for_project_run(
+                conn,
+                workspace_id=request.workspace_id,
+                project_run_id=UUID(str(request.project_run_id)),
+            )
+        )
         return ResolvedResearchViewScope(
             request=request,
             project_run=project_run,
@@ -200,6 +224,7 @@ class ResearchViewScopeResolver:
             canonical_member_entity_ids=members,
             routes=routes,
             account_entity_id=account_id,
+            allowed_run_ids=allowed_run_ids,
         )
 
 
@@ -265,10 +290,7 @@ class DbDirectClaimReader:
             routes=self._scope.routes,
             scope=self._scope.workspace_scope,
             product_id=request.product_id,
-            allowed_run_ids=(
-                str(request.project_run_id),
-                str(self._scope.account_run.id),
-            ),
+            allowed_run_ids=self._scope.allowed_run_ids,
         )
         return tuple(
             ResearchStatementCandidate(
@@ -297,10 +319,7 @@ class DbDerivedClaimReader:
             routes=self._scope.routes,
             scope=self._scope.workspace_scope,
             product_id=request.product_id,
-            allowed_run_ids=(
-                str(request.project_run_id),
-                str(self._scope.account_run.id),
-            ),
+            allowed_run_ids=self._scope.allowed_run_ids,
         )
         supports_by_root = await derivation_supports_batch(
             self._conn, tuple(claim.id for _route, claim in roots)

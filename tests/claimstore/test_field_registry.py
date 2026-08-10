@@ -8,7 +8,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import text
 
-from clue_core import Claim, FieldClass, FieldDef, PassKind, ReuseScope
+from clue_core import Claim, FieldClass, FieldDef, PassKind, ResearchScope, ReuseScope
 from clue_research.claimstore import (
     FieldRedefinitionError,
     UnknownFieldError,
@@ -205,7 +205,10 @@ def test_register_accepts_each_canonical_and_a_pack() -> None:
             # a persistent schema, and re-registering one of their keys with a different definition
             # would (correctly) raise FieldRedefinitionError on a rerun.
             pack_fd = FieldDef(
-                field_key="maritime.imo_number", value_type="str", pass_kind=PassKind.SCORING
+                field_key="maritime.imo_number",
+                value_type="str",
+                pass_kind=PassKind.SCORING,
+                research_scope=ResearchScope.PROJECT_NEUTRAL,
             )
             await register_field(conn, pack_fd, pack="maritime", value_schema={"type": "string"})
             stored = await get_field(conn, "maritime.imo_number")
@@ -339,13 +342,21 @@ def test_two_packs_disjoint_load_and_redefinition_rejected() -> None:
             await register_field(
                 conn,
                 FieldDef(
-                    field_key="maritime.imo_number", value_type="str", pass_kind=PassKind.SCORING
+                    field_key="maritime.imo_number",
+                    value_type="str",
+                    pass_kind=PassKind.SCORING,
+                    research_scope=ResearchScope.PROJECT_NEUTRAL,
                 ),
                 pack="maritime",
             )
             await register_field(
                 conn,
-                FieldDef(field_key="fintech.mrr", value_type="int", pass_kind=PassKind.SCORING),
+                FieldDef(
+                    field_key="fintech.mrr",
+                    value_type="int",
+                    pass_kind=PassKind.SCORING,
+                    research_scope=ResearchScope.PROJECT_NEUTRAL,
+                ),
                 pack="fintech",
             )
             assert await get_field(conn, "maritime.imo_number") is not None

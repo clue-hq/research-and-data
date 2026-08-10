@@ -102,12 +102,20 @@ def build_client_knowledge_retriever(
     return ClientKnowledgeRetrieverStub(conn_factory=conn_factory)
 
 
-def build_handoff_assembler(*, committee_reader: HandoffCommitteeReader) -> HandoffAssembler:
+def build_handoff_assembler(
+    *, committee_reader: HandoffCommitteeReader, verification_enabled: bool = True
+) -> HandoffAssembler:
     """Construct the M12.2 ``account_handoff`` assembler at the ``api`` composition root.
 
     The assembler is a pure store read; its one injected dependency is the
     :class:`~clue_research.narrative.HandoffCommitteeReader` (the M12 ↔ M8/M10 seam). The
     production reader is :class:`clue_api.contact_eligibility.ProductionHandoffCommitteeReader`.
     It is constructed per project run from the exact account-run references and product scope,
-    keeping M12 independent of identity, durable execution, profiling, and compliance."""
-    return HandoffAssembler(committee_reader=committee_reader)
+    keeping M12 independent of identity, durable execution, profiling, and compliance.
+
+    ``verification_enabled`` mirrors ``Settings.verification_enabled`` (FI-M12 toggle compat
+    §3-A): the default keeps the narrative read VERIFIED-only; the composition root passes the
+    live toggle so a disabled-mode deployment still hands off (unverified, status carried)."""
+    return HandoffAssembler(
+        committee_reader=committee_reader, verification_enabled=verification_enabled
+    )

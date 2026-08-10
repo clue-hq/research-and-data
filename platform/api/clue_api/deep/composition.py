@@ -44,7 +44,7 @@ definitions a deep run reads are registered.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Final
@@ -65,6 +65,7 @@ from clue_api.deep.orchestrator import AccountDeepOrchestrator
 from clue_api.entity_research_quarantine import EntityResearchAgentNotComposed
 from clue_config import OverlayStore
 from clue_core import (
+    Claim,
     ICPSpec,
     LLMGateway,
     PhaseContext,
@@ -241,11 +242,16 @@ def build_high_tier_resolver(
                 directed = directed_specs.get(entity_id)
                 if directed is None or directed.research_directive is None:
                     continue
-                live = await claims_for(conn, entity_id, TIER_FIELD, scope=scope)
-                if not live:
-                    continue
-                value = live[0].value_json  # most-recent live tier claim for this account
-                if not isinstance(value, dict):
+                # FI-2 §6.4: an account shared by two projects now carries **two** live tier
+                # claims (P2's tier no longer supersedes P1's), so "the most recent live claim"
+                # is no longer this project's by construction. Prefer the most recent live tier
+                # THIS project wrote and fall back to an unstamped one only if it wrote none —
+                # the read-side mirror of the write-side absorb rule.
+                value = _live_tier_for_project(
+                    await claims_for(conn, entity_id, TIER_FIELD, scope=scope),
+                    project_id=ctx.project_id,
+                )
+                if value is None:
                     continue
                 if selection_mode:
                     if (
@@ -275,6 +281,39 @@ def build_high_tier_resolver(
         return tuple(specs)
 
     return _resolve
+
+
+def _live_tier_for_project(
+    live: Sequence[Claim], *, project_id: str
+) -> Mapping[str, JsonValue] | None:
+    """The most-recent live ``account.scoring.tier`` payload this project may act on (FI-2 §6.4),
+    or ``None``.
+
+    ``claims_for`` returns live claims most-recent-first. Since §6.4 stopped cross-project
+    supersession, several may be live at once — one per project that tiered the account — so this
+    picks the caller's own rather than whichever landed last.
+
+    **Two passes, deliberately.** An **unstamped** payload (no ``project_id``) is not necessarily a
+    pre-§6.4 leftover: ``persist_discovery_selection_tier`` historically wrote unstamped tiers, and
+    any writer that has not yet been taught to stamp still does. Such a payload is attributed to no
+    project *by this predicate*, so any project may fall back to it — but only as a **fallback**. A
+    single pass that accepted the first stamped-or-unstamped match would let a more recent *other*
+    project's unstamped selection tier shadow this project's own stamped M6.4 tier and silently
+    drop the account from the deep set. So: pass 1 takes the most recent payload stamped for
+    ``project_id``; pass 2 runs only if pass 1 found nothing, and takes the most recent unstamped
+    payload. A payload stamped for a *different* project is never returned.
+    """
+    fallback: Mapping[str, JsonValue] | None = None
+    for claim in live:
+        value = claim.value_json
+        if not isinstance(value, dict):
+            continue
+        stamped = value.get("project_id")
+        if stamped == project_id:
+            return value  # pass 1: this project's own, most recent first
+        if not isinstance(stamped, str) and fallback is None:
+            fallback = value  # pass 2 candidate: the most recent unstamped payload
+    return fallback
 
 
 def _tier_cutoffs(raw: JsonValue | None) -> TierCutoffs | None:

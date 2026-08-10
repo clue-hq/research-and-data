@@ -252,9 +252,7 @@ def compile_exa_contact_acquisition_plan(
                     "reuse_fingerprint": reuse_fingerprint,
                     "project_run_id": str(intent.project_run_id),
                     "entity_research_job_id": (
-                        str(entity_research_job_id)
-                        if entity_research_job_id is not None
-                        else None
+                        str(entity_research_job_id) if entity_research_job_id is not None else None
                     ),
                     "observation_window": observation_window,
                     "bundle_index": index,

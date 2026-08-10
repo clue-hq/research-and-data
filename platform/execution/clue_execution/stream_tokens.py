@@ -27,6 +27,15 @@ Tenant-scoped: a token is consumable only in the ``workspace_id`` it was minted 
 stream has no workspace to assert (its consumer cannot send a header — see
 :func:`consume_subject_stream_token`), so it derives the tenant *from* the token row instead.
 
+**The turn scope (FI Lane D D3, relocated here at the frontend×design integration merge).** The
+chat turn stream's token pair (:func:`mint_turn_stream_token` / :func:`consume_turn_stream_token`)
+was born in ``clue_api.stream_tokens`` on the frontend-integration line while D7 was relocating the
+DAL here on the design line; the merge keeps ONE owner by moving the pair here unchanged. Its scope
+rides the ``turn_id`` column (migration ``98a5ddafa21b``), not the D7 subject pair — the subject
+vocabulary CHECK (``stream_token_subject_kind_known``) does not yet know an agent-turn kind.
+Unifying the two scope vocabularies is recorded follow-up work; until then the ``turn_id IS NULL``
+guard in the subject consume keeps the species disjoint.
+
 **Retention (Part II D8, ruling R-D8-4).** Both consume statements above require
 ``used_at IS NULL AND expires_at > now()``, so a row that is *used* or *expired* is provably
 unreadable by every code path in the repository — deleting it changes no observable behaviour, only
@@ -65,6 +74,9 @@ _MINT_SQL = text(
 # same-SUBJECT row. A second use (used_at already set), an expired token, a cross-tenant token, or a
 # token minted for a DIFFERENT subject returns no row (subject-bound: a subject-scoped token opens
 # only the stream it was minted for; a NULL-subject token is workspace-wide by design).
+# ``turn_id IS NULL``: a turn-scoped token (FI Lane D D3 — its scope rides the ``turn_id`` column,
+# not the subject pair; see the module docstring) is shaped like a workspace-wide row on the
+# subject columns, and without this predicate it would open any subject stream in its tenant.
 _CONSUME_SQL = text(
     """
     UPDATE stream_token
@@ -73,6 +85,7 @@ _CONSUME_SQL = text(
       AND workspace_id = :workspace_id
       AND used_at IS NULL
       AND expires_at > now()
+      AND turn_id IS NULL
       AND (
         subject_kind IS NULL
         OR (subject_kind = :subject_kind AND subject_id = :subject_id)
@@ -97,6 +110,35 @@ _CONSUME_FOR_SUBJECT_SQL = text(
       AND subject_kind = :subject_kind
       AND subject_id = :subject_id
     RETURNING workspace_id
+    """
+)
+
+
+#: The FI Lane D D3 turn-stream pair. Same table, same single-use semantics, a **different scope
+#: column** (migration ``98a5ddafa21b`` adds ``turn_id`` plus a CHECK that at most one of
+#: ``run_id``/``turn_id`` is set). A turn row carries NULL subject columns, which the D7 coherence
+#: CHECK reads as the workspace-wide shape — the ``turn_id IS NULL`` guard in ``_CONSUME_SQL`` is
+#: what keeps the two scope vocabularies from leaking into each other. Folding the turn scope into
+#: the subject taxonomy proper (``subject_kind = 'agent_turn'``) needs a vocabulary-CHECK migration
+#: and is deliberately post-merge follow-up work, not done here.
+_MINT_TURN_SQL = text(
+    """
+    INSERT INTO stream_token (workspace_id, turn_id, expires_at)
+    VALUES (:workspace_id, :turn_id, now() + make_interval(secs => :ttl_s))
+    RETURNING token
+    """
+)
+
+_CONSUME_TURN_SQL = text(
+    """
+    UPDATE stream_token
+    SET used_at = now()
+    WHERE token = :token
+      AND workspace_id = :workspace_id
+      AND used_at IS NULL
+      AND expires_at > now()
+      AND turn_id = :turn_id
+    RETURNING token
     """
 )
 
@@ -193,6 +235,51 @@ async def consume_stream_token(
                 "subject_kind": kind,
                 "subject_id": sid,
             },
+        )
+    ).one_or_none()
+    return row is not None
+
+
+async def mint_turn_stream_token(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+    ttl_s: float,
+) -> UUID:
+    """Mint a single-use token that opens **one turn's** stream, once, within ``ttl_s``.
+
+    Lane B contract §5.5 in one function: an already-authenticated request mints a short-lived,
+    single-use, principal-scoped, workspace-scoped, turn-scoped token; no bearer credential ever
+    travels in a URL, and the token's expiry or replay cannot extend anybody's domain authority —
+    it authorises *opening a stream*, and the stream serves only rows of the workspace and turn the
+    token names.
+    """
+
+    token = (
+        await conn.execute(
+            _MINT_TURN_SQL,
+            {"workspace_id": workspace_id, "turn_id": turn_id, "ttl_s": ttl_s},
+        )
+    ).scalar_one()
+    return UUID(str(token))
+
+
+async def consume_turn_stream_token(
+    conn: AsyncConnection, *, token: UUID, workspace_id: str, turn_id: UUID
+) -> bool:
+    """Atomically consume a turn-stream token: ``True`` iff live, this tenant's, and this turn's.
+
+    ``False`` — indistinguishably — for a used, expired, cross-tenant, wrong-turn, run-scoped, or
+    unknown token, so a probe learns nothing about which of those it was. Reconnect re-mints; the
+    ``Last-Event-ID`` cursor carries replay state independently, so single-use never costs a
+    gapless reconnect.
+    """
+
+    row = (
+        await conn.execute(
+            _CONSUME_TURN_SQL,
+            {"token": token, "workspace_id": workspace_id, "turn_id": turn_id},
         )
     ).one_or_none()
     return row is not None

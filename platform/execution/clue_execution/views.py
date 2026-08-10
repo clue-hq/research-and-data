@@ -55,6 +55,12 @@ class ExecutionNodeView(_View):
     parameter_sha256: str | None
     input_schema_sha256: str | None
     output_schema_sha256: str | None
+    invocation_actor: str | None
+    principal_kind: str | None
+    authority_workspace_id: str | None
+    actor_id: str | None
+    membership_id: str | None
+    action_ref: str | None
     display_params: dict[str, JsonValue]
     declared_by_node_id: ExecutionNodeId | None
     created_at: UtcDatetime
@@ -449,13 +455,17 @@ class DbExecutionRunViewReader:
                     await conn.execute(
                         text(
                             """
-                            SELECT id, node_key, kind, tool_name, tool_version, operation_id,
-                                   parameter_artifact_key, parameter_sha256, input_schema_sha256,
-                                   output_schema_sha256, display_params_json,
-                                   declared_by_node_id, created_at
-                            FROM execution_node
-                            WHERE execution_id = :execution_id
-                            ORDER BY created_at, node_key
+                            SELECT n.id, n.node_key, n.kind, n.tool_name, n.tool_version,
+                                   n.operation_id, n.parameter_artifact_key, n.parameter_sha256,
+                                   n.input_schema_sha256, n.output_schema_sha256,
+                                   a.invocation_actor, a.principal_kind,
+                                   a.authority_workspace_id, a.actor_id, a.membership_id,
+                                   a.action_ref, n.display_params_json, n.declared_by_node_id,
+                                   n.created_at
+                            FROM execution_node n
+                            LEFT JOIN execution_node_authority a ON a.node_id = n.id
+                            WHERE n.execution_id = :execution_id
+                            ORDER BY n.created_at, n.node_key
                             """
                         ),
                         {"execution_id": execution_id},
@@ -565,6 +575,12 @@ class DbExecutionRunViewReader:
                         "parameter_sha256": row["parameter_sha256"],
                         "input_schema_sha256": row["input_schema_sha256"],
                         "output_schema_sha256": row["output_schema_sha256"],
+                        "invocation_actor": row["invocation_actor"],
+                        "principal_kind": row["principal_kind"],
+                        "authority_workspace_id": row["authority_workspace_id"],
+                        "actor_id": row["actor_id"],
+                        "membership_id": row["membership_id"],
+                        "action_ref": row["action_ref"],
                         "display_params": decode_jsonb(row["display_params_json"]),
                         "declared_by_node_id": row["declared_by_node_id"],
                         "created_at": row["created_at"],

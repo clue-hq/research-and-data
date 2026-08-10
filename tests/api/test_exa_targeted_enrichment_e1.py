@@ -70,6 +70,7 @@ from clue_research.durable import (
 )
 from clue_research.identity import insert_account_entity, stamp_reuse
 from clue_storage import FsStorage
+from tests._run_lineage import assert_written_claims_are_attributable
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
 from tests.durable.test_discovery_batch_d1 import _complete_batch, _start_batch
@@ -687,6 +688,16 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
             assert completed.claims_created == 1
             assert completed.resolved_fields == 1
             assert completed.missing_fields == 1
+            # FI-2 P2: enrichment claims carry the project run as their run_id, and that run is
+            # registered so the project lens can back-join them.
+            await assert_written_claims_are_attributable(
+                conn,
+                started.project_run_id,
+                kind="enrichment",
+                workspace_id=workspace_id,
+                project_id=started.project_id,
+                project_run_id=started.project_run_id,
+            )
             results = await list_targeted_enrichment_field_results(
                 conn,
                 workspace_id=workspace_id,

@@ -39,6 +39,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config.settings import Settings, load_settings
 from clue_core import (
     DEFAULT_NUMERIC_ABS_TOLERANCE,
     DEFAULT_NUMERIC_REL_TOLERANCE,
@@ -113,6 +114,33 @@ class MergePolicy(BaseModel):
 
 
 DEFAULT_MERGE_POLICY = MergePolicy()
+
+# The one deviation disabled-mode verification makes to the read side (FI-M12 toggle compat §3-B):
+# the tier-4 verified-only gate drops; REJECTED and weak-binding exclusions stay on in both modes
+# (identity protection is not verification), and there is still no unpromotable fallback.
+_VERIFICATION_DISABLED_MERGE_POLICY = MergePolicy(require_verified_tier4=False)
+
+
+def active_merge_policy(settings: Settings | None = None) -> MergePolicy:
+    """The effective default merge policy for production reads (FI-M12 toggle compat §3-B).
+
+    ``require_verified_tier4`` follows the temporary runtime verification toggle
+    (``CLUE_VERIFICATION_ENABLED``): with verification disabled the M9.3 judge never runs, so no
+    tier-4 claim can ever become VERIFIED and the verified-only gate would blank the whole tier-4
+    layer (M11 synthesis, the M12 narrative). Disabled mode therefore serves unverified tier-4
+    claims as current truth — globally, founder-ratified — with the claim's durable
+    ``verification_status ≠ VERIFIED`` remaining the queryable marker of its basis. The default
+    (enabled) returns :data:`DEFAULT_MERGE_POLICY` unchanged, preserving every existing behavior.
+
+    Every defaulted claimstore read resolves through this accessor, so all call sites flip
+    together; a caller that passes an explicit :class:`MergePolicy` is untouched. (This bypasses
+    the dormant ``clue_config.schema.MergePolicy`` seam — acknowledged debt riding the existing
+    [M9.2×M0.4] backlog item.)
+    """
+    resolved = settings if settings is not None else load_settings()
+    if resolved.verification_enabled:
+        return DEFAULT_MERGE_POLICY
+    return _VERIFICATION_DISABLED_MERGE_POLICY
 
 
 def _is_fresh(claim: Claim, freshness_ttl: timedelta | None, now: datetime) -> bool:
@@ -374,9 +402,12 @@ async def current_value(
     field_key: FieldKey | str,
     *,
     scope: WorkspaceScope,
-    policy: MergePolicy = DEFAULT_MERGE_POLICY,
+    policy: MergePolicy | None = None,
 ) -> CurrentValue | None:
     """The current truth for one ``(entity, field)``, or ``None`` if there is no eligible claim.
+
+    ``policy=None`` (the production default) resolves to :func:`active_merge_policy` — the
+    verification-toggle-aware effective default; pass an explicit policy to pin behavior.
 
     ``scope`` is **required** (M2.5 — fail-closed): the caller must state whose view this is — a
     workspace (:meth:`WorkspaceScope.for_workspace`, returning public ∪ that workspace's private),
@@ -385,6 +416,8 @@ async def current_value(
     (``WorkspaceScope.all_workspaces``).
     A tenant scope never returns another tenant's private claim.
     """
+    if policy is None:
+        policy = active_merge_policy()
     now = _now()
     scope_sql, scope_params = scope.predicate()
     retention_sql = _retention_eligible_sql()
@@ -421,15 +454,18 @@ async def current_values(
     field_keys: Iterable[FieldKey | str],
     *,
     scope: WorkspaceScope,
-    policy: MergePolicy = DEFAULT_MERGE_POLICY,
+    policy: MergePolicy | None = None,
 ) -> dict[tuple[EntityId, str], CurrentValue]:
     """Batch merge over the ``entity_ids × field_keys`` cross-product in a single live-claims query.
 
     Returns a dict keyed by ``(entity_id, field_key)`` containing only the pairs with a current
     truth — identical to calling :func:`current_value` per pair (the empty pairs are omitted). One
     query for the claims and one for the TTLs, so it scales to Pass A's 1k–10k accounts. ``scope``
-    is required and applied in the live-claims query (M2.5).
+    is required and applied in the live-claims query (M2.5). ``policy=None`` resolves to
+    :func:`active_merge_policy` (the toggle-aware effective default).
     """
+    if policy is None:
+        policy = active_merge_policy()
     entities = list(entity_ids)
     fields = [str(f) for f in field_keys]
     if not entities or not fields:
@@ -482,11 +518,12 @@ async def provenance_index(
     entity_id: EntityId,
     *,
     scope: WorkspaceScope,
-    policy: MergePolicy = DEFAULT_MERGE_POLICY,
+    policy: MergePolicy | None = None,
 ) -> dict[str, WinningProvenance]:
     """The winning provenance per field for an entity — ``{field_key: winning_provenance}``
     (overview §3). Present for every field with at least one eligible claim; absent otherwise.
-    ``scope`` is required and applied to both the field discovery and the merge (M2.5)."""
+    ``scope`` is required and applied to both the field discovery and the merge (M2.5);
+    ``policy=None`` resolves to :func:`active_merge_policy` (delegated to ``current_values``)."""
     scope_sql, scope_params = scope.predicate()
     field_rows = await conn.execute(
         text(

@@ -58,6 +58,17 @@ __all__ = [
 
 _ORDER = tuple(ContextLayer)
 
+#: Layers whose budget retains the **newest** candidates rather than the first ones in canonical
+#: (``stable_key``) order — FI Lane D D0, charter §1.1.
+#:
+#: Every other layer is a set of independent compiled cards where "which one was dropped" is a
+#: matter of ordering convention. L6 is not: it is one ordered conversation, its ``stable_key`` is
+#: the message sequence, and a long thread that keeps its *oldest* messages hands the model a
+#: transcript that stops before the thing the user just said. Retention is therefore newest-first
+#: for L6; **emission stays chronological** for every layer, so the model still reads the retained
+#: window in order and each candidate's ``stable_key``/receipt ordinal is unchanged.
+_RETAIN_NEWEST_LAYERS: frozenset[ContextLayer] = frozenset({ContextLayer.L6_CONVERSATION})
+
 
 class ContextValue(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
@@ -92,6 +103,9 @@ class ContextCandidate(ContextValue):
     ref: ArtifactRef | DomainObjectRef
     body: str = Field(min_length=1)
     role: Literal["system", "user", "assistant", "tool"] = "system"
+    origin: Literal["trusted_context", "history", "current_user_instruction"] = (
+        "trusted_context"
+    )
     materialized_path: str | None = None
     required: bool = False
 
@@ -395,16 +409,16 @@ class FocusLayerSource:
     ) -> Sequence[ContextCandidate]:
         del profile, history
         refs = (*request.constitution.focus_refs, *request.focus_refs)
-        unique = {(ref.object_type, ref.object_id, ref.version): ref for ref in refs}
+        unique: list[DomainObjectRef] = []
+        seen: set[tuple[str, str, int | None]] = set()
+        for ref in refs:
+            identity = (ref.object_type, ref.object_id, ref.version)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            unique.append(ref)
         result: list[ContextCandidate] = []
-        for ref in sorted(
-            unique.values(),
-            key=lambda item: (
-                item.object_type,
-                item.object_id,
-                item.version,
-            ),
-        ):
+        for ordinal, ref in enumerate(unique):
             card = await self._cards.read(
                 workspace_id=request.constitution.workspace_id,
                 object_type=ref.object_type,
@@ -412,11 +426,21 @@ class FocusLayerSource:
             )
             if card is None:
                 continue
-            if card.ref != ref:
+            if (
+                card.ref.workspace_id != ref.workspace_id
+                or card.ref.object_type != ref.object_type
+                or card.ref.object_id != ref.object_id
+                or (ref.version is not None and card.ref.version != ref.version)
+            ):
                 raise ValueError("focus card version differs from the requested exact reference")
             result.append(
                 ContextCandidate(
-                    stable_key=f"{ref.object_type}:{ref.object_id}:{ref.version}",
+                    # The assembler sorts by stable key before budgeting and emission. Prefixing
+                    # the durable submission order keeps the user's account/contact sequence
+                    # intact all the way into L5 instead of silently alphabetizing it.
+                    stable_key=(
+                        f"{ordinal:06d}:{ref.object_type}:{ref.object_id}:{ref.version}"
+                    ),
                     ref=ref,
                     body=card.body,
                     materialized_path=_card_path("focus", ref),
@@ -450,6 +474,7 @@ class HistoryLayerSource:
                     ref=item.body_ref,
                     body=body,
                     role=item.role,
+                    origin="history",
                 )
             )
         return result
@@ -503,29 +528,20 @@ class TurnLayerSource:
     ) -> Sequence[ContextCandidate]:
         del profile, history
         body = (await self._artifacts.read(request.user_message_artifact_ref)).decode("utf-8")
-        result = [
-            ContextCandidate(
-                stable_key="000-user-message",
-                ref=request.user_message_artifact_ref,
-                body=body,
-                role="user",
-                materialized_path="inputs/user-message.txt",
-                required=True,
-            )
-        ]
+        result: list[ContextCandidate] = []
         # Raw attachment bytes are never opening context. The agent gets only exact pointers and
         # may later use an authorized tool to inspect an allowed attachment.
         for index, ref in enumerate(request.attachment_refs):
             result.append(
                 ContextCandidate(
-                    stable_key=f"{index + 1:03d}-attachment:{ref.artifact_key}",
+                    stable_key=f"200-{index:06d}-attachment:{ref.artifact_key}",
                     ref=ref,
                     body=(
                         "Attachment reference only: "
                         f"artifact_key={ref.artifact_key} sha256={ref.sha256} "
                         f"media_type={ref.media_type} byte_count={ref.byte_count}"
                     ),
-                    role="user",
+                    role="system",
                 )
             )
         # The turn's own identity, so the model can *reference* this capture without authoring it.
@@ -539,7 +555,7 @@ class TurnLayerSource:
         if captured is not None:
             result.append(
                 ContextCandidate(
-                    stable_key="900-captured-turn",
+                    stable_key="100-captured-turn",
                     ref=request.user_message_artifact_ref,
                     body=(
                         "Captured turn reference only: this message is already a captured "
@@ -549,9 +565,23 @@ class TurnLayerSource:
                         f"artifact_key={captured.artifact_key} sha256={captured.sha256} "
                         f"byte_count={captured.byte_count}"
                     ),
-                    role="user",
+                    role="system",
                 )
             )
+        # The only user-authored message in L7 is deliberately last. Attachment and capture
+        # descriptions are platform-authored trusted context, not words the user typed, and may
+        # never become the model's most-recent human instruction.
+        result.append(
+            ContextCandidate(
+                stable_key="999-user-message",
+                ref=request.user_message_artifact_ref,
+                body=body,
+                role="user",
+                origin="current_user_instruction",
+                materialized_path="inputs/user-message.txt",
+                required=True,
+            )
+        )
         return result
 
 
@@ -598,6 +628,38 @@ class DeterministicAgentContextAssembler:
             raise ValueError("token counter version differs from context policy")
         self._clock = clock
 
+    def _retain(
+        self,
+        *,
+        layer: ContextLayer,
+        candidates: Sequence[ContextCandidate],
+        budget: int,
+    ) -> dict[str, int]:
+        """Decide which candidates fit ``budget``; return ``{stable_key: token_count}``.
+
+        The greedy rule is unchanged — a candidate that does not fit is *skipped*, not a stop, so a
+        small later item still fits behind a large refused one — and so is the hard failure when a
+        ``required`` candidate cannot fit. The only thing this method adds is the **direction** in
+        which the budget is spent: canonical order for every layer, reverse (newest-first) for the
+        conversation layer, where dropping the newest messages would silently truncate the turn the
+        user just took (:data:`_RETAIN_NEWEST_LAYERS`).
+        """
+
+        order = tuple(reversed(candidates)) if layer in _RETAIN_NEWEST_LAYERS else tuple(candidates)
+        retained: dict[str, int] = {}
+        used = 0
+        for candidate in order:
+            count = self._counter.count(candidate.body)
+            if used + count > budget:
+                if candidate.required:
+                    raise ValueError(
+                        f"required {layer.value} context exceeds its hard layer budget"
+                    )
+                continue
+            retained[candidate.stable_key] = count
+            used += count
+        return retained
+
     async def assemble(
         self,
         *,
@@ -610,6 +672,7 @@ class DeterministicAgentContextAssembler:
         messages: list[BaseMessage] = []
         materializations: list[ContextMaterialization] = []
         seen_paths: set[str] = set()
+        current_instructions: list[ContextCandidate] = []
 
         for layer in _ORDER:
             candidates = sorted(
@@ -622,21 +685,26 @@ class DeterministicAgentContextAssembler:
             )
             if len({item.stable_key for item in candidates}) != len(candidates):
                 raise ValueError(f"{layer.value} emitted duplicate stable context keys")
+            for candidate in candidates:
+                if candidate.ref.workspace_id != request.constitution.workspace_id:
+                    raise ValueError(f"{layer.value} emitted a cross-workspace context ref")
+                if (
+                    candidate.origin == "current_user_instruction"
+                    and layer is not ContextLayer.L7_TURN
+                ):
+                    raise ValueError("only l7_turn may emit the current user instruction")
             budget = self._policy.budget_for(layer)
+            retained = self._retain(layer=layer, candidates=candidates, budget=budget)
             used = 0
             included: list[ContextCandidate] = []
             excluded: list[ContextCandidate] = []
             hashes: list[str] = []
             paths: list[str] = []
+            # Emission stays in canonical ``stable_key`` order for every layer — only *which*
+            # candidates survive the budget depends on the layer's retention direction.
             for candidate in candidates:
-                if candidate.ref.workspace_id != request.constitution.workspace_id:
-                    raise ValueError(f"{layer.value} emitted a cross-workspace context ref")
-                count = self._counter.count(candidate.body)
-                if used + count > budget:
-                    if candidate.required:
-                        raise ValueError(
-                            f"required {layer.value} context exceeds its hard layer budget"
-                        )
+                count = retained.get(candidate.stable_key)
+                if count is None:
                     excluded.append(candidate)
                     receipt_refs.append(
                         ContextReceiptRef(
@@ -663,6 +731,8 @@ class DeterministicAgentContextAssembler:
                         )
                     )
                 included.append(candidate)
+                if candidate.origin == "current_user_instruction":
+                    current_instructions.append(candidate)
                 hashes.append(digest)
                 messages.append(_message(candidate))
                 receipt_refs.append(
@@ -688,6 +758,18 @@ class DeterministicAgentContextAssembler:
                     exclusion_reason_codes=tuple("layer_budget_exceeded" for _ in excluded),
                 )
             )
+
+        if len(current_instructions) != 1:
+            raise ValueError("opening context requires exactly one current user instruction")
+        current_instruction = current_instructions[0]
+        if current_instruction.ref != request.user_message_artifact_ref:
+            raise ValueError("current user instruction differs from the turn message artifact")
+        if (
+            not messages
+            or not isinstance(messages[-1], HumanMessage)
+            or messages[-1].content != current_instruction.body
+        ):
+            raise ValueError("current user instruction must be the final opening-context message")
 
         aggregate_payload = {
             "schema_version": "1",

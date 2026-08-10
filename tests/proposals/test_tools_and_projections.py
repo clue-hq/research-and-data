@@ -59,6 +59,9 @@ def test_four_tools_return_refs_and_enforce_human_decisions() -> None:
             human = ToolContext(
                 workspace_id=workspace_id,
                 actor="human",
+                principal_kind="human",
+                actor_id="human:proposal-test",
+                membership_id="wsm_proposal_test",
                 conn_factory=factory,
                 operation_id=new_operation_id(),
             )
@@ -86,9 +89,7 @@ def test_four_tools_return_refs_and_enforce_human_decisions() -> None:
                 reason="Not required in the shared registry.",
             )
             failures = await decide_field_tool.preconditions(decide_field_input, agent)
-            assert tuple(item.reason_code for item in failures) == (
-                "insufficient_proposal_authority",
-            )
+            assert tuple(item.reason_code for item in failures) == ("human_required",)
             assert await decide_field_tool.preconditions(decide_field_input, human) == ()
             field_decision = await decide_field_tool.invoke(decide_field_input, human)
             assert field_decision.references["status"] == ProposalStatus.REJECTED.value
@@ -119,9 +120,7 @@ def test_four_tools_return_refs_and_enforce_human_decisions() -> None:
                 assigned_tier=3,
             )
             failures = await decide_source_tool.preconditions(decide_source_input, agent)
-            assert tuple(item.reason_code for item in failures) == (
-                "insufficient_proposal_authority",
-            )
+            assert tuple(item.reason_code for item in failures) == ("human_required",)
             failures = await decide_source_tool.preconditions(decide_source_input, human)
             assert tuple(item.reason_code for item in failures) == ("credential_setup_required",)
             ready_source_tool = DecideSourceProposalTool(

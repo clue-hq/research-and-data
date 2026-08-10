@@ -26,16 +26,27 @@ class FleetTaskKind(StrEnum):
     * ``EXECUTE_GRAPH`` — one durable recipe execution in the shared top-level leased worker.
     * ``ENTITY_RESEARCH_JOB`` — one M8D account or contact research subject. Both types use this
       same mechanical kind; exact subject authority lives in the immutable job envelope.
+    * ``AGENT_TURN`` — one human-submitted platform-deepagent conversation turn (FI Lane D D2).
+      ``work_id`` is the *thread*, not the turn, which is what makes the driver lease a per-thread
+      single-flight fence; the turn itself is named by the payload and by the
+      ``agent-turn:<turn_id>`` dedup key. The queue never carries a session token — only internal
+      ids and durable turn refs (`FI-lane-B-authenticated-principal-contract.md` §7).
     * ``DESIGN_JOB`` — one unit of design-subsystem work (PD Part II D5). Agent turns, web turns,
       and brand-kit ingestion all use this same mechanical kind, exactly as the two research
       subject types share ``ENTITY_RESEARCH_JOB``; which shape it is lives in the immutable
       by-value envelope the worker executes from, not in the queue taxonomy.
+
+    New members are appended, never inserted: the DB enum is grown with ``ALTER TYPE … ADD VALUE``
+    (which appends), and the parity test compares the two **in order**. Member order here mirrors
+    migration application order on the merged tree (the frontend lane chain applies before the
+    design Part-II chain, so ``agent_turn`` precedes ``design_job``).
     """
 
     DRIVE_RUN = "drive_run"
     ACCOUNT_JOB = "account_job"
     EXECUTE_GRAPH = "execute_graph"
     ENTITY_RESEARCH_JOB = "entity_research_job"
+    AGENT_TURN = "agent_turn"
     DESIGN_JOB = "design_job"
 
 

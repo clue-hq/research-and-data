@@ -16,6 +16,8 @@ import asyncio
 from collections.abc import Sequence
 from decimal import Decimal
 
+import pytest
+
 from clue_api.verification import (
     VerificationPhaseHandler,
     build_verification_phase_handler,
@@ -301,6 +303,58 @@ def test_runs_full_gate_chain_with_use_gate_last() -> None:
     asyncio.run(_run())
 
 
+def test_disabled_verification_calls_no_corroborator_or_judge_but_keeps_use_gate() -> None:
+    rec = _Recorder()
+    account, contact = new_entity_id(), new_entity_id()
+    use_gate = FakeUseGate(rec)
+    handler = VerificationPhaseHandler(
+        account_resolver=_resolver((_spec(account),)),
+        load_claims=_loader({account: [_acct(_PAIN, 4, account)], contact: [_facet(contact)]}),
+        corroborator=None,
+        judge=None,
+        verification_enabled=False,
+        contact_resolver=_contact_resolver({account: [contact]}),
+        use_gate_provider=_use_gate_provider(use_gate),
+    )
+
+    async def _run() -> None:
+        result = await handler.run(_ctx())
+        assert result.status is PhaseStatus.COMPLETED
+        assert result.accounts_processed == 1
+        assert result.cost_cents == Decimal(0)
+        assert not rec.steps("corroborate")
+        assert not rec.steps("judge")
+        assert use_gate.evaluated == [_FACET]
+        assert result.payload == {
+            "verification_enabled": False,
+            "verified_accounts": 0,
+            "accounts_skipped": 1,
+            "accounts_failed": 0,
+        }
+
+    asyncio.run(_run())
+
+
+def test_disabled_verification_without_use_gate_does_not_load_claims() -> None:
+    account = new_entity_id()
+    handler = VerificationPhaseHandler(
+        account_resolver=_resolver((_spec(account),)),
+        load_claims=_loader({}, raise_for=account),
+        corroborator=None,
+        judge=None,
+        verification_enabled=False,
+        use_gate_provider=None,
+    )
+
+    async def _run() -> None:
+        result = await handler.run(_ctx())
+        assert result.status is PhaseStatus.COMPLETED
+        assert result.accounts_processed == 1
+        assert result.payload["accounts_skipped"] == 1
+
+    asyncio.run(_run())
+
+
 def test_judges_every_tier4_claim_and_no_lower_tier() -> None:
     rec = _Recorder()
     e1 = new_entity_id()
@@ -511,3 +565,21 @@ def test_build_verification_phase_handler_wires_the_concrete_seams() -> None:
     )
     assert isinstance(handler, PhaseHandler)
     assert handler.phase is ProjectPhase.VERIFICATION
+
+
+def test_build_disabled_verification_handler_needs_no_gateway() -> None:
+    handler = build_verification_phase_handler(
+        gateway=None,
+        account_resolver=_resolver(()),
+        verification_enabled=False,
+    )
+    assert isinstance(handler, PhaseHandler)
+    assert handler.phase is ProjectPhase.VERIFICATION
+
+
+def test_build_enabled_verification_handler_requires_gateway() -> None:
+    with pytest.raises(ValueError, match="enabled verification requires an LLM gateway"):
+        build_verification_phase_handler(
+            gateway=None,
+            account_resolver=_resolver(()),
+        )

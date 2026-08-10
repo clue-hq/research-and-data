@@ -34,6 +34,7 @@ from clue_api.entity_research_tools import (
     fold_rejected_operation_settlement,
 )
 from clue_api.sumble_account_gaps import (
+    SumbleAccountGapNotEligible,
     SumbleAccountGapOutcome,
     SumbleAccountGapStarter,
 )
@@ -69,6 +70,7 @@ from clue_core.entity_research import (
     ResearchFieldResultProjection,
     ResearchSubjectType,
 )
+from clue_research.claimstore import record_run_lineage
 from clue_research.durable import (
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
@@ -444,16 +446,36 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 and observation.disposition == ProviderObservationDisposition.CAUSED.value
             )
 
-        result = await self._starter.start(
-            workspace_id=self._workspace_id,
-            project_run_id=self._project_run_id,
-            account_id=self._account_id,
-            field_expected_value_credits={key: self._values[key] for key in request.field_keys},
-            provider_credit_cap=self._provider_credit_cap,
-            allow_unbounded_tech=self._allow_unbounded_tech,
-            before_dispatch=bind_sumble_before_dispatch,
-            entity_research_job_id=self._entity_research_job_id,
-        )
+        try:
+            result = await self._starter.start(
+                workspace_id=self._workspace_id,
+                project_run_id=self._project_run_id,
+                account_id=self._account_id,
+                field_expected_value_credits={key: self._values[key] for key in request.field_keys},
+                provider_credit_cap=self._provider_credit_cap,
+                allow_unbounded_tech=self._allow_unbounded_tech,
+                before_dispatch=bind_sumble_before_dispatch,
+                entity_research_job_id=self._entity_research_job_id,
+            )
+        except SumbleAccountGapNotEligible as exc:
+            # FI-2 §6.3(b), and *only* §6.3(b): the ladder found the field already confidently and
+            # freshly answered.  The preflight refuses before any operation row or dispatch, so
+            # this is a zero-spend, zero-state refusal of the request the agent made — the
+            # model-repairable species (R10), not a job suspension.  The agent drops that field,
+            # picks another admitted source, or finalizes with an honest gap.
+            #
+            # Deliberately the subclass, not the ``SumbleAccountGapEligibilityError`` family: the
+            # other members (job authority lost, discovery seal conflicted, account not the
+            # canonical survivor, a field mis-declared as project-relative) are facts about the
+            # world that no choice of the agent's repairs, and they were suspending before §6.3(b)
+            # existed.  Catching the base class here would have converted a fenced-out job's
+            # authority failure into a turn it could keep taking.  (The legacy toolbelt path does
+            # convert the whole family, to ``PreconditionFailed`` — a human-facing precondition,
+            # not an agent turn.)
+            raise EntityResearchGovernedRejection(
+                "account_gap_ineligible",
+                f"Sumble account enrichment is not eligible for this request: {exc}",
+            ) from exc
         if result.outcome is SumbleAccountGapOutcome.JOINED_IN_FLIGHT:
             raise EntityResearchProviderWait(
                 self._descriptor(
@@ -924,6 +946,19 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
         # existing member/role claims instead of superseding them per tool call.
         run_id = RunId(UUID(str(durable.project_run_id)))
         async with self._conn_factory() as conn:
+            # FI-2 P2 (spec §3): register the committee run in the same transaction as the
+            # role/persona/discovery claims ``discover_committee`` writes below. Idempotent, so a
+            # repeat committee call re-registers harmlessly. Because this run id *is* the project
+            # run, the enrichment materializer may already have registered it under its own kind —
+            # first writer wins on ``kind``; the project attribution is identical either way.
+            await record_run_lineage(
+                conn,
+                run_id=UUID(str(run_id)),
+                workspace_id=durable.workspace_id,
+                kind="committee",
+                project_id=durable.project_id,
+                project_run_id=UUID(str(durable.project_run_id)),
+            )
             committee = await discover_committee(
                 conn,
                 account_entity_id=EntityId(request.target_entity_id),

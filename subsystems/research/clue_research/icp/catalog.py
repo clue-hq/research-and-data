@@ -135,6 +135,17 @@ def _validate_pack_definition(pack: Pack) -> None:
                     "field has no safe default — set reuse_scope=public_footprint or "
                     "tenant_private; fail-closed, ENG-165 W5)"
                 )
+            # Species likewise has no ratified default for a vertical pack (FI-2 P3 / §5.2), and
+            # `register_field` refuses an undeclared one — so `validate_pack` must not return clean
+            # for a pack `load_pack` will reject. `client.*` is exempt (workspace-scoped by
+            # construction, ratified neutral).
+            if seed.field_def.research_scope is None and pack.namespace != "client":
+                raise PackValidationError(
+                    f"pack {pack.pack_key!r} field {key!r} must declare a research_scope (a "
+                    "<pack>.* field has no ratified species default — set "
+                    "research_scope=project_neutral for a world-fact or project_relative for an "
+                    "ICP/campaign-relative value; FI-2 P3)"
+                )
         elif seed.pack is not None:
             # A canonical contribution (e.g. a registered account.resonance.* field — Doc C §2) is a
             # shared registry row, not pack-namespaced; it must not declare a pack.

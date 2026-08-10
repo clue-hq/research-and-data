@@ -19,6 +19,7 @@ from clue_research.claimstore import (
     WorkspaceScope,
     claims_for,
     insert_claim,
+    project_supersedable,
     supersede_claims,
 )
 
@@ -46,6 +47,28 @@ def claim_project_run_id(claim: Claim) -> str | None:
     return None
 
 
+def claim_project_id(claim: Claim) -> str | None:
+    """The owning **project** stamp for a score-family claim (FI-2 §6.4), or ``None`` when the
+    claim is *unstamped*.
+
+    "Unstamped" is not a synonym for "pre-§6.4": it is any claim whose writer does not set
+    ``value_json["project_id"]``, which includes claims written long after §6.4 by a writer that
+    has not been taught to stamp. Treat the class as open, not as a frozen historical leftover.
+
+    Coarser than :func:`claim_project_run_id` on purpose: a project re-tiers/re-scores an account
+    across successive runs and must keep exactly one live winner, so the *run* is not the right
+    supersede discriminator for that family — the *project* is. The claim row has no project column
+    (FI-2 §1.3), so the stamp rides ``value_json``, the same convention ``icp_key`` uses.
+    """
+
+    value_json = claim.value_json
+    if isinstance(value_json, dict):
+        value = value_json.get("project_id")
+        if isinstance(value, str):
+            return value
+    return None
+
+
 async def write_icp_scoped_claim(
     conn: AsyncConnection,
     claim: Claim,
@@ -60,9 +83,21 @@ async def write_icp_scoped_claim(
     for that pair is reused (``written=False`` — no new row, no double-charge). A live claim from a
     *different* run of the same ``(ICP, product)`` is **superseded** so the merged truth keeps one
     live winner for that scope (append-only history preserved). A claim from another ICP or product
-    is left untouched (D5 / C7.1 per-product fit). The caller supplies the already-
+    is left untouched (D5 / C7.1 per-product fit), and — since FI-2 §6.4 — so is a claim belonging
+    to a **different project** (``claim_project_id``, absorbing an *unstamped* claim once; see
+    :func:`~clue_research.claimstore.project_supersedable`), so a second project scoring or tiering
+    a shared account never destroys the first project's lens. The caller supplies the already-
     ``stamp_reuse``-stamped ``claim`` and the read ``scope``; this owns only the read →
-    replay-check → scoped supersede → insert sequence (the shared protocol)."""
+    replay-check → scoped supersede → insert sequence (the shared protocol).
+
+    **Side effect of §6.4 coexistence, noted:** two projects' live tier/score claims on one account
+    now disagree on value, so ``claimstore.merge._conflict`` (exact-equality over tier≤2 sources)
+    can set ``current_value.conflict = True`` for these fields where it previously could not. That
+    is cosmetic today — **no consumer reads ``CurrentValue.conflict``** (the mode-aware,
+    authoritative surface is M9.2's ``conflict_flag`` table), and the divergence between the two
+    conflict surfaces is already a tracked backlog item ([M9.2×M1.2] in ``CLAUDE.md``). Whoever
+    lands that fix should decide there whether a cross-project coexistence counts as a conflict at
+    all — it is two lenses, not two contradicting sources."""
     # Serialize writers in the exact score family before reading the live set. Without this lock,
     # two concurrent retries can both observe no predecessor and leave two live exact-scope rows.
     lock_key = ":".join(
@@ -90,10 +125,16 @@ async def write_icp_scoped_claim(
         if claim_icp_key(prior) == icp_key
         and prior.product_id == claim.product_id
         and claim_project_run_id(prior) == claim_project_run_id(claim)
+        and project_supersedable(claim_project_id(prior), claim_project_id(claim))
     ]
     if predecessors:
         return await supersede_claims(conn, predecessors, claim), True
     return await insert_claim(conn, claim), True
 
 
-__all__ = ["claim_icp_key", "claim_project_run_id", "write_icp_scoped_claim"]
+__all__ = [
+    "claim_icp_key",
+    "claim_project_id",
+    "claim_project_run_id",
+    "write_icp_scoped_claim",
+]

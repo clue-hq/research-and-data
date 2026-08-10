@@ -12,17 +12,29 @@ the same Pass A scoring + tiering path (a mock checkpoint).
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import AccountStatus, EntityId, IdentityBinding, ReuseScope, UseClass
+from clue_core import (
+    AccountStatus,
+    EntityId,
+    EntityType,
+    IdentityBinding,
+    ReuseScope,
+    UseClass,
+)
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.icp import assign_tier, get_rubric_version, score_entity
 from clue_research.identity import (
     DispositionPolicy,
     embed_account,
     get_account,
+    get_task,
     insert_account_entity,
+    mark_merged,
+    resolve_create_new_entity,
 )
+from clue_research.membership import accounts_for_project, projects_for_accounts
 from clue_research.sources import bind_resolver
 from clue_research.stage0 import (
     CONTACT_IMPORT_RECORD,
@@ -30,9 +42,13 @@ from clue_research.stage0 import (
     IMPORT_BATCH,
     FitFlag,
     ImportContactRow,
+    ImportProjectNotFound,
     ImportRow,
     import_accounts,
 )
+from clue_research.stage0.import_accounts import import_batch_run_id
+from tests._run_lineage import assert_written_claims_are_attributable
+from tests._workspace import seed_project
 from tests.stage0._fakes import FakeCrmResolver, build_confirmed_icp
 from tests.stage0.conftest import rollback_conn, run_async
 
@@ -54,6 +70,29 @@ async def _client_entity(conn: AsyncConnection, suffix: str) -> EntityId:
 
 def _scope() -> WorkspaceScope:
     return WorkspaceScope.for_workspace(_CLIENT)
+
+
+async def _added_via(conn: AsyncConnection, entity_id: EntityId) -> list[str]:
+    """The membership channels recorded for one account — no reader exposes ``added_via``."""
+    rows = await conn.execute(
+        text(
+            "SELECT added_via FROM project_account "
+            "WHERE workspace_id = :ws AND account_entity_id = :id ORDER BY added_at"
+        ),
+        {"ws": _CLIENT, "id": entity_id},
+    )
+    return list(rows.scalars())
+
+
+async def _accounts_named(conn: AsyncConnection, domain: str) -> int:
+    """How many account entities exist for a domain — "the batch created nothing" made checkable."""
+    rows = await conn.execute(
+        text(
+            "SELECT count(*) FROM account_entity WHERE primary_domain = :d AND workspace_id = :ws"
+        ),
+        {"d": domain, "ws": _CLIENT},
+    )
+    return int(rows.scalar_one())
 
 
 def test_duplicate_variants_collapse_to_one_entity() -> None:
@@ -394,5 +433,279 @@ def test_reimport_same_batch_does_not_duplicate_entities() -> None:
             assert first.resolved[0].account_entity_id == second.resolved[0].account_entity_id
             # the second pass auto-merges onto the existing entity (deterministic strong key)
             assert second.resolved[0].resolution_method == "deterministic"
+
+    run_async(_run())
+
+
+def test_import_batch_registers_its_run_in_run_lineage() -> None:
+    """FI-2 P2: every claim an import batch writes back-joins to a registered run.
+
+    Import carries no project context of its own yet (the caller supplies one), so an unattributed
+    batch registers as a workspace-level run — and a batch handed a project registers under it.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            client = await _client_entity(conn, "lineage")
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
+            rows = [ImportRow(row_index=1, name="Lineage Inc", domain="lineage.example")]
+
+            await import_accounts(
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client, import_batch_id="bl"
+            )
+            await assert_written_claims_are_attributable(
+                conn,
+                import_batch_run_id("bl"),
+                kind="import",
+                workspace_id=_CLIENT,
+                project_id=None,
+            )
+
+            project = await seed_project(conn, _CLIENT, name="Import project")
+            await import_accounts(
+                conn,
+                rows,
+                icp,
+                workspace_id=_CLIENT,
+                client_entity_id=client,
+                import_batch_id="bl-project",
+                project_id=project.project_id,
+            )
+            await assert_written_claims_are_attributable(
+                conn,
+                import_batch_run_id("bl-project"),
+                kind="import",
+                workspace_id=_CLIENT,
+                project_id=project.project_id,
+            )
+
+    run_async(_run())
+
+
+def test_import_into_a_project_joins_every_account_the_batch_lands_on() -> None:
+    """FI-2 H3 (spec §8.3): an import *into a project* makes every account the batch resolves to a
+    target of that project — the freshly-admitted one and the one that auto-merged onto an account
+    that already existed. Membership is a join, not a creation record: an account discovery already
+    put in the workspace joins the importing project too."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            client = await _client_entity(conn, "join")
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
+            project = await seed_project(conn, _CLIENT, name="Joining project")
+            existing = await insert_account_entity(
+                conn,
+                canonical_name="Already Here Ltd",
+                primary_domain="alreadyhere.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id=_CLIENT,
+            )
+            await embed_account(conn, existing)
+            rows = [
+                ImportRow(row_index=1, name="Brand New Co", domain="brandnew-join.example"),
+                ImportRow(row_index=2, name="Already Here", domain="alreadyhere.example"),
+            ]
+            result = await import_accounts(
+                conn,
+                rows,
+                icp,
+                workspace_id=_CLIENT,
+                client_entity_id=client,
+                project_id=project.project_id,
+            )
+            by_row = {r.row_index: r for r in result.resolved}
+            assert by_row[1].resolution_method == "new_entity"
+            assert by_row[2].resolution_method == "deterministic"
+            assert by_row[2].account_entity_id == existing
+
+            assert set(
+                await accounts_for_project(
+                    conn, workspace_id=_CLIENT, project_id=project.project_id
+                )
+            ) == {by_row[1].account_entity_id, existing}
+            assert await projects_for_accounts(
+                conn, workspace_id=_CLIENT, account_ids=[by_row[1].account_entity_id, existing]
+            ) == {
+                by_row[1].account_entity_id: (project.project_id,),
+                existing: (project.project_id,),
+            }
+            # the channel is how the account joined the project, and this one joined by import
+            assert await _added_via(conn, by_row[1].account_entity_id) == ["imported"]
+            assert await _added_via(conn, existing) == ["imported"]
+
+    run_async(_run())
+
+
+def test_import_row_landing_on_a_merged_loser_joins_the_survivor() -> None:
+    """FI-2 H3 (spec §8.3), the merge-chain leg: a row whose strong key still points at an account
+    that has since been merged away joins the *survivor* to the project, never the loser.
+
+    Membership rides the ``surviving_id`` redirect the import applies before it writes, so the join
+    can never be orphaned on a merged-away entity — the same guarantee ``mark_merged`` gives
+    memberships that already existed, here for one created after the merge."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            client = await _client_entity(conn, "merged")
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
+            project = await seed_project(conn, _CLIENT, name="Survivor project")
+            loser = await insert_account_entity(
+                conn,
+                canonical_name="Old Name Ltd",
+                primary_domain="mergedloser.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id=_CLIENT,
+            )
+            survivor = await insert_account_entity(
+                conn,
+                canonical_name="Survivor Corp",
+                primary_domain="survivor-merged.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id=_CLIENT,
+            )
+            await embed_account(conn, loser)
+            await embed_account(conn, survivor)
+            await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)
+
+            result = await import_accounts(
+                conn,
+                [ImportRow(row_index=1, name="Old Name", domain="mergedloser.example")],
+                icp,
+                workspace_id=_CLIENT,
+                client_entity_id=client,
+                project_id=project.project_id,
+            )
+
+            (resolved,) = result.resolved
+            # the row's domain is the *loser*'s strong key, so this is a deterministic hit on the
+            # merged-away entity — the survivor id below is the redirect's doing, not a fresh admit
+            assert resolved.resolution_method == "deterministic"
+            assert resolved.account_entity_id == survivor  # redirected off the loser
+            assert await accounts_for_project(
+                conn, workspace_id=_CLIENT, project_id=project.project_id
+            ) == (survivor,)
+            assert await projects_for_accounts(
+                conn, workspace_id=_CLIENT, account_ids=[loser, survivor]
+            ) == {survivor: (project.project_id,)}
+            assert await _added_via(conn, survivor) == ["imported"]
+            assert await _added_via(conn, loser) == []
+
+    run_async(_run())
+
+
+def test_import_without_a_project_writes_no_membership() -> None:
+    """A projectless (workspace-level) import is unchanged: the accounts land workspace-global with
+    no project claiming them (spec §8.3) — membership-less accounts are a supported state."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            client = await _client_entity(conn, "nomember")
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
+            project = await seed_project(conn, _CLIENT, name="Uninvolved project")
+            rows = [ImportRow(row_index=1, name="Global Co", domain="globalco-nomember.example")]
+            result = await import_accounts(
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client
+            )
+            (acct,) = result.resolved
+            assert (
+                await projects_for_accounts(
+                    conn, workspace_id=_CLIENT, account_ids=[acct.account_entity_id]
+                )
+                == {}
+            )
+            assert (
+                await accounts_for_project(
+                    conn, workspace_id=_CLIENT, project_id=project.project_id
+                )
+                == ()
+            )
+
+    run_async(_run())
+
+
+def test_import_into_an_unknown_project_refuses_before_creating_any_account() -> None:
+    """A project that is not this workspace's is refused up front, so the batch is all-or-nothing.
+
+    The check cannot be left to the ``project_account`` composite FK: every row's admit + write
+    phase runs in its own savepoint, so an FK violation would surface as a per-row "resolution write
+    failed" and the batch would report a partially-imported success instead of failing loud.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            client = await _client_entity(conn, "badproject")
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
+            other = await seed_project(conn, "tenant-elsewhere", name="Another tenant's project")
+            rows = [ImportRow(row_index=1, name="Never Created", domain="nevercreated.example")]
+
+            with pytest.raises(ImportProjectNotFound):
+                await import_accounts(
+                    conn,
+                    rows,
+                    icp,
+                    workspace_id=_CLIENT,
+                    client_entity_id=client,
+                    project_id="prj-does-not-exist",
+                )
+            assert await _accounts_named(conn, "nevercreated.example") == 0
+
+            # a real project of *another* workspace is equally unknown here
+            with pytest.raises(ImportProjectNotFound):
+                await import_accounts(
+                    conn,
+                    rows,
+                    icp,
+                    workspace_id=_CLIENT,
+                    client_entity_id=client,
+                    project_id=other.project_id,
+                )
+            assert await _accounts_named(conn, "nevercreated.example") == 0
+
+    run_async(_run())
+
+
+def test_import_review_task_carries_the_project_and_its_resolution_joins_it() -> None:
+    """An import row that lands mid-band admits no entity, so it can join no project — the project
+    rides the review task instead (FI-2 P1) and the human resolution joins the account it creates.
+    An imported ambiguity therefore reaches the same project a clean import row would have."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            client = await _client_entity(conn, "reviewproject")
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
+            project = await seed_project(conn, _CLIENT, name="Review project")
+            existing = await insert_account_entity(
+                conn,
+                canonical_name="Globex Review Industries",
+                primary_domain="globex-reviewproject.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id=_CLIENT,
+            )
+            await embed_account(conn, existing)
+            rows = [ImportRow(row_index=1, name="Globex Review Industries")]  # name-only → mid-band
+            policy = DispositionPolicy(auto_merge_threshold=0.95, review_low_threshold=0.05)
+            result = await import_accounts(
+                conn,
+                rows,
+                icp,
+                workspace_id=_CLIENT,
+                client_entity_id=client,
+                project_id=project.project_id,
+                disposition_policy=policy,
+            )
+            (review,) = result.needs_review
+            task = await get_task(conn, review.task_id)
+            assert task is not None and task.project_id == project.project_id
+            assert (
+                await accounts_for_project(
+                    conn, workspace_id=_CLIENT, project_id=project.project_id
+                )
+                == ()
+            )
+
+            new_id = await resolve_create_new_entity(conn, review.task_id, resolved_by="reviewer")
+            assert await accounts_for_project(
+                conn, workspace_id=_CLIENT, project_id=project.project_id
+            ) == (new_id,)
 
     run_async(_run())

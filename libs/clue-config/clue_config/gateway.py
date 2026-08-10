@@ -39,6 +39,39 @@ class ModelPrice(BaseModel):
         return prompt + completion
 
 
+class ReasoningRequest(BaseModel):
+    """What the agent model asks the provider to do with its reasoning, as policy data.
+
+    "Policy is data" applied to the one model parameter that is not a model id: whether a governed
+    agent call requests an extended-thinking / reasoning-summary mode, and how deep. It is a
+    *request* — every field is optional and a model with no reasoning mode simply ignores the whole
+    block — so nothing downstream may assume a trace came back.
+
+    The three members are the OpenAI-Responses reasoning vocabulary, which is what the OpenRouter
+    gateway speaks (:class:`~clue_gateway.agent_model.OpenRouterAgentModelProvider` builds
+    ``ChatOpenAI(use_responses_api=True)``). ``max_tokens`` is OpenRouter's unified spelling of a
+    thinking budget and is passed through untouched for the providers that accept it.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    effort: str | None = None
+    summary: str | None = None
+    max_tokens: int | None = Field(default=None, ge=1)
+
+    def as_provider_payload(self) -> dict[str, object]:
+        """The provider ``reasoning`` block, omitting every member that was not asked for."""
+
+        payload: dict[str, object] = {}
+        if self.effort is not None:
+            payload["effort"] = self.effort
+        if self.summary is not None:
+            payload["summary"] = self.summary
+        if self.max_tokens is not None:
+            payload["max_tokens"] = self.max_tokens
+        return payload
+
+
 class GatewayConfig(BaseModel):
     """Versioned config for the shared :class:`~clue_core.gateway.LLMGateway`.
 
@@ -70,6 +103,12 @@ class GatewayConfig(BaseModel):
     # ``prices`` too, or the inherited price table is dropped and costs read as 0. Carry the full
     # GatewayConfig (ids + prices) in any overlay that overrides the gateway.
     prices: dict[str, ModelPrice] = Field(default_factory=dict)
+    # What a governed *agent* model call asks the provider to do with its reasoning. ``None`` (the
+    # default) means "ask for nothing" and is byte-for-byte today's behaviour: the provider builder
+    # keeps its own per-model baseline (GPT-5.6's governed ``effort: none``). A value overrides that
+    # baseline for every agent model this config builds — which is why it is set from exactly one
+    # place, ``default_gateway_config`` below, under the dev-only reasoning-trace setting.
+    agent_reasoning: ReasoningRequest | None = None
 
     def cost_cents(self, model: str, usage: TokenUsage) -> CostCents:
         """Cost of a call to ``model`` with the given usage, from the configured price table.
@@ -83,13 +122,34 @@ class GatewayConfig(BaseModel):
 
 def default_gateway_config() -> GatewayConfig:
     """Return gateway defaults with deploy-time env overrides (``CLUE_SYNTHESIS_MODEL``,
-    ``CLUE_JUDGE_MODEL``, …)."""
+    ``CLUE_JUDGE_MODEL``, …).
+
+    This is also where the FI Lane D dev-lens reasoning request enters the gateway, and the only
+    place it can: ``CLUE_CHAT_REASONING_TRACE_MODE=raw`` is refused at settings construction outside
+    a dev deployment (``Settings._refuse_dev_lens_in_production``), so a production process cannot
+    reach the ``raw`` branch below — it does not start.
+    """
+
     settings = load_settings()
+    reasoning = (
+        ReasoningRequest(
+            # ``effort`` is what makes a reasoning model actually reason; ``summary`` is what makes
+            # it *emit* anything about that reasoning. Asking for one without the other is the
+            # common way to get a trace-free "reasoning" run, so the dev lens asks for both.
+            effort="medium",
+            summary="auto",
+            max_tokens=settings.chat_reasoning_thinking_budget_tokens,
+        )
+        if settings.chat_reasoning_trace_mode == "raw"
+        else None
+    )
     if settings.judge_model:
         return GatewayConfig(
-            synthesis_model=settings.synthesis_model, judge_model=settings.judge_model
+            synthesis_model=settings.synthesis_model,
+            judge_model=settings.judge_model,
+            agent_reasoning=reasoning,
         )
-    return GatewayConfig(synthesis_model=settings.synthesis_model)
+    return GatewayConfig(synthesis_model=settings.synthesis_model, agent_reasoning=reasoning)
 
 
 DEFAULT_GATEWAY_CONFIG = default_gateway_config()

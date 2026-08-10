@@ -63,6 +63,7 @@ from clue_execution.journal import (
     LostExecutionLease,
     OperationConflict,
     StaleCursor,
+    ToolAuthorityStateChanged,
     get_cursor,
     rebuild_cursor,
 )
@@ -118,7 +119,9 @@ from clue_execution.run_events import (
 from clue_execution.stream_tokens import (
     consume_stream_token,
     consume_subject_stream_token,
+    consume_turn_stream_token,
     mint_stream_token,
+    mint_turn_stream_token,
     sweep_stream_tokens,
 )
 from clue_execution.supervisor import (
@@ -186,7 +189,9 @@ __all__ = [
     # one constant, and a parity test binds the token module's copy to it.
     "consume_stream_token",
     "consume_subject_stream_token",
+    "consume_turn_stream_token",
     "mint_stream_token",
+    "mint_turn_stream_token",
     # D8 (R-D8-4) — the spent-token reclaim the fleet worker runs on a cadence.
     "sweep_stream_tokens",
     "DiagnosisActionCandidate",
@@ -245,6 +250,7 @@ __all__ = [
     "JournalCrashHook",
     "LostExecutionLease",
     "OperationConflict",
+    "ToolAuthorityStateChanged",
     "StaleCursor",
     "get_cursor",
     "rebuild_cursor",

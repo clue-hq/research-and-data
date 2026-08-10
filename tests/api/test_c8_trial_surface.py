@@ -32,6 +32,7 @@ from clue_api.agent_registry_wiring import (
     C6_ACTIVE_PROFILE_VERSIONS,
     C6_AGENT_TOOL_AUTHORITY,
     C6_SURFACE_POLICIES,
+    PROJECT_CONVERSATION_SURFACE,
     STAGE0_CONVERSATION_TRIAL_SURFACE,
     ToolRegistryAgentCatalog,
     build_agent_profile_registry,
@@ -44,9 +45,23 @@ from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 # Mirrors C6_SURFACE_POLICIES for the trial surface. M8D R10 retired the account-deep launch and
 # gap-enrichment tools from every active role (they are no longer *grantable*, so there is nothing
 # to withhold) and put the promoted separately confirmed launches behind the same trial withhold.
+# FI Lane D D4 added `open_directive_confirmation_gate` to the same set, for the same sentence: a
+# dev harness that could present a real, addressed, durable confirmation gate — but could never act
+# on the answer — would be inviting a human to approve spend no surface here can perform.
 _WITHHELD = {
     "launch_account_research",
     "launch_contact_research",
+    "open_directive_confirmation_gate",
+    "start_recon",
+    "submit_onboarding_input",
+    "synthesize_icps",
+}
+
+# The production conversation's own subtraction, which D4 made genuinely different from the trial's:
+# it keeps the drafting, gate, and launch tools (that flow is the whole point of the surface) and
+# withholds only the three the trial withholds for reasons that still hold here — this surface does
+# no external research and never captures on the client's behalf.
+_PROJECT_WITHHELD = {
     "start_recon",
     "submit_onboarding_input",
     "synthesize_icps",
@@ -228,10 +243,10 @@ def test_the_stage0_skill_survives_the_narrowed_surface(
     trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
     disclosures = trial.skill_disclosures()
 
-    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v9"]
+    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v10"]
     required = {address.partition("@")[0] for address in disclosures[0].required_tool_addresses}
     assert required & _WITHHELD == set()
-    body = trial.open_skill("skill:stage0-interview@v9")
+    body = trial.open_skill("skill:stage0-interview@v10")
     assert "Ask one compact question" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body
@@ -364,8 +379,13 @@ def test_the_operator_projection_reports_the_narrowed_surface_not_just_the_full_
     head = entries[AgentRole.HEAD_OF_ABM]
 
     assert head.profile is not None
-    assert [item.surface for item in head.surfaces] == [STAGE0_CONVERSATION_TRIAL_SURFACE]
-    trial = head.surfaces[0]
+    # Every declared surface of the role is legible here, each with its own withheld set. Lane D
+    # D2 added `project_conversation` (the production conversation the fleet worker runs), so the
+    # projection now reports two — an operator must be able to tell them apart, which is exactly
+    # what this test guards; asserting a single surface would have made adding one a silent change.
+    by_surface = {item.surface: item for item in head.surfaces}
+    assert set(by_surface) == {STAGE0_CONVERSATION_TRIAL_SURFACE, PROJECT_CONVERSATION_SURFACE}
+    trial = by_surface[STAGE0_CONVERSATION_TRIAL_SURFACE]
 
     assert trial.reason_code == "trial_manual_conversation_only"
     assert set(trial.withheld_tool_names) == _WITHHELD
@@ -380,6 +400,12 @@ def test_the_operator_projection_reports_the_narrowed_surface_not_just_the_full_
             AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE
         ).resource_manifest.aggregate_sha256
     )
+    # The production conversation is reported with its own reason code and its own, *narrower*
+    # subtraction: D4 earned the drafting/gate/launch tools here, and only here.
+    production = by_surface[PROJECT_CONVERSATION_SURFACE]
+    assert production.reason_code == "project_conversation_no_autonomous_research"
+    assert set(production.withheld_tool_names) == _PROJECT_WITHHELD
+    assert production.delegation_roles == ()
     # Roles with no declared surface report none rather than an empty-ish placeholder.
     assert entries[AgentRole.RESEARCH].surfaces == ()
 

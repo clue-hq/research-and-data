@@ -26,9 +26,16 @@ def new_account_gap_operation_id() -> AccountGapOperationId:
 
 
 class AccountGapReason(StrEnum):
+    """Why a field is a *gap* worth paying a structured provider to answer (FI-2 §6.3).
+
+    Carried in the durable gap request payload (JSON — there is no ``account_gap_reason`` DB enum),
+    so adding a member needs no migration.
+    """
+
     MISSING = "missing"
     LOW_CONFIDENCE = "low_confidence"
     CONFLICT = "conflict"
+    STALE = "stale"  # confidently resolved, conflict-free, but past the field's freshness TTL
 
 
 class AccountGapOperationState(StrEnum):

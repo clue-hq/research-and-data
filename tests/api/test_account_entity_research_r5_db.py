@@ -142,6 +142,12 @@ _MOVES = "account.strategic_moves"
 _HIRING = "account.hiring_velocity_eng"
 _QUALITATIVE_QUESTION = "Where is administrative work creating avoidable burden?"
 _STRUCTURED_QUESTION = "What is the current hiring velocity for operational roles?"
+#: What ``_FixtureAccountProviders`` answers an account-field call with, per field.
+_R5_FIELD_VALUES: Mapping[str, object] = {
+    _PAIN: "Referral intake depends on repeated manual fax reconciliation.",
+    _MOVES: "The practice is expanding its centralized referral program.",
+    _HIRING: 4,
+}
 _COMMITTEE_QUESTION = "Who participates in this product buying decision at the same office?"
 
 
@@ -396,11 +402,17 @@ class _FixtureAccountProviders(EntityResearchProviderAction):
         conn_factory: Callable[[], Any],
         contacts: tuple[UUID, UUID],
         lineage: _FixtureLineageReader,
+        field_values: Mapping[str, object] | None = None,
     ) -> None:
         self._storage = storage
         self._conn_factory = conn_factory
         self._contacts = contacts
         self._lineage = lineage
+        # The three R5 fields this fixture has always answered, plus anything a caller adds.
+        # Additive on purpose: a suite that researches a *different* field (FI-2 slice 3 buys a
+        # project-relative one) supplies its value here instead of copying the whole
+        # claim/artifact plumbing below.
+        self._field_values: Mapping[str, object] = {**_R5_FIELD_VALUES, **(field_values or {})}
         self.calls: list[str] = []
 
     async def execute(
@@ -485,11 +497,7 @@ class _FixtureAccountProviders(EntityResearchProviderAction):
         snapshot_ref: str,
         provider_request_id: str,
     ) -> tuple[ProviderResearchProjectionDraft, str, str]:
-        values: Mapping[str, object] = {
-            _PAIN: "Referral intake depends on repeated manual fax reconciliation.",
-            _MOVES: "The practice is expanding its centralized referral program.",
-            _HIRING: 4,
-        }
+        values: Mapping[str, object] = self._field_values
         spans = {
             field: f"Grounded evidence for {field}: {values[field]}" for field in request.field_keys
         }
@@ -1122,6 +1130,37 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
             assert counts["contact_request_count"] == 0
             assert Decimal(counts["job_spent"]) == Decimal("8.75")
             assert Decimal(counts["run_spent"]) == Decimal("8.75")
+
+            # FI-2 P2: the account claims this run wrote carry a per-tool-call materialization run
+            # id (not the launch research run id) — every one of them is registered and
+            # project-attributed, so the project lens can back-join them.
+            unattributed = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM claim "
+                        "WHERE entity_id=:account_id AND source_key='exa_deep' "
+                        "AND run_id NOT IN (SELECT run_id FROM run_lineage "
+                        "WHERE workspace_id=:workspace_id AND project_id=:project_id "
+                        "AND kind='entity_research')"
+                    ),
+                    {
+                        "account_id": authorization.subject_entity_id,
+                        "workspace_id": authorization.workspace_id,
+                        "project_id": authorization.project_id,
+                    },
+                )
+            ).scalar_one()
+            assert unattributed == 0
+            written_claims = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM claim "
+                        "WHERE entity_id=:account_id AND source_key='exa_deep'"
+                    ),
+                    {"account_id": authorization.subject_entity_id},
+                )
+            ).scalar_one()
+            assert written_claims > 0
 
     run_async(scenario())
 

@@ -142,8 +142,7 @@ def test_governed_provider_tool_returns_actionable_bounded_schema_feedback(
             for name in provider_names
         },
         engine_tools={
-            name: EntityResearchToolBinding(tool=_tool(name), version=1)
-            for name in engine_names
+            name: EntityResearchToolBinding(tool=_tool(name), version=1) for name in engine_names
         },
     )
     committee = next(

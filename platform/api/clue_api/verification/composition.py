@@ -58,11 +58,12 @@ from clue_research.verification import (
 
 def build_verification_phase_handler(
     *,
-    gateway: LLMGateway,
+    gateway: LLMGateway | None,
     account_resolver: VerificationAccountResolver,
     session_factory: ConnFactory = transaction,
     judge_policy: JudgePolicy = DEFAULT_JUDGE_POLICY,
     corroboration_policy: CorroborationPolicy = DEFAULT_CORROBORATION_POLICY,
+    verification_enabled: bool = True,
     govern_contacts: bool = True,
     health_sink: MetricSink | None = None,
 ) -> VerificationPhaseHandler:
@@ -73,12 +74,21 @@ def build_verification_phase_handler(
     reads all live fields for an entity in one tenant-scoped read. With ``govern_contacts`` set, the
     committee-contact resolver and the per-client use-gate provider are wired so personal hooks are
     governed; clear it for account-only verification."""
-    corroborator = Corroborator(
-        policy=corroboration_policy, conn_factory=session_factory, sink=health_sink
-    )
-    judge = FaithfulnessJudgeImpl(
-        gateway=gateway, policy=judge_policy, conn_factory=session_factory, sink=health_sink
-    )
+    if verification_enabled:
+        if gateway is None:
+            raise ValueError("enabled verification requires an LLM gateway")
+        corroborator: Corroborator | None = Corroborator(
+            policy=corroboration_policy, conn_factory=session_factory, sink=health_sink
+        )
+        judge: FaithfulnessJudgeImpl | None = FaithfulnessJudgeImpl(
+            gateway=gateway,
+            policy=judge_policy,
+            conn_factory=session_factory,
+            sink=health_sink,
+        )
+    else:
+        corroborator = None
+        judge = None
 
     async def load_claims(entity_id: EntityId, scope: WorkspaceScope) -> Sequence[Claim]:
         async with session_factory() as conn:
@@ -107,6 +117,7 @@ def build_verification_phase_handler(
         load_claims=load_claims,
         corroborator=corroborator,
         judge=judge,
+        verification_enabled=verification_enabled,
         contact_resolver=contact_resolver,
         use_gate_provider=use_gate_provider,
         health_sink=health_sink,
@@ -115,11 +126,12 @@ def build_verification_phase_handler(
 
 def register_verification_phase_handler(
     *,
-    gateway: LLMGateway,
+    gateway: LLMGateway | None,
     account_resolver: VerificationAccountResolver,
     session_factory: ConnFactory = transaction,
     judge_policy: JudgePolicy = DEFAULT_JUDGE_POLICY,
     corroboration_policy: CorroborationPolicy = DEFAULT_CORROBORATION_POLICY,
+    verification_enabled: bool = True,
     govern_contacts: bool = True,
     health_sink: MetricSink | None = None,
 ) -> VerificationPhaseHandler:
@@ -131,6 +143,7 @@ def register_verification_phase_handler(
         session_factory=session_factory,
         judge_policy=judge_policy,
         corroboration_policy=corroboration_policy,
+        verification_enabled=verification_enabled,
         govern_contacts=govern_contacts,
         health_sink=health_sink,
     )

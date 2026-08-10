@@ -47,6 +47,7 @@ from clue_research.durable.provider_spend import (
     require_provider_spend_capacity,
 )
 from clue_storage import FsStorage
+from tests._run_lineage import assert_run_registered
 from tests.api.account_deep_test_support import confirmed_account_research_direction
 from tests.api.test_account_deep_fixture_a1 import _pages
 from tests.db.conftest import run_async
@@ -172,6 +173,16 @@ def test_confirmed_direction_compiles_exact_account_fleet_without_provider_or_co
             assert tuple(selection["committee_source_keys"]) == ("sumble_people",)
             assert stored["concurrency_limit"] == 4
 
+            # FI-2 P2: the launched research run is attributed to its project at launch time.
+            await assert_run_registered(
+                conn,
+                projection.research_run_id,
+                kind="entity_research",
+                workspace_id=fixture.discovery_fixture.workspace_id,
+                project_id=fixture.discovery_fixture.project_id,
+                project_run_id=fixture.project_run_id,
+            )
+
             account_runs = await find_account_runs_for_entity(
                 conn,
                 project_run_id=fixture.project_run_id,
@@ -181,9 +192,7 @@ def test_confirmed_direction_compiles_exact_account_fleet_without_provider_or_co
             assert job.account_run_id == UUID(str(account_runs[0].id))
             assert account_runs[0].research_directive == pin
             assert account_runs[0].budget_cap_cents == Decimal("300")
-            stored_job = await DbEntityResearchJobStore(conn_factory=connection).get_job(
-                job.job_id
-            )
+            stored_job = await DbEntityResearchJobStore(conn_factory=connection).get_job(job.job_id)
             assert stored_job is not None
             assert await DbAccountResearchJobContextResolver(
                 conn_factory=connection

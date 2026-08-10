@@ -764,6 +764,7 @@ class SumbleDiscoveryGapResolver:
                 continue
             outcome = await self._materializer.materialize(
                 workspace_id=operation.request.workspace_id,
+                project_id=operation.request.project_id,
                 project_run_id=operation.request.project_run_id,
                 account_id=operation.request.account_id,
                 field_key=str(plan.field_key),

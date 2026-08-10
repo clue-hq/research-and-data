@@ -18,6 +18,7 @@ from clue_core import (
     FieldDef,
     IdentityBinding,
     PassKind,
+    ResearchScope,
     ReuseScope,
     RunId,
     SourceGate,
@@ -227,6 +228,11 @@ class IngestionProposalSink:
                 # An upload-discovered fact shape is tenant-private until a reviewer explicitly
                 # authors a broader replacement proposal. Never infer public reuse from a prompt.
                 reuse_scope=ReuseScope.TENANT_PRIVATE,
+                # Species is likewise stamped, not inferred (FI-2 P3): a `<pack>.*` field must
+                # declare one at authoring, and an upload never tells us the target is
+                # ICP/campaign-relative. Neutral is the safe answer (a wrong neutral costs a
+                # skipped re-spend, never a leak); a reviewer widens it deliberately.
+                research_scope=ResearchScope.PROJECT_NEUTRAL,
             ),
             description="Field shape nominated from an unmapped ingestion target",
             pack=field_namespace(target.field_key) if field_class is FieldClass.PACK else None,

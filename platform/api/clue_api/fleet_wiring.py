@@ -321,6 +321,7 @@ def build_multi_work_worker(
     driver: RunDriver,
     graph_handler: WorkHandler,
     entity_research_handler: WorkHandler | None = None,
+    agent_turn_handler: WorkHandler | None = None,
     design_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
@@ -330,6 +331,11 @@ def build_multi_work_worker(
 
     R2 adds only the composition seam.  Production deliberately omits the optional handler until
     R3 supplies the governed ``create_agent()`` driver, preserving R1's fail-loud quarantine.
+
+    ``agent_turn_handler`` (Lane D D2) is optional for the same reason: a deployment with chat
+    disabled composes no conversation engine and nothing enqueues ``agent_turn`` tasks, so the
+    worker simply never offers that kind. Each kind gets its own keyword and its own guard rather
+    than a registry, so a handler wired to the wrong queue is a composition-time error.
 
     ``design_handler`` (Part II D5 Round B) joins on exactly the same terms: optional, kind-checked
     here so a wiring mistake fails at construction rather than at claim time, and off unless
@@ -342,6 +348,8 @@ def build_multi_work_worker(
         and entity_research_handler.kind is not FleetTaskKind.ENTITY_RESEARCH_JOB
     ):
         raise ValueError("entity_research_handler must own entity_research_job tasks")
+    if agent_turn_handler is not None and agent_turn_handler.kind is not FleetTaskKind.AGENT_TURN:
+        raise ValueError("agent_turn_handler must own agent_turn tasks")
     if design_handler is not None and design_handler.kind is not FleetTaskKind.DESIGN_JOB:
         raise ValueError("design_handler must own design_job tasks")
     handlers = [
@@ -350,6 +358,8 @@ def build_multi_work_worker(
     ]
     if entity_research_handler is not None:
         handlers.append(entity_research_handler)
+    if agent_turn_handler is not None:
+        handlers.append(agent_turn_handler)
     if design_handler is not None:
         handlers.append(design_handler)
     return LeasedWorkWorker(

@@ -53,7 +53,9 @@ from clue_research.stage0 import (
     assemble_lookalike_seeds,
     confirm_icp,
 )
+from clue_research.stage0.seeds import seeds_run_id
 from clue_research.stage0.types import ClientKnowledgeBaseRef
+from tests._run_lineage import assert_written_claims_are_attributable
 from tests.stage0._fakes import (
     build_client_kb,
     build_confirmed_icp,
@@ -565,5 +567,33 @@ def test_reassembly_is_stable() -> None:
             ]
             assert len(seed_markers) == 1
             assert first.seeds[0].justifying_claim_ids == second.seeds[0].justifying_claim_ids
+
+    run_async(_run())
+
+
+def test_seed_assembly_registers_its_run_in_run_lineage() -> None:
+    """FI-2 P2: the seed-provenance markers back-join to a workspace-level stage-0 run."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            icp = await build_confirmed_icp_on_field(
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
+            )
+            cust = await _account(conn, "lineage", domain="lineage-cust.example")
+            await _write_field(conn, cust, _EMP, 250)
+            kb = await _kb_with_customers(
+                conn, "lineage", [{"name": "Cust Co", "domain": "lineage-cust.example"}]
+            )
+
+            seeds = await assemble_lookalike_seeds(conn, icp, kb)
+            assert seeds.seed_count == 1
+
+            await assert_written_claims_are_attributable(
+                conn,
+                seeds_run_id(_CLIENT, icp),
+                kind="stage0",
+                workspace_id=_CLIENT,
+                project_id=None,
+            )
 
     run_async(_run())

@@ -31,6 +31,7 @@ from clue_config.gateway import (
     DEFAULT_GATEWAY_CONFIG,
     GatewayConfig,
     ModelPrice,
+    ReasoningRequest,
     default_gateway_config,
 )
 from clue_config.loader import (
@@ -142,6 +143,7 @@ __all__ = [
     # llm-gateway config (the model-egress policy-as-data; client in clue_gateway)
     "GatewayConfig",
     "ModelPrice",
+    "ReasoningRequest",
     "DEFAULT_GATEWAY_CONFIG",
     "default_gateway_config",
     # deploy-time settings (non-secret env)

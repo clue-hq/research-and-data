@@ -18,6 +18,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import cast
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -83,7 +84,12 @@ from clue_research.adapters.exa_websets import (
     ExaWebsetStatus,
     normalize_exa_discovery_company_item,
 )
-from clue_research.claimstore import WorkspaceScope, claims_for, load_core_pack
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_for,
+    load_core_pack,
+    record_run_lineage,
+)
 from clue_research.discovery_scoring.discovery import REVENUE_BAND_OPTIONS
 from clue_research.discovery_scoring.tiering import TIER_FIELD
 from clue_research.durable import (
@@ -1193,6 +1199,18 @@ class ExaTargetedEnrichmentCoordinator:
                 )
             await load_core_pack(conn)
             await seed_source_manifests(conn)
+            # FI-2 P2 (spec §3): every enrichment claim written below is stamped with the project
+            # run itself as its ``run_id``, so that is the id the project lens must resolve.
+            # Registered once here — before the per-target loop, in the same transaction as its
+            # writes. Idempotent, so a re-reconciled operation re-registers harmlessly.
+            await record_run_lineage(
+                conn,
+                run_id=UUID(str(operation.request.project_run_id)),
+                workspace_id=operation.request.workspace_id,
+                kind="enrichment",
+                project_id=operation.request.project_id,
+                project_run_id=UUID(str(operation.request.project_run_id)),
+            )
             for target, item, company_properties, item_bytes in prepared:
                 if (
                     await surviving_id(conn, target.account_id, EntityType.ACCOUNT)

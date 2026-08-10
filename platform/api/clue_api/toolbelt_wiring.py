@@ -12,7 +12,7 @@ The registered set (spec §2 slice 2) with each tool's precondition reason codes
 
 * setup / stage-0 — ``reverse_profile`` (none), ``synthesize_icps`` (``no_client_kb``),
   ``confirm_icp`` (``no_client_kb``), ``import_accounts`` (``no_active_icp``, ``invalid_entity_id``,
-  ``no_client_kb``);
+  ``no_client_kb``, ``project_not_found``);
 * discovery / scoring — ``discover_accounts`` (``run_not_found``, ``icp_version_missing``),
   ``score_accounts`` (``run_not_found``, ``discovery_not_run``), ``submit_tier_checkpoint``
   (``run_not_found``, ``checkpoint_not_awaiting``);
@@ -63,7 +63,9 @@ from uuid import UUID
 from pydantic import Field, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.agent_gate_wiring import register_agent_gate_tools
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.auth_tool_context import require_human_authority
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.composition import build_pre_spend_gate
 from clue_api.contact_content_handoff import ContactContentHandoffService
@@ -112,6 +114,7 @@ from clue_api.sumble_account_gaps import (
     SumbleAccountGapEligibilityError,
     SumbleAccountGapResult,
 )
+from clue_api.thread_wiring import register_thread_tools
 from clue_api.tool_outputs import (
     AccountDeepLaunchOutput,
     AccountGapEnrichmentOutput,
@@ -317,6 +320,11 @@ class ImportAccountsInput(ToolInput):
     client_entity_id: str
     icp_key: str
     rows: list[ImportRow]
+    # FI-2 H3 (spec §8.3): the project this list is being imported *into*. ``ToolContext`` carries
+    # workspace + actor + operation but no project, and import is not run-scoped, so the project
+    # cannot be derived from context — it has to be an input. Optional: omitted, the import is
+    # workspace-level and the accounts join no project's target list (today's behaviour).
+    project_id: str | None = None
 
 
 class DiscoverAccountsInput(ToolInput):
@@ -760,7 +768,15 @@ class ImportAccountsTool(_CapabilityTool):
         external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
     )
     effect_class = ToolEffectClass.SPEND
-    parameter_policy = JournalParameterPolicy(safe_display_fields=("client_entity_id", "icp_key"))
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("client_entity_id", "icp_key", "project_id")
+    )
+    # FI-2 H3: ``project`` is deliberately NOT pinned even though ``project_id`` is now an input.
+    # The parameter is *optional* — a workspace-level import with no project is a supported, tested
+    # shape — and ``pin_requirements`` is an all-or-nothing availability check (Recipe 1 refuses the
+    # tool when a required pin has no value), so declaring it would make every legitimately
+    # projectless import unavailable. The project is instead validated per call in ``preconditions``
+    # (typed ``project_not_found``, workspace-scoped) and journalled via ``safe_display_fields``.
     pin_requirements = ("client_kb", "icp", "source_registry")
 
     async def preconditions(
@@ -780,11 +796,18 @@ class ImportAccountsTool(_CapabilityTool):
             return _fail("invalid_entity_id", "client_entity_id is not a valid entity id")
         async with ctx.conn_factory() as conn:
             version = await current_kb_version(conn, entity, workspace_id=ctx.workspace_id)
-        if version is None:
-            return _fail(
-                "no_client_kb",
-                "no Client Knowledge Base for this client — run reverse_profile first",
-            )
+            if version is None:
+                return _fail(
+                    "no_client_kb",
+                    "no Client Knowledge Base for this client — run reverse_profile first",
+                )
+            # The capability refuses an unowned project with ImportProjectNotFound; checking it
+            # here keeps the refusal typed and machine-readable rather than a raised traceback, and
+            # fails closed on another workspace's project exactly like _load_run / _load_account.
+            if inputs.project_id is not None:
+                project = await get_project(conn, inputs.project_id)
+                if project is None or project.workspace_id != ctx.workspace_id:
+                    return _fail("project_not_found", "no such project")
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
@@ -804,6 +827,7 @@ class ImportAccountsTool(_CapabilityTool):
                 workspace_id=ctx.workspace_id,
                 client_entity_id=entity,
                 import_batch_id=f"operation-{ctx.operation_id}",
+                project_id=inputs.project_id,
                 pre_spend_gate=self._pre_spend_gate,
             )
         return ToolResult(
@@ -2058,11 +2082,15 @@ class ApproveContactResearchSelectionTool(Tool):
         ctx: ToolContext,
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ApproveContactResearchSelectionInput)
-        if ctx.actor != "human":
-            return _fail(
-                "human_required",
-                "only a human can approve a contact-research selection successor",
-            )
+        authority = require_human_authority(
+            ctx,
+            action_ref_required=True,
+            message=(
+                "selection approval requires authenticated human identity and action reference"
+            ),
+        )
+        if authority:
+            return authority
         if ctx.actor_id is None or ctx.action_ref is None:
             return _fail(
                 "trusted_human_receipt_required",
@@ -2187,11 +2215,12 @@ class RunVerificationTool(_CapabilityTool):
         assert spec is not None
         handler = self._wrap_snapshots(
             build_verification_phase_handler(
-                gateway=self._require_gateway(),
+                gateway=self._gateway,
                 account_resolver=build_high_tier_resolver(
                     spec=spec, session_factory=self._conn_factory
                 ),
                 session_factory=self._conn_factory,
+                verification_enabled=self._settings.verification_enabled,
             )
         )
         result = await handler.run(self._phase_ctx(run, ProjectPhase.VERIFICATION))
@@ -2201,6 +2230,7 @@ class RunVerificationTool(_CapabilityTool):
             references={
                 "status": result.status.value,
                 "accounts_processed": result.accounts_processed,
+                "verification_enabled": result.payload.get("verification_enabled", True),
             },
         )
 
@@ -2619,7 +2649,7 @@ def build_toolbelt(
     )
     entailment_judge = (
         None
-        if gateway is None
+        if gateway is None or not resolved_settings.verification_enabled
         else FaithfulnessClaimEntailmentJudge(
             judge=FaithfulnessJudgeImpl(gateway=gateway, conn_factory=conn_factory)
         )
@@ -2752,6 +2782,13 @@ def build_toolbelt(
     )
     registry.register(SubmitIngestionTool(ingestion_engine), make_default=True)
     registry.register(RetryIngestionTool(ingestion_engine), make_default=True)
+    # FI Lane D D0 / REQ-21: thread CRUD is a governed tool set like everything else that mutates
+    # durable state (Doc A — the toolbelt is the only write path), registered from its own wiring
+    # module per the chokepoint protocol.
+    register_thread_tools(registry, conn_factory=conn_factory)
+    # FI Lane D D4 / §3-P5(a): the durable confirmation gate is opened through a governed tool for
+    # the same reason, and from its own wiring module for the same one.
+    register_agent_gate_tools(registry, conn_factory=conn_factory)
     for tool in stage0_tools(
         conn_factory=conn_factory,
         policy=DEFAULT_STAGE0_POLICY,

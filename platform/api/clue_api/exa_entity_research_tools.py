@@ -53,7 +53,11 @@ from clue_core.entity_research import (
     ResearchFieldResultProjection,
     ResearchSubjectType,
 )
-from clue_research.claimstore import FieldRegistryScope, get_effective_field
+from clue_research.claimstore import (
+    FieldRegistryScope,
+    get_effective_field,
+    record_run_lineage,
+)
 from clue_research.durable.external_research import ExternalResearchOperationRow
 from clue_research.identity import get_account
 from clue_research.resolvers.exa import (
@@ -953,6 +957,20 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
                 f"{request.research_run_id}:{request.tool_call_id}",
             )
         )
+        # FI-2 P2 (spec §3): this derived per-tool-call run — not the launch ``research_run_id`` —
+        # is what every claim below carries, so it is the id the project lens must resolve. The
+        # field loop takes one connection per field, so there is no single transaction to join;
+        # registering first is the safe direction (a run that wrote nothing is inert, an
+        # unattributable claim is not). Idempotent, so a replayed tool call re-registers harmlessly.
+        async with self._conn_factory() as conn:
+            await record_run_lineage(
+                conn,
+                run_id=run_id,
+                workspace_id=self._workspace_id,
+                kind="entity_research",
+                project_id=self._project_id,
+                project_run_id=UUID(str(self._project_run_id)),
+            )
         with bind_resolver_overrides({SOURCE_KEY: resolver}):
             for effective in effective_fields:
                 async with self._conn_factory() as conn:

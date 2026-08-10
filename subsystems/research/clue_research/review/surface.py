@@ -39,6 +39,7 @@ from clue_core import (
     ReviewSession,
     ReviewSessionStatus,
     ReviewSurface,
+    RunId,
     VerificationStatus,
     classify_field_key,
     new_run_id,
@@ -50,13 +51,19 @@ from clue_core.review import (
     VerificationAnnotationReader,
 )
 from clue_db import ConnFactory
-from clue_research.claimstore import WorkspaceScope, claims_by_ids, supersede_claim
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_by_ids,
+    record_run_lineage,
+    supersede_claim,
+)
 from clue_research.review.projection import ReviewProjector
 from clue_research.review.repository import (
     count_open_sessions,
     ensure_review_session,
     finalize_review_session,
     get_review_session,
+    project_id_for_run,
     record_review_action,
 )
 
@@ -89,7 +96,9 @@ def _research_mode(entity_type: EntityType) -> ResearchMode:
     )
 
 
-def _build_correction(target: Claim, corrected_value: JsonValue, *, note: str | None) -> Claim:
+def _build_correction(
+    target: Claim, corrected_value: JsonValue, *, run_id: RunId, note: str | None
+) -> Claim:
     """A ``human``, tier-1, VERIFIED claim that supersedes ``target`` and wins ``current_value``.
 
     tier-1 is required (``merge._winner`` ranks by tier and does not privilege HUMAN). A
@@ -106,7 +115,7 @@ def _build_correction(target: Claim, corrected_value: JsonValue, *, note: str | 
         extraction_method=ExtractionMethod.HUMAN,
         evidence_span=note or "human review correction",
         confidence=1.0,
-        run_id=new_run_id(),
+        run_id=run_id,
         research_mode=_research_mode(target.entity_type),
         verification_status=VerificationStatus.VERIFIED,
         identity_binding=(IdentityBinding.STRONG if is_facet else target.identity_binding),
@@ -117,7 +126,9 @@ def _build_correction(target: Claim, corrected_value: JsonValue, *, note: str | 
     )
 
 
-def _build_reject(target: Claim, *, reason: ReviewRejectReason, note: str | None) -> Claim:
+def _build_reject(
+    target: Claim, *, reason: ReviewRejectReason, run_id: RunId, note: str | None
+) -> Claim:
     """A ``REJECTED`` redacted claim that supersedes ``target`` so ``merge._is_eligible`` drops it —
     the field returns empty (a correct output) unless another eligible claim wins. Models
     ``dsar.build_tombstone``; a ``contact.facet.*`` reject carries WEAK binding (a second
@@ -133,7 +144,7 @@ def _build_reject(target: Claim, *, reason: ReviewRejectReason, note: str | None
         extraction_method=ExtractionMethod.HUMAN,
         evidence_span=span,
         confidence=0.0,
-        run_id=new_run_id(),
+        run_id=run_id,
         research_mode=_research_mode(target.entity_type),
         verification_status=VerificationStatus.REJECTED,
         identity_binding=(IdentityBinding.WEAK if is_facet else target.identity_binding),
@@ -222,19 +233,42 @@ class ReviewSurfaceImpl:
             superseding_id: ClaimId | None = None
             row_reason: ReviewRejectReason | None = None
             row_corrected: JsonValue | None = None
+            if action in {ReviewAction.CORRECT, ReviewAction.REJECT}:
+                # FI-2 P2 (spec §3): a human action mints its own one-claim run, so "register at
+                # the mint site" is per action here — one lineage row per correction/reject, not a
+                # registration inside a write loop. Minted once for the action and registered in
+                # the same transaction as the superseding claim below, attributed to the session's
+                # project run. ``approve`` writes no claim, so it mints and registers nothing.
+                #
+                # ``review_session.project_run_id`` is a *soft* FK (no REFERENCES, mirroring
+                # ``claim``), so the run row may legitimately be absent. When it is, the action is
+                # recorded as a workspace-level ``manual`` run rather than failing: a human
+                # correction must never be blocked by a lineage-attribution lookup.
+                run_id = new_run_id()
+                run_project_id = await project_id_for_run(conn, row.project_run_id)
+                await record_run_lineage(
+                    conn,
+                    run_id=run_id,
+                    workspace_id=row.workspace_id,
+                    kind="manual",
+                    project_id=run_project_id,
+                    project_run_id=(row.project_run_id if run_project_id is not None else None),
+                )
             if action is ReviewAction.CORRECT:
                 if corrected_value_json is None:
                     raise ReviewError("a correction requires corrected_value_json")
                 row_corrected = corrected_value_json
                 superseding_id = await supersede_claim(
-                    conn, target.id, _build_correction(target, corrected_value_json, note=note)
+                    conn,
+                    target.id,
+                    _build_correction(target, corrected_value_json, run_id=run_id, note=note),
                 )
             elif action is ReviewAction.REJECT:
                 row_reason = reason_code or ReviewRejectReason.OTHER
                 superseding_id = await supersede_claim(
                     conn,
                     target.id,
-                    _build_reject(target, reason=row_reason, note=note),
+                    _build_reject(target, reason=row_reason, run_id=run_id, note=note),
                     validate_field=False,
                 )
 
