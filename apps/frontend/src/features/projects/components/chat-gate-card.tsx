@@ -19,10 +19,14 @@ import styles from "./project-flow.module.css";
  * answer is a durable receipt rather than a card that disappears.
  *
  * `unavailable` is the honest fourth state. A gate can only be answered by
- * echoing back the subject digest and the server-derived maximum spend; when
- * this deployment served neither, the card shows the request, disables the
- * controls, and says why — instead of offering a button whose click the server
- * would refuse.
+ * echoing back the subject digest; when this deployment served none, the card
+ * shows the request, disables the controls, and says why — instead of offering
+ * a button whose click the server would refuse.
+ *
+ * The cost line is conditional and stays conditional. `formatCents` returns
+ * null for a null amount — it never coerces to `0` — so a gate whose amount was
+ * withheld (pilot budget controls off) renders *no* cost row: no `$0.00`, no
+ * empty currency, no dash standing in for a number nobody may see.
  */
 
 const DECISION_COPY: Record<GateDecision, string> = {

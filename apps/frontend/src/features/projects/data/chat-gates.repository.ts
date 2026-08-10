@@ -40,7 +40,7 @@ export interface ChatGatesRepository {
 
 const UNSERVED =
   "this deployment serves no durable gate read, so the approval card cannot " +
-  "send the subject digest and maximum spend the server requires";
+  "send the subject digest the server requires";
 
 export function createHttpChatGatesRepository(
   transport: Extract<ChatTransport, { mode: "http" }>,

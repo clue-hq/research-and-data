@@ -12,7 +12,10 @@ import {
  * **Why this is a repository read and not just the stream part.** A gate is
  * answered by echoing back exactly what was on the screen: `gate_response`
  * requires `expected_subject_sha256` and `expected_estimated_cost_cents`, and
- * the server refuses anything that does not match the immutable gate row. The
+ * the server refuses anything that does not match the immutable gate row —
+ * except that with the pilot's budget controls off the amount never reaches the
+ * card, so the server stops checking the cost echo and the subject digest is
+ * the whole stale-approval guard (`chat/router.py::_gate_for_answer`). The
  * `gate` part the turn stream currently emits carries only the ref, the kind
  * and `state="requested"` (`conversation_turns.py::_project_turn_close` passes
  * nothing else), so the stream alone cannot produce an answerable card. The
@@ -51,7 +54,13 @@ const GateWireSchema = z.object({
   subject_revision: z.number().int().nullable().default(null),
   expected_subject_sha256: z.string(),
   subject_snapshot: z.record(z.string(), z.unknown()).default({}),
-  max_spend_cents: z.union([z.number(), z.string()]),
+  // Optional because the amount is *withheld*, not missing: with the pilot's
+  // `CLUE_BUDGET_CONTROLS_ENABLED` off no cost number may reach a human
+  // surface, so the route serves `null` while the immutable gate row keeps its
+  // `max_spend_cents`. Null rather than `"0"`/`""` deliberately — a withheld
+  // amount must never be readable as a real one, and the card must render no
+  // cost row at all rather than a fabricated zero.
+  max_spend_cents: z.union([z.number(), z.string()]).nullish().default(null),
   currency: z.string(),
   addressee_user_id: z.string(),
   created_at: z.string(),
@@ -149,9 +158,10 @@ export function isGateOpen(gate: ChatGate): boolean {
  * shows when the transcript knows a gate exists (the stream said so, or a
  * message carries an `open_gate` ref) but the durable payload could not be
  * read. The card then renders the request with its controls **disabled** and
- * says why, because an approve button that cannot send the required digest and
- * amount would refuse at the server anyway — and a card that guessed them would
- * be worse.
+ * says why, because an approve button that cannot send the required subject
+ * digest would refuse at the server anyway — and a card that guessed it would
+ * be worse. A withheld *amount* is not that case: it is the pilot's normal
+ * posture and leaves the card fully answerable.
  */
 export type GateCardState =
   | "requested"
@@ -231,8 +241,14 @@ export function gateCardModel({
   const decision =
     decisionOf(gate?.answer?.decision ?? null) ?? decisionOf(part?.decision ?? null);
 
-  const answerable =
-    expectedSubjectSha256 !== null && amountCents !== null && decision === null;
+  // The subject digest alone decides answerability. It is the load-bearing
+  // stale-approval guard in both deployment postures, whereas the amount is
+  // absent by design whenever budget controls are off — requiring it here would
+  // make every pilot gate permanently unanswerable. A card that reached us with
+  // a digest but no amount while controls are *on* is the rare read-failure
+  // case; it stays clickable and the server answers with `GATE_AMOUNT_STALE`
+  // rather than the client guessing which posture the deployment is in.
+  const answerable = expectedSubjectSha256 !== null && decision === null;
 
   let state: GateCardState;
   if (decision === "approved") state = "responded";
@@ -262,7 +278,7 @@ export function gateCardModel({
     unavailableReason:
       state === "unavailable"
         ? (unavailableReason ??
-          "this deployment did not serve the gate's spend limit and subject digest")
+          "this deployment did not serve the gate's subject digest")
         : null,
     launches: gate?.launches ?? [],
   };

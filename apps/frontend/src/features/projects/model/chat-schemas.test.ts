@@ -271,6 +271,16 @@ test("a gate parses its decimal spend and derives open from the missing answer",
   assert.equal(formatCents(24000, "USD"), "$240.00");
 });
 
+test("a gate whose amount was withheld parses, and formats no cost at all", () => {
+  const [gate] = ChatGateListResponseSchema.parse({
+    data: [{ ...fixtureGates[0], max_spend_cents: null }],
+  });
+  assert.equal(gate.maxSpendCents, null);
+  assert.equal(isGateOpen(gate), true);
+  // Never "$0.00": a withheld amount must not be readable as a real one.
+  assert.equal(formatCents(gate.maxSpendCents, gate.currency), null);
+});
+
 test("every part kind round-trips from its wire snapshot", () => {
   const tool = ChatPartSnapshotSchema.parse({
     part_id: "tool:x",

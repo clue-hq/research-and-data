@@ -34,6 +34,19 @@ test("a durable gate makes the card answerable", () => {
   assert.deepEqual(card.permittedDecisions, ["approved", "rejected", "revised"]);
 });
 
+test("a durable gate with a withheld amount is still answerable, with no cost", () => {
+  // The pilot posture (`CLUE_BUDGET_CONTROLS_ENABLED` off): the amount stays on
+  // the immutable row and never crosses. The digest does, so the card works.
+  const card = gateCardModel({
+    gate: { ...openGate, maxSpendCents: null },
+    part: part(),
+  });
+  assert.ok(card);
+  assert.equal(card.state, "requested");
+  assert.equal(card.amountCents, null);
+  assert.equal(card.unavailableReason, null);
+});
+
 test("a part with no durable payload is unavailable, not answerable", () => {
   const card = gateCardModel({ gate: null, part: part() });
   assert.ok(card);

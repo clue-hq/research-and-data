@@ -170,6 +170,28 @@ network failure. Presentation components do not call the API directly.
   explicit persistent artifact root. Both report the normalized root at
   startup; database clones cannot be reused independently of their blobs.
 
+### Pilot budget-controls — gate amount is optional (2026-08-11)
+
+- The gate amount is **optional on every human-visible surface**. With the
+  deployment switch `CLUE_BUDGET_CONTROLS_ENABLED` off (the pilot posture,
+  `docs/specs/FI-pilot-budget-controls.md`), `GET …/threads/:threadId/gates`
+  serves `max_spend_cents: null` and the rich `gate` stream part omits
+  `amount_cents` and `currency`. The amount is withheld, not missing: it stays
+  on the immutable gate row for audit and integrity.
+- Null rather than `"0"` or `""`, deliberately — a withheld amount must never be
+  readable as a real one. The frontend schema accepts null/absent and the
+  approval card renders **no cost row at all**: no `$0.00`, no empty currency,
+  no dash standing in for a number nobody may see.
+- The amount does not gate answerability. `expected_subject_sha256` is the one
+  field that makes a card answerable in both postures; a card missing only the
+  amount stays clickable.
+- The answer still sends `expected_estimated_cost_cents` (the field is required
+  by `GateResponseRequest` and no tool/route schema changed), but with controls
+  off the server does **not** validate it — `GATE_AMOUNT_STALE` is unreachable
+  in that mode. The `expected_subject_sha256` digest check remains armed in both
+  modes and is the load-bearing stale-approval guard. When the amount was
+  withheld the client sends `0` purely as the courier value.
+
 ## Ownership model
 
 ```text

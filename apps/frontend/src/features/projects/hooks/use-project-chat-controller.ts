@@ -484,13 +484,13 @@ export function useProjectChatController({
   const answerGate = useCallback(
     async (card: GateCardModel, decision: GateDecision) => {
       if (!activeThreadId) return;
-      if (card.expectedSubjectSha256 === null || card.amountCents === null) {
-        // Structurally unanswerable: the two `expected*` fields are what make
-        // "approve" mean the card that was on the screen, and the server
-        // refuses anything else. Say so rather than sending a guess.
+      if (card.expectedSubjectSha256 === null) {
+        // Structurally unanswerable: the subject digest is what makes "approve"
+        // mean the card that was on the screen, and the server refuses anything
+        // else. Say so rather than sending a guess.
         setError(
           card.unavailableReason ??
-            "this gate cannot be answered without its subject digest and maximum spend",
+            "this gate cannot be answered without its subject digest",
         );
         return;
       }
@@ -505,7 +505,11 @@ export function useProjectChatController({
               gateId: card.gateId,
               decision,
               expectedSubjectSha256: card.expectedSubjectSha256,
-              expectedEstimatedCostCents: card.amountCents,
+              // The courier half of staleness. When the amount was withheld
+              // (pilot budget controls off) there is no number to echo and the
+              // server does not check this field; `0` is the placeholder that
+              // travels, never a figure shown to anyone.
+              expectedEstimatedCostCents: card.amountCents ?? 0,
             },
           },
           idempotencyKey: newIdempotencyKey(`gate:${card.gateId}:${decision}`),
