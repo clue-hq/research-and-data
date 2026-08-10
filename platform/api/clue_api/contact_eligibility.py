@@ -176,10 +176,10 @@ class EntityResearchCoverageReferenceSource:
     """M8D: the latest human-confirmed account-research fleet run's own coverage output.
 
     Applicability has two conditions, and the second is not pedantry.  The run must exist (R11 §6c
-    latest-wins, workspace-scoped — the same read the DEEP adapter and the verification selector
-    use), **and** it must have published at least one account coverage row.  A fleet run that has
-    produced no coverage at all has not yet spoken about a single account, so treating it as the
-    authority would silently blank a committee that a previous, completed pass legitimately
+    latest-wins, workspace-scoped — resolved through the same shared rule the DEEP adapter and the
+    verification selector use), **and** it must have published at least one coverage row.  A run
+    that produced no coverage at all has not yet spoken about a single account, so treating it as
+    the authority would silently blank a committee that a previous, completed pass legitimately
     resolved.  Once the run *has* published, it is the authority for every account in its
     selection: an account with no coverage row was not researched by it, and the honest answer is
     an empty committee rather than a fall-back to a source this run supersedes.
