@@ -434,9 +434,15 @@ class ComposingRunDriver:
         registry.register(deep)
 
         # VERIFICATION — the same researched-account resolver instance the HANDOFF sweep uses.
+        # ``session_factory`` is threaded like every sibling registration: the corroborator, the
+        # judge, the live-claims loader and the use-gate all read/write through the driver's
+        # durable seam rather than the process default. Production is unchanged (the driver's
+        # default *is* ``transaction``); what it fixes is a composition driven with an injected
+        # factory, where VERIFICATION alone used to reach past it to a different connection.
         verification = build_verification_phase_handler(
             gateway=self._gateway,
             account_resolver=researched_account_resolver,
+            session_factory=self._session_factory,
             verification_enabled=self._settings.verification_enabled,
         )
         registry.register(verification)
