@@ -75,9 +75,7 @@ class CandidateProfessionalFact(BaseModel):
     @model_validator(mode="after")
     def _field_is_professional(self) -> CandidateProfessionalFact:
         if str(self.field_key) not in CONTACT_PROFESSIONAL_FIELD_KEYS:
-            raise ValueError(
-                f"committee professional fact uses unfrozen field {self.field_key!r}"
-            )
+            raise ValueError(f"committee professional fact uses unfrozen field {self.field_key!r}")
         return self
 
 

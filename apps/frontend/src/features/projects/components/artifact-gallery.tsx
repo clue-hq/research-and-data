@@ -62,7 +62,7 @@ export function ArtifactGallery({
   onGalleryQueryChange,
   onGroupByAccountChange,
   onOpenArtifact,
-  showSkeletons,
+  showSkeletons = false,
 }: {
   artifacts: ProjectArtifact[];
   artifactFilter: ArtifactFilter;
@@ -76,7 +76,8 @@ export function ArtifactGallery({
   onGalleryQueryChange: (query: string) => void;
   onGroupByAccountChange: (grouped: boolean) => void;
   onOpenArtifact: (artifactId: string) => void;
-  showSkeletons: boolean;
+  /** Placeholder tiles while a generation run is producing. */
+  showSkeletons?: boolean;
 }) {
   return (
     <section className={styles.gallerySurface}>

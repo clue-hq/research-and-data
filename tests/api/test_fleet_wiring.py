@@ -185,6 +185,38 @@ def test_multi_worker_accepts_one_optional_subject_neutral_entity_handler() -> N
         )
 
 
+def test_multi_worker_accepts_one_optional_agent_turn_handler() -> None:
+    """FI Lane D D2: the conversation drain is optional and kind-guarded like its neighbours.
+
+    Optional because a deployment with chat disabled composes no conversation engine and nothing
+    enqueues ``agent_turn`` tasks; kind-guarded because a handler wired to the wrong queue must be
+    a composition-time error, not a silently mis-drained kind.
+    """
+
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    turns = _CompositionHandler(FleetTaskKind.AGENT_TURN)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        agent_turn_handler=turns,
+        worker_id="shared-worker",
+    )
+    assert set(worker._handlers) == {
+        FleetTaskKind.DRIVE_RUN,
+        FleetTaskKind.EXECUTE_GRAPH,
+        FleetTaskKind.AGENT_TURN,
+    }
+
+    with pytest.raises(ValueError, match="must own agent_turn"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            agent_turn_handler=graph,
+        )
+
+
 # --- the resume-surface helper (spec §2.4): re-driving is a fresh enqueue_drive -------------------
 
 

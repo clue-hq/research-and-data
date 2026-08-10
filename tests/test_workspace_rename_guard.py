@@ -37,7 +37,14 @@ _FORBIDDEN = re.compile(r"(?<![A-Za-z0-9])(tenant_id|client_id)(?![A-Za-z0-9])")
 _ALLOWLIST: frozenset[tuple[str, str]] = frozenset()
 
 _SCAN_DIRS = ("subsystems", "platform", "libs", "scripts", "tests")
-_SKIP_DIR_NAMES = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "node_modules"}
+_SKIP_DIR_NAMES = {
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "node_modules",
+    ".context",  # gitignored Conductor session data (attachments may quote e.g. oauth client_id)
+}
 _SKIP_SUFFIXES = {".pyc", ".so", ".whl", ".png", ".jpg", ".gif", ".ico", ".lock"}
 
 

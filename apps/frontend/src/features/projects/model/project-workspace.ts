@@ -16,9 +16,15 @@ export const ProjectModelOptionSchema = z.object({
   shortLabel: z.string().min(1),
 });
 
-export const ProjectThreadSchema = z.object({
+export const ProjectBrandSchema = z.object({
   id: z.string().min(1),
-  title: z.string().min(1),
+  name: z.string().min(1),
+});
+
+export const ProjectComposerCapabilitiesSchema = z.object({
+  attachments: z.boolean(),
+  contextRefs: z.boolean(),
+  agentProfileSelection: z.boolean(),
 });
 
 export const ProjectWebsiteContentSchema = z.object({
@@ -61,48 +67,6 @@ export const ProjectArtifactSchema = z.object({
   websiteContent: ProjectWebsiteContentSchema.optional(),
 });
 
-export const GenerationStepSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  logoPath: z.string().startsWith("/"),
-  note: z.string().min(1),
-  progress: z.number().min(0).max(100),
-});
-
-export const ProjectPreviewTimelineSchema = z.object({
-  agentRunningMs: z.number().int().positive(),
-  conversationToQuestionnaireMs: z.number().int().positive(),
-  generationMilestones: z.array(z.object({
-    delayMs: z.number().int().positive(),
-    progress: z.number().min(0).max(100),
-  })).min(1),
-  generationStartProgress: z.number().min(0).max(100),
-});
-
-const ReasoningTagSchema = z.object({
-  label: z.string().min(1),
-  logoPath: z.string().startsWith("/").optional(),
-});
-
-export const ProjectReasoningTraceSchema = z.object({
-  profile: z.object({
-    caption: z.string().min(1),
-    detail: z.string().min(1),
-    imageAlt: z.string().min(1),
-    imagePath: z.string().startsWith("/"),
-    label: z.string().min(1),
-  }),
-  recentSearch: z.object({
-    label: z.string().min(1),
-    tags: z.array(ReasoningTagSchema).min(1),
-  }),
-  targetSearch: z.object({
-    label: z.string().min(1),
-    tags: z.array(ReasoningTagSchema).min(1),
-  }),
-  title: z.string().min(1),
-});
-
 export const ProjectQuestionChoiceSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -127,81 +91,248 @@ export const ProjectQuestionnaireSchema = z.object({
   title: z.string().min(1),
 });
 
-export const ProjectHomeSchema = z.object({
-  entities: z.array(ProjectEntitySchema),
-  models: z.array(ProjectModelOptionSchema).min(1),
-  suggestions: z.array(z.string().min(1)).length(3),
-  suggestedProjectId: z.string().min(1),
-  suggestedThreadId: z.string().min(1),
-});
-
-export const ProjectWorkspaceSchema = z.object({
-  artifacts: z.array(ProjectArtifactSchema),
-  contextEntities: z.array(ProjectEntitySchema),
-  defaultModelId: z.string().min(1),
-  conversationActivity: z.object({
-    sources: z.array(z.object({
-      href: z.string().url(),
-      id: z.string().min(1),
-      label: z.string().min(1),
-      logoPath: z.string().startsWith("/").optional(),
-    })).min(1),
-    tools: z.array(z.object({
-      id: z.string().min(1),
-      input: z.record(z.string(), z.unknown()).optional(),
-      output: z.string().min(1).optional(),
-      title: z.string().min(1),
-    })).min(2),
-  }),
-  conversationCopy: z.object({
-    agentRunningLabel: z.string().min(1),
-    assistantName: z.string().min(1),
-    beforeQuestionnaire: z.array(z.string().min(1)).min(1),
-    buildingAccepted: z.string().min(1),
-    buildingLabel: z.string().min(1),
-    initialReasoning: z.string().min(1),
-    planCardLabel: z.string().min(1),
-    planCreated: z.string().min(1),
-    planStarting: z.string().min(1),
-    questionnaireCardLabel: z.string().min(1),
-    reasoningLabel: z.string().min(1),
-  }),
-  generationCopy: z.object({
-    completeCreditsLabel: z.string().min(1),
-    completeLabel: z.string().min(1),
-    completeTimingLabel: z.string().min(1),
-    progressCreditsLabel: z.string().min(1),
-    progressLabel: z.string().min(1),
-  }),
-  generationSteps: z.array(GenerationStepSchema).min(1),
-  id: z.string().min(1),
-  models: z.array(ProjectModelOptionSchema).min(1),
-  plan: z.object({
-    audience: z.string().min(1),
-    sections: z.array(z.object({
-      lines: z.array(z.string().min(1)).min(1),
-      title: z.string().min(1),
-    })).min(1),
+export const ProjectPlanSchema = z.object({
+  audience: z.string().min(1),
+  sections: z.array(z.object({
+    lines: z.array(z.string().min(1)).min(1),
     title: z.string().min(1),
-  }),
-  prompt: z.string().min(1),
-  previewTimeline: ProjectPreviewTimelineSchema,
-  questionnaire: ProjectQuestionnaireSchema,
-  reasoningTrace: ProjectReasoningTraceSchema,
-  threads: z.array(ProjectThreadSchema).min(1),
+  })).min(1),
   title: z.string().min(1),
 });
 
-export const ProjectPhaseSchema = z.enum([
-  "conversation",
-  "questionnaire",
-  "agent-running",
-  "planning",
-  "generating",
-  "complete",
-]);
+export const ProjectHomeSchema = z.object({
+  brands: z.array(ProjectBrandSchema),
+  composerCapabilities: ProjectComposerCapabilitiesSchema,
+  defaultAgentProfileId: z.string().min(1).nullable(),
+  defaultBrandId: z.string().min(1).nullable(),
+  entities: z.array(ProjectEntitySchema),
+  models: z.array(ProjectModelOptionSchema),
+  suggestions: z.array(z.string().min(1)).max(3),
+});
 
-export const ArtifactSurfaceSchema = z.enum(["gallery", "artifact"]);
+const ProjectBootstrapMessageSchema = z
+  .string()
+  .min(1)
+  .max(32_000)
+  .refine((message) => message.trim().length > 0, {
+    message: "message must contain something other than whitespace",
+  });
+
+/** The complete browser-owned portion of one atomic Home bootstrap act. */
+export const ProjectBootstrapRequestSchema = z.object({
+  agentProfileId: z.string().min(1).max(200).nullable().default(null),
+  attachmentRefs: z.array(z.object({
+    artifactKey: z.string().min(1).max(1_000),
+    byteCount: z.number().int().nonnegative(),
+    filename: z.string().min(1).max(255),
+    mediaType: z.string().min(1).max(255),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  }).strict()).default([]),
+  brandId: z.string().min(1).max(200),
+  contextRefs: z.array(z.object({
+    objectId: z.string().min(1).max(200),
+    objectType: z.enum(["account", "contact"]),
+    version: z.number().int().positive().nullable().default(null),
+  }).strict()).default([]),
+  message: ProjectBootstrapMessageSchema,
+}).strict();
+
+const ProjectHomeWireSchema = z.object({
+  data: z.object({
+    brands: z.array(z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+    })),
+    default_brand_id: z.string().min(1).nullable(),
+    context_entities: z.array(z.object({
+      object_type: z.enum(["account", "contact"]),
+      object_id: z.string().min(1),
+      label: z.string().min(1),
+      secondary_label: z.string().min(1),
+      image_url: z.string().nullable(),
+      version: z.number().int().positive().nullable().default(null),
+    })),
+    agent_profiles: z.array(z.object({
+      id: z.string().min(1),
+      label: z.string().min(1),
+      short_label: z.string().min(1),
+      description: z.string().min(1),
+      model_id: z.string().min(1),
+    })),
+    default_agent_profile_id: z.string().min(1).nullable(),
+    composer_capabilities: z.object({
+      context_refs: z.boolean(),
+      attachments: z.boolean(),
+      agent_profile_selection: z.boolean(),
+    }),
+    suggestions: z.array(z.string().min(1)).max(3),
+  }),
+});
+
+export const ProjectHomeResponseSchema = ProjectHomeWireSchema.transform(({ data }) =>
+  ProjectHomeSchema.parse({
+    brands: data.brands,
+    composerCapabilities: {
+      attachments: data.composer_capabilities.attachments,
+      contextRefs: data.composer_capabilities.context_refs,
+      agentProfileSelection:
+        data.composer_capabilities.agent_profile_selection,
+    },
+    defaultAgentProfileId: data.default_agent_profile_id,
+    defaultBrandId: data.default_brand_id,
+    entities: data.context_entities.map((entity) => ({
+      id: entity.object_id,
+      imagePath: entity.image_url?.startsWith("/")
+        ? entity.image_url
+        : "/logos/clue.svg",
+      label: entity.label,
+      secondaryLabel: entity.secondary_label,
+      type: entity.object_type,
+    })),
+    models: data.agent_profiles.map((profile) => ({
+      description: profile.description,
+      id: profile.id,
+      label: profile.label,
+      shortLabel: profile.short_label,
+    })),
+    suggestions: data.suggestions,
+  }),
+);
+
+const ProjectBootstrapWireSchema = z.object({
+  data: z.object({
+    project: z.object({
+      id: z.string().min(1),
+      title: z.literal("Untitled project"),
+      brand_id: z.string().min(1),
+      href: z.string().startsWith("/projects/"),
+      created_at: z.string().min(1),
+    }),
+    thread: z.object({
+      id: z.string().min(1),
+      title: z.string().min(1),
+      href: z.string().startsWith("/projects/"),
+      status: z.literal("running"),
+      pinned: z.boolean(),
+      project_id: z.string().min(1),
+      created_at: z.string().min(1),
+      updated_at: z.string().min(1),
+    }),
+    turn: z.object({
+      turn_id: z.string().min(1),
+      thread_id: z.string().min(1),
+      requested_at: z.string().min(1),
+      replayed: z.boolean(),
+    }),
+    href: z.string().startsWith("/projects/"),
+  }),
+});
+
+export const ProjectBootstrapResponseSchema = ProjectBootstrapWireSchema.transform(
+  ({ data }) => ({
+    href: data.href,
+    project: {
+      id: data.project.id,
+      title: data.project.title,
+      brandId: data.project.brand_id,
+      href: data.project.href,
+      createdAt: data.project.created_at,
+    },
+    thread: {
+      id: data.thread.id,
+      title: data.thread.title,
+      href: data.thread.href,
+      status: data.thread.status,
+      pinned: data.thread.pinned,
+      projectId: data.thread.project_id,
+      createdAt: data.thread.created_at,
+      updatedAt: data.thread.updated_at,
+    },
+    turn: {
+      turnId: data.turn.turn_id,
+      threadId: data.turn.thread_id,
+      requestedAt: data.turn.requested_at,
+      replayed: data.turn.replayed,
+    },
+  }),
+);
+
+const ProjectWorkspaceWireSchema = z.object({
+  data: z.object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    brand_id: z.string().min(1),
+    product_id: z.string().min(1).nullable(),
+    status: z.enum(["draft", "active", "paused", "archived"]),
+    created_at: z.string().min(1),
+    context_entities: ProjectHomeWireSchema.shape.data.shape.context_entities,
+    agent_profiles: ProjectHomeWireSchema.shape.data.shape.agent_profiles,
+    default_agent_profile_id: z.string().min(1).nullable(),
+    composer_capabilities: z.object({
+      context_refs: z.boolean(),
+      attachments: z.boolean(),
+      agent_profile_selection: z.boolean(),
+    }),
+    artifacts: z.array(z.never()),
+  }),
+});
+
+/**
+ * The real project shell served before artifact integration exists.
+ *
+ * It deliberately excludes the prototype's plan, questionnaire, model list,
+ * prompt, phase, and context catalog. Those values are not backend project
+ * state. `artifacts` is an exact empty tuple until a separately contracted
+ * artifact read surface can supply real records.
+ */
+export const ProjectWorkspaceSchema = z.object({
+  artifacts: z.tuple([]),
+  brandId: z.string().min(1),
+  composerCapabilities: ProjectComposerCapabilitiesSchema,
+  createdAt: z.string().min(1),
+  defaultAgentProfileId: z.string().min(1).nullable(),
+  entities: z.array(ProjectEntitySchema),
+  id: z.string().min(1),
+  models: z.array(ProjectModelOptionSchema),
+  productId: z.string().min(1).nullable(),
+  status: z.enum(["draft", "active", "paused", "archived"]),
+  title: z.string().min(1),
+}).strict();
+
+export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transform(
+  ({ data }) =>
+    ProjectWorkspaceSchema.parse({
+      artifacts: [],
+      brandId: data.brand_id,
+      composerCapabilities: {
+        attachments: data.composer_capabilities.attachments,
+        contextRefs: data.composer_capabilities.context_refs,
+        agentProfileSelection:
+          data.composer_capabilities.agent_profile_selection,
+      },
+      createdAt: data.created_at,
+      defaultAgentProfileId: data.default_agent_profile_id,
+      entities: data.context_entities.map((entity) => ({
+        id: entity.object_id,
+        imagePath: entity.image_url?.startsWith("/")
+          ? entity.image_url
+          : "/logos/clue.svg",
+        label: entity.label,
+        secondaryLabel: entity.secondary_label,
+        type: entity.object_type,
+      })),
+      id: data.id,
+      models: data.agent_profiles.map((profile) => ({
+        description: profile.description,
+        id: profile.id,
+        label: profile.label,
+        shortLabel: profile.short_label,
+      })),
+      productId: data.product_id,
+      status: data.status,
+      title: data.title,
+    }),
+);
 export const GalleryLayoutSchema = z.enum(["grid", "list"]);
 export const ArtifactFilterSchema = z.enum([
   "all",
@@ -219,87 +350,29 @@ export const InspectorSelectionSchema = z.enum([
   "button",
 ]);
 
-const ProjectToolStateSchema = z.enum([
-  "approval-requested",
-  "approval-responded",
-  "input-available",
-  "input-streaming",
-  "output-available",
-  "output-denied",
-  "output-error",
-]);
-
-export const ProjectMessagePartSchema = z.discriminatedUnion("type", [
-  z.object({
-    id: z.string().min(1),
-    text: z.string().min(1),
-    type: z.literal("text"),
-  }),
-  z.object({
-    detail: z.string().min(1).optional(),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    showTrace: z.boolean().default(false),
-    streaming: z.boolean().default(false),
-    type: z.literal("reasoning"),
-  }),
-  z.object({
-    action: z.enum(["questionnaire", "plan"]),
-    icon: z.enum(["clipboard-list", "list"]),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    type: z.literal("action"),
-  }),
-  z.object({
-    id: z.string().min(1),
-    input: z.record(z.string(), z.unknown()).optional(),
-    output: z.string().min(1).optional(),
-    state: ProjectToolStateSchema,
-    title: z.string().min(1),
-    type: z.literal("tool"),
-  }),
-  z.object({
-    id: z.string().min(1),
-    type: z.literal("plan"),
-  }),
-  z.object({
-    complete: z.boolean(),
-    id: z.string().min(1),
-    progress: z.number().min(0).max(100),
-    type: z.literal("task"),
-  }),
-  z.object({
-    id: z.string().min(1),
-    type: z.literal("sources"),
-  }),
-]);
-
-export const ProjectMessageSchema = z.object({
-  authorLabel: z.string().min(1).optional(),
-  id: z.string().min(1),
-  parts: z.array(ProjectMessagePartSchema).min(1),
-  role: z.enum(["assistant", "user"]),
-});
-
 export type ProjectEntity = z.infer<typeof ProjectEntitySchema>;
+export type ProjectBrand = z.infer<typeof ProjectBrandSchema>;
+export type ProjectComposerCapabilities = z.infer<
+  typeof ProjectComposerCapabilitiesSchema
+>;
 export type ProjectModelOption = z.infer<typeof ProjectModelOptionSchema>;
-export type ProjectThread = z.infer<typeof ProjectThreadSchema>;
 export type ProjectWebsiteContent = z.infer<typeof ProjectWebsiteContentSchema>;
 export type ProjectTableContent = z.infer<typeof ProjectTableContentSchema>;
 export type ProjectArtifact = z.infer<typeof ProjectArtifactSchema>;
-export type GenerationStep = z.infer<typeof GenerationStepSchema>;
-export type ProjectPreviewTimeline = z.infer<typeof ProjectPreviewTimelineSchema>;
-export type ProjectReasoningTrace = z.infer<typeof ProjectReasoningTraceSchema>;
 export type ProjectQuestionnaire = z.infer<typeof ProjectQuestionnaireSchema>;
+export type ProjectPlan = z.infer<typeof ProjectPlanSchema>;
 export type ProjectQuestionGroup = z.infer<typeof ProjectQuestionGroupSchema>;
 export type ProjectHome = z.infer<typeof ProjectHomeSchema>;
+export type ProjectBootstrapRequest = z.infer<
+  typeof ProjectBootstrapRequestSchema
+>;
+export type ProjectBootstrapRequestInput = z.input<
+  typeof ProjectBootstrapRequestSchema
+>;
+export type ProjectBootstrap = z.infer<typeof ProjectBootstrapResponseSchema>;
 export type ProjectWorkspace = z.infer<typeof ProjectWorkspaceSchema>;
-export type ProjectPhase = z.infer<typeof ProjectPhaseSchema>;
-export type ArtifactSurface = z.infer<typeof ArtifactSurfaceSchema>;
 export type GalleryLayout = z.infer<typeof GalleryLayoutSchema>;
 export type ArtifactFilter = z.infer<typeof ArtifactFilterSchema>;
 export type ArtifactSort = z.infer<typeof ArtifactSortSchema>;
 export type PreviewDevice = z.infer<typeof PreviewDeviceSchema>;
 export type InspectorSelection = z.infer<typeof InspectorSelectionSchema>;
-export type ProjectMessagePart = z.infer<typeof ProjectMessagePartSchema>;
-export type ProjectMessage = z.infer<typeof ProjectMessageSchema>;

@@ -10,6 +10,7 @@ from clue_auth.models import RoleKey
 
 Permission = Literal[
     "project.read",
+    "project.write",
     "thread.read",
     "thread.write",
     "gate.respond",
@@ -20,12 +21,15 @@ Permission = Literal[
 ]
 
 # B1's initial internal policy revision. B2 resolves this version at authorization time; moving
-# the mapping into data later does not change the role/permission seam.
-ROLE_POLICY_VERSION = 1
+# the mapping into data later does not change the role/permission seam. Revision 2 adds the
+# founder-ratified Home-bootstrap authority: operators, admins and owners may create projects;
+# viewers remain read-only.
+ROLE_POLICY_VERSION = 2
 
 _READ: frozenset[Permission] = frozenset({"project.read", "thread.read"})
 _OPERATE: frozenset[Permission] = _READ | frozenset(
     {
+        "project.write",
         "thread.write",
         "gate.respond",
         "research.estimate",

@@ -28,6 +28,7 @@ __all__ = [
     "C6_AGENT_TOOL_AUTHORITY",
     "C6_SURFACE_POLICIES",
     "ACCOUNT_RESEARCH_UNIT_SURFACE",
+    "PROJECT_CONVERSATION_SURFACE",
     "STAGE0_CONVERSATION_TRIAL_SURFACE",
     "c6_roles_for_tool",
     "ToolRegistryAgentCatalog",
@@ -35,7 +36,10 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v22",
+    # v23 (FI Lane D D4): pins ``open_directive_confirmation_gate@1`` and re-pins
+    # account-deep-steering at v3, whose procedure is the Option-B kickoff — gate first, launch only
+    # after the human's own confirming turn.
+    AgentRole.HEAD_OF_ABM: "v23",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -46,6 +50,14 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
 C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "approve_contact_research_selection": (),
     "adjust_budget": (),
+    # FI Lane D D0 / REQ-21 thread shell. Empty for now — the tools exist and are invocable by the
+    # authenticated chat surface, but no *model* surface has been given thread management yet.
+    # They are deliberately NOT in ``_HUMAN_ONLY_TOOLS``: REQ-21 anticipates an agent filing or
+    # splitting its own threads, so this is an ungranted capability, not a human-authority gate.
+    "archive_thread": (),
+    "create_thread": (),
+    "rename_thread": (),
+    "set_thread_pinned": (),
     "compose_handoff": (
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,
@@ -84,6 +96,11 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "launch_account_deep": (),
     "launch_account_research": (AgentRole.HEAD_OF_ABM,),
     "launch_contact_research": (AgentRole.HEAD_OF_ABM,),
+    # FI Lane D D4 / §3-P5(a): asking the human for authority is the Head of ABM's own act, so the
+    # gate-opening tool is granted to that role. It writes an immutable gate row and nothing else —
+    # it confirms nothing, spends nothing, and cannot address a gate to anybody but the human whose
+    # turn it is answering (the addressee is derived from the durable submission, not proposed).
+    "open_directive_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
     "pause_run": (),
     "profile_contact": (),
@@ -114,6 +131,15 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
 #: The Stage-0 conversation trial (`clue_api.stage0_trial`). One human types, the platform captures
 #: every turn, and the agent's whole job is to converse and route what was said.
 STAGE0_CONVERSATION_TRIAL_SURFACE = "stage0_conversation_trial"
+
+#: The **production** project conversation (FI Lane D D2): the same Head-of-ABM role, on a real
+#: project thread, executed by the fleet worker instead of a local CLI. It is a separate surface
+#: from the trial rather than a reuse of it because the two are genuinely different deployments of
+#: one role — the trial is a dev harness with no launch authority *and* no production traffic, and
+#: collapsing them would make widening the production surface (D4's P5(e)) silently widen the trial
+#: too. D2 declares it with exactly the trial's tool subtraction: the launch tools stay
+#: structurally withheld until the D4 kickoff flow earns them.
+PROJECT_CONVERSATION_SURFACE = "project_conversation"
 
 #: The fleet-owned per-account unit executes the one-tool ``account-research-unit@1`` recipe.
 #: ``get_research_view`` belongs to the broader account-research role for conversational/read
@@ -168,6 +194,11 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
             {
                 "launch_account_research",
                 "launch_contact_research",
+                # D4 added the gate tool to the role. The trial keeps it withheld with the launch
+                # tools it belongs to: a dev harness that could present a real, durable, addressed
+                # confirmation gate — but never act on the answer — would be inviting a human to
+                # approve spend that no surface here can perform.
+                "open_directive_confirmation_gate",
                 "start_recon",
                 "submit_onboarding_input",
                 "synthesize_icps",
@@ -185,6 +216,39 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
             "This surface is a manual-conversation-only Stage-0 trial: it does no external "
             "research, and the platform captures every turn before you see it, so you never "
             "capture, fetch, delegate, or synthesize outside this conversation."
+        ),
+    ),
+    # D4 widened this surface: `launch_account_research` / `launch_contact_research` are no longer
+    # withheld here, because the authority they were waiting for now exists — a durable gate object
+    # (`open_directive_confirmation_gate@1`), a structured human answer to it, and the confirming
+    # turn's own `action_ref` threaded into the tool context. The remaining three subtractions are
+    # the trial's, for the trial's reasons: this surface still does no external research and still
+    # never captures on the client's behalf. Delegation stays withheld (D4 grants launch authority,
+    # not a specialist fleet).
+    AgentSurfacePolicy(
+        surface=PROJECT_CONVERSATION_SURFACE,
+        role=AgentRole.HEAD_OF_ABM,
+        withheld_tools=frozenset(
+            {
+                "start_recon",
+                "submit_onboarding_input",
+                "synthesize_icps",
+            }
+        ),
+        withheld_delegation_roles=frozenset(
+            {
+                AgentRole.RESEARCH,
+                AgentRole.CONTENT_DRAFTER,
+                AgentRole.REVIEWER,
+            }
+        ),
+        withheld_reason_code="project_conversation_no_autonomous_research",
+        framing=(
+            "This surface is the project conversation: you converse with the client, record what "
+            "they tell you, and can draft research direction, present its confirmation gate, and "
+            "launch the research the client has confirmed. You do not capture on their behalf, "
+            "fetch external sources, or delegate to a specialist — and you never launch anything "
+            "the client's own confirming turn has not just approved."
         ),
     ),
 )

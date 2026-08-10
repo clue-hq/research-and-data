@@ -389,9 +389,7 @@ def test_real_committee_materializes_narrative_and_c7_references() -> None:
             )
             assert len(governed) == 1
             assert denied_facet.id in {item.claim.id for item in governed[0].display_claims}
-            assert professional_title.id in {
-                item.claim.id for item in governed[0].display_claims
-            }
+            assert professional_title.id in {item.claim.id for item in governed[0].display_claims}
             assert denied_facet.id not in {
                 item.claim.id for item in governed[0].personalization_claims
             }

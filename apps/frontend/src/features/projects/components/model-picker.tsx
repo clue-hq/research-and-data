@@ -12,12 +12,14 @@ export function ModelPicker({
 }) {
   return (
     <div aria-label="Choose a model" className={styles.modelPicker} role="menu">
-      {models.filter((model) => model.id !== selectedModelId).map((model) => (
+      {models.map((model) => (
         <button
+          aria-checked={model.id === selectedModelId}
           className={styles.modelOption}
+          data-selected={model.id === selectedModelId || undefined}
           key={model.id}
           onClick={() => onSelect(model.id)}
-          role="menuitem"
+          role="menuitemradio"
           type="button"
         >
           <span>

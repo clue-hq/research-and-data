@@ -1,27 +1,47 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { sidebarProjectFixtures } from "../data/sidebar-projects.fixture";
-import {
-  SidebarProjectsResponseSchema,
-  type SidebarProject,
-} from "../model/sidebar-project";
+import { useChatRepositories } from "../data/projects-transport";
+import type { SidebarProject } from "../model/sidebar-project";
+import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
 
-function createInitialProjects() {
-  return SidebarProjectsResponseSchema.parse({
-    data: sidebarProjectFixtures,
-    meta: { total: sidebarProjectFixtures.length },
-  }).data;
-}
-
+/**
+ * The sidebar tree.
+ *
+ * It reads through the repository seam (`frontend.md`:95) rather than importing
+ * a fixture — the bypass charter §2 catalogued. Thread creation, rename, pin and
+ * archive are governed mutations against the thread repository, so a sidebar
+ * action is the same durable act the conversation header performs, and the
+ * status badges are the server's derived precedence rather than a local guess.
+ */
 export function useSidebarProjectsController() {
   const pathname = usePathname();
   const router = useRouter();
-  const [projects, setProjects] = useState<SidebarProject[]>(createInitialProjects);
+  const repositories = useChatRepositories();
+  const catalogInvalidation = useProjectCatalogInvalidation();
+  const sidebar = repositories.sidebar;
+  const projectMutationsAvailable = repositories.transport.mode === "fixture";
+  const [projects, setProjects] = useState<SidebarProject[]>([]);
   const [menuProjectId, setMenuProjectId] = useState<string | null>(null);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [editProjectName, setEditProjectName] = useState("");
+
+  const reload = useCallback(async () => {
+    const response = await sidebar.list();
+    setProjects(response.data);
+  }, [sidebar]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const response = await sidebar.list();
+      if (!cancelled) setProjects(response.data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogInvalidation.revision, pathname, sidebar]);
 
   const editProject = useMemo(
     () => projects.find((project) => project.id === editProjectId) ?? null,
@@ -83,34 +103,16 @@ export function useSidebarProjectsController() {
     setMenuProjectId(null);
   }
 
-  function createConversation(projectId: string) {
-    const project = projects.find((item) => item.id === projectId);
-    if (!project) return;
-
-    const nextId = `thread-draft-${Date.now()}`;
-    const nextHref = `${project.href}?thread=${nextId}`;
-
-    updateProject(projectId, (project) => {
-      return {
-        ...project,
-        expanded: true,
-        conversations: [
-          ...project.conversations,
-          {
-            href: nextHref,
-            id: nextId,
-            status: "idle",
-            title: "New chat",
-          },
-        ],
-      };
-    });
-
+  async function createConversation(projectId: string) {
     setMenuProjectId(null);
-    router.push(nextHref);
+    const thread = await repositories.threads.create({ projectId });
+    updateProject(projectId, (project) => ({ ...project, expanded: true }));
+    await reload();
+    router.push(thread.href);
   }
 
   function togglePinned(projectId: string) {
+    if (!projectMutationsAvailable) return;
     updateProject(projectId, (project) => ({
       ...project,
       pinned: !project.pinned,
@@ -119,6 +121,7 @@ export function useSidebarProjectsController() {
   }
 
   function beginEditProject(projectId: string) {
+    if (!projectMutationsAvailable) return;
     const project = projects.find((item) => item.id === projectId);
     if (!project) return;
     setEditProjectId(project.id);
@@ -132,9 +135,12 @@ export function useSidebarProjectsController() {
   }
 
   function saveEditProject() {
+    if (!projectMutationsAvailable) return;
     const nextName = editProjectName.trim();
     if (!editProjectId || !nextName) return;
-
+    // Project rename is not served: the as-built contract keeps project
+    // lifecycle outside the chat shell (item 9), so this stays a local edit
+    // until a project surface exists. It is not written anywhere.
     updateProject(editProjectId, (project) => ({
       ...project,
       title: nextName,
@@ -142,16 +148,21 @@ export function useSidebarProjectsController() {
     cancelEditProject();
   }
 
-  function archiveProjectChats(projectId: string) {
-    updateProject(projectId, (project) => ({
-      ...project,
-      conversations: [],
-      expanded: false,
-    }));
+  async function archiveProjectChats(projectId: string) {
     setMenuProjectId(null);
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) return;
+    // Per-thread archive is the as-built contract (item 2); the proposal's bulk
+    // archive-all endpoint does not exist, so the sidebar action archives each
+    // visible thread rather than pretending one call did.
+    for (const conversation of project.conversations) {
+      await repositories.threads.archive({ projectId, threadId: conversation.id });
+    }
+    await reload();
   }
 
   function removeProject() {
+    if (!projectMutationsAvailable) return;
     if (!editProjectId) return;
     setProjects((current) =>
       current.filter((project) => project.id !== editProjectId),
@@ -161,15 +172,20 @@ export function useSidebarProjectsController() {
 
   return {
     activePathname: pathname,
-    archiveProjectChats,
+    archiveProjectChats: (projectId: string) => {
+      void archiveProjectChats(projectId);
+    },
     beginEditProject,
     cancelEditProject,
     closeMenu,
-    createConversation,
+    createConversation: (projectId: string) => {
+      void createConversation(projectId);
+    },
     editProject,
     editProjectName,
     menuProjectId,
     projects,
+    projectMutationsAvailable,
     removeProject,
     saveEditProject,
     setEditProjectName,

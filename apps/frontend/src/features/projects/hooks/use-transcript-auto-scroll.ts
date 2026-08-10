@@ -1,15 +1,18 @@
 import { useEffect, useRef } from "react";
-import type { ProjectPhase } from "../model/project-workspace";
 
 const BOTTOM_THRESHOLD_PX = 40;
 
-export function useTranscriptAutoScroll({
-  generationProgress,
-  phase,
-}: {
-  generationProgress: number;
-  phase: ProjectPhase;
-}) {
+/**
+ * Keep the transcript pinned to the bottom while the user is at the bottom.
+ *
+ * `revision` is any monotonically-changing signal that means "the transcript
+ * grew" — the streamed cursor, or the message count. It replaces the old
+ * `(generationProgress, phase)` pair, which tied scrolling to the manufactured
+ * phase enum: with that gone, scrolling follows content, and an independent
+ * reasoning or tool disclosure opening below the fold no longer yanks the view,
+ * because the pin state is read from the user's own scroll position first.
+ */
+export function useTranscriptAutoScroll({ revision }: { revision: number }) {
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottomRef = useRef(true);
 
@@ -55,7 +58,7 @@ export function useTranscriptAutoScroll({
       });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [generationProgress, phase]);
+  }, [revision]);
 
   return { transcriptScrollRef };
 }

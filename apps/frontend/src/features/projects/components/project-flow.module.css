@@ -4,6 +4,14 @@
   font-family: var(--clue-ds-typography-text-default-font-family), Arial, sans-serif;
 }
 
+.projectLoadState {
+  align-self: center;
+  grid-row: 1 / -1;
+  justify-self: center;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 14px;
+}
+
 .home {
   height: 100%;
   overflow-x: hidden;
@@ -31,6 +39,31 @@
   line-height: 48px;
   letter-spacing: -0.02em;
   text-align: center;
+}
+
+.homeBrandPicker {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+}
+
+.homeBrandPicker select {
+  width: 100%;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 8px;
+  background: white;
+  padding: 9px 10px;
+  color: var(--clue-ds-color-content-neutral);
+  font: inherit;
+}
+
+.homeError {
+  margin: 12px 4px 0;
+  color: #b42318;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .composer {
@@ -396,6 +429,7 @@
 }
 
 .modelOption:hover,
+.modelOption[data-selected="true"],
 .entityOption:hover,
 .entityOption[data-active="true"],
 .entityOption[aria-selected="true"] {
@@ -565,7 +599,7 @@
 }
 
 .projectHeader {
-  z-index: 40;
+  z-index: auto;
   display: flex;
   height: 48px;
   align-items: center;
@@ -592,6 +626,13 @@
   justify-content: center;
   border-radius: 6px;
   background: transparent;
+}
+
+.projectHeader .desktopSidebarTrigger {
+  display: none;
+  position: relative;
+  z-index: 60;
+  background: var(--clue-ds-color-bg-page);
 }
 
 .projectHeader .projectTitle {
@@ -652,26 +693,36 @@
 .conversationHeader {
   display: flex;
   height: 48px;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 0 16px;
 }
 
 .conversationHeader label {
   position: relative;
   display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
   align-items: center;
 }
 
 .conversationHeader select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   appearance: none;
   border: 0;
   outline: 0;
+  overflow: hidden;
   background: transparent;
   padding: 8px 24px 8px 8px;
   color: inherit;
   font-size: 13px;
   line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .conversationHeader label > svg {
@@ -682,6 +733,7 @@
 
 .conversationHeader > div {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 4px;
 }
@@ -1287,7 +1339,8 @@
   padding: 4px 0 8px 12px;
 }
 
-.artifactTabs button {
+.artifactTabs button,
+.artifactTabs > span {
   display: inline-flex;
   max-width: 230px;
   height: 36px;
@@ -1445,6 +1498,48 @@
   margin: 0 0 64px;
   color: var(--clue-ds-color-content-subtle);
   font-size: 14px;
+}
+
+.galleryEmptyState {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 32px;
+  background:
+    radial-gradient(circle at center, rgb(247 248 250 / 94%) 0, transparent 48%),
+    white;
+  text-align: center;
+}
+
+.galleryEmptyIcon {
+  display: inline-flex;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 14px;
+  background: white;
+  color: var(--clue-ds-color-content-subtle);
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+}
+
+.galleryEmptyState h2 {
+  margin: 16px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.galleryEmptyState p {
+  max-width: 300px;
+  margin: 4px 0 0;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .artifactGrid {
@@ -2544,6 +2639,27 @@
   margin: 0;
 }
 
+.messageContextRefs {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.messageContextRefs > span {
+  overflow: hidden;
+  max-width: 240px;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 999px;
+  background: var(--clue-ds-color-bg-page);
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .planApproval {
   display: flex;
   height: 94px;
@@ -2628,6 +2744,245 @@
 
 .reasoningStatus {
   cursor: default;
+}
+
+/*
+ * The dev-lens raw reasoning disclosure. It exists only when the backend sent a
+ * trace, which only a development deployment can be configured to do, so it is
+ * deliberately styled as a diagnostic — monospaced, muted, dashed — and never as
+ * part of the conversation.
+ */
+.reasoningTrace {
+  margin: 0;
+}
+
+.reasoningTrace .reasoningStatus {
+  cursor: pointer;
+}
+
+.reasoningTraceContent {
+  margin-top: 6px;
+  border-left: 2px dashed var(--clue-ds-color-border-subtle);
+  padding-left: 10px;
+}
+
+.reasoningTraceNote {
+  margin: 0 0 6px;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+/*
+ * The dev-lens turn inspector. Named `turnLens*` rather than `inspector*`
+ * because `.inspector*` is already the canvas inspector's — two unrelated
+ * surfaces sharing a prefix is how a stylesheet starts lying about what it
+ * styles.
+ *
+ * Styled as a developer tool throughout: monospace addresses, muted notes, a
+ * dashed frame. It is never rendered in a production deployment, because the
+ * affordance that opens it is not rendered when the capability probe 404s.
+ */
+.turnLensTrigger {
+  margin-left: auto;
+  border: 0.5px dashed var(--clue-ds-color-border-subtle);
+  border-radius: 4px;
+  background: transparent;
+  padding: 1px 6px;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.turnLensPanel {
+  display: flex;
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  flex-direction: column;
+  width: min(460px, 100%);
+  border-left: 0.5px solid var(--clue-ds-color-border-subtle);
+  background: var(--clue-ds-color-surface-neutral, #fff);
+}
+
+.turnLensHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 0.5px solid var(--clue-ds-color-border-subtle);
+  padding: 10px 12px;
+}
+
+.turnLensHeader button {
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.turnLensTabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 0.5px solid var(--clue-ds-color-border-subtle);
+  padding: 6px 8px;
+}
+
+.turnLensTabs button {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  padding: 3px 8px;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.turnLensTabs button[data-active] {
+  background: var(--clue-ds-color-surface-subtle, rgb(0 0 0 / 5%));
+  color: var(--clue-ds-color-content-neutral);
+}
+
+.turnLensContent {
+  flex: 1;
+  padding: 10px 12px 16px;
+  overflow-y: auto;
+}
+
+.turnLensSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.turnLensRow,
+.turnLensLayer {
+  border: 0.5px solid var(--clue-ds-color-border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.turnLensLayer > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.turnLensMeter {
+  flex: 1;
+  min-width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--clue-ds-color-surface-subtle, rgb(0 0 0 / 8%));
+}
+
+.turnLensMeter > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--clue-ds-color-content-subtle);
+}
+
+.turnLensCount,
+.turnLensNote,
+.turnLensAddress {
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.turnLensAddress {
+  margin: 2px 0 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.turnLensNote {
+  margin: 4px 0 0;
+}
+
+.turnLensRefHead,
+.turnLensSubhead {
+  margin: 8px 0 2px;
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.turnLensMeta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.turnLensMeta dt {
+  color: var(--clue-ds-color-content-subtle);
+}
+
+.turnLensMeta dd {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  overflow-wrap: anywhere;
+}
+
+.turnLensList {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.turnLensRef {
+  margin-top: 6px;
+  border-left: 2px solid var(--clue-ds-color-border-subtle);
+  padding-left: 8px;
+}
+
+.turnLensRef[data-disposition="excluded"] {
+  border-left-style: dashed;
+}
+
+.turnLensBody {
+  margin-top: 4px;
+}
+
+.turnLensPre {
+  margin: 0;
+  border-radius: 4px;
+  background: var(--clue-ds-color-surface-subtle, rgb(0 0 0 / 4%));
+  padding: 6px 8px;
+  max-height: 260px;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.reasoningTraceText {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 17px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .reasoning[data-state="open"] .reasoningChevron,
@@ -2953,8 +3308,15 @@
   .artifactGrid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
 }
 
+@media (min-width: 1024px) {
+  .projectHeader .desktopSidebarTrigger {
+    display: inline-flex;
+  }
+}
+
 @media (max-width: 900px) {
   .homeHero { min-height: 600px; padding-top: 180px; }
+  .projectHeader { padding-left: 52px; }
   .projectColumns { display: block; overflow-y: auto; }
   .conversationPane { min-height: 620px; border-right: 0; border-bottom: 0.5px solid var(--clue-ds-color-border-subtle); }
   .artifactWorkspace { min-height: 700px; }
@@ -2996,4 +3358,95 @@
   .websiteCanvasFrame {
     transition: none;
   }
+}
+
+/* --- FI Lane D D5: streamed Markdown, gate cards, research tasks ---------- */
+
+/*
+ * Assistant prose is rendered as Markdown blocks now, not a single <p>, so the
+ * container owns block rhythm. Everything below is typography only: no state,
+ * no timing, no animation that a wire value could drive.
+ */
+.messageText :global(.clue-markdown) > * {
+  margin: 0 0 8px;
+}
+
+.messageText :global(.clue-markdown) > *:last-child {
+  margin-bottom: 0;
+}
+
+.messageText :global(.clue-markdown) h1,
+.messageText :global(.clue-markdown) h2,
+.messageText :global(.clue-markdown) h3,
+.messageText :global(.clue-markdown) h4,
+.messageText :global(.clue-markdown) h5,
+.messageText :global(.clue-markdown) h6 {
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.messageText :global(.clue-markdown) ul,
+.messageText :global(.clue-markdown) ol {
+  padding-left: 18px;
+  list-style: revert;
+}
+
+.messageText :global(.clue-markdown) li {
+  margin: 2px 0;
+}
+
+.messageText :global(.clue-markdown) code {
+  border-radius: 4px;
+  background: var(--clue-surface-muted, rgba(17, 19, 24, 0.06));
+  padding: 1px 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.messageText :global(.clue-markdown) pre {
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--clue-surface-muted, rgba(17, 19, 24, 0.06));
+  padding: 10px 12px;
+}
+
+.messageText :global(.clue-markdown) pre code {
+  background: none;
+  padding: 0;
+}
+
+.messageText :global(.clue-markdown) blockquote {
+  border-left: 2px solid var(--clue-border-neutral, rgba(17, 19, 24, 0.12));
+  padding-left: 10px;
+  color: var(--clue-text-secondary, rgba(17, 19, 24, 0.64));
+}
+
+.messageText :global(.clue-markdown) a {
+  text-decoration: underline;
+}
+
+/* An answered gate stays in history; its controls are visibly spent. */
+.planApproval[data-gate-state="responded"],
+.planApproval[data-gate-state="denied"] {
+  height: auto;
+  opacity: 0.82;
+}
+
+.planApproval[data-gate-state="unavailable"] {
+  height: auto;
+}
+
+.planApproval button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* One visible research task, whatever the scale. Tones are semantic only. */
+.generationStep[data-tone="failed"] strong,
+.generationStep[data-tone="blocked"] strong {
+  color: var(--clue-text-critical, #b42318);
+}
+
+.generationStep[data-tone="partial"] strong {
+  color: var(--clue-text-warning, #b54708);
 }

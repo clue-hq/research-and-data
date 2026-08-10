@@ -1,0 +1,309 @@
+import { z } from "zod";
+import { GateDecisionSchema } from "./chat-parts";
+import type { ChatStreamEventType } from "./chat-events";
+import {
+  ChatMessageWireSchema,
+  toChatMessage,
+  type ChatMessage,
+} from "./chat-message";
+
+/**
+ * Turn submission and the submissions-union read (charter §3.5, as-built D2).
+ *
+ * The two-phase turn identity ratified after D2 is the thing to hold on to: a
+ * turn that has been accepted but not yet executed exists only as a
+ * *submission* row, so `GET …/turns` unions submissions with turn events. A
+ * surface built on executed turns alone would show a user's three waiting
+ * questions as nothing at all — which is exactly the "visibly queued" the
+ * charter demands of the composer.
+ */
+
+/** What the submissions-union says about one turn. `queued` counts as busy. */
+export const TurnStateSchema = z.enum([
+  "queued",
+  "running",
+  "completed",
+  "awaiting_input",
+  "failed",
+  "cancelled",
+]);
+
+export type TurnState = z.infer<typeof TurnStateSchema>;
+
+export const LIVE_TURN_STATES: ReadonlySet<TurnState> = new Set([
+  "queued",
+  "running",
+]);
+
+const TurnAcceptedWireSchema = z.object({
+  turn_id: z.string().min(1),
+  thread_id: z.string().min(1),
+  requested_at: z.string(),
+  replayed: z.boolean().default(false),
+});
+
+export interface AcceptedTurn {
+  turnId: string;
+  threadId: string;
+  requestedAt: string;
+  /** True when this idempotency identity had already been accepted. */
+  replayed: boolean;
+}
+
+export const AcceptedTurnResponseSchema = z
+  .object({ data: TurnAcceptedWireSchema })
+  .transform(
+    (wire): AcceptedTurn => ({
+      turnId: wire.data.turn_id,
+      threadId: wire.data.thread_id,
+      requestedAt: wire.data.requested_at,
+      replayed: wire.data.replayed,
+    }),
+  );
+
+const TurnViewWireSchema = z.object({
+  turn_id: z.string().min(1),
+  thread_id: z.string().min(1),
+  project_id: z.string().min(1),
+  // Open on purpose: the union's state vocabulary is a backend derivation, and
+  // a value this build has not been taught is reported as-is rather than
+  // dropping the turn out of the transcript.
+  state: z.string(),
+  requested_at: z.string(),
+  last_event_id: z.number().int().nullable().default(null),
+  generation_attempts: z.number().int().min(0).default(0),
+  submission_message: ChatMessageWireSchema.nullable().default(null),
+});
+
+export interface ChatTurn {
+  turnId: string;
+  threadId: string;
+  projectId: string;
+  state: string;
+  requestedAt: string;
+  /** The stream cursor to attach *after*, so a cold load never replays history. */
+  lastEventId: number | null;
+  generationAttempts: number;
+  /** Accepted user bytes not yet materialized into canonical thread history. */
+  submissionMessage: ChatMessage | null;
+}
+
+export const ChatTurnListResponseSchema = z
+  .object({
+    data: z.array(TurnViewWireSchema).default([]),
+    meta: z
+      .object({ thread_status: z.string().default("idle") })
+      .default({ thread_status: "idle" }),
+  })
+  .transform((wire) => ({
+    turns: wire.data.map(
+      (item): ChatTurn => ({
+        turnId: item.turn_id,
+        threadId: item.thread_id,
+        projectId: item.project_id,
+        state: item.state,
+        requestedAt: item.requested_at,
+        lastEventId: item.last_event_id,
+        generationAttempts: item.generation_attempts,
+        submissionMessage:
+          item.submission_message === null
+            ? null
+            : toChatMessage(item.submission_message),
+      }),
+    ),
+    threadRunning: wire.meta.thread_status === "running",
+  }));
+
+export type ChatTurnPage = z.infer<typeof ChatTurnListResponseSchema>;
+
+const TERMINAL_TURN_STATES: ReadonlySet<TurnState> = new Set([
+  "completed",
+  "awaiting_input",
+  "failed",
+  "cancelled",
+]);
+
+export interface TurnQueueState {
+  threadBusy: boolean;
+  runningTurn: ChatTurn | null;
+  queuedTurns: readonly ChatTurn[];
+}
+
+/** The three independent selectors that drive queue and Stop presentation. */
+export function selectTurnQueueState(
+  turns: readonly ChatTurn[],
+): TurnQueueState {
+  const runningTurn = turns.find((turn) => turn.state === "running") ?? null;
+  const queuedTurns = turns.filter((turn) => turn.state === "queued");
+  return {
+    threadBusy: runningTurn !== null || queuedTurns.length > 0,
+    runningTurn,
+    // `GET …/turns` is already in durable submission order; filtering keeps it.
+    queuedTurns,
+  };
+}
+
+export function isTerminalTurnState(state: string): state is TurnState {
+  return TERMINAL_TURN_STATES.has(state as TurnState);
+}
+
+/**
+ * Apply stream-authoritative transitions over a potentially stale list read.
+ *
+ * A terminal frame must hide Stop on the same render even if an older list
+ * request returns `running` afterwards. A `turn.started` frame likewise owns
+ * the running target until the canonical read catches up.
+ */
+export function applyTurnStateOverrides(
+  turns: readonly ChatTurn[],
+  overrides: ReadonlyMap<string, TurnState>,
+): ChatTurn[] {
+  return turns.map((turn) => {
+    const state = overrides.get(turn.turnId);
+    return state === undefined || state === turn.state ? turn : { ...turn, state };
+  });
+}
+
+/** Drop a stream override once the durable read has reached or passed it. */
+export function reconcileTurnStateOverrides(
+  overrides: ReadonlyMap<string, TurnState>,
+  durableTurns: readonly ChatTurn[],
+): ReadonlyMap<string, TurnState> {
+  if (overrides.size === 0) return overrides;
+  const durable = new Map(durableTurns.map((turn) => [turn.turnId, turn.state]));
+  const next = new Map(overrides);
+  for (const [turnId, state] of overrides) {
+    const durableState = durable.get(turnId);
+    if (
+      durableState === state ||
+      (durableState !== undefined && isTerminalTurnState(durableState)) ||
+      (state === "queued" && durableState === "running")
+    ) {
+      next.delete(turnId);
+    }
+  }
+  return next.size === overrides.size ? overrides : next;
+}
+
+export interface MessageSubmissionAttempt {
+  fingerprint: string;
+  idempotencyKey: string;
+}
+
+/** Block only a duplicate of the exact message request currently in flight. */
+export class MessageSubmissionGuard {
+  private readonly inFlight = new Map<string, MessageSubmissionAttempt>();
+
+  begin(
+    threadId: string,
+    submission: {
+      message: string;
+      contextRefs: readonly {
+        objectId: string;
+        objectType: "account" | "contact";
+        version: number | null;
+      }[];
+      agentProfileId: string | null;
+    },
+    createIdempotencyKey: () => string,
+  ): MessageSubmissionAttempt | null {
+    const fingerprint = JSON.stringify([threadId, submission]);
+    if (this.inFlight.has(fingerprint)) return null;
+    const attempt = {
+      fingerprint,
+      idempotencyKey: createIdempotencyKey(),
+    };
+    this.inFlight.set(fingerprint, attempt);
+    return attempt;
+  }
+
+  finish(attempt: MessageSubmissionAttempt): void {
+    const current = this.inFlight.get(attempt.fingerprint);
+    if (current?.idempotencyKey === attempt.idempotencyKey) {
+      this.inFlight.delete(attempt.fingerprint);
+    }
+  }
+}
+
+export function isTurnLive(turn: ChatTurn): boolean {
+  return LIVE_TURN_STATES.has(turn.state as TurnState);
+}
+
+/** The durable stream transitions that immediately refine the submissions read. */
+export function turnStateForStreamEvent(
+  type: ChatStreamEventType,
+): TurnState | null {
+  switch (type) {
+    case "turn.accepted":
+      return "queued";
+    case "turn.started":
+    case "turn.retrying":
+      return "running";
+    case "turn.completed":
+      return "completed";
+    case "turn.failed":
+      return "failed";
+    case "turn.cancelled":
+      return "cancelled";
+    case "turn.awaiting_input":
+      return "awaiting_input";
+    default:
+      return null;
+  }
+}
+
+/**
+ * The structured gate answer the turn endpoint accepts instead of a message.
+ *
+ * The two `expected*` fields are the client's statement of *what it was looking
+ * at*: the server refuses the answer unless both match the immutable gate. That
+ * is what makes "Approve" mean the card that was on the screen. Note what can
+ * never appear here on any slice — `actor_id`, `action_ref`, or the amount to
+ * *use*: authority is ambient and server-derived.
+ */
+export const GateResponseSchema = z.object({
+  gateId: z.string().min(1),
+  decision: GateDecisionSchema,
+  expectedSubjectSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  expectedEstimatedCostCents: z.number(),
+});
+
+export type GateResponse = z.infer<typeof GateResponseSchema>;
+
+export type TurnSubmission =
+  | {
+      kind: "message";
+      message: string;
+      contextRefs?: readonly {
+        objectId: string;
+        objectType: "account" | "contact";
+        version: number | null;
+      }[];
+      agentProfileId?: string | null;
+    }
+  | { kind: "gate_response"; response: GateResponse };
+
+/** The wire body of a turn submission. Exactly one of the two, never both. */
+export function turnRequestBody(submission: TurnSubmission): unknown {
+  if (submission.kind === "message") {
+    return {
+      message: submission.message,
+      context_refs: (submission.contextRefs ?? []).map((reference) => ({
+        object_type: reference.objectType,
+        object_id: reference.objectId,
+        version: reference.version,
+      })),
+      attachment_refs: [],
+      agent_profile_id: submission.agentProfileId ?? null,
+    };
+  }
+  return {
+    gate_response: {
+      gate_id: submission.response.gateId,
+      decision: submission.response.decision,
+      expected_subject_sha256: submission.response.expectedSubjectSha256,
+      expected_estimated_cost_cents:
+        submission.response.expectedEstimatedCostCents,
+    },
+  };
+}

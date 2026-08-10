@@ -1,50 +1,52 @@
 import {
   SidebarProjectsResponseSchema,
+  SidebarProjectsWireResponseSchema,
   type SidebarProjectsResponse,
 } from "../model/sidebar-project";
+import { chatRequest, type ChatTransport } from "./chat-api";
 import { sidebarProjectFixtures } from "./sidebar-projects.fixture";
 
+export interface SidebarProjectsQuery {
+  cursor?: string;
+  limit?: number;
+}
+
 export interface SidebarProjectsRepository {
-  list(): Promise<SidebarProjectsResponse>;
+  list(query?: SidebarProjectsQuery): Promise<SidebarProjectsResponse>;
 }
 
 export const fixtureSidebarProjectsRepository: SidebarProjectsRepository = {
   async list() {
     return SidebarProjectsResponseSchema.parse({
       data: sidebarProjectFixtures,
-      meta: { total: sidebarProjectFixtures.length },
+      meta: { nextCursor: null },
     });
   },
 };
 
 export function createHttpSidebarProjectsRepository(
-  apiBaseUrl: string,
+  transport: Extract<ChatTransport, { mode: "http" }>,
 ): SidebarProjectsRepository {
   return {
-    async list() {
-      const response = await fetch(
-        new URL(
-          "/api/v1/projects/sidebar",
-          `${apiBaseUrl.replace(/\/$/, "")}/`,
-        ),
-        { cache: "no-store", headers: { Accept: "application/json" } },
+    async list(query = {}) {
+      return SidebarProjectsWireResponseSchema.parse(
+        await chatRequest(transport, "/projects/sidebar", {
+          query: { cursor: query.cursor, limit: query.limit },
+        }),
       );
-
-      if (!response.ok) {
-        throw new Error(`Sidebar projects API returned ${response.status}`);
-      }
-
-      return SidebarProjectsResponseSchema.parse(await response.json());
     },
   };
 }
 
-/**
- * Pinned to fixtures until phase 2 — see the note in
- * `project-workspace.repository.ts`. `GET /api/v1/projects/sidebar` is not
- * served by slice 1, and this repository must not flip on the accounts flow's
- * variable.
- */
-export async function getSidebarProjects() {
+export function createSidebarProjectsRepository(
+  transport: ChatTransport,
+): SidebarProjectsRepository {
+  return transport.mode === "http"
+    ? createHttpSidebarProjectsRepository(transport)
+    : fixtureSidebarProjectsRepository;
+}
+
+/** Fixture-only server read; authenticated HTTP sidebar data loads client-side. */
+export function getSidebarProjects() {
   return fixtureSidebarProjectsRepository.list();
 }

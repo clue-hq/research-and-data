@@ -53,20 +53,26 @@ export function AppSidebar({
   activeHref,
   className = "",
   collapsed = false,
+  id,
   onToggle,
+  toggleLabel,
 }: {
   activeHref: string;
   className?: string;
   collapsed?: boolean;
-  onToggle?: () => void;
+  id?: string;
+  onToggle?: (trigger: HTMLButtonElement) => void;
+  toggleLabel?: string;
 }) {
   const projectsController = useSidebarProjectsController();
 
   return (
     <>
       <aside
+        aria-label="Main navigation"
         className={`flex h-full shrink-0 flex-col overflow-hidden border-r border-[var(--clue-ds-color-border-subtle)] bg-[var(--clue-ds-color-bg-neutral)] transition-[width] duration-200 ease-out ${className}`}
         data-collapsed={collapsed}
+        id={id}
         style={{ width: collapsed ? 56 : "var(--clue-ds-product-dimension-sidebar-width)" }}
       >
         <div className={`flex h-[var(--clue-ds-product-dimension-sidebar-header-height)] shrink-0 items-center transition-[padding] duration-200 ${collapsed ? "px-2" : "px-4"}`}>
@@ -83,9 +89,11 @@ export function AppSidebar({
             />
           </span>
           <button
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={
+              toggleLabel ?? (collapsed ? "Expand sidebar" : "Collapse sidebar")
+            }
             className="ml-auto flex size-6 items-center justify-center rounded-[4px] hover:bg-[var(--clue-background-hover)]"
-            onClick={onToggle}
+            onClick={(event) => onToggle?.(event.currentTarget)}
             type="button"
           >
             <DesignIcon className={`transition-transform duration-200 ${collapsed ? "rotate-180" : ""}`} name="sidebar-toggle" size={12} />

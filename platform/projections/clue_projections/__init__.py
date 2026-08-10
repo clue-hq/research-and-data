@@ -28,10 +28,13 @@ from clue_projections.account_deep_steering import (
     AccountDeepSteeringLaunch,
 )
 from clue_projections.agents import (
+    DEFAULT_TURN_PAGE_SIZE,
+    MAX_TURN_PAGE_SIZE,
     AgentArtifactView,
     AgentProgressView,
     AgentRouteView,
     AgentTelemetryView,
+    AgentTurnPage,
     AgentTurnSummary,
     AgentTurnView,
     agent_progress,
@@ -39,6 +42,7 @@ from clue_projections.agents import (
     agent_telemetry,
     agent_turn,
     agent_turns_for_project,
+    agent_turns_for_thread,
 )
 from clue_projections.dtos import (
     PROJECTIONS_SCHEMA_VERSION,
@@ -51,6 +55,13 @@ from clue_projections.dtos import (
     RunOverview,
 )
 from clue_projections.events import ReplayPlan, plan_replay
+from clue_projections.gates import (
+    GateAnswerView,
+    GateLaunchView,
+    GateView,
+    open_gate_kinds_for_threads,
+    thread_gates,
+)
 from clue_projections.ingestion import IngestionStatusView, ingestion_status
 from clue_projections.manifest import (
     MANIFEST_OP_TOOLS,
@@ -58,6 +69,7 @@ from clue_projections.manifest import (
     run_manifest,
     validate_manifest_op,
 )
+from clue_projections.pagination import InvalidCursorError
 from clue_projections.proposals import (
     FieldProposalCard,
     ProposalScopeCard,
@@ -77,6 +89,11 @@ from clue_projections.research_directives import (
     ResearchDirectiveAccountPreview,
     ResearchDirectivePreview,
     project_research_directive_preview,
+)
+from clue_projections.research_tasks import (
+    ResearchTaskCounts,
+    ResearchTaskView,
+    research_tasks_for_action_refs,
 )
 from clue_projections.research_views import (
     ResearchViewStatus,
@@ -106,6 +123,53 @@ from clue_projections.stage0 import (
     stage0_progress,
     stage0_readiness,
 )
+from clue_projections.thread_refs import (
+    ARTIFACT_OBJECT_TYPE,
+    ASSISTANT_MESSAGE_FLAVORS,
+    USER_MESSAGE_FLAVORS,
+    MessageObjectRef,
+    MessageRefFlavor,
+    flavors_for_message_role,
+)
+from clue_projections.threads import (
+    AGENT_TURN_TASK_DEDUP_PREFIX,
+    DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE,
+    DEFAULT_THREAD_MESSAGE_PAGE_SIZE,
+    DEFAULT_THREAD_PAGE_SIZE,
+    MAX_PROJECT_SIDEBAR_PAGE_SIZE,
+    MAX_THREAD_MESSAGE_PAGE_SIZE,
+    MAX_THREAD_PAGE_SIZE,
+    ProjectSidebarPage,
+    ProjectSidebarProjectView,
+    ThreadMessagePage,
+    ThreadMessageSummary,
+    ThreadPage,
+    ThreadTurnView,
+    ThreadView,
+    project_sidebar_page,
+    thread_messages,
+    thread_turn,
+    thread_turns,
+    threads_for_project,
+    threads_running,
+)
+from clue_projections.turn_inspector import (
+    TurnContextLayerView,
+    TurnContextReceiptView,
+    TurnContextRefView,
+    TurnModelRoundView,
+    TurnPlanEventView,
+    TurnPlanOperationView,
+    TurnPlanReceiptView,
+    TurnStatusEventView,
+    TurnToolCallView,
+    turn_context_receipt,
+    turn_exists,
+    turn_model_rounds,
+    turn_plan_receipt,
+    turn_status_ledger,
+    turn_tool_calls,
+)
 
 __all__ = [
     # schema version
@@ -115,13 +179,51 @@ __all__ = [
     "AgentProgressView",
     "AgentRouteView",
     "AgentTelemetryView",
+    "AgentTurnPage",
     "AgentTurnSummary",
     "AgentTurnView",
+    "DEFAULT_TURN_PAGE_SIZE",
+    "MAX_TURN_PAGE_SIZE",
     "agent_progress",
     "agent_route",
     "agent_telemetry",
     "agent_turn",
     "agent_turns_for_project",
+    "agent_turns_for_thread",
+    # REQ-21 thread shell (FI Lane D D0)
+    "ARTIFACT_OBJECT_TYPE",
+    "ASSISTANT_MESSAGE_FLAVORS",
+    "DEFAULT_THREAD_MESSAGE_PAGE_SIZE",
+    "DEFAULT_THREAD_PAGE_SIZE",
+    "DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE",
+    "InvalidCursorError",
+    "MAX_THREAD_MESSAGE_PAGE_SIZE",
+    "MAX_THREAD_PAGE_SIZE",
+    "MAX_PROJECT_SIDEBAR_PAGE_SIZE",
+    "MessageObjectRef",
+    "MessageRefFlavor",
+    "ThreadMessagePage",
+    "ThreadMessageSummary",
+    "ThreadPage",
+    "ThreadView",
+    "thread_turn",
+    "ProjectSidebarPage",
+    "ProjectSidebarProjectView",
+    "USER_MESSAGE_FLAVORS",
+    # FI Lane D D4 gate substrate projections
+    "GateAnswerView",
+    "GateLaunchView",
+    "GateView",
+    "open_gate_kinds_for_threads",
+    "thread_gates",
+    "flavors_for_message_role",
+    "thread_messages",
+    "project_sidebar_page",
+    "AGENT_TURN_TASK_DEDUP_PREFIX",
+    "ThreadTurnView",
+    "thread_turns",
+    "threads_for_project",
+    "threads_running",
     # M8B O3 main-agent account-deep steering context
     "ACCOUNT_DEEP_STEERING_CARD_MEDIA_TYPE",
     "AccountDeepSteeringAccount",
@@ -160,6 +262,25 @@ __all__ = [
     "ResearchDirectiveAccountPreview",
     "ResearchDirectivePreview",
     "project_research_directive_preview",
+    "ResearchTaskCounts",
+    "ResearchTaskView",
+    "research_tasks_for_action_refs",
+    # FI Lane D dev-lens turn-context inspector (dev-only read surface; zero new storage)
+    "TurnContextLayerView",
+    "TurnContextReceiptView",
+    "TurnContextRefView",
+    "TurnModelRoundView",
+    "TurnPlanEventView",
+    "TurnPlanOperationView",
+    "TurnPlanReceiptView",
+    "TurnStatusEventView",
+    "TurnToolCallView",
+    "turn_context_receipt",
+    "turn_exists",
+    "turn_model_rounds",
+    "turn_plan_receipt",
+    "turn_status_ledger",
+    "turn_tool_calls",
     # Phase C2 proposals
     "ProposalScopeCard",
     "FieldProposalCard",

@@ -302,7 +302,10 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
                 project_id=project.project_id,
                 conn_factory=factory,
             )
-            assert tuple(item.turn_id for item in project_turns) == (turn_request.turn_id,)
+            # FI Lane D D0 gave this reader keyset pagination (FI-1 defect L6). The summaries are
+            # unchanged; they now arrive as one page, and a single turn is the whole of it.
+            assert tuple(item.turn_id for item in project_turns.items) == (turn_request.turn_id,)
+            assert project_turns.next_cursor is None
             progress = await agent_progress(
                 workspace_id=project.workspace_id,
                 turn_id=turn_request.turn_id,

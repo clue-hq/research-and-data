@@ -30,6 +30,13 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # anything in that slot is certified here first.
     "inspect_statement_history@1",
     "inspect_readiness_history@1",
+    # FI Lane D D4 (added in recipe0-stage0@6): the Option-B kickoff chain. Anything runnable in
+    # the Stage-0 interaction slot is replay-certified here first, and these three are the whole
+    # point of the widened conversation surface — draft the direction, present its confirmation
+    # gate, and launch what the human's confirming turn approved.
+    "draft_account_research_directive@2",
+    "open_directive_confirmation_gate@1",
+    "launch_account_research@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

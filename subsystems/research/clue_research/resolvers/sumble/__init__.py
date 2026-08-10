@@ -613,9 +613,7 @@ def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[
                 row.attributes.url,
                 source_url=source_url,
                 confidence=0.98,
-            ).model_copy(
-                update={"evidence_span": _json_member_span("url", row.attributes.url)}
-            )
+            ).model_copy(update={"evidence_span": _json_member_span("url", row.attributes.url)})
         ]
     if field.field_key == _INDUSTRY_FIELD and row.attributes.industry:
         return [
@@ -625,9 +623,7 @@ def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[
                 source_url=source_url,
                 confidence=0.9,
             ).model_copy(
-                update={
-                    "evidence_span": _json_member_span("industry", row.attributes.industry)
-                }
+                update={"evidence_span": _json_member_span("industry", row.attributes.industry)}
             )
         ]
     if field.field_key == _HQ_LOCATION_FIELD and row.attributes.headquarters_country:
@@ -639,9 +635,7 @@ def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[
                 source_url=source_url,
                 confidence=0.88,
             ).model_copy(
-                update={
-                    "evidence_span": _json_member_span("headquarters_country", country)
-                }
+                update={"evidence_span": _json_member_span("headquarters_country", country)}
             )
         ]
     return []

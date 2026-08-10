@@ -119,11 +119,18 @@ class _CertifiedEcho(Tool):
     def __init__(self) -> None:
         self.calls = 0
         self.values: list[int] = []
+        # The ambient invocation identity each call actually saw (Lane D D1 × Lane B B4): a human
+        # gate reads exactly these values, so a test that only checks the executor's arguments
+        # proves nothing about what a tool body receives. ``principal_kind`` is in the tuple
+        # because after the Lane B join it is what separates "the worker invoked this" from "the
+        # human did" — two calls can carry the same receipt and mean different things.
+        self.identities: list[tuple[str | None, str | None, str | None]] = []
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, _Input)
         self.calls += 1
         self.values.append(inputs.value)
+        self.identities.append((ctx.principal_kind, ctx.actor_id, ctx.action_ref))
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -1157,5 +1164,102 @@ def test_tightened_runtime_envelope_blocks_future_map_expansion() -> None:
                     {"id": execution_id},
                 )
             ).scalar_one() == 0
+
+    run_async(scenario())
+
+
+def test_ambient_invocation_identity_reaches_the_tool_or_stays_absent() -> None:
+    """Lane D D1 §3-P2 × Lane B §7: the receipt is threaded; the *invoker* is not impersonated.
+
+    Both values arrive as *data* on the call that knows the turn — never a global, never a tool
+    argument. A drive that belongs to no turn passes neither, and the tool sees ``None``: an absent
+    receipt refuses a human gate, while an invented one would forge consent.
+
+    The Lane B join sharpens the first half. This node's actor class is ``agent``, and the thing
+    actually executing it is a **detached worker**, so it invokes as a service principal
+    (``svc_execution_worker``) rather than wearing the turn's user id. That is Lane B ruling 8: a
+    worker "may execute an agent turn that carries a persisted human approval receipt, but it may
+    not synthesize a human ``actor_id`` from its own service credential." The human's authority is
+    not lost by this — it is carried *properly*, as the ``turn-action:`` receipt, which resolves to
+    the submitting user, their membership, the captured bytes, and (for a gate answer) the exact
+    gate. A string on a context proves none of that.
+    """
+
+    action_ref = "turn-action:00000000-0000-4000-8000-0000000000d1"
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            execution_id, executor, tool, generation = await _runtime(conn)
+            result = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+                actor_id="usr_lane_d1_principal",
+                action_ref=action_ref,
+            )
+            assert result.status is ExecutionStatus.COMPLETED
+            assert tool.identities == [("service", "svc_execution_worker", action_ref)]
+
+            unattributed_id, unattributed, off_turn_tool, unattributed_generation = await _runtime(
+                conn
+            )
+            assert (
+                await unattributed.execute(
+                    unattributed_id,
+                    worker_id="worker",
+                    lease_generation=unattributed_generation,
+                )
+            ).status is ExecutionStatus.COMPLETED
+            # Still a service invocation — the worker is who it is whether or not a turn sent it —
+            # but with no receipt at all, which is what refuses a human gate.
+            assert off_turn_tool.identities == [("service", "svc_execution_worker", None)]
+
+    run_async(scenario())
+
+
+def test_an_interaction_child_carries_the_turns_identity_into_its_tool_context() -> None:
+    """The agent seam's path: a governed tool appended by a plan runs under that turn's receipt.
+
+    The other side of the join. This child is appended with ``actor="human"`` — a human-*authority*
+    node — so it keeps the turn's human ``actor_id`` instead of the worker's service id. Its
+    ``principal_kind`` stays ``None`` (the legacy shape) rather than ``"human"``, and deliberately:
+    a closed human principal requires a ``membership_id``, and the C5 seam carries an ``actor_id``
+    and nothing else. Claiming ``"human"`` here would assert a membership nobody proved. The
+    consequence is intended and fail-closed — ``require_human_authority`` admits this shape only
+    for a node already in C5's durable journal and only where no action receipt is required, so a
+    receipt-bearing confirmation still cannot be entered through the executor. D4 runs those
+    outside the model surface, at the HTTP boundary, where the full principal exists.
+    """
+
+    action_ref = "turn-action:00000000-0000-4000-8000-0000000000d2"
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            execution_id, executor, tool, generation = await _runtime(conn, interaction=True)
+            opened = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+            )
+            assert opened.status is ExecutionStatus.AWAITING_INPUT
+
+            appended = await executor.append_interaction_tool(
+                execution_id=execution_id,
+                workspace_id="ws-c5-executor",
+                slot_key="interactions",
+                node_key="answer-001",
+                tool_name=tool.name,
+                tool_version=tool.version,
+                inputs={"value": 17},
+                actor="human",
+            )
+            await executor.invoke_interaction_tool(
+                appended,
+                inputs={"value": 17},
+                actor="human",
+                actor_id="usr_lane_d1_principal",
+                action_ref=action_ref,
+            )
+            assert tool.identities == [(None, "usr_lane_d1_principal", action_ref)]
 
     run_async(scenario())

@@ -1,37 +1,76 @@
-import type { ProjectHome } from "../model/project-workspace";
 import { ProjectComposer } from "./project-composer";
 import styles from "./project-flow.module.css";
 
 export function ProjectHomeView({
   controller,
-  data,
 }: {
   controller: ReturnType<typeof import("../hooks/use-project-home-controller").useProjectHomeController>;
-  data: ProjectHome;
 }) {
+  const data = controller.data;
   return (
     <main className={styles.home}>
       <section className={styles.homeHero}>
         <div className={styles.homeComposer}>
           <h1>What will you create today?</h1>
+          {data.brands.length > 1 || !controller.selectedBrandId ? (
+            <label className={styles.homeBrandPicker}>
+              <span>Brand</span>
+              <select
+                aria-label="Brand"
+                disabled={controller.loading}
+                onChange={(event) => controller.setSelectedBrandId(event.target.value)}
+                value={controller.selectedBrandId}
+              >
+                <option value="">Select a brand</option>
+                {data.brands.map((brand) => (
+                  <option key={brand.id} value={brand.id}>
+                    {brand.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <ProjectComposer
             attachments={controller.attachments}
             entities={data.entities}
+            disabled={controller.loading}
             modelPickerOpen={controller.modelPickerOpen}
             models={data.models}
-            onAttachmentFiles={controller.addAttachments}
-            onAttachmentRemove={controller.removeAttachment}
-            onEntityRemove={controller.removeEntity}
-            onEntitySelect={controller.selectEntity}
+            onAttachmentFiles={
+              data.composerCapabilities.attachments
+                ? controller.addAttachments
+                : undefined
+            }
+            onAttachmentRemove={
+              data.composerCapabilities.attachments
+                ? controller.removeAttachment
+                : undefined
+            }
+            onEntityRemove={
+              data.composerCapabilities.contextRefs
+                ? controller.removeEntity
+                : undefined
+            }
+            onEntitySelect={
+              data.composerCapabilities.contextRefs
+                ? controller.selectEntity
+                : undefined
+            }
             onModelPickerToggle={controller.toggleModelPicker}
             onModelSelect={controller.selectModel}
             onPromptChange={controller.setPrompt}
             onSubmit={controller.submit}
             prompt={controller.prompt}
+            sendDisabled={!controller.selectedBrandId || controller.submitting}
             selectedEntities={controller.selectedEntities}
             selectedEntityIds={controller.selectedEntityIds}
             selectedModel={controller.selectedModel}
           />
+          {controller.error ? (
+            <p className={styles.homeError} role="alert">
+              {controller.error}
+            </p>
+          ) : null}
           <div className={styles.homeSuggestions}>
             {controller.suggestions.map((suggestion, index) => (
               <button

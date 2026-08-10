@@ -31,6 +31,8 @@ specifications from becoming competing sources of truth.
   contacts backend handoff.
 - [`api-contracts/projects.md`](api-contracts/projects.md) — projects, threads,
   messages, generation runs, attachments, and artifacts.
+- [`api-contracts/session.md`](api-contracts/session.md) — authenticated session,
+  workspace selection, and same-origin BFF boundary.
 - [`figma/projects-chat-flow.md`](figma/projects-chat-flow.md) — approved project
   flow frames, assets, and implemented interaction states.
 - [`research/lightfield-chat-reference.md`](research/lightfield-chat-reference.md)

@@ -489,10 +489,8 @@ class OpenRouterAgentModelProvider:
         temperature: float,
     ) -> BaseChatModel:
         # OpenRouter's Responses API is stateless. Clue/DeepAgents therefore continues to replay
-        # the complete durable message history and never uses ``previous_response_id``. GPT-5.6's
-        # current governed baseline remains reasoning ``none``; express it in the native Responses
-        # shape so it can be tuned later by eval-backed policy without returning to Chat params.
-        reasoning = {"effort": "none"} if model_id.startswith("openai/gpt-5.6") else None
+        # the complete durable message history and never uses ``previous_response_id``.
+        reasoning = _reasoning_request(self._config, model_id=model_id)
         # Runtime aliases are intentionally friendlier than ChatOpenAI's generated static type.
         return ChatOpenAI(  # type: ignore[call-arg]
             model=model_id,
@@ -509,6 +507,45 @@ class OpenRouterAgentModelProvider:
             http_async_client=self._http_async_client,
             reasoning=reasoning,
         )
+
+
+def _reasoning_request(config: GatewayConfig, *, model_id: str) -> dict[str, Any] | None:
+    """The provider ``reasoning`` block for one governed agent model — config first, baseline else.
+
+    **The baseline (no config).** GPT-5.6's current governed default is reasoning ``none``,
+    expressed in the native Responses shape so it can be tuned by eval-backed policy without
+    returning to Chat params. Every other model asks for nothing.
+
+    **The override (``GatewayConfig.agent_reasoning``).** Set only by ``default_gateway_config``
+    under the dev-only ``CLUE_CHAT_REASONING_TRACE_MODE=raw`` lens, which a production process is
+    refused at startup. It replaces the baseline wholesale — including GPT-5.6's ``effort: none``,
+    which is the point: a model told to spend no reasoning effort has no reasoning to expose.
+
+    **What actually comes back is provider-dependent, and this is the honest account.** The request
+    is uniform; the response is not.
+
+    * **OpenAI o-series / GPT-5.x reasoning models.** The Responses API never returns the private
+      chain-of-thought. With ``summary`` requested it returns a model-written *summary* of it, as
+      ``response.reasoning_summary_text.delta`` chunks that
+      ``langchain_openai`` surfaces as ``reasoning`` content blocks. That summary is what the dev
+      lens streams. Without ``summary`` the request still reasons and emits nothing observable.
+    * **Anthropic models (via OpenRouter).** Extended thinking returns thinking blocks, and
+      OpenRouter maps them onto the same reasoning items — so the lens shows the thinking text
+      rather than a summary. ``max_tokens`` is the thinking budget these models actually read.
+    * **Plain (non-reasoning) models.** Nothing. The block is accepted and ignored, or ignored and
+      dropped, depending on the route; either way no reasoning content exists to stream and the
+      ``reasoning`` part stays exactly the safe status card it is in ``summary`` mode.
+
+    Nothing downstream may assume a trace arrived. An empty reasoning card is the correct output for
+    a model with no reasoning to show, in the same way an empty claim is the correct output for a
+    field no source can answer.
+    """
+
+    configured = config.agent_reasoning
+    if configured is not None:
+        payload = configured.as_provider_payload()
+        return dict(payload) if payload else None
+    return {"effort": "none"} if model_id.startswith("openai/gpt-5.6") else None
 
 
 def _served_model_from_result(result: ChatResult, *, fallback: str) -> str:

@@ -1,5 +1,6 @@
 import {
   ProjectHomeSchema,
+  ProjectWorkspaceResponseSchema,
   ProjectWorkspaceSchema,
   type ProjectHome,
   type ProjectWorkspace,
@@ -8,17 +9,18 @@ import {
   projectHomeFixture,
   projectWorkspaceFixture,
 } from "./project-workspace.fixture";
+import {
+  chatRequest,
+  resolveChatTransport,
+  type ChatTransport,
+} from "./chat-api";
 
 export interface ProjectWorkspaceRepository {
-  getHome(): Promise<ProjectHome>;
-  getProject(projectId: string): Promise<ProjectWorkspace>;
+  get(projectId: string): Promise<ProjectWorkspace>;
 }
 
 export const fixtureProjectWorkspaceRepository: ProjectWorkspaceRepository = {
-  async getHome() {
-    return ProjectHomeSchema.parse(projectHomeFixture);
-  },
-  async getProject(projectId) {
+  async get(projectId) {
     return ProjectWorkspaceSchema.parse({
       ...projectWorkspaceFixture,
       id: projectId,
@@ -27,51 +29,49 @@ export const fixtureProjectWorkspaceRepository: ProjectWorkspaceRepository = {
 };
 
 export function createHttpProjectWorkspaceRepository(
-  apiBaseUrl: string,
+  transport: Extract<ChatTransport, { mode: "http" }>,
 ): ProjectWorkspaceRepository {
-  const baseUrl = `${apiBaseUrl.replace(/\/$/, "")}/`;
-
-  async function read(path: string) {
-    const response = await fetch(new URL(path, baseUrl), {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
-    if (!response.ok) {
-      throw new Error(`Project API returned ${response.status}`);
-    }
-    return response.json();
-  }
-
   return {
-    async getHome() {
-      return ProjectHomeSchema.parse(await read("api/v1/home"));
-    },
-    async getProject(projectId) {
-      return ProjectWorkspaceSchema.parse(
-        await read(`api/v1/projects/${encodeURIComponent(projectId)}`),
+    async get(projectId) {
+      return ProjectWorkspaceResponseSchema.parse(
+        await chatRequest(
+          transport,
+          `/projects/${encodeURIComponent(projectId)}`,
+        ),
       );
     },
   };
 }
 
+/** Fixture-only server render for Home; HTTP Home loads through its client repository. */
+export function getProjectHome(): Promise<ProjectHome> {
+  if (resolveChatTransport().mode === "http") {
+    return Promise.resolve(ProjectHomeSchema.parse({
+      brands: [],
+      composerCapabilities: {
+        agentProfileSelection: false,
+        attachments: false,
+        contextRefs: false,
+      },
+      defaultAgentProfileId: null,
+      defaultBrandId: null,
+      entities: [],
+      models: [],
+      suggestions: [],
+    }));
+  }
+  return Promise.resolve(ProjectHomeSchema.parse(projectHomeFixture));
+}
+
 /**
- * Pinned to fixtures until phase 2.
- *
- * The HTTP adapter above calls `api/v1/home` and `api/v1/projects/*`, which no
- * backend serves yet — slice 1 ships the accounts read layer only. This
- * repository used to flip on the same environment variable the accounts flow
- * read, so pointing the app at a real backend to see accounts also threw the
- * home route on the first non-2xx. It now reads none, and stays on fixtures
- * until the project surface exists and gets its own variable.
+ * A protected Server Component cannot call the origin-relative authenticated
+ * BFF. HTTP mode therefore supplies no project payload at all; the client
+ * repository loads and validates the real shell before mounting it. This is a
+ * loading boundary, never a fixture fallback.
  */
-function getRepository() {
-  return fixtureProjectWorkspaceRepository;
-}
-
-export function getProjectHome() {
-  return getRepository().getHome();
-}
-
-export function getProjectWorkspace(projectId: string) {
-  return getRepository().getProject(projectId);
+export function getProjectWorkspace(
+  projectId: string,
+): Promise<ProjectWorkspace | null> {
+  if (resolveChatTransport().mode === "http") return Promise.resolve(null);
+  return fixtureProjectWorkspaceRepository.get(projectId);
 }

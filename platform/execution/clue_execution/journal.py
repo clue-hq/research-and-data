@@ -10,6 +10,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import JsonValue
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -45,6 +46,10 @@ class StaleCursor(RuntimeError):
 
 class OperationConflict(RuntimeError):
     pass
+
+
+class ToolAuthorityStateChanged(RuntimeError):
+    """A durable user/membership authority no longer satisfies its database anchors."""
 
 
 class LostExecutionLease(RuntimeError):
@@ -581,15 +586,59 @@ class DbInvocationJournal(InvocationJournal):
                 },
             )
             node_created = node_insert.rowcount == 1
+            try:
+                await conn.execute(
+                    text(
+                        """
+                    INSERT INTO execution_node_authority
+                        (node_id, execution_id, authority_workspace_id, invocation_actor,
+                         principal_kind, actor_id, membership_id, action_ref)
+                    SELECT :node_id, :execution_id, :authority_workspace_id, :invocation_actor,
+                           :principal_kind, :actor_id, :membership_id, :action_ref
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM execution_attempt a WHERE a.node_id = :node_id
+                    )
+                    ON CONFLICT (node_id) DO NOTHING
+                        """
+                    ),
+                    {
+                        "node_id": node_id,
+                        "execution_id": execution_id,
+                        "authority_workspace_id": (
+                            context.workspace_id if context.principal_kind is not None else None
+                        ),
+                        "invocation_actor": context.actor,
+                        "principal_kind": context.principal_kind,
+                        "actor_id": context.actor_id,
+                        "membership_id": context.membership_id,
+                        "action_ref": context.action_ref,
+                    },
+                )
+            except IntegrityError as exc:
+                constraint = getattr(getattr(exc.orig, "__cause__", None), "constraint_name", None)
+                if constraint in {
+                    "execution_node_authority_membership_actor_fk",
+                    "execution_node_authority_membership_workspace_fk",
+                }:
+                    raise ToolAuthorityStateChanged(
+                        "authenticated user or workspace membership state changed"
+                    ) from exc
+                raise
             node = (
                 (
                     await conn.execute(
                         text(
                             """
-                            SELECT id, node_key, tool_name, tool_version, parameter_artifact_key,
-                                   parameter_sha256, input_schema_sha256, output_schema_sha256
-                            FROM execution_node
-                            WHERE execution_id = :execution_id AND operation_id = :operation_id
+                            SELECT n.id, n.node_key, n.tool_name, n.tool_version,
+                                   n.parameter_artifact_key, n.parameter_sha256,
+                                   n.input_schema_sha256, n.output_schema_sha256,
+                                   a.invocation_actor, a.principal_kind,
+                                   a.authority_workspace_id, a.actor_id, a.membership_id,
+                                   a.action_ref
+                            FROM execution_node n
+                            LEFT JOIN execution_node_authority a ON a.node_id = n.id
+                            WHERE n.execution_id = :execution_id
+                              AND n.operation_id = :operation_id
                             """
                         ),
                         {
@@ -619,11 +668,40 @@ class DbInvocationJournal(InvocationJournal):
                 if node is not None
                 else None
             )
-            if actual_node != expected_node or (
-                node is not None and str(node["id"]) != str(node_id)
+            authority_matches = node is not None and (
+                # Nodes that already had attempts when B4 landed deliberately received no
+                # authority backfill.  Their LEFT JOIN is all-NULL and is historical absence,
+                # not the string actor id ``"None"`` or a replay conflict.
+                node["invocation_actor"] is None
+                or (
+                    str(node["invocation_actor"]),
+                    (str(node["principal_kind"]) if node["principal_kind"] is not None else None),
+                    (
+                        str(node["authority_workspace_id"])
+                        if node["authority_workspace_id"] is not None
+                        else None
+                    ),
+                    str(node["actor_id"]) if node["actor_id"] is not None else None,
+                    str(node["membership_id"]) if node["membership_id"] is not None else None,
+                    str(node["action_ref"]) if node["action_ref"] is not None else None,
+                )
+                == (
+                    context.actor,
+                    context.principal_kind,
+                    context.workspace_id if context.principal_kind is not None else None,
+                    context.actor_id,
+                    context.membership_id,
+                    context.action_ref,
+                )
+            )
+            if (
+                actual_node != expected_node
+                or not authority_matches
+                or (node is not None and str(node["id"]) != str(node_id))
             ):
                 raise OperationConflict(
-                    "operation id or node key was replayed with a different tool/body/schema"
+                    "operation id or node key was replayed with different "
+                    "tool/body/schema/authority"
                 )
             existing_parameter = (
                 (
@@ -987,6 +1065,7 @@ __all__ = [
     "LostExecutionLease",
     "JournalCrashHook",
     "OperationConflict",
+    "ToolAuthorityStateChanged",
     "StaleCursor",
     "get_cursor",
     "rebuild_cursor",

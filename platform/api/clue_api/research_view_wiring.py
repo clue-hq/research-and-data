@@ -13,6 +13,7 @@ from uuid import UUID
 
 from sqlalchemy import text
 
+from clue_api.auth_tool_context import tool_context_for_internal_service
 from clue_core import EntityType, OperationId, ResearchSubjectRef, ResearchViewComposer
 from clue_db import ConnFactory, transaction
 from clue_research.durable import append_subject_activity
@@ -32,7 +33,7 @@ from clue_research.narrative import (
     SnapshotReachabilityReader,
     StatementGovernanceReader,
 )
-from clue_toolbelt import ToolContext, ToolInvoker
+from clue_toolbelt import ToolInvoker
 
 
 def build_research_view_composer(
@@ -197,9 +198,9 @@ class ToolInvokerResearchOperationRequester:
                 "tier": str(row[1]),
                 "project_run_id": str(request.project_run_id),
             },
-            ToolContext(
+            tool_context_for_internal_service(
+                service_id="svc_research_view_recheck",
                 workspace_id=request.workspace_id,
-                actor="human",
                 conn_factory=self._conn_factory,
                 operation_id=request.operation_id,
             ),

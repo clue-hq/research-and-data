@@ -25,6 +25,10 @@ from clue_api.agent_registry_wiring import (
     ToolRegistryAgentCatalog,
     build_agent_profile_registry,
 )
+from clue_api.chat.composer_context import (
+    PROJECT_CONVERSATION_AGENT_PROFILE_ID,
+    PROJECT_CONVERSATION_MODEL_ID,
+)
 from clue_api.toolbelt_wiring import build_toolbelt
 from tests.agents.workspace_helpers import make_workspace
 from tests.api.conftest import hermetic_flag_env
@@ -59,7 +63,10 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # inspection-tool grants + delegation withholding) and task 1.4's:
         # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
         # nested authority, and B1 layer 2's engine-defaulted claim entity.
-        AgentRole.HEAD_OF_ABM: ("1e6708383f7fe77730d5dd77c8bf933160b454110308bce59d42bea89a96bce5"),
+        # FI Lane D D4 minted head-of-abm@v23: it pins `open_directive_confirmation_gate@1` and
+        # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
+        # gate, end the turn, and launch only after the human's own confirming turn.
+        AgentRole.HEAD_OF_ABM: ("7d85eb0083badf9104b004f546368674bc109f46ee6c630a7d14422840ce3ba5"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -70,6 +77,12 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     for role, digest in expected_manifests.items():
         resolved = registry.resolve(role)
         assert resolved.profile.model.model_id == "openai/gpt-5.6-terra"
+        if role is AgentRole.HEAD_OF_ABM:
+            assert (
+                f"{resolved.profile_ref.name}@{resolved.profile_ref.version}"
+                == PROJECT_CONVERSATION_AGENT_PROFILE_ID
+            )
+            assert resolved.profile.model.model_id == PROJECT_CONVERSATION_MODEL_ID
         expected_tools = {
             (
                 "research_account_gaps@2"
@@ -114,7 +127,21 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # The two proposal v1 addresses remain installed only for historical recipe replay. They add
     # inventory entries but cannot enter the current model surface; only propose_field@2 carries
     # the dynamic Client-KB authority.
-    assert len(by_address) == 55
+    #
+    # FI Lane D D0 added four more inventory-only entries — the REQ-21 thread tools. They are
+    # disclosed and refused for exactly the reason every other ungranted tool is: the inventory is
+    # honest about what the platform can do and what *this role* may not, and a capability the
+    # model can see it lacks is what stops it inventing a workaround. Withholding them through a
+    # surface policy is not an option either — a policy may only narrow tools the role's profile
+    # pins, and no profile pins these.
+    assert len(by_address) == 60
+    for address in (
+        "create_thread@1",
+        "rename_thread@1",
+        "set_thread_pinned@1",
+        "archive_thread@1",
+    ):
+        assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
@@ -125,6 +152,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "inspect_statement_history@1",
         "launch_account_research@1",
         "launch_contact_research@1",
+        "open_directive_confirmation_gate@1",
         "propose_field@2",
         "propose_source@1",
         "read_account_research_run@1",
@@ -184,7 +212,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
 
     assert len(disclosures) == 2
     assert disclosures[0].resource.address == "skill:stage0-interview@v10"
-    assert disclosures[1].resource.address == "skill:account-deep-steering@v2"
+    assert disclosures[1].resource.address == "skill:account-deep-steering@v3"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -313,7 +341,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "evaluate_stage0_readiness@1" not in {pin.address for pin in head.profile.tools}
     assert [item.resource.address for item in head.skill_disclosures()] == [
-        "skill:account-deep-steering@v2"
+        "skill:account-deep-steering@v3"
     ]
 
 

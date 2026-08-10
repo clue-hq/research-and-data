@@ -53,6 +53,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
     assert [item.ref.address for item in skills.list()] == [
         "skill:account-deep-steering@v1",
         "skill:account-deep-steering@v2",
+        "skill:account-deep-steering@v3",
         "skill:account-gap-research@v1",
         "skill:account-gap-research@v2",
         "skill:account-gap-research@v3",
@@ -100,6 +101,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v20",
         "profile:head-of-abm@v21",
         "profile:head-of-abm@v22",
+        "profile:head-of-abm@v23",
         "profile:head-of-abm@v3",
         "profile:head-of-abm@v4",
         "profile:head-of-abm@v5",

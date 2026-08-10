@@ -43,6 +43,11 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v3.json",
     "recipe0-stage0-v4.json",
     "recipe0-stage0-v5.json",
+    # FI Lane D D4: v6 is v5 plus the Option-B kickoff chain — the agent may draft direction,
+    # present its confirmation gate, and launch the research the human's confirming turn approved.
+    # A promoted recipe revision is immutable, so widening the interaction slot's ceiling is a new
+    # revision rather than an edit, exactly like the profile mint the same slice needed.
+    "recipe0-stage0-v6.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )
@@ -323,6 +328,103 @@ def build_recipe_pin_registry(
         return _observation(version="1", payload=dict(row))
 
     registry.register(CallablePinResolver(kind="project_run", loader=project_run))
+
+    async def research_directive(
+        request: PinRequest,
+        context: CompatibilityContext,
+    ) -> ResourceObservation | None:
+        """One account-research directive **revision**, by directive id (FI Lane D D4).
+
+        The pin kind the Option-B kickoff tools declare. Its version is the directive's own
+        ``version`` column, so pinning it says "this exact revision" — which is what makes a gate,
+        and then a launch, refuse a directive that was redrafted underneath them.
+
+        The payload is deliberately the *immutable* revision identity and lineage, the same
+        posture ``project_run`` takes: ``status`` / ``confirmed_by`` / ``confirmed_at`` are
+        lifecycle, they move between the gate call and the launch call by design, and the tools
+        that care about them check them themselves.
+        """
+
+        try:
+            UUID(request.key)
+        except ValueError:
+            return None
+        async with conn_factory() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT directive_id, workspace_id, project_id, product_id,
+                                   icp_key, icp_version, version, predecessor_id,
+                                   canonical_json_sha256
+                            FROM account_research_directive
+                            WHERE directive_id = CAST(:key AS uuid)
+                              AND workspace_id = :workspace_id
+                            """
+                        ),
+                        {"key": request.key, "workspace_id": context.workspace_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            return None
+        return _observation(version=str(row["version"]), payload=dict(row))
+
+    registry.register(CallablePinResolver(kind="research_directive", loader=research_directive))
+
+    async def account_research_selection(
+        request: PinRequest,
+        context: CompatibilityContext,
+    ) -> ResourceObservation | None:
+        """The exact account-research selection a launch authorizes — **absent before the launch**.
+
+        ``launch_account_research@1`` declares this pin kind because a selection *is* its subject,
+        but the selection does not exist until the launcher mints it: its id is derived from the
+        request digest inside the launch transaction. So on the only path that matters — the first,
+        real launch — this resolver correctly returns ``None`` and the caller supplies the pin as
+        **optional**, which resolves to a recorded ``status='missing'`` pin rather than an
+        incompatibility. Requiring it would deadlock the flow: the tool could never run, because
+        the thing it is pinned to is the thing it creates.
+
+        It still resolves truthfully once a selection exists, so a *replay* of an already-launched
+        run (and any later audit of one) pins the real thing rather than a permanent absence.
+        """
+
+        try:
+            UUID(request.key)
+        except ValueError:
+            # Includes the ``__not_supplied__`` sentinel the pin provider uses to declare the
+            # absence explicitly; "there is no selection yet" is the honest observation.
+            return None
+        async with conn_factory() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT selection_id, research_run_id, workspace_id, project_id,
+                                   product_id, project_run_id, lifecycle_sha256
+                            FROM entity_research_run
+                            WHERE selection_id = CAST(:key AS uuid)
+                              AND workspace_id = :workspace_id
+                            """
+                        ),
+                        {"key": request.key, "workspace_id": context.workspace_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            return None
+        return _observation(version="1", payload=dict(row))
+
+    registry.register(
+        CallablePinResolver(kind="account_research_selection", loader=account_research_selection)
+    )
 
     async def account(
         request: PinRequest,

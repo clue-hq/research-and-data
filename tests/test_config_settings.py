@@ -152,3 +152,53 @@ def test_agent_workspace_allowlist_accepts_one_bare_workspace_id(
     monkeypatch.setenv("CLUE_AGENT_WORKSPACE_ALLOWLIST", "ws-a")
     settings = load_settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.agent_workspace_allowlist == ("ws-a",)
+
+
+def test_auth_local_fixture_mode_is_forbidden_in_production() -> None:
+    with pytest.raises(ValidationError, match="local fixture auth is forbidden"):
+        load_settings(
+            _env_file=None,
+            auth_environment="production",
+            auth_mode="local_fixture",
+        )
+
+
+def test_auth_clerk_authorized_parties_accept_shell_safe_list() -> None:
+    settings = load_settings(
+        _env_file=None,
+        auth_environment="production",
+        auth_mode="clerk",
+        projections_auth_mode="authenticated_principal",
+        auth_clerk_authorized_parties="https://app.example, http://localhost:3000",
+    )
+    assert settings.auth_clerk_authorized_parties == (
+        "https://app.example",
+        "http://localhost:3000",
+    )
+
+
+def test_enabled_auth_requires_explicit_environment() -> None:
+    with pytest.raises(ValidationError, match="CLUE_AUTH_ENVIRONMENT must be set explicitly"):
+        load_settings(_env_file=None, auth_enabled=True)
+
+
+def test_production_auth_refuses_local_header_workspace_authority() -> None:
+    with pytest.raises(ValidationError, match="forbids the local-header"):
+        load_settings(
+            _env_file=None,
+            auth_enabled=True,
+            auth_environment="production",
+            auth_mode="clerk",
+            projections_auth_mode="local_header",
+        )
+
+
+def test_declared_production_refuses_local_header_even_before_auth_flip() -> None:
+    with pytest.raises(ValidationError, match="forbids the local-header"):
+        load_settings(
+            _env_file=None,
+            auth_enabled=False,
+            auth_environment="production",
+            auth_mode="clerk",
+            projections_auth_mode="local_header",
+        )

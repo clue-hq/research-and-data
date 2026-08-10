@@ -1,0 +1,705 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  SseFrameReader,
+  parseChatStreamEvent,
+  type ChatStreamEvent,
+} from "./chat-events";
+import {
+  applyChatStreamEvent,
+  composeTranscript,
+  emptyTranscriptState,
+  turnsAwaitingRehydration,
+  type TranscriptState,
+} from "./chat-transcript";
+import type { ChatTextPart } from "./chat-parts";
+import {
+  fixtureLaunchEvents,
+  fixtureTurnEvents,
+} from "../data/chat.fixture";
+
+/**
+ * The stream adapter, driven by synthetic SSE conforming to D3's event schema.
+ *
+ * These mirror the charter §5 streaming cases at the consumer end: reconnect
+ * replay, duplicate delivery, `part.updated` replacement, `stream.reset`, and
+ * attempt isolation. They are the frontend's half of "the stream has its own
+ * contract suite and is never used to prove the domain outcome".
+ */
+
+const TURN = "turn-1";
+const ATTEMPT_A = "attempt-a";
+const ATTEMPT_B = "attempt-b";
+
+let nextEventId = 0;
+
+function frame(payload: Record<string, unknown>): ChatStreamEvent {
+  nextEventId += 1;
+  const parsed = parseChatStreamEvent({
+    schema_version: "1",
+    event_id: nextEventId,
+    sequence: nextEventId,
+    project_id: "p1",
+    thread_id: "t1",
+    turn_id: TURN,
+    generation_attempt_id: ATTEMPT_A,
+    ...payload,
+  });
+  assert.ok(parsed.ok, `frame did not parse: ${parsed.ok ? "" : parsed.reason}`);
+  return parsed.event;
+}
+
+function apply(
+  state: TranscriptState,
+  events: readonly ChatStreamEvent[],
+): TranscriptState {
+  return events.reduce(applyChatStreamEvent, state);
+}
+
+function textOf(state: TranscriptState, turnId = TURN): string {
+  const turn = state.turns.get(turnId);
+  assert.ok(turn, "expected a projected turn");
+  const part = turn.parts.find((entry) => entry.part.kind === "text");
+  return part ? (part.part as ChatTextPart).text : "";
+}
+
+test("text deltas accumulate in index order across arbitrary splits", () => {
+  const events = [
+    frame({ type: "turn.started" }),
+    frame({ type: "text.start", part_id: "text:a", part_kind: "text" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 0, delta: "Loo" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 1, delta: "king at **bo" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 2, delta: "th** accounts" }),
+    frame({ type: "text.end", part_id: "text:a" }),
+  ];
+  const state = apply(emptyTranscriptState(), events);
+  assert.equal(textOf(state), "Looking at **both** accounts");
+  const part = state.turns.get(TURN)?.parts.find((entry) => entry.part.kind === "text");
+  assert.equal((part?.part as ChatTextPart).streaming, false);
+});
+
+test("an out-of-order delta still lands at its own index", () => {
+  const events = [
+    frame({ type: "text.start", part_id: "text:a", part_kind: "text" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 1, delta: "second" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 0, delta: "first " }),
+  ];
+  assert.equal(textOf(apply(emptyTranscriptState(), events)), "first second");
+});
+
+test("duplicate delivery of the same event is a no-op", () => {
+  const start = frame({ type: "text.start", part_id: "text:a", part_kind: "text" });
+  const delta = frame({
+    type: "text.delta",
+    part_id: "text:a",
+    delta_index: 0,
+    delta: "hello",
+  });
+  const once = apply(emptyTranscriptState(), [start, delta]);
+  const twice = apply(once, [start, delta, delta]);
+  assert.equal(textOf(twice), "hello");
+  assert.equal(twice, once, "a duplicate must not even produce a new state object");
+});
+
+test("a reconnect replay of the whole backlog reproduces the same transcript", () => {
+  const events = [
+    frame({ type: "turn.accepted" }),
+    frame({ type: "turn.started" }),
+    frame({ type: "text.start", part_id: "text:a", part_kind: "text" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 0, delta: "abc" }),
+  ];
+  const live = apply(emptyTranscriptState(), events);
+  // The server replays `event_id > cursor`; a client that lost its socket after
+  // the first two frames receives the last two again.
+  const replayed = apply(apply(emptyTranscriptState(), events.slice(0, 2)), events);
+  assert.equal(textOf(replayed), textOf(live));
+  assert.equal(replayed.cursor, live.cursor);
+});
+
+test("part.updated replaces the prior snapshot and never appends a second card", () => {
+  const snapshot = (revision: number, state: string) => ({
+    part_id: "tool:x",
+    kind: "tool",
+    revision,
+    state,
+    tool_name: "draft_directive",
+    tool_call_id: "c1",
+    node_key: "x",
+  });
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "part.created", part_id: "tool:x", part_kind: "tool", part: snapshot(1, "input-available") }),
+    frame({ type: "part.updated", part_id: "tool:x", part_kind: "tool", part: snapshot(2, "output-available") }),
+  ]);
+  const parts = state.turns.get(TURN)?.parts ?? [];
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0].part.kind === "tool" && parts[0].part.state, "output-available");
+});
+
+test("an older revision never overwrites a newer snapshot", () => {
+  const snapshot = (revision: number, state: string) => ({
+    part_id: "tool:x",
+    kind: "tool",
+    revision,
+    state,
+    tool_name: "t",
+    tool_call_id: "c",
+    node_key: "x",
+  });
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "part.created", part_id: "tool:x", part_kind: "tool", part: snapshot(2, "output-available") }),
+    frame({ type: "part.updated", part_id: "tool:x", part_kind: "tool", part: snapshot(1, "input-available") }),
+  ]);
+  const parts = state.turns.get(TURN)?.parts ?? [];
+  assert.equal(parts[0].part.kind === "tool" && parts[0].part.state, "output-available");
+});
+
+test("stream.reset drops the projection and asks for the canonical message", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "text.start", part_id: "text:a", part_kind: "text" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 0, delta: "partial" }),
+    frame({ type: "stream.reset", reason: "delta_reconciliation_mismatch" }),
+  ]);
+  assert.deepEqual(state.turns.get(TURN)?.parts, []);
+  assert.deepEqual(turnsAwaitingRehydration(state), [TURN]);
+  // The cursor restarts with the backlog, or the repaired stream would resume
+  // past the very events it was told to re-read.
+  assert.equal(state.cursor, 0);
+});
+
+test("a retry's attempt is never spliced into the superseded one", () => {
+  const first = apply(emptyTranscriptState(), [
+    frame({ type: "text.start", part_id: "text:a1", part_kind: "text" }),
+    frame({ type: "text.delta", part_id: "text:a1", delta_index: 0, delta: "half a sen" }),
+  ]);
+  const retried = apply(first, [
+    frame({
+      type: "part.reset",
+      part_id: "text:a1",
+      part_kind: "text",
+      generation_attempt_id: ATTEMPT_A,
+      reason: "generation_attempt_superseded",
+    }),
+    frame({ type: "turn.retrying", generation_attempt_id: ATTEMPT_B }),
+    frame({ type: "text.start", part_id: "text:a2", part_kind: "text", generation_attempt_id: ATTEMPT_B }),
+    frame({
+      type: "text.delta",
+      part_id: "text:a2",
+      delta_index: 0,
+      delta: "a whole sentence",
+      generation_attempt_id: ATTEMPT_B,
+    }),
+  ]);
+  assert.equal(textOf(retried), "a whole sentence");
+  assert.equal(
+    retried.turns.get(TURN)?.parts.filter((entry) => entry.part.kind === "text").length,
+    1,
+  );
+});
+
+test("a cancelled turn keeps its partial text, marked as stopped", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "text.start", part_id: "text:a", part_kind: "text" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 0, delta: "half" }),
+    frame({ type: "turn.cancelled", reason: "stop_requested" }),
+  ]);
+  const part = state.turns.get(TURN)?.parts[0]?.part as ChatTextPart;
+  assert.equal(part.text, "half");
+  assert.equal(part.failed, true);
+  assert.equal(part.streaming, false, "a stopped attempt must not look like a live one");
+});
+
+test("a terminal turn cannot leave replayed reasoning or activity visibly active", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "turn.started" }),
+    frame({
+      type: "part.created",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot(),
+    }),
+    frame({
+      type: "part.created",
+      part_id: "activity:a",
+      part_kind: "agent_activity",
+      part: {
+        part_id: "activity:a",
+        kind: "agent_activity",
+        revision: 1,
+        title: "Agent activity",
+        steps: [
+          {
+            id: "round-1",
+            kind: "model_round",
+            status: "active",
+            label: "Model round",
+          },
+        ],
+      },
+    }),
+    frame({ type: "turn.cancelled", reason: "stop_requested" }),
+  ]);
+
+  const transcript = composeTranscript({ messages: [], turns: [], stream: state });
+  const assistant = transcript.find((message) => message.role === "assistant");
+  assert.ok(assistant);
+  assert.equal(assistant.state, "cancelled");
+  const reasoning = assistant.parts.find((part) => part.kind === "reasoning");
+  const activity = assistant.parts.find((part) => part.kind === "agent_activity");
+  assert.equal(reasoning?.kind === "reasoning" && reasoning.state, "error");
+  assert.equal(
+    activity?.kind === "agent_activity" && activity.steps[0]?.status,
+    "error",
+  );
+});
+
+test("a replayed terminal turn asks to be rehydrated rather than faking deltas", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "turn.completed", status: "completed", replayed: true }),
+  ]);
+  assert.deepEqual(turnsAwaitingRehydration(state), [TURN]);
+});
+
+test("an unknown schema version is fatal; an unreadable part is not", () => {
+  const version = parseChatStreamEvent({
+    schema_version: "9",
+    turn_id: TURN,
+    type: "turn.started",
+  });
+  assert.equal(version.ok, false);
+  assert.equal(version.ok === false && version.fatal, true);
+
+  const badPart = parseChatStreamEvent({
+    schema_version: "1",
+    project_id: "p1",
+    thread_id: "t1",
+    turn_id: TURN,
+    type: "part.created",
+    part_id: "tool:x",
+    part_kind: "tool",
+    part: { part_id: "tool:x", kind: "tool" },
+  });
+  assert.equal(badPart.ok, false);
+  assert.equal(badPart.ok === false && badPart.fatal, false);
+});
+
+test("connect control frames carry common identity and remain cursorless", () => {
+  for (const type of ["stream.hello", "stream.reset"] as const) {
+    const parsed = parseChatStreamEvent(
+      {
+        schema_version: "1",
+        project_id: "p1",
+        thread_id: "t1",
+        turn_id: TURN,
+        type,
+        ...(type === "stream.reset"
+          ? { reason: "cursor_older_than_horizon", rehydrate: "transcript" }
+          : {}),
+      },
+      type,
+    );
+    assert.ok(parsed.ok);
+    assert.equal(parsed.event.eventId, null);
+    assert.equal(parsed.event.sequence, null);
+    assert.equal(parsed.event.projectId, "p1");
+    assert.equal(parsed.event.threadId, "t1");
+  }
+});
+
+test("an SSE event name that disagrees with data.type is fatal", () => {
+  const parsed = parseChatStreamEvent(
+    {
+      schema_version: "1",
+      project_id: "p1",
+      thread_id: "t1",
+      turn_id: TURN,
+      type: "turn.completed",
+    },
+    "turn.started",
+  );
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.ok === false && parsed.fatal, true);
+});
+
+test("a typed frame without common project/thread/turn identity is fatal", () => {
+  const parsed = parseChatStreamEvent({
+    schema_version: "1",
+    turn_id: TURN,
+    type: "turn.started",
+  });
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.ok === false && parsed.fatal, true);
+});
+
+test("the SSE reader reassembles frames split across chunk boundaries", () => {
+  const reader = new SseFrameReader();
+  assert.deepEqual(reader.push("id: 4\nevent: text.delta\nda"), []);
+  const frames = reader.push('ta: {"a":1}\n\nid: 5\nevent: turn.completed\ndata: {}\n\n');
+  assert.equal(frames.length, 2);
+  assert.equal(frames[0].id, "4");
+  assert.equal(frames[0].event, "text.delta");
+  assert.equal(frames[0].data, '{"a":1}');
+  assert.equal(frames[1].event, "turn.completed");
+});
+
+test("the scripted fixture turn produces a gate card and a complete text part", () => {
+  const state = fixtureTurnEvents("fixture-turn").reduce((current, payload) => {
+    const parsed = parseChatStreamEvent(payload);
+    assert.ok(parsed.ok);
+    return applyChatStreamEvent(current, parsed.event);
+  }, emptyTranscriptState());
+
+  const turn = state.turns.get("fixture-turn");
+  assert.ok(turn);
+  assert.equal(turn.state, "awaiting_input");
+  const kinds = turn.parts.map((entry) => entry.part.kind);
+  assert.deepEqual(kinds, [
+    "reasoning",
+    "agent_activity",
+    "tool",
+    "text",
+    "gate",
+    "sources",
+  ]);
+  const text = turn.parts.find((entry) => entry.part.kind === "text")?.part as ChatTextPart;
+  assert.match(text.text, /Shall I take the deep pass\?$/);
+  assert.equal(text.streaming, false);
+});
+
+test("the launch script keeps one task card per run at every revision", () => {
+  const state = fixtureLaunchEvents("launch-turn").reduce((current, payload) => {
+    const parsed = parseChatStreamEvent(payload);
+    assert.ok(parsed.ok);
+    return applyChatStreamEvent(current, parsed.event);
+  }, emptyTranscriptState());
+  const parts = state.turns.get("launch-turn")?.parts ?? [];
+  const tasks = parts.filter((entry) => entry.part.kind === "task");
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].part.kind === "task" && tasks[0].part.state, "partial");
+});
+
+test("the transcript prefers a streamed text part and falls back to the durable body", () => {
+  const durable = {
+    id: "m1",
+    turnId: TURN,
+    threadId: "t1",
+    sequence: 2,
+    role: "assistant" as const,
+    bodyArtifactKey: "k",
+    bodySha256: "s",
+    body: "the canonical answer",
+    bodyUnavailableReason: null,
+    createdAt: "2026-08-09T00:00:00Z",
+    refs: [],
+  };
+  const streamed = apply(emptyTranscriptState(), [
+    frame({ type: "text.start", part_id: "text:a", part_kind: "text" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 0, delta: "the canonical answer" }),
+  ]);
+
+  const live = composeTranscript({
+    messages: [durable],
+    turns: [],
+    stream: streamed,
+  });
+  assert.equal(live[0].body, null, "a live text part owns the prose while it streams");
+  assert.equal(live[0].parts.length, 1);
+
+  const cold = composeTranscript({
+    messages: [durable],
+    turns: [],
+    stream: emptyTranscriptState(),
+  });
+  assert.equal(cold[0].body, "the canonical answer");
+  assert.equal(cold[0].parts.length, 0);
+});
+
+test("an optimistic user turn shows immediately and is retired by the durable read", () => {
+  const optimistic = [
+    { turnId: TURN, text: "do the thing", requestedAt: "2026-08-09T00:00:00Z" },
+  ];
+  const pending = composeTranscript({
+    messages: [],
+    turns: [],
+    stream: emptyTranscriptState(),
+    optimistic,
+  });
+  assert.equal(pending[0].role, "user");
+  assert.equal(pending[0].optimistic, true);
+  assert.equal(pending[0].body, "do the thing");
+
+  const settled = composeTranscript({
+    messages: [
+      {
+        id: "m0",
+        turnId: TURN,
+        threadId: "t1",
+        sequence: 1,
+        role: "user",
+        bodyArtifactKey: "k",
+        bodySha256: "s",
+        body: "do the thing",
+        bodyUnavailableReason: null,
+        createdAt: "2026-08-09T00:00:01Z",
+        refs: [],
+      },
+    ],
+    turns: [],
+    stream: emptyTranscriptState(),
+    optimistic,
+  });
+  assert.equal(settled.filter((message) => message.role === "user").length, 1);
+  assert.equal(settled[0].optimistic, false);
+});
+
+test("an accepted submission renders before the worker materializes thread history", () => {
+  const acceptedMessage = {
+    id: "accepted-user-message",
+    turnId: TURN,
+    threadId: "t1",
+    sequence: 0,
+    role: "user" as const,
+    bodyArtifactKey: "accepted-key",
+    bodySha256: "accepted-sha",
+    body: "Home accepted this exact message",
+    bodyUnavailableReason: null,
+    createdAt: "2026-08-09T00:00:00Z",
+    refs: [],
+  };
+  const turns = [
+    {
+      turnId: TURN,
+      threadId: "t1",
+      projectId: "p1",
+      state: "queued",
+      requestedAt: acceptedMessage.createdAt,
+      lastEventId: null,
+      generationAttempts: 0,
+      submissionMessage: acceptedMessage,
+    },
+  ];
+  const pending = composeTranscript({
+    messages: [],
+    turns,
+    stream: apply(emptyTranscriptState(), [frame({ type: "turn.accepted" })]),
+  });
+  assert.equal(pending[0].role, "user");
+  assert.equal(pending[0].body, acceptedMessage.body);
+  assert.equal(pending[0].optimistic, false);
+
+  const materialized = composeTranscript({
+    messages: [{ ...acceptedMessage, sequence: 1 }],
+    turns,
+    stream: emptyTranscriptState(),
+  });
+  assert.equal(materialized.filter((message) => message.role === "user").length, 1);
+  assert.equal(materialized[0].id, acceptedMessage.id);
+});
+
+test("a cold cancelled turn keeps a visible terminal assistant receipt", () => {
+  const acceptedMessage = {
+    id: "cancelled-user-message",
+    turnId: TURN,
+    threadId: "t1",
+    sequence: 0,
+    role: "user" as const,
+    bodyArtifactKey: "cancelled-key",
+    bodySha256: "cancelled-sha",
+    body: "Stop this turn",
+    bodyUnavailableReason: null,
+    createdAt: "2026-08-09T00:00:00Z",
+    refs: [],
+  };
+  const cold = composeTranscript({
+    messages: [],
+    turns: [
+      {
+        turnId: TURN,
+        threadId: "t1",
+        projectId: "p1",
+        state: "cancelled",
+        requestedAt: acceptedMessage.createdAt,
+        lastEventId: null,
+        generationAttempts: 1,
+        submissionMessage: acceptedMessage,
+      },
+    ],
+    stream: emptyTranscriptState(),
+  });
+
+  assert.equal(cold.length, 2);
+  assert.equal(cold[1].role, "assistant");
+  assert.equal(cold[1].state, "cancelled");
+  assert.equal(cold[1].body, null);
+  assert.deepEqual(cold[1].parts, []);
+});
+
+/**
+ * Rule 6 — the dev-lens raw reasoning trace.
+ *
+ * The lens reuses `text.delta` targeting the *reasoning* part's id, so the
+ * reducer's routing is the only thing standing between "a collapsible
+ * diagnostic beside a model round" and "the model's private thoughts spliced
+ * into the assistant's answer". These are that guard.
+ */
+
+function reasoningPart(state: TranscriptState, partId: string) {
+  const turn = state.turns.get(TURN);
+  assert.ok(turn, "expected a projected turn");
+  const entry = turn.parts.find((item) => item.part.partId === partId);
+  assert.ok(entry, `expected a part ${partId}`);
+  assert.equal(entry.part.kind, "reasoning");
+  return entry.part as Extract<(typeof entry)["part"], { kind: "reasoning" }>;
+}
+
+function reasoningSnapshot(extra: Record<string, unknown> = {}) {
+  return {
+    part_id: "reasoning:a:1",
+    kind: "reasoning",
+    revision: 1,
+    state: "active",
+    round_ordinal: 1,
+    requested_tool_calls: 0,
+    started_at: "2026-08-09T00:00:00Z",
+    ...extra,
+  };
+}
+
+test("a reasoning delta accumulates on its round's card, never as assistant text", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.created",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot(),
+    }),
+    frame({ type: "text.start", part_id: "text:a", part_kind: "text" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 0, delta: "Hello" }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 0,
+      delta: "The user ",
+    }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 1,
+      delta: "is fishing.",
+    }),
+  ]);
+
+  // The two streams stayed apart: the answer is untouched by the trace.
+  assert.equal(textOf(state), "Hello");
+  const reasoning = reasoningPart(state, "reasoning:a:1");
+  assert.equal(reasoning.text, "The user is fishing.");
+  assert.equal(reasoning.textEphemeral, true);
+  // And the round is still one card, not a card plus a stray text part.
+  const turn = state.turns.get(TURN);
+  assert.ok(turn);
+  assert.equal(turn.parts.filter((entry) => entry.part.kind === "text").length, 1);
+  assert.equal(turn.parts.filter((entry) => entry.part.kind === "reasoning").length, 1);
+});
+
+test("a reasoning delta is idempotent and order-insensitive, like every other delta", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.created",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot(),
+    }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 1,
+      delta: "second",
+    }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 0,
+      delta: "first ",
+    }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 0,
+      delta: "first ",
+    }),
+  ]);
+  assert.equal(reasoningPart(state, "reasoning:a:1").text, "first second");
+});
+
+test("the round's closing snapshot still replaces the locally accumulated trace", () => {
+  // Regression guard for the reason `upsertReasoningText` does not bump
+  // `revision`: if it did, rule 2 ("never backwards") would make the local copy
+  // outrank the server's `part.completed` and the authoritative trace would be
+  // silently dropped.
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.created",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot(),
+    }),
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 0,
+      delta: "partial",
+    }),
+    frame({
+      type: "part.completed",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot({
+        revision: 2,
+        state: "complete",
+        requested_tool_calls: 1,
+        completed_at: "2026-08-09T00:00:02Z",
+        text: "partial trace, whole",
+        text_ephemeral: true,
+      }),
+    }),
+  ]);
+  const reasoning = reasoningPart(state, "reasoning:a:1");
+  assert.equal(reasoning.state, "complete");
+  assert.equal(reasoning.text, "partial trace, whole");
+  assert.equal(reasoning.textEphemeral, true);
+});
+
+test("a summary-mode reasoning card carries no text at all", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.completed",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      part: reasoningSnapshot({ revision: 2, state: "complete" }),
+    }),
+  ]);
+  const reasoning = reasoningPart(state, "reasoning:a:1");
+  assert.equal(reasoning.text, null);
+  assert.equal(reasoning.textEphemeral, false);
+});
+
+test("a reasoning delta with no card to belong to invents nothing", () => {
+  // A frame out of order must not conjure a model round that never started.
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "text.delta",
+      part_id: "reasoning:a:1",
+      part_kind: "reasoning",
+      delta_index: 0,
+      delta: "orphan",
+    }),
+  ]);
+  const turn = state.turns.get(TURN);
+  assert.ok(turn);
+  assert.equal(turn.parts.length, 0);
+});

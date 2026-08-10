@@ -40,6 +40,7 @@ class AgentTurnStatus(StrEnum):
     AWAITING_INPUT = "awaiting_input"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
     ABANDONED = "abandoned"
     PRIVACY_TOMBSTONED = "privacy_tombstoned"
 

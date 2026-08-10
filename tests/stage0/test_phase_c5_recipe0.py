@@ -359,6 +359,9 @@ async def _url_recon_fingerprint(
             actor=actor,
             conn_factory=factory,
             operation_id=new_operation_id(),
+            principal_kind="human" if actor == "human" else None,
+            actor_id="human:recipe0-test" if actor == "human" else None,
+            membership_id="wsm_recipe0_test" if actor == "human" else None,
             execution_id=execution_id,
         )
         if runner is not None:

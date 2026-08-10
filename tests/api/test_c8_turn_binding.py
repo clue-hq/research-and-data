@@ -54,6 +54,7 @@ from clue_api.agent_execution_wiring import _trusted_tool_arguments
 from clue_api.agent_runtime_wiring import _with_trusted_runtime
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.stage0_tools import RecordInterviewAnswerInput, RecordInterviewAnswerTool
+from clue_api.turn_action import derive_turn_action_ref
 from clue_api.turn_binding import (
     CAPTURE_NOT_FOUND,
     CapturedTurn,
@@ -299,7 +300,8 @@ def test_the_engine_derives_the_turn_binding_from_the_artifact_and_its_capture_r
         **_: Any,
     ) -> None:
         binder = CapturedTurnBinder(artifacts=artifacts, conn_factory=connection_factory)
-        binding = await binder.bind(_request(scope, ref))
+        request = _request(scope, ref)
+        binding = await binder.bind(request)
 
         assert binding.onboarding_input_id == str(captured_id)
         assert binding.artifact_key == ref.artifact_key
@@ -307,6 +309,10 @@ def test_the_engine_derives_the_turn_binding_from_the_artifact_and_its_capture_r
         # The digest and count are over the raw bytes; the answer is the decoded text.
         assert binding.byte_count == len(ANSWER.encode()) > len(ANSWER)
         assert binding.answer == ANSWER
+        # Lane D D1: the turn's own identity and the canonical receipt for it ride the binding.
+        assert binding.turn_id == str(request.turn_id)
+        assert binding.user_instruction == ANSWER
+        assert binding.source_turn_ref == derive_turn_action_ref(request.turn_id)
 
     run_async(_scenario(tmp_path, body=body))
 
@@ -964,12 +970,16 @@ def test_the_model_facing_schema_refuses_smuggled_turn_authority() -> None:
 def test_the_seam_refuses_turn_authority_that_reaches_it_in_plan_arguments() -> None:
     """Defence in depth: even a plan built past the schema cannot carry a forged capture id."""
 
+    turn_id = uuid5(NAMESPACE_URL, "c8-turn-binding:plan-arguments")
     binding = CapturedTurn(
         onboarding_input_id="00000000-0000-0000-0000-00000000beef",
         artifact_key="ws-1/real-turn",
         sha256="0" * 64,
         byte_count=4,
         answer="real",
+        turn_id=str(turn_id),
+        user_instruction="real",
+        source_turn_ref=derive_turn_action_ref(turn_id),
     )
     with pytest.raises(ValueError, match="trusted turn authority"):
         _trusted_tool_arguments(

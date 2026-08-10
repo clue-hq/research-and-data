@@ -16,21 +16,24 @@ import {
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
+const NOOP = () => undefined;
+
 export function ProjectComposer({
   attachments = [],
   disabled = false,
   entities = [],
-  modelPickerOpen,
-  models,
+  modelPickerOpen = false,
+  models = [],
   onAttachmentFiles,
   onAttachmentRemove,
   onEntityRemove,
   onEntitySelect,
-  onModelPickerToggle,
-  onModelSelect,
+  onModelPickerToggle = NOOP,
+  onModelSelect = NOOP,
   onPromptChange,
   onSubmit,
   prompt,
+  sendDisabled = false,
   selectedEntities = [],
   selectedEntityIds = [],
   selectedModel,
@@ -38,28 +41,29 @@ export function ProjectComposer({
   attachments?: ProjectComposerAttachmentData[];
   disabled?: boolean;
   entities?: ProjectEntity[];
-  modelPickerOpen: boolean;
-  models: ProjectModelOption[];
+  modelPickerOpen?: boolean;
+  models?: ProjectModelOption[];
   onAttachmentFiles?: (files: File[]) => void;
   onAttachmentRemove?: (attachmentId: string) => void;
   onEntityRemove?: (entityId: string) => void;
   onEntitySelect?: (entityId: string) => void;
-  onModelPickerToggle: () => void;
-  onModelSelect: (modelId: string) => void;
+  onModelPickerToggle?: () => void;
+  onModelSelect?: (modelId: string) => void;
   onPromptChange: (value: string) => void;
   onSubmit: (value?: string, entityIds?: string[]) => void;
   prompt: string;
+  sendDisabled?: boolean;
   selectedEntities?: ProjectEntity[];
   selectedEntityIds?: string[];
-  selectedModel: ProjectModelOption;
+  selectedModel?: ProjectModelOption;
 }) {
   const editorRef = useRef<ProjectComposerEditorHandle>(null);
   const sendButtonRef = useRef<HTMLButtonElement>(null);
   const handleDraftChange = useCallback((hasContent: boolean) => {
     if (sendButtonRef.current) {
-      sendButtonRef.current.disabled = disabled || !hasContent;
+      sendButtonRef.current.disabled = disabled || sendDisabled || !hasContent;
     }
-  }, [disabled]);
+  }, [disabled, sendDisabled]);
   const handleContextChange = useCallback(
     (entityIds: string[]) => {
       selectedEntityIds
@@ -82,6 +86,7 @@ export function ProjectComposer({
         .join(" ")}
       onSubmit={(event) => {
         event.preventDefault();
+        if (disabled || sendDisabled) return;
         const currentPrompt = editorRef.current?.getPrompt() ?? prompt;
         const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
         if (!currentPrompt.trim() && !currentEntityIds.length) return;
@@ -106,9 +111,10 @@ export function ProjectComposer({
           onContextChange={handleContextChange}
           onDraftChange={handleDraftChange}
           onPromptChange={onPromptChange}
-          onSubmit={(value) =>
-            onSubmit(value, editorRef.current?.getEntityIds() ?? [])
-          }
+          onSubmit={(value) => {
+            if (disabled || sendDisabled) return;
+            onSubmit(value, editorRef.current?.getEntityIds() ?? []);
+          }}
           prompt={prompt}
           ref={editorRef}
           selectedEntities={selectedEntities}
@@ -117,19 +123,21 @@ export function ProjectComposer({
       </div>
       <div className={styles.composerFooter}>
         <div className={styles.composerPickerAnchor}>
-          <label aria-label="Attach files" className={styles.iconButton}>
-            <input
-              accept=".csv,.doc,.docx,.gif,.jpeg,.jpg,.pdf,.png,.webp,.xls,.xlsx"
-              disabled={disabled || !onAttachmentFiles}
-              multiple
-              onChange={(event) => {
-                onAttachmentFiles?.(Array.from(event.target.files ?? []));
-                event.target.value = "";
-              }}
-              type="file"
-            />
-            <ProjectIcon name="plus" size={14} />
-          </label>
+          {onAttachmentFiles ? (
+            <label aria-label="Attach files" className={styles.iconButton}>
+              <input
+                accept=".csv,.doc,.docx,.gif,.jpeg,.jpg,.pdf,.png,.webp,.xls,.xlsx"
+                disabled={disabled}
+                multiple
+                onChange={(event) => {
+                  onAttachmentFiles(Array.from(event.target.files ?? []));
+                  event.target.value = "";
+                }}
+                type="file"
+              />
+              <ProjectIcon name="plus" size={14} />
+            </label>
+          ) : null}
           {onEntitySelect ? (
             <button
               aria-label="Add account or contact context"
@@ -145,28 +153,32 @@ export function ProjectComposer({
           ) : null}
         </div>
         <div className={styles.composerActions}>
-          <div className={styles.modelAnchor}>
-            <button
-              aria-expanded={modelPickerOpen}
-              className={styles.modelButton}
-              onClick={onModelPickerToggle}
-              type="button"
-            >
-              {selectedModel.shortLabel}
-              <ProjectIcon name="chevron-down" size={12} />
-            </button>
-            {modelPickerOpen ? (
-              <ModelPicker
-                models={models}
-                onSelect={onModelSelect}
-                selectedModelId={selectedModel.id}
-              />
-            ) : null}
-          </div>
+          {selectedModel && models.length ? (
+            <div className={styles.modelAnchor}>
+              <button
+                aria-expanded={modelPickerOpen}
+                className={styles.modelButton}
+                onClick={onModelPickerToggle}
+                type="button"
+              >
+                {selectedModel.shortLabel}
+                <ProjectIcon name="chevron-down" size={12} />
+              </button>
+              {modelPickerOpen ? (
+                <ModelPicker
+                  models={models}
+                  onSelect={onModelSelect}
+                  selectedModelId={selectedModel.id}
+                />
+              ) : null}
+            </div>
+          ) : null}
           <button
             aria-label="Send"
             className={styles.sendButton}
-            disabled={disabled || (!prompt.trim() && !selectedEntities.length)}
+            disabled={
+              disabled || sendDisabled || (!prompt.trim() && !selectedEntities.length)
+            }
             ref={sendButtonRef}
             type="submit"
           >
