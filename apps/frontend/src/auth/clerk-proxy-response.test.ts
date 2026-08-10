@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { normalizeClerkProxyResponse } from "./clerk-proxy-response";
 
+test("preserves Clerk's undefined pass-through result", () => {
+  assert.equal(
+    normalizeClerkProxyResponse("http://localhost:3000/projects/prj_1", undefined),
+    undefined,
+  );
+  assert.equal(
+    normalizeClerkProxyResponse("http://localhost:3000/projects/prj_1", null),
+    null,
+  );
+});
+
 test("turns Clerk's exact self-rewrite into a pass-through without losing auth headers", () => {
   const url = "http://localhost:3000/projects/prj_1";
   const response = new Response(null, {

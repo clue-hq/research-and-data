@@ -8,8 +8,9 @@
  */
 export function normalizeClerkProxyResponse(
   requestUrl: string,
-  response: Response,
-): Response {
+  response: Response | null | void,
+): Response | null | void {
+  if (response == null) return response;
   if (response.headers.get("x-middleware-rewrite") !== requestUrl) {
     return response;
   }
