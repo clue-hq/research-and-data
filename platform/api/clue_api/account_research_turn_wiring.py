@@ -225,8 +225,10 @@ class DbCompiledContextCardReader:
                 version = contact.canonical_version
             else:
                 return None
-        if body is None and (value is None or value.workspace_id != workspace_id):
-            return None
+        if body is None:
+            if value is None or value.workspace_id != workspace_id:
+                return None
+            body = value.model_dump_json(exclude_none=False)
         return CompiledContextCard(
             ref=DomainObjectRef(
                 workspace_id=workspace_id,
@@ -234,7 +236,7 @@ class DbCompiledContextCardReader:
                 object_id=object_id,
                 version=version,
             ),
-            body=body if body is not None else value.model_dump_json(exclude_none=False),
+            body=body,
         )
 
 

@@ -97,6 +97,7 @@ from clue_api.chat.schemas import (
     CreateThreadRequest,
     GateListResponse,
     GateResponseRequest,
+    HomeBrandWire,
     HomeComposerCapabilitiesWire,
     HomeProjectRequest,
     HomeResponse,
@@ -109,7 +110,10 @@ from clue_api.chat.schemas import (
     ProjectBootstrapWire,
     ProjectShellResponse,
     ProjectShellWire,
+    SidebarConversationWire,
+    SidebarPageMeta,
     SidebarProjectsResponse,
+    SidebarProjectWire,
     SubmitTurnRequest,
     ThreadListResponse,
     ThreadResponse,
@@ -671,7 +675,7 @@ def build_chat_router(
             )
         return HomeResponse(
             data=HomeWire(
-                brands=tuple({"id": brand.brand_id, "name": brand.name} for brand in brands),
+                brands=tuple(HomeBrandWire(id=brand.brand_id, name=brand.name) for brand in brands),
                 default_brand_id=brands[0].brand_id if len(brands) == 1 else None,
                 context_entities=tuple(_context_entity_wire(entity) for entity in context_entities),
                 agent_profiles=_agent_profile_options(),
@@ -945,29 +949,29 @@ def build_chat_router(
         )
         return SidebarProjectsResponse(
             data=tuple(
-                {
-                    "id": project.project_id,
-                    "title": project.title,
-                    "href": f"/projects/{project.project_id}",
-                    "conversations": tuple(
-                        {
-                            "id": thread.thread_id,
-                            "title": thread.title,
-                            "href": f"/projects/{project.project_id}?thread={thread.thread_id}",
-                            "status": thread_wire(
+                SidebarProjectWire(
+                    id=project.project_id,
+                    title=project.title,
+                    href=f"/projects/{project.project_id}",
+                    conversations=tuple(
+                        SidebarConversationWire(
+                            id=thread.thread_id,
+                            title=thread.title,
+                            href=f"/projects/{project.project_id}?thread={thread.thread_id}",
+                            status=thread_wire(
                                 thread,
                                 open_gate_kinds=open_gates.get(thread.thread_id, ()),
                                 running=thread.thread_id in busy,
                             ).status,
-                            "pinned": thread.pinned,
-                            "updated_at": thread.updated_at.isoformat(),
-                        }
+                            pinned=thread.pinned,
+                            updated_at=thread.updated_at.isoformat(),
+                        )
                         for thread in project.threads
                     ),
-                }
+                )
                 for project in page.items
             ),
-            meta={"next_cursor": page.next_cursor},
+            meta=SidebarPageMeta(next_cursor=page.next_cursor),
         )
 
     @router.get("/projects/{project_id}")
