@@ -320,6 +320,7 @@ from clue_research.durable.planning import (
 )
 from clue_research.durable.project import (
     PHASE_SEQUENCE,
+    REENTRANT_HOLD_KEY,
     BudgetEngineNotConfigured,
     CheckpointNotAwaiting,
     DbProjectRunStore,
@@ -706,6 +707,7 @@ __all__ = [
     "ProjectRunStore",
     "DbProjectRunStore",
     "PHASE_SEQUENCE",
+    "REENTRANT_HOLD_KEY",
     "next_phase",
     "ProjectRunError",
     "ProjectRunNotFound",

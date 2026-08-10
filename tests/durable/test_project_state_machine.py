@@ -11,13 +11,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from clue_core import (
     BudgetEngine,
     DeepAccountExternalWait,
     DeepExternalWait,
+    DeepExternalWakeReason,
+    DeepFleetExternalWait,
     DiscoveryExternalWait,
     DiscoveryWakeReason,
     ExternalResearchPreparation,
@@ -33,12 +37,14 @@ from clue_core import (
 )
 from clue_research.durable import (
     PHASE_SEQUENCE,
+    REENTRANT_HOLD_KEY,
     BudgetEngineNotConfigured,
     CheckpointNotAwaiting,
     NoPhaseHandlerRegistered,
     PhaseCheckpointStatus,
     PhaseHandlerRegistry,
     ProjectRun,
+    ProjectRunError,
     ProjectRunNotFound,
     ProjectRunStatus,
     ProjectRunStore,
@@ -286,6 +292,119 @@ def test_deep_waits_externally_and_reenters_same_phase_after_wake() -> None:
         assert completed.calls == 1
 
     run_async(_run())
+
+
+# --- R11.4: the DEEP waiting_external arm accepts two disjoint reference-only shapes ------------
+
+
+def _fleet_wait() -> DeepFleetExternalWait:
+    return DeepFleetExternalWait(
+        research_run_id=uuid4(),
+        job_state_counts={"queued": 2, "running": 1, "terminal": 0},
+        next_poll_at=datetime.now(UTC) + timedelta(seconds=60),
+    )
+
+
+def test_deep_fleet_external_wait_requires_a_live_job_census() -> None:
+    """R11.4 payload validation: a census must exist, be non-negative, and describe live work."""
+
+    wait = _fleet_wait()
+    assert wait.wake_reason is DeepExternalWakeReason.SCHEDULED_POLL
+    assert DeepFleetExternalWait.model_validate(wait.model_dump(mode="json")) == wait
+
+    for counts in ({}, {"queued": -1}, {"terminal": 0}):
+        with pytest.raises(ValidationError):
+            DeepFleetExternalWait(
+                research_run_id=uuid4(),
+                job_state_counts=counts,
+                next_poll_at=datetime.now(UTC) + timedelta(seconds=60),
+            )
+
+
+def test_deep_waiting_external_accepts_the_fleet_shape_and_still_accepts_the_legacy_shape() -> None:
+    """The M8D bridge's payload lands a durable checkpoint; historical payloads are unchanged."""
+
+    retry_after = datetime.now(UTC) + timedelta(minutes=1)
+    legacy = DeepExternalWait(
+        pending_accounts=(
+            DeepAccountExternalWait(
+                account_entity_id=new_entity_id(),
+                account_run_id=new_run_id(),
+                preparation=ExternalResearchPreparation(
+                    outcome=ExternalResearchPreparationOutcome.WAITING_EXTERNAL,
+                    operation_ref="committee-operation:op-1",
+                    retry_after=retry_after,
+                    reason_code="provider_pending",
+                ),
+            ),
+        ),
+        next_poll_at=retry_after,
+    )
+
+    async def _wait_at_deep(payload: dict[str, object]) -> PhaseCheckpointStatus:
+        store = FakeProjectRunStore()
+        events: list[str] = []
+        registry, _ = _registry(
+            events,
+            overrides={
+                ProjectPhase.DEEP: RecordingPhaseHandler(
+                    ProjectPhase.DEEP,
+                    result_status=PhaseStatus.WAITING_EXTERNAL,
+                    payload=payload,
+                    events=events,
+                )
+            },
+        )
+        machine = ProjectRun(store=store, registry=registry)
+        project_run_id = await machine.start(
+            project_id="prj-test", workspace_id="c1", icp_key="default", icp_version=1
+        )
+        for _ in range(5):
+            await machine.advance(project_run_id)
+        run = await machine.advance(project_run_id)
+        assert run.phase is ProjectPhase.DEEP
+        assert run.status is ProjectRunStatus.ACTIVE
+        checkpoint = await store.get_checkpoint(project_run_id, ProjectPhase.DEEP)
+        assert checkpoint is not None
+        assert checkpoint.payload == payload
+        return checkpoint.status
+
+    for payload in (_fleet_wait().model_dump(mode="json"), legacy.model_dump(mode="json")):
+        assert run_async(_wait_at_deep(payload)) is PhaseCheckpointStatus.WAITING_EXTERNAL
+
+
+def test_deep_waiting_external_rejects_a_payload_matching_neither_shape() -> None:
+    """Garbage (and a body-bearing hybrid) is refused with a message naming both admissible
+    shapes — the checkpoint stays reference-only."""
+
+    async def _run(payload: dict[str, object]) -> None:
+        store = FakeProjectRunStore()
+        events: list[str] = []
+        registry, _ = _registry(
+            events,
+            overrides={
+                ProjectPhase.DEEP: RecordingPhaseHandler(
+                    ProjectPhase.DEEP,
+                    result_status=PhaseStatus.WAITING_EXTERNAL,
+                    payload=payload,
+                    events=events,
+                )
+            },
+        )
+        machine = ProjectRun(store=store, registry=registry)
+        project_run_id = await machine.start(
+            project_id="prj-test", workspace_id="c1", icp_key="default", icp_version=1
+        )
+        for _ in range(5):
+            await machine.advance(project_run_id)
+        with pytest.raises(ProjectRunError) as excinfo:
+            await machine.advance(project_run_id)
+        assert "DeepFleetExternalWait" in str(excinfo.value)
+        assert "DeepExternalWait" in str(excinfo.value)
+
+    hybrid = _fleet_wait().model_dump(mode="json") | {"pending_accounts": []}
+    for payload in ({"research_note": "everything is fine"}, {}, hybrid):
+        run_async(_run(payload))
 
 
 def test_pause_resume_does_not_respend() -> None:
@@ -794,6 +913,51 @@ def test_run_to_completion_no_progress_guard_does_not_spin() -> None:
         assert run.phase is ProjectPhase.TIER_CHECKPOINT
         assert run.status is ProjectRunStatus.ACTIVE
         assert handlers[ProjectPhase.DEEP].calls == 0
+
+    run_async(_run())
+
+
+def test_a_reentrant_hold_reruns_its_handler_after_an_explicit_resume() -> None:
+    """R11 §6b: a phase that pauses on durable state it re-reads (M8D's DEEP fleet bridge) marks
+    its payload re-entrant, so ``resume`` re-runs it — where a decision gate stays parked until a
+    decision is submitted, and approving DEEP would wrongly finalize a phase that researched
+    nothing."""
+
+    store = FakeProjectRunStore()
+    events: list[str] = []
+    holding = RecordingPhaseHandler(
+        ProjectPhase.DEEP,
+        result_status=PhaseStatus.PAUSED,
+        payload={REENTRANT_HOLD_KEY: True, "reason_code": "entity_research_fleet_not_launched"},
+        events=events,
+    )
+    registry, handlers = _registry(events, overrides={ProjectPhase.DEEP: holding})
+
+    async def _run() -> None:
+        machine = ProjectRun(store=store, registry=registry)
+        run_id = await machine.start(
+            project_id="prj-test", workspace_id="c1", icp_key="default", icp_version=1
+        )
+        run = await machine.run_to_completion(run_id)
+        assert (run.phase, run.status) == (ProjectPhase.DEEP, ProjectRunStatus.PAUSED)
+        checkpoint = await store.get_checkpoint(run_id, ProjectPhase.DEEP)
+        assert checkpoint is not None
+        assert checkpoint.status is PhaseCheckpointStatus.AWAITING_INPUT
+        assert handlers[ProjectPhase.VERIFICATION].calls == 0
+
+        # A resume alone re-enters the same phase (the hold's condition may not have cleared yet).
+        await machine.resume(run_id)
+        run = await machine.advance(run_id)
+        assert (run.phase, run.status) == (ProjectPhase.DEEP, ProjectRunStatus.PAUSED)
+        assert holding.calls == 2
+
+        # Once the external condition clears, the resumed run advances normally.
+        cleared = RecordingPhaseHandler(ProjectPhase.DEEP, events=events)
+        registry.register(cleared)
+        await machine.resume(run_id)
+        run = await machine.advance(run_id)
+        assert (run.phase, run.status) == (ProjectPhase.VERIFICATION, ProjectRunStatus.ACTIVE)
+        assert cleared.calls == 1
 
     run_async(_run())
 

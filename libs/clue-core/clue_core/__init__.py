@@ -275,6 +275,7 @@ from clue_core.external_research import (
     DeepAccountExternalWait,
     DeepExternalWait,
     DeepExternalWakeReason,
+    DeepFleetExternalWait,
     ExternalResearchAcquisitionRequest,
     ExternalResearchAttemptState,
     ExternalResearchCostDisposition,
@@ -861,6 +862,7 @@ __all__ = [
     "DeepAccountExternalWait",
     "DeepExternalWakeReason",
     "DeepExternalWait",
+    "DeepFleetExternalWait",
     # enums — M13.1 review surface
     "ReviewAction",
     "ReviewSessionStatus",

@@ -29,7 +29,7 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
 from clue_core import (
     BudgetEngine,
@@ -38,6 +38,7 @@ from clue_core import (
     BurnDown,
     CostCents,
     DeepExternalWait,
+    DeepFleetExternalWait,
     DiscoveryExternalWait,
     Estimate,
     IdempotencyScope,
@@ -141,6 +142,46 @@ class CheckpointNotAwaiting(ProjectRunError):
 class BudgetEngineNotConfigured(ProjectRunError):
     """:meth:`ProjectRun.pre_run_estimate` needs a :class:`~clue_core.BudgetEngine` (M7.5
     supplies the cost math); none was injected."""
+
+
+# --- re-entrant holds (R11 §6b) ---------------------------------------------------------------
+
+#: Reserved :class:`~clue_core.PhaseResult` payload key marking a ``PAUSED`` result as a *plain*
+#: hold rather than a decision gate. The machine's default ``PAUSED`` handling lands an
+#: ``AWAITING_INPUT`` checkpoint that only :meth:`ProjectRun.submit_checkpoint` can clear — right
+#: for the ``TIER_CHECKPOINT``/``REVIEW`` gates, where a human decision is the missing input, but
+#: wrong for a phase that is merely waiting on durable state it re-reads (M8D R11.1's DEEP bridge
+#: pauses because no account-research fleet run is bound to the project run yet; approving that
+#: "gate" would finalize DEEP having researched nothing). A handler sets this key to ``True`` in
+#: its ``PAUSED`` payload to say: hold the run, and on an explicit ``resume`` re-run me against
+#: current state. Gates that do not set it keep their exact submit-only behaviour.
+REENTRANT_HOLD_KEY = "reentrant_hold"
+
+
+# --- DEEP external-wait payload validation (R11.4) --------------------------------------------
+
+# The two admissible reference-only DEEP wait shapes, newest first. Both are ``extra="forbid"`` and
+# neither's required fields satisfy the other, so a payload validates as *exactly one* of them: the
+# M8D fleet bridge's census (R11.1) or the legacy per-account provider wait, which keeps validating
+# historical checkpoints byte-for-byte.
+_DEEP_EXTERNAL_WAIT_SHAPES = (DeepFleetExternalWait, DeepExternalWait)
+
+
+def _validate_deep_external_wait(payload: dict[str, JsonValue]) -> None:
+    """Fail closed on a DEEP ``waiting_external`` payload matching neither admissible shape."""
+    failures: list[str] = []
+    for shape in _DEEP_EXTERNAL_WAIT_SHAPES:
+        try:
+            shape.model_validate(payload)
+        except ValidationError as error:
+            failures.append(f"{shape.__name__}: {error}")
+        else:
+            return
+    raise ProjectRunError(
+        "a deep waiting_external payload must validate as exactly one of "
+        "DeepFleetExternalWait (the M8D fleet bridge) or DeepExternalWait (the legacy "
+        "per-account provider wait); it matched neither — " + " | ".join(failures)
+    )
 
 
 # --- the persistence seam --------------------------------------------------------------------
@@ -434,8 +475,16 @@ class ProjectRun:
             # The phase already committed (e.g. a crash between commit and transition) — replay the
             # transition without re-running the handler (idempotent re-entry).
             return await self._transition_after(run)
-        if checkpoint is not None and checkpoint.status == PhaseCheckpointStatus.AWAITING_INPUT:
-            # Suspended at a durable gate; the handler does not re-run until a decision arrives.
+        if (
+            checkpoint is not None
+            and checkpoint.status == PhaseCheckpointStatus.AWAITING_INPUT
+            and not checkpoint.payload.get(REENTRANT_HOLD_KEY)
+        ):
+            # Suspended at a durable *decision* gate; the handler does not re-run until a decision
+            # arrives through submit_checkpoint. A re-entrant hold (R11 §6b's "plain PAUSED" — the
+            # phase suspended on external state it re-reads, not on a decision to submit) instead
+            # falls through: a still-PAUSED run returned above, so reaching here means the run was
+            # explicitly resumed and the handler should re-evaluate current state.
             return run
         # WAITING_EXTERNAL deliberately falls through: a scheduled/webhook wake re-enters the same
         # handler with the persisted batch/operation refs.  It is not a human gate and the run is
@@ -500,7 +549,7 @@ class ProjectRun:
                 # Account-deep uses the same active, non-human wait semantics. Its typed payload
                 # pins account-run and provider-operation references so a wake resumes the exact
                 # acquisition before short committee materialization.
-                DeepExternalWait.model_validate(result.payload)
+                _validate_deep_external_wait(result.payload)
             else:
                 raise ProjectRunError(
                     "waiting_external is valid only for discovery and deep phases"
