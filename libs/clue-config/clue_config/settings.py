@@ -424,6 +424,16 @@ class Settings(BaseSettings):
     auth_clerk_issuer: str | None = None
     auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
 
+    # --- Lane E E3 value-narrative synthesis ------------------------------------------------
+    # One default-off gate over the on-completion positioning step (the M12.1 Positioner behind
+    # the governed ``synthesize_value_narrative@1`` tool). Off means the fleet never *offers* a
+    # finalized account job to it — no journal rows, no spend — and the tool, which still registers
+    # everywhere so the C6 authority surface is identical in every process, refuses
+    # ``value_narrative_not_composed``. Same posture as the C7 block above: activation is a
+    # deployment decision, and rollback stops new narratives without touching the append-only
+    # claims already written. Env: ``CLUE_VALUE_NARRATIVE_SYNTHESIS_ENABLED``.
+    value_narrative_synthesis_enabled: bool = False
+
     # --- local Clue Trial canary ------------------------------------------------------------
     # The Sumble-only founder acceptance surface is never part of the default production app.
     # It must be enabled explicitly and binds to loopback by default. Env:

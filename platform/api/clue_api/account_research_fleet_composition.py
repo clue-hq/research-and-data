@@ -55,6 +55,7 @@ from clue_api.entity_research_tools import (
 from clue_api.entity_research_tools import (
     GovernedEntityResearchToolFactory as GovernedTools,
 )
+from clue_api.prose_synthesis_step import ProseSynthesisStep
 from clue_api.sumble_entity_research_tools import SumbleEntityResearchLineageReader
 from clue_db import ConnFactory, transaction
 from clue_fleet import EntityResearchJobRow, EntityResearchJobWorkHandler
@@ -151,6 +152,7 @@ def build_account_research_fleet_composition(
     model_policy: ModelPolicy,
     conn_factory: ConnFactory = transaction,
     checkpointers: EntityResearchCheckpointerFactory | None = None,
+    prose_step: ProseSynthesisStep | None = None,
 ) -> AccountResearchFleetComposition:
     """Compose one production-capable account fleet without provider branches in the fleet.
 
@@ -219,7 +221,12 @@ def build_account_research_fleet_composition(
     return AccountResearchFleetComposition(
         fleets=fleets,
         launcher=AccountResearchFleetLauncher(fleets=fleets, conn_factory=conn_factory),
-        handler=AccountResearchFleetWorkHandler(inner=inner, fleets=fleets),
+        handler=AccountResearchFleetWorkHandler(
+            inner=inner,
+            fleets=fleets,
+            # Lane E E1: ``None`` (the default) composes the pre-Lane-E handler exactly.
+            prose_step=prose_step,
+        ),
     )
 
 

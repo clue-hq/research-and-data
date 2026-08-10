@@ -67,6 +67,16 @@
       ]
     },
     {
+      "kind": "value_narrative",
+      "owner_species": "claim_derivation",
+      "block_kind": "value_narrative",
+      "required_elements": [
+        "verified_narrative_statement",
+        "provenance_ref",
+        "unknown_state"
+      ]
+    },
+    {
       "kind": "committee",
       "owner_species": "committee",
       "block_kind": "committee_member",

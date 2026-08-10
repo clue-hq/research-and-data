@@ -205,6 +205,13 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("research_directive_not_found",),
     ),
+    # Lane E E1: this matrix builds the toolbelt without the prose synthesizers, so the governed
+    # synthesis surface refuses fail-closed on composition before it reads anything.
+    "synthesize_entity_prose": ("precondition", ("prose_synthesis_not_composed",)),
+    # Lane E E3: same posture for the positioning surface — the tool registers everywhere so the
+    # name set (and the C6 authority check over it) is identical in every process, and an
+    # uncomposed one refuses on composition before it reads a job.
+    "synthesize_value_narrative": ("precondition", ("value_narrative_not_composed",)),
 }
 
 
@@ -456,6 +463,8 @@ def _bodies() -> dict[str, dict[str, object]]:
             "directive_id": _UUID(),
             "expected_sha256": "0" * 64,
         },
+        "synthesize_entity_prose": {"job_id": _UUID(), "field_key": "account.summary"},
+        "synthesize_value_narrative": {"job_id": _UUID()},
     }
 
 
@@ -855,11 +864,13 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # account-deep launch boundary; M8D R10 adds the promoted separately confirmed
     # launch_account_research / launch_contact_research and their two run-read tools (44 → 48);
     # FI Lane D D0 adds REQ-21's four thread-shell tools (48 → 52), each with exactly one version,
-    # and D4 adds the one gate-presenting tool (52 → 53).
-    assert len(registry.names()) == 53
+    # and D4 adds the one gate-presenting tool (52 → 53); Lane E E1 adds the governed
+    # on-completion prose synthesis surface, and E3 the governed value-narrative positioning
+    # surface beside it (53 → 55 in the merged tree).
+    assert len(registry.names()) == 55
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 60
+    assert len(registry) == 62
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

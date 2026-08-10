@@ -44,11 +44,19 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # FI Lane D D4 added `open_directive_confirmation_gate`, granted to the Head of ABM: asking the
     # human for authority is that role's own act, and the tool cannot address a gate to anybody but
     # the human whose turn it is answering.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 53
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["archive_thread"] == ()
+    # Lane E E1 adds `synthesize_entity_prose`, machine-invoked only: the fleet step offers a
+    # finalized job to it, and no model surface may reach for it.
+    assert C6_AGENT_TOOL_AUTHORITY["synthesize_entity_prose"] == ()
+    # Lane E E3, same reasoning one slice on: an agent that could position on demand could spend N
+    # completions on an account the research engine never finished.
+    assert C6_AGENT_TOOL_AUTHORITY["synthesize_value_narrative"] == ()
+    # Merged Lane D (+5: four thread tools + the confirmation gate) and Lane E (+2: the two
+    # machine-invoked synthesis tools) off the shared 48-tool base.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 55
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)

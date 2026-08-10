@@ -88,11 +88,13 @@ from clue_api.external_research_wake import (
 )
 from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, register_boot_handlers
 from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
-from clue_api.narrative_wiring import register_narrative_wiring
+from clue_api.narrative_wiring import build_client_knowledge_retriever, register_narrative_wiring
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
     Recipe1ProjectExecutionRouter,
 )
+from clue_api.prose_synthesis_step import ProseSynthesisStep
+from clue_api.prose_synthesis_tools import ProseSynthesisServices
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
     build_recipe_pin_registry,
@@ -105,6 +107,7 @@ from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_api.value_narrative_tools import ValueNarrativeServices
 from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
 from clue_core import ProjectPhase
 from clue_db import ConnFactory, db_lifespan, transaction
@@ -122,6 +125,8 @@ from clue_fleet import DbTaskQueue, DbWorkQueue, run_worker
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
 from clue_research.adapters.exa_websets import ExaWebsetsClient
+from clue_research.narrative import ProseSynthesizer
+from clue_research.verification import FaithfulnessJudgeImpl
 from clue_storage import StorageBackend
 from clue_toolbelt import DbIdempotencyStore
 
@@ -463,6 +468,12 @@ async def _serve() -> None:
         gateway = build_platform_gateway(settings)
         gateway_config = default_gateway_config()
         pre_spend_gate = build_pre_spend_gate(conn_factory=transaction)
+        # Lane E E1. Constructed here because the fleet composition needs it, but it cannot be
+        # handed an invoker yet: the fleet's launch services feed `build_toolbelt` below, and
+        # the invoker is built from the resulting registry. It is bound after that (`:bind`).
+        prose_step = ProseSynthesisStep(
+            narrative_enabled=settings.value_narrative_synthesis_enabled
+        )
         entity_research = build_production_entity_research_fleet(
             settings=settings,
             secrets=secrets,
@@ -476,6 +487,7 @@ async def _serve() -> None:
             gateway_config=gateway_config,
             pre_spend_gate=pre_spend_gate,
             conn_factory=transaction,
+            prose_step=prose_step,
         )
         entity_research_launches = (
             EntityResearchLaunchServices(
@@ -505,6 +517,35 @@ async def _serve() -> None:
             if settings.c7_production_handoff_enabled and research_views is not None
             else None
         )
+        # Lane E E1. The judge follows the runtime verification toggle exactly as the project-run
+        # composition does: with verification off there is no judge, the prose claim stays at its
+        # born `unverified` status, and the disabled-mode effective merge policy is what serves it.
+        prose_judge = (
+            FaithfulnessJudgeImpl(gateway=gateway, conn_factory=transaction)
+            if settings.verification_enabled
+            else None
+        )
+        # One synthesizer instance serves both prose species (E2). The two service fields are the
+        # seam for composing them differently later — a different policy, model, or judge per
+        # species — not an obligation to build two objects today.
+        prose_synthesizer = ProseSynthesizer(gateway=gateway, judge=prose_judge)
+        prose_synthesis = ProseSynthesisServices(
+            account=prose_synthesizer, contact=prose_synthesizer
+        )
+        # Lane E E3. The positioning services share the same toggle-following judge; the
+        # Client-Knowledge retriever is the api-root `read_client_kb_claims` seam (pgvector lands
+        # behind the same signature later). Composed only under the flag, so a disabled deployment
+        # registers the tool and refuses it rather than holding a live positioning surface.
+        value_narrative = (
+            ValueNarrativeServices(
+                gateway=gateway,
+                judge=prose_judge,
+                retriever=build_client_knowledge_retriever(conn_factory=transaction),
+                conn_factory=transaction,
+            )
+            if settings.value_narrative_synthesis_enabled
+            else None
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -522,6 +563,8 @@ async def _serve() -> None:
             research_view_recheck=(research_views.recheck if research_views is not None else None),
             contact_content_handoff=contact_content_handoff,
             entity_research_launches=entity_research_launches,
+            prose_synthesis=prose_synthesis,
+            value_narrative=value_narrative,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -543,6 +586,7 @@ async def _serve() -> None:
             storage=storage,
             settings=settings,
         )
+        prose_step.bind(tool_invoker)
         if research_views is not None:
             research_views.bind_tool_invoker(tool_invoker)
         deferred_supervisor_actions.bind(

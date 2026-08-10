@@ -134,7 +134,12 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # model can see it lacks is what stops it inventing a workaround. Withholding them through a
     # surface policy is not an option either — a policy may only narrow tools the role's profile
     # pins, and no profile pins these.
-    assert len(by_address) == 60
+    #
+    # Lane E E1's `synthesize_entity_prose@1` likewise adds an inventory entry with no role grant
+    # (machine-invoked only), so it is disclosed as unavailable to every surface; E3's
+    # `synthesize_value_narrative@1` is the same shape for the same reason. Merged count: the
+    # 55-address base + Lane D's 5 (four thread tools + the confirmation gate) + Lane E's 2.
+    assert len(by_address) == 62
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -142,6 +147,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "archive_thread@1",
     ):
         assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["synthesize_entity_prose@1"].status is not AgentCapabilityStatus.AVAILABLE
+    assert by_address["synthesize_value_narrative@1"].status is not AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {

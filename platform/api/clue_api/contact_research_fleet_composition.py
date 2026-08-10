@@ -48,6 +48,7 @@ from clue_api.entity_research_tools import (
     GovernedEntityResearchToolFactory,
     ProviderActionBinding,
 )
+from clue_api.prose_synthesis_step import ProseSynthesisStep
 from clue_api.sumble_entity_research_tools import SumbleEntityResearchLineageReader
 from clue_core.contact_research import ContactResearchIntent, ContactResearchPolicyPin
 from clue_db import ConnFactory, transaction
@@ -162,6 +163,7 @@ def build_contact_research_fleet_composition(
     model_policy: ModelPolicy,
     conn_factory: ConnFactory = transaction,
     checkpointers: EntityResearchCheckpointerFactory | None = None,
+    prose_step: ProseSynthesisStep | None = None,
 ) -> ContactResearchFleetComposition:
     if isinstance(provider_actions, StaticContactResearchProviderActions) or isinstance(
         channel_actions, StaticContactResearchChannelActions
@@ -220,7 +222,7 @@ def build_contact_research_fleet_composition(
     return ContactResearchFleetComposition(
         launcher=ContactResearchFleetLauncher(conn_factory=conn_factory),
         fleets=fleets,
-        handler=ContactResearchFleetWorkHandler(inner=inner, fleets=fleets),
+        handler=ContactResearchFleetWorkHandler(inner=inner, fleets=fleets, prose_step=prose_step),
     )
 
 

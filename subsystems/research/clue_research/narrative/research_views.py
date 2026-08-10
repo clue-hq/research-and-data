@@ -245,6 +245,12 @@ ACCOUNT_SECTION_ORDER: tuple[ResearchSectionKind, ...] = (
     ResearchSectionKind.ABOUT,
     ResearchSectionKind.FIT,
     ResearchSectionKind.INSIGHTS,
+    # L1 fix (Lane E charter §3): VALUE_NARRATIVE is legal in the route authority
+    # (research_view_routes._ACCOUNT_SECTIONS) and must also be ordered here, or the first
+    # VERIFIED account.value_narrative claim fails the whole account view with
+    # section_not_allowed_for_subject. Until research writes one, the section renders the
+    # honest empty state (UNKNOWN/unresearched) — the D4-acknowledged contract change.
+    ResearchSectionKind.VALUE_NARRATIVE,
     ResearchSectionKind.COMMITTEE,
     ResearchSectionKind.ACTIVITY,
     ResearchSectionKind.COVERAGE_GAPS,
