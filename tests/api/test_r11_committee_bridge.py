@@ -523,6 +523,32 @@ def test_the_governed_committee_resolves_out_of_m8d_coverage() -> None:
     run_async(scenario())
 
 
+@pytest.mark.parametrize("verification_enabled", ["true", "false"])
+def test_the_bridged_committee_is_identical_in_both_verification_toggle_states(
+    verification_enabled: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R11 §1a: the bridge is a pure reference read — no gateway, no judge, no toggle branch.
+
+    The toggle only relaxes the merge's verified-tier-4 gate, and committee membership is
+    deterministic tier-1 evidence, so flipping it must not move a single member or claim.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", verification_enabled)
+            fixture = await _seed_m8d(conn)
+            governed = await _resolver(conn, fixture).resolve_account(
+                account_entity_id=fixture.account,
+                workspace_id=fixture.scope.workspace_id,
+            )
+            assert [item.contact_entity_id for item in governed] == list(fixture.members)
+            assert [
+                sorted(str(claim.claim.field_key) for claim in item.claims) for item in governed
+            ] == [sorted({str(claim.field_key) for claim in fixture.claims})] * len(fixture.members)
+
+    run_async(scenario())
+
+
 def test_the_contact_detail_read_follows_the_same_bridged_decision() -> None:
     """``resolve_contact`` delegates to ``resolve_account``, so it is bridged by construction — the
     contact detail surface cannot disagree with the committee list about who is on it."""
