@@ -253,6 +253,16 @@ edits); the FI-2/C7-owned product-pin fallback-run serving gap stays **out** (ra
 - **(b) "No fleet run yet" semantics: RATIFIED — plain `PAUSED`.** The operator resumes the run
   after launching research via the confirmed launch tool. Upgrade to a first-class
   `AWAITING_INPUT` gate card only if the phase-2 frontend asks for it.
+  *Mechanical amendment (F1 implementation finding, orchestrator-accepted 2026-08-10):* the
+  machine's stock `PAUSED` handling lands an `AWAITING_INPUT` checkpoint that only
+  `submit_checkpoint(approve)` clears — and approving a DEEP hold would finalize the phase
+  having researched nothing. "Plain PAUSED" is therefore realized as an opt-in
+  **re-entrant hold**: the handler stamps `REENTRANT_HOLD_KEY` in its `PAUSED` payload
+  (`durable/project.py`), an explicit `resume` re-runs the handler against current fleet
+  state, and `submit_checkpoint` **refuses** a decision aimed at such a hold (typed error) so
+  a stray approval cannot fake DEEP completion. Existing decision gates
+  (TIER_CHECKPOINT/REVIEW) are byte-identical. Phase-2 frontend note: a DEEP hold is a
+  resume-shaped state, never an approvable gate card.
 - **(c) Multiple fleet runs: RATIFIED — the latest human-confirmed fleet run is current**;
   older runs are preserved as visible history and never drive the phase or the selectors.
 - **(d) Budget attribution: RATIFIED — enforce once at fleet admission; copy settled cost into
