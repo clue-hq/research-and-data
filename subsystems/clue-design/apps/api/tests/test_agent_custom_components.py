@@ -5,15 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from clue_storage import FsStorage
+
+from conftest import make_blob_store
 
 from lumen_api.agent_custom_components import (
     DurableAgentCustomComponentRegistry,
 )
+from lumen_api.design_store import HybridRepository
 from lumen_api.database import (
     CustomComponentSourceVersionConflict,
     NotFoundError,
-    Repository,
-    connect,
 )
 from lumen_api.main import create_app
 
@@ -58,22 +60,22 @@ export default function AccountMetric({
 
 
 def make_gateway(app, *, account_id: str, document_id: str):
+    # D6 (R-D6-5): the gateway's two durable writes run through the app's governed design
+    # invoker, so an agent write is journaled and A9-keyed exactly like an HTTP one.
     return DurableAgentCustomComponentRegistry(
-        database_path=Path(app.state.database_path),
-        store_root=Path(app.state.custom_component_store_root),
+        blobs=make_blob_store(app),
         account_id=account_id,
         document_id=document_id,
-        node_binary=app.state.custom_component_compiler_node_bin,
-        worker_path=Path(app.state.custom_component_compiler_worker),
-        timeout_seconds=app.state.custom_component_compiler_timeout_seconds,
+        invocations=app.state.design_tools,
     )
 
 
 def seed(tmp_path: Path):
-    database_path = tmp_path / "api.sqlite3"
-    app = create_app(database_path)
+    app = create_app(
+        tmp_path / "engine-cache", storage=FsStorage(tmp_path / "design-storage")
+    )
     core = app.state.core
-    repository = Repository(connect(database_path))
+    repository = HybridRepository()
     repository.create_web_account(
         "acc_alpha", "Alpha", None, None, {}, None
     )
@@ -98,7 +100,6 @@ def seed(tmp_path: Path):
         repository.create_document(
             web_doc, doc_kind="web", account_id="acc_alpha"
         )
-    repository.connection.close()
     return app
 
 
@@ -110,46 +111,43 @@ def attach(
     artifact_id: str,
     node_id: str,
 ):
-    repository = Repository(connect(app.state.database_path))
-    try:
-        document = repository.require_document(document_id)
-        page = document["scene"]["pages"][0]
-        operation = {
-            "kind": "insert_node",
-            "page_id": "home",
-            "parent": "host_box",
-            "index": len(page["nodes"]["host_box"].get("children") or []),
-            "nodes": [
-                {
-                    "id": node_id,
-                    "kind": "custom_component",
-                    "slug": slug,
-                    "artifact_id": artifact_id,
-                    "props": {
-                        "headline": "Performance",
-                        "emphasis": "primary",
-                        "count": 3,
-                        "visible": True,
-                    },
-                    "classes": "w-full min-h-[160px]",
-                }
-            ],
-            "root": node_id,
-        }
-        applied = app.state.core.web_apply_ops(
-            document["scene"], [operation]
-        )
-        repository.update_web_document(
-            document_id,
-            applied["web_doc"],
-            intent="attach custom component",
-            checkpoint_label="Attach",
-            operations=[operation],
-            inverse_operations=applied.get("inverse_operations"),
-            expected_base_version=document["current_version"],
-        )
-    finally:
-        repository.connection.close()
+    repository = HybridRepository()
+    document = repository.require_document(document_id)
+    page = document["scene"]["pages"][0]
+    operation = {
+        "kind": "insert_node",
+        "page_id": "home",
+        "parent": "host_box",
+        "index": len(page["nodes"]["host_box"].get("children") or []),
+        "nodes": [
+            {
+                "id": node_id,
+                "kind": "custom_component",
+                "slug": slug,
+                "artifact_id": artifact_id,
+                "props": {
+                    "headline": "Performance",
+                    "emphasis": "primary",
+                    "count": 3,
+                    "visible": True,
+                },
+                "classes": "w-full min-h-[160px]",
+            }
+        ],
+        "root": node_id,
+    }
+    applied = app.state.core.web_apply_ops(
+        document["scene"], [operation]
+    )
+    repository.update_web_document(
+        document_id,
+        applied["web_doc"],
+        intent="attach custom component",
+        checkpoint_label="Attach",
+        operations=[operation],
+        inverse_operations=applied.get("inverse_operations"),
+        expected_base_version=document["current_version"],
+    )
 
 
 def repin(
@@ -160,39 +158,36 @@ def repin(
     slug: str,
     artifact_id: str,
 ):
-    repository = Repository(connect(app.state.database_path))
-    try:
-        document = repository.require_document(document_id)
-        operation = {
-            "kind": "set_node_props",
-            "page_id": "home",
-            "id": node_id,
+    repository = HybridRepository()
+    document = repository.require_document(document_id)
+    operation = {
+        "kind": "set_node_props",
+        "page_id": "home",
+        "id": node_id,
+        "props": {
+            "kind": "custom_component",
+            "slug": slug,
+            "artifact_id": artifact_id,
             "props": {
-                "kind": "custom_component",
-                "slug": slug,
-                "artifact_id": artifact_id,
-                "props": {
-                    "headline": "Updated",
-                    "emphasis": "accent",
-                    "count": 4,
-                    "visible": True,
-                },
+                "headline": "Updated",
+                "emphasis": "accent",
+                "count": 4,
+                "visible": True,
             },
-        }
-        applied = app.state.core.web_apply_ops(
-            document["scene"], [operation]
-        )
-        repository.update_web_document(
-            document_id,
-            applied["web_doc"],
-            intent="repin custom component",
-            checkpoint_label="Repin",
-            operations=[operation],
-            inverse_operations=applied.get("inverse_operations"),
-            expected_base_version=document["current_version"],
-        )
-    finally:
-        repository.connection.close()
+        },
+    }
+    applied = app.state.core.web_apply_ops(
+        document["scene"], [operation]
+    )
+    repository.update_web_document(
+        document_id,
+        applied["web_doc"],
+        intent="repin custom component",
+        checkpoint_label="Repin",
+        operations=[operation],
+        inverse_operations=applied.get("inverse_operations"),
+        expected_base_version=document["current_version"],
+    )
 
 
 def test_source_survives_gateway_recreation_and_is_account_isolated(

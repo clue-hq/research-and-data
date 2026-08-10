@@ -321,26 +321,37 @@ def build_multi_work_worker(
     driver: RunDriver,
     graph_handler: WorkHandler,
     entity_research_handler: WorkHandler | None = None,
+    design_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
     worker_id: str | None = None,
 ) -> LeasedWorkWorker:
-    """One leased drain for project runs, recipe graphs, and optional entity-research jobs.
+    """One leased drain for project runs, recipe graphs, entity-research jobs, and design jobs.
 
     R2 adds only the composition seam.  Production deliberately omits the optional handler until
     R3 supplies the governed ``create_agent()`` driver, preserving R1's fail-loud quarantine.
+
+    ``design_handler`` (Part II D5 Round B) joins on exactly the same terms: optional, kind-checked
+    here so a wiring mistake fails at construction rather than at claim time, and off unless
+    ``design_runtime_enabled`` is set.  ONE fleet worker drains every kind — design work does not
+    get a private drain (the round-robin in :class:`~clue_fleet.LeasedWorkWorker` already keeps
+    one kind from starving another).
     """
     if (
         entity_research_handler is not None
         and entity_research_handler.kind is not FleetTaskKind.ENTITY_RESEARCH_JOB
     ):
         raise ValueError("entity_research_handler must own entity_research_job tasks")
+    if design_handler is not None and design_handler.kind is not FleetTaskKind.DESIGN_JOB:
+        raise ValueError("design_handler must own design_job tasks")
     handlers = [
         _OwnedRunGuardHandler(ProjectRunWorkHandler(driver)),
         graph_handler,
     ]
     if entity_research_handler is not None:
         handlers.append(entity_research_handler)
+    if design_handler is not None:
+        handlers.append(design_handler)
     return LeasedWorkWorker(
         handlers=tuple(handlers),
         queue=queue if queue is not None else DbWorkQueue(),

@@ -9,7 +9,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from lumen_api.database import Repository, connect
+from conftest import make_client
+from sqlalchemy import text as sa_text
+
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 
@@ -68,8 +71,8 @@ class RuntimeFrameParser(HTMLParser):
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    return TestClient(create_app(tmp_path / "api.sqlite3"))
+def client(tmp_path: Path, design_storage) -> TestClient:
+    return make_client(create_app(tmp_path / "engine-cache", storage=design_storage))
 
 
 def create_account(client: TestClient, account_id: str = "acc_alpha") -> None:
@@ -109,15 +112,12 @@ def create_document(client: TestClient) -> dict:
         None,
     )
     assert ingested.get("web_doc"), ingested
-    repository = Repository(connect(client.app.state.database_path))
-    try:
-        return repository.create_document(
-            ingested["web_doc"],
-            doc_kind="web",
-            account_id="acc_alpha",
-        )
-    finally:
-        repository.connection.close()
+    repository = HybridRepository()
+    return repository.create_document(
+        ingested["web_doc"],
+        doc_kind="web",
+        account_id="acc_alpha",
+    )
 
 
 def container_id(document: dict) -> str:
@@ -397,15 +397,25 @@ def test_missing_runtime_host_and_artifact_are_contained_without_losing_siblings
     )
 
     client.app.state.custom_component_runtime_host = runtime_host
-    repository = Repository(connect(client.app.state.database_path))
-    try:
-        repository.connection.execute(
-            "DELETE FROM custom_component_artifacts WHERE artifact_id = ?",
-            (artifact["artifact_id"],),
+    repository = HybridRepository()
+    # D2.4B: the registry lives on Postgres; purge the row there to simulate the
+    # missing-artifact case the renderer must contain. The citing compilation rows go
+    # first: their artifact FK is ON DELETE SET NULL, and that SET NULL is itself an
+    # UPDATE, which the compilation table's immutability trigger rejects. (No production
+    # path deletes an artifact — the registry is INSERT-only — and the account CASCADE
+    # removes compilations outright, so this ordering is a test-only concern.)
+    for statement in (
+        "DELETE FROM design_custom_component_compilation"
+        " WHERE artifact_id = :i AND workspace_id = :w",
+        "DELETE FROM design_custom_component_artifact"
+        " WHERE artifact_id = :i AND workspace_id = :w",
+    ):
+        repository._bridge._run(
+            lambda conn, sql=statement: conn.execute(
+                sa_text(sql),
+                {"i": artifact["artifact_id"], "w": repository.workspace_id},
+            )
         )
-        repository.connection.commit()
-    finally:
-        repository.connection.close()
     artifact_missing = client.get(f"/documents/{document['id']}/web/render")
     assert artifact_missing.status_code == 200, artifact_missing.text
     assert "Sibling stays visible" in artifact_missing.json()["html"]

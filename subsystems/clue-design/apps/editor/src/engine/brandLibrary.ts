@@ -1,5 +1,6 @@
 import type { AssetRecord } from "./contracts";
 import { assetBytesUrl, assetThumbnailUrl, fetchAssets } from "./assetLibrary";
+import { lumenFetch } from "./editorConfig";
 
 /**
  * Brand-section library + ingest client (slice 4).
@@ -54,7 +55,7 @@ export async function fetchDescriptions(
   }
   const url = new URL("/assets/descriptions", options.apiBaseUrl);
   url.searchParams.set("asset_ids", ids.join(","));
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const response = await lumenFetch(url, { headers: { Accept: "application/json" } });
   if (!response.ok) {
     throw new Error(`Asset descriptions failed with status ${response.status}`);
   }
@@ -69,7 +70,7 @@ export async function saveDescription(
   assetId: string,
   patch: DescriptionPatch
 ): Promise<AssetDescription> {
-  const response = await fetch(
+  const response = await lumenFetch(
     new URL(`/assets/${assetId}/description`, options.apiBaseUrl),
     {
       method: "PUT",
@@ -124,7 +125,7 @@ async function postIngest(
   body: BodyInit,
   headers?: HeadersInit
 ): Promise<IngestJob> {
-  const response = await fetch(new URL(path, options.apiBaseUrl), {
+  const response = await lumenFetch(new URL(path, options.apiBaseUrl), {
     method: "POST",
     headers,
     body
@@ -187,7 +188,7 @@ export async function fetchIngestJob(
   options: BrandLibraryOptions,
   jobId: string
 ): Promise<IngestJob> {
-  const response = await fetch(
+  const response = await lumenFetch(
     new URL(`/brand-kits/ingest/${jobId}`, options.apiBaseUrl),
     { headers: { Accept: "application/json" } }
   );
@@ -201,7 +202,7 @@ export async function fetchIngestJob(
 export async function fetchIngestJobs(
   options: BrandLibraryOptions
 ): Promise<IngestJob[]> {
-  const response = await fetch(new URL("/brand-kits/ingest", options.apiBaseUrl), {
+  const response = await lumenFetch(new URL("/brand-kits/ingest", options.apiBaseUrl), {
     headers: { Accept: "application/json" }
   });
   if (!response.ok) {

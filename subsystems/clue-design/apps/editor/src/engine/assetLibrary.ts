@@ -1,4 +1,5 @@
 import type { AssetPlacement, AssetRecord, Diagnostic, NodeId, Operation, SlotId } from "./contracts";
+import { lumenFetch } from "./editorConfig";
 
 /**
  * Workspace asset library client (Phase E slice E7).
@@ -44,7 +45,7 @@ export async function fetchAssets(
   if (query.offset !== undefined) {
     url.searchParams.set("offset", String(query.offset));
   }
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const response = await lumenFetch(url, { headers: { Accept: "application/json" } });
   if (!response.ok) {
     throw new Error(`Asset list failed with status ${response.status}`);
   }
@@ -71,7 +72,7 @@ export async function uploadAsset(
   if (fields.tags) {
     form.append("tags", fields.tags);
   }
-  const response = await fetch(new URL("/assets", apiBaseUrl), {
+  const response = await lumenFetch(new URL("/assets", apiBaseUrl), {
     method: "POST",
     body: form
   });
@@ -126,7 +127,7 @@ export async function generateAsset(
   apiBaseUrl: string,
   request: GenerateAssetRequest
 ): Promise<AssetGenerateResult> {
-  const response = await fetch(new URL("/assets/generate", apiBaseUrl), {
+  const response = await lumenFetch(new URL("/assets/generate", apiBaseUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -184,7 +185,7 @@ export async function editAsset(
   apiBaseUrl: string,
   request: EditAssetRequest
 ): Promise<AssetGenerateResult> {
-  const response = await fetch(new URL("/assets/generate", apiBaseUrl), {
+  const response = await lumenFetch(new URL("/assets/generate", apiBaseUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({

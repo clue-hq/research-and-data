@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import copy
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from lumen_api.database import Repository, connect
+from conftest import make_client
+
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 
@@ -39,8 +42,8 @@ TINY_PNG = bytes.fromhex(
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    app = create_app(tmp_path / "engine-cache")
+    return make_client(app)
 
 
 def create_web_document(client: TestClient, title: str = "Acme Site") -> dict:
@@ -76,18 +79,15 @@ def seed_template(
     response = client.app.state.core.web_ingest_html(web_doc, "home", html, None, None)
     errors = [d for d in response.get("diagnostics", []) if d.get("severity") == "error"]
     assert not errors, response.get("diagnostics")
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        store.update_web_document(
-            document_id,
-            response["web_doc"],
-            intent="seed",
-            checkpoint_label="seed",
-            operations=[{"kind": "replace_web_doc"}],
-            inverse_operations=None,
-        )
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.update_web_document(
+        document_id,
+        response["web_doc"],
+        intent="seed",
+        checkpoint_label="seed",
+        operations=[{"kind": "replace_web_doc"}],
+        inverse_operations=None,
+    )
 
 
 def upload_asset_record(client: TestClient) -> tuple[str, dict]:
@@ -99,11 +99,8 @@ def upload_asset_record(client: TestClient) -> tuple[str, dict]:
     )
     assert response.status_code == 200, response.text
     asset_id = response.json()["asset"]["id"]
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        record = store.require_asset_record(asset_id)["asset"]
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    record = store.require_asset_record(asset_id)["asset"]
     return asset_id, record
 
 
@@ -230,10 +227,19 @@ def test_derive_rejects_scene_document_409(client: TestClient) -> None:
     assert response.json()["detail"]["code"] == "document.kind_unsupported"
 
 
-def test_derive_rejected_on_missing_logo_asset_422(client: TestClient) -> None:
-    # Template carries an image slot bound to account.logo; the referenced
-    # data-asset resolves at ingest, but the account's logo points at an asset
-    # whose record is GONE → derive fails atomically (LUMW0605 → 422).
+def test_account_logo_cannot_dangle_and_detaches_when_the_asset_goes(
+    client: TestClient,
+) -> None:
+    """D2.4: the ghost-logo state this test used to construct is now impossible.
+
+    It previously seeded an account whose ``logo_asset_id`` named no asset at all (SQLite
+    validated the logo at write time only, with no FK) and asserted the derive rejected it
+    with LUMW0605. On Postgres ``design_account_logo_fk`` refuses that row outright and
+    ``ON DELETE SET NULL`` detaches the pointer when the asset is deleted, so an account can
+    never carry a dangling logo for a derive to trip over. Both halves are asserted here;
+    ``account_values``' defensive ``except NotFoundError`` (which still yields the unbound
+    path) is now belt-and-braces rather than a reachable state.
+    """
     asset_id, record = upload_asset_record(client)
     document = create_web_document(client)
     logo_html = (
@@ -242,26 +248,23 @@ def test_derive_rejected_on_missing_logo_asset_422(client: TestClient) -> None:
     )
     seed_template(client, document["id"], html=logo_html, inject_assets={asset_id: record})
 
-    # An account whose logo id does NOT resolve (seeded directly to bypass the
-    # create endpoint's resolution check).
-    store = Repository(connect(client.app.state.database_path))
-    try:
+    store = HybridRepository()
+    # A logo that resolves to nothing is refused BY THE SCHEMA, not by convention.
+    with pytest.raises(sqlite3.IntegrityError):
         store.create_web_account(
             "acc_ghost", "Ghost Co", None, "asset_ghost_999", {}, None
         )
-    finally:
-        store.connection.close()
+    # A real logo binds; deleting the asset SET-NULLs it instead of dangling.
+    store.create_web_account("acc_ghost", "Ghost Co", None, asset_id, {}, None)
+    assert store.require_web_account("acc_ghost")["logo_asset_id"] == asset_id
+    store.delete_asset_record(asset_id)
+    assert store.require_web_account("acc_ghost")["logo_asset_id"] is None
 
+    # The derive still runs (the account simply has no logo to bind) and coverage rides it.
     response = client.post(
         f"/documents/{document['id']}/web/derive",
         json={"account_id": "acc_ghost"},
     )
-    assert response.status_code == 422, response.text
-    detail = response.json()["detail"]
-    assert detail["code"] == "web_derive.rejected"
-    codes = [d.get("code") for d in detail["diagnostics"]]
-    assert "LUMW0605" in codes
-    # Coverage still rides the rejection.
-    assert isinstance(detail["coverage"], dict)
-    # No document row was created (atomic).
-    assert client.get("/web/templates").status_code == 200
+    assert response.status_code == 200, response.text
+    coverage = response.json()["coverage"]
+    assert [slot["key"] for slot in coverage["unbound_slots"]] == ["account.logo"]

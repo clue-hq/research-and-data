@@ -1,7 +1,7 @@
 """Website-mode personalization accounts (P5 D3) + the account_values projection.
 
 Accounts CRUD runs over the real API + temp DB via the shared `client` fixture;
-account_values is exercised directly against a Repository so its value-namespace
+account_values is exercised directly against a HybridRepository so its value-namespace
 mapping and logo asset-record projection are pinned without a derive call.
 """
 
@@ -12,7 +12,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from lumen_api.database import Repository, connect
+from conftest import make_client
+
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import account_values, create_app
 
 
@@ -26,8 +28,8 @@ TINY_PNG = bytes.fromhex(
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    app = create_app(tmp_path / "engine-cache")
+    return make_client(app)
 
 
 def upload_logo(client: TestClient, label: str = "Acme logo") -> str:
@@ -167,11 +169,8 @@ def test_account_values_maps_namespace_and_logo_record(client: TestClient) -> No
         "data": {"headline": "Care that connects", "cta": "Book a demo"},
         "notes": "agent-only context — never substituted",
     }
-    repo = Repository(connect(client.app.state.database_path))
-    try:
-        values, asset_records = account_values(account, repo)
-    finally:
-        repo.connection.close()
+    repo = HybridRepository()
+    values, asset_records = account_values(account, repo)
 
     assert values["account.name"] == {"kind": "text", "value": "Privia Health"}
     assert values["account.domain"] == {"kind": "text", "value": "priviahealth.com"}
@@ -201,11 +200,8 @@ def test_account_values_without_domain_or_logo(client: TestClient) -> None:
         "data": {},
         "notes": None,
     }
-    repo = Repository(connect(client.app.state.database_path))
-    try:
-        values, asset_records = account_values(account, repo)
-    finally:
-        repo.connection.close()
+    repo = HybridRepository()
+    values, asset_records = account_values(account, repo)
     assert values == {"account.name": {"kind": "text", "value": "Bare Co"}}
     assert asset_records == []
 
@@ -221,11 +217,8 @@ def test_account_values_logo_row_missing_yields_no_record(client: TestClient) ->
         "data": {},
         "notes": None,
     }
-    repo = Repository(connect(client.app.state.database_path))
-    try:
-        values, asset_records = account_values(account, repo)
-    finally:
-        repo.connection.close()
+    repo = HybridRepository()
+    values, asset_records = account_values(account, repo)
     assert values["account.logo"] == {
         "kind": "asset",
         "asset_id": "asset_deleted",

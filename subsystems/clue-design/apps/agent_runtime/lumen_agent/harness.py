@@ -22,6 +22,7 @@ from typing import Any, Optional
 from langchain.agents.structured_output import ToolStrategy
 from py_lumen_obs import configure, get_logger
 
+from .checkpoint import invoke_turn_graph
 from .config import AgentRuntimeConfig
 from .models.schemas import VisualCritique
 from .models.state import CONSTITUTION_FIELDS, LumenTurnState
@@ -116,6 +117,7 @@ def create_design_deepagent(
     event_sink=None,
     *,
     clarification_already_requested: bool = False,
+    checkpointer: Any = None,
 ) -> tuple[Any, LumenDesignTools]:
     """Build the v0 deepagent + substrate. Mirrors
     factory.create_lumen_design_agent's signature so callers can swap.
@@ -126,6 +128,13 @@ def create_design_deepagent(
     user's answer, recording any residual assumption via record_gap (never a
     second question round). The API sets it from the turn request's
     `previous_turn_outcome`.
+
+    `checkpointer` (D5 Round B) is an optional LangGraph `BaseCheckpointSaver`.
+    When present the graph compiles durably, so a turn's message history and
+    graph position survive the process that ran it. It is `None` for the CLI /
+    fixtures / offline paths, which keeps their behaviour byte-identical. See
+    `checkpoint.py` for what durability does and does NOT buy the design
+    harness (short answer: resume-as-restart, honestly).
     """
     try:
         from deepagents import create_deep_agent
@@ -300,6 +309,7 @@ def create_design_deepagent(
         system_prompt=build_orchestrator_prompt(workspace_str, has_references=has_references),
         subagents=subagents,
         name="lumen-design-deepagent",
+        checkpointer=checkpointer,
     )
     return agent, tools
 
@@ -314,6 +324,8 @@ def run_deepagent_turn(
     event_sink=None,
     *,
     clarification_already_requested: bool = False,
+    checkpointer: Any = None,
+    thread_id: str | None = None,
 ) -> tuple[dict, LumenDesignTools]:
     """Create + invoke + guarantee an honest finalize payload.
 
@@ -324,6 +336,13 @@ def run_deepagent_turn(
 
     `clarification_already_requested` rides through to the harness's structural
     one-round-per-turn guard (see create_design_deepagent).
+
+    `checkpointer` / `thread_id` (D5 Round B) are the durable-execution seam.
+    Supplied together by the fleet handler: the graph compiles on the given
+    checkpointer and runs on `thread_id` — the DESIGN RUN ID, per the D5 ruling,
+    so graph state, run row, event stream and fleet work id all key on one
+    identifier. Without them the turn threads on `tools.run_id` exactly as it
+    did before, which is what every CLI/fixture/offline caller still wants.
     """
     agent, tools = create_design_deepagent(
         prompt,
@@ -331,6 +350,7 @@ def run_deepagent_turn(
         initial_scene=initial_scene,
         event_sink=event_sink,
         clarification_already_requested=clarification_already_requested,
+        checkpointer=checkpointer,
     )
 
     # Per-run trace substrate (deliverables 2+3): attach THIS run's full-detail
@@ -354,14 +374,23 @@ def run_deepagent_turn(
     )
 
     initial_state = {"messages": [{"role": "user", "content": prompt}], **initial_turn_state(tools, prompt)}
+    # D5: the durable thread is the DESIGN RUN, not the runtime's private run id. When no
+    # thread_id is supplied the runtime id keeps its old double duty (thread + trace-dir name);
+    # when one is, the runtime id degrades to trace-dir naming only.
     invoke_config = {
         "recursion_limit": 200,
-        "configurable": {"thread_id": tools.run_id},
+        "configurable": {"thread_id": thread_id or tools.run_id},
     }
 
     exception_text: Optional[str] = None
     try:
-        agent.invoke(initial_state, config=invoke_config)
+        invoke_turn_graph(
+            agent,
+            initial_state,
+            invoke_config=invoke_config,
+            checkpointer=checkpointer,
+            thread_id=thread_id,
+        )
     except Exception as error:  # noqa: BLE001 - honest failure, recorded verbatim
         exception_text = f"{type(error).__name__}: {error}"
         tools.record(

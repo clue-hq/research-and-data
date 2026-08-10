@@ -35,7 +35,10 @@ sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
 
 from py_lumen_config import settings  # noqa: E402
 from lumen_api.core import CoreClient  # noqa: E402
-from lumen_api.database import Repository, connect, run_migrations  # noqa: E402
+from lumen_api.design_store import (  # noqa: E402
+    HybridRepository,
+    default_workspace_id,
+)
 from lumen_ingestion.font_library import (  # noqa: E402
     CURATED_FAMILIES,
     FontLibraryError,
@@ -59,6 +62,14 @@ AGENT_INVENTORY_DOC = (
 )
 
 
+def _blob_store(workspace_id: str):
+    """The design byte store for the provisioning tenant (D4)."""
+    from clue_storage import storage_from_settings
+    from lumen_api.design_store import DesignBlobStore
+
+    return DesignBlobStore(storage_from_settings(), workspace_id)
+
+
 def fonts_repo_commit(fonts_repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(fonts_repo), "rev-parse", "HEAD"],
@@ -68,28 +79,29 @@ def fonts_repo_commit(fonts_repo: Path) -> str:
     ).stdout.strip()
 
 
-def check_environment(manifest_path: Path, store_root: Path, database_path: Path) -> int:
+def check_environment(manifest_path: Path, workspace_id: str) -> int:
     import json
 
     from lumen_api.database import NotFoundError
 
     manifest = json.loads(manifest_path.read_text())
-    connection = connect(database_path)
-    repo = Repository(connection)
+    # D2.5B: the store is Postgres via clue_design. D4: the face BYTES live in platform storage
+    # (a cache file proves nothing — it can be wiped at any moment), so the check asks the
+    # durable seam, not the filesystem.
+    repo = HybridRepository(workspace_id)
+    blobs = _blob_store(workspace_id)
     problems: list[str] = []
-    try:
-        for family in manifest["families"]:
-            for face in family["faces"]:
-                digest = face["digest"]
-                blob = store_root / "sha256" / digest[:2] / digest
-                if not blob.is_file():
-                    problems.append(f"{family['slug']} w{face['weight']}: store bytes missing ({blob})")
-                try:
-                    repo.require_asset_record(face["asset_id"])
-                except NotFoundError:
-                    problems.append(f"{family['slug']} w{face['weight']}: asset record missing ({face['asset_id']})")
-    finally:
-        connection.close()
+    for family in manifest["families"]:
+        for face in family["faces"]:
+            digest = face["digest"]
+            if not blobs.exists(digest):
+                problems.append(
+                    f"{family['slug']} w{face['weight']}: durable bytes missing ({digest})"
+                )
+            try:
+                repo.require_asset_record(face["asset_id"])
+            except NotFoundError:
+                problems.append(f"{family['slug']} w{face['weight']}: asset record missing ({face['asset_id']})")
     if problems:
         print(f"FONT LIBRARY CHECK FAILED — {len(problems)} problem(s):")
         for problem in problems:
@@ -105,19 +117,32 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fonts-repo", type=Path, default=REPO_ROOT / ".context" / "google-fonts")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
-    parser.add_argument("--database", type=Path, default=None)
-    parser.add_argument("--store-root", type=Path, default=None)
+    parser.add_argument(
+        "--workspace",
+        type=str,
+        default=None,
+        help="tenant that owns the provisioned faces (default: the dev workspace)",
+    )
+    parser.add_argument(
+        "--cache-root",
+        type=Path,
+        default=None,
+        help="engine materialization cache root (default: LUMEN_ASSET_STORE_ROOT)",
+    )
     parser.add_argument("--families", type=str, default=None, help="comma-separated slugs subset")
     parser.add_argument("--check", action="store_true", help="verify env against manifest; no writes")
     args = parser.parse_args()
 
-    database_path = args.database or settings.lumen_api_database_path
-    store_root = args.store_root or (
-        settings.lumen_asset_store_root or database_path.parent / "asset-store"
-    )
+    # D4: the font library is one shared, openly-licensed set, so it is provisioned into ONE
+    # workspace's durable storage (see `lumen_api.font_library.library_workspace_id`, which
+    # reads the same default). The cache dir is that workspace's engine cache — a mirror the
+    # engine ingests through, not the store.
+    workspace_id = args.workspace or default_workspace_id()
+    cache_root = args.cache_root or settings.effective_asset_store_root
+    cache_dir = Path(cache_root) / workspace_id
 
     if args.check:
-        return check_environment(args.manifest, Path(store_root), database_path)
+        return check_environment(args.manifest, workspace_id)
 
     if not args.fonts_repo.is_dir():
         print(
@@ -140,10 +165,10 @@ def main() -> int:
             return 1
         selected = [f for f in CURATED_FAMILIES if f.slug in wanted]
 
-    run_migrations(database_path)
-    connection = connect(database_path)
-    repo = Repository(connection)
+    repo = HybridRepository(workspace_id)
+    blobs = _blob_store(workspace_id)
     core = CoreClient()
+    cache_dir.mkdir(parents=True, exist_ok=True)
     entries = []
     try:
         for curated in selected:
@@ -157,7 +182,8 @@ def main() -> int:
                 metrics,
                 ingest=core.ingest_asset,
                 create_record=repo.create_asset_record,
-                store_root=str(store_root),
+                blobs=blobs,
+                cache_dir=str(cache_dir),
                 google_fonts_commit=commit,
             )
             total_kb = sum(f["byte_length"] for f in entry["faces"]) // 1024
@@ -166,8 +192,6 @@ def main() -> int:
     except FontLibraryError as error:
         print(f"PROVISIONING FAILED: {error}")
         return 1
-    finally:
-        connection.close()
 
     if args.families:
         # Subset run: merge into the existing manifest instead of truncating it.

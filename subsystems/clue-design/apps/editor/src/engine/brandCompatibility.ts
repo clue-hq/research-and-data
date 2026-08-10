@@ -14,6 +14,7 @@ import {
   isRecord,
   responseStatus
 } from "./brandDiagnostics";
+import { lumenFetch } from "./editorConfig";
 
 export interface BrandCompatibilityRequest {
   scene: Scene;
@@ -64,7 +65,7 @@ export function createApiBrandCompatibilityRunner({
     }
 
     const url = new URL("/brand-kits/compatibility", apiBaseUrl);
-    const response = await fetch(url, {
+    const response = await lumenFetch(url, {
       method: "POST",
       headers: {
         "content-type": "application/json"

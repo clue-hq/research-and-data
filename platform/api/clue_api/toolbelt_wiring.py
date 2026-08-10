@@ -72,6 +72,7 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_v2_tool,
 )
 from clue_api.deep.composition import build_high_tier_resolver
+from clue_api.design_tools import build_design_tools
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
 from clue_api.entity_research_launch_tools import (
@@ -138,6 +139,7 @@ from clue_api.tool_outputs import (
 from clue_api.verification import build_verification_phase_handler
 from clue_config import DEFAULT_STAGE0_POLICY, Settings, load_settings
 from clue_core import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountEntity,
     ContactContentHandoff,
     ContactResearchSelection,
@@ -165,7 +167,6 @@ from clue_research.discovery_scoring.phases import discovery_run_id
 from clue_research.discovery_scoring.scoring import admitted_account_ids
 from clue_research.discovery_scoring.tiering import DEFAULT_TIERING_CONFIG
 from clue_research.durable import (
-    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountDeepLaunchConflict,
     AccountDeepLaunchInvalid,
     BudgetEngine,
@@ -2796,6 +2797,17 @@ def build_toolbelt(
         snapshot_compose_enabled=resolved_settings.c7_snapshot_compose_enabled,
         recheck_enabled=resolved_settings.c7_recheck_enabled,
         admitted_workspace_ids=frozenset(resolved_settings.c7_workspace_canary_ids),
+    ):
+        registry.register(tool, make_default=True)
+    # Part II D6: the design subsystem's governed write path. Registered UNCONDITIONALLY (the C6
+    # authority audit is a strict set equality — a registry whose shape depends on
+    # `design_runtime_enabled` would make flipping that switch an AgentCatalogError), but LIVE
+    # only where a design runtime is composed; elsewhere every design tool refuses
+    # `design_runtime_not_configured` before any write. No design tool is granted to any agent
+    # role until Part III — see `C6_AGENT_TOOL_AUTHORITY`.
+    for tool in build_design_tools(
+        enabled=resolved_settings.design_runtime_enabled,
+        storage=storage,
     ):
         registry.register(tool, make_default=True)
     return registry

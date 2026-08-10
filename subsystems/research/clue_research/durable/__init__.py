@@ -357,15 +357,6 @@ from clue_research.durable.recursion import (
     SpawnDenyReason,
     SpawnGuard,
 )
-from clue_research.durable.run_events import (
-    NARRATIVE_EMIT_SKIPPED_KEY,
-    RUN_EVENT_TOPICS,
-    RunEventRow,
-    RunEventTopic,
-    emit_run_event,
-    event_created_at,
-    list_run_events,
-)
 from clue_research.durable.scheduler import (
     AccountScheduler,
     AccountSpec,
@@ -725,14 +716,11 @@ __all__ = [
     "upsert_checkpoint",
     "insert_adjustment",
     "list_adjustments",
-    # run_event SSE outbox (PB-B4 slice 3, D8)
-    "RunEventTopic",
-    "RUN_EVENT_TOPICS",
-    "RunEventRow",
-    "emit_run_event",
-    "list_run_events",
-    "NARRATIVE_EMIT_SKIPPED_KEY",
-    "event_created_at",
+    # The run_event SSE outbox used to live here (PB-B4 slice 3; subject-widened at Part II D7).
+    # Part II D8 gave it ONE owner: the shapes are ``clue_core.run_event``'s, the DAL is
+    # ``clue_execution.run_events``'. Nothing in clue_research ever called it — the module was
+    # here only because clue_projections may import research read surfaces but not clue_execution,
+    # which the injected ``RunEventReader`` seam now solves properly.
     # phase-handler registry (M7.3)
     "PhaseHandlerRegistry",
     "default_phase_handler_registry",

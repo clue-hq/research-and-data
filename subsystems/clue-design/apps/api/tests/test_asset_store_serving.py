@@ -18,6 +18,10 @@ from typing import Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from clue_design.storage import SOURCE_KEY_ASSET
+
+from conftest import make_blob_store, make_client
+
 from lumen_api.main import create_app
 
 
@@ -36,20 +40,22 @@ TINY_PNG = bytes.fromhex(
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    app.state.asset_store_root = str(tmp_path / "asset-store")
-    return TestClient(app)
+def client(tmp_path: Path, design_storage) -> TestClient:
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    return make_client(app)
 
 
 def store_bytes(client: TestClient, data: bytes) -> str:
-    """Write bytes into the app's content-addressed store; returns the digest."""
-    digest = hashlib.sha256(data).hexdigest()
-    root = Path(client.app.state.asset_store_root)
-    path = root / "sha256" / digest[:2] / digest
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-    return digest
+    """Give bytes DURABLE custody in this test's workspace; returns the digest.
+
+    D4: the app-local content-addressed tree is gone — the durable home is platform storage, and
+    the app resolves every byte read from there. Registering through the same seam the
+    production producers use is what makes these fixtures exercise the real path.
+    """
+    make_blob_store(client.app).register(
+        data, media_type="application/octet-stream", source_key=SOURCE_KEY_ASSET
+    )
+    return hashlib.sha256(data).hexdigest()
 
 
 def minimal_scene() -> dict:
@@ -64,6 +70,8 @@ def scene_with_generated_asset(digest: str, asset_id: str = "asset_img_run_test_
     record = json.loads(GENERATED_RASTER_ASSET_PATH.read_text())
     record["id"] = asset_id
     record["media"]["digest"] = {"algorithm": "sha256", "value": digest}
+    # Deliberately the LEGACY provider label + ref shape: a scene written before D4 (or by the
+    # engine, which still mints this shape) must keep promoting and serving.
     record["media"]["location"] = {
         "provider": "local-store",
         "opaque_ref": f"sha256/{digest[:2]}/{digest}",
@@ -160,8 +168,10 @@ def test_scene_persist_promotion_is_insert_only(client: TestClient) -> None:
 
 
 def test_scene_persist_skips_records_without_local_bytes(client: TestClient) -> None:
-    """Records pointing at non-local providers are not servable rows; the
-    promotion must not fabricate registry entries for them."""
+    """A location that resolves to no DIGEST is not a servable row; the
+    promotion must not fabricate registry entries for it (D4: the gate is the digest, not the
+    provider label — an `opaque_asset_store` handle naming someone else's object still
+    resolves to nothing)."""
     digest = store_bytes(client, TINY_PNG)
     document = create_document(client)
     scene = scene_with_generated_asset(digest, asset_id="asset_remote_ref")

@@ -24,6 +24,9 @@ reference_docs/*
 !reference_docs/Brilliant-Reverse-Engineering-Report.md
 
 # Local-only heavy artifacts — stripped from history 2026-08-04, never re-commit
+# D4: the ENGINE MATERIALIZATION CACHE (transient, per-workspace; durable design bytes live in
+# platform storage). `apps/api/asset-store/` is kept below for historical working trees.
+.engine-cache/
 apps/api/asset-store/
 apps/agent_runtime/.lumen-runs-A/
 apps/agent_runtime/.lumen-runs-B/

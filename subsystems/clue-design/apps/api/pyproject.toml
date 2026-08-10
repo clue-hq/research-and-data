@@ -1,0 +1,61 @@
+# Minimal packaging for the design API app (design-integration Part II, slice D2.1 — the R3
+# workspace entry, per docs/specs/PD-part2-design-substrate.md §2).
+#
+# Scope, deliberately narrow:
+# - This re-enters the uv workspace as an EXPLICIT member by exact path (the root pyproject's
+#   `exclude = ["subsystems/clue-design"]` guard stays; only this app re-enters), so the design
+#   API can import the platform substrate — `clue_design` (the design_* DAL) and, through it,
+#   clue-db/clue-core/clue-config/clue-obs/clue-storage.
+# - Dependencies are the API app's own runtime surface (apps/api/requirements.txt) MINUS the
+#   agent-runtime trio (deepagents / langchain-anthropic / langchain-openai) and rich: those
+#   belong to apps/agent_runtime, are lazy-imported (the API answers `agent_runtime.unavailable`
+#   without them), and their pins are the "one version story" resolution Part-I Step-2 owns —
+#   pulling them into the root lockfile is deferred to D5/Step-2 on purpose.
+# - `py_lumen_config` / `py_lumen_obs` ARE packaged since D5 Round B (R-D5-B1) — they moved to
+#   `packages/py-lumen-{obs,config}` and are declared below as real dependencies, replacing the
+#   old `PYTHONPATH=subsystems/clue-design` arrangement (a fleet worker cannot rely on it). Their
+#   own third-party deps now ride with them; the pydantic-settings / structlog entries below stay
+#   because `lumen_api` imports both directly, not only through the shims. Step-2 still owns
+#   folding the two shims into clue-config/clue-obs and deleting them.
+# - Full packaging hygiene (structure tests, strict gates, CI lanes) stays Part-I Step-2 work.
+
+[project]
+name = "lumen-api"
+version = "0.0.0"
+description = "Design subsystem API app (merged havana tree) — minimal D2.1 packaging so it can consume the clue_design substrate."
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    "fastapi>=0.111,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "python-dotenv>=1,<2",
+    "pydantic-settings>=2,<3",
+    "structlog>=25,<26",
+    "python-multipart>=0.0.9,<1",
+    "httpx>=0.27,<1",
+    "fonttools>=4.53,<5",
+    "pillow>=10,<12",
+    "playwright>=1.45,<2",
+    "pymupdf>=1.24,<2",
+    # pypdf (in the legacy requirements.txt) is deliberately dropped: nothing in the design
+    # tree imports it (all PDF work is fitz/pymupdf), and its <6 pin conflicted with
+    # clue-research's >=6 in the shared lockfile — a dead dep is not worth a version treaty.
+    "selectolax>=0.3.21,<1",
+    "tinycss2>=1.3,<2",
+    "clue-design",
+    # D5 Round B: the two design-tree shims, now installed packages rather than PYTHONPATH.
+    "py-lumen-obs",
+    "py-lumen-config",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lumen_api", "lumen_ingestion"]
+
+[tool.uv.sources]
+clue-design = { workspace = true }
+py-lumen-obs = { workspace = true }
+py-lumen-config = { workspace = true }

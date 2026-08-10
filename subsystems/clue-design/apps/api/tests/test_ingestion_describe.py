@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import io
-import json
 import os
 import subprocess
 import sys
-import sqlite3
 from pathlib import Path
 
 import pytest
 
 from lumen_api.core import CoreClient
-from lumen_api.database import connect, run_migrations
+from lumen_api.design_store import HybridRepository
 from lumen_ingestion import normalize_evidence
 from lumen_ingestion.describe import (
     DescribeItem,
@@ -27,26 +26,44 @@ from lumen_ingestion.evidence import (
     LogoEvidence,
 )
 
-MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
-
-
 def _noop(stage: str, progress: float) -> None:
     return None
 
 
-def _frozen_clock():
-    ticks = iter(f"2026-01-01T00:00:{s:02d}+00:00" for s in range(60))
+def _register(*asset_ids: str) -> None:
+    """D2.3: descriptions live on ``design_asset_description``, which is FK'd 1:1 to the
+    registry row in the SAME workspace (SQLite omitted that FK). Every asset a test describes
+    therefore needs a registry row first — which is also the production order, since the
+    pipeline persists records before the describe pass."""
+    repo = HybridRepository()
+    for asset_id in asset_ids:
+        digest = hashlib.sha256(asset_id.encode()).hexdigest()
+        repo.create_asset_record(
+            {
+                "id": asset_id,
+                "label": asset_id,
+                "kind": "image",
+                "status": "ready",
+                "tags": [],
+                "media": {
+                    "mime_type": "image/png",
+                    "byte_length": 1,
+                    "filename": f"{asset_id}.png",
+                    "digest": {"algorithm": "sha256", "value": digest},
+                    "location": {"provider": "local-store", "opaque_ref": f"sha256/{digest}"},
+                },
+            }
+        )
 
-    def now_iso() -> str:
-        return next(ticks)
 
-    return now_iso
+def _stored(asset_id: str) -> dict:
+    """The persisted description row (Postgres since D2.3) — the ported ``asset_descriptions``
+    SELECT the SQLite-era assertions used."""
+    return DescriptionStore().get_many([asset_id]).get(asset_id) or {}
 
 
-def _connection(tmp_path: Path) -> sqlite3.Connection:
-    database_path = tmp_path / "api.sqlite3"
-    run_migrations(database_path)
-    return connect(database_path)
+def _description_count(*asset_ids: str) -> int:
+    return len(DescriptionStore().get_many(list(asset_ids)))
 
 
 def _pointer() -> EvidencePointer:
@@ -141,12 +158,11 @@ def test_null_describer_returns_all_none() -> None:
 
 
 def test_apply_with_null_describer_is_noop(tmp_path: Path) -> None:
-    connection = _connection(tmp_path)
+    _register("asset_ing_a")
     evidence = _evidence("asset_ing_a")
     resolved = {"asset_ing_a": (_png_bytes(), "image/png")}
     result = apply_descriptions(
         evidence,
-        connection=connection,
         describer=NullDescriber(),
         resolve_bytes=lambda aid: resolved.get(aid),
         reporter=_noop,
@@ -154,8 +170,7 @@ def test_apply_with_null_describer_is_noop(tmp_path: Path) -> None:
     assert result.logos[0].title is None
     assert result.logos[0].description is None
     # No rows written.
-    rows = connection.execute("SELECT COUNT(*) FROM asset_descriptions").fetchone()
-    assert rows[0] == 0
+    assert _description_count("asset_ing_a") == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -164,13 +179,12 @@ def test_apply_with_null_describer_is_noop(tmp_path: Path) -> None:
 
 
 def test_scripted_describer_stamps_and_persists(tmp_path: Path) -> None:
-    connection = _connection(tmp_path)
+    _register("asset_ing_a")
     evidence = _evidence("asset_ing_a")
     resolved = {"asset_ing_a": (_png_bytes(), "image/png")}
     describer = _ScriptedDescriber()
     result = apply_descriptions(
         evidence,
-        connection=connection,
         describer=describer,
         resolve_bytes=lambda aid: resolved.get(aid),
         reporter=_noop,
@@ -181,10 +195,7 @@ def test_scripted_describer_stamps_and_persists(tmp_path: Path) -> None:
     assert logo.usage_note == "Use on light backgrounds."
     assert logo.tags == ["mark", "brand"]
 
-    row = connection.execute(
-        "SELECT title, usage, origin, model FROM asset_descriptions WHERE asset_id=?",
-        ("asset_ing_a",),
-    ).fetchone()
+    row = _stored("asset_ing_a")
     assert row["title"] == "Title asset_ing_a"
     assert row["usage"] == "Use on light backgrounds."
     assert row["origin"] == "ai"
@@ -197,8 +208,8 @@ def test_scripted_describer_stamps_and_persists(tmp_path: Path) -> None:
 
 
 def test_cache_hit_skips_describer(tmp_path: Path) -> None:
-    connection = _connection(tmp_path)
-    store = DescriptionStore(connection, now_iso=_frozen_clock())
+    _register("asset_ing_cached")
+    store = DescriptionStore()
     store.put_ai(
         DescribeResult("asset_ing_cached", "Cached", "Cached desc.", "Cached usage.", ["x"]),
         "some/model",
@@ -207,7 +218,6 @@ def test_cache_hit_skips_describer(tmp_path: Path) -> None:
     describer = _CountingNull()
     result = apply_descriptions(
         evidence,
-        connection=connection,
         describer=describer,
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         reporter=_noop,
@@ -225,17 +235,14 @@ def test_cache_hit_skips_describer(tmp_path: Path) -> None:
 
 
 def test_put_ai_never_overwrites_human(tmp_path: Path) -> None:
-    connection = _connection(tmp_path)
-    store = DescriptionStore(connection, now_iso=_frozen_clock())
+    _register("asset_ing_h")
+    store = DescriptionStore()
     store.put_human("asset_ing_h", "Human title", "Human desc.", "Human usage.", ["h"])
     store.put_ai(
         DescribeResult("asset_ing_h", "AI title", "AI desc.", "AI usage.", ["ai"]),
         "some/model",
     )
-    row = connection.execute(
-        "SELECT title, description, usage, origin FROM asset_descriptions WHERE asset_id=?",
-        ("asset_ing_h",),
-    ).fetchone()
+    row = _stored("asset_ing_h")
     assert row["origin"] == "human"
     assert row["title"] == "Human title"
     assert row["description"] == "Human desc."
@@ -252,13 +259,12 @@ def test_per_item_isolation_17_items_17_calls(tmp_path: Path) -> None:
     # image costs exactly one caption, never a batch (the old batch-of-8 lost
     # 7 innocent descriptions per failure; the cache makes per-image latency a
     # once-per-lifetime cost).
-    connection = _connection(tmp_path)
     asset_ids = [f"asset_ing_{i:02d}" for i in range(17)]
+    _register(*asset_ids)
     evidence = _evidence(*asset_ids)
     describer = _ScriptedDescriber()
     apply_descriptions(
         evidence,
-        connection=connection,
         describer=describer,
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         reporter=_noop,
@@ -273,21 +279,19 @@ def test_per_item_isolation_17_items_17_calls(tmp_path: Path) -> None:
 
 
 def test_svg_skipped(tmp_path: Path) -> None:
-    connection = _connection(tmp_path)
+    _register("asset_ing_svg")
     evidence = _evidence("asset_ing_svg")
     svg_bytes = b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
     describer = _ScriptedDescriber()
     result = apply_descriptions(
         evidence,
-        connection=connection,
         describer=describer,
         resolve_bytes=lambda aid: (svg_bytes, "image/svg+xml"),
         reporter=_noop,
     )
     assert describer.calls == 0
     assert result.logos[0].title is None
-    rows = connection.execute("SELECT COUNT(*) FROM asset_descriptions").fetchone()
-    assert rows[0] == 0
+    assert _description_count("asset_ing_svg") == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -296,12 +300,10 @@ def test_svg_skipped(tmp_path: Path) -> None:
 
 
 def test_unresolvable_bytes_skipped(tmp_path: Path) -> None:
-    connection = _connection(tmp_path)
     evidence = _evidence("asset_ing_missing")
     describer = _ScriptedDescriber()
     result = apply_descriptions(
         evidence,
-        connection=connection,
         describer=describer,
         resolve_bytes=lambda aid: None,
         reporter=_noop,
@@ -316,7 +318,7 @@ def test_unresolvable_bytes_skipped(tmp_path: Path) -> None:
 
 
 def test_describer_failure_leaves_evidence_unchanged(tmp_path: Path) -> None:
-    connection = _connection(tmp_path)
+    _register("asset_ing_a")
     evidence = _evidence("asset_ing_a")
 
     class _Boom:
@@ -325,36 +327,17 @@ def test_describer_failure_leaves_evidence_unchanged(tmp_path: Path) -> None:
 
     result = apply_descriptions(
         evidence,
-        connection=connection,
         describer=_Boom(),
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         reporter=_noop,
     )
     assert result.logos[0].title is None
-    rows = connection.execute("SELECT COUNT(*) FROM asset_descriptions").fetchone()
-    assert rows[0] == 0
+    assert _description_count("asset_ing_a") == 0
 
 
-# --------------------------------------------------------------------------- #
-# Migration idempotence (fresh + reopen)
-# --------------------------------------------------------------------------- #
-
-
-def test_migration_idempotent(tmp_path: Path) -> None:
-    database_path = tmp_path / "api.sqlite3"
-    run_migrations(database_path)
-    connection = connect(database_path)
-    store = DescriptionStore(connection, now_iso=_frozen_clock())
-    store.put_ai(DescribeResult("asset_ing_a", "T", "D.", "U.", []), "m")
-    connection.close()
-
-    # Re-run migrations on the existing DB and reopen: the row survives.
-    run_migrations(database_path)
-    reopened = connect(database_path)
-    row = reopened.execute(
-        "SELECT title FROM asset_descriptions WHERE asset_id=?", ("asset_ing_a",)
-    ).fetchone()
-    assert row["title"] == "T"
+# D2.5B DELETED `test_migration_idempotent` here: it re-ran `run_migrations` against a SQLite
+# file and reopened it, and both the function and the file are gone. The description rows it
+# asserted have been Postgres since D2.3, covered by the rest of this module.
 
 
 # --------------------------------------------------------------------------- #
@@ -496,13 +479,12 @@ class _FailsOnDescriber(_ScriptedDescriber):
 
 
 def test_one_failing_item_does_not_sink_the_rest(tmp_path: Path) -> None:
-    connection = _connection(tmp_path)
+    _register("asset_a", "asset_b", "asset_c")
     evidence = _evidence("asset_a", "asset_b", "asset_c")
     describer = _FailsOnDescriber("asset_b")
     sink: list[dict] = []
     result = apply_descriptions(
         evidence,
-        connection=connection,
         describer=describer,
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         reporter=_noop,
@@ -520,7 +502,7 @@ def test_one_failing_item_does_not_sink_the_rest(tmp_path: Path) -> None:
 
 def test_every_undescribed_asset_gets_a_named_diagnostic(tmp_path: Path) -> None:
     # LUMI0805 for unresolvable bytes; LUMI0804 for an SVG with no rasterizer.
-    connection = _connection(tmp_path)
+    _register("asset_missing", "asset_svg")
     evidence = _evidence("asset_missing", "asset_svg")
     svg_bytes = b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
 
@@ -532,7 +514,6 @@ def test_every_undescribed_asset_gets_a_named_diagnostic(tmp_path: Path) -> None
     sink: list[dict] = []
     apply_descriptions(
         evidence,
-        connection=connection,
         describer=_ScriptedDescriber(),
         resolve_bytes=resolve,
         reporter=_noop,
@@ -548,13 +529,12 @@ def test_every_undescribed_asset_gets_a_named_diagnostic(tmp_path: Path) -> None
 def test_svg_described_through_rasterize_seam(tmp_path: Path) -> None:
     # With the engine-rasterizer seam supplied, an SVG is described like any
     # raster — no diagnostic, row persisted.
-    connection = _connection(tmp_path)
+    _register("asset_svg")
     evidence = _evidence("asset_svg")
     svg_bytes = b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
     sink: list[dict] = []
     result = apply_descriptions(
         evidence,
-        connection=connection,
         describer=_ScriptedDescriber(),
         resolve_bytes=lambda aid: (svg_bytes, "image/svg+xml"),
         reporter=_noop,
@@ -568,14 +548,13 @@ def test_svg_described_through_rasterize_seam(tmp_path: Path) -> None:
 def test_inactive_describer_skips_misses_without_failure_spam(tmp_path: Path) -> None:
     # Describe OFF (NullDescriber.active=False) is OFF — zero calls, zero
     # diagnostics, not N per-asset failures.
-    connection = _connection(tmp_path)
+    _register("asset_a", "asset_b")
     evidence = _evidence("asset_a", "asset_b")
     describer = _CountingNull()
     describer.active = False
     sink: list[dict] = []
     apply_descriptions(
         evidence,
-        connection=connection,
         describer=describer,
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         reporter=_noop,
@@ -586,7 +565,7 @@ def test_inactive_describer_skips_misses_without_failure_spam(tmp_path: Path) ->
 
 
 def test_reporter_carries_described_summary(tmp_path: Path) -> None:
-    connection = _connection(tmp_path)
+    _register("asset_a", "asset_b", "asset_c")
     evidence = _evidence("asset_a", "asset_b", "asset_c")
     stages: list[str] = []
 
@@ -595,7 +574,6 @@ def test_reporter_carries_described_summary(tmp_path: Path) -> None:
 
     apply_descriptions(
         evidence,
-        connection=connection,
         describer=_FailsOnDescriber("asset_c"),
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         reporter=reporter,
@@ -629,10 +607,9 @@ def _backfill_kit() -> dict:
 
 def test_describe_kit_assets_backfills_and_counts(tmp_path: Path) -> None:
     from lumen_ingestion.describe import describe_kit_assets
-
-    connection = _connection(tmp_path)
+    _register("asset_logo", "asset_photo", "asset_photo_described")
     # One asset already described (any origin) → cache hit, no model call.
-    DescriptionStore(connection, now_iso=_frozen_clock()).put_human(
+    DescriptionStore().put_human(
         "asset_photo_described",
         "Existing title",
         "Existing caption.",
@@ -644,7 +621,6 @@ def test_describe_kit_assets_backfills_and_counts(tmp_path: Path) -> None:
     sink: list[dict] = []
     counts = describe_kit_assets(
         kit,
-        connection=connection,
         describer=describer,
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         diagnostics=sink,
@@ -674,9 +650,8 @@ def test_describe_kit_assets_inactive_describer_only_stamps_cache(
     tmp_path: Path,
 ) -> None:
     from lumen_ingestion.describe import describe_kit_assets
-
-    connection = _connection(tmp_path)
-    DescriptionStore(connection, now_iso=_frozen_clock()).put_human(
+    _register("asset_logo", "asset_photo", "asset_photo_described")
+    DescriptionStore().put_human(
         "asset_photo_described", "Existing title", None, None, []
     )
     kit = _backfill_kit()
@@ -684,7 +659,6 @@ def test_describe_kit_assets_inactive_describer_only_stamps_cache(
     describer.active = False
     counts = describe_kit_assets(
         kit,
-        connection=connection,
         describer=describer,
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
     )
@@ -775,13 +749,12 @@ def test_apply_diagnostic_carries_the_failure_reason(tmp_path: Path) -> None:
     """When the describer records WHY it returned nothing, that reason is
     threaded into the LUMI0803 diagnostic instead of a bare 'returned
     nothing'."""
-    connection = _connection(tmp_path)
+    _register("asset_a")
     evidence = _evidence("asset_a")
     reason = "HTTP 429 (attempt 2): rate limited by upstream"
     sink: list[dict] = []
     apply_descriptions(
         evidence,
-        connection=connection,
         describer=_ReasonedNull(reason),
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         reporter=_noop,
@@ -796,8 +769,6 @@ def test_backfill_summary_and_diagnostic_carry_the_reason(tmp_path: Path) -> Non
     """The kit-backfill path threads the failure reason into BOTH the LUMI0803
     diagnostic message AND the job summary (counts['failures'][asset_id])."""
     from lumen_ingestion.describe import describe_kit_assets
-
-    connection = _connection(tmp_path)
     kit = {
         "assets": {
             "logos": {
@@ -810,7 +781,6 @@ def test_backfill_summary_and_diagnostic_carry_the_reason(tmp_path: Path) -> Non
     sink: list[dict] = []
     counts = describe_kit_assets(
         kit,
-        connection=connection,
         describer=_ReasonedNull(reason),
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         diagnostics=sink,

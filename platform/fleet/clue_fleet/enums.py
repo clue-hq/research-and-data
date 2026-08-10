@@ -26,12 +26,17 @@ class FleetTaskKind(StrEnum):
     * ``EXECUTE_GRAPH`` — one durable recipe execution in the shared top-level leased worker.
     * ``ENTITY_RESEARCH_JOB`` — one M8D account or contact research subject. Both types use this
       same mechanical kind; exact subject authority lives in the immutable job envelope.
+    * ``DESIGN_JOB`` — one unit of design-subsystem work (PD Part II D5). Agent turns, web turns,
+      and brand-kit ingestion all use this same mechanical kind, exactly as the two research
+      subject types share ``ENTITY_RESEARCH_JOB``; which shape it is lives in the immutable
+      by-value envelope the worker executes from, not in the queue taxonomy.
     """
 
     DRIVE_RUN = "drive_run"
     ACCOUNT_JOB = "account_job"
     EXECUTE_GRAPH = "execute_graph"
     ENTITY_RESEARCH_JOB = "entity_research_job"
+    DESIGN_JOB = "design_job"
 
 
 class FleetTaskStatus(StrEnum):

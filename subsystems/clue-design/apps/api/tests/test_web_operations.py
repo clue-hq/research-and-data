@@ -17,7 +17,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from lumen_api.database import Repository, connect
+from conftest import make_client
+
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 
@@ -68,8 +70,8 @@ SET_TEXT_ON_CONTAINER = {
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    app = create_app(tmp_path / "engine-cache")
+    return make_client(app)
 
 
 def minimal_scene() -> dict:
@@ -141,19 +143,16 @@ def install_operations(before: dict, after: dict) -> list[dict]:
 def seed_content(client: TestClient, document_id: str, web_doc: dict) -> None:
     """Install a starting content doc WITHOUT creating an undo entry, so the
     manual-edit stack starts clean (push_undo=False)."""
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        store.update_web_document(
-            document_id,
-            web_doc,
-            intent="seed",
-            checkpoint_label="seed",
-            operations=[{"kind": "replace_web_doc"}],
-            inverse_operations=None,
-            push_undo=False,
-        )
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.update_web_document(
+        document_id,
+        web_doc,
+        intent="seed",
+        checkpoint_label="seed",
+        operations=[{"kind": "replace_web_doc"}],
+        inverse_operations=None,
+        push_undo=False,
+    )
 
 
 def get_document(client: TestClient, document_id: str) -> dict:
@@ -161,11 +160,8 @@ def get_document(client: TestClient, document_id: str) -> dict:
 
 
 def envelopes(client: TestClient, document_id: str) -> list:
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        return store.list_envelopes(document_id, newest_first=False)
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    return store.list_envelopes(document_id, newest_first=False)
 
 
 def wait_for_run(client: TestClient, run_id: str, timeout: float = 30.0) -> dict:

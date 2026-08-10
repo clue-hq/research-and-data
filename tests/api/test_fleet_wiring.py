@@ -185,6 +185,44 @@ def test_multi_worker_accepts_one_optional_subject_neutral_entity_handler() -> N
         )
 
 
+def test_multi_worker_registers_the_optional_design_handler_on_the_one_drain() -> None:
+    # Part II D5 Round B: design turns drain on the SAME leased worker as everything else — no
+    # private drain — and the kind is checked at construction so a wiring mistake fails here
+    # rather than at claim time.
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    design = _CompositionHandler(FleetTaskKind.DESIGN_JOB)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        design_handler=design,
+        worker_id="shared-worker",
+    )
+    assert set(worker._handlers) == {
+        FleetTaskKind.DRIVE_RUN,
+        FleetTaskKind.EXECUTE_GRAPH,
+        FleetTaskKind.DESIGN_JOB,
+    }
+
+    with pytest.raises(ValueError, match="must own design_job"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            design_handler=graph,
+        )
+
+
+def test_the_design_handler_is_off_unless_the_runtime_switch_is_set() -> None:
+    """The production gate: no switch, no handler — and therefore no import of the design app."""
+    from clue_api.design_fleet import build_design_job_handler
+
+    assert build_design_job_handler(enabled=False) is None
+    enabled = build_design_job_handler(enabled=True)
+    assert enabled is not None
+    assert enabled.kind is FleetTaskKind.DESIGN_JOB
+
+
 # --- the resume-surface helper (spec §2.4): re-driving is a fresh enqueue_drive -------------------
 
 
@@ -347,3 +385,29 @@ def test_orphan_sweep_task_started_when_enabled() -> None:
 def test_orphan_sweep_disabled_when_interval_zero() -> None:
     settings = _settings(storage_orphan_sweep_interval_s=0.0)
     assert _start_orphan_sweep(settings, FakeStorage()) is None
+
+
+# --- the background design reaper (Part II D5 Round C) -------------------------------------------
+
+
+def test_design_reaper_is_off_unless_the_runtime_switch_is_set() -> None:
+    """Gated on the SAME switch as the handler: a deployment that does not DRAIN design work has
+    no business RE-OFFERING it, and the reaper import must not be paid for when it is off."""
+    from clue_api.design_fleet import start_design_reaper
+
+    assert start_design_reaper(enabled=False, interval_s=300.0) is None
+
+
+def test_design_reaper_started_when_enabled_and_disabled_at_zero_interval() -> None:
+    """Same disabled-by-non-positive-interval convention the orphan sweep uses."""
+    from clue_api.design_fleet import start_design_reaper
+
+    async def scenario() -> None:
+        assert start_design_reaper(enabled=True, interval_s=0.0) is None
+        task = start_design_reaper(enabled=True, interval_s=3600.0)
+        assert task is not None
+        task.cancel()  # cancel before it ever sleeps a real interval
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    run_async(scenario())

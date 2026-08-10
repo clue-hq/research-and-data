@@ -37,13 +37,13 @@ from clue_core import (
     ReadinessGate,
     ReadinessVerdict,
     ReconRunId,
+    RunEventTopic,
     RunId,
 )
 from clue_db import ConnFactory, transaction
+from clue_execution.run_events import emit_run_event
 from clue_research.durable import (
     ProjectRunStatus,
-    RunEventTopic,
-    emit_run_event,
     ensure_project_run,
     get_project_run,
 )

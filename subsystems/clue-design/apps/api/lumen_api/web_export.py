@@ -31,12 +31,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
+from clue_design.storage import SOURCE_KEY_PUBLISH_ASSET
+
+from .asset_custody import read_asset_bytes
 from .custom_component_runtime import (
     CustomComponentRuntimeError,
     build_custom_component_delivery_package,
     default_runtime_host_path,
     web_doc_uses_custom_components,
 )
+from .database import NotFoundError
+from .design_store import DesignBlobStore
 
 JsonObject = Dict[str, Any]
 
@@ -45,6 +50,21 @@ JsonObject = Dict[str, Any]
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STATIC_CSS_SCRIPT = "scripts/web_static_css.mjs"
 PUBLISH_ASSET_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+# The delivery-asset kinds a publish package can mint, and the ONE media type each one is
+# served as (mirrors `_DeliveryAssetCatalog.add`'s call sites in custom_component_runtime).
+# Since D4 this table is the extension↔media-type contract the `{digest}.meta.json` sidecar
+# used to carry: `persist_publish_assets` refuses a record that disagrees with it, and
+# `resolve_publish_asset` refuses to serve a blob whose recorded media type is not the one the
+# requested extension names.
+PUBLISH_ASSET_MEDIA_TYPES: Dict[str, str] = {
+    "js": "text/javascript; charset=utf-8",
+    "css": "text/css; charset=utf-8",
+    "html": "text/html; charset=utf-8",
+}
+# Stored on a delivery asset the manifest does not describe: it is durable, but nothing can
+# name an extension for it, so no publish URL will ever serve it.
+UNSERVABLE_ASSET_MEDIA_TYPE = "application/octet-stream"
 
 # The one page every website-mode doc renders (mirrors the render endpoint).
 HOME_PAGE_ID = "home"
@@ -82,13 +102,24 @@ class WebExportCompileError(WebExportError):
 
 
 def persist_publish_assets(
-    store_root: Path,
+    blobs: DesignBlobStore,
     assets: Dict[str, bytes],
     asset_records: Optional[List[JsonObject]] = None,
 ) -> None:
-    """Persist immutable public delivery bytes under their verified digest."""
+    """Persist immutable public delivery bytes under their verified digest.
 
-    root = Path(store_root) / "publish" / "sha256"
+    D4: the bytes land in platform storage (``{workspace}/design/{sha256}``) through the
+    row-before-blob seam instead of the API-local ``publish/sha256/{ab}/{digest}`` tree, and
+    the ``{digest}.meta.json`` sidecar is **gone** — its only payload was the media type, which
+    is now a column on the ``artifact`` row (ruling R-D4-3). The digest verification the sidecar
+    era did is unchanged, and content addressing makes a re-publish of the same package a no-op
+    (one row, one blob) rather than a collision check.
+
+    An asset with no manifest record is still stored, under an opaque media type: nothing can
+    honestly claim its extension, so :func:`resolve_publish_asset` will refuse to serve it —
+    exactly what the missing sidecar used to do.
+    """
+
     records_by_digest = {
         str(record.get("digest")): record
         for record in (asset_records or [])
@@ -102,70 +133,48 @@ def persist_publish_assets(
             raise WebExportError(
                 f"publish asset bytes do not match digest {digest}"
             )
-        destination = root / digest[:2] / digest
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            if destination.read_bytes() != data:
-                raise WebExportError(
-                    f"publish asset digest collision at {digest}"
-                )
-        else:
-            temporary = destination.with_name(f".{digest}.tmp")
-            temporary.write_bytes(data)
-            temporary.replace(destination)
         record = records_by_digest.get(digest)
-        if record is None:
-            continue
-        extension = record.get("extension")
-        media_type = record.get("media_type")
-        if extension not in {"js", "css", "html"} or not isinstance(
-            media_type, str
-        ):
-            raise WebExportError(
-                f"publish asset {digest} has invalid media metadata"
-            )
-        metadata = _canonical_json(
-            {"extension": extension, "media_type": media_type}
-        )
-        metadata_path = destination.with_suffix(".meta.json")
-        if metadata_path.exists():
-            if metadata_path.read_bytes() != metadata:
+        media_type = UNSERVABLE_ASSET_MEDIA_TYPE
+        if record is not None:
+            extension = record.get("extension")
+            declared = record.get("media_type")
+            if (
+                extension not in PUBLISH_ASSET_MEDIA_TYPES
+                or not isinstance(declared, str)
+                or declared != PUBLISH_ASSET_MEDIA_TYPES[str(extension)]
+            ):
                 raise WebExportError(
-                    f"publish asset {digest} media metadata changed"
+                    f"publish asset {digest} has invalid media metadata"
                 )
-        else:
-            temporary_metadata = metadata_path.with_name(
-                f".{digest}.meta.tmp"
-            )
-            temporary_metadata.write_bytes(metadata)
-            temporary_metadata.replace(metadata_path)
+            media_type = declared
+        blobs.register(
+            data, media_type=media_type, source_key=SOURCE_KEY_PUBLISH_ASSET
+        )
 
 
 def resolve_publish_asset(
-    store_root: Path, digest: str, extension: str
+    blobs: DesignBlobStore, digest: str, extension: str
 ) -> Tuple[bytes, str]:
-    """Read and integrity-check one public immutable publish asset."""
+    """Read and integrity-check one public immutable publish asset.
+
+    The URL's extension must agree with the media type recorded on the blob's ``artifact`` row
+    (the sidecar's job before D4), so ``/{digest}.css`` can never serve a JavaScript bundle.
+    """
 
     if not PUBLISH_ASSET_PATTERN.fullmatch(digest):
         raise WebExportError("invalid publish asset digest")
-    path = Path(store_root) / "publish" / "sha256" / digest[:2] / digest
+    expected_media_type = PUBLISH_ASSET_MEDIA_TYPES.get(extension)
+    if expected_media_type is None:
+        raise WebExportError("publish asset media type does not match its URL")
     try:
-        data = path.read_bytes()
-    except OSError as error:
+        media_type, data = blobs.read_blob(digest)
+    except (NotFoundError, ValueError) as error:
         raise WebExportError("publish asset is missing") from error
     if _sha256(data) != digest:
         raise WebExportError("publish asset failed its integrity check")
-    try:
-        metadata = json.loads(path.with_suffix(".meta.json").read_text())
-    except (OSError, json.JSONDecodeError) as error:
-        raise WebExportError("publish asset metadata is missing") from error
-    if (
-        not isinstance(metadata, dict)
-        or metadata.get("extension") != extension
-        or not isinstance(metadata.get("media_type"), str)
-    ):
+    if media_type != expected_media_type:
         raise WebExportError("publish asset media type does not match its URL")
-    return data, metadata["media_type"]
+    return data, media_type
 
 
 @dataclass
@@ -238,7 +247,7 @@ def _family_embeddable(license_obj: Any) -> bool:
 def _gather_fonts(
     brand_kit: Optional[JsonObject],
     repo: Any,
-    store_root: str,
+    blobs: DesignBlobStore,
 ) -> Tuple[List[_FontFace], List[JsonObject], List[str]]:
     """Resolve the kit's embeddable font faces to bytes.
 
@@ -252,7 +261,6 @@ def _gather_fonts(
     excluded: List[JsonObject] = []
     warnings: List[str] = []
     seen: set[str] = set()
-    store = Path(store_root)
     for font in fonts.values():
         if not isinstance(font, dict):
             continue
@@ -278,15 +286,16 @@ def _gather_fonts(
                 continue
             if digest in seen:
                 continue
-            blob = store / "sha256" / digest[:2] / digest
-            if not blob.is_file():
+            # D4: a pure-Python read — the face bytes go straight into the zip, so they come
+            # from durable storage rather than a round trip through the engine cache.
+            data = read_asset_bytes(blobs, digest)
+            if data is None:
                 warnings.append(
                     f"font face {digest[:12]} for family {family} skipped: "
                     "bytes missing from the asset store"
                 )
                 continue
             seen.add(digest)
-            data = blob.read_bytes()
             faces.append(
                 _FontFace(
                     digest=digest,
@@ -588,14 +597,14 @@ def _compile_static_css(html: str, tokens: Dict[str, str], node_bin: str) -> str
 # --------------------------------------------------------------------------- #
 
 
-def _resolve_brand_kit(web_doc: JsonObject, database_path: Any) -> Optional[JsonObject]:
+def _resolve_brand_kit(
+    web_doc: JsonObject, blobs: DesignBlobStore
+) -> Optional[JsonObject]:
     # Lazy import to dodge the main <-> web_export circular; reuse the exact
     # resolver the render/theme endpoints use so export sees the same kit.
     from .main import resolve_web_turn_brand_kit
 
-    brand_kit, _source, _assets, _fonts = resolve_web_turn_brand_kit(
-        web_doc, database_path=database_path
-    )
+    brand_kit, _source, _assets, _fonts = resolve_web_turn_brand_kit(web_doc, blobs)
     return brand_kit
 
 
@@ -639,7 +648,7 @@ def _custom_component_package(
     repo: Any,
     document: JsonObject,
     *,
-    custom_component_store_root: Path,
+    blobs: DesignBlobStore,
     asset_url_for: Any,
     deterministic_seed: str,
     embed_runtime_assets: bool,
@@ -649,7 +658,7 @@ def _custom_component_package(
     if not web_doc_uses_custom_components(web_doc, HOME_PAGE_ID):
         return build_custom_component_delivery_package(
             repo,
-            custom_component_store_root,
+            blobs,
             account_id=(
                 document.get("account_id")
                 if isinstance(document.get("account_id"), str)
@@ -668,7 +677,7 @@ def _custom_component_package(
     try:
         return build_custom_component_delivery_package(
             repo,
-            custom_component_store_root,
+            blobs,
             account_id=(
                 document.get("account_id")
                 if isinstance(document.get("account_id"), str)
@@ -743,14 +752,13 @@ def build_export_bundle(
     repo: Any,
     document: JsonObject,
     *,
-    store_root: str,
-    database_path: Any,
+    blobs: DesignBlobStore,
     generated_at: str,
     node_bin: str = "node",
 ) -> ExportBundle:
     """Build a self-contained static-site zip for ``document`` (a WebDoc)."""
     web_doc = document["scene"]
-    brand_kit = _resolve_brand_kit(web_doc, database_path)
+    brand_kit = _resolve_brand_kit(web_doc, blobs)
 
     files: Dict[str, bytes] = {}
     warnings: List[str] = []
@@ -762,7 +770,7 @@ def build_export_bundle(
         core,
         repo,
         document,
-        custom_component_store_root=Path(store_root) / "custom-components",
+        blobs=blobs,
         asset_url_for=(
             lambda digest, extension: (
                 f"components/sha256/{digest}.{extension}"
@@ -787,7 +795,7 @@ def build_export_bundle(
     ).encode("utf-8")
 
     # 1. Fonts (license-gated), embedded as relative fonts/<digest12>.<ext>.
-    faces, excluded, font_warnings = _gather_fonts(brand_kit, repo, store_root)
+    faces, excluded, font_warnings = _gather_fonts(brand_kit, repo, blobs)
     warnings.extend(font_warnings)
     font_face_css = _font_face_css(
         faces, lambda face: f"fonts/{face.digest[:12]}.{face.ext}"
@@ -812,14 +820,15 @@ def build_export_bundle(
     images = _resolve_images(web_doc)
     exported_images: List[_ImageAsset] = []
     for image in images:
-        blob = Path(store_root) / "sha256" / image.digest[:2] / image.digest
-        if not blob.is_file():
+        # D4: pure-Python read — the bytes are copied straight into the zip.
+        data = read_asset_bytes(blobs, image.digest)
+        if data is None:
             warnings.append(
                 f"image asset {image.asset_id} ({image.digest[:12]}) skipped: "
                 "bytes missing from the asset store"
             )
             continue
-        files[f"assets/{image.digest}.{image.ext}"] = blob.read_bytes()
+        files[f"assets/{image.digest}.{image.ext}"] = data
         html = html.replace(
             f"assets/{image.digest}", f"assets/{image.digest}.{image.ext}"
         )
@@ -882,10 +891,10 @@ def build_publish_package(
     repo: Any,
     document: JsonObject,
     *,
-    store_root: str,
-    database_path: Any,
+    blobs: DesignBlobStore,
     slug: str,
     public_base: str,
+    workspace_id: str,
     node_bin: str = "node",
 ) -> PublishPackage:
     """Build one immutable publish package for same-origin delivery.
@@ -894,11 +903,19 @@ def build_publish_package(
     server first frames, and generated per-node bootstrap modules are all
     pinned by digest. Runtime asset URLs are immutable and never resolve
     ``latest`` registry state.
+
+    Every publish URL this package mints (canonical, og:url, the manifest link,
+    the per-asset runtime URLs) is workspace-scoped under ``/w/{workspace_id}``:
+    publish slugs became tenant-local at Part II D1 (O6), so a bare ``/p/{slug}``
+    is ambiguous. This is the interim O6b scheme — Part-IV item 5 replaces it.
+    The ``/asset-store`` URLs stay unprefixed: that route is not part of the
+    public publish surface and is unchanged by O6b.
     """
     web_doc = document["scene"]
-    brand_kit = _resolve_brand_kit(web_doc, database_path)
+    brand_kit = _resolve_brand_kit(web_doc, blobs)
     warnings: List[str] = []
     base = public_base.rstrip("/")
+    public_prefix = f"{base}/w/{workspace_id}"
     deterministic_seed = (
         f"publish:{document['id']}:{document['current_version']}:"
         f"{_sha256(_canonical_json(web_doc))}"
@@ -907,10 +924,10 @@ def build_publish_package(
         core,
         repo,
         document,
-        custom_component_store_root=Path(store_root) / "custom-components",
+        blobs=blobs,
         asset_url_for=(
             lambda digest, extension: (
-                f"{base}/p-assets/{digest}.{extension}"
+                f"{public_prefix}/p-assets/{digest}.{extension}"
             )
         ),
         deterministic_seed=deterministic_seed,
@@ -919,7 +936,7 @@ def build_publish_package(
     )
 
     # Fonts (license-gated) as absolute /asset-store urls; no files emitted.
-    faces, _excluded, font_warnings = _gather_fonts(brand_kit, repo, store_root)
+    faces, _excluded, font_warnings = _gather_fonts(brand_kit, repo, blobs)
     warnings.extend(font_warnings)
     font_face_css = _font_face_css(
         faces, lambda face: f"/asset-store/{face.digest}"
@@ -949,8 +966,8 @@ def build_publish_package(
         title=document["title"],
         description=_seo_description(web_doc, document["title"]),
         og_image=og_image,
-        canonical=f"{base}/p/{slug}",
-        og_url=f"{base}/p/{slug}",
+        canonical=f"{public_prefix}/p/{slug}",
+        og_url=f"{public_prefix}/p/{slug}",
     )
     head += f'<style id="lumen-static-css">{site_css}</style>\n'
     publish_manifest = {
@@ -962,7 +979,7 @@ def build_publish_package(
             warnings=warnings,
         ),
         "slug": slug,
-        "canonical_url": f"{base}/p/{slug}",
+        "canonical_url": f"{public_prefix}/p/{slug}",
     }
     manifest_digest = _sha256(_canonical_json(publish_manifest))
     head += (
@@ -975,7 +992,7 @@ def build_publish_package(
     )
     head += (
         '<link rel="lumen-publish-manifest" href="'
-        f'{_escape_attr(f"{base}/p/{slug}/manifest.json")}">\n'
+        f'{_escape_attr(f"{public_prefix}/p/{slug}/manifest.json")}">\n'
     )
     html = _inject_before_head_close(html, head)
     html_digest = _sha256(html)
@@ -1005,10 +1022,10 @@ def build_publish_html(
     repo: Any,
     document: JsonObject,
     *,
-    store_root: str,
-    database_path: Any,
+    blobs: DesignBlobStore,
     slug: str,
     public_base: str,
+    workspace_id: str,
     node_bin: str = "node",
 ) -> Tuple[str, Optional[int], List[str]]:
     """Compatibility wrapper for callers that only need the publish HTML."""
@@ -1017,10 +1034,10 @@ def build_publish_html(
         core,
         repo,
         document,
-        store_root=store_root,
-        database_path=database_path,
+        blobs=blobs,
         slug=slug,
         public_base=public_base,
+        workspace_id=workspace_id,
         node_bin=node_bin,
     )
     return package.html, package.runtime_version, package.warnings

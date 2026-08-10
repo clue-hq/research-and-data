@@ -22,8 +22,8 @@ from clue_execution import (
     ParameterArtifactState,
     ParameterArtifactStore,
     StoredParameterArtifact,
+    emit_run_event,
 )
-from clue_research.durable import emit_run_event
 from clue_storage import (
     StorageBackend,
     get_artifact,

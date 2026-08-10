@@ -27,6 +27,90 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-10-part2-d7-close.md` — **Part II D7 CLOSED:** one durable stream serves design —
+  run_event/stream_token widened with generic subject_kind/subject_id (a02cbcb6e641),
+  design_run_event dropped (eb9c5b963f40); lease-fenced emitter, self-contained terminals,
+  single-use subject-bound tokens with workspace-from-token; editor on a fetch-stream client,
+  wire contract byte-preserved; suite 548/9/0. D8 backlog inventoried.
+- `2026-08-10-part2-d7a-subject-widening.md` / `…-d7b-stream-unification.md` — D7 round detail.
+- `2026-08-10-part2-d6-close.md` — **Part II D6 CLOSED:** 49 design_* tools (classes in
+  lumen_api/toolbelt/, clue_api lazy-registers; always-present, refusing when runtime off);
+  one ToolInvoker write path for REST + agent over the shared A9/journal tables; no-bypass
+  guard with equality-closed exemptions; scene CAS drop + 8 more correctness debts paid;
+  generation ledger → Postgres (2711924d1e29); suite 543/9/0; registry 97/104.
+- `2026-08-10-part2-d6a-toolbelt-foundation.md` / `…-d6b-documents-domain.md` /
+  `…-d6c-assets-brand-personalization.md` — D6 round detail.
+- `2026-08-09-part2-d5-close.md` — **Part II D5 CLOSED:** design turns + ingestion are leased
+  fleet work (`design_job`, envelope-discriminated); daemon threads + orphan sweep gone;
+  generation-fenced zombie writes; Postgres checkpointer with honest resume-as-restart;
+  stranded-work reaper (re-offer once, then fail); shims + agent_runtime are real uv members
+  (deepagents 0.6.12 treaty); O5 bridge survives by corrected ruling; suite 501/9/0.
+- `2026-08-09-part2-d5a-durable-foundation.md` / `…-d5b-turns-on-the-fleet.md` /
+  `…-d5c-ingestion-reaper.md` — D5 round detail (schema+CAS+envelopes; handler+checkpointer+API
+  switch+kill-and-resume; ingestion+reaper+workspace debts).
+- `2026-08-09-part2-d4-close.md` — **Part II D4 CLOSED:** every design asset byte durably on
+  platform `clue_storage` (`{ws}/design/{sha}` keys, row-before-blob); Rust engine keeps a
+  transient per-ws materialization cache (write-back + read-through); migration `13cd5078d697`
+  (CHECK widened + `content_sha256` index); suite 501/9/0; two founder-ratification flags.
+- `2026-08-09-part2-d4a-design-storage-seam.md` — D4 Round A detail: the `clue_design.storage`
+  seam + `DesignBlobStore`; custom-component blobs + publish assets moved; sidecar dead; the
+  CHECK-collision and shared-row media-type findings.
+- `2026-08-09-part2-d4b-main-asset-store.md` — D4 Round B detail: engine cache demoted,
+  `asset_custody.py` write-back/read-through, staged ingestion on storage keys, public route on
+  the artifact table; the `tests/api` DB-pollution defect bisection; traps for later agents.
+- `2026-08-08-part2-d3-concept-joins.md` — **Part II D3 done:** brand-kit brand_id +
+  design_account account_entity_id stamped via resolve-or-create (clue_design/joins.py,
+  interim scaffolding; Part III owns governed creation + NOT NULL + backfill); suite 490/0.
+- `2026-08-08-part2-d24a-personalization-accounts.md` + `2026-08-08-part2-d24b-publishes-components.md`
+  — **Part II D2.4 done (two Opus rounds):** personalization/accounts/batches (A) and
+  publishes/components + O6b `/w/{ws}/p/…` public routes, bare routes deleted (B); document→
+  account FK re-added; last cross-domain validation seam closed; migration `cf7dd82cf683`
+  (account FK + workspace-local binding/instance/repair ids — founder nod pending); bridge
+  fixed to private-engine-per-call (concurrent calls); design suite 487/0. Remaining: D2.5.
+- `2026-08-08-part2-d23-brand-assets-ingestion.md` — **Part II D2.3 done:** brand kits/compat,
+  asset registry/descriptions, ingestion jobs on Postgres; scene-asset promotion in-transaction
+  (D2.2 seam closed); migration `cf4f80537c8e` (content-derived asset ids + client-supplied
+  snapshot ids → workspace-local PKs). **Incident:** a D2.3 agent ran `git reset` to D2.1
+  despite the no-git rule — orphaned the D2.2 commit + clobbered fixed tests/docs; recovered
+  via reflog + `git checkout acd10f8e --`. Future agent briefs: no git, verify file states in
+  review. (Phase-B detail note: `2026-08-08-part2-d23b-ingestion-descriptions.md`.)
+- `2026-08-08-part2-d22-documents-history-port.md` — **Part II D2.2 done:** documents+history
+  on Postgres behind `HybridRepository` (scene CAS added; legacy asset-metadata 410s per O3);
+  migration `7a9881f9717a` — workspace-local PKs extended to all client-supplied/content-hash
+  id namespaces (**needs founder ratification**), account FK deferred to D2.4; design suite
+  487/0 green after harness adaptation + merge-fallout repairs (fixtures, npm). jsonb does NOT
+  preserve object key order — never select nodes by dict position. Opus-implements/Fable-reviews
+  process now binding.
+- `2026-08-07-part2-d21-dal-foundation.md` — **Part II D2.1 done:** `lumen-api` packaged +
+  explicit uv-workspace member (agent-runtime deps deliberately excluded; dead `pypdf` pin
+  dropped over a real lockfile conflict; py_lumen_* stay PYTHONPATH until Step-2);
+  `clue_design` gains errors + parent-row-lock sequence allocators (O5 one-transaction rule
+  binding); 10/10 design DB tests incl. an observed lock-blocking concurrency proof.
+- `2026-08-07-part2-d1-design-schema.md` — **Part II D1 done:** six `design_*` migrations off
+  `c6d84aa84b79` (head `e79f192828b1`), 11 package-local enums + parity, immutability triggers,
+  structural tenancy; db-smoke + 6/6 design tests green. Env gotcha: localhost:5432 = Homebrew
+  PG17, NOT the docker container. Pre-existing DB-suite failures (waterfall et al.) proven
+  D1-independent by A/B. Next: D2 after O6b ratification.
+- `2026-08-07-part2-o1-o6-ratified.md` — **O1–O6 RATIFIED (founder); D1 unblocked.** Key
+  refinements: `design_brand_kit` promoted to THE platform versioned brand-kit payload (brand
+  studio vision); `asset_descriptions` ported with full behavior; O5 atomicity rule binding;
+  fleet-for-design-deepagent uncertain but concurrent multi-session runs binding; O6 slugs
+  workspace-local with O6b (interim `/p/{slug}` rule) open for D2; append-only design history
+  is a preserved principle — no destructive compaction ever.
+- `2026-08-07-part2-d0-preflight.md` — **Part II slice D0 done:** contract doc
+  `docs/specs/PD-part2-design-substrate.md` (slice map, 22-table `design_*` map, rules, open
+  decisions O1–O6 — **unratified, gate D1**); `subsystems/design/clue_design` scaffold under all
+  gates incl. new Rule-S4 contract; clue-design logging-guard carve-out. Pre-existing red found:
+  23-file ruff-format drift at `origin/main` fails `make lint` — ruling pending.
+- `2026-08-07-alembic-single-head-c6d84aa84b79.md` — **Alembic has ONE head: `c6d84aa84b79`**;
+  all new (incl. Part-II `design_*`) migrations chain off it. A 4-head report was false (it
+  counted Phase-C branch tips already joined by `fc1f3d22a167`). Verify with
+  `uv run alembic heads`, never by eyeballing the versions dir.
+- `2026-08-07-design-subsystem-monorepo-merge.md` — Design-integration **Part I / Step 1** done:
+  `clue-design`/*havana* merged into `subsystems/clue-design/` (full history preserved; on
+  `origin/main` via PR #40; design-only ancestry = 2nd parent of `3ab4a750`), excluded from the
+  uv workspace + ruff pending Step-2 hygiene. Parts II–IV (substrate / agent / surface) not
+  started. Authoritative plan: `docs/specs/design-integration-master-plan.md`.
 - `2026-08-06-m8d-r9-parallel-execution.md` — R9 accepted: exact-wave dependency checks,
   atomic budget/provider admission, concurrent Exa/Sumble execution, partial-result joining,
   callback-race-safe composite waits, cold-resume/crash replay, DSAR, and isolated-DB evidence.
@@ -208,3 +292,5 @@ The central architecture bet is that verification must be modeled at the claim/d
 - `2026-06-26-m134-observability-surface.md` — M13.4 (cost & progress surface) complete: the read-only `ObservabilitySurface`, its api-root wiring, the `cost_estimate` migration, the coverage/verification-health/pre-run-estimate decisions, and the integration follow-ups.
 
 - **2026-08-01 — Stage-0 acceptance run PASSED** (`2026-08-01-stage0-acceptance-run.md`): structured-output repair plan + F6/F7/F8 landed; live Terra interview → grounded confirmed ICP; entailment-strictness product finding; Sumble canary is next.
+
+- **2026-08-10 — Part II D8 CLOSED; Part II COMPLETE (D0–D8)** (`2026-08-10-part2-d8-close.md`): outbox consolidation (one DAL owner + `clue_core.run_event` contract-delta), dead liveness net deleted, retention (token sweep ON / design pruner OFF with in-code floors), Part-II gate machine-checked end to end, DSAR **assessed not wired** (`docs/specs/PD-D8-dsar-assessment.md`); founder items: pruner enablement + the standing D2.2/D4 flags.

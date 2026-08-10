@@ -1,81 +1,28 @@
-"""Single-use SSE ``stream_token`` store (PB-B4 slice 3, D8) — a composition-root write surface.
+"""Compatibility re-export of the single-use SSE ``stream_token`` store.
 
-The SSE endpoint (``GET …/events``) is opened with a one-shot token a consumer mints first. The
-token authorises *opening* a stream exactly once: :func:`consume_stream_token` stamps ``used_at``
-atomically (``… WHERE used_at IS NULL AND expires_at > now() RETURNING``), so a second presentation
-finds no live row and is refused. ``EventSource`` reconnect re-mints (the ``Last-Event-ID`` cursor
-carries replay state across connects independently of the token, so single-use never breaks
-gapless reconnect — the client just mints a fresh token per connect).
+The DAL itself moved to :mod:`clue_execution.stream_tokens` at Part II D7 Round B: the design API
+(``lumen_api``) needs the same mint/consume surface and may not import ``clue_api`` (Rule 5 —
+nothing imports the composition root), so the token store now lives beside
+:mod:`clue_execution.run_events`, the other half of the one-transport / one-auth-model seam.
 
-**Why here, not in ``clue_projections``.** Minting and consuming are *writes*; the read-only
-projections package cannot own them (that would break its MVCC-only discipline). The token store is
-composition-root machinery (SSE transport auth), so it lives in ``clue_api`` alongside the SSE app.
-Tenant-scoped: a token is consumable only in the ``workspace_id`` it was minted for.
+This module survives so every pre-D7 import path (``from clue_api.stream_tokens import
+mint_stream_token, consume_stream_token``) still resolves, and because the SSE app that consumes
+these tokens is genuinely composition-root machinery. There is no second implementation here — only
+names.
 """
 
 from __future__ import annotations
 
-from uuid import UUID
-
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection
-
-from clue_core import ProjectRunId
-
-_MINT_SQL = text(
-    """
-    INSERT INTO stream_token (workspace_id, run_id, expires_at)
-    VALUES (:workspace_id, :run_id, now() + make_interval(secs => :ttl_s))
-    RETURNING token
-    """
+from clue_execution.stream_tokens import (
+    PROJECT_RUN_SUBJECT_KIND,
+    consume_stream_token,
+    consume_subject_stream_token,
+    mint_stream_token,
 )
 
-# Single-use consume: stamp used_at atomically only for a live, unused, unexpired, same-tenant,
-# same-run row. A second use (used_at already set), an expired token, a cross-tenant token, or a
-# token minted for a DIFFERENT run returns no row (run-bound: a run-scoped token opens only the
-# stream it was minted for; a NULL-run token is workspace-wide by design).
-_CONSUME_SQL = text(
-    """
-    UPDATE stream_token
-    SET used_at = now()
-    WHERE token = :token
-      AND workspace_id = :workspace_id
-      AND used_at IS NULL
-      AND expires_at > now()
-      AND (run_id IS NULL OR run_id = :run_id)
-    RETURNING token
-    """
-)
-
-
-async def mint_stream_token(
-    conn: AsyncConnection,
-    *,
-    workspace_id: str,
-    run_id: ProjectRunId | None,
-    ttl_s: float,
-) -> UUID:
-    """Mint a single-use stream token for ``workspace_id`` (optionally run-scoped), expiring
-    ``ttl_s`` seconds from now. Returns the opaque token the consumer presents to open a stream."""
-    token = (
-        await conn.execute(
-            _MINT_SQL,
-            {"workspace_id": workspace_id, "run_id": run_id, "ttl_s": ttl_s},
-        )
-    ).scalar_one()
-    return UUID(str(token))
-
-
-async def consume_stream_token(
-    conn: AsyncConnection, *, token: UUID, workspace_id: str, run_id: ProjectRunId | None = None
-) -> bool:
-    """Atomically consume ``token`` for ``workspace_id`` on ``run_id``'s stream: ``True`` iff live
-    (unused, unexpired, this tenant's, and minted for this run — or minted run-unscoped) —
-    stamping ``used_at`` so a second use is refused. ``False`` for a used / expired / cross-tenant
-    / wrong-run / unknown token (indistinguishable — no existence leak)."""
-    row = (
-        await conn.execute(
-            _CONSUME_SQL, {"token": token, "workspace_id": workspace_id, "run_id": run_id}
-        )
-    ).one_or_none()
-    return row is not None
+__all__ = [
+    "PROJECT_RUN_SUBJECT_KIND",
+    "consume_stream_token",
+    "consume_subject_stream_token",
+    "mint_stream_token",
+]
