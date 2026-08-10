@@ -145,6 +145,20 @@ async def finalize_review_session(
     return await get_review_session(conn, session_id), False
 
 
+async def project_id_for_run(conn: AsyncConnection, project_run_id: ProjectRunId) -> str | None:
+    """The project a review session's run belongs to — the FI-2 P2 attribution for a human action.
+
+    A read of one column on the run the session already keys on (the same shape ``stage0`` uses to
+    check whether a KB version is pinned), not a durable-package import.
+    """
+    return (
+        await conn.execute(
+            text("SELECT project_id FROM project_run WHERE id = :run"),
+            {"run": project_run_id},
+        )
+    ).scalar_one_or_none()
+
+
 async def count_open_sessions(conn: AsyncConnection, project_run_id: ProjectRunId) -> int:
     """How many sessions for this run are still OPEN — the resume gate (0 ⇒ review complete)."""
     count = (

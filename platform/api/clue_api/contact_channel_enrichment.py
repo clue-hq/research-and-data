@@ -80,6 +80,7 @@ from clue_research.claimstore import (
     current_value,
     insert_claim,
     load_core_pack,
+    record_run_lineage,
 )
 from clue_research.compliance import CONTACT_JURISDICTION, record_lawful_basis
 from clue_research.directives import effective_account_research_directive
@@ -2106,6 +2107,19 @@ class ExaContactChannelCoordinator:
         references: tuple[str, ...],
         reasoning: str | None,
     ) -> Claim:
+        # FI-2 P2 (spec §3): the observed channel claim is stamped with the project run itself as
+        # its ``run_id``, so that is the id the project lens must resolve. Registered here, in the
+        # caller's transaction — the same one ``insert_claim`` below commits in. ``enrichment``
+        # matches the other project-run-keyed enrichment writer (the Sumble materializer), so the
+        # first-writer-wins ``kind`` on this shared run id is the same value either way.
+        await record_run_lineage(
+            conn,
+            run_id=UUID(str(operation.request.project_run_id)),
+            workspace_id=operation.request.workspace_id,
+            kind="enrichment",
+            project_id=operation.request.project_id,
+            project_run_id=UUID(str(operation.request.project_run_id)),
+        )
         source_url = references[0] if references else operation.request.canonical_profile_url
         if urlsplit(source_url).scheme not in {"http", "https"}:
             source_url = operation.request.canonical_profile_url

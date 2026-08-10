@@ -32,7 +32,7 @@ def test_scripted_o3_conversations_cover_the_non_linear_gate() -> None:
     with hermetic_flag_env():
         registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    skill = head.open_skill("skill:account-deep-steering@v2")
+    skill = head.open_skill("skill:account-deep-steering@v3")
 
     for scenario in scenarios:
         assert scenario["user_turns"]
@@ -49,7 +49,7 @@ def test_scripted_o3_conversations_cover_the_non_linear_gate() -> None:
     assert "draft_directive" not in discovery_completion_actions
     assert "launch_account_research" not in discovery_completion_actions
 
-    # The v2 steering skill — not the launch tool's registered description — now carries the
+    # The steering skill — not the launch tool's registered description — carries the
     # human-approval gate and the "a receipt is not completed research" reading rule, so the
     # contract is pinned where it actually lives.
     assert (
@@ -66,12 +66,9 @@ def test_scripted_o3_conversations_cover_the_non_linear_gate() -> None:
     # its durable identity is the approved directive/selection/budget triple — so a replay is the
     # same launch, never a second one.
     descriptor = build_toolbelt(storage=None, gateway=None).descriptor("launch_account_research")
+    assert "only after the current user action explicitly approves" in descriptor.model_description
     assert (
-        "only after the current user action explicitly approves" in descriptor.model_description
-    )
-    assert (
-        "it never means account or committee research has completed"
-        in descriptor.model_description
+        "it never means account or committee research has completed" in descriptor.model_description
     )
     assert "never authorizes contact research" in descriptor.model_description
     assert descriptor.effect_class.value == "spend"

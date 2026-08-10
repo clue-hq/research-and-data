@@ -36,14 +36,21 @@ from clue_core import (
     FieldClass,
     FieldDef,
     PassKind,
+    ResearchScope,
     ReuseScope,
     classify_field_key,
     decode_jsonb,
+    default_research_scope,
     field_namespace,
+    resolve_research_scope,
     resolve_reuse_scope,
     serialize_value_json,
 )
 from clue_core.field import FieldKey
+
+# The tenant-local dynamic Client-KB namespace (``stage0.fields.CLIENT_PACK``), repeated here
+# rather than imported: the claim-store substrate must not depend on a milestone package.
+_CLIENT_NAMESPACE = "client"
 
 
 class UnknownFieldError(ValueError):
@@ -68,6 +75,18 @@ class ReuseScopeError(ValueError):
     ``public_footprint`` — refusing the write stops client-private data leaking into the shared
     cross-tenant base (substrate §2). A claim stamped *more* private than its field is allowed (a
     ``crm_import`` of a public-class field is correctly tenant-private)."""
+
+
+class ResearchScopeError(ValueError):
+    """Raised by :func:`register_field` when a ``<pack>.*`` field declares no ``research_scope``
+    (FI-2 P3 — the species attribute; spec §4/§5.2).
+
+    A vertical pack's fields are authored outside the ratified species table, so there is no safe
+    default for them: guessing neutral would let a project-relative pack field be reused across
+    projects and shown in every lens, and guessing relative would re-buy world-facts per project.
+    Pack authors declare per field, exactly as they already do for ``reuse_scope``. ``client.*``
+    (the tenant-local dynamic Client-KB namespace) is excepted — those fields are workspace-scoped
+    by construction and neutral by the ratified table."""
 
 
 class FieldRegistryOrigin(StrEnum):
@@ -366,13 +385,13 @@ def _validate_payload(value: Any, schema: Mapping[str, Any], path: str = "value"
 # --- row <-> FieldDef helpers ----------------------------------------------
 _SELECT = (
     "field_key, value_type, validation, tier_plan, freshness_ttl, pass_kind, gate, signal_class, "
-    "reuse_scope, field_class, value_schema, corroboration_min, single_source_sufficient, "
-    "equality_mode, description, active, pack, version, created_at"
+    "reuse_scope, research_scope, field_class, value_schema, corroboration_min, "
+    "single_source_sufficient, equality_mode, description, active, pack, version, created_at"
 )
 
 _WORKSPACE_SELECT = (
     "w.field_key, w.value_type, w.validation, w.tier_plan, w.freshness_ttl, w.pass_kind, "
-    "w.gate, w.signal_class, w.reuse_scope, w.field_class, w.value_schema, "
+    "w.gate, w.signal_class, w.reuse_scope, w.research_scope, w.field_class, w.value_schema, "
     "w.corroboration_min, w.single_source_sufficient, w.equality_mode, w.description, "
     "(w.active AND r.field_key IS NULL) AS active, w.pack, "
     "w.definition_version AS version, w.promoted_at AS created_at, w.workspace_id, "
@@ -391,6 +410,7 @@ def _row_to_field_def(row: Mapping[str, Any]) -> FieldDef:
         gate=row["gate"],
         signal_class=row["signal_class"],
         reuse_scope=row["reuse_scope"],
+        research_scope=row["research_scope"],
     )
 
 
@@ -436,12 +456,12 @@ _INSERT = text(
     """
     INSERT INTO field_definition (
         field_key, value_type, validation, tier_plan, freshness_ttl, pass_kind, gate, signal_class,
-        reuse_scope, field_class, value_schema, corroboration_min, single_source_sufficient,
-        equality_mode, description, active, pack, version
+        reuse_scope, research_scope, field_class, value_schema, corroboration_min,
+        single_source_sufficient, equality_mode, description, active, pack, version
     ) VALUES (
         :field_key, :value_type, CAST(:validation AS jsonb), CAST(:tier_plan AS jsonb),
         :freshness_ttl, CAST(:pass_kind AS field_pass), :gate, :signal_class,
-        CAST(:reuse_scope AS reuse_scope), CAST(:field_class AS field_class),
+        CAST(:reuse_scope AS reuse_scope), :research_scope, CAST(:field_class AS field_class),
         CAST(:value_schema AS jsonb), :corroboration_min, :single_source_sufficient,
         CAST(:equality_mode AS equality_mode), :description, :active, :pack, :version
     )
@@ -452,14 +472,15 @@ _WORKSPACE_INSERT = text(
     """
     INSERT INTO workspace_field_definition (
         workspace_id, field_key, value_type, validation, value_schema, tier_plan, freshness_ttl,
-        pass_kind, gate, signal_class, reuse_scope, field_class, corroboration_min,
-        single_source_sufficient, equality_mode, description, pack, client_kb_role, active,
-        definition_version, promoted_from_proposal_id, promotion_policy_version, promoted_by
+        pass_kind, gate, signal_class, reuse_scope, research_scope, field_class,
+        corroboration_min, single_source_sufficient, equality_mode, description, pack,
+        client_kb_role, active, definition_version, promoted_from_proposal_id,
+        promotion_policy_version, promoted_by
     ) VALUES (
         :workspace_id, :field_key, :value_type, CAST(:validation AS jsonb),
         CAST(:value_schema AS jsonb), CAST(:tier_plan AS jsonb), :freshness_ttl,
         CAST(:pass_kind AS field_pass), :gate, :signal_class,
-        CAST(:reuse_scope AS reuse_scope), CAST(:field_class AS field_class),
+        CAST(:reuse_scope AS reuse_scope), :research_scope, CAST(:field_class AS field_class),
         :corroboration_min, :single_source_sufficient, CAST(:equality_mode AS equality_mode),
         :description, :pack, :client_kb_role, :active, :definition_version,
         :promoted_from_proposal_id, :promotion_policy_version, :promoted_by
@@ -511,6 +532,7 @@ def _comparable(
     gate: str | None,
     signal_class: str | None,
     reuse_scope: str | None,
+    research_scope: str | None,
     field_class: str,
     value_schema: Mapping[str, Any] | None,
     corroboration_min: int,
@@ -522,7 +544,9 @@ def _comparable(
 ) -> dict[str, Any]:
     """A normalized view of a field definition's *semantic* columns (ignores version/created_at),
     so idempotent re-registration can be detected by equality. ``reuse_scope`` is part of the
-    contract: changing a field's declared data-class is a redefinition (bump the version). The M9.2
+    contract: changing a field's declared data-class is a redefinition (bump the version), and so is
+    ``research_scope`` — changing a field's species silently would change which project lens its
+    live claims belong to and whether they may be reused across projects. The M9.2
     corroboration config (``corroboration_min`` / ``single_source_sufficient`` / ``equality_mode``)
     is contract too — changing how a field is verified is a redefinition (D7: tune via a version
     bump, not a silent overwrite under live claims)."""
@@ -535,6 +559,7 @@ def _comparable(
         "gate": gate,
         "signal_class": signal_class,
         "reuse_scope": reuse_scope,
+        "research_scope": research_scope,
         "field_class": field_class,
         "value_schema": dict(value_schema) if value_schema is not None else None,
         "corroboration_min": corroboration_min,
@@ -579,6 +604,12 @@ async def register_field(
             )
         if pack != namespace:
             raise ValueError(f"pack {pack!r} must equal the field_key namespace {namespace!r}")
+        if field_def.research_scope is None and namespace != _CLIENT_NAMESPACE:
+            raise ResearchScopeError(
+                f"field_key {field_def.field_key!r} must declare a research_scope (a <pack>.* "
+                "field has no ratified species default — set research_scope=project_neutral for a "
+                "world-fact or project_relative for an ICP/campaign-relative value; FI-2 P3)"
+            )
     elif pack is not None:
         raise ValueError(
             f"field_key {field_def.field_key!r} is in canonical namespace {namespace!r}; "
@@ -594,6 +625,9 @@ async def register_field(
         gate=field_def.gate,
         signal_class=field_def.signal_class,
         reuse_scope=field_def.reuse_scope.value if field_def.reuse_scope is not None else None,
+        research_scope=(
+            field_def.research_scope.value if field_def.research_scope is not None else None
+        ),
         field_class=field_class.value,
         value_schema=value_schema,
         corroboration_min=corroboration_min,
@@ -615,6 +649,7 @@ async def register_field(
             gate=existing["gate"],
             signal_class=existing["signal_class"],
             reuse_scope=existing["reuse_scope"],
+            research_scope=existing["research_scope"],
             field_class=existing["field_class"],
             value_schema=decode_jsonb(existing["value_schema"]),
             corroboration_min=existing["corroboration_min"],
@@ -649,6 +684,9 @@ async def register_field(
             "reuse_scope": (
                 field_def.reuse_scope.value if field_def.reuse_scope is not None else None
             ),
+            "research_scope": (
+                field_def.research_scope.value if field_def.research_scope is not None else None
+            ),
             "field_class": field_class.value,
             "value_schema": (
                 serialize_value_json(value_schema) if value_schema is not None else None
@@ -682,9 +720,11 @@ async def register_workspace_field(
     """Register one immutable, tenant-local extended Client-KB field.
 
     The service forces every authority-bearing property instead of trusting the proposal payload:
-    ``client.*`` namespace, ``pack=client``, ``tenant_private`` reuse, extended-only role, and the
-    owning workspace. A global collision is always refused; workspace rows never shadow platform
-    vocabulary.
+    ``client.*`` namespace, ``pack=client``, ``tenant_private`` reuse, ``project_neutral`` species
+    (a workspace's own dynamic Client-KB field is scoped to the workspace, not to a project — FI-2
+    §5.2; the column is not CHECK-forced, so a declared-relative client field stays possible if the
+    product ever needs one), extended-only role, and the owning workspace. A global collision is
+    always refused; workspace rows never shadow platform vocabulary.
     """
 
     if not workspace_id:
@@ -718,6 +758,7 @@ async def register_workspace_field(
         gate=field_def.gate,
         signal_class=field_def.signal_class,
         reuse_scope=ReuseScope.TENANT_PRIVATE.value,
+        research_scope=ResearchScope.PROJECT_NEUTRAL.value,
         field_class=FieldClass.PACK.value,
         value_schema=value_schema,
         corroboration_min=corroboration_min,
@@ -740,6 +781,7 @@ async def register_workspace_field(
             gate=existing["gate"],
             signal_class=existing["signal_class"],
             reuse_scope=existing["reuse_scope"],
+            research_scope=existing["research_scope"],
             field_class=existing["field_class"],
             value_schema=decode_jsonb(existing["value_schema"]),
             corroboration_min=existing["corroboration_min"],
@@ -779,6 +821,7 @@ async def register_workspace_field(
             "gate": field_def.gate,
             "signal_class": field_def.signal_class,
             "reuse_scope": ReuseScope.TENANT_PRIVATE.value,
+            "research_scope": ResearchScope.PROJECT_NEUTRAL.value,
             "field_class": FieldClass.PACK.value,
             "corroboration_min": corroboration_min,
             "single_source_sufficient": single_source_sufficient,
@@ -1061,6 +1104,51 @@ async def list_effective_fields(
         resolved.extend(locals_resolved)
 
     return tuple(sorted(resolved, key=lambda item: item.field_def.field_key))
+
+
+async def field_species(
+    conn: AsyncConnection, *, workspace_id: str, field_keys: Sequence[str]
+) -> dict[str, ResearchScope]:
+    """Split ``field_keys`` by species, through the *effective* (global + workspace) registry.
+
+    Always via :func:`~clue_core.resolve_research_scope`, never the raw
+    ``field_definition.research_scope`` column: a global row may legitimately carry ``NULL`` and the
+    ratified key rule decides (FI-2 slice-0 handoff).
+
+    **Deactivated and retired declarations are included on purpose** (``active=None`` +
+    ``include_retired``). Species is a property of the *declaration*, and a declaration outlives its
+    activation: a field's live claims do not change meaning the moment the field stops being
+    researched. The default active-only read would silently fold a deactivated
+    ``project_relative`` pack field back to ``project_neutral`` and migrate its existing claims from
+    a project section into ``neutralFacts`` — a bucket change with no data change, which is exactly
+    the kind of silent drift the read layer must not produce, and the same reading the research
+    economics must take when it decides whether a claim is the workspace's to borrow.
+
+    A key with **no** registry row at all (its definition was deleted, not merely retired) falls
+    back to :func:`~clue_core.default_research_scope`, the same ratified key rule
+    ``resolve_research_scope`` applies to an undeclared field.
+
+    Lives here, beside :func:`list_effective_fields`, because "is this field project-relative?" must
+    have exactly one answer for four consumers that are otherwise unrelated: the FI-2 read layer's
+    section routing, the account runtime's fresh-skip, the R5 execution guard, and the Sumble gap
+    ladder. It was originally written in the read-layer module, which made a research-path module
+    import a BFF module — the wrong direction, and the reason it moved.
+    """
+    if not field_keys:
+        return {}
+    registry = {
+        item.field_def.field_key: resolve_research_scope(item.field_def)
+        for item in await list_effective_fields(
+            conn,
+            scope=FieldRegistryScope.for_workspace(workspace_id),
+            filters=FieldFilters(active=None),
+            include_retired=True,
+        )
+    }
+    return {
+        key: registry.get(key, default_research_scope(classify_field_key(key), key))
+        for key in field_keys
+    }
 
 
 async def validate_value(

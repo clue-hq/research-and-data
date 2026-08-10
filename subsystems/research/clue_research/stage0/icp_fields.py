@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import FieldDef, PassKind, ReuseScope
+from clue_core import FieldDef, PassKind, ResearchScope, ReuseScope
 from clue_research.claimstore import SeedField, load_pack
 
 # --- the icp-synthesis feedback namespace ----------------------------------
@@ -41,6 +41,8 @@ ICP_FEEDBACK_PACK: tuple[SeedField, ...] = (
             tier_plan=(),
             pass_kind=PassKind.SCORING,
             reuse_scope=ReuseScope.TENANT_PRIVATE,
+            # A per-confirm ICP feedback marker, not an account/contact fact (FI-2 P3).
+            research_scope=ResearchScope.PROJECT_NEUTRAL,
         ),
         value_schema={
             "type": "object",

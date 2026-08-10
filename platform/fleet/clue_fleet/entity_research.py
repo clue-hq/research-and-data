@@ -509,7 +509,7 @@ async def _lock_run_and_job(
     return run, job
 
 
-async def _event(
+async def append_entity_research_job_event(
     conn: AsyncConnection,
     *,
     run_id: UUID,
@@ -716,7 +716,7 @@ async def launch_entity_research_run(
                 "different authority"
             )
         if job_inserted is not None:
-            await _event(
+            await append_entity_research_job_event(
                 conn,
                 run_id=lifecycle.run_id,
                 job_id=authorization.job_id,
@@ -846,16 +846,16 @@ async def begin_entity_research_job(
                 ),
                 {"job_id": job_id},
             )
-            await _event(
-                conn,
-                run_id=job.research_run_id,
-                job_id=job_id,
-                kind=EntityResearchJobEventKind.STARTED,
-                from_state=ResearchJobState.LEASED,
-                to_state=ResearchJobState.RUNNING,
-                actor=fence.worker_id,
-                references={"lease_generation": fence.lease_generation},
-            )
+        await append_entity_research_job_event(
+            conn,
+            run_id=job.research_run_id,
+            job_id=job_id,
+            kind=EntityResearchJobEventKind.STARTED,
+            from_state=ResearchJobState.LEASED,
+            to_state=ResearchJobState.RUNNING,
+            actor=fence.worker_id,
+            references={"lease_generation": fence.lease_generation},
+        )
         current = await _read_job(conn, job_id)
         assert current is not None
         return EntityResearchBeginResult(admitted=True, reason="admitted", job=current)
@@ -894,7 +894,7 @@ async def begin_entity_research_job(
             "generation": fence.lease_generation,
         },
     )
-    await _event(
+    await append_entity_research_job_event(
         conn,
         run_id=job.research_run_id,
         job_id=job_id,
@@ -920,7 +920,7 @@ async def begin_entity_research_job(
         ),
         {"job_id": job_id},
     )
-    await _event(
+    await append_entity_research_job_event(
         conn,
         run_id=job.research_run_id,
         job_id=job_id,
@@ -965,7 +965,7 @@ async def checkpoint_entity_research_job(
             "state_sha": current_state_sha256,
         },
     )
-    await _event(
+    await append_entity_research_job_event(
         conn,
         run_id=job.research_run_id,
         job_id=job_id,
@@ -1042,7 +1042,7 @@ async def wait_entity_research_job(
         result_ref={"outcome": "waiting_external", "wait_ref": wait_ref},
     ):
         raise EntityResearchLeaseLost("fleet task ownership was lost before external wait")
-    await _event(
+    await append_entity_research_job_event(
         conn,
         run_id=job.research_run_id,
         job_id=job_id,
@@ -1120,7 +1120,7 @@ async def wake_entity_research_job(
         ),
         {"job_id": job_id},
     )
-    await _event(
+    await append_entity_research_job_event(
         conn,
         run_id=job.research_run_id,
         job_id=job_id,
@@ -1244,7 +1244,7 @@ async def _record_finalization(
             work_id=WorkId(job.job_id),
             result_ref={"outcome": "cancelled", "finalization_receipt_ref": receipt_ref},
         )
-    await _event(
+    await append_entity_research_job_event(
         conn,
         run_id=job.research_run_id,
         job_id=job.job_id,

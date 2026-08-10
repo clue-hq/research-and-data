@@ -30,6 +30,7 @@ from clue_api.agent_runtime_wiring import (
     GovernedAgentToolFactory,
 )
 from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
+from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.stage0_recipe import Stage0StepPinProvider
 from clue_api.turn_binding import CapturedTurnBinder, RequestCapturedTurn
 from clue_core import ExecutionId
@@ -169,12 +170,18 @@ class HeadOfAbmStage0Runtime:
         lease: AgentWorkspaceLease,
         execution: C5AgentExecutionAdapter,
         completion_guard: CompletionGuard | None = None,
+        stream: TurnStreamEmitter | None = None,
     ) -> AgentTurnOutcome:
         """Run one Stage-0 turn.
 
         ``completion_guard`` is the surface's veto over a non-failing terminal proposal — the seam
         the Stage-0 routing-receipt honesty check rides. It is optional because the guard needs the
         captured onboarding input of *this* turn, which only the calling surface knows.
+
+        ``stream`` is FI Lane D D3's live projection (charter §3-P4). It is optional and defaults to
+        absent for one reason: attaching it is what makes *this* turn take the model's streaming
+        path, so a surface that does not want a turn stream — the dev trial, every specialist and
+        fleet turn — keeps byte-for-byte the behaviour it had before D3.
         """
 
         resolved = self._profiles.resolve(AgentRole.HEAD_OF_ABM, surface=self._surface)
@@ -233,6 +240,7 @@ class HeadOfAbmStage0Runtime:
             lease=lease,
             artifacts=self._artifacts,
             completion_guard=completion_guard,
+            stream=stream,
         ).build()
         runtime = DeepAgentTurnRuntime(
             models=self._models,
@@ -250,4 +258,5 @@ class HeadOfAbmStage0Runtime:
             context=context,
             lease=lease,
             tools=governed_tools,
+            stream=stream,
         )

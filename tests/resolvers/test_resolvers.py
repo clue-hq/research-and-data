@@ -27,6 +27,7 @@ from clue_core import (
     IdentityBinding,
     PassKind,
     ResearchMode,
+    ResearchScope,
     Resolver,
     RetryableResolverError,
     ReuseScope,
@@ -170,7 +171,8 @@ def test_npi_activates_only_when_a_field_tier_plan_names_it() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             # A healthcare pack registers the npi field (the only ICPs whose tier_plan names npi).
-            # A <pack>.* field must declare its reuse_scope (ENG-165 W5); NPI is a public registry.
+            # A <pack>.* field must declare its reuse_scope (ENG-165 W5) and its research_scope
+            # (FI-2 P3); NPI is a public registry identifier and a world-fact.
             await register_field(
                 conn,
                 FieldDef(
@@ -178,6 +180,7 @@ def test_npi_activates_only_when_a_field_tier_plan_names_it() -> None:
                     value_type="str",
                     pass_kind=PassKind.SCORING,
                     reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
+                    research_scope=ResearchScope.PROJECT_NEUTRAL,
                 ),
                 pack="healthcare",
             )

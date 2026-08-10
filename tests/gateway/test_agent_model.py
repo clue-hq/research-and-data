@@ -283,9 +283,9 @@ def test_openrouter_agent_model_normalizes_exact_function_choice() -> None:
         temperature=0,
     )
 
-    response = model.bind_tools(
-        [ReadProjectInput], tool_choice="ReadProjectInput"
-    ).invoke("Read the project.")
+    response = model.bind_tools([ReadProjectInput], tool_choice="ReadProjectInput").invoke(
+        "Read the project."
+    )
 
     assert response.tool_calls[0]["name"] == "ReadProjectInput"
     assert captured[0]["tool_choice"] == {

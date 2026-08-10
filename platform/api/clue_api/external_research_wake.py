@@ -159,9 +159,7 @@ class ExternalResearchWakeDispatcher:
             for project_source in self._sources:
                 run_ids.extend(await project_source(conn, observed_at, self._batch_limit))
             for entity_source in self._entity_wait_sources:
-                member_wait_refs.extend(
-                    await entity_source(conn, observed_at, self._batch_limit)
-                )
+                member_wait_refs.extend(await entity_source(conn, observed_at, self._batch_limit))
         offered = 0
         for project_run_id in tuple(dict.fromkeys(run_ids))[: self._batch_limit]:
             if await self._project_run_waker(project_run_id):

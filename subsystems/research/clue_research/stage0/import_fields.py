@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import FieldDef, PassKind, ReuseScope
+from clue_core import FieldDef, PassKind, ResearchScope, ReuseScope
 from clue_research.claimstore import SeedField, load_pack, register_field
 
 # --- the import grouping marker (vertical pack) ----------------------------
@@ -45,6 +45,8 @@ IMPORT_BATCH_PACK: tuple[SeedField, ...] = (
             tier_plan=(),
             pass_kind=PassKind.SCORING,
             reuse_scope=ReuseScope.TENANT_PRIVATE,
+            # A bookkeeping marker for one client import run — not researched per project (FI-2 P3).
+            research_scope=ResearchScope.PROJECT_NEUTRAL,
         ),
         value_schema={
             "type": "object",

@@ -20,7 +20,14 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import EntityType, FieldDef, PassKind, ResearchSectionKind, ReuseScope
+from clue_core import (
+    EntityType,
+    FieldDef,
+    PassKind,
+    ResearchScope,
+    ResearchSectionKind,
+    ReuseScope,
+)
 from clue_research.claimstore.registry import register_field
 from clue_research.claimstore.research_view_routes import (
     ResearchRouteContext,
@@ -92,6 +99,7 @@ def _seed(
     freshness_ttl: timedelta | None = None,
     gate: str | None = None,
     reuse_scope: ReuseScope | None = None,
+    research_scope: ResearchScope | None = None,
     value_schema: dict[str, Any] | None = None,
     corroboration_min: int = 1,
     single_source_sufficient: bool = False,
@@ -110,6 +118,7 @@ def _seed(
             pass_kind=pass_kind,
             gate=gate,
             reuse_scope=reuse_scope,
+            research_scope=research_scope,
         ),
         value_schema=value_schema,
         corroboration_min=corroboration_min,
@@ -407,6 +416,7 @@ CORE_PACK: tuple[SeedField, ...] = (
         PassKind.SCORING,
         freshness_ttl=timedelta(days=30),
         reuse_scope=ReuseScope.TENANT_PRIVATE,
+        research_scope=ResearchScope.PROJECT_RELATIVE,
         value_schema={
             "type": "object",
             "required": ["value"],
@@ -420,6 +430,7 @@ CORE_PACK: tuple[SeedField, ...] = (
         PassKind.SCORING,
         freshness_ttl=timedelta(days=30),
         reuse_scope=ReuseScope.TENANT_PRIVATE,
+        research_scope=ResearchScope.PROJECT_RELATIVE,
         value_schema={
             "type": "object",
             "required": ["value"],
@@ -432,21 +443,27 @@ CORE_PACK: tuple[SeedField, ...] = (
     # intent (so the reuse policy classifies it private — a tier is a per-client/ICP scoring
     # decision, never amortized) with the same fail-closed write boundary. M6.4 writes value_json=
     # {"tier": <str>, "cutoff_version": <str>, "fit_score": <0..1>, "intent_score": <0..1>,
-    # "icp_key": …, "icp_version": …, …} and stamps the run's workspace_id; the value is the human-
-    # approved decision at the checkpoint (extraction_method=human), not a resolver fact — so there
-    # is no tier_plan.
+    # "icp_key": …, "icp_version": …, "project_id": …, …} and stamps the run's workspace_id; the
+    # value is the human-approved decision at the checkpoint (extraction_method=human), not a
+    # resolver fact — so there is no tier_plan. `project_id` (FI-2 §6.4) is the project whose
+    # checkpoint approved the tier: it rides value_json because the claim row has no project column,
+    # and it is the project leg of the supersede key, so a second project's tier coexists with the
+    # first's instead of destroying it. Optional — absent on unstamped tier claims, an *open*
+    # class (any writer that omits it), not just pre-§6.4 history.
     _seed(
         "account.scoring.tier",
         "object",
         PassKind.SCORING,
         freshness_ttl=timedelta(days=30),
         reuse_scope=ReuseScope.TENANT_PRIVATE,
+        research_scope=ResearchScope.PROJECT_RELATIVE,
         value_schema={
             "type": "object",
             "required": ["tier", "cutoff_version"],
             "properties": {
                 "tier": {"type": "string"},
                 "cutoff_version": {"type": "string"},
+                "project_id": {"type": "string"},
             },
         },
         description="Approved tier assignment + cutoff version (Output 1 tiering; M6.4). "

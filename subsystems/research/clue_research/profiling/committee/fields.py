@@ -29,6 +29,7 @@ from clue_core import (
     FieldDef,
     PassKind,
     Persona,
+    ResearchScope,
     ResearchSectionKind,
 )
 from clue_research.claimstore import ResearchViewFieldRoute, SeedField, load_pack
@@ -126,11 +127,17 @@ _ORGANIZATION_RELATIONSHIP_SCHEMA: dict[str, Any] = {
 
 
 def _committee_field(
-    field_key: str, *, value_type: str, value_schema: dict[str, Any], description: str
+    field_key: str,
+    *,
+    value_type: str,
+    value_schema: dict[str, Any],
+    description: str,
+    research_scope: ResearchScope | None = None,
 ) -> SeedField:
     """A plain ``contact.*`` committee field: deep pass, no ``tier_plan`` (M3-produced, not
     waterfall-filled), advisory ``gate``, ``reuse_scope`` inheriting the class default
-    (``TENANT_PRIVATE``)."""
+    (``TENANT_PRIVATE``). ``research_scope`` is declared only for the two fields that *are* the
+    per-project targeting decision (FI-2 §5.2); the rest inherit the neutral default."""
     return SeedField(
         field_def=FieldDef(
             field_key=field_key,
@@ -138,6 +145,7 @@ def _committee_field(
             tier_plan=(),  # produced by committee discovery, not the M4 waterfall
             pass_kind=PassKind.DEEP,
             gate="committee-gated",
+            research_scope=research_scope,
         ),
         value_schema=value_schema,
         description=description,
@@ -177,17 +185,21 @@ def _professional_field(
 
 
 COMMITTEE_PACK: tuple[SeedField, ...] = (
+    # The buying committee is a per-project targeting decision — each project resolves its own, so
+    # both committee fields are PROJECT_RELATIVE (FI-2 §5.2, founder-ratified 2026-08-08).
     _committee_field(
         ROLE_ON_COMMITTEE,
         value_type="object",
         value_schema=_ROLE_VALUE_SCHEMA,
         description="Inferred buying-committee role + role-plausibility verdict (Output 3; M8.3).",
+        research_scope=ResearchScope.PROJECT_RELATIVE,
     ),
     _committee_field(
         PERSONA,
         value_type="str",
         value_schema=_PERSONA_VALUE_SCHEMA,
         description="Buying-committee persona key for (account, persona) addressing (M8.3).",
+        research_scope=ResearchScope.PROJECT_RELATIVE,
     ),
     _committee_field(
         CONTACT_CLASS,

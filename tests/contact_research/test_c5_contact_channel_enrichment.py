@@ -15,6 +15,7 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
+from tests._run_lineage import assert_written_claims_are_attributable
 from tests.contact_research.test_c4_exa_contact_acquisition_materialization import (
     _seed,
     _TrackedConnFactory,
@@ -726,6 +727,17 @@ def test_c5_email_validates_promotes_replays_and_objection_suppresses(
             )
             promoted = await get_contact(conn, intent.contact_entity_id)
             assert promoted is not None and promoted.verified_email == _EMAIL
+            # FI-2 P2: the observed channel claim carries the project run as its run_id, and that
+            # run is registered so the project lens can back-join it.
+            assert completed.operation.observed_claim_id is not None
+            await assert_written_claims_are_attributable(
+                conn,
+                intent.project_run_id,
+                kind="enrichment",
+                workspace_id=intent.workspace_id,
+                project_id=intent.project_id,
+                project_run_id=intent.project_run_id,
+            )
 
             replay = await coordinator.start(
                 intent=intent,

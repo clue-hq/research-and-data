@@ -62,6 +62,7 @@ from clue_research.verification import (
 from clue_spine import create_brand, create_product, create_project
 from clue_storage import artifact_key as make_artifact_key
 from clue_storage import record_artifact
+from tests._run_lineage import assert_written_claims_are_attributable
 from tests.stage0.conftest import rollback_conn, run_async
 
 pytestmark = pytest.mark.usefixtures("require_stage0_db")
@@ -477,6 +478,14 @@ def test_the_hipaa_boolean_lands_as_a_judged_claim_with_its_own_source_key() -> 
             assert claim.extraction_method is ExtractionMethod.HUMAN
             # The evidence is still the verbatim span, not the judge's opinion about it.
             assert claim.evidence_span == HIPAA_QUOTE
+            # FI-2 P2: the interview turn's run is a workspace-level stage-0 run (no project).
+            await assert_written_claims_are_attributable(
+                conn,
+                claim.run_id,
+                kind="stage0",
+                workspace_id=_WORKSPACE,
+                project_id=None,
+            )
 
     run_async(_run())
 

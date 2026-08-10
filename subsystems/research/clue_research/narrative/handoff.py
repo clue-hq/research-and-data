@@ -148,6 +148,11 @@ class AssembledHandoff(BaseModel):
     narrative_citations: dict[str, FaithfulnessCitation] = {}
     coverage_gap_personas: tuple[Persona, ...] = ()
     verification_health: VerificationHealth | None = None
+    # Per narrative ``claim_id``: the claim's actual ``verification_status`` at assembly (FI-M12
+    # toggle compat §3-A). All VERIFIED in enabled mode; in disabled mode an included unverified
+    # narrative's basis is carried honestly. The frozen ``ValueNarrativeItem`` has no status field,
+    # so it rides here (like ``narrative_citations``); defaulted so pre-existing rows validate.
+    narrative_verification: dict[str, VerificationStatus] = {}
 
 
 # --- pure helpers (DB-free, unit-testable) ----------------------------------
@@ -228,9 +233,15 @@ class HandoffAssembler:
         *,
         committee_reader: HandoffCommitteeReader,
         sink: MetricSink | None = None,
+        verification_enabled: bool = True,
     ) -> None:
+        # ``verification_enabled`` mirrors the runtime toggle (``Settings.verification_enabled``,
+        # injected at the composition root — FI-M12 toggle compat §3-A). ``True`` (the default)
+        # keeps the narrative read VERIFIED-only, bit-for-bit; ``False`` admits unverified
+        # (non-REJECTED) narrative claims, their actual status carried on the wrapper.
         self._committee_reader = committee_reader
         self._sink = sink
+        self._verification_enabled = verification_enabled
 
     async def assemble(
         self,
@@ -313,7 +324,7 @@ class HandoffAssembler:
 
             # 4) the value narrative (Output 4) for THIS segment + its judge citations + coverage
             # gaps.
-            narrative, citations = await self._read_value_narrative(
+            narrative, citations, narrative_statuses = await self._read_value_narrative(
                 conn, account_entity_id, icp_spec_version, icp_key, product_id, scope
             )
             personas_with_narrative = {item.persona for item in narrative}
@@ -378,6 +389,7 @@ class HandoffAssembler:
                 narrative_citations=citations,
                 coverage_gap_personas=coverage_gaps,
                 verification_health=health,
+                narrative_verification=narrative_statuses,
             )
 
     async def _read_score(
@@ -469,17 +481,34 @@ class HandoffAssembler:
         icp_key: str | None,
         product_id: str | None,
         scope: WorkspaceScope,
-    ) -> tuple[tuple[ValueNarrativeItem, ...], dict[str, FaithfulnessCitation]]:
-        """The verified value-narrative lines (Output 4) for this ICP segment + their judge
-        citations.
+    ) -> tuple[
+        tuple[ValueNarrativeItem, ...],
+        dict[str, FaithfulnessCitation],
+        dict[str, VerificationStatus],
+    ]:
+        """The value-narrative lines (Output 4) for this ICP segment + their judge citations +
+        each included line's actual ``verification_status``.
 
         Matched on ``icp_spec_version`` **and** ``icp_key`` (D5: version restarts per segment, so
-        version alone would mix segment A's and B's narratives). Only **verified**
-        ``account.value_narrative`` claims belong in the handoff: an ungrounded argument is
-        ``rejected`` by the M9.3 judge and must not appear. Each line carries its two-sided
-        ``claim_support`` (account evidence × client knowledge) and, in the wrapper's
-        ``narrative_citations``, the answering judge model ([M9.3×M12]). Ordered by ``(persona,
-        claim_id)`` for a byte-stable handoff (AC5)."""
+        version alone would mix segment A's and B's narratives). With verification **enabled**
+        (the default) only **verified** ``account.value_narrative`` claims belong in the handoff:
+        an ungrounded argument is ``rejected`` by the M9.3 judge and must not appear. With
+        verification **disabled** (FI-M12 toggle compat §3-A) no judge runs, so an unverified
+        (non-REJECTED) narrative is admitted and its actual status is returned so the assembled
+        handoff carries the basis honestly; a REJECTED claim never crosses in either mode. Each
+        line carries its two-sided ``claim_support`` (account evidence × client knowledge) and, in
+        the wrapper's ``narrative_citations``, the answering judge model ([M9.3×M12]). Ordered by
+        ``(persona, claim_id)`` for a byte-stable handoff (AC5).
+
+        **Known gap — no project filter (FI-2 §6.4).** Since §6.4 stopped cross-project supersession
+        of ``account.value_narrative``, an account targeted by two projects can carry *two* live,
+        verified narratives for the same ``(persona, icp, product)`` — one per project, each
+        stamped ``value_json["project_id"]`` — and this read would include both. Unreachable today
+        (the M12.1 positioner is uncomposed and HANDOFF is parked fail-closed), so no filter is
+        imposed here rather than guessing the contract: the sibling ``_read_score`` filters on
+        ``project_run_id``, but the narrative pins the coarser ``project_id``, so closing this needs
+        a deliberate decision about which project key the handoff is assembled for. Do it when the
+        positioner is composed / handoff is unparked."""
         claims = await claims_for(conn, account_entity_id, VALUE_NARRATIVE, scope=scope)
         items: list[ValueNarrativeItem] = []
         citation_claims = []
@@ -493,8 +522,11 @@ class HandoffAssembler:
                 continue  # a different ICP segment (D5)
             if claim.product_id != product_id:
                 continue  # product-scoped narrative relevance is exact, never inherited
-            if claim.verification_status is not VerificationStatus.VERIFIED:
-                continue  # an ungrounded / unpromoted narrative is not handed off
+            if self._verification_enabled:
+                if claim.verification_status is not VerificationStatus.VERIFIED:
+                    continue  # an ungrounded / unpromoted narrative is not handed off
+            elif claim.verification_status is VerificationStatus.REJECTED:
+                continue  # judge-REJECTED never crosses, toggle or no toggle
             support = await read_claim_support(conn, claim.id)
             items.append(
                 ValueNarrativeItem(
@@ -519,7 +551,11 @@ class HandoffAssembler:
             ).items()
         }
         items.sort(key=lambda i: (i.persona.value, str(i.claim_id)))
-        return tuple(items), dict(sorted(citations.items()))
+        statuses = {
+            str(claim.id): claim.verification_status
+            for claim in sorted(citation_claims, key=lambda c: str(c.id))
+        }
+        return tuple(items), dict(sorted(citations.items())), statuses
 
     async def _build_provenance_index(
         self,

@@ -67,7 +67,7 @@ from clue_fleet import (
     EntityResearchRunEnvelope,
     launch_entity_research_run,
 )
-from clue_research.claimstore import WorkspaceScope, claims_by_ids
+from clue_research.claimstore import WorkspaceScope, claims_by_ids, record_run_lineage
 from clue_research.directives import effective_account_research_directive, get_research_directive
 from clue_research.durable import (
     ContactResearchSelectionApprovalAuthority,
@@ -814,6 +814,19 @@ class ContactResearchFleetLauncher:
                     "contact launch exceeds remaining project budget headroom"
                 )
             research_run_id = uuid5(_RUN_NAMESPACE, request_sha)
+            # FI-2 P2 (spec §3): attribute the contact research run to its project inside the launch
+            # transaction — the same one the run/job rows below commit in. Idempotent, so a
+            # re-confirmed identical request re-registers harmlessly. The per-tool-call
+            # materialization runs derived from this id register themselves at their own mint site
+            # (that is what ``claim.run_id`` actually carries for contact facets).
+            await record_run_lineage(
+                conn,
+                run_id=research_run_id,
+                workspace_id=request.workspace_id,
+                kind="contact_research",
+                project_id=body.project_id,
+                project_run_id=UUID(str(body.project_run_id)),
+            )
             subjects: list[SelectedResearchSubject] = []
             jobs: list[EntityResearchJobEnvelope] = []
             intents: dict[UUID, ContactResearchIntent] = {}

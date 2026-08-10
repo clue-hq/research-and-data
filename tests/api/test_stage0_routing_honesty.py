@@ -68,6 +68,7 @@ from clue_api.stage0_trial import (
 )
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_api.trial import spine as spine_module
+from clue_api.turn_action import derive_turn_action_ref
 from clue_api.turn_binding import CapturedTurn
 from clue_config import Settings
 from clue_core import (
@@ -993,13 +994,24 @@ class _BoundTurn:
     only add a second artifact store to the fixture.
     """
 
-    def __init__(self, *, onboarding_input_id: str, artifact_key: str, answer: str) -> None:
+    def __init__(
+        self,
+        *,
+        onboarding_input_id: str,
+        artifact_key: str,
+        answer: str,
+        turn_id: UUID | None = None,
+    ) -> None:
+        turn = turn_id or uuid5(UUID(int=0), f"bound-turn:{artifact_key}")
         self._binding = CapturedTurn(
             onboarding_input_id=onboarding_input_id,
             artifact_key=artifact_key,
             sha256=hashlib.sha256(answer.encode()).hexdigest(),
             byte_count=len(answer.encode()),
             answer=answer,
+            turn_id=str(turn),
+            user_instruction=answer,
+            source_turn_ref=derive_turn_action_ref(turn),
         )
 
     async def captured_turn(self) -> CapturedTurn:

@@ -41,6 +41,8 @@ from clue_api.agent_turn_wiring import (
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
 )
+from clue_api.frontend_read.account_detail import AccountNotFound
+from clue_api.frontend_read.contacts import ContactNotFound, read_contact_profile
 from clue_config import Settings
 from clue_core import (
     AccountEntity,
@@ -73,7 +75,7 @@ from clue_research.durable import (
     get_account_run,
     get_project_run,
 )
-from clue_research.identity import get_account
+from clue_research.identity import get_account, get_contact
 from clue_spine import Brand, Product, Project, get_brand, get_product, get_project
 from clue_toolbelt import ToolInvoker, ToolRegistry
 
@@ -186,6 +188,8 @@ class DbCompiledContextCardReader:
     ) -> CompiledContextCard | None:
         async with self._conn_factory() as conn:
             value: Brand | Product | Project | AccountEntity | None
+            body: str | None = None
+            version: int | None = None
             if object_type == "brand":
                 value = await get_brand(conn, workspace_id=workspace_id, brand_id=object_id)
             elif object_type == "product":
@@ -198,18 +202,39 @@ class DbCompiledContextCardReader:
                 except ValueError:
                     return None
                 value = await get_account(conn, entity_id)
+                version = None if value is None else value.canonical_version
+            elif object_type == "contact":
+                try:
+                    entity_id = EntityId(UUID(object_id))
+                except ValueError:
+                    return None
+                contact = await get_contact(conn, entity_id)
+                if contact is None or contact.workspace_id != workspace_id:
+                    return None
+                try:
+                    profile = await read_contact_profile(
+                        conn,
+                        workspace_id=workspace_id,
+                        account_id=UUID(str(contact.account_entity_id)),
+                        contact_id=UUID(str(contact.id)),
+                    )
+                except (AccountNotFound, ContactNotFound):
+                    return None
+                value = None
+                body = profile.model_dump_json(exclude_none=False, by_alias=True)
+                version = contact.canonical_version
             else:
                 return None
-        if value is None or value.workspace_id != workspace_id:
+        if body is None and (value is None or value.workspace_id != workspace_id):
             return None
         return CompiledContextCard(
             ref=DomainObjectRef(
                 workspace_id=workspace_id,
                 object_type=object_type,
                 object_id=object_id,
-                version=None,
+                version=version,
             ),
-            body=value.model_dump_json(exclude_none=False),
+            body=body if body is not None else value.model_dump_json(exclude_none=False),
         )
 
 

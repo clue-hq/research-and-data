@@ -31,6 +31,12 @@ scoring bridge and everything downstream cannot tell discovered from imported ac
 that provenance flavor. stage0 imports **no sibling milestone** — back-scoring is the importable
 M3.4 ``icp`` service (not M6), and the CRM resolver is reached only through the ``sources``
 waterfall seam (bound at the api composition root); the convergence into M6 is store-mediated.
+
+The symmetry extends to **project membership** (FI-2 H3, spec §8.3): discovery admits accounts into
+the project its run was serving, and an import handed a ``project_id`` joins every account the batch
+lands on to that project the same way (``project_account``, ``added_via='imported'``). Import is not
+run-scoped, so the project cannot be derived — the caller supplies it, and a projectless import
+stays exactly what it was: workspace-level, the accounts global and claimed by no project.
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ from dataclasses import dataclass
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pydantic import JsonValue
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -69,6 +76,7 @@ from clue_research.claimstore import (
     get_field,
     insert_claim,
     load_core_pack,
+    record_run_lineage,
 )
 from clue_research.icp import (
     ScoringRubric,
@@ -95,6 +103,7 @@ from clue_research.identity import (
     stamp_reuse,
     surviving_id,
 )
+from clue_research.membership import ensure_project_account
 from clue_research.stage0.icp_types import ICPSpecRef
 from clue_research.stage0.import_fields import (
     CONTACT_IMPORT_RECORD,
@@ -128,6 +137,22 @@ _LAWFUL_BASIS_BY_USE_CLASS = {
 }
 
 
+class ImportProjectNotFound(ValueError):
+    """Raised when ``import_accounts`` is handed a ``project_id`` this workspace does not own.
+
+    Checked once, before the batch writes anything, rather than left to the ``project_account``
+    composite FK: each row's admit + write phase runs in its own savepoint, so an FK violation would
+    surface as a per-row "resolution write failed" and the batch would report a partially-imported
+    *success*. An import into a project that does not exist is a caller bug — all-or-nothing and
+    loud is the only honest outcome.
+    """
+
+
+_PROJECT_IN_WORKSPACE = text(
+    "SELECT 1 FROM project WHERE project_id = :project_id AND workspace_id = :workspace_id"
+)
+
+
 def import_batch_run_id(import_batch_id: str) -> RunId:
     """The deterministic run id for an import batch — a retried import with the same
     ``import_batch_id`` re-resolves to the now-existing entities (no duplicate accounts) and the CRM
@@ -143,6 +168,7 @@ async def import_accounts(
     workspace_id: str,
     client_entity_id: EntityId,
     import_batch_id: str | None = None,
+    project_id: str | None = None,
     crm_enrich: bool = False,
     decided_by: str = "auto",
     disposition_policy: DispositionPolicy = DEFAULT_DISPOSITION_POLICY,
@@ -158,16 +184,49 @@ async def import_accounts(
     resolution admits/merges entities and writes provenance + marker claims that commit together.
     Each row's full admit + write phase is wrapped in its own ``begin_nested`` savepoint (and each
     contact in a further nested one), so a poison row rolls back only its own writes and surfaces in
-    ``unresolved[]`` — one bad row never aborts the batch."""
+    ``unresolved[]`` — one bad row never aborts the batch.
+
+    ``project_id`` is the import's project context (FI-2 H3, spec §8.3) — the caller supplies it,
+    because import is not run-scoped and has none of its own. Supplied, it must name a project of
+    ``workspace_id`` (refused up front with :class:`ImportProjectNotFound`), it attributes the
+    batch's run in ``run_lineage`` (FI-2 P2), and **every account the batch lands on** — freshly
+    admitted, auto-merged onto one that already existed, or collapsed intra-batch — joins that
+    project (``added_via='imported'``). Left ``None`` the import is workspace-level: the accounts
+    are still workspace-global (FI-2 R1), they simply belong to no project's target list."""
     batch_id = import_batch_id or f"imp-{uuid4().hex[:12]}"
     run_id = import_batch_run_id(batch_id)
     scope = WorkspaceScope.for_workspace(workspace_id)
 
     with traced_step("stage0.import_accounts", **{ATTR_WORKSPACE_ID: workspace_id}):
+        # Before anything is written, so an unknown project costs the caller nothing and leaves the
+        # batch all-or-nothing (see ImportProjectNotFound on why the FK cannot carry this).
+        if project_id is not None:
+            owned = (
+                await conn.execute(
+                    _PROJECT_IN_WORKSPACE,
+                    {"project_id": project_id, "workspace_id": workspace_id},
+                )
+            ).first()
+            if owned is None:
+                raise ImportProjectNotFound(
+                    f"project {project_id!r} is not a project of workspace {workspace_id!r}"
+                )
+
         # account.scoring.* / account.crm_relationship_status (core) + import.* /
         # contact.import_record must exist before any claim is written (insert_claim validates it).
         await load_core_pack(conn)
         await load_import_pack(conn)
+
+        # FI-2 P2 (spec §3): register the batch's run once, in the caller's transaction — the same
+        # one every provenance/marker claim below commits in. Idempotent, so a retried import with
+        # the same ``import_batch_id`` (which re-derives the same run id) re-registers harmlessly.
+        await record_run_lineage(
+            conn,
+            run_id=run_id,
+            workspace_id=workspace_id,
+            kind="import",
+            project_id=project_id,
+        )
 
         rubric = await get_rubric_version(
             conn, icp_spec_ref.workspace_id, icp_spec_ref.icp_key, icp_spec_ref.icp_version
@@ -231,6 +290,7 @@ async def import_accounts(
                         rubric=rubric,
                         scope=scope,
                         workspace_id=workspace_id,
+                        project_id=project_id,
                         run_id=run_id,
                         batch_id=batch_id,
                         crm_enrich=crm_enrich,
@@ -303,6 +363,7 @@ async def _resolve_row(
     rubric: ScoringRubric | None,
     scope: WorkspaceScope,
     workspace_id: str,
+    project_id: str | None,
     run_id: RunId,
     batch_id: str,
     crm_enrich: bool,
@@ -311,9 +372,10 @@ async def _resolve_row(
     pre_spend_gate: PreSpendGate | None,
 ) -> _RowOutcome:
     """Resolve one row to its outcome inside the caller's savepoint: dispose it (auto-merge / review
-    / new-entity / intra-batch), then for a resolved account write provenance, CRM-enrich (opt-in),
-    back-score, and tag contacts. Returns a :class:`_RowOutcome`; a review / no-entity row returns
-    early, before any account write is attempted."""
+    / new-entity / intra-batch), then for a resolved account join it to ``project_id`` (when the
+    import has one), write provenance, CRM-enrich (opt-in), back-score, and tag contacts. Returns a
+    :class:`_RowOutcome`; a review / no-entity row returns early, before any account write is
+    attempted."""
     prior = admitted.get(strong_key) if strong_key is not None else None
     if prior is not None:
         entity_id, method, signal, confidence = (
@@ -330,6 +392,7 @@ async def _resolve_row(
             result,
             policy=disposition_policy,
             workspace_id=workspace_id,
+            project_id=project_id,
             decided_by=decided_by,
         )
         if disp.outcome is DispositionOutcome.ENQUEUED:
@@ -362,6 +425,18 @@ async def _resolve_row(
             new_key = (strong_key, entity_id) if strong_key is not None else None
 
     entity_id = await surviving_id(conn, entity_id, EntityType.ACCOUNT)
+    if project_id is not None:
+        # On the survivor, and for every disposition — an account this workspace already had (or
+        # merged into) is a target of the importing project just as much as one this row minted.
+        # Idempotent, so the rows that collapse intra-batch re-affirm the first add rather than
+        # re-dating it, and a retried batch is a no-op.
+        await ensure_project_account(
+            conn,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            account_entity_id=entity_id,
+            added_via="imported",
+        )
     provenance_id = await _write_resolution_provenance(
         conn,
         entity_id=entity_id,

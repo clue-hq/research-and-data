@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 from sqlalchemy import text
@@ -27,7 +28,7 @@ from clue_core import (
 )
 from clue_core.field import FieldDef
 from clue_db import db_lifespan, transaction
-from clue_research.claimstore import insert_claim, register_field
+from clue_research.claimstore import insert_claim, register_field, runs_for_project_run
 from clue_research.claimstore.tenancy import WorkspaceScope
 from clue_research.durable import (
     AccountResearchGraph,
@@ -45,6 +46,8 @@ from clue_research.durable import (
     set_status,
 )
 from clue_research.durable.planning import build_plan
+from tests._run_lineage import assert_run_registered
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_run
 from tests.db.conftest import run_async
 from tests.durable.conftest import StubAspectWorker, rollback_conn
 
@@ -374,5 +377,85 @@ def test_db_store_fail_marks_status() -> None:
                     await conn.execute(
                         text("DELETE FROM account_run WHERE id = :id"), {"id": committed_id}
                     )
+
+    run_async(_run())
+
+
+# --- FI-2 P2: the account run is a claim-writing run, so it registers its own lineage -----------
+
+
+def test_account_run_registers_its_lineage_at_its_mint_site() -> None:
+    """``account_run.id`` *is* the ``claim.run_id`` its workers stamp — so it names its project.
+
+    Both writers register (the resume-safe ``ensure_account_run`` too), idempotently, deriving the
+    workspace and project from the run's own ``project_run`` row — which is what lets the C7
+    project-run lens read its pinned claims out of ``run_lineage`` alone (FI-2 slice 2).
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project_run_id = new_project_run_id()
+            project_id = await seed_run(conn, project_run_id=project_run_id)
+            inserted = new_run_id()
+            await insert_account_run(
+                conn,
+                account_run_id=inserted,
+                project_run_id=project_run_id,
+                entity_id=new_entity_id(),
+                tier="top",
+            )
+            ensured = new_run_id()
+            for _ in range(2):  # a resume re-ensures the same run; registration is idempotent
+                await ensure_account_run(
+                    conn,
+                    account_run_id=ensured,
+                    project_run_id=project_run_id,
+                    entity_id=new_entity_id(),
+                    tier="top",
+                )
+            for account_run_id in (inserted, ensured):
+                await assert_run_registered(
+                    conn,
+                    account_run_id,
+                    kind="entity_research",
+                    workspace_id=DEFAULT_TEST_WORKSPACE,
+                    project_id=project_id,
+                    project_run_id=project_run_id,
+                )
+            # Registered once each, so the project run's lens holds exactly the two runs.
+            assert set(
+                await runs_for_project_run(
+                    conn,
+                    workspace_id=DEFAULT_TEST_WORKSPACE,
+                    project_run_id=UUID(str(project_run_id)),
+                )
+            ) == {inserted, ensured}
+
+    run_async(_run())
+
+
+def test_an_account_run_naming_no_project_run_is_left_unattributed() -> None:
+    """``account_run.project_run_id`` carries no FK, so an orphan run is possible.
+
+    It belongs to no project's lens, and an execution write must never be blocked by a lineage
+    lookup — so the insert succeeds and simply records nothing.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            orphan = new_run_id()
+            await insert_account_run(
+                conn,
+                account_run_id=orphan,
+                project_run_id=new_project_run_id(),  # no project_run row behind it
+                entity_id=new_entity_id(),
+                tier="top",
+            )
+            assert (await get_account_run(conn, orphan)) is not None
+            registered = await conn.execute(
+                text("SELECT count(*) FROM run_lineage WHERE run_id = :run_id"),
+                {"run_id": UUID(str(orphan))},
+            )
+            assert registered.scalar_one() == 0
 
     run_async(_run())

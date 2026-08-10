@@ -22,17 +22,22 @@ from clue_core import (
 )
 from clue_research.claimstore import ALL_WORKSPACES, claims_for
 from clue_research.discovery_scoring import AdmissionStatus, ExistenceVerdict, admit
-from clue_research.discovery_scoring.gate.admission import DISCOVERY_PROVENANCE_FIELD
+from clue_research.discovery_scoring.gate.admission import (
+    DISCOVERY_PROVENANCE_FIELD,
+    IMPORT_CHANNEL,
+)
 from clue_research.identity import (
     DispositionPolicy,
     embed_account,
     get_account,
+    get_task,
     insert_account_entity,
     list_open_tasks,
 )
+from clue_research.membership import accounts_for_project, projects_for_accounts
 from clue_storage import artifact_key, content_address, record_artifact
 from tests._workspace import DEFAULT_TEST_WORKSPACE as WS
-from tests._workspace import seed_workspace
+from tests._workspace import seed_project, seed_workspace
 
 from .conftest import candidate, rollback_conn, run_async
 
@@ -52,6 +57,17 @@ async def _count_accounts(conn: AsyncConnection) -> int:
 
 async def _provenance_claims(conn: AsyncConnection, entity_id: EntityId) -> list[object]:
     return list(await claims_for(conn, entity_id, DISCOVERY_PROVENANCE_FIELD, scope=ALL_WORKSPACES))
+
+
+async def _added_via(conn: AsyncConnection, entity_id: EntityId) -> list[str]:
+    """The recorded membership channels for an account (the one fact the readers do not expose)."""
+    rows = await conn.execute(
+        text(
+            "SELECT added_via FROM project_account WHERE account_entity_id = :id ORDER BY added_at"
+        ),
+        {"id": entity_id},
+    )
+    return [str(value) for value in rows.scalars()]
 
 
 def test_admit_real_candidate_creates_entity_and_one_provenance_claim() -> None:
@@ -358,6 +374,180 @@ def test_domain_lock_id_is_workspace_partitioned() -> None:
     assert _domain_lock_id("ws-b", "acme.com") != a  # different ws, same domain → distinct lock
     assert _domain_lock_id("ws-a", "acme.com") == a  # same (ws, domain) → stable
     assert _domain_lock_id("ws-a", "beta.com") != a  # same ws, different domain → distinct lock
+
+
+def test_admit_records_project_membership_for_a_new_account() -> None:
+    """FI-2 P1 (spec §2): an admitted candidate joins the admitting project's target list.
+
+    Read back through the real membership readers, not the row — the frontend's ``projects[]``
+    and a project's target-account list are what this write exists to serve.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            project = await seed_project(conn, WS, name="Discovery project")
+            result = await admit(
+                conn,
+                candidate(matched_channel="exa", domain="joined.example", name="Joined Co"),
+                new_run_id(),
+                workspace_id=WS,
+                project_id=project.project_id,
+            )
+            assert result.status is AdmissionStatus.ADMITTED
+            assert result.account_entity_id is not None
+            assert await accounts_for_project(
+                conn, workspace_id=WS, project_id=project.project_id
+            ) == (result.account_entity_id,)
+            assert await projects_for_accounts(
+                conn, workspace_id=WS, account_ids=[result.account_entity_id]
+            ) == {result.account_entity_id: (project.project_id,)}
+            assert await _added_via(conn, result.account_entity_id) == ["discovered"]
+
+    run_async(_run())
+
+
+def test_admit_records_membership_on_the_survivor_of_an_auto_merge() -> None:
+    """An admission that auto-merges onto an *existing* account still joins *this* project.
+
+    The account is workspace-global (R1) and may already belong to another project; membership is
+    per (project, account), so the second project's add lands on the survivor.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            first = await seed_project(conn, WS, name="First project")
+            second = await seed_project(conn, WS, name="Second project")
+            acme = await _seed(conn, canonical_name="Acme", primary_domain="acme-merge.example")
+            await admit(
+                conn,
+                candidate(domain="acme-merge.example", name="Acme"),
+                new_run_id(),
+                workspace_id=WS,
+                project_id=first.project_id,
+            )
+            result = await admit(
+                conn,
+                candidate(record_ref="rec:2", domain="acme-merge.example", name="Acme Inc"),
+                new_run_id(),
+                workspace_id=WS,
+                project_id=second.project_id,
+            )
+            assert result.status is AdmissionStatus.ADMITTED
+            assert result.account_entity_id == acme  # auto-merged onto the existing entity
+            assert await projects_for_accounts(conn, workspace_id=WS, account_ids=[acme]) == {
+                acme: (first.project_id, second.project_id)
+            }
+
+    run_async(_run())
+
+
+def test_admit_writes_no_membership_for_a_review_band_candidate() -> None:
+    """A mid-band (``ENQUEUED``) admission admits no entity, so it joins no project *yet*.
+
+    Membership follows the *resolved* account. The project is not lost, though: the admission
+    stamps it on the review task (FI-2 P1), so the human resolution can join the account it
+    creates or merges into. Resolving one is asserted in ``tests/identity/test_review.py``.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            project = await seed_project(conn, WS, name="Review project")
+            await _seed(conn, canonical_name="Acme Corporation")  # name-only, embedded
+            policy = DispositionPolicy(
+                version=9, review_low_threshold=0.3, auto_merge_threshold=0.99
+            )
+            result = await admit(
+                conn,
+                candidate(matched_channel="exa", name="Acme Corporation"),
+                new_run_id(),
+                workspace_id=WS,
+                project_id=project.project_id,
+                disposition_policy=policy,
+            )
+            assert result.status is AdmissionStatus.NEEDS_REVIEW
+            assert (
+                await accounts_for_project(conn, workspace_id=WS, project_id=project.project_id)
+                == ()
+            )
+            assert result.review_task_id is not None
+            task = await get_task(conn, result.review_task_id)
+            # The admitting project rides the task, so the two can never disagree about which
+            # project claimed the account once a human resolves it.
+            assert task is not None and task.project_id == project.project_id
+
+    run_async(_run())
+
+
+def test_admit_can_override_the_membership_channel() -> None:
+    """``added_via`` records how the account *joined the project*, which is not always the gate's
+    resolution channel: a human-typed add resolves through the reserved ``import`` path but joins
+    as ``manual`` (the trial's case). The caller may say so explicitly."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            project = await seed_project(conn, WS, name="Manual add project")
+            result = await admit(
+                conn,
+                candidate(
+                    matched_channel=IMPORT_CHANNEL, domain="typed.example", name="Hand Typed Co"
+                ),
+                new_run_id(),
+                workspace_id=WS,
+                project_id=project.project_id,
+                added_via="manual",
+            )
+            assert result.status is AdmissionStatus.ADMITTED
+            assert result.account_entity_id is not None
+            assert await _added_via(conn, result.account_entity_id) == ["manual"]
+
+    run_async(_run())
+
+
+def test_admit_records_an_import_channel_candidate_as_imported() -> None:
+    """The gate is channel-agnostic but membership is not: the reserved ``import`` channel records
+    ``added_via='imported'`` — one gate, two entry scenarios (Doc B §4), two truthful channels."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            project = await seed_project(conn, WS, name="Import project")
+            result = await admit(
+                conn,
+                candidate(
+                    matched_channel=IMPORT_CHANNEL, domain="imported.example", name="Imported Co"
+                ),
+                new_run_id(),
+                workspace_id=WS,
+                project_id=project.project_id,
+            )
+            assert result.status is AdmissionStatus.ADMITTED
+            assert result.account_entity_id is not None
+            assert await _added_via(conn, result.account_entity_id) == ["imported"]
+
+    run_async(_run())
+
+
+def test_admit_without_project_context_writes_no_membership() -> None:
+    """A projectless admission still admits the account — membership is the project's claim on it,
+    and a workspace-level admission simply makes none (the account is global, R1)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            result = await admit(
+                conn,
+                candidate(matched_channel="exa", domain="projectless.example", name="No Project"),
+                new_run_id(),
+                workspace_id=WS,
+            )
+            assert result.status is AdmissionStatus.ADMITTED
+            assert result.account_entity_id is not None
+            assert (
+                await projects_for_accounts(
+                    conn, workspace_id=WS, account_ids=[result.account_entity_id]
+                )
+                == {}
+            )
+
+    run_async(_run())
 
 
 def test_existence_check_is_a_pluggable_gate() -> None:

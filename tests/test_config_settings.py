@@ -31,6 +31,16 @@ def test_gateway_config_picks_up_env_synthesis_model(monkeypatch: pytest.MonkeyP
     assert default_gateway_config().synthesis_model == "openai/gpt-4o-mini"
 
 
+def test_verification_is_default_on_and_can_be_disabled_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("CLUE_VERIFICATION_ENABLED", raising=False)
+    assert load_settings(_env_file=None).verification_enabled is True  # type: ignore[call-arg]
+
+    monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "false")
+    assert load_settings(_env_file=None).verification_enabled is False  # type: ignore[call-arg]
+
+
 def test_exa_account_deep_controls_are_independent_bounded_and_default_off(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -142,3 +152,53 @@ def test_agent_workspace_allowlist_accepts_one_bare_workspace_id(
     monkeypatch.setenv("CLUE_AGENT_WORKSPACE_ALLOWLIST", "ws-a")
     settings = load_settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.agent_workspace_allowlist == ("ws-a",)
+
+
+def test_auth_local_fixture_mode_is_forbidden_in_production() -> None:
+    with pytest.raises(ValidationError, match="local fixture auth is forbidden"):
+        load_settings(
+            _env_file=None,
+            auth_environment="production",
+            auth_mode="local_fixture",
+        )
+
+
+def test_auth_clerk_authorized_parties_accept_shell_safe_list() -> None:
+    settings = load_settings(
+        _env_file=None,
+        auth_environment="production",
+        auth_mode="clerk",
+        projections_auth_mode="authenticated_principal",
+        auth_clerk_authorized_parties="https://app.example, http://localhost:3000",
+    )
+    assert settings.auth_clerk_authorized_parties == (
+        "https://app.example",
+        "http://localhost:3000",
+    )
+
+
+def test_enabled_auth_requires_explicit_environment() -> None:
+    with pytest.raises(ValidationError, match="CLUE_AUTH_ENVIRONMENT must be set explicitly"):
+        load_settings(_env_file=None, auth_enabled=True)
+
+
+def test_production_auth_refuses_local_header_workspace_authority() -> None:
+    with pytest.raises(ValidationError, match="forbids the local-header"):
+        load_settings(
+            _env_file=None,
+            auth_enabled=True,
+            auth_environment="production",
+            auth_mode="clerk",
+            projections_auth_mode="local_header",
+        )
+
+
+def test_declared_production_refuses_local_header_even_before_auth_flip() -> None:
+    with pytest.raises(ValidationError, match="forbids the local-header"):
+        load_settings(
+            _env_file=None,
+            auth_enabled=False,
+            auth_environment="production",
+            auth_mode="clerk",
+            projections_auth_mode="local_header",
+        )

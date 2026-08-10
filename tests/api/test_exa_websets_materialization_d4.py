@@ -89,6 +89,7 @@ from clue_research.identity import (
     list_open_tasks,
     resolve_create_new_entity,
 )
+from clue_research.membership import accounts_for_project, projects_for_accounts
 from clue_storage import FsStorage, content_address
 from tests._workspace import seed_project
 from tests.db.conftest import run_async
@@ -456,6 +457,9 @@ async def _workspace_table_counts(conn: AsyncConnection, workspace_id: str) -> t
         "discovery_candidate_link",
         "discovery_field_resolution",
         "discovery_artifact_subject",
+        # FI-2 P1: membership is written by the same materialization, so a replay that writes
+        # nothing must not grow it either.
+        "project_account",
     ):
         counts.append(
             int(
@@ -654,6 +658,23 @@ def test_d4_materializes_dedup_conflict_missing_evidence_and_exact_replay(
             assert "core.founded_year" not in field_keys
             assert "account.web_traffic" not in field_keys
 
+            # FI-2 P1 (spec §2): a materialized candidate joins the batch's project as a target,
+            # via the shared admission gate (added_via='discovered').
+            batch_project_id = str(
+                (
+                    await conn.execute(
+                        text("SELECT project_id FROM discovery_batch WHERE id = :batch_id"),
+                        {"batch_id": batch_id},
+                    )
+                ).scalar_one()
+            )
+            assert await accounts_for_project(
+                conn, workspace_id=workspace_id, project_id=batch_project_id
+            ) == (account_id,)
+            assert await projects_for_accounts(
+                conn, workspace_id=workspace_id, account_ids=[account_id]
+            ) == {account_id: (batch_project_id,)}
+
             counts_before_replay = await _workspace_table_counts(conn, workspace_id)
             batch_updated_before_replay = (
                 await conn.execute(
@@ -767,9 +788,43 @@ def test_d4_persists_identity_review_lineage_and_blocks_batch(tmp_path: Path) ->
             assert replay.review_item_count == 1
             assert len(await list_open_tasks(conn, workspace_id=workspace_id)) == task_count
 
+            # FI-2 P1 (spec §2): a review-banded candidate has no entity, so it joins no project.
+            batch_project_id = str(
+                (
+                    await conn.execute(
+                        text("SELECT project_id FROM discovery_batch WHERE id = :batch_id"),
+                        {"batch_id": batch_id},
+                    )
+                ).scalar_one()
+            )
+            assert (
+                await accounts_for_project(
+                    conn, workspace_id=workspace_id, project_id=batch_project_id
+                )
+                == ()
+            )
+
             admitted_id = await resolve_create_new_entity(
                 conn, link.review_task_id, resolved_by="d4-test-reviewer"
             )
+            # The admission stamped the batch's project on the review task (FI-2 P1), so the human
+            # resolution joins the entity it created — membership lands here, before the resume.
+            assert await accounts_for_project(
+                conn, workspace_id=workspace_id, project_id=batch_project_id
+            ) == (admitted_id,)
+            membership_after_resolution = (
+                await conn.execute(
+                    text(
+                        "SELECT added_via, added_at FROM project_account WHERE workspace_id = :ws "
+                        "AND project_id = :project AND account_entity_id = :account"
+                    ),
+                    {
+                        "ws": workspace_id,
+                        "project": batch_project_id,
+                        "account": admitted_id,
+                    },
+                )
+            ).one()
             resumed = await ExaWebsetsD4Materializer(
                 storage=storage,
                 conn_factory=conn_session_factory(conn),
@@ -790,6 +845,25 @@ def test_d4_persists_identity_review_lineage_and_blocks_batch(tmp_path: Path) ->
             assert terminal_link.account_entity_id == admitted_id
             assert terminal_link.survivor_entity_id == admitted_id
             assert terminal_link.review_task_id == link.review_task_id
+            # The resumed materialization runs its own ensure over the same account. Two
+            # independent paths, one membership: first-add-wins makes the second a no-op, so the
+            # row keeps the resolution's channel and added_at rather than being re-added later.
+            assert await accounts_for_project(
+                conn, workspace_id=workspace_id, project_id=batch_project_id
+            ) == (admitted_id,)
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT added_via, added_at FROM project_account WHERE workspace_id = :ws "
+                        "AND project_id = :project AND account_entity_id = :account"
+                    ),
+                    {
+                        "ws": workspace_id,
+                        "project": batch_project_id,
+                        "account": admitted_id,
+                    },
+                )
+            ).one() == membership_after_resolution
             counts_before_terminal_replay = await _workspace_table_counts(conn, workspace_id)
             terminal_replay = await service.materialize(
                 workspace_id=workspace_id, batch_id=batch_id
@@ -877,6 +951,26 @@ def test_d4_replay_follows_identity_survivor_without_rewriting_or_duplicating_cl
             assert link.account_entity_id == original_id
             assert link.survivor_entity_id == survivor_id
             redirected_link_updated_at = link.updated_at
+            # FI-2 P1 (spec §2): membership follows the merge. ``mark_merged`` re-pointed the
+            # original's row onto the survivor, and the replay's own ensure lands on the survivor
+            # too — so the project targets exactly the survivor, once.
+            batch_project_id = str(
+                (
+                    await conn.execute(
+                        text("SELECT project_id FROM discovery_batch WHERE id = :batch_id"),
+                        {"batch_id": batch_id},
+                    )
+                ).scalar_one()
+            )
+            assert await accounts_for_project(
+                conn, workspace_id=workspace_id, project_id=batch_project_id
+            ) == (survivor_id,)
+            assert (
+                await projects_for_accounts(
+                    conn, workspace_id=workspace_id, account_ids=[original_id]
+                )
+                == {}
+            )
             survivor_resolution = await get_discovery_field_resolution(
                 conn,
                 workspace_id=workspace_id,
@@ -934,7 +1028,7 @@ def test_d4_rejects_tampered_raw_artifact_before_identity_or_claim_writes(tmp_pa
                         storage=storage,
                         conn_factory=conn_session_factory(conn),
                     ).materialize(workspace_id=workspace_id, batch_id=batch_id)
-            assert await _workspace_table_counts(conn, workspace_id) == (0, 0, 0, 0, 0)
+            assert await _workspace_table_counts(conn, workspace_id) == (0, 0, 0, 0, 0, 0)
 
     run_async(_run())
 

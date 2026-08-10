@@ -441,10 +441,23 @@ class ResearchDirectivePin(BaseModel):
         *,
         account_id: EntityId | None = None,
         allow_superseded: bool = False,
+        allow_draft: bool = False,
     ) -> ResearchDirectivePin:
+        """Freeze one account's exact directive revision.
+
+        ``allow_draft`` exists for exactly one caller (FI Lane D D4): a confirmation gate has to
+        *price* the draft it is asking the human to approve, and pricing needs the same effective
+        composition execution needs. It is a pricing relaxation only — a pin derived this way names
+        a draft revision, so it must never be frozen onto an account run. Every path that does
+        freeze one (``pin_account_run_research_directive``, through the launcher) leaves this
+        ``False``, which keeps "only a confirmed directive executes" exactly as strict as it was.
+        """
+
         allowed_statuses = {ResearchDirectiveStatus.CONFIRMED}
         if allow_superseded:
             allowed_statuses.add(ResearchDirectiveStatus.SUPERSEDED)
+        if allow_draft:
+            allowed_statuses.add(ResearchDirectiveStatus.DRAFT)
         if directive.status not in allowed_statuses:
             raise ValueError("only a confirmed research directive can be pinned")
         if override is not None and override.directive_id != directive.directive_id:
@@ -512,12 +525,22 @@ def compose_account_research_directive(
     account_id: EntityId,
     override: ResearchDirectiveAccountOverride | None = None,
     allow_superseded: bool = False,
+    allow_draft: bool = False,
 ) -> EffectiveAccountResearchDirective:
-    """Layer one immutable account override without mutating the project directive."""
+    """Layer one immutable account override without mutating the project directive.
+
+    ``allow_draft`` is the FI Lane D D4 pricing relaxation described on
+    :meth:`ResearchDirectivePin.from_records`: a directive-confirmation gate must compute its
+    maximum spend from the *draft* it is presenting, and it must compute it with this composition
+    rather than a second one, or the number on the gate and the number the launcher verifies could
+    drift. Composing is not authorizing — every execution path keeps this ``False``.
+    """
 
     allowed_statuses = {ResearchDirectiveStatus.CONFIRMED}
     if allow_superseded:
         allowed_statuses.add(ResearchDirectiveStatus.SUPERSEDED)
+    if allow_draft:
+        allowed_statuses.add(ResearchDirectiveStatus.DRAFT)
     if directive.status not in allowed_statuses:
         raise ValueError("effective account direction requires a confirmed directive")
     if directive.body.account_scope.explicit_account_ids and (
@@ -564,6 +587,7 @@ def compose_account_research_directive(
             override,
             account_id=account_id,
             allow_superseded=allow_superseded,
+            allow_draft=allow_draft,
         ),
         field_keys=fields,
         questions=questions,

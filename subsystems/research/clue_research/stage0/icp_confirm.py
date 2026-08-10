@@ -42,7 +42,7 @@ from clue_core import (
     new_run_id,
 )
 from clue_obs.otel import ATTR_ENTITY_ID, ATTR_WORKSPACE_ID, apply_attributes, traced_step
-from clue_research.claimstore import insert_claim
+from clue_research.claimstore import insert_claim, record_run_lineage
 from clue_research.icp import (
     RubricEntry,
     ScoringRubric,
@@ -158,6 +158,14 @@ async def confirm_icp(
                 client_kb_version=draft.client_kb_version,
                 product_id=draft.product_id,
             )
+            # FI-2 P2 (spec §3): ICP confirmation is a workspace-level stage-0 run — the ICP spec
+            # belongs to no single project, so ``project_id`` stays NULL. Registered in the same
+            # transaction as the diff claim below; an idempotent re-confirm writes nothing at all
+            # (the branch above), so no run is registered that never wrote.
+            diff_run_id = new_run_id()
+            await record_run_lineage(
+                conn, run_id=diff_run_id, workspace_id=workspace_id, kind="stage0"
+            )
             await _persist_diff(
                 conn,
                 client_entity_id=client_entity_id,
@@ -165,7 +173,7 @@ async def confirm_icp(
                 icp_key=spec.icp_key,
                 icp_version=spec.version,
                 diff=diff,
-                run_id=new_run_id(),
+                run_id=diff_run_id,
             )
 
     return ICPConfirmation(

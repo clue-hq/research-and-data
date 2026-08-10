@@ -8,10 +8,12 @@ from uuid import UUID
 import pytest
 
 from clue_agents.context import (
+    CompiledContextCard,
     ContextAssemblyPolicy,
     ContextAssemblyReceipt,
     ContextCandidate,
     DeterministicAgentContextAssembler,
+    FocusLayerSource,
     LayerBudget,
     TurnLayerSource,
     Utf8ByteTokenCounter,
@@ -94,9 +96,15 @@ def _sources(*, cross_workspace: bool = False) -> tuple[_Source, ...]:
                 candidates=(
                     ContextCandidate(
                         stable_key=f"{index:02d}",
-                        ref=domain_ref(
-                            f"item-{index}",
-                            workspace_id="ws-2" if cross_workspace and index == 4 else "ws-1",
+                        ref=(
+                            artifact("user-message.txt")
+                            if layer is ContextLayer.L7_TURN
+                            else domain_ref(
+                                f"item-{index}",
+                                workspace_id=(
+                                    "ws-2" if cross_workspace and index == 4 else "ws-1"
+                                ),
+                            )
                         ),
                         body=f"layer {index}",
                         materialized_path=(
@@ -105,6 +113,12 @@ def _sources(*, cross_workspace: bool = False) -> tuple[_Source, ...]:
                             else None
                         ),
                         role="user" if layer is ContextLayer.L7_TURN else "system",
+                        origin=(
+                            "current_user_instruction"
+                            if layer is ContextLayer.L7_TURN
+                            else "trusted_context"
+                        ),
+                        required=layer is ContextLayer.L7_TURN,
                     ),
                 ),
             )
@@ -216,6 +230,39 @@ def test_context_assembly_rejects_cross_workspace_source() -> None:
         )
 
 
+def test_context_assembly_rejects_platform_metadata_after_the_current_instruction() -> None:
+    sources = list(_sources())
+    sources[-1] = _Source(
+        layer=ContextLayer.L7_TURN,
+        candidates=(
+            ContextCandidate(
+                stable_key="100-current",
+                ref=request().user_message_artifact_ref,
+                body="Answer C.",
+                role="user",
+                origin="current_user_instruction",
+                required=True,
+            ),
+            ContextCandidate(
+                stable_key="900-platform-metadata",
+                ref=domain_ref("capture"),
+                body="Synthetic capture metadata.",
+                role="user",
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="final opening-context message"):
+        asyncio.run(
+            DeterministicAgentContextAssembler(
+                sources=sources,
+                policy=_policy(),
+                receipts=_Receipts(),
+                clock=lambda: NOW,
+            ).assemble(request=request(), profile=profile(), history=())
+        )
+
+
 class _ArtifactReader:
     def __init__(self, bodies: dict[str, bytes]) -> None:
         self.bodies = bodies
@@ -224,6 +271,46 @@ class _ArtifactReader:
     async def read(self, ref: ArtifactRef) -> bytes:
         self.read_keys.append(ref.artifact_key)
         return self.bodies[ref.artifact_key]
+
+
+class _FocusCards:
+    async def read(
+        self,
+        *,
+        workspace_id: str,
+        object_type: str,
+        object_id: str,
+    ) -> CompiledContextCard:
+        return CompiledContextCard(
+            ref={
+                "workspace_id": workspace_id,
+                "object_type": object_type,
+                "object_id": object_id,
+                "version": 7,
+            },
+            body=f"context for {object_id}",
+        )
+
+
+def test_focus_layer_preserves_submission_order_and_accepts_current_revision_refs() -> None:
+    source = FocusLayerSource(_FocusCards())
+    selected = (
+        domain_ref("second").model_copy(update={"version": None}),
+        domain_ref("first").model_copy(update={"version": None}),
+    )
+    values = asyncio.run(
+        source.load(
+            request=request(
+                constitution=constitution(focus_refs=()),
+                focus_refs=selected,
+            ),
+            profile=profile(),
+            history=(),
+        )
+    )
+
+    assert [item.ref.object_id for item in values] == ["second", "first"]
+    assert [item.stable_key[:6] for item in values] == ["000000", "000001"]
 
 
 def test_turn_layer_reads_message_but_never_raw_attachment_bytes() -> None:
@@ -244,9 +331,12 @@ def test_turn_layer_reads_message_but_never_raw_attachment_bytes() -> None:
     )
 
     assert reader.read_keys == [message.artifact_key]
-    assert values[0].body == "Please inspect the attached file."
-    assert values[1].body.startswith("Attachment reference only:")
-    assert attachment.artifact_key in values[1].body
+    assert values[0].body.startswith("Attachment reference only:")
+    assert values[0].role == "system"
+    assert attachment.artifact_key in values[0].body
+    assert values[-1].body == "Please inspect the attached file."
+    assert values[-1].role == "user"
+    assert values[-1].origin == "current_user_instruction"
 
 
 @dataclass(frozen=True)
@@ -274,7 +364,7 @@ def test_the_turn_layer_names_this_turns_capture_as_a_reference_the_model_cannot
 
     The trusted values are injected at the tool seam (PC-C8 §6a); this envelope exists so the
     agent can talk about the turn it is answering without the platform handing it an id to retype.
-    It is reference-only and ordered last, after the message and any attachments.
+    It is reference-only trusted context and is ordered before the one current user instruction.
     """
 
     message = artifact("user-message.txt")
@@ -298,9 +388,10 @@ def test_the_turn_layer_names_this_turns_capture_as_a_reference_the_model_cannot
     )
 
     assert capture.requests == [message.artifact_key]
-    envelope = values[-1]
-    assert envelope.stable_key == "900-captured-turn"
-    assert values[0].stable_key < envelope.stable_key
+    envelope = values[0]
+    assert envelope.stable_key == "100-captured-turn"
+    assert envelope.role == "system"
+    assert envelope.stable_key < values[-1].stable_key
     assert envelope.required is False
     assert "onboarding_input_id=00000000-0000-0000-0000-0000000000a1" in envelope.body
     assert f"artifact_key={message.artifact_key}" in envelope.body
@@ -324,7 +415,7 @@ def test_a_turn_with_no_capture_emits_no_envelope_rather_than_failing() -> None:
         )
     )
 
-    assert [item.stable_key for item in values] == ["000-user-message"]
+    assert [item.stable_key for item in values] == ["999-user-message"]
 
 
 def test_utf8_byte_counter_is_conservative_and_versioned() -> None:

@@ -1,0 +1,59 @@
+const FORWARDED_REQUEST_HEADERS = [
+  "accept",
+  "content-type",
+  "idempotency-key",
+  "last-event-id",
+  "x-quality-mode",
+] as const;
+
+const FORWARDED_RESPONSE_HEADERS = [
+  "content-type",
+  "cache-control",
+  "x-request-id",
+  "x-projections-schema-version",
+] as const;
+
+export function backendPath(segments: readonly string[]): string {
+  if (segments.length === 0) throw new Error("a backend path is required");
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    throw new Error("backend paths cannot contain dot segments");
+  }
+  return `/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+}
+
+export function backendRequestHeaders(
+  incoming: Headers,
+  {
+    token,
+    workspaceId,
+  }: Readonly<{ token: string; workspaceId: string | null }>,
+): Headers {
+  const outgoing = new Headers({ Authorization: `Bearer ${token}` });
+  for (const name of FORWARDED_REQUEST_HEADERS) {
+    const value = incoming.get(name);
+    if (value) outgoing.set(name, value);
+  }
+  if (workspaceId) outgoing.set("X-Clue-Workspace-Id", workspaceId);
+  return outgoing;
+}
+
+export function browserResponseHeaders(incoming: Headers): Headers {
+  const outgoing = new Headers();
+  for (const name of FORWARDED_RESPONSE_HEADERS) {
+    const value = incoming.get(name);
+    if (value) outgoing.set(name, value);
+  }
+  return outgoing;
+}
+
+export function hasAllowedOrigin(request: Request): boolean {
+  const method = request.method.toUpperCase();
+  if (method === "GET" || method === "HEAD") return true;
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+  try {
+    return new URL(origin).origin === new URL(request.url).origin;
+  } catch {
+    return false;
+  }
+}

@@ -46,7 +46,14 @@ from collections.abc import Awaitable, Callable
 
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
 from clue_api.agent_model_wiring import build_agent_model_provider
+from clue_api.agent_platform_wiring import build_agent_platform_components
+from clue_api.agent_turn_fleet_wiring import (
+    build_agent_turn_work_handler,
+    sweep_thread_dispatch,
+    sweep_turn_stream_retention,
+)
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
+from clue_api.chat.turn_stream import TurnStreamPolicy
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
 from clue_api.contact_content_handoff import ContactContentHandoffService
@@ -80,7 +87,7 @@ from clue_api.external_research_wake import (
     registered_external_research_wake_sources,
 )
 from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, register_boot_handlers
-from clue_api.memory_wiring import memory_write_factory_builder
+from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
@@ -166,6 +173,44 @@ def _start_orphan_sweep(settings: Settings, storage: StorageBackend) -> asyncio.
         log.info("fleet.orphan_sweep.disabled")
         return None
     return asyncio.create_task(_orphan_sweep_loop(settings, storage))
+
+
+async def _chat_sweep_loop(
+    settings: Settings,
+    *,
+    conn_factory: ConnFactory = transaction,
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+) -> None:
+    """FI Lane D D3's two chat sweeps, every ``chat_sweep_interval_s`` seconds until cancelled.
+
+    * **Stranded dispatch** — a thread whose queued submission never got its fleet task, because the
+      process died between finalizing a task and offering the thread's next turn. Self-healing but,
+      without this, only on that thread's next POST.
+    * **Turn-outbox retention** — prune terminal turns' frames past the replay window (§3.3(7)).
+
+    Isolated exactly like the orphan sweep: a fault is logged and the loop continues. Neither sweep
+    may ever sink the worker, and neither touches a live turn.
+    """
+    interval = settings.chat_sweep_interval_s
+    while True:
+        await sleep(interval)
+        try:
+            dispatched = await sweep_thread_dispatch(conn_factory)
+            pruned = await sweep_turn_stream_retention(
+                conn_factory,
+                retention_s=settings.chat_turn_event_retention_s,
+            )
+            if dispatched or pruned:
+                log.info("fleet.chat_sweep.done", dispatched=dispatched, pruned=pruned)
+        except Exception:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
+            log.warning("fleet.chat_sweep.error", exc_info=True)
+
+
+def _start_chat_sweep(settings: Settings) -> asyncio.Task[None] | None:
+    """Start the chat sweep task, or ``None`` when chat or the cadence is disabled."""
+    if not settings.chat_enabled or settings.chat_sweep_interval_s <= 0:
+        return None
+    return asyncio.create_task(_chat_sweep_loop(settings))
 
 
 async def _agent_cleanup_loop(
@@ -541,6 +586,48 @@ async def _serve() -> None:
             event_emitter=build_run_event_emitter(),
             project_execution_router=project_execution_router,
         )
+        # FI Lane D D2: the production conversation turn executor, composed ONCE here (§3-P3) and
+        # reused by every turn. Only when chat is enabled — nothing enqueues ``agent_turn`` tasks
+        # otherwise, and an unused composition would still resolve a profile and a manifest at boot.
+        # ORDERING IS LOAD-BEARING: this must compose BEFORE ``register_execution_control_tools``
+        # widens the shared registry. ``build_agent_platform_components`` audits the registry
+        # against ``C6_AGENT_TOOL_AUTHORITY``, whose reviewed surface is exactly the model-facing
+        # toolbelt (``build_toolbelt`` names — pinned by ``test_tool_authority_audit``); the
+        # run-control tools registered below are the human/API run-control plane sharing this
+        # registry object, not model-surface tools, and composing after them fails the audit
+        # at boot.
+        agent_turn_handler = (
+            build_agent_turn_work_handler(
+                components=build_agent_platform_components(
+                    settings=settings,
+                    secrets=secrets,
+                    gateway_config=gateway_config,
+                    storage=storage,
+                    tools=registry,
+                ),
+                tools=registry,
+                tool_invoker=tool_invoker,
+                executor=executor,
+                compatibility=compatibility,
+                recipes=recipe_reader,
+                starter=starter,
+                parameters=execution_parameters,
+                memory=memory_assembly_factory(settings, transaction),
+                queue=work_queue,
+                streaming=settings.chat_turn_streaming_enabled,
+                stream_policy=TurnStreamPolicy(
+                    batch_max_chars=settings.chat_turn_stream_batch_max_chars,
+                    batch_interval_s=settings.chat_turn_stream_batch_interval_s,
+                    # The dev-only raw-reasoning lens. ``raw`` is refused at settings construction
+                    # outside a dev deployment, so a production worker composes ``False`` here or
+                    # does not start at all.
+                    reasoning_trace=settings.chat_reasoning_trace_mode == "raw",
+                ),
+                stop_poll_interval_s=settings.chat_turn_stop_poll_interval_s,
+            )
+            if settings.chat_enabled
+            else None
+        )
         register_execution_control_tools(
             ExecutionControlServices(
                 starter=starter,
@@ -580,9 +667,11 @@ async def _serve() -> None:
             entity_research_handler=(
                 entity_research.handler if entity_research is not None else None
             ),
+            agent_turn_handler=agent_turn_handler,
             queue=work_queue,
         )
         sweep = _start_orphan_sweep(settings, storage)
+        chat_sweep = _start_chat_sweep(settings)
         if agent_workspace_factory is None and settings.agent_workspace_root is not None:
             agent_workspace_factory = build_agent_workspace_factory(
                 storage=storage,
@@ -615,6 +704,7 @@ async def _serve() -> None:
         finally:
             for background in (
                 sweep,
+                chat_sweep,
                 agent_cleanup,
                 exa_discovery,
                 exa_targeted_enrichment,

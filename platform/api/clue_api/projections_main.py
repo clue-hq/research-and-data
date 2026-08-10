@@ -6,6 +6,8 @@ import uvicorn
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from clue_api.auth_wiring import build_principal_service
+from clue_api.chat import StartupDevPrincipalResolver
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import load_research_packs
 from clue_api.exa_targeted_enrichment import build_production_exa_targeted_starter
@@ -85,11 +87,67 @@ def build_application(
         if resolved.c7_recheck_enabled and not research_views.deferred_requester.is_bound:
             raise RuntimeError("C7 recheck is enabled but its governed requester is unbound")
     budget = BudgetEngine(store=DbBudgetStore())
+    auth_service = None
+    auth_closer = None
+    if resolved.auth_enabled:
+        auth_service, auth_closer = build_principal_service(
+            settings=resolved,
+            conn_factory=transaction,
+        )
+
+    # --- the chat surface's identity source: exactly one, decided here -------------------------
+    # FI Lane B ⇄ Lane D join. Before the join this process built the development principal
+    # whenever chat was enabled *and* the real principal service whenever auth was enabled, and
+    # said nothing about the case where both were true — the chat surface would then have been
+    # handed a development identity while the rest of the app authenticated properly. That is
+    # resolved explicitly:
+    #
+    #   auth_enabled          -> Lane B's real chain governs the chat surface; NO dev resolver.
+    #   not auth_enabled      -> the guarded, Postgres-provisioned development principal.
+    #
+    # and the two settings that select them must agree, or the process refuses to start. The
+    # development principal's rows can only be provisioned once the process has a database, so the
+    # resolver is handed over now and bound from the startup check below; a process that cannot
+    # provision its identity fails to start rather than serving chat under a fictional one.
+    if resolved.chat_enabled:
+        if resolved.auth_enabled and resolved.projections_auth_mode == "local_header":
+            raise RuntimeError(
+                "contradictory chat identity configuration: CLUE_AUTH_ENABLED=true selects the "
+                "authenticated principal, but CLUE_PROJECTIONS_AUTH_MODE=local_header selects the "
+                "development one; set CLUE_PROJECTIONS_AUTH_MODE=authenticated_principal"
+            )
+        if not resolved.auth_enabled and resolved.projections_auth_mode != "local_header":
+            raise RuntimeError(
+                "the chat surface has no authenticated principal: CLUE_AUTH_ENABLED is false and "
+                f"CLUE_PROJECTIONS_AUTH_MODE={resolved.projections_auth_mode!r} forbids the "
+                "development principal; enable CLUE_AUTH_ENABLED or select local_header"
+            )
+    chat_principal = (
+        StartupDevPrincipalResolver()
+        if resolved.chat_enabled and not resolved.auth_enabled
+        else None
+    )
 
     async def startup_check() -> None:
-        if resolved.projections_auth_mode != "local_header":
+        if resolved.projections_auth_mode == "service":
             raise RuntimeError(
                 "service authentication mode is selected but no service-auth resolver is wired"
+            )
+        if (
+            resolved.projections_auth_mode == "authenticated_principal"
+            and not resolved.auth_enabled
+        ):
+            raise RuntimeError(
+                "authenticated-principal projections mode requires CLUE_AUTH_ENABLED=true"
+            )
+        if chat_principal is not None:
+            ids = await chat_principal.bind(resolved)
+            log.info(
+                "chat.dev_principal.provisioned",
+                user_id=ids.user_id,
+                membership_id=ids.membership_id,
+                workspace_id=ids.workspace_id,
+                role_key=ids.role_key,
             )
         async with transaction() as conn:
             await conn.execute(text("SELECT 1"))
@@ -154,6 +212,7 @@ def build_application(
             research_views.owner_references if research_views is not None else None
         ),
         startup_check=startup_check,
+        chat_principal_resolver=chat_principal,
         discovery_webhook_router=(
             build_exa_webhook_router(
                 ExaWebhookIngestor(
@@ -164,6 +223,8 @@ def build_application(
             if resolved_secrets.exa_websets_webhook_secret is not None
             else None
         ),
+        auth_service=auth_service,
+        auth_closer=auth_closer,
     )
 
 

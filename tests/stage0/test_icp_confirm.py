@@ -42,6 +42,7 @@ from clue_research.stage0.fields import (
     CLIENT_PRODUCT,
     CLIENT_VALUE_PROP,
 )
+from tests._run_lineage import assert_written_claims_are_attributable
 from tests.stage0._fakes import build_client_kb
 from tests.stage0.conftest import rollback_conn, run_async
 
@@ -164,6 +165,14 @@ def test_confirm_round_trips_edits_and_persists_diff() -> None:
             assert isinstance(added, list)
             assert "core.work_email" in added
             assert diff_claims[0].reuse_scope is ReuseScope.TENANT_PRIVATE
+            # FI-2 P2: the diff claim's run is a workspace-level stage-0 run (no project).
+            await assert_written_claims_are_attributable(
+                conn,
+                diff_claims[0].run_id,
+                kind="stage0",
+                workspace_id=_CLIENT,
+                project_id=None,
+            )
 
     run_async(_run())
 

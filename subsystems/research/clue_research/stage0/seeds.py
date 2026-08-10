@@ -48,7 +48,12 @@ from clue_core import (
     discovery_claim,
 )
 from clue_obs.otel import ATTR_WORKSPACE_ID, traced_step
-from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_for,
+    insert_claim,
+    record_run_lineage,
+)
 from clue_research.icp import ScoringRubric, fit_floor, get_rubric_version, score_entity
 from clue_research.identity import (
     Observation,
@@ -205,6 +210,12 @@ async def assemble_lookalike_seeds(
             )
 
         chosen = _rank_and_gate(candidates, policy=policy, fit_floor=floor)
+
+        # FI-2 P2 (spec §3): seed assembly is a workspace-level stage-0 run — it belongs to no
+        # project, so ``project_id`` stays NULL. Registered once, in the caller's transaction, ahead
+        # of the seed markers below; idempotent, so a re-assembly re-registers harmlessly.
+        if chosen:
+            await record_run_lineage(conn, run_id=run, workspace_id=workspace_id, kind="stage0")
 
         seeds: list[SeedAccount] = []
         for cand in chosen:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
@@ -10,12 +11,16 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_db import ConnFactory, transaction
+from clue_projections.pagination import InvalidCursorError, decode_cursor, encode_cursor
 
 __all__ = [
+    "DEFAULT_TURN_PAGE_SIZE",
+    "MAX_TURN_PAGE_SIZE",
     "AgentArtifactView",
     "AgentProgressView",
     "AgentRouteView",
     "AgentTelemetryView",
+    "AgentTurnPage",
     "AgentTurnSummary",
     "AgentTurnView",
     "agent_progress",
@@ -23,7 +28,13 @@ __all__ = [
     "agent_telemetry",
     "agent_turn",
     "agent_turns_for_project",
+    "agent_turns_for_thread",
 ]
+
+#: Page sizes for the turn listings. A transcript is unbounded, so an unpaginated read of it is a
+#: latent outage, not a convenience — FI-1 defect L6.
+DEFAULT_TURN_PAGE_SIZE = 50
+MAX_TURN_PAGE_SIZE = 200
 
 
 class _View(BaseModel):
@@ -47,6 +58,14 @@ class AgentTurnSummary(_View):
     failure_code: str | None
     profile_address: str
     requested_at: AwareDatetime
+
+
+class AgentTurnPage(_View):
+    """One keyset page of turn summaries. ``next_cursor`` is ``None`` on the last page — it is
+    absent because there is nothing after it, never because the page happened to be full."""
+
+    items: tuple[AgentTurnSummary, ...]
+    next_cursor: str | None = None
 
 
 class AgentTurnView(AgentTurnSummary):
@@ -202,31 +221,130 @@ async def agent_turn(
     )
 
 
-async def agent_turns_for_project(
+def _encode_turn_cursor(item: AgentTurnSummary) -> str:
+    return encode_cursor(item.requested_at.isoformat(), str(item.turn_id))
+
+
+def _decode_turn_cursor(cursor: str | None) -> tuple[datetime | None, str | None]:
+    """Decode the ``(requested_at, id)`` keyset position, or ``(None, None)`` for page one."""
+
+    if cursor is None:
+        return None, None
+    position, turn_id = decode_cursor(cursor, parts=2)
+    try:
+        requested_at = datetime.fromisoformat(position)
+        parsed = UUID(turn_id)
+    except ValueError as exc:
+        raise InvalidCursorError("cursor is not a value this endpoint issued") from exc
+    if requested_at.tzinfo is None:
+        requested_at = requested_at.replace(tzinfo=UTC)
+    return requested_at, str(parsed)
+
+
+# Keyset, oldest first (a transcript reads forwards). The row-value comparison is total over
+# ``(requested_at, id)``, so two turns requested in one transaction still page deterministically and
+# neither is skipped nor repeated. ``:scope_column`` is not a bind parameter — the two callers
+# below interpolate one of exactly two literal column names.
+_PAGE_TURNS = """
+    SELECT t.*, latest.status, latest.reason_code AS failure_code
+    FROM agent_turn t
+    JOIN LATERAL (
+        SELECT status, reason_code FROM agent_turn_event
+        WHERE turn_id=t.id ORDER BY seq DESC LIMIT 1
+    ) latest ON true
+    WHERE t.workspace_id=:workspace AND t.{scope_column}=:scope
+      AND (
+          CAST(:cursor_requested_at AS timestamptz) IS NULL
+          OR (t.requested_at, t.id) > (:cursor_requested_at, CAST(:cursor_id AS uuid))
+      )
+    ORDER BY t.requested_at, t.id
+    LIMIT :row_limit
+"""
+
+
+async def _turn_page(
     *,
     workspace_id: str,
-    project_id: str,
-    conn_factory: ConnFactory = transaction,
-) -> tuple[AgentTurnSummary, ...]:
+    scope_column: str,
+    scope: str,
+    limit: int,
+    cursor: str | None,
+    conn_factory: ConnFactory,
+) -> AgentTurnPage:
+    if not 1 <= limit <= MAX_TURN_PAGE_SIZE:
+        raise ValueError(f"turn page size must be between 1 and {MAX_TURN_PAGE_SIZE}")
+    cursor_requested_at, cursor_id = _decode_turn_cursor(cursor)
     async with conn_factory() as conn:
         rows = (
             (
                 await conn.execute(
-                    text(
-                        "SELECT t.*, latest.status, latest.reason_code AS failure_code "
-                        "FROM agent_turn t "
-                        "JOIN LATERAL (SELECT status, reason_code FROM agent_turn_event "
-                        " WHERE turn_id=t.id ORDER BY seq DESC LIMIT 1) latest ON true "
-                        "WHERE t.workspace_id=:workspace AND t.project_id=:project "
-                        "ORDER BY t.requested_at, t.id"
-                    ),
-                    {"workspace": workspace_id, "project": project_id},
+                    text(_PAGE_TURNS.format(scope_column=scope_column)),
+                    {
+                        "workspace": workspace_id,
+                        "scope": scope,
+                        "cursor_requested_at": cursor_requested_at,
+                        "cursor_id": cursor_id,
+                        # One extra row is the has-more probe: it never reaches the caller, and it
+                        # is why a full final page does not hand out a cursor onto nothing.
+                        "row_limit": limit + 1,
+                    },
                 )
             )
             .mappings()
             .all()
         )
-    return tuple(_summary(row) for row in rows)
+    has_more = len(rows) > limit
+    items = tuple(_summary(row) for row in rows[:limit])
+    return AgentTurnPage(
+        items=items,
+        next_cursor=_encode_turn_cursor(items[-1]) if has_more and items else None,
+    )
+
+
+async def agent_turns_for_project(
+    *,
+    workspace_id: str,
+    project_id: str,
+    limit: int = DEFAULT_TURN_PAGE_SIZE,
+    cursor: str | None = None,
+    conn_factory: ConnFactory = transaction,
+) -> AgentTurnPage:
+    """One keyset page of a project's turns, oldest first.
+
+    Raises :class:`~clue_projections.pagination.InvalidCursorError` for a cursor this projection
+    did not mint, and ``ValueError`` for an out-of-range ``limit``.
+    """
+
+    return await _turn_page(
+        workspace_id=workspace_id,
+        scope_column="project_id",
+        scope=project_id,
+        limit=limit,
+        cursor=cursor,
+        conn_factory=conn_factory,
+    )
+
+
+async def agent_turns_for_thread(
+    *,
+    workspace_id: str,
+    thread_id: str,
+    limit: int = DEFAULT_TURN_PAGE_SIZE,
+    cursor: str | None = None,
+    conn_factory: ConnFactory = transaction,
+) -> AgentTurnPage:
+    """One keyset page of a thread's turns, oldest first — the thread-scoped twin of
+    :func:`agent_turns_for_project`, riding the existing
+    ``agent_turn (workspace_id, thread_id, requested_at, id)`` index."""
+
+    return await _turn_page(
+        workspace_id=workspace_id,
+        scope_column="thread_id",
+        scope=thread_id,
+        limit=limit,
+        cursor=cursor,
+        conn_factory=conn_factory,
+    )
 
 
 async def agent_progress(

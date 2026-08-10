@@ -1,0 +1,529 @@
+"""The durable submission record for one human turn, and the per-thread single-flight dispatcher.
+
+FI Lane D slice **D2** (charter §3-P3 / §3.5). Two responsibilities, both about the seam between
+the HTTP process that *accepts* a turn and the fleet worker that *executes* it:
+
+**1. ``agent_turn_submission`` — identity before enqueue.** The route writes it before it enqueues
+anything; the worker reads it as the authority for who is acting. It exists because an
+``agent_turn`` row cannot: that row references an ``execution``, and its constitution pins a
+resolved profile, a resource manifest, a project card and a budget envelope — the whole agent
+plane, model provider included, which the HTTP process must never compose (§3-P3). So a turn's
+identity lands in two halves keyed on the same ``turn_id``: the submission (who, which thread,
+which captured bytes) written by the route, and the ``agent_turn`` row (which execution, which
+profile) written by the worker, which copies the submitter across. Neither half is ever taken from
+a queue payload — Lane B §7 lets the queue carry internal ids, but a *message* is not evidence.
+
+**2. Per-thread single-flight, by construction.** The invariant charter §3.5 asks for — one active
+turn per thread, later turns durably queued in submission order, no cross-thread blocking — is not
+enforced by a lock held during execution. It falls out of one rule: **at most one non-terminal
+``agent_turn`` fleet task exists per thread at any moment.** :func:`dispatch_next_thread_turn`
+offers the thread's *earliest* not-yet-executed submission and nothing else; the next one is
+offered only once the previous task is terminal (by the worker, after it finishes). Because every
+queued row is therefore immediately runnable, a busy thread never blocks another thread's turn at
+the head of the shared queue — which a "claim it then bounce off a lock" design would.
+
+Three mechanisms fence it, cheapest first:
+
+* a Postgres **advisory transaction lock** on the thread makes read-then-enqueue atomic, so two
+  concurrent submissions (or a submission racing the worker's post-turn dispatch) cannot both
+  decide the thread is free;
+* the queue's own ``ON CONFLICT (kind, work_id, dedup_key) DO NOTHING`` means a repeated offer of
+  the same turn is a no-op even if the lock were bypassed;
+* the fleet **driver lease**, which the worker takes on ``work_id`` before running a handler, is
+  keyed here on the *thread* — so even two workers holding two tasks of one thread could not
+  execute them concurrently.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from collections.abc import Sequence
+from uuid import NAMESPACE_URL, UUID, uuid5
+
+from pydantic import BaseModel, ConfigDict, JsonValue
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_agents import ArtifactRef, DomainObjectRef
+from clue_core import OnboardingInputId, ProjectRunId, UtcDatetime
+from clue_fleet import FleetTaskKind, WorkId, enqueue_task
+
+__all__ = [
+    "AGENT_TURN_DEDUP_PREFIX",
+    "AgentTurnSubmissionRow",
+    "SubmissionContextRefRow",
+    "SubmissionConflict",
+    "agent_turn_dedup_key",
+    "dispatch_next_thread_turn",
+    "get_submission",
+    "submission_context_refs",
+    "submission_context_refs_for_turns",
+    "message_artifact_ref",
+    "insert_submission",
+    "submissions_for_thread",
+    "thread_work_id",
+    "turn_id_for_submission",
+]
+
+#: One task per turn, named by the turn (the brief's contract). ``work_id`` carries the thread, so
+#: the pair ``(work_id, dedup_key)`` reads as "this thread, this turn".
+AGENT_TURN_DEDUP_PREFIX = "agent-turn:"
+
+_TURN_NAMESPACE = uuid5(NAMESPACE_URL, "clue-agent-turn-submission")
+_THREAD_WORK_NAMESPACE = uuid5(NAMESPACE_URL, "clue-agent-turn-thread-work")
+
+_COLUMNS = (
+    "turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
+    "submitted_via_membership_id, onboarding_input_id, message_artifact_key, message_sha256, "
+    "idempotency_key, agent_profile_id, requested_at"
+)
+
+
+class SubmissionConflict(ValueError):
+    """This idempotency identity already named a *different* message.
+
+    A retry replays; a new message under a used key is a client bug, and answering it with the
+    first message's turn would silently drop what the user typed.
+    """
+
+
+def _framed(*parts: str) -> str:
+    """Length-frame the parts so no two different tuples can hash to one key."""
+
+    return "".join(f"{len(part)}:{part}" for part in parts)
+
+
+def turn_id_for_submission(
+    *,
+    workspace_id: str,
+    thread_id: str,
+    idempotency_key: str,
+) -> UUID:
+    """Derive the turn id one submission identity names.
+
+    Derived, not minted: a duplicate POST under one idempotency identity must land on the *same*
+    turn — the same durable row, the same fleet task dedup key, the same replayed answer — rather
+    than a second turn that runs the same message twice.
+    """
+
+    if not idempotency_key.strip():
+        raise ValueError("a turn submission requires a non-empty idempotency identity")
+    return uuid5(_TURN_NAMESPACE, _framed(workspace_id, thread_id, idempotency_key))
+
+
+def thread_work_id(*, workspace_id: str, thread_id: str) -> WorkId:
+    """The fleet ``work_id`` for a thread — the unit the driver lease makes exclusive.
+
+    Turns are not the unit of exclusion; threads are. Keying the lease on the turn would let two
+    turns of one thread run at once, which is precisely what §3.5 forbids.
+    """
+
+    return WorkId(uuid5(_THREAD_WORK_NAMESPACE, _framed(workspace_id, thread_id)))
+
+
+def agent_turn_dedup_key(turn_id: UUID) -> str:
+    return f"{AGENT_TURN_DEDUP_PREFIX}{turn_id}"
+
+
+class AgentTurnSubmissionRow(BaseModel):
+    """One ``agent_turn_submission`` row — immutable by trigger."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    turn_id: UUID
+    workspace_id: str
+    project_id: str
+    thread_id: str
+    submitted_by_user_id: str
+    submitted_via_membership_id: str
+    onboarding_input_id: OnboardingInputId
+    message_artifact_key: str
+    message_sha256: str
+    idempotency_key: str | None
+    agent_profile_id: str | None
+    requested_at: UtcDatetime
+
+
+class SubmissionContextRefRow(BaseModel):
+    """One ordered account/contact ref captured with a human submission."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    turn_id: UUID
+    workspace_id: str
+    ordinal: int
+    object_type: str
+    object_id: str
+    object_version: int | None
+
+
+async def insert_submission(
+    conn: AsyncConnection,
+    *,
+    turn_id: UUID,
+    workspace_id: str,
+    project_id: str,
+    thread_id: str,
+    submitted_by_user_id: str,
+    submitted_via_membership_id: str,
+    onboarding_input_id: OnboardingInputId,
+    message_artifact_key: str,
+    message_sha256: str,
+    idempotency_key: str | None,
+    context_refs: Sequence[DomainObjectRef] = (),
+    agent_profile_id: str | None = None,
+) -> tuple[AgentTurnSubmissionRow, bool]:
+    """Insert one submission, or replay it. Returns ``(row, created)``.
+
+    Replay is decided by the durable row, not by an in-memory guess: a second POST under the same
+    idempotency identity derives the same ``turn_id``, conflicts, and reads back the row it
+    conflicted with. If that row records a different message digest the identity was reused for new
+    content and this raises :class:`SubmissionConflict` — the 409 case — rather than answering with
+    somebody else's turn.
+    """
+
+    if any(ref.workspace_id != workspace_id for ref in context_refs):
+        raise ValueError("submission context refs cross the workspace boundary")
+
+    inserted = (
+        (
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_turn_submission "
+                    "(turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
+                    " submitted_via_membership_id, onboarding_input_id, message_artifact_key, "
+                    " message_sha256, idempotency_key, agent_profile_id) "
+                    "VALUES (:turn_id, :workspace_id, :project_id, :thread_id, :user_id, "
+                    " :membership_id, :onboarding_input_id, :artifact_key, :sha256, :key, "
+                    " :agent_profile_id) "
+                    f"ON CONFLICT (turn_id) DO NOTHING RETURNING {_COLUMNS}"
+                ),
+                {
+                    "turn_id": turn_id,
+                    "workspace_id": workspace_id,
+                    "project_id": project_id,
+                    "thread_id": thread_id,
+                    "user_id": submitted_by_user_id,
+                    "membership_id": submitted_via_membership_id,
+                    "onboarding_input_id": onboarding_input_id,
+                    "artifact_key": message_artifact_key,
+                    "sha256": message_sha256,
+                    "key": idempotency_key,
+                    "agent_profile_id": agent_profile_id,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if inserted is not None:
+        row = AgentTurnSubmissionRow.model_validate(dict(inserted))
+        for ordinal, ref in enumerate(context_refs):
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_turn_submission_context_ref "
+                    "(turn_id, workspace_id, ordinal, object_type, object_id, object_version) "
+                    "VALUES (:turn_id, :workspace_id, :ordinal, :object_type, :object_id, "
+                    " :object_version)"
+                ),
+                {
+                    "turn_id": turn_id,
+                    "workspace_id": workspace_id,
+                    "ordinal": ordinal,
+                    "object_type": ref.object_type,
+                    "object_id": ref.object_id,
+                    "object_version": ref.version,
+                },
+            )
+        return row, True
+    existing = await get_submission(conn, workspace_id=workspace_id, turn_id=turn_id)
+    if existing is None:
+        # The id exists outside this workspace. Deriving the id from the workspace makes this
+        # practically unreachable; refusing beats leaking that another tenant holds it.
+        raise SubmissionConflict("this turn identity exists outside the requested workspace")
+    existing_refs = await submission_context_refs(
+        conn,
+        workspace_id=workspace_id,
+        turn_id=turn_id,
+    )
+    if (
+        existing.message_sha256 != message_sha256
+        or existing.thread_id != thread_id
+        or existing.agent_profile_id != agent_profile_id
+        or tuple(context_refs) != existing_refs
+    ):
+        raise SubmissionConflict(
+            "this idempotency identity was already used for a different submission"
+        )
+    return existing, False
+
+
+async def get_submission(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+) -> AgentTurnSubmissionRow | None:
+    """Read one submission **inside one workspace**; a cross-workspace read is a miss."""
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_COLUMNS} FROM agent_turn_submission "
+                    "WHERE turn_id = :turn_id AND workspace_id = :workspace_id"
+                ),
+                {"turn_id": turn_id, "workspace_id": workspace_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return AgentTurnSubmissionRow.model_validate(dict(row)) if row is not None else None
+
+
+async def submission_context_refs(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+) -> tuple[DomainObjectRef, ...]:
+    """Rehydrate context refs in the exact order the user supplied."""
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT turn_id, workspace_id, ordinal, object_type, object_id, "
+                    "object_version FROM agent_turn_submission_context_ref "
+                    "WHERE turn_id=:turn_id AND workspace_id=:workspace_id ORDER BY ordinal"
+                ),
+                {"turn_id": turn_id, "workspace_id": workspace_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    receipts = tuple(SubmissionContextRefRow.model_validate(dict(row)) for row in rows)
+    return tuple(
+        DomainObjectRef(
+            workspace_id=item.workspace_id,
+            object_type=item.object_type,
+            object_id=item.object_id,
+            version=item.object_version,
+        )
+        for item in receipts
+    )
+
+
+async def submission_context_refs_for_turns(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_ids: Sequence[UUID],
+) -> dict[UUID, tuple[DomainObjectRef, ...]]:
+    """Batch ordered submission context for transcript/turn-list hydration."""
+
+    if not turn_ids:
+        return {}
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT turn_id, ordinal, object_type, object_id, object_version "
+                    "FROM agent_turn_submission_context_ref "
+                    "WHERE workspace_id=:workspace_id "
+                    "AND turn_id=ANY(CAST(:turn_ids AS uuid[])) "
+                    "ORDER BY turn_id, ordinal"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "turn_ids": [str(turn_id) for turn_id in turn_ids],
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    grouped: dict[UUID, list[DomainObjectRef]] = {}
+    for row in rows:
+        turn_id = UUID(str(row["turn_id"]))
+        grouped.setdefault(turn_id, []).append(
+            DomainObjectRef(
+                workspace_id=workspace_id,
+                object_type=str(row["object_type"]),
+                object_id=str(row["object_id"]),
+                version=(
+                    None if row["object_version"] is None else int(row["object_version"])
+                ),
+            )
+        )
+    return {turn_id: tuple(refs) for turn_id, refs in grouped.items()}
+
+
+async def message_artifact_ref(
+    conn: AsyncConnection,
+    submission: AgentTurnSubmissionRow,
+) -> ArtifactRef:
+    """Rehydrate the exact artifact reference for a submission's captured message.
+
+    The submission stores the address (key + digest) rather than the full reference because the
+    address is what identity depends on; media type and size are the artifact row's own facts and
+    are read back from it. The digest is re-checked here, so an artifact row that no longer matches
+    the submission fails loudly instead of feeding the model different bytes than the human sent.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT content_sha256, media_type, size_bytes FROM artifact "
+                    "WHERE storage_key = :key AND workspace_id = :workspace_id "
+                    "AND erased_at IS NULL AND purged_at IS NULL"
+                ),
+                {
+                    "key": submission.message_artifact_key,
+                    "workspace_id": submission.workspace_id,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None or row["content_sha256"] != submission.message_sha256:
+        raise SubmissionConflict(
+            "the captured message artifact for this turn is missing or no longer matches"
+        )
+    return ArtifactRef(
+        workspace_id=submission.workspace_id,
+        artifact_key=submission.message_artifact_key,
+        sha256=submission.message_sha256,
+        media_type=row["media_type"],
+        byte_count=int(row["size_bytes"]),
+    )
+
+
+async def submissions_for_thread(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    thread_id: str,
+) -> tuple[AgentTurnSubmissionRow, ...]:
+    """Every submission of one thread in submission order — the visible queue."""
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_COLUMNS} FROM agent_turn_submission "
+                    "WHERE workspace_id = :workspace_id AND thread_id = :thread_id "
+                    "ORDER BY requested_at, turn_id"
+                ),
+                {"workspace_id": workspace_id, "thread_id": thread_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(AgentTurnSubmissionRow.model_validate(dict(row)) for row in rows)
+
+
+_THREAD_INFLIGHT_SQL = text(
+    """
+    SELECT 1 FROM fleet_task
+    WHERE kind = CAST('agent_turn' AS fleet_task_kind)
+      AND work_id = :work_id
+      AND status IN ('queued', 'claimed')
+    LIMIT 1
+    """
+)
+
+# The next turn this thread owes: the earliest submission whose task has not reached a terminal
+# state. A DONE task is an executed turn; a FAILED task is an honest failure that the fleet's own
+# doctrine says is retried only by an explicit requeue, never silently — so both are skipped and
+# the thread moves on instead of looping on a turn that cannot succeed.
+_NEXT_PENDING_SQL = text(
+    """
+    SELECT s.turn_id, s.project_id
+    FROM agent_turn_submission s
+    WHERE s.workspace_id = :workspace_id
+      AND s.thread_id = :thread_id
+      AND NOT EXISTS (
+            SELECT 1 FROM fleet_task f
+            WHERE f.kind = CAST('agent_turn' AS fleet_task_kind)
+              AND f.work_id = :work_id
+              AND f.dedup_key = :prefix || s.turn_id::text
+              AND f.status IN ('done', 'failed')
+          )
+    ORDER BY s.requested_at, s.turn_id
+    LIMIT 1
+    """
+)
+
+
+def _thread_lock_scope(workspace_id: str, thread_id: str) -> str:
+    framed = _framed(workspace_id, thread_id).encode()
+    return "agent-turn-dispatch:" + hashlib.sha256(framed).hexdigest()
+
+
+async def dispatch_next_thread_turn(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    thread_id: str,
+    priority: int = 0,
+) -> UUID | None:
+    """Offer this thread's next turn to the fleet, or nothing. Returns the enqueued turn id.
+
+    Called from exactly two places, and it must be safe to call from either at any time: the turn
+    route (having just recorded a submission) and the ``AGENT_TURN`` handler (having just made its
+    own task terminal). Both run it inside their own transaction so the advisory lock, the
+    in-flight check, the ordering read and the enqueue are one atomic decision — the lock is a
+    *transaction* lock precisely so no caller can forget to release it.
+
+    Returning ``None`` is the common, correct outcome: the thread already has a task in flight, or
+    it has no un-executed submission left.
+    """
+
+    work_id = thread_work_id(workspace_id=workspace_id, thread_id=thread_id)
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+        {"scope": _thread_lock_scope(workspace_id, thread_id)},
+    )
+    in_flight = (await conn.execute(_THREAD_INFLIGHT_SQL, {"work_id": work_id})).first()
+    if in_flight is not None:
+        return None
+    row = (
+        (
+            await conn.execute(
+                _NEXT_PENDING_SQL,
+                {
+                    "workspace_id": workspace_id,
+                    "thread_id": thread_id,
+                    "work_id": work_id,
+                    "prefix": AGENT_TURN_DEDUP_PREFIX,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        return None
+    turn_id = UUID(str(row["turn_id"]))
+    payload: dict[str, JsonValue] = {
+        # References only, never a token and never a message body (substrate §5b, Lane B §7).
+        "turn_id": str(turn_id),
+        "workspace_id": workspace_id,
+        "project_id": str(row["project_id"]),
+        "thread_id": thread_id,
+    }
+    await enqueue_task(
+        conn,
+        kind=FleetTaskKind.AGENT_TURN,
+        project_run_id=ProjectRunId(work_id),
+        dedup_key=agent_turn_dedup_key(turn_id),
+        priority=priority,
+        payload=payload,
+    )
+    return turn_id

@@ -1077,3 +1077,57 @@ def test_field_conflict_contenders_are_in_the_provenance_index() -> None:
             assert str(a) in h.provenance_index and str(b) in h.provenance_index
 
     run_async(_run())
+
+
+@pytest.mark.usefixtures("require_narrative_db")
+def test_disabled_verification_assembles_unverified_narrative_carrying_its_status() -> None:
+    """FI-M12 toggle compat §3-A: with ``verification_enabled=False`` the assembler accepts an
+    unverified (non-REJECTED) narrative claim and carries its actual ``verification_status`` on the
+    wrapper, so downstream consumers see the basis honestly; a REJECTED narrative still never
+    crosses, and the default (enabled) assembler stays VERIFIED-only."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            account = await _account(conn)
+            await _write_score(
+                conn, account, FIT_FIELD, _score_payload(0.5, [], icp_version=1, non_fit=False)
+            )
+            unverified = await _write_narrative(
+                conn,
+                account,
+                Persona.CHAMPION,
+                icp_version=1,
+                account_evidence_ids=[],
+                client_knowledge_ids=["a"],
+                verified=False,
+            )
+            rejected = await _write_narrative(
+                conn,
+                account,
+                Persona.BLOCKER,
+                icp_version=1,
+                account_evidence_ids=[],
+                client_knowledge_ids=["b"],
+                verified=False,
+            )
+            await record_verification(conn, rejected, status=VerificationStatus.REJECTED)
+
+            relaxed = HandoffAssembler(
+                committee_reader=InMemoryHandoffCommitteeReader(), verification_enabled=False
+            )
+            assembled = await relaxed.assemble(
+                conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
+            )
+            assert [i.claim_id for i in assembled.handoff.value_narrative] == [unverified]
+            assert assembled.narrative_verification == {
+                str(unverified): VerificationStatus.UNVERIFIED
+            }
+
+            strict = (
+                await _assembler().assemble(
+                    conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
+                )
+            ).handoff
+            assert strict.value_narrative == ()  # enabled mode is VERIFIED-only, unchanged
+
+    run_async(_run())

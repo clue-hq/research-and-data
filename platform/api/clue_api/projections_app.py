@@ -25,12 +25,24 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ValidationError
 
 import clue_obs
 from clue_agents import AgentProfileRegistry
+from clue_api.auth_tool_context import tool_context_for_principal
+from clue_api.auth_wiring import (
+    authenticated_route_resolvers,
+    install_auth_wiring,
+    principal_from_request,
+)
+from clue_api.chat import PrincipalResolver, chat_workspace_resolver, install_chat_surface
+from clue_api.chat.stream import install_chat_stream_surface
+from clue_api.frontend_read import (
+    frontend_read_workspace_resolver,
+    install_frontend_read_surface,
+)
 from clue_api.ingestion_tools import (
     build_ingestion_router,
 )
@@ -47,6 +59,7 @@ from clue_api.research_view_api import (
 )
 from clue_api.research_view_owner_refs import ProductionOwnerReferenceResolver
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
+from clue_auth import MembershipStateChanged, PrincipalService
 from clue_config import Settings, load_settings
 from clue_core import (
     EntityId,
@@ -62,10 +75,13 @@ from clue_core import (
 from clue_core.ingestion import IngestionJobId
 from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
-from clue_execution import OperationConflict
+from clue_execution import OperationConflict, ToolAuthorityStateChanged
 from clue_projections import (
+    DEFAULT_TURN_PAGE_SIZE,
     MANIFEST_OP_TOOLS,
+    MAX_TURN_PAGE_SIZE,
     PROJECTIONS_SCHEMA_VERSION,
+    InvalidCursorError,
     account_progress,
     agent_progress,
     agent_route,
@@ -104,8 +120,8 @@ from clue_toolbelt import (
 # Served on every projection/tool response so a consumer can confirm the shape it negotiated.
 PROJECTIONS_SCHEMA_HEADER = "X-Projections-Schema-Version"
 
-WorkspaceResolver = Callable[..., str]
-ActorResolver = Callable[..., Actor]
+WorkspaceResolver = Callable[..., str | Awaitable[str]]
+ActorResolver = Callable[..., Actor | Awaitable[Actor]]
 
 
 def header_workspace_resolver(
@@ -205,15 +221,25 @@ def create_projections_router(
     async def get_agent_project_turns(
         project_id: str,
         workspace_id: WorkspaceDep,
+        limit: Annotated[int, Query(ge=1, le=MAX_TURN_PAGE_SIZE)] = DEFAULT_TURN_PAGE_SIZE,
+        cursor: Annotated[str | None, Query()] = None,
     ) -> dict[str, Any]:
-        turns = await agent_turns_for_project(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            conn_factory=conn_factory,
-        )
+        # FI-1 defect L6: this listing had no LIMIT/cursor. ``turns`` keeps its element shape; the
+        # page now stops, and ``next_cursor`` (``null`` on the last page) carries the keyset.
+        try:
+            page = await agent_turns_for_project(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                limit=limit,
+                cursor=cursor,
+                conn_factory=conn_factory,
+            )
+        except InvalidCursorError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {
             "schema_version": PROJECTIONS_SCHEMA_VERSION,
-            "turns": [item.model_dump(mode="json") for item in turns],
+            "turns": [item.model_dump(mode="json") for item in page.items],
+            "next_cursor": page.next_cursor,
         }
 
     @router.get("/agent/turns/{turn_id}")
@@ -482,22 +508,41 @@ def create_projections_router(
         name: str,
         body: dict[str, Any],
         *,
+        request: Request,
         workspace_id: str,
         actor: Actor,
         quality_mode: str | None,
         idempotency_key: str | None,
     ) -> ToolResult:
-        ctx = ToolContext(
-            workspace_id=workspace_id,
-            actor=actor,
-            conn_factory=conn_factory,
-            operation_id=(
-                operation_id_from_key(workspace_id, f"tool:{name}:{idempotency_key}")
-                if idempotency_key is not None
-                else new_operation_id()
-            ),
-            quality_mode=quality_mode,
+        operation_id = (
+            operation_id_from_key(workspace_id, f"tool:{name}:{idempotency_key}")
+            if idempotency_key is not None
+            else new_operation_id()
         )
+        principal = principal_from_request(request)
+        if principal is not None:
+            if name.startswith(("launch_", "run_deep_")):
+                principal.require("research.launch")
+            elif name.startswith(("confirm_", "approve_", "override_", "decide_")):
+                principal.require("research.approve_spend")
+            elif name.startswith("estimate_"):
+                principal.require("research.estimate")
+            elif not name.startswith(("read_", "get_")):
+                principal.require("thread.write")
+            ctx = tool_context_for_principal(
+                principal,
+                conn_factory=conn_factory,
+                operation_id=operation_id,
+                quality_mode=quality_mode,
+            )
+        else:
+            ctx = ToolContext(
+                workspace_id=workspace_id,
+                actor=actor,
+                conn_factory=conn_factory,
+                operation_id=operation_id,
+                quality_mode=quality_mode,
+            )
         try:
             return await tool_invoker.invoke(
                 name,
@@ -532,9 +577,14 @@ def create_projections_router(
                 status_code=409,
                 detail={"error": "idempotency_conflict", "reason": "operation"},
             ) from exc
+        except ToolAuthorityStateChanged as exc:
+            raise MembershipStateChanged(
+                "workspace membership changed before the tool effect was journaled"
+            ) from exc
 
     @router.post("/tools/{name}")
     async def post_tool(
+        request: Request,
         name: str,
         body: dict[str, Any],
         workspace_id: WorkspaceDep,
@@ -545,6 +595,7 @@ def create_projections_router(
         result = await _invoke(
             name,
             body,
+            request=request,
             workspace_id=workspace_id,
             actor=actor,
             quality_mode=quality_mode,
@@ -556,6 +607,7 @@ def create_projections_router(
 
     @router.patch("/project_runs/{project_run_id}/manifest")
     async def patch_manifest(
+        request: Request,
         project_run_id: UUID,
         op_request: ManifestOpRequest,
         workspace_id: WorkspaceDep,
@@ -589,6 +641,7 @@ def create_projections_router(
         result = await _invoke(
             tool_name,
             tool_body,
+            request=request,
             workspace_id=workspace_id,
             actor=actor,
             quality_mode=None,
@@ -694,7 +747,12 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
         startup_check = getattr(_app.state, "startup_check", None)
         if startup_check is not None:
             await startup_check()
-        yield
+        try:
+            yield
+        finally:
+            auth_closer = getattr(_app.state, "auth_closer", None)
+            if auth_closer is not None:
+                await auth_closer()
 
 
 def create_projections_app(
@@ -716,6 +774,10 @@ def create_projections_app(
     research_view_owner_references: ProductionOwnerReferenceResolver | None = None,
     startup_check: Callable[[], Awaitable[None]] | None = None,
     discovery_webhook_router: APIRouter | None = None,
+    chat_principal_resolver: PrincipalResolver | None = None,
+    chat_stream_live_tail: bool = True,
+    auth_service: PrincipalService | None = None,
+    auth_closer: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -723,15 +785,24 @@ def create_projections_app(
     C5.1 journaled invocation boundary. ``conn_factory`` is the connection seam every projection
     read + tool precondition + stream-token write uses (tests bind a savepoint-scoped factory).
     ``workspace_resolver`` / ``actor_resolver`` swap the auth seams via ``dependency_overrides``.
+    ``auth_service`` is Lane B's authenticated principal chain; when present it governs the chat
+    surface's identity (and, absent explicit resolvers, the other surfaces' workspace/actor seams).
+    ``chat_principal_resolver`` injects a deterministic test/development ``RequestPrincipal``
+    instead; without either, the chat surface may only run under ``local_header`` auth mode, and
+    supplying both is refused at composition rather than resolved silently.
     ``sse_live_tail=False`` makes the SSE stream replay-then-close (deterministic for tests);
-    production leaves it ``True`` (an open live stream)."""
+    production leaves it ``True`` (an open live stream). ``chat_stream_live_tail`` is the same
+    switch for FI Lane D D3's turn stream."""
     resolved = settings if settings is not None else load_settings()
+    if resolved.auth_environment == "production" and auth_service is None:
+        raise RuntimeError("production projections require the authenticated principal service")
     app = FastAPI(
         title="Clue-HQ platform — projections + toolbelt + SSE",
         version=PROJECTIONS_SCHEMA_VERSION,
         lifespan=_projections_lifespan if manage_db_lifespan else None,
     )
     app.state.startup_check = startup_check
+    app.state.auth_closer = auth_closer
 
     # Review F3: actually serve the declared schema header on EVERY response (JSON routes and the
     # SSE stream alike — response headers precede the streamed body), so a consumer can confirm the
@@ -742,10 +813,47 @@ def create_projections_app(
         response.headers[PROJECTIONS_SCHEMA_HEADER] = PROJECTIONS_SCHEMA_VERSION
         return response
 
+    # FI-2 slice 1: the `/frontend/v1` read surface — its own router, error envelope, request id,
+    # and the process's CORS policy. Both halves are default-off (flag / empty origins), so an
+    # unconfigured deployment is byte-identical to the pre-FI-2 app.
+    install_frontend_read_surface(app, settings=resolved, conn_factory=conn_factory)
+    if auth_service is not None:
+        install_auth_wiring(app, service=auth_service)
+        if workspace_resolver is None and actor_resolver is None:
+            workspace_resolver, actor_resolver = authenticated_route_resolvers(auth_service)
+
+    # FI Lane D D0: the `/api/v1` chat surface — REQ-21's thread shell. Default-off flag; enabled
+    # outside local_header auth mode it demands a real Lane B principal (either the authenticated
+    # service below, or an injected resolver) and refuses to start without one. Supplying both is
+    # a contradiction the installer refuses outright.
+    install_chat_surface(
+        app,
+        settings=resolved,
+        conn_factory=conn_factory,
+        tool_invoker=tool_invoker,
+        principal_resolver=chat_principal_resolver,
+        auth_service=auth_service,
+        # D2's turn submission captures the user's bytes as a durable artifact before enqueueing.
+        # The same backend the ingestion surface already uses; nothing model-shaped is added here.
+        storage=ingestion_storage,
+    )
+
+    # FI Lane D D3: the turn stream (attach/stop/retry/hydrated cold load), behind the same
+    # default-off flag and governed by the same principal resolver the chat surface installed.
+    install_chat_stream_surface(
+        app,
+        settings=resolved,
+        conn_factory=conn_factory,
+        storage=ingestion_storage,
+        live_tail=chat_stream_live_tail,
+    )
+
     if workspace_resolver is not None:
         app.dependency_overrides[header_workspace_resolver] = workspace_resolver
         app.dependency_overrides[ingestion_header_workspace_resolver] = workspace_resolver
         app.dependency_overrides[research_workspace_resolver] = workspace_resolver
+        app.dependency_overrides[frontend_read_workspace_resolver] = workspace_resolver
+        app.dependency_overrides[chat_workspace_resolver] = workspace_resolver
     if actor_resolver is not None:
         app.dependency_overrides[header_actor_resolver] = actor_resolver
         app.dependency_overrides[ingestion_header_actor_resolver] = actor_resolver

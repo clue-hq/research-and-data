@@ -1,0 +1,78 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  backendPath,
+  backendRequestHeaders,
+  browserResponseHeaders,
+  hasAllowedOrigin,
+} from "./bff";
+
+test("BFF path encoding cannot escape the configured backend origin", () => {
+  assert.equal(
+    backendPath(["v1", "projects", "../other"]),
+    "/v1/projects/..%2Fother",
+  );
+  assert.throws(() => backendPath(["v1", "..", "admin"]), /dot segments/);
+});
+
+test("BFF permits only same-origin browser mutations", () => {
+  assert.equal(
+    hasAllowedOrigin(
+      new Request("https://app.example/api/clue/tools/run", {
+        method: "POST",
+        headers: { Origin: "https://app.example" },
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    hasAllowedOrigin(
+      new Request("https://app.example/api/clue/tools/run", {
+        method: "POST",
+        headers: { Origin: "https://attacker.example" },
+      }),
+    ),
+    false,
+  );
+  assert.equal(
+    hasAllowedOrigin(
+      new Request("https://app.example/api/clue/tools/run", { method: "POST" }),
+    ),
+    false,
+  );
+});
+
+test("BFF forwards a narrow header allowlist and never browser cookies", () => {
+  const incoming = new Headers({
+    Cookie: "__session=secret",
+    Authorization: "Bearer browser-controlled",
+    "Content-Type": "application/json",
+    "Idempotency-Key": "idem-1",
+    "X-Workspace-Id": "browser-workspace",
+  });
+  const outgoing = backendRequestHeaders(incoming, {
+    token: "server-session-token",
+    workspaceId: "ws_internal",
+  });
+
+  assert.equal(outgoing.get("authorization"), "Bearer server-session-token");
+  assert.equal(outgoing.get("x-clue-workspace-id"), "ws_internal");
+  assert.equal(outgoing.get("idempotency-key"), "idem-1");
+  assert.equal(outgoing.get("cookie"), null);
+  assert.equal(outgoing.get("x-workspace-id"), null);
+});
+
+test("BFF response never forwards backend cookies or authentication headers", () => {
+  const outgoing = browserResponseHeaders(
+    new Headers({
+      "Content-Type": "application/json",
+      "Set-Cookie": "backend=secret",
+      Authorization: "Bearer secret",
+      "X-Request-Id": "request-1",
+    }),
+  );
+  assert.equal(outgoing.get("content-type"), "application/json");
+  assert.equal(outgoing.get("x-request-id"), "request-1");
+  assert.equal(outgoing.get("set-cookie"), null);
+  assert.equal(outgoing.get("authorization"), null);
+});

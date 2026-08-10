@@ -12,6 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 
 from clue_api.account_entity_research_composition import account_research_profile_sha256
+from clue_api.account_research_estimate import (
+    AccountTierCheckpointMissing,
+    compute_account_research_estimate,
+)
 from clue_api.account_research_fleet import (
     AccountResearchFleetError,
     AccountResearchFleetPolicy,
@@ -21,7 +25,6 @@ from clue_api.account_research_fleet import (
 from clue_core import (
     EntityId,
     EntityScope,
-    ExtractionMethod,
     ProjectRunId,
     ResearchDirectiveId,
     ResearchDirectiveStatus,
@@ -41,8 +44,8 @@ from clue_core.entity_research import (
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet import EntityResearchJobEnvelope, EntityResearchRunEnvelope
-from clue_research.claimstore import WorkspaceScope, claims_for
-from clue_research.directives import effective_account_research_directive, get_research_directive
+from clue_research.claimstore import record_run_lineage
+from clue_research.directives import get_research_directive
 from clue_research.durable import (
     ensure_account_run,
     get_project_run,
@@ -80,7 +83,6 @@ _SUPPORTED_FIELD_SOURCES = frozenset(
         TECH_STACK_SOURCE_KEY,
     }
 )
-_TIER_FIELD = "account.scoring.tier"
 
 
 class AccountResearchFleetLaunchError(RuntimeError):
@@ -152,8 +154,7 @@ class AccountResearchFleetLauncher:
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
                 {
                     "scope": (
-                        f"account-research-launch:{request.workspace_id}:"
-                        f"{source_operation_id}"
+                        f"account-research-launch:{request.workspace_id}:{source_operation_id}"
                     )
                 },
             )
@@ -180,6 +181,10 @@ class AccountResearchFleetLauncher:
                 or directive.status is not ResearchDirectiveStatus.CONFIRMED
                 or directive.confirming_turn_ref is None
                 or directive.confirmed_at is None
+                # All three halves of the confirmation receipt or none: the directive's own row is
+                # the only place the human approver is recorded, and the frozen selection below
+                # cites it (see ``confirmed_by`` there).
+                or directive.confirmed_by is None
             ):
                 raise AccountResearchFleetLaunchError(
                     "account research requires the current human-confirmed directive"
@@ -198,40 +203,51 @@ class AccountResearchFleetLauncher:
                     "directive policy does not authorize account research"
                 )
 
-            effective_by_account = {}
-            pins_by_account = {}
-            estimated_cost = Decimal(0)
-            for account_id in account_ids:
-                effective = await effective_account_research_directive(
+            # FI Lane D D4 (§3-P5(b), ratified §6-D5): the Σ per-account budget-cap loop moved to
+            # ``clue_api.account_research_estimate`` verbatim so the directive-confirmation gate
+            # can write **the same number** this launcher then verifies. One computation, two
+            # callers; the exact-match verification below is unchanged and stays the launcher's.
+            try:
+                estimate = await compute_account_research_estimate(
                     conn,
                     workspace_id=request.workspace_id,
+                    project_run_id=ProjectRunId(request.project_run_id),
                     directive_id=directive.directive_id,
-                    account_id=account_id,
+                    account_ids=account_ids,
                 )
-                matching_tiers = []
-                for claim in await claims_for(
-                    conn,
-                    account_id,
-                    _TIER_FIELD,
-                    scope=WorkspaceScope.for_workspace(request.workspace_id),
-                ):
-                    value = claim.value_json
-                    if (
-                        isinstance(value, dict)
-                        and claim.extraction_method is ExtractionMethod.HUMAN
-                        and claim.source_tier == 1
-                        and value.get("project_run_id") == str(request.project_run_id)
-                        and value.get("tier") == effective.effort_policy.tier
-                        and value.get("disposition") == "selected"
-                    ):
-                        matching_tiers.append(claim)
-                if len(matching_tiers) != 1:
-                    raise AccountResearchFleetLaunchError(
-                        f"account {account_id} lacks one exact human-approved selected tier"
-                    )
-                effective_by_account[account_id] = effective
-                pins_by_account[account_id] = effective.pin
-                estimated_cost += effective.effort_policy.budget_cap_cents
+            except AccountTierCheckpointMissing as exc:
+                raise AccountResearchFleetLaunchError(str(exc)) from exc
+            effective_by_account = estimate.effective_by_account
+            pins_by_account = {
+                account_id: effective.pin for account_id, effective in effective_by_account.items()
+            }
+            estimated_cost = estimate.total_cents
+            # FI-2 §6.2 estimate netting (spec §11 open item 3, a "should-have"): the estimate is
+            # deliberately **gross** — it is not reduced by the fields the fresh-skip will make
+            # free.  Four verified reasons, recorded so this is a decision and not an oversight:
+            #
+            # 1. ``effort_policy.budget_cap_cents`` is a per-account *cap*, not a per-field price.
+            #    Nothing decomposes it per field, so "netting" it means inventing a cost model the
+            #    directive does not carry.
+            # 2. The same number is each job's ``budget_cap_cents`` below (and this sum is what
+            #    ``approved_budget_cap_cents`` must cover).  Netting the sum without netting the
+            #    per-job caps would let a launch be approved for less than the authority it hands
+            #    out — the dangerous direction.
+            # 3. ``expected_estimated_cost_cents`` is a *caller-supplied* input, equality-checked
+            #    here; there is no server-side estimate-proposal surface for this launch at all
+            #    (``LaunchAccountResearchTool.estimate`` just echoes the input back).  So netting
+            #    would break every existing caller and has no producer to move in step — the
+            #    opposite of "minimal".
+            # 4. A launch-time freshness probe is a *prediction* that the runtime re-takes when the
+            #    job plans, and it would enter the durably-replayed launch identity: a claim that
+            #    expires between launch and replay would change the number and turn a legitimate
+            #    idempotent replay into a conflict.
+            #
+            # The honest consequence, stated rather than hidden: the estimate is a **ceiling**, and
+            # the fresh-skip materialises as under-spend.  Where the money actually went is already
+            # answerable from data — per-job spend on the job row, and the coverage ledger's
+            # per-field ``…:existing_claim_fresh`` skip reasons.  Netting belongs with an estimate
+            # *proposal* surface, so both sides of the equality can move together.
             if estimated_cost != request.expected_estimated_cost_cents:
                 raise AccountResearchFleetLaunchError(
                     "approved estimate differs from the current effective directives"
@@ -241,9 +257,7 @@ class AccountResearchFleetLauncher:
                     "approved account-fleet budget is below the reviewed estimate"
                 )
             if project_run.budget_cap_cents is not None:
-                remaining = max(
-                    Decimal(0), project_run.budget_cap_cents - project_run.spent_cents
-                )
+                remaining = max(Decimal(0), project_run.budget_cap_cents - project_run.spent_cents)
                 if request.approved_budget_cap_cents > remaining:
                     raise AccountResearchFleetLaunchError(
                         "approved account-fleet budget exceeds remaining project headroom"
@@ -350,9 +364,7 @@ class AccountResearchFleetLauncher:
 
             source_keys = tuple(
                 dict.fromkeys(
-                    source
-                    for authority in authorities
-                    for source in authority.source_keys
+                    source for authority in authorities for source in authority.source_keys
                 )
             )
             admitted_sources = (*source_keys, PEOPLE_SOURCE_KEY)
@@ -380,9 +392,7 @@ class AccountResearchFleetLauncher:
                     "approved_budget_cap_cents": request.approved_budget_cap_cents,
                     "expected_estimated_cost_cents": request.expected_estimated_cost_cents,
                     "concurrency_limit": request.concurrency_limit,
-                    "supervisor_policy_sha256": (
-                        request.supervisor_policy.policy_sha256
-                    ),
+                    "supervisor_policy_sha256": (request.supervisor_policy.policy_sha256),
                     "actor": actor,
                     "source_action_ref": source_action_ref,
                     "source_operation_id": str(source_operation_id),
@@ -420,11 +430,45 @@ class AccountResearchFleetLauncher:
                     request.supervisor_policy.policy_ref,
                 ),
                 budget_envelope_ref=f"account-research-launch:{request_sha}",
-                approval_refs=(source_action_ref, directive.confirming_turn_ref),
-                confirmed_by=actor,
+                # The launching action and the directive's confirming turn, de-duplicated. They are
+                # usually two acts ("you confirmed the direction last week; you approve this launch
+                # now") and the pair records both. Under the FI Lane D Option-B kickoff they are
+                # deliberately **one** act: the user's structured approval confirms the directive
+                # and is the very turn the deepagent then launches from, so both names resolve to
+                # the same ``turn-action:`` receipt. Listing it twice would claim two approvals
+                # where there was one — and the selection contract rightly refuses duplicates.
+                approval_refs=tuple(
+                    dict.fromkeys((source_action_ref, directive.confirming_turn_ref))
+                ),
+                # The **human who confirmed the directive**, read from the directive row — not the
+                # identity that happens to be invoking the launch. Its pair, ``confirmed_at``, is
+                # already read from there, and the two must describe one act.
+                #
+                # Before the Lane B ⇄ Lane D join this was ``actor``, and the two agreed by luck:
+                # the launcher's caller was the same user. B4 makes the launching invoker a
+                # *service* principal whenever the deepagent launches from a model-planned node
+                # (Lane B ruling 8 — a worker executes an approved act without becoming its
+                # approver), so ``actor`` would now write ``svc_execution_worker`` into a field
+                # meaning "who approved this spend", beside a timestamp of when the human did.
+                # The receipt is the human's; the worker's identity is already recorded as the
+                # fleet row's creator and in the C5 journal.
+                confirmed_by=directive.confirmed_by,
                 confirmed_at=directive.confirmed_at,
             )
             research_run_id = uuid5(_RUN_NAMESPACE, request_sha)
+            # FI-2 P2 (spec §3): attribute the research run to its project inside the launch
+            # transaction — the same one the run/job rows below commit in. Idempotent, so a
+            # re-confirmed identical request (same ``request_sha`` -> same run id) re-registers
+            # harmlessly. The per-tool-call materialization runs derived from this id register
+            # themselves at their own mint sites (that is what ``claim.run_id`` actually carries).
+            await record_run_lineage(
+                conn,
+                run_id=research_run_id,
+                workspace_id=request.workspace_id,
+                kind="entity_research",
+                project_id=project_run.project_id,
+                project_run_id=UUID(str(request.project_run_id)),
+            )
             lifecycle = ResearchRunLifecycleContract(
                 run_id=research_run_id,
                 run_kind=ResearchRunKind.ACCOUNT_RESEARCH,

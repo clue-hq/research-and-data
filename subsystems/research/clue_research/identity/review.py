@@ -46,14 +46,16 @@ from clue_core import (
 )
 from clue_locks import multi_lock
 from clue_research.claimstore import (
-    DEFAULT_MERGE_POLICY,
     MergePolicy,
     WorkspaceScope,
+    active_merge_policy,
     claims_for,
     merge_claims,
 )
 from clue_research.identity.canonicalize import plan_merge
+from clue_research.identity.embedding import DEFAULT_EMBEDDER, Embedder, embed_account
 from clue_research.identity.entities import (
+    enrich_account,
     get_account,
     insert_account_entity,
     mark_merged,
@@ -63,6 +65,7 @@ from clue_research.identity.entities import (
 )
 from clue_research.identity.policy import DEFAULT_DISPOSITION_POLICY, DispositionPolicy
 from clue_research.identity.resolve import Observation, ResolutionResult
+from clue_research.membership import ensure_project_account
 
 
 class MergeConflictError(ValueError):
@@ -132,6 +135,9 @@ class ReviewTask(BaseModel):
     proposed_action: str
     subject_entity_id: EntityId | None
     workspace_id: str | None
+    # FI-2 P1: the project the admitting caller was discovering for. NULL = a projectless
+    # (workspace-level) admission, or a task enqueued before the column existed.
+    project_id: str | None = None
     status: ReviewStatus
     resolution: ReviewResolution | None
     resolved_by: str | None
@@ -351,6 +357,45 @@ async def auto_merge(
     return await _do()
 
 
+# --- enrichment on a strong-key match ---------------------------------------
+async def enrich_survivor(
+    conn: AsyncConnection,
+    *,
+    survivor_id: EntityId,
+    observation: Observation,
+    workspace_id: str,
+) -> bool:
+    """Fold what a new sighting knows into the account it auto-merged onto (FI-2 §8.2-H2).
+
+    An auto-merge with no ``subject_entity_id`` has no loser entity to canonicalize from — the
+    observation *is* the loser — so before this the whole sighting was thrown away: an import row
+    matching an existing account by domain contributed neither its alias nor a registry id the
+    account lacked, and the same row re-imported forever re-learned nothing.
+
+    This is the deliberately conservative counterpart to :func:`auto_merge`'s ``plan_merge``: the
+    survivor gains aliases / registry namespaces it lacks and fills an empty
+    ``primary_domain`` / ``hq_geo``, and never gives up a value it already asserts (including its
+    ``canonical_name`` — a merge may rename, an observation may not). Accounts only: a contact
+    sighting has no equivalent gap-fill contract yet (committee canonicalization is M8).
+
+    Returns whether the survivor changed. Runs in the caller's transaction, so the enrichment
+    commits with the disposition audit row that justifies it, or not at all.
+    """
+    if observation.entity_type is not EntityType.ACCOUNT:
+        return False
+    return await enrich_account(
+        conn,
+        survivor_id,
+        workspace_id=workspace_id,
+        primary_domain=observation.domain,
+        # The observation's own name is an alias of the account it resolved to — that is exactly
+        # what a future name-only sighting needs to hit (the ``alias_overlap`` arm, FI-2 §1.2-H1).
+        add_aliases=(observation.name, *observation.aliases),
+        add_registry_ids=observation.registry_ids,
+        hq_geo=observation.geo,
+    )
+
+
 # --- the disposition band policy --------------------------------------------
 async def disposition(
     conn: AsyncConnection,
@@ -360,17 +405,30 @@ async def disposition(
     policy: DispositionPolicy = DEFAULT_DISPOSITION_POLICY,
     redis: Redis | None = None,
     workspace_id: str,
+    project_id: str | None = None,
     decided_by: str = "auto",
     subject_entity_id: EntityId | None = None,
+    embedder: Embedder | None = None,
 ) -> Disposition:
     """Decide what to do with a resolution result (the seam callers use).
 
     * ``top_score ≥ auto_merge_threshold`` → **auto-merge**: the observation resolves to the top
       candidate; if a ``subject_entity_id`` was pre-admitted (e.g. an import row), it is merged into
-      the survivor. Returns the survivor id.
-    * mid-band → **review**: exactly one ``open`` task is enqueued; **no entity is mutated**.
+      the survivor. With no pre-admitted subject the observation itself is the loser, so
+      :func:`enrich_survivor` folds its aliases / registry ids / gap-filling domain+geo into the
+      survivor (FI-2 §8.2-H2) — a sighting is evidence, not a discard. Returns the survivor id.
+    * mid-band → **review**: exactly one ``open`` task is enqueued; **no entity is mutated**. The
+      caller's ``project_id`` (FI-2 P1) rides the task, so the human resolution can join the
+      resulting account to the project this admission was serving.
     * below ``review_low_threshold`` (or no candidate) → **new entity**: a fresh ``candidate`` is
       admitted from the observation (or the pre-admitted ``subject`` is kept). Returns the new id.
+
+    ``embedder`` (FI-2 §1.2-H1) embeds a *newly minted* account so the next encounter of the same
+    company can find it through the resolver's ANN arm. It is **optional**: passed ``None`` this
+    behaves exactly as it did before — the caller either embeds the entity itself (M5's import
+    pipeline does, right after this returns) or accepts that it stays unembedded. An entity this
+    call did not mint (an auto-merge survivor, a pre-admitted ``subject``) is never re-embedded
+    here — re-embedding is an explicit act (see :func:`~clue_research.identity.embed_account`).
     """
     top = result.top
     entity_type = observation.entity_type
@@ -390,6 +448,16 @@ async def disposition(
                 workspace_id=workspace_id,
             )
         else:
+            # No loser entity exists (the observation is the loser), so ``auto_merge``'s
+            # canonicalization has nothing to run on — FI-2 §8.2-H2 folds the sighting's own
+            # identifiers into the survivor instead, in this same transaction. Conservative and
+            # gap-filling: see :func:`enrich_survivor`.
+            await enrich_survivor(
+                conn,
+                survivor_id=survivor,
+                observation=observation,
+                workspace_id=workspace_id,
+            )
             await record_disposition(
                 conn,
                 entity_type=entity_type,
@@ -411,6 +479,7 @@ async def disposition(
             observation,
             result,
             workspace_id=workspace_id,
+            project_id=project_id,
             config_version=policy.version,
             subject_entity_id=subject_entity_id,
             proposed_action="merge_into",
@@ -430,6 +499,10 @@ async def disposition(
             registry_ids=observation.registry_ids,
             workspace_id=workspace_id,
         )
+        if embedder is not None:
+            # FI-2 §1.2-H1: embed at creation, or the next name-only encounter of this company
+            # scores with the cosine arm zeroed, falls below the review floor, and duplicates it.
+            await embed_account(conn, new_id, embedder=embedder)
     if new_id is None:
         # A contact resolves *under* an account (M2.1), so it cannot be admitted standalone here;
         # the caller must pre-admit it (pass subject_entity_id). Fail loudly, never return None.
@@ -461,20 +534,29 @@ async def enqueue_review_task(
     *,
     config_version: int,
     workspace_id: str | None = None,
+    project_id: str | None = None,
     subject_entity_id: EntityId | None = None,
     proposed_action: str = "merge_into",
 ) -> EntityId:
-    """Enqueue one ``open`` review task for an ambiguous match (mutates no entity)."""
+    """Enqueue one ``open`` review task for an ambiguous match (mutates no entity).
+
+    ``project_id`` (FI-2 P1) records which project the admitting caller was discovering for, so the
+    resolution can join the resulting account to it. It is the *same* value that caller would have
+    written the membership with had the candidate been admitted outright, which is why the two can
+    never disagree. Optional: a projectless admission leaves it ``NULL`` and its resolution writes
+    no membership. A named composite FK anchors ``(project_id, workspace_id)`` to one project, and
+    a named CHECK refuses a project without a workspace (migration ``9c8cbd79a0e7``).
+    """
     row = await conn.execute(
         text(
             """
             INSERT INTO identity_review_task (
                 entity_type, observation_json, candidates_json, proposed_action,
-                subject_entity_id, workspace_id, config_version
+                subject_entity_id, workspace_id, project_id, config_version
             ) VALUES (
                 CAST(:entity_type AS entity_type), CAST(:observation_json AS jsonb),
                 CAST(:candidates_json AS jsonb), :proposed_action, :subject_entity_id,
-                :workspace_id, :config_version
+                :workspace_id, :project_id, :config_version
             ) RETURNING id
             """
         ),
@@ -485,6 +567,7 @@ async def enqueue_review_task(
             "proposed_action": proposed_action,
             "subject_entity_id": subject_entity_id,
             "workspace_id": workspace_id,
+            "project_id": project_id,
             "config_version": config_version,
         },
     )
@@ -505,7 +588,7 @@ async def enqueue_review_task(
 
 _TASK_COLUMNS = (
     "id, entity_type, observation_json, candidates_json, proposed_action, subject_entity_id, "
-    "workspace_id, status, resolution, resolved_by, config_version"
+    "workspace_id, project_id, status, resolution, resolved_by, config_version"
 )
 
 
@@ -519,6 +602,7 @@ def _row_to_task(row: dict[str, object]) -> ReviewTask:
             "proposed_action": row["proposed_action"],
             "subject_entity_id": row["subject_entity_id"],
             "workspace_id": row["workspace_id"],
+            "project_id": row["project_id"],
             "status": row["status"],
             "resolution": row["resolution"],
             "resolved_by": row["resolved_by"],
@@ -629,6 +713,38 @@ async def _close_task(
     )
 
 
+async def _join_enqueuing_project(
+    conn: AsyncConnection, task: ReviewTask, entity_id: EntityId
+) -> None:
+    """Join a review-resolved account to the project whose admission enqueued the task (FI-2 P1).
+
+    The mid-band admission admitted nothing, so it could not record the membership itself; the
+    project rode the task instead, and this closes the loop in the resolution's own transaction.
+    Idempotent (first add wins), so a caller that *also* re-joins the account by another route —
+    the Exa D4 materializer re-runs its own ensure when it resumes a resolved batch — writes a
+    harmless no-op rather than a second, later add.
+
+    Degrades on a task with no project (a projectless admission, or one predating migration
+    ``9c8cbd79a0e7``): resolution then behaves exactly as it did before FI-2. Contact tasks are
+    skipped — ``project_account`` keys on accounts, and a contact resolves *under* one.
+
+    ``added_via='discovered'``: reaching the mid-band is the identity gate's discovery path. A
+    caller whose join provenance differs (``admit(added_via=...)``) does not survive into the task,
+    which records no channel — a known, deliberate narrowing, not an oversight.
+    """
+    if task.project_id is None or task.workspace_id is None:
+        return
+    if task.entity_type is not EntityType.ACCOUNT:
+        return
+    await ensure_project_account(
+        conn,
+        workspace_id=task.workspace_id,
+        project_id=task.project_id,
+        account_entity_id=entity_id,
+        added_via="discovered",
+    )
+
+
 # --- the review resolve API -------------------------------------------------
 async def resolve_merge_into(
     conn: AsyncConnection,
@@ -654,6 +770,7 @@ async def resolve_merge_into(
             config_version=task.config_version,
             workspace_id=task.workspace_id,
         )
+    await _join_enqueuing_project(conn, task, survivor_id)
     await _close_task(
         conn,
         task_id,
@@ -675,10 +792,24 @@ async def resolve_merge_into(
 
 
 async def resolve_create_new_entity(
-    conn: AsyncConnection, task_id: EntityId, *, resolved_by: str
+    conn: AsyncConnection,
+    task_id: EntityId,
+    *,
+    resolved_by: str,
+    embedder: Embedder = DEFAULT_EMBEDDER,
 ) -> EntityId:
     """Human decision: none of the candidates match → admit a new ``candidate`` entity from the
-    observation (or keep the pre-admitted subject) and close the task."""
+    observation (or keep the pre-admitted subject) and close the task.
+
+    ``embedder`` embeds the account this resolution mints (FI-2 §1.2-H1). Unlike :func:`disposition`
+    — whose callers include M5's import pipeline, which embeds the entity itself right afterwards —
+    this path has **no** caller that embeds on its behalf, so the dependency is *defaulted, not
+    optional*: an unembedded human-minted account is invisible to the resolver's ANN arm, so the
+    next name-only encounter of that company duplicates it, re-opening the very ambiguity this
+    resolution just settled. Making the M2.4 review surface remember to pass one would be a
+    silent-by-default trap; the default embedder is deterministic and offline, so always embedding
+    here costs one upsert. Pass an explicit embedder only to swap the model.
+    """
     task = await get_task(conn, task_id)
     if task is None:
         raise ValueError(f"review task {task_id} not found")
@@ -698,11 +829,13 @@ async def resolve_create_new_entity(
             registry_ids=obs.registry_ids,
             workspace_id=task.workspace_id,
         )
+        await embed_account(conn, new_id, embedder=embedder)
     if new_id is None:
         raise NotImplementedError(
             "cannot admit a new contact entity without an account_entity_id — the task must carry "
             "a subject_entity_id (committee contact creation is M8)"
         )
+    await _join_enqueuing_project(conn, task, new_id)
     await _close_task(
         conn,
         task_id,
@@ -788,7 +921,15 @@ async def split_merge(
 
     Restoration is for the common case (a single merge, reversed before the survivor changed); it
     clears the absorbed keys from the survivor first so the partial-unique constraints permit the
-    loser to take them back. If no auto-merge audit is found, only the pointer is un-set."""
+    loser to take them back. If no auto-merge audit is found, only the pointer is un-set.
+
+    **Known gap — FI-2 ``project_account`` membership is NOT restored.** ``mark_merged`` re-points
+    the loser's project memberships onto the survivor (``membership.repoint_project_accounts``), and
+    this split does not move them back: the revived loser comes back with zero memberships and the
+    survivor keeps the absorbed ones. Restoring them needs the moved ``project_id``s recorded in the
+    merge's disposition payload (the way ``relinquished_strong_keys`` already is), which is real
+    scope for the **M2.4 review-surface composition** — uncomposed today, so the gap is accepted and
+    deferred rather than half-built here."""
     table = _entity_table(entity_type)
     prior = await _latest_auto_merge(conn, loser_id)
 
@@ -901,7 +1042,7 @@ async def current_value_resolved(
     *,
     scope: WorkspaceScope,
     entity_type: EntityType = EntityType.ACCOUNT,
-    policy: MergePolicy = DEFAULT_MERGE_POLICY,
+    policy: MergePolicy | None = None,
 ) -> CurrentValue | None:
     """The current truth for a field, **resolved across a merge**: claims attached to any entity
     that merged into the survivor are read under the survivor (substrate §2). Reuses M1's pure
@@ -910,7 +1051,10 @@ async def current_value_resolved(
     ``scope`` is **required** (M2.5 — fail-closed), exactly like :func:`current_value`: the
     merge-resolved read crosses *entities*, not *tenants*, so the tenant filter is applied to every
     member's claims — a tenant scope never surfaces another tenant's private claim under the merge.
+    ``policy=None`` resolves to :func:`active_merge_policy` (the toggle-aware effective default).
     """
+    if policy is None:
+        policy = active_merge_policy()
     survivor = await surviving_id(conn, entity_id, entity_type)
     members = await merged_member_ids(conn, survivor, entity_type)
     claims: list[Claim] = []

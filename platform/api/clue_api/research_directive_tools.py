@@ -10,6 +10,7 @@ from typing import Annotated, ClassVar
 from pydantic import ConfigDict, Field, StringConstraints, model_validator
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.auth_tool_context import require_human_authority
 from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_core import (
     USER_RESEARCH_INSTRUCTION_MAX_BYTES,
@@ -387,8 +388,15 @@ class ConfirmAccountResearchDirectiveTool(Tool):
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ConfirmAccountResearchDirectiveInput)
-        if ctx.actor != "human":
-            return _failure("human_required", "only a human can confirm research direction")
+        authority = require_human_authority(
+            ctx,
+            action_ref_required=True,
+            message=(
+                "confirmation requires authenticated human identity and captured action reference"
+            ),
+        )
+        if authority:
+            return authority
         if ctx.actor_id is None or ctx.action_ref is None:
             return _failure(
                 "trusted_human_receipt_required",
@@ -505,8 +513,15 @@ class ConfirmAccountResearchDirectiveToolV2(ConfirmAccountResearchDirectiveTool)
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ConfirmAccountResearchDirectiveInputV2)
-        if ctx.actor != "human":
-            return _failure("human_required", "only a human can confirm research direction")
+        authority = require_human_authority(
+            ctx,
+            action_ref_required=True,
+            message=(
+                "confirmation requires authenticated human identity and captured action reference"
+            ),
+        )
+        if authority:
+            return authority
         if ctx.actor_id is None or ctx.action_ref is None:
             return _failure(
                 "trusted_human_receipt_required",

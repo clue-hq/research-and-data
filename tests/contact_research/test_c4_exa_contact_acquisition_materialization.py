@@ -14,6 +14,7 @@ from typing import Any, cast
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
+from tests._run_lineage import assert_written_claims_are_attributable
 from tests.api.account_deep_test_support import confirmed_account_research_direction
 from tests.api.test_account_deep_fixture_a1 import _pages
 from tests.profiling.conftest import migrated_db as migrated_db
@@ -447,6 +448,16 @@ def test_c4_acquires_once_settles_once_materializes_governed_claim_and_replays(
             )
             provider_claims = [claim for claim in written if claim.source_key == "exa_deep"]
             assert len(provider_claims) == 1
+            # FI-2 P2: the materialization run the facet claims carry is registered under the
+            # intent's project, so the project lens can back-join them.
+            await assert_written_claims_are_attributable(
+                conn,
+                run_id,
+                kind="contact_research",
+                workspace_id=seed.intent.workspace_id,
+                project_id=seed.intent.project_id,
+                project_run_id=seed.intent.project_run_id,
+            )
             claim = provider_claims[0]
             assert claim.identity_binding is IdentityBinding.STRONG
             assert claim.use_class is UseClass.PROFESSIONAL_PUBLIC

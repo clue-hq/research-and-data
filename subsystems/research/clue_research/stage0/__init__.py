@@ -123,7 +123,11 @@ from clue_research.stage0.icp_types import (
     StartingSourceProfile,
     TechnographicDimension,
 )
-from clue_research.stage0.import_accounts import import_accounts, import_batch_run_id
+from clue_research.stage0.import_accounts import (
+    ImportProjectNotFound,
+    import_accounts,
+    import_batch_run_id,
+)
 from clue_research.stage0.import_fields import (
     CONTACT_IMPORT_RECORD,
     DISCOVERY_PROVENANCE,
@@ -271,6 +275,7 @@ __all__ = [
     # M5.3 — import entry scenario (bulk ID resolution + ICP back-scoring + non-fit flagging)
     "import_accounts",
     "import_batch_run_id",
+    "ImportProjectNotFound",
     # M5.3 input / output contracts
     "ImportRow",
     "ImportContactRow",

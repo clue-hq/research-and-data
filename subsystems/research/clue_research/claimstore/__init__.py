@@ -65,6 +65,7 @@ from clue_research.claimstore.merge import (
     DEFAULT_MERGE_POLICY,
     FreshnessMode,
     MergePolicy,
+    active_merge_policy,
     current_value,
     current_values,
     merge_claims,
@@ -82,6 +83,7 @@ from clue_research.claimstore.registry import (
     FieldRedefinitionError,
     FieldRegistryOrigin,
     FieldRegistryScope,
+    ResearchScopeError,
     ResolvedFieldDefinition,
     ReuseScopeError,
     UnknownFieldError,
@@ -91,6 +93,7 @@ from clue_research.claimstore.registry import (
     WorkspaceFieldRetiredError,
     assert_workspace_dynamic_client_kb_active,
     check_claim_writable,
+    field_species,
     get_corroboration_config,
     get_effective_field,
     get_field,
@@ -120,6 +123,13 @@ from clue_research.claimstore.research_view_routes import (
     ResearchViewRouteRedefinitionError,
     list_research_view_routes,
     register_research_view_route,
+)
+from clue_research.claimstore.run_lineage import (
+    RUN_LINEAGE_KINDS,
+    project_run_ids,
+    project_supersedable,
+    record_run_lineage,
+    runs_for_project_run,
 )
 from clue_research.claimstore.tenancy import ALL_WORKSPACES, PUBLIC_ONLY, WorkspaceScope
 
@@ -154,6 +164,7 @@ __all__ = [
     "MergePolicy",
     "FreshnessMode",
     "DEFAULT_MERGE_POLICY",
+    "active_merge_policy",
     "canonical_json",
     # entailment-question identity (PC-C8 §6c-b) — one definition three packages agree on
     "ENTAILMENT_JUDGMENT_NAMESPACE",
@@ -178,6 +189,7 @@ __all__ = [
     "get_workspace_field",
     "get_effective_field",
     "list_fields",
+    "field_species",
     "list_effective_fields",
     "validate_value",
     "validate_effective_value",
@@ -200,6 +212,7 @@ __all__ = [
     "ValueSchemaError",
     "FieldRedefinitionError",
     "ReuseScopeError",
+    "ResearchScopeError",
     "WorkspaceFieldDefinitionError",
     "WorkspaceDynamicClientKbErasedError",
     "WorkspaceFieldRetiredError",
@@ -217,4 +230,10 @@ __all__ = [
     "current_field_claims_resolved_for_product",
     "current_values_resolved_for_product",
     "live_derived_claims_for_research_view",
+    # FI-2 P2 run→project lineage
+    "RUN_LINEAGE_KINDS",
+    "record_run_lineage",
+    "project_run_ids",
+    "runs_for_project_run",
+    "project_supersedable",
 ]

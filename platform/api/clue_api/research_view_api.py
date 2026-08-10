@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import text
 
+from clue_api.auth_tool_context import tool_context_for_principal
+from clue_api.auth_wiring import principal_from_request
 from clue_api.research_view_owner_refs import (
     OwnerReferenceResolutionError,
     ProductionOwnerReferenceResolver,
@@ -267,6 +269,7 @@ def build_research_view_router(
 
     async def invoke_mutation(
         *,
+        request: Request,
         tool_name: str,
         body: dict[str, Any],
         workspace_id: str,
@@ -280,15 +283,29 @@ def build_research_view_router(
             workspace_id, f"tool:{tool_name}:{idempotency_key}"
         )
         try:
-            result = await tool_invoker.invoke(
-                tool_name,
-                body,
-                ToolContext(
+            principal = principal_from_request(request)
+            if principal is not None:
+                principal.require(
+                    "research.launch" if tool_name == "recheck_research_view" else "thread.write"
+                )
+            context = (
+                tool_context_for_principal(
+                    principal,
+                    conn_factory=conn_factory,
+                    operation_id=operation_id,
+                )
+                if principal is not None
+                else ToolContext(
                     workspace_id=workspace_id,
                     actor=actor,
                     conn_factory=conn_factory,
                     operation_id=operation_id,
-                ),
+                )
+            )
+            result = await tool_invoker.invoke(
+                tool_name,
+                body,
+                context,
                 version="1",
                 idempotency_key=idempotency_key,
             )
@@ -404,12 +421,14 @@ def build_research_view_router(
         return _page_view(view, section_kind=section_kind, cursor=cursor, limit=limit)
 
     async def post_snapshot(
+        request: Request,
         body: ComposeResearchViewRequest,
         workspace_id: WorkspaceDep,
         actor: ActorDep,
         idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     ) -> dict[str, Any]:
         return await invoke_mutation(
+            request=request,
             tool_name="compose_dossier",
             body=body.model_dump(mode="json"),
             workspace_id=workspace_id,
@@ -418,6 +437,7 @@ def build_research_view_router(
         )
 
     async def post_recheck(
+        request: Request,
         snapshot_id: UUID,
         body: RecheckResearchViewRequestBody,
         workspace_id: WorkspaceDep,
@@ -425,6 +445,7 @@ def build_research_view_router(
         idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     ) -> dict[str, Any]:
         return await invoke_mutation(
+            request=request,
             tool_name="recheck_research_view",
             body={**body.model_dump(mode="json"), "snapshot_id": str(snapshot_id)},
             workspace_id=workspace_id,
@@ -433,17 +454,21 @@ def build_research_view_router(
         )
 
     async def post_evidence_action(
+        request: Request,
         statement_id: UUID,
         body: EvidenceActionRequestBody,
         workspace_id: WorkspaceDep,
         actor: ActorDep,
     ) -> dict[str, Any]:
         require_workspace_admitted(workspace_id)
+        principal = principal_from_request(request)
+        if principal is not None:
+            principal.require("thread.write")
         result = await evidence_access.request_access(
             EvidenceAccessRequest(
                 workspace_id=workspace_id,
                 project_id=body.project_id,
-                actor_id=actor,
+                actor_id=principal.user_id if principal is not None else actor,
                 subject_entity_id=EntityId(body.subject_entity_id),
                 statement_id=ResearchStatementId(statement_id),
                 claim_id=ClaimId(body.claim_id),
@@ -557,6 +582,7 @@ def build_research_view_router(
         return payload
 
     async def post_legacy_dossier(
+        request: Request,
         body: ComposeResearchViewRequest,
         response: Response,
         workspace_id: WorkspaceDep,
@@ -564,6 +590,7 @@ def build_research_view_router(
         idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     ) -> dict[str, Any]:
         payload = await invoke_mutation(
+            request=request,
             tool_name="compose_dossier",
             body=body.model_dump(mode="json"),
             workspace_id=workspace_id,

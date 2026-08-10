@@ -38,6 +38,7 @@ from clue_core import (
     RunId,
 )
 from clue_db import ConnFactory, transaction
+from clue_research.claimstore import record_run_lineage
 from clue_research.discovery_scoring import (
     AdmissionStatus,
     CandidateHypothesis,
@@ -333,11 +334,31 @@ class ClueTrialSpine:
             icp_version=icp_version,
         )
         async with self._conn_factory() as conn:
+            # FI-2 P2 (spec §3): the trial admits accounts under the shared discovery run id
+            # without ever driving the DISCOVERY phase, so nothing else registers it. Registered
+            # here, in the same transaction as the admission's provenance claim; idempotent, so
+            # each further direct account re-registers the same run harmlessly.
+            await record_run_lineage(
+                conn,
+                run_id=UUID(str(run_id)),
+                workspace_id=state.workspace_id,
+                kind="discovery",
+                project_id=state.project_id,
+                project_run_id=UUID(str(project_run.project_run_id)),
+            )
+            # FI-2 P1 (spec §2): a human-added trial account joins the trial's project, in the
+            # same transaction as its admission. ``added_via`` records *how the account joined the
+            # project*, which here is a human typing a domain — the 'manual' channel. The
+            # candidate's reserved ``import`` matched_channel is the gate's resolution-path label
+            # (client-supplied, tier-1 data), not join provenance, so it is overridden explicitly
+            # rather than by bending the candidate.
             result = await admit(
                 conn,
                 candidate,
                 run_id,
                 workspace_id=state.workspace_id,
+                project_id=state.project_id,
+                added_via="manual",
             )
         if result.status is not AdmissionStatus.ADMITTED or result.account_entity_id is None:
             raise TrialAccountNotAdmitted(

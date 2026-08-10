@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from clue_core import (
     AccountStatus,
@@ -49,7 +50,8 @@ from clue_research.identity.review import (
     DispositionKind,
     ReviewResolution,
 )
-from tests._workspace import seed_workspace
+from clue_research.membership import accounts_for_project, projects_for_accounts
+from tests._workspace import seed_project, seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -575,5 +577,137 @@ def test_resolve_create_new_entity_on_unscoped_task_raises() -> None:
             task_id = await enqueue_review_task(conn, obs, result, config_version=1)
             with pytest.raises(ReviewTaskUnscopedError):
                 await resolve_create_new_entity(conn, task_id, resolved_by="test")
+
+    run_async(_run())
+
+
+# --- FI-2 P1: the review task carries its project, so a resolution joins it -----------------
+def test_resolve_create_new_entity_joins_the_enqueuing_project() -> None:
+    """FI-2 P1 (spec §2): a mid-band candidate admits nothing, so it joins nothing — but the task
+    remembers which project was discovering, and resolving it to a **new** entity makes that
+    account a target of that project, in the resolution's own transaction."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            project = await seed_project(conn, "ws-review-new", name="Review new entity")
+            ws = project.workspace_id
+            obs = Observation(name="Brand New Corp", domain="brandnew-review.example")
+            result = await resolve(conn, obs, workspace_id=ws)
+            task_id = await enqueue_review_task(
+                conn, obs, result, config_version=1, workspace_id=ws, project_id=project.project_id
+            )
+            task = await get_task(conn, task_id)
+            assert task is not None and task.project_id == project.project_id
+            # Nothing joined while the task is open — there is no entity yet.
+            assert (
+                await accounts_for_project(conn, workspace_id=ws, project_id=project.project_id)
+                == ()
+            )
+
+            new_id = await resolve_create_new_entity(conn, task_id, resolved_by="reviewer-fi2")
+            assert await accounts_for_project(
+                conn, workspace_id=ws, project_id=project.project_id
+            ) == (new_id,)
+            assert await projects_for_accounts(conn, workspace_id=ws, account_ids=[new_id]) == {
+                new_id: (project.project_id,)
+            }
+
+    run_async(_run())
+
+
+def test_resolve_merge_into_joins_the_enqueuing_project_on_the_survivor() -> None:
+    """The same for a merge_into resolution: the *survivor* joins the enqueuing project."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            project = await seed_project(conn, "ws-review-merge", name="Review merge into")
+            ws = project.workspace_id
+            survivor = await _seed(
+                conn, canonical_name="Acme", primary_domain="acme-review.example", workspace_id=ws
+            )
+            subject = await insert_account_entity(conn, canonical_name="Acme Co", workspace_id=ws)
+            obs = Observation(name="Acme Co")
+            result = await resolve(conn, obs, workspace_id=ws)
+            task_id = await enqueue_review_task(
+                conn,
+                obs,
+                result,
+                config_version=1,
+                workspace_id=ws,
+                subject_entity_id=subject,
+                project_id=project.project_id,
+            )
+            returned = await resolve_merge_into(conn, task_id, survivor, resolved_by="reviewer-fi2")
+            assert returned == survivor
+            assert await accounts_for_project(
+                conn, workspace_id=ws, project_id=project.project_id
+            ) == (survivor,)
+            # The merged-away subject holds no membership of its own.
+            assert await projects_for_accounts(conn, workspace_id=ws, account_ids=[subject]) == {}
+
+    run_async(_run())
+
+
+def test_resolve_without_a_project_writes_no_membership_and_does_not_fail() -> None:
+    """A task with no project (a projectless admission, or one enqueued before the column existed)
+    resolves exactly as it did before FI-2 — degrade, never fail."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws = await seed_workspace(conn, "ws-review-projectless")
+            obs = Observation(name="No Project Corp", domain="noproject-review.example")
+            result = await resolve(conn, obs, workspace_id=ws)
+            task_id = await enqueue_review_task(
+                conn, obs, result, config_version=1, workspace_id=ws
+            )
+            task = await get_task(conn, task_id)
+            assert task is not None and task.project_id is None
+            new_id = await resolve_create_new_entity(conn, task_id, resolved_by="reviewer-fi2")
+            assert await projects_for_accounts(conn, workspace_id=ws, account_ids=[new_id]) == {}
+
+    run_async(_run())
+
+
+def test_a_review_task_cannot_name_a_project_from_another_workspace() -> None:
+    """The composite (project_id, workspace_id) FK makes a cross-workspace review task
+    unrepresentable — the same anchor project_account itself uses."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            project = await seed_project(conn, "ws-review-owner", name="Owner")
+            other = await seed_workspace(conn, "ws-review-other")
+            obs = Observation(name="Foreign Corp", domain="foreign-review.example")
+            result = await resolve(conn, obs, workspace_id=other)
+            with pytest.raises(IntegrityError, match="identity_review_task_project_ws_fk"):
+                async with conn.begin_nested():
+                    await enqueue_review_task(
+                        conn,
+                        obs,
+                        result,
+                        config_version=1,
+                        workspace_id=other,
+                        project_id=project.project_id,
+                    )
+
+    run_async(_run())
+
+
+def test_a_review_task_project_requires_a_workspace() -> None:
+    """A project with no workspace would be a membership no lens read could anchor; the named CHECK
+    refuses it (the run_lineage_project_requires_project_id guard idiom)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            with pytest.raises(
+                IntegrityError, match="identity_review_task_project_requires_workspace"
+            ):
+                async with conn.begin_nested():
+                    await conn.execute(
+                        text(
+                            "INSERT INTO identity_review_task (entity_type, observation_json, "
+                            "candidates_json, proposed_action, config_version, project_id) "
+                            "VALUES ('account', '{}'::jsonb, '[]'::jsonb, 'merge_into', 1, 'prj-x')"
+                        )
+                    )
 
     run_async(_run())
