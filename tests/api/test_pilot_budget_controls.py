@@ -69,19 +69,47 @@ from clue_api.entity_research_parallel import (
     R9EntityResearchJobStore,
 )
 from clue_api.entity_research_runtime_wiring import DbEntityResearchAgentJournal
+from clue_api.exa_websets_acquisition import (
+    DiscoveryBudgetExceeded,
+    ExaWebsetsDiscoveryStarter,
+)
 from clue_api.trial.account_deep_fixture import seed_insight_health_account_deep_fixture
 from clue_config import Settings, load_settings
-from clue_core import ProjectPhase, ResearchQuestion
+from clue_core import (
+    ICPCreatedFrom,
+    PhaseContext,
+    ProjectPhase,
+    ProjectRunId,
+    ResearchQuestion,
+    new_project_run_id,
+)
 from clue_db import db_lifespan, transaction
 from clue_research.durable import (
     PhaseHandlerRegistry,
     ProjectRun,
     ProjectRunStatus,
+    ensure_project_run,
 )
+from clue_research.durable.account_gap_enrichment import reserve_account_gap_operation
 from clue_research.durable.budget import BudgetEngine
+from clue_research.durable.committee_acquisition import reserve_committee_acquisition
+from clue_research.durable.contact_channel import reserve_contact_channel_operation
+from clue_research.durable.discovery import reserve_discovery_operation
+from clue_research.durable.discovery_gap import reserve_discovery_gap_operation
 from clue_research.durable.enums import BudgetEventKind
+from clue_research.durable.external_research import reserve_external_research_operation
 from clue_research.durable.project import PHASE_SEQUENCE
+from clue_research.durable.provider_spend import (
+    ProviderSpendBudgetExceeded,
+    ProviderSpendRunIneligible,
+    require_provider_spend_capacity,
+)
+from clue_research.durable.targeted_enrichment import (
+    reserve_targeted_enrichment_operation,
+)
+from clue_research.icp import create_icp_spec
 from clue_storage import FsStorage
+from tests._workspace import seed_project
 from tests.agents.test_entity_research_runtime_r3 import Finalizer, Guard, Models
 from tests.api.account_deep_test_support import confirmed_account_research_direction
 from tests.api.test_account_deep_fixture_a1 import _pages
@@ -95,6 +123,8 @@ from tests.api.test_entity_research_parallel_r9_db import (
     _release,
     _runtime_context,
 )
+from tests.api.test_exa_websets_acquisition_d6 import _strategy
+from tests.api.test_exa_websets_submit_d2 import _RecordingTransport
 from tests.db.conftest import _db_available, run_async
 from tests.durable.conftest import (
     FakeBudgetStore,
@@ -733,7 +763,18 @@ def test_every_composition_root_threads_the_switch_rather_than_reading_it_global
         ),
         (phase_wiring.build_tier_checkpoint_handler, "enforce_budget"),
         (phase_wiring.register_tier_checkpoint_handler, "enforce_budget"),
+        (phase_wiring.build_reverse_profiling_handler, "enforce_budget"),
+        (phase_wiring.register_reverse_profiling_handler, "enforce_budget"),
         (agent_gate_wiring.register_agent_gate_tools, "budget_controls_enabled"),
+        # Fix round 1: the provider-spend chokepoint and every wrapper that reserves through it.
+        (require_provider_spend_capacity, "enforce_budget"),
+        (reserve_discovery_operation, "enforce_budget"),
+        (reserve_targeted_enrichment_operation, "enforce_budget"),
+        (reserve_discovery_gap_operation, "enforce_budget"),
+        (reserve_account_gap_operation, "enforce_budget"),
+        (reserve_committee_acquisition, "enforce_budget"),
+        (reserve_contact_channel_operation, "enforce_budget"),
+        (reserve_external_research_operation, "enforce_budget"),
     ):
         signature = inspect.signature(builder)
         assert parameter in signature.parameters, f"{builder.__qualname__} lost its switch"
@@ -760,3 +801,171 @@ def test_the_r9_coordinator_and_project_machine_default_to_enforcing() -> None:
     assert ProjectRun(store=FakeProjectRunStore(), registry=PhaseHandlerRegistry())._enforce_budget
 
     assert OpenDirectiveConfirmationGateTool()._budget_controls_enabled is True
+
+
+# --- fix round 1: the remaining live pre-action refusals the sweep found -----------------------
+#
+# The spec's §2 catch-all — "any other pre-action budget refusal found by the implementation sweep
+# is gated the same way (refuse→record)". Three sites reached the ruling's bar: they compare
+# accumulated spend against a *project-run* cap and stop work the human already approved. Each is
+# tested in both states. (The per-operation envelope family — the source waterfall, the source
+# planner, the recursion spawn guard, the committee stopping rule, the agent plan ceiling — is
+# ratified as shape rather than economics and stays enforced in both modes.)
+
+
+async def _run_at_cap(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    label: str,
+    phase: ProjectPhase,
+    cap: Decimal,
+    spent: Decimal,
+) -> tuple[Any, ProjectRunId]:
+    """One ACTIVE project run whose recorded spend already sits at its cap."""
+
+    project = await seed_project(conn, workspace_id, name=f"pilot spend {label}")
+    icp = await create_icp_spec(
+        conn,
+        workspace_id=workspace_id,
+        icp_key=f"pilot-{label}",
+        created_from=ICPCreatedFrom.SYNTHESIS,
+        field_keys=("core.primary_domain", "core.employee_count"),
+        discovery_strategy=_strategy(),  # type: ignore[arg-type]
+        activate=True,
+    )
+    run_id = new_project_run_id()
+    await ensure_project_run(
+        conn,
+        project_run_id=run_id,
+        project_id=project.project_id,
+        workspace_id=workspace_id,
+        icp_key=icp.icp_key,
+        icp_version=icp.version,
+        phase=phase,
+        status=ProjectRunStatus.ACTIVE,
+        budget_cap_cents=cap,
+    )
+    await conn.execute(
+        text("UPDATE project_run SET spent_cents = :spent WHERE id = :id"),
+        {"spent": spent, "id": run_id},
+    )
+    return project, run_id
+
+
+def test_the_provider_spend_chokepoint_admits_and_still_reports_when_controls_are_off() -> None:
+    """Fix round 1(a) — `require_provider_spend_capacity`, the seven-caller money chokepoint.
+
+    It guards every paid provider reservation on the live path (Exa deep, Exa discovery and
+    targeted enrichment, the Sumble gap/committee paths, contact channels), so a pilot run that
+    reached its project cap would otherwise hard-stop mid-research no matter what the toggle said.
+
+    With controls off it must not raise — and, just as importantly, it must still do everything
+    else: lock the run, prove the phase authority, and return the true cap/spend/outstanding, so
+    the caller writes its ledger row unchanged and the overspend is *recorded* rather than hidden.
+    """
+
+    if not _db_available():
+        pytest.skip("CLUE_DATABASE_URL unset or database unreachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            _, run_id = await _run_at_cap(
+                conn,
+                workspace_id="ws-pilot-spend",
+                label="chokepoint",
+                phase=ProjectPhase.DEEP,
+                cap=Decimal("100"),
+                spent=Decimal("100"),
+            )
+            over_cap = {
+                "project_run_id": run_id,
+                "proposed_cents": Decimal("50"),
+                "allowed_phases": frozenset({ProjectPhase.DEEP}),
+            }
+
+            with pytest.raises(ProviderSpendBudgetExceeded):
+                await require_provider_spend_capacity(conn, **over_cap)
+
+            capacity = await require_provider_spend_capacity(conn, **over_cap, enforce_budget=False)
+            # Admitted — and the numbers it reports are the honest ones, not zeroed.
+            assert capacity.project_run_id == run_id
+            assert capacity.phase is ProjectPhase.DEEP
+            assert capacity.cap_cents == Decimal("100")
+            assert capacity.spent_cents == Decimal("100")
+            assert capacity.proposed_cents == Decimal("50")
+            assert capacity.spent_cents + capacity.proposed_cents > capacity.cap_cents
+
+            # Every non-budget guard still refuses in BOTH modes: enforcement-off is not
+            # authority-off. A run outside its allowed phase is still ineligible.
+            with pytest.raises(ProviderSpendRunIneligible):
+                await require_provider_spend_capacity(
+                    conn,
+                    project_run_id=run_id,
+                    proposed_cents=Decimal("1"),
+                    allowed_phases=frozenset({ProjectPhase.DISCOVERY}),
+                    enforce_budget=False,
+                )
+
+    run_async(scenario())
+
+
+def test_the_exa_discovery_preflight_admits_past_the_project_cap_when_controls_are_off(
+    tmp_path: Path,
+) -> None:
+    """Fix round 1(b) — the Websets discovery preflight's remaining-headroom refusal.
+
+    The bound on *how much* one discovery may buy is the plan's own ``maximum_cost_cents``, a
+    structural fan-out cap; it is unchanged here and still rides the plan. Only the comparison
+    against the run's remaining headroom — a stop on budget grounds — goes inert.
+    """
+
+    if not _db_available():
+        pytest.skip("CLUE_DATABASE_URL unset or database unreachable")
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=True) as conn:
+            project, run_id = await _run_at_cap(
+                conn,
+                workspace_id="ws-pilot-discovery",
+                label="discovery",
+                phase=ProjectPhase.DISCOVERY,
+                cap=Decimal("1"),
+                spent=Decimal("1"),
+            )
+            ctx = PhaseContext(
+                project_run_id=run_id,
+                project_id=project.project_id,
+                brand_id=project.brand_id,
+                phase=ProjectPhase.DISCOVERY,
+                workspace_id="ws-pilot-discovery",
+                icp_key="pilot-discovery",
+                icp_version=1,
+                budget_cap_cents=Decimal("1"),
+            )
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            @asynccontextmanager
+            async def transport_context() -> AsyncIterator[_RecordingTransport]:
+                yield _RecordingTransport()
+
+            def starter(*, enforce_budget: bool) -> ExaWebsetsDiscoveryStarter:
+                return ExaWebsetsDiscoveryStarter(
+                    transport_factory=transport_context,
+                    storage=FsStorage(tmp_path / f"pilot-discovery-{enforce_budget}"),
+                    conn_factory=same_connection,
+                    enforce_budget=enforce_budget,
+                )
+
+            with pytest.raises(DiscoveryBudgetExceeded, match="remaining project-run budget"):
+                await starter(enforce_budget=True).preflight(ctx)
+
+            preflight = await starter(enforce_budget=False).preflight(ctx)
+            # Admitted, and still bounded by its own plan rather than by nothing at all.
+            assert preflight.maximum_cost_cents > Decimal("0")
+            assert preflight.plan.money_budget_cap_cents >= preflight.maximum_cost_cents
+
+    run_async(scenario())

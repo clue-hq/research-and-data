@@ -109,6 +109,32 @@ def test_handler_pauses_on_budget_exhaustion() -> None:
     run_async(_run())
 
 
+def test_handler_completes_instead_of_pausing_when_budget_controls_are_off() -> None:
+    """FI pilot budget-controls: an exhausted envelope may not hold the run.
+
+    The mirror of ``test_handler_pauses_on_budget_exhaustion`` on the identical over-budget setup.
+    The ruling is that nothing stops a pre-approved action on budget grounds, so the phase
+    COMPLETES — while ``budget_exhausted`` and the real ``cost_cents`` still ride the result, so
+    the record of what happened is unchanged and an operator can still see the envelope ran out.
+
+    The envelope itself is untouched: it still bounds how many client fields one phase resolves
+    (that is shape, not economics). Only its run-halting consequence is gated.
+    """
+
+    async def _run() -> None:
+        async with db_lifespan():
+            suffix = uuid4().hex[:12]
+            await _seed_committed(f"tenant-handler-{suffix}")
+            bind_resolver("firecrawl_site", FakeResolver(tier=2, values={CLIENT_VALUE_PROP: "ci"}))
+            ctx = _ctx(suffix, budget_cap_cents=Decimal("1.0"))
+            result = await ReverseProfilingHandler(enforce_budget=False).run(ctx)
+            assert result.status is PhaseStatus.COMPLETED
+            # Recording untouched: the phase reports honestly that it ran out of envelope.
+            assert result.payload["budget_exhausted"] is True
+
+    run_async(_run())
+
+
 def test_handler_idempotent_resume_across_commits() -> None:
     async def _run() -> None:
         async with db_lifespan():
