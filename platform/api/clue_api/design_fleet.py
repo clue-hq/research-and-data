@@ -81,8 +81,39 @@ def start_design_reaper(*, enabled: bool, interval_s: float) -> Any:
     return start_reaper(interval_s=interval_s)
 
 
+def start_design_event_pruner(*, interval_s: float, retention_s: float) -> Any:
+    """Start the D8 design run-event pruner, or ``None`` when off (``interval_s <= 0``).
+
+    Same lazy seam as the two above and, deliberately, a DIFFERENT switch. The handler and the
+    reaper are gated on ``design_runtime_enabled`` because both act on work — a deployment that
+    does not drain design turns must not claim or re-offer them. Retention is not work: it is a
+    substrate property of a shared table, and it is governed by its own interval knob
+    (``design_run_event_prune_interval_s``, **default 0 = disabled**), which is the founder-facing
+    switch for the one sweep in the platform that destroys durable run-visibility history.
+
+    Because that default is off, a platform worker without the design app installed never reaches
+    the import; a deployment that turns the sweep on and cannot import the design app fails loudly,
+    exactly as an enabled-but-unavailable handler does.
+
+    The retention floor is applied inside ``lumen_api.event_pruner`` (never here), so every entry
+    point into the pruner gets it. Must be called with a running event loop.
+    """
+    if interval_s <= 0:
+        return None
+    try:
+        from lumen_api.event_pruner import start_pruner
+    except Exception as error:  # pragma: no cover - deployment shape, not logic
+        raise DesignRuntimeUnavailable(
+            "design_run_event_prune_interval_s is set but lumen_api.event_pruner cannot be "
+            "imported; install the design app (subsystems/clue-design/apps/{api,agent_runtime}) "
+            "or unset CLUE_DESIGN_RUN_EVENT_PRUNE_INTERVAL_S"
+        ) from error
+    return start_pruner(interval_s=interval_s, retention_s=retention_s)
+
+
 __all__ = [
     "DesignRuntimeUnavailable",
     "build_design_job_handler",
+    "start_design_event_pruner",
     "start_design_reaper",
 ]

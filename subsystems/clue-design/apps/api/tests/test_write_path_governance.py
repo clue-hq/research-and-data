@@ -25,8 +25,8 @@ introduces one, the operation-core module that owns them). Nothing else changes.
 **Round C closed the list.** Rounds A and B deferred brand kits, ingestion, the asset registry,
 personalization and both batch families; all of them are governed here now, and
 ``UNCONVERTED_MUTATIONS`` has shrunk from "the scheduled backlog" to one closed *exemption* —
-the four run-lifecycle writes of the execution plane, which the fleet lease arbitrates rather
-than the toolbelt. ``test_unconverted_domains_are_explicitly_listed`` asserts that set exactly,
+the three run-lifecycle writes of the execution plane, which the fleet lease arbitrates rather
+than the toolbelt (D8 deleted a fourth, ``set_run_result``, for having no caller at all). ``test_unconverted_domains_are_explicitly_listed`` asserts that set exactly,
 so a later round cannot quietly park a new ungoverned write beside them.
 """
 
@@ -147,30 +147,35 @@ _GOVERNED: dict[str, tuple[str, tuple[str, ...]]] = {
 #: — is governed above. What remains is one closed category, and it is an *exemption by
 #: construction*, not a backlog:
 #:
-#: the durable RUN LIFECYCLE (``create_run`` / ``set_run_result`` / ``complete_run`` /
-#: ``emit_run_event``) is the EXECUTION plane. Those writes are made by a leased fleet worker
-#: driving a run it already owns, and they are fenced by the ``work_lease`` generation (the D5
-#: contract) — not by an idempotency key a caller supplies. Putting them behind the toolbelt
-#: would add a second, weaker authority over writes the lease already arbitrates, and would
-#: mean a worker journaling an invocation for every progress event of a run that is itself a
-#: journaled invocation. The one caller-initiated half — the ENQUEUE — is governed
-#: (``create_run_and_offer``, ``create_and_offer``).
+#: the durable RUN LIFECYCLE (``create_run`` / ``complete_run`` / ``emit_run_event``) is the
+#: EXECUTION plane. Those writes are made by a leased fleet worker driving a run it already owns,
+#: and they are fenced by the ``work_lease`` generation (the D5 contract) — not by an idempotency
+#: key a caller supplies. Putting them behind the toolbelt would add a second, weaker authority
+#: over writes the lease already arbitrates, and would mean a worker journaling an invocation for
+#: every progress event of a run that is itself a journaled invocation. The one caller-initiated
+#: half — the ENQUEUE — is governed (``create_run_and_offer``, ``create_and_offer``).
 #:
 #: **D7 renamed one member and changed nothing else about the category.** ``append_run_event``
 #: (the private ``design_run_event`` log) became ``emit_run_event`` (a ``design.run.event`` on the
 #: platform outbox). The exemption argument is unchanged and, if anything, stronger: the emit is
 #: now the *projection* of an already-governed durable write, so routing it through the toolbelt
-#: would journal an invocation whose only effect is to announce another invocation. The set stays
-#: closed at four, asserted by equality below.
+#: would journal an invocation whose only effect is to announce another invocation.
 #:
-#: Two facade methods were DELETED rather than governed, because nothing called them:
-#: ``set_document_account`` (the derive path sets the account inside ``create_web_document``) and
-#: ``register_scene_assets`` (every scene-persist path calls the DAL in-transaction). Minting a
-#: tool for a write no caller performs would have been governance theatre.
+#: **D8 removed a member by DELETING it, not by governing it.** ``set_run_result`` — the raw
+#: terminalize-without-emitting facade — had zero callers (every real terminal path goes through
+#: ``complete_run`` → ``run_stream.complete_run_and_emit``, which writes the result and its stream
+#: event in one fenced transaction). It was the only surface that could leave a run terminal with
+#: no terminal event, and the SSE loop carried a defensive branch solely to cover for it; both went
+#: together (R-D8-3). The set is now closed at THREE, asserted by equality below.
+#:
+#: Three facade methods were DELETED rather than governed, because nothing called them:
+#: ``set_document_account`` (the derive path sets the account inside ``create_web_document``),
+#: ``register_scene_assets`` (every scene-persist path calls the DAL in-transaction) and
+#: ``set_run_result`` (above). Minting a tool for a write no caller performs would have been
+#: governance theatre.
 UNCONVERTED_MUTATIONS: frozenset[str] = frozenset(
     {
         "create_run",
-        "set_run_result",
         "complete_run",
         "emit_run_event",
     }
@@ -257,32 +262,36 @@ def test_every_governed_name_actually_exists() -> None:
 
 
 def test_unconverted_domains_are_explicitly_listed() -> None:
-    """Every ungoverned mutation is one of the four run-lifecycle writes, and nothing else.
+    """Every ungoverned mutation is one of the three run-lifecycle writes, and nothing else.
 
-    Round C closed the last scheduled domain, so this list is now an exhaustive statement of an
+    Round C closed the last scheduled domain, so this list is an exhaustive statement of an
     EXEMPTION rather than a backlog: the execution plane's run-lifecycle writes, fenced by the
     fleet lease. The equality assertion is the point — a future round cannot quietly park a new
     ungoverned write here without changing this test. (D7 renamed ``append_run_event`` to
-    ``emit_run_event`` when the private event log became a subject on the platform outbox; the
-    category, and its size, are unchanged.)
+    ``emit_run_event`` when the private event log became a subject on the platform outbox; D8
+    deleted the caller-less ``set_run_result``, taking the set from four to three.)
     """
     from lumen_api.design_store import HybridRepository
 
     for name in UNCONVERTED_MUTATIONS:
         assert hasattr(HybridRepository, name), f"{name} is no longer a store method"
     assert not (set(_GOVERNED) & UNCONVERTED_MUTATIONS)
-    assert UNCONVERTED_MUTATIONS == frozenset(
-        {"create_run", "set_run_result", "complete_run", "emit_run_event"}
-    )
+    assert UNCONVERTED_MUTATIONS == frozenset({"create_run", "complete_run", "emit_run_event"})
 
 
 def test_the_deleted_dead_facade_methods_stay_deleted() -> None:
-    """``set_document_account`` and ``register_scene_assets`` had zero callers; Round C removed
-    them rather than minting tools for writes nobody performs. If either comes back it needs a
-    caller AND a tool — this test is the reminder, not a prohibition."""
+    """``set_document_account`` / ``register_scene_assets`` (Round C) and ``set_run_result`` (D8)
+    had zero callers and were removed rather than given tools for writes nobody performs.
+
+    ``set_run_result`` carries an extra condition: it was the ONLY path that could terminalize a
+    run without emitting its terminal stream event, and the design SSE loop's defensive
+    close-the-stream branch existed solely to cover for it. Both were deleted together (R-D8-3),
+    so bringing this one back needs a caller, a tool, AND a decision about that liveness net.
+    If any comes back it needs a caller AND a tool — this test is the reminder, not a prohibition.
+    """
     from lumen_api.design_store import HybridRepository
 
-    for name in ("set_document_account", "register_scene_assets"):
+    for name in ("set_document_account", "register_scene_assets", "set_run_result"):
         assert not hasattr(HybridRepository, name), (
             f"HybridRepository.{name} is back: give it a governed tool and a _GOVERNED entry"
         )

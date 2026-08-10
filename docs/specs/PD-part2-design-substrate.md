@@ -126,7 +126,53 @@ re-mint-and-resume-from-`Last-Event-ID` handshake. Gates: design-API suite **548
 six-suite set 206 + `tests/durable`+`tests/projections`+`test_run_event_subjects` 246 = **452/1s**;
 agent-runtime **551/2**; offline **2204/1537**; editor `tsc` clean + vitest **993/101**; db-smoke
 green through both migrations; single head `eb9c5b963f40`; mypy 594; 25/25 contracts.
-Next: D8 (closeout). Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
+**D8 EXECUTED 2026-08-10** (one migration: `6f81d8fd729a`, three retention indexes; the closeout
+slice — consolidation, retention, gate guards, DSAR assessment). **Outbox consolidation:** the
+run-events DAL has ONE owner, `clue_execution.run_events` (project writer, design writer with its
+refusals, the superset reader); the shared shapes *and the one `plan_replay`* live in
+`clue_core.run_event` (contract-delta 2026-08-10 — the planner's two consumers sit on opposite
+sides of the `clue_projections` ⊥ `clue_execution` import ban, so core is the only home where
+"one replay semantics" is structural); `clue_research.durable.run_events` is deleted,
+`clue_projections.events` is a documented re-export shim, the planner reads through an injected
+`RunEventReader` built at the composition roots, and the D7 parity tests became single-ownership
+identity guards. Import contracts unchanged at 25. **Dead code:** `HybridRepository.set_run_result`,
+the SSE loop's defensive terminal branch, and `_terminal_run` deleted as one unit —
+`UNCONVERTED_MUTATIONS` closed at three by equality, and the serve loop now reads no run row,
+structurally. **Retention (R-D8-4):** `sweep_stream_tokens` (default ON, hourly — a used/expired
+token is provably unreadable by every code path, so deletion is unobservable) and the design
+run-event pruner — the one destructive sweep in the platform, therefore **default OFF**
+(`design_run_event_prune_interval_s = 0`) with five floors in code, not config: design progress
+rows only (SQL literals — a `project_run` subject is unreachable), terminal rows never deleted
+(topic filter + a surviving-terminal `EXISTS`), terminal runs only, retention clamped UP to a 7-day
+floor that strictly exceeds the 24h replay horizon, prefix-only deletion. The standing [B4×SSE]
+reset-then-backlog question is settled by scope: the project stream is untouched; on the design
+stream the floors mean a within-horizon cursor can never point into a pruned run. Accepted cost,
+documented at the site: a pruned run's `GET /agent/runs/{id}` snapshot returns its terminal event
+only. **Gate guards (R-D8-5):** the master-plan Part-II gate is now machine-checked end to end —
+clause 1 by a catalog-driven test (all 25 `design_%` tables carry `workspace_id NOT NULL`),
+clause 2 by the existing kill-and-resume battery **plus a new takeover test composed with the real
+`PostgresSaver`** (certifying *resume-as-restart with checkpoint continuity* — the honest reading,
+stated in the test), clause 3 by the no-bypass guard with its three-member exemption set, clause 4
+by a SQLite source guard (three exempt modules pinned by set-equality — the `sqlite3.IntegrityError`
+parity type, the ratified D8 exemption; the actual cut is Step-2's; noted out of scope: a real
+`sqlite3.connect` in `agent_runtime/evaluation/brand_fidelity.py`, agent-runtime-internal), clause 5
+by the `design_run_event` retirement grep promoted to a three-test guard. **DSAR: ASSESSED, NOT
+WIRED** — founder instruction 2026-08-10 (assessment only, no wiring this slice; the D8 gate line
+reads "assessed", so the contract is met as written). The assessment is
+`docs/specs/PD-D8-dsar-assessment.md`: 31 design surfaces can hold personal data, 0 are reached by
+any erasure path today, structurally (no data-subject key exists in the design plane); the D4
+namespace disjointness is confirmed working; three latent hazards recorded (tool-parameter
+artifacts in the bare claim-evidence namespace; design checkpoint threads invisible to the
+existing deleter; the merge-blind account join); the wiring approach is specified with subject
+resolvability first, designed WITH Part III. The pruner is a retention mechanism, not an erasure
+mechanism. Gates, all re-run by the orchestrator on exclusive fresh DBs: design-API suite
+**548/9/0**; agent-runtime **551/2** serial; six-suite set **220** (206 + 14 new);
+durable+projections+execution **320/1s**; offline **2208/1556**; db-smoke up→base→up through
+`6f81d8fd729a`; single head; mypy 594; 25/25 contracts; editor untouched (D7 editor gates stand).
+**NEW PENDING FOUNDER DECISION (D8):** *enabling* the design run-event pruner anywhere — it ships
+built, tested, and OFF; destroying stream history inverts the recorded posture, so turning it on
+is an explicit deployment decision, never a default.
+Part II is COMPLETE: D0–D8 all EXECUTED. Slice map and D0 rulings ADOPTED; **O1–O6 RATIFIED
 by the founder 2026-08-07** (with refinements — see §6); **O6b RATIFIED 2026-08-08: option
 (a)**. **PENDING FOUNDER RATIFICATION (D2.2 field decision):** migration `7a9881f9717a`
 extended O6's workspace-locality to every design id namespace that is client-supplied

@@ -1,4 +1,4 @@
-"""Part II D7 — the ``run_event`` stream's subject widening.
+"""Part II D7/D8 — the ``run_event`` stream's subject widening, and its single owner.
 
 Three things are proven here, in order of how badly they would hurt if wrong:
 
@@ -8,43 +8,45 @@ Three things are proven here, in order of how badly they would hurt if wrong:
 2. **The design emitter.** ``emit_design_run_event`` round-trips, and refuses a project-run topic
    loudly (a design leg that could stamp ``run.phase.completed`` would forge project lifecycle
    events on a client's project stream).
-3. **Parity between the two DALs.** D7 ships two thin DALs over the one table for an import-contract
-   reason (documented in ``clue_execution.run_events``). These tests are what stop that duplication
-   from drifting: same row shape, same topic vocabulary, same subject vocabulary as the DB CHECK,
-   same replay semantics.
+3. **Single ownership (D8, ruling R-D8-2).** D7 shipped two thin DALs over the one table and bound
+   them with *parity* tests — same row shape, same vocabularies, same replay semantics. D8 removed
+   the second implementation, so those parity tests are replaced (not deleted) by the stronger
+   claim they were approximating: there is exactly ONE of each of these things, and the ways a
+   second one could come back are named and refused. Identity (``is``) is the assertion, because
+   equality is what drift defeats.
 """
 
 from __future__ import annotations
+
+import importlib
+import inspect
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from clue_core import new_project_run_id
-from clue_execution.run_events import (
+import clue_core
+import clue_execution.run_events as exec_run_events
+import clue_projections
+from clue_core import (
     DESIGN_RUN_EVENT_TOPICS,
     DESIGN_RUN_SUBJECT_KIND,
     PROJECT_RUN_SUBJECT_KIND,
-    InvalidRunEventSubject,
-    SubjectReplayPlan,
-    emit_design_run_event,
-    list_subject_run_events,
-    plan_subject_replay,
-    subject_event_created_at,
-)
-from clue_execution.run_events import RunEventRow as ExecutionRunEventRow
-from clue_projections import ReplayPlan, plan_replay
-from clue_research.durable import (
-    DESIGN_RUN_EVENT_TOPICS as RESEARCH_DESIGN_TOPICS,
-)
-from clue_research.durable import (
     RUN_EVENT_SUBJECT_KINDS,
     RUN_EVENT_TOPICS,
-    emit_run_event,
-    list_run_events,
+    ReplayPlan,
+    RunEventReader,
+    RunEventRow,
+    new_project_run_id,
+    plan_replay,
 )
-from clue_research.durable import (
-    RunEventRow as ResearchRunEventRow,
+from clue_execution.run_events import (
+    DbRunEventReader,
+    InvalidRunEventSubject,
+    emit_design_run_event,
+    emit_run_event,
+    event_created_at,
+    list_run_events,
 )
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
@@ -53,32 +55,38 @@ _WS = "ws-d7"
 _OTHER = "ws-d7-other"
 _DESIGN_RUN = "run_0123456789abcdef0123456789abcdef"
 
-# The drift guards below are deliberately NOT DB-gated: the duplication they police is a source-
-# level hazard, so they must fail in the offline ``make check`` gate, not only where a Postgres
-# happens to be configured. Only the tests that touch the table carry the skip-gate.
+# The single-ownership guards below are deliberately NOT DB-gated: a second implementation is a
+# source-level hazard, so they must fail in the offline ``make check`` gate, not only where a
+# Postgres happens to be configured. Only the tests that touch the table carry the skip-gate.
 _needs_db = pytest.mark.usefixtures("require_profiling_db")
 
 
-# --- offline parity: the two DALs cannot drift ------------------------------------------------
+# --- single ownership: there is one of each of these ------------------------------------------
 
 
-def test_the_two_run_event_row_models_are_field_identical() -> None:
-    """D7 ships two DALs over one table. If their row shapes diverge, a design consumer and a
-    project consumer stop seeing the same envelope — so pin them field-for-field."""
-    assert set(ExecutionRunEventRow.model_fields) == set(ResearchRunEventRow.model_fields)
-    # Same names AND same annotations — a divergent type is drift just as much as a missing field.
-    for name, field in ExecutionRunEventRow.model_fields.items():
-        assert field.annotation == ResearchRunEventRow.model_fields[name].annotation, name
-    # ``run_id`` is optional on BOTH (it is absent for every non-project subject).
-    assert not ExecutionRunEventRow.model_fields["run_id"].is_required()
-    assert not ResearchRunEventRow.model_fields["run_id"].is_required()
+def test_the_run_event_row_model_has_exactly_one_definition() -> None:
+    """D7 had two ``RunEventRow`` classes and a field-by-field parity test. D8 has one class, so
+    the assertion is identity: every import path must reach the SAME object, or a design consumer
+    and a project consumer could again stop seeing the same envelope."""
+    assert exec_run_events.RunEventRow is RunEventRow
+    assert clue_core.run_event.RunEventRow is RunEventRow
+    # ``run_id`` is optional (it is absent for every non-project subject) — the one field shape a
+    # widening could regress.
+    assert not RunEventRow.model_fields["run_id"].is_required()
 
 
-def test_design_topic_vocabularies_agree_and_are_stream_topics() -> None:
-    """``clue_execution`` may not import ``clue_research``, so it re-states the design topics. This
-    is the binding that keeps the restatement honest — and proves each is a *stored* stream topic
-    (an emitter writing a topic outside ``RUN_EVENT_TOPICS`` would be invisible to the contract)."""
-    assert DESIGN_RUN_EVENT_TOPICS == RESEARCH_DESIGN_TOPICS
+def test_the_topic_and_subject_vocabularies_have_exactly_one_definition() -> None:
+    """The topic enum, the stored-topic allow-list, the design subset and the subject kinds were
+    all stated twice at D7 (``clue_execution`` restated what ``clue_research.durable`` defined).
+    One definition now, in ``clue_core.run_event``, and the design emitter reads that object."""
+    assert clue_core.RUN_EVENT_TOPICS is RUN_EVENT_TOPICS
+    assert clue_core.DESIGN_RUN_EVENT_TOPICS is DESIGN_RUN_EVENT_TOPICS
+    assert exec_run_events.DESIGN_RUN_EVENT_TOPICS is DESIGN_RUN_EVENT_TOPICS
+    assert exec_run_events.PROJECT_RUN_SUBJECT_KIND is PROJECT_RUN_SUBJECT_KIND
+    assert exec_run_events.DESIGN_RUN_SUBJECT_KIND is DESIGN_RUN_SUBJECT_KIND
+
+    # The invariants the old parity test proved, kept — they constrain the ONE vocabulary.
+    assert tuple(t.value for t in clue_core.RunEventTopic) == RUN_EVENT_TOPICS
     assert set(DESIGN_RUN_EVENT_TOPICS) <= set(RUN_EVENT_TOPICS)
     assert DESIGN_RUN_EVENT_TOPICS == (
         "design.run.event",
@@ -88,12 +96,51 @@ def test_design_topic_vocabularies_agree_and_are_stream_topics() -> None:
     # The design topics are exactly the design.* prefix of the stream vocabulary — no design topic
     # may hide outside the prefix, and no design.* topic may exist that an emitter cannot write.
     assert set(DESIGN_RUN_EVENT_TOPICS) == {t for t in RUN_EVENT_TOPICS if t.startswith("design.")}
-
-
-def test_subject_kind_constants_agree_across_packages() -> None:
     assert PROJECT_RUN_SUBJECT_KIND == RUN_EVENT_SUBJECT_KINDS[0] == "project_run"
     assert DESIGN_RUN_SUBJECT_KIND == "design_run"
     assert set(RUN_EVENT_SUBJECT_KINDS) == {PROJECT_RUN_SUBJECT_KIND, DESIGN_RUN_SUBJECT_KIND}
+
+
+def test_the_replay_planner_has_exactly_one_definition() -> None:
+    """One-replay-semantics was a D7 *claim* backed by a both-planners-agree test. D8 makes it a
+    fact: ``clue_projections`` re-exports the ``clue_core`` planner rather than defining a second
+    one, the design stream calls that same function object, and ``clue_execution`` publishes no
+    planner of its own to drift from it."""
+    assert clue_projections.plan_replay is plan_replay
+    assert clue_projections.ReplayPlan is ReplayPlan
+    assert clue_projections.events.plan_replay is plan_replay
+    # The D7 twins are gone by name as well as by body — a re-added one would be a second planner.
+    assert not hasattr(exec_run_events, "plan_subject_replay")
+    assert not hasattr(exec_run_events, "SubjectReplayPlan")
+    assert not hasattr(exec_run_events, "list_subject_run_events")
+    assert not hasattr(exec_run_events, "subject_event_created_at")
+    # The reader seam is what lets one planner serve two streams whose packages may not import
+    # each other, so the planner must take a READER, not a connection — a conn-taking planner
+    # would have to know the DAL, which is the coupling D8 removed.
+    assert list(inspect.signature(plan_replay).parameters)[0] == "reader"
+    assert "conn" not in inspect.signature(plan_replay).parameters
+    for method in ("cursor_created_at", "events_after"):
+        assert hasattr(RunEventReader, method) and hasattr(DbRunEventReader, method)
+
+
+def test_the_outbox_dal_has_exactly_one_owner() -> None:
+    """The project-run writer/reader used to live in ``clue_research.durable``. D8 deleted that
+    module (nothing inside ``clue_research`` ever called it) and moved the statements beside the
+    design writer. Assert the old home stays empty — a re-export there would be harmless, but a
+    re-*implementation* is exactly the duplication D8 removed, and both start the same way."""
+    durable = importlib.import_module("clue_research.durable")
+    for name in (
+        "emit_run_event",
+        "list_run_events",
+        "event_created_at",
+        "RunEventRow",
+        "RunEventTopic",
+        "RUN_EVENT_TOPICS",
+        "NARRATIVE_EMIT_SKIPPED_KEY",
+    ):
+        assert not hasattr(durable, name), f"clue_research.durable.{name} is back — see R-D8-1"
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("clue_research.durable.run_events")
 
 
 def test_the_stream_token_store_is_one_module_with_one_subject_vocabulary() -> None:
@@ -115,10 +162,6 @@ def test_the_stream_token_store_is_one_module_with_one_subject_vocabulary() -> N
     # tenant; it must therefore REQUIRE a subject (a workspace-wide token must not open a run).
     assert "subject_kind" in exec_tokens.consume_subject_stream_token.__annotations__
     assert "workspace_id" not in exec_tokens.consume_subject_stream_token.__annotations__
-
-
-def test_the_two_replay_plan_shapes_agree() -> None:
-    assert SubjectReplayPlan.__dataclass_fields__.keys() == ReplayPlan.__dataclass_fields__.keys()
 
 
 # --- the DB integrity matrix -------------------------------------------------------------------
@@ -301,7 +344,7 @@ def test_emit_design_run_event_round_trips_and_is_subject_scoped() -> None:
             assert a.payload["event_type"] == "scene_patch_applied"
             assert a.seq < b.seq
 
-            served = await list_subject_run_events(
+            served = await list_run_events(
                 conn,
                 workspace_id=_WS,
                 subject_kind=DESIGN_RUN_SUBJECT_KIND,
@@ -315,7 +358,7 @@ def test_emit_design_run_event_round_trips_and_is_subject_scoped() -> None:
             # The cursor and the horizon probe behave exactly as on a project-run stream.
             assert [
                 e.seq
-                for e in await list_subject_run_events(
+                for e in await list_run_events(
                     conn,
                     workspace_id=_WS,
                     subject_kind=DESIGN_RUN_SUBJECT_KIND,
@@ -323,8 +366,8 @@ def test_emit_design_run_event_round_trips_and_is_subject_scoped() -> None:
                     after_seq=a.seq,
                 )
             ] == [b.seq]
-            assert await subject_event_created_at(conn, workspace_id=_WS, seq=a.seq) is not None
-            assert await subject_event_created_at(conn, workspace_id=_OTHER, seq=a.seq) is None
+            assert await event_created_at(conn, workspace_id=_WS, seq=a.seq) is not None
+            assert await event_created_at(conn, workspace_id=_OTHER, seq=a.seq) is None
 
     run_async(_run())
 
@@ -348,7 +391,7 @@ def test_design_emitter_may_not_impersonate_a_project_run_topic() -> None:
                 )
             # Nothing was written by any refusal.
             assert (
-                await list_subject_run_events(
+                await list_run_events(
                     conn,
                     workspace_id=_WS,
                     subject_kind=DESIGN_RUN_SUBJECT_KIND,
@@ -364,10 +407,11 @@ def test_design_emitter_may_not_impersonate_a_project_run_topic() -> None:
 
 
 @_needs_db
-def test_both_replay_planners_agree_on_a_design_subject() -> None:
-    """ "One replay semantics" is the D7 claim. Plan the same design stream through both planners
-    (``clue_projections.plan_replay`` and ``clue_execution.plan_subject_replay``) and require
-    identical reset / backlog / cursor decisions — fresh, mid-stream, and unknown-cursor."""
+def test_the_one_planner_plans_a_design_subject_exactly_as_it_plans_a_project_run() -> None:
+    """D7 ran the same stream through two planners and required them to agree. D8 has one planner,
+    so the remaining risk is the *reader wiring*: prove the design-subject reader delivers the same
+    three decisions the project-run reader does — fresh, mid-stream, unknown-cursor — and that the
+    reader's subject filter is what scopes them."""
 
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -382,64 +426,41 @@ def test_both_replay_planners_agree_on_a_design_subject() -> None:
                 for i in range(4)
             ]
             horizon = 3600.0
-
-            for cursor in (None, events[1].seq, 10_000_000):
-                projections = await plan_replay(
-                    conn,
-                    workspace_id=_WS,
-                    subject_kind=DESIGN_RUN_SUBJECT_KIND,
-                    subject_id=_DESIGN_RUN,
-                    last_event_id=cursor,
-                    horizon_s=horizon,
-                )
-                execution = await plan_subject_replay(
-                    conn,
-                    workspace_id=_WS,
-                    subject_kind=DESIGN_RUN_SUBJECT_KIND,
-                    subject_id=_DESIGN_RUN,
-                    last_event_id=cursor,
-                    horizon_s=horizon,
-                )
-                assert projections.reset == execution.reset
-                assert projections.effective_cursor == execution.effective_cursor
-                assert [e.seq for e in projections.backlog] == [e.seq for e in execution.backlog]
-
-            # Fresh connect: the whole subject backlog, no reset.
-            fresh = await plan_subject_replay(
+            reader = DbRunEventReader(
                 conn,
                 workspace_id=_WS,
                 subject_kind=DESIGN_RUN_SUBJECT_KIND,
                 subject_id=_DESIGN_RUN,
-                last_event_id=None,
-                horizon_s=horizon,
             )
+            assert isinstance(reader, RunEventReader)
+
+            # Fresh connect: the whole subject backlog, no reset.
+            fresh = await plan_replay(reader, last_event_id=None, horizon_s=horizon)
             assert not fresh.reset
             assert [e.seq for e in fresh.backlog] == [e.seq for e in events]
 
             # Mid-stream cursor: gapless, no reset, cursor carried through as the tail floor.
-            mid = await plan_subject_replay(
-                conn,
-                workspace_id=_WS,
-                subject_kind=DESIGN_RUN_SUBJECT_KIND,
-                subject_id=_DESIGN_RUN,
-                last_event_id=events[1].seq,
-                horizon_s=horizon,
-            )
+            mid = await plan_replay(reader, last_event_id=events[1].seq, horizon_s=horizon)
             assert not mid.reset and mid.effective_cursor == events[1].seq
             assert [e.seq for e in mid.backlog] == [e.seq for e in events[2:]]
 
             # An unknown cursor resets and drops the floor to 0 (never a dead tail) — identical to
-            # the project-run rule.
-            unknown = await plan_subject_replay(
-                conn,
-                workspace_id=_WS,
-                subject_kind=DESIGN_RUN_SUBJECT_KIND,
-                subject_id=_DESIGN_RUN,
-                last_event_id=10_000_000,
-                horizon_s=horizon,
-            )
+            # the project-run rule, because it is the same code.
+            unknown = await plan_replay(reader, last_event_id=10_000_000, horizon_s=horizon)
             assert unknown.reset and unknown.effective_cursor == 0
             assert [e.seq for e in unknown.backlog] == [e.seq for e in events]
+
+            # The subject filter is the reader's, not the planner's: an unscoped reader over the
+            # same tenant sees the project row too.
+            project_run = new_project_run_id()
+            project = await emit_run_event(
+                conn, workspace_id=_WS, run_id=project_run, topic="run.done"
+            )
+            whole = await plan_replay(
+                DbRunEventReader(conn, workspace_id=_WS), last_event_id=None, horizon_s=horizon
+            )
+            assert project.seq in {e.seq for e in whole.backlog}
+            assert project.seq not in {e.seq for e in fresh.backlog}
 
     run_async(_run())
 

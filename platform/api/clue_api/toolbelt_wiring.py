@@ -139,6 +139,7 @@ from clue_api.tool_outputs import (
 from clue_api.verification import build_verification_phase_handler
 from clue_config import DEFAULT_STAGE0_POLICY, Settings, load_settings
 from clue_core import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountEntity,
     ContactContentHandoff,
     ContactResearchSelection,
@@ -166,7 +167,6 @@ from clue_research.discovery_scoring.phases import discovery_run_id
 from clue_research.discovery_scoring.scoring import admitted_account_ids
 from clue_research.discovery_scoring.tiering import DEFAULT_TIERING_CONFIG
 from clue_research.durable import (
-    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountDeepLaunchConflict,
     AccountDeepLaunchInvalid,
     BudgetEngine,

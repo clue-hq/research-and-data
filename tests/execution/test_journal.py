@@ -27,10 +27,10 @@ from clue_execution import (
     ParameterArtifactState,
     StaleCursor,
     get_cursor,
+    list_run_events,
     rebuild_cursor,
     resolve_parameter_body,
 )
-from clue_research.durable import list_run_events
 from clue_toolbelt import (
     JournalParameterPolicy,
     PreconditionFailed,

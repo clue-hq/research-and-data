@@ -272,6 +272,58 @@ def test_design_account_cannot_bind_foreign_workspace_entity(require_design_db: 
     run_async(_check())
 
 
+def test_every_design_table_is_tenant_scoped(require_design_db: None) -> None:
+    """Part II gate clause 1, read literally: **every** design row is tenant-scoped.
+
+    Catalog-driven on purpose (D8 / ruling R-D8-5). The hand-written tenancy tests above prove that
+    the composite FKs *work*; they cannot prove there is no design table someone added without a
+    ``workspace_id`` at all, because a test that enumerates tables only ever covers the tables its
+    author remembered. This asks ``information_schema`` instead: for every base table named
+    ``design\\_%`` in the live schema, a ``workspace_id`` column must exist and be ``NOT NULL``.
+
+    NOT NULL rather than merely present, because a nullable tenant column is not tenancy — one
+    NULL-workspace row is a row every tenant's scan either sees or silently drops, which is the
+    exact failure the platform's own account-entity localization had to migrate away from
+    (``82a80fb80c9e``, "fails loud if an unreset DB still contains a NULL-workspace entity").
+
+    A future design table that is genuinely tenant-independent would fail here and *should*: that
+    is a ruling to make explicitly, with an exemption written down, not a check to weaken.
+    """
+
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            tables = [
+                row[0]
+                for row in await conn.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.tables"
+                        " WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+                        "   AND table_name LIKE 'design\\_%' ESCAPE '\\'"
+                        " ORDER BY table_name"
+                    )
+                )
+            ]
+            assert tables, "no design_* tables found — is the database migrated to head?"
+
+            scoping = {
+                (row[0], row[1]): row[2]
+                for row in await conn.execute(
+                    text(
+                        "SELECT table_name, column_name, is_nullable"
+                        " FROM information_schema.columns"
+                        " WHERE table_schema = 'public' AND column_name = 'workspace_id'"
+                        "   AND table_name LIKE 'design\\_%' ESCAPE '\\'"
+                    )
+                )
+            }
+            missing = [name for name in tables if (name, "workspace_id") not in scoping]
+            nullable = [name for name in tables if scoping.get((name, "workspace_id")) == "YES"]
+            assert not missing, f"design tables with no workspace_id column: {missing}"
+            assert not nullable, f"design tables whose workspace_id is nullable: {nullable}"
+
+    run_async(_check())
+
+
 def test_single_alembic_head_descending_from_the_ratified_base() -> None:
     """Offline guard: the D1 chain keeps exactly one head, and it descends from the ratified
     base ``c6d84aa84b79`` (the founder's single-head ruling)."""

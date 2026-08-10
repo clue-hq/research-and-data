@@ -77,8 +77,9 @@ down_revision: str | None = "2711924d1e29"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# The D7 subject vocabulary, mirrored by clue_research.durable.run_events.RUN_EVENT_SUBJECT_KINDS
-# and clue_execution.run_events (a DB-parity test binds code to this CHECK).
+# The D7 subject vocabulary, mirrored by clue_core.run_event.RUN_EVENT_SUBJECT_KINDS (a DB-parity
+# test binds code to this CHECK). At D7 this comment named two mirrors — the D8 consolidation left
+# exactly one; the constraint itself is unchanged.
 _SUBJECT_KINDS = "'project_run', 'design_run'"
 
 _RESEARCH_VIEW_TRIGGER_FN_D7 = """

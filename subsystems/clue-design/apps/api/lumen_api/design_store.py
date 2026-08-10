@@ -1553,17 +1553,6 @@ class HybridRepository:
             )
         )
 
-    def set_run_result(self, run_id: str, status: str, result: Optional[JsonObject]) -> None:
-        self._bridge._run(
-            lambda conn: design_runs.set_run_result(
-                conn,
-                workspace_id=self.workspace_id,
-                run_id=run_id,
-                status=status,
-                result=result,
-            )
-        )
-
     def complete_run(
         self,
         run_id: str,

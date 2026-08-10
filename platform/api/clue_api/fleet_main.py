@@ -33,9 +33,12 @@ degenerate no-composer deployment). Two honest limits remain:
   C7.6 closed the HANDOFF gap: the per-run composer now binds the production governed committee
   reader and the real materialise-then-outbox M12 handler. See :mod:`clue_api.run_composition`.
 
-This entrypoint also runs the B2 **orphan-blob sweep** and provider lifecycle wake paths as
-background tasks alongside the worker (started with it, cancelled on drain). Sweep/wake errors are
-logged and never fatal to the worker; they do not originate new quarantined entity-research work.
+This entrypoint also runs the B2 **orphan-blob sweep**, the two D8 **retention sweeps** (spent
+``stream_token`` rows — default ON because a swept token was already unreadable; and the design
+run-event pruner — default OFF, the one sweep that destroys durable run-visibility history) and
+provider lifecycle wake paths as background tasks alongside the worker (started with it, cancelled
+on drain). Sweep/wake errors are logged and never fatal to the worker; they do not originate new
+quarantined entity-research work.
 """
 
 from __future__ import annotations
@@ -51,7 +54,11 @@ from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
 from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.contact_research_fleet_launch import ContactResearchSelectionApprover
-from clue_api.design_fleet import build_design_job_handler, start_design_reaper
+from clue_api.design_fleet import (
+    build_design_job_handler,
+    start_design_event_pruner,
+    start_design_reaper,
+)
 from clue_api.entity_research_launch_tools import EntityResearchLaunchServices
 from clue_api.entity_research_parallel import EntityResearchBatchWakeService
 from clue_api.entity_research_provider_wiring import build_production_entity_research_fleet
@@ -111,6 +118,7 @@ from clue_execution import (
     DbRunControlStore,
     RecipeExecutionHandler,
     RecipeExecutor,
+    sweep_stream_tokens,
 )
 from clue_fleet import DbTaskQueue, DbWorkQueue, run_worker
 from clue_locks import redis_lifespan
@@ -167,6 +175,41 @@ def _start_orphan_sweep(settings: Settings, storage: StorageBackend) -> asyncio.
         log.info("fleet.orphan_sweep.disabled")
         return None
     return asyncio.create_task(_orphan_sweep_loop(settings, storage))
+
+
+async def _stream_token_sweep_loop(
+    settings: Settings,
+    *,
+    conn_factory: ConnFactory = transaction,
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+) -> None:
+    """Run :func:`~clue_execution.sweep_stream_tokens` every ``stream_token_sweep_interval_s``
+    seconds until cancelled (Part II D8, ruling R-D8-4). Modelled on the orphan-blob sweep above,
+    down to the per-pass isolation: a sweep fault is logged and the loop continues.
+
+    Deleting a spent token is semantically free — both consume statements require
+    ``used_at IS NULL AND expires_at > now()``, so every row this removes was already unreadable by
+    every code path — which is why this loop is ON by default while the design-event pruner below
+    is off."""
+    interval = settings.stream_token_sweep_interval_s
+    while True:
+        await sleep(interval)
+        try:
+            async with conn_factory() as conn:
+                deleted = await sweep_stream_tokens(conn)
+            if deleted:
+                log.info("fleet.stream_token_sweep.deleted", count=deleted)
+        except Exception:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
+            log.warning("fleet.stream_token_sweep.error", exc_info=True)
+
+
+def _start_stream_token_sweep(settings: Settings) -> asyncio.Task[None] | None:
+    """Start the background stream-token sweep, or ``None`` when disabled
+    (``stream_token_sweep_interval_s <= 0``). Must be called with a running event loop."""
+    if settings.stream_token_sweep_interval_s <= 0:
+        log.info("fleet.stream_token_sweep.disabled")
+        return None
+    return asyncio.create_task(_stream_token_sweep_loop(settings))
 
 
 async def _agent_cleanup_loop(
@@ -586,11 +629,22 @@ async def _serve() -> None:
             queue=work_queue,
         )
         sweep = _start_orphan_sweep(settings, storage)
+        # Part II D8: the spent-``stream_token`` reclaim. Default ON — a used or expired token is
+        # already unreadable by every code path, so its deletion is unobservable.
+        token_sweep = _start_stream_token_sweep(settings)
         # Part II D5 Round C: the stranded-design-work reaper, beside the orphan-blob sweep it
         # copies. Only a design-draining deployment runs it (same switch as the handler above).
         design_reaper = start_design_reaper(
             enabled=settings.design_runtime_enabled,
             interval_s=settings.design_reaper_interval_s,
+        )
+        # Part II D8: the design run-event pruner. Its OWN switch, default 0 = disabled — this is
+        # the one sweep that destroys durable run-visibility history, so a deployment gets it only
+        # by asking. Its floors (never a terminal row, never a project subject, never a run that is
+        # not long-finished) live in ``lumen_api.event_pruner``, not in the knob.
+        design_event_pruner = start_design_event_pruner(
+            interval_s=settings.design_run_event_prune_interval_s,
+            retention_s=settings.design_run_event_retention_s,
         )
         if agent_workspace_factory is None and settings.agent_workspace_root is not None:
             agent_workspace_factory = build_agent_workspace_factory(
@@ -624,7 +678,9 @@ async def _serve() -> None:
         finally:
             for background in (
                 sweep,
+                token_sweep,
                 design_reaper,
+                design_event_pruner,
                 agent_cleanup,
                 exa_discovery,
                 exa_targeted_enrichment,

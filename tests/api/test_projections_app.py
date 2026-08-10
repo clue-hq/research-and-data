@@ -38,17 +38,14 @@ from clue_api import (
 )
 from clue_config import load_settings
 from clue_core import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
     ProjectPhase,
     new_execution_id,
     new_operation_id,
     new_project_run_id,
 )
-from clue_execution import DbExecutionRunViewReader
-from clue_research.durable import (
-    NARRATIVE_EMIT_SKIPPED_KEY,
-    PhaseCheckpointStatus,
-    emit_run_event,
-)
+from clue_execution import DbExecutionRunViewReader, emit_run_event
+from clue_research.durable import PhaseCheckpointStatus
 from clue_toolbelt import DbIdempotencyStore, ToolContext, ToolRegistry
 from tests._workspace import seed_workspace
 from tests.db.conftest import run_async

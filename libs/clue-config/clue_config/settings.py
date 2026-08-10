@@ -327,6 +327,26 @@ class Settings(BaseSettings):
     # backlog). Env: ``CLUE_SSE_REPLAY_PAGE_LIMIT``.
     sse_replay_page_limit: int = 10_000
 
+    # --- retention (design-integration Part II D8, ruling R-D8-4) ---------------------------
+    # How often the fleet worker deletes spent ``stream_token`` rows (used or expired). ``<= 0``
+    # disables the loop, the ``storage_orphan_sweep_interval_s`` convention. Default ON: both
+    # consume statements require ``used_at IS NULL AND expires_at > now()``, so a swept row was
+    # already unreadable by every code path and its deletion is unobservable — there is nothing to
+    # canary. Env: ``CLUE_STREAM_TOKEN_SWEEP_INTERVAL_S``.
+    stream_token_sweep_interval_s: float = 3600.0  # 1h
+    # How often the fleet worker prunes a TERMINAL design run's PROGRESS ``run_event`` rows.
+    # ``<= 0`` disables it, and it is the founder-facing switch: this sweep is the only one in the
+    # platform that destroys durable run-visibility history, so it is **off until deliberately
+    # turned on**. Its safety floors (never a terminal row, never a non-design subject, never a
+    # non-terminal run, never inside the retention floor) are baked into the pruner's code, not
+    # into this knob. Env: ``CLUE_DESIGN_RUN_EVENT_PRUNE_INTERVAL_S``.
+    design_run_event_prune_interval_s: float = 0.0
+    # How long a design run must have been terminal before its progress events may be pruned.
+    # Clamped UP in code to a hard 7-day floor that strictly exceeds the design stream's 24h replay
+    # horizon, so a within-horizon reconnect can never observe a hole; configuring less is logged
+    # and ignored, never honoured. Env: ``CLUE_DESIGN_RUN_EVENT_RETENTION_S``.
+    design_run_event_retention_s: float = 2_592_000.0  # 30d
+
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod
     def _parse_agent_workspace_allowlist(cls, value: Any) -> Any:

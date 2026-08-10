@@ -108,20 +108,18 @@ from clue_execution.recipes import (
     load_recipe_definition,
 )
 from clue_execution.run_events import (
-    DESIGN_RUN_EVENT_TOPICS,
-    DESIGN_RUN_SUBJECT_KIND,
-    PROJECT_RUN_SUBJECT_KIND,
+    DbRunEventReader,
     InvalidRunEventSubject,
-    SubjectReplayPlan,
     emit_design_run_event,
-    list_subject_run_events,
-    plan_subject_replay,
-    subject_event_created_at,
+    emit_run_event,
+    event_created_at,
+    list_run_events,
 )
 from clue_execution.stream_tokens import (
     consume_stream_token,
     consume_subject_stream_token,
     mint_stream_token,
+    sweep_stream_tokens,
 )
 from clue_execution.supervisor import (
     DiagnosisActionCandidate,
@@ -171,19 +169,17 @@ __all__ = [
     "ControlPolicyViolation",
     "DbRunControlStore",
     "EffectiveEnvelope",
-    # D7 — the non-project-run half of the run_event stream (see clue_execution.run_events for why
-    # it lives here). ``RunEventRow`` is deliberately NOT re-exported at package level: it is
-    # field-identical to ``clue_research.durable.RunEventRow`` and the composition root imports
-    # both, so the name stays qualified (``from clue_execution.run_events import RunEventRow``).
-    "DESIGN_RUN_EVENT_TOPICS",
-    "DESIGN_RUN_SUBJECT_KIND",
-    "PROJECT_RUN_SUBJECT_KIND",
+    # D7/D8 — the run_event outbox DAL, whose single owner this package is. The SHAPES
+    # (``RunEventRow`` / ``RunEventTopic`` / the subject + topic vocabularies / ``ReplayPlan`` /
+    # ``plan_replay``) live in ``clue_core.run_event`` and are imported from there, not re-exported
+    # here: they are shared with packages this one may not touch, and one import path per name is
+    # the point of the D8 consolidation.
+    "DbRunEventReader",
     "InvalidRunEventSubject",
-    "SubjectReplayPlan",
     "emit_design_run_event",
-    "list_subject_run_events",
-    "plan_subject_replay",
-    "subject_event_created_at",
+    "emit_run_event",
+    "event_created_at",
+    "list_run_events",
     # D7 Round B — the single-use stream-token store, relocated here from ``clue_api`` so the
     # design API can mint/consume the SAME token species (``clue_api.stream_tokens`` re-exports).
     # ``PROJECT_RUN_SUBJECT_KIND`` is deliberately not re-listed: run_events already exports the
@@ -191,6 +187,8 @@ __all__ = [
     "consume_stream_token",
     "consume_subject_stream_token",
     "mint_stream_token",
+    # D8 (R-D8-4) — the spent-token reclaim the fleet worker runs on a cadence.
+    "sweep_stream_tokens",
     "DiagnosisActionCandidate",
     "SupervisorDiagnosis",
     "SupervisorEngine",

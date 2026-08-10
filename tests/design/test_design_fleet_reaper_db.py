@@ -33,14 +33,14 @@ from lumen_api import run_stream
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import ProjectRunId
+from clue_core import DESIGN_RUN_SUBJECT_KIND, ProjectRunId
 from clue_db import db_lifespan, transaction
 from clue_design import ingestion as design_ingestion
 from clue_design import runs as design_runs
 from clue_design.enums import DesignIngestionKind, DesignRunKind
 from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
 from clue_design.errors import DesignNotFoundError
-from clue_execution.run_events import DESIGN_RUN_SUBJECT_KIND, list_subject_run_events
+from clue_execution.run_events import list_run_events
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
 from clue_fleet.lease import WorkId, acquire_work_lease
 from clue_fleet.queue import enqueue_task
@@ -375,7 +375,7 @@ def test_the_reaper_reoffers_a_stranded_run_once_then_terminalizes_it() -> None:
                 events = await run_stream.run_snapshot_events(
                     conn, workspace_id=workspace_id, run_id=run_id
                 )
-                rows = await list_subject_run_events(
+                rows = await list_run_events(
                     conn,
                     workspace_id=workspace_id,
                     subject_kind=DESIGN_RUN_SUBJECT_KIND,

@@ -61,7 +61,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, dump_json_opt, iso, load_json, load_json_opt
-from clue_design.enums import DesignRunKind
+from clue_design.enums import DesignRunKind, DesignRunStatus
 from clue_design.errors import DesignNotFoundError, DesignRunFencedError
 
 #: The shipped run-id shape (``run_<uuid4 hex>``), which :func:`work_id_for_run` inverts exactly.
@@ -491,6 +491,60 @@ async def fail_stranded_run(
         )
     ).first()
     return None if row is None else _agent_run_job_from_row(row)
+
+
+#: The two terminal ``design_run_status`` labels. Named once here so the retention scan below and
+#: any future reader agree on what "finished" means without restating the enum inline.
+TERMINAL_RUN_STATUSES: tuple[str, ...] = (
+    DesignRunStatus.SUCCEEDED.value,
+    DesignRunStatus.FAILED.value,
+)
+
+
+async def list_prunable_terminal_runs(
+    conn: AsyncConnection, *, terminal_before_s: float, limit: int = 500
+) -> list[JsonObject]:
+    """Runs that finished more than ``terminal_before_s`` seconds ago — the event pruner's input.
+
+    The **eligibility half** of the D8 design-event pruner (ruling R-D8-4); the deletion itself is
+    ``clue_execution.run_events.prune_design_run_progress_events``, which ``clue_design`` may not
+    import. The split is the S4 boundary the reaper already draws: the design substrate answers
+    questions about design rows and nothing else, and the composition root
+    (``lumen_api.event_pruner``) joins the two halves.
+
+    ``status`` is checked against the two terminal labels — a ``queued``/``running`` run is never
+    returned, whatever its age, because its stream is still being written. "How long terminal" is
+    measured on ``updated_at``, which the terminal write stamps (``set_run_result`` /
+    ``fail_stranded_run``) and which nothing bumps afterwards: a terminal run is never touched
+    again (``touch_run`` only rides an emit, and a terminal run emits nothing more).
+
+    Unscoped by workspace for the same reason as :func:`list_dispatched_running_runs`: retention is
+    a substrate property, and a per-tenant sweep would leave every unnamed tenant growing forever.
+    ``limit`` bounds one pass so a large backlog is drained over several passes rather than in one
+    long transaction; oldest first, so the drain is deterministic and makes progress.
+    """
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT run_id, workspace_id, status, updated_at"
+                " FROM design_agent_run"
+                " WHERE status = ANY(CAST(:terminal AS design_run_status[]))"
+                "   AND updated_at < now() - make_interval(secs => :age_s)"
+                " ORDER BY updated_at ASC, run_id ASC"
+                " LIMIT :limit"
+            ),
+            {"terminal": list(TERMINAL_RUN_STATUSES), "age_s": terminal_before_s, "limit": limit},
+        )
+    ).fetchall()
+    return [
+        {
+            "run_id": row.run_id,
+            "workspace_id": row.workspace_id,
+            "status": row.status,
+            "updated_at": iso(row.updated_at),
+        }
+        for row in rows
+    ]
 
 
 # --- the run's activity stream: the fence primitives it is written under (D7) ------------------

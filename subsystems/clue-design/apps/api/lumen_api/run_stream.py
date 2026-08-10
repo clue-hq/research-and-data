@@ -34,11 +34,36 @@ satisfies (a workspace's — and therefore a run's — rows form a strictly incr
 The D7 recon confirmed no editor code depends on gaplessness or on the first seq being 1;
 ``agentChecklist`` and the web hook's event list both only append in arrival order.
 
-**Capacity honesty (R-D7-B7).** ``run_event`` carries no FK to its subject and no retention sweep.
-Design payloads are markedly heavier than project-run ones — a ``dsl_compiled`` progress event
-carries the compile's whole applied-``operations`` array — and a chatty turn emits dozens. Nothing
-here prunes; growth is real and unbounded, and a retention/pruner story is D8's (it also has to
-answer the [B4×SSE] reset-then-backlog question, which only gets sharper once rows can vanish).
+**Capacity honesty (R-D7-B7, answered at D8 / R-D8-4).** ``run_event`` still carries no FK to its
+subject and no CASCADE, and design payloads are markedly heavier than project-run ones — a
+``dsl_compiled`` progress event carries the compile's whole applied-``operations`` array — so a
+chatty turn emits dozens of heavy rows. D8 gives that growth a bound: ``lumen_api.event_pruner``
+deletes the **progress** rows of design runs that finished at least a retention window ago. It is
+**disabled by default** (``Settings.design_run_event_prune_interval_s = 0``) — the one sweep in the
+platform that destroys durable run-visibility history — and it is hemmed in by floors written in
+code, not configuration: only ``subject_kind='design_run'`` + ``topic='design.run.event'`` rows,
+only for a ``succeeded``/``failed`` run, only when a terminal row survives, and only after a hard
+7-day retention floor that strictly exceeds :data:`REPLAY_HORIZON_SECONDS` below.
+
+Two consequences worth stating plainly. (1) The **[B4×SSE] reset-then-backlog** question is
+answered by scope: the project stream is never touched, so its post-reset backlog stays complete;
+and on the design stream retention ≫ horizon means a cursor young enough to replay gaplessly points
+at a run far too young to prune, while an older cursor is reset to 0, where the surviving terminal
+row still closes the stream correctly. A within-horizon cursor therefore never observes a hole, and
+a fresh connect on a pruned run still ends in ``done``. (2) :func:`run_snapshot_events` (the
+``GET /agent/runs/{id}`` events key) replays from seq 0, so once a run has been pruned its snapshot
+returns the terminal event only. Accepted by ruling, for a default-off sweep scoped to runs that
+finished a week ago; the run row and its ``result_json`` are untouched.
+
+**A hard constraint the pruner inherits (D8 / R-D8-3), and honours.** A **terminal** row must never
+be pruned. :func:`stream_run_events` closes a subscriber's stream on the terminal *event* and on
+nothing else: D8 deleted the idle-poll liveness net that used to re-read ``design_agent_run`` and
+close out a run whose terminal event was missing. That net existed only to cover
+``HybridRepository.set_run_result`` (caller-less, terminalizing without emitting), which D8 deleted
+in the same breath — so a sweep that could remove a terminal row would silently reintroduce
+hang-forever streams with nothing left to catch them. The pruner cannot: its delete statement
+(``clue_execution.run_events.prune_design_run_progress_events``) filters the progress topic as a
+literal and additionally *requires* a surviving terminal row.
 """
 
 from __future__ import annotations
@@ -50,16 +75,14 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from clue_core import ExecutionId
+from clue_core import DESIGN_RUN_SUBJECT_KIND, ExecutionId, RunEventRow, plan_replay
 from clue_db import create_engine
 from clue_design import runs as design_runs
 from clue_design.errors import DesignRunFencedError
 from clue_execution.run_events import (
-    DESIGN_RUN_SUBJECT_KIND,
-    RunEventRow,
+    DbRunEventReader,
     emit_design_run_event,
-    list_subject_run_events,
-    plan_subject_replay,
+    list_run_events,
 )
 from clue_execution.stream_tokens import (
     consume_subject_stream_token,
@@ -70,7 +93,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 JsonObject = Dict[str, Any]
 
 #: The three coarse routing topics a design leg may write (mirrors
-#: ``clue_execution.run_events.DESIGN_RUN_EVENT_TOPICS``; the emitter refuses anything else).
+#: ``clue_core.DESIGN_RUN_EVENT_TOPICS``; the emitter refuses anything else).
 PROGRESS_TOPIC = "design.run.event"
 COMPLETED_TOPIC = "design.run.completed"
 FAILED_TOPIC = "design.run.failed"
@@ -118,10 +141,12 @@ def terminal_payload(
     """The terminal payload — **self-contained** (R-D7-B2).
 
     It carries the run's FULL result envelope alongside the marker's own ``event_type``/``data``,
-    so the serve layer builds its ``done`` frame from the event and never reads the run row after
-    a terminal event. That read was the pre-D7 shape (``sse_frame(seq, "done", run["result"])``)
-    and it only worked because ``complete_run`` fused the result and the marker into one
-    transaction; carrying the result *in* the event removes the coupling instead of re-timing it.
+    so the serve layer builds its ``done`` frame from the event and — since D8 deleted the idle
+    liveness net — **never reads the run row at all**, which is now a structural property of
+    :func:`stream_run_events` rather than a claim about timing. That read was the pre-D7 shape
+    (``sse_frame(seq, "done", run["result"])``) and it only worked because ``complete_run`` fused
+    the result and the marker into one transaction; carrying the result *in* the event removes the
+    coupling instead of re-timing it.
     """
     return {"event_type": event_type, "data": data if data is not None else {}, "result": result}
 
@@ -243,6 +268,21 @@ async def complete_run_and_emit(
 # --- reading ------------------------------------------------------------------------------------
 
 
+def _reader(conn: AsyncConnection, *, workspace_id: str, run_id: str) -> DbRunEventReader:
+    """This run's slice of the outbox, bound to one connection — what ``plan_replay`` reads through.
+
+    D8: the planner is ``clue_core.plan_replay``, the single implementation the platform's own SSE
+    endpoint also runs. It takes an injected reader rather than a connection, which is what lets one
+    planner serve two streams whose packages may not import each other.
+    """
+    return DbRunEventReader(
+        conn,
+        workspace_id=workspace_id,
+        subject_kind=DESIGN_RUN_SUBJECT_KIND,
+        subject_id=run_id,
+    )
+
+
 def legacy_event(row: RunEventRow) -> JsonObject:
     """One outbox row in the shape ``design_run_event`` served — the editor contract, verbatim.
 
@@ -350,9 +390,9 @@ async def stream_run_events(
     connection, one transaction, bound to this call's loop") still holds; only the per-poll setup
     cost is gone.
 
-    Replay semantics come from ``plan_subject_replay`` — the same planner the platform stream uses,
-    so "no cursor ⇒ full backlog / cursor within horizon ⇒ gapless / stale cursor ⇒ restart from 0"
-    is one implementation, not two. A reset is **not** framed to the client: R-D7-B1 pins this
+    Replay semantics come from ``clue_core.plan_replay`` — literally the same function the platform
+    stream runs, so "no cursor ⇒ full backlog / cursor within horizon ⇒ gapless / stale cursor ⇒
+    restart from 0" is one implementation (D8 folded D7's parity-bound twin into it). A reset is **not** framed to the client: R-D7-B1 pins this
     stream to exactly two event names, and a reset here is indistinguishable from the fresh-connect
     replay the editor already performs on every mount. (The platform stream's ``stream.hello`` /
     ``stream.reset`` frames are why the new editor client ignores unknown event names — it will
@@ -363,11 +403,8 @@ async def stream_run_events(
         # The browser's own reconnect hint, preserved from the pre-D7 stream.
         yield "retry: 1000\n\n"
         async with engine.connect() as conn, conn.begin():
-            plan = await plan_subject_replay(
-                conn,
-                workspace_id=workspace_id,
-                subject_kind=DESIGN_RUN_SUBJECT_KIND,
-                subject_id=run_id,
+            plan = await plan_replay(
+                _reader(conn, workspace_id=workspace_id, run_id=run_id),
                 last_event_id=cursor,
                 horizon_s=REPLAY_HORIZON_SECONDS,
                 limit=REPLAY_PAGE_LIMIT,
@@ -386,20 +423,13 @@ async def stream_run_events(
         idle_polls = 0
         while True:
             async with engine.connect() as conn, conn.begin():
-                rows = await list_subject_run_events(
+                rows = await list_run_events(
                     conn,
                     workspace_id=workspace_id,
                     subject_kind=DESIGN_RUN_SUBJECT_KIND,
                     subject_id=run_id,
                     after_seq=last_seq,
                     limit=REPLAY_PAGE_LIMIT,
-                )
-                # Liveness net (see the module notes on the defensive terminal branch): only read
-                # when the stream is idle, and only to answer "is this run already over?".
-                finished = (
-                    await _terminal_run(conn, workspace_id=workspace_id, run_id=run_id)
-                    if not rows
-                    else None
                 )
             for row in rows:
                 last_seq = row.seq
@@ -410,17 +440,18 @@ async def stream_run_events(
             if rows:
                 idle_polls = 0
                 continue
-            # DEFENSIVE, kept one release (R-D7-B2). Both live terminal writers — the worker's
-            # ``complete_run_and_emit`` and the reaper's stranded terminal — write the result and
-            # its event in ONE transaction, so "terminal status, no terminal event" is unreachable
-            # through either. What keeps this branch is the one surface that could still produce it:
-            # ``HybridRepository.set_run_result`` terminalizes WITHOUT emitting. It has no caller
-            # today (grep-proven) and survives only as an exempted facade name, so this is a
-            # liveness net, not a correctness one — without it, such a run would leave every
-            # subscriber hanging forever rather than closing out. Delete it with ``set_run_result``.
-            if finished is not None:
-                yield sse_frame(last_seq, "done", finished["result"])
-                return
+            # D8 (R-D8-3) removed the defensive terminal branch that used to sit here, together
+            # with the one surface that could produce the state it covered for
+            # (``HybridRepository.set_run_result`` — caller-less, terminalizing WITHOUT emitting).
+            # Both live terminal writers — the worker's ``complete_run_and_emit`` and the reaper's
+            # stranded terminal — write the result and its event in ONE transaction, so "terminal
+            # status, no terminal event" is now unreachable and this loop reads no run row at all.
+            #
+            # CONSEQUENCE FOR RETENTION: a terminal ``run_event`` row is the ONLY thing that closes
+            # a subscriber's stream. A pruner must never delete one, or every reader of that run
+            # hangs until it gives up — the net that used to catch that is gone on purpose. D8's
+            # pruner (``lumen_api.event_pruner``) honours that structurally: it deletes only the
+            # progress topic, and only for a subject that still holds a terminal row.
             if idle_polls % polls_per_keepalive == 0:
                 yield ": keepalive\n\n"
             idle_polls += 1
@@ -429,24 +460,11 @@ async def stream_run_events(
         await engine.dispose()
 
 
-async def _terminal_run(
-    conn: AsyncConnection, *, workspace_id: str, run_id: str
-) -> Optional[JsonObject]:
-    """The run row IF it is already terminal, else ``None`` — the liveness net's only read.
-
-    The ROW, not just its result, so the caller can serve ``result`` verbatim (``None`` included,
-    which is what the pre-D7 stream sent for a terminal run that stored no envelope)."""
-    run = await design_runs.get_run(conn, workspace_id=workspace_id, run_id=run_id)
-    if run is None or run["status"] not in ("succeeded", "failed"):
-        return None
-    return run
-
-
 async def run_snapshot_events(
     conn: AsyncConnection, *, workspace_id: str, run_id: str
 ) -> List[JsonObject]:
     """This run's whole stream in the legacy row shape — the ``GET /agent/runs/{id}`` events key."""
-    rows = await list_subject_run_events(
+    rows = await list_run_events(
         conn,
         workspace_id=workspace_id,
         subject_kind=DESIGN_RUN_SUBJECT_KIND,

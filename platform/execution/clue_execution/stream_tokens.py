@@ -26,6 +26,15 @@ re-exports it, so every pre-D7 import path still resolves.
 Tenant-scoped: a token is consumable only in the ``workspace_id`` it was minted for. The design
 stream has no workspace to assert (its consumer cannot send a header — see
 :func:`consume_subject_stream_token`), so it derives the tenant *from* the token row instead.
+
+**Retention (Part II D8, ruling R-D8-4).** Both consume statements above require
+``used_at IS NULL AND expires_at > now()``, so a row that is *used* or *expired* is provably
+unreadable by every code path in the repository — deleting it changes no observable behaviour, only
+the table's size. Until D8 nothing deleted them and rows accumulated at the editor's reconnect rate
+forever (a design stream mints one token per connect, and its TTL is 60s).
+:func:`sweep_stream_tokens` is that deletion, run on a cadence by the fleet worker. It is **on by
+default** precisely because it is unobservable: there is no state to lose and no consumer to
+surprise.
 """
 
 from __future__ import annotations
@@ -88,6 +97,27 @@ _CONSUME_FOR_SUBJECT_SQL = text(
       AND subject_kind = :subject_kind
       AND subject_id = :subject_id
     RETURNING workspace_id
+    """
+)
+
+
+#: Grace applied to BOTH halves of the sweep predicate before a row is considered dead. Nothing
+#: correctness-critical rides on it — a used or expired row is already unreadable — but a small
+#: window keeps the sweep away from rows a request is mid-flight on, and keeps the deletion honest
+#: under modest clock skew between the app's ``now()`` and the row's stamps (both are the DB's own
+#: clock today, so the real margin is the transaction, not the machine).
+DEFAULT_SWEEP_GRACE_S = 3600.0
+
+# Deletes exactly the rows :func:`consume_stream_token` / :func:`consume_subject_stream_token`
+# can never return: ``expires_at`` in the past, or ``used_at`` already stamped. Written as two
+# range predicates rather than ``used_at IS NOT NULL`` so the planner can BitmapOr the two indexes
+# the D8 migration adds (``stream_token_expires_at`` and the partial ``stream_token_used_at``)
+# instead of sequentially scanning the table.
+_SWEEP_SQL = text(
+    """
+    DELETE FROM stream_token
+    WHERE expires_at < now() - make_interval(secs => :grace_s)
+       OR used_at    < now() - make_interval(secs => :grace_s)
     """
 )
 
@@ -193,3 +223,22 @@ async def consume_subject_stream_token(
         )
     ).one_or_none()
     return None if row is None else str(row[0])
+
+
+async def sweep_stream_tokens(
+    conn: AsyncConnection, *, grace_s: float = DEFAULT_SWEEP_GRACE_S
+) -> int:
+    """Delete every spent token — used or expired, older than ``grace_s`` — and return how many.
+
+    **Semantically free.** A row this removes cannot be consumed by any code path: both consume
+    statements in this module require ``used_at IS NULL AND expires_at > now()``, so the deletion is
+    unobservable at the API surface. An already-consumed token is refused *identically* whether its
+    row is still present (``used_at`` set) or has been swept (no row at all) — the consume returns
+    ``False``/``None`` either way, which is the same answer it deliberately gives for an unknown
+    token (no existence leak).
+
+    Idempotent and cheap: re-running it immediately deletes nothing. Tenant-unscoped on purpose —
+    it is a substrate reclaim, not a tenant read, and a per-workspace sweep would leave every
+    workspace nobody happens to name growing forever.
+    """
+    return int((await conn.execute(_SWEEP_SQL, {"grace_s": grace_s})).rowcount)

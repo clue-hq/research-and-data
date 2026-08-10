@@ -509,6 +509,19 @@ from clue_core.review import (
     ReviewSurface,
     VerificationAnnotationReader,
 )
+from clue_core.run_event import (
+    DESIGN_RUN_EVENT_TOPICS,
+    DESIGN_RUN_SUBJECT_KIND,
+    NARRATIVE_EMIT_SKIPPED_KEY,
+    PROJECT_RUN_SUBJECT_KIND,
+    RUN_EVENT_SUBJECT_KINDS,
+    RUN_EVENT_TOPICS,
+    ReplayPlan,
+    RunEventReader,
+    RunEventRow,
+    RunEventTopic,
+    plan_replay,
+)
 from clue_core.source import SourceManifest
 from clue_core.stage0 import (
     OnboardingInputId,
@@ -1048,6 +1061,20 @@ __all__ = [
     # client-knowledge retrieval seam (M5↔M12 contract; impl stubbed in M12/stage0)
     "ClientKnowledgeChunk",
     "ClientKnowledgeRetriever",
+    # run_event outbox — shared shapes + the one replay planner (Part II D8 contract-delta;
+    # the DAL that writes/reads these rows is owned by clue_execution.run_events, and the
+    # RunEventReader concrete is built at a composition root and injected into plan_replay).
+    "RunEventTopic",
+    "RUN_EVENT_TOPICS",
+    "DESIGN_RUN_EVENT_TOPICS",
+    "PROJECT_RUN_SUBJECT_KIND",
+    "DESIGN_RUN_SUBJECT_KIND",
+    "RUN_EVENT_SUBJECT_KINDS",
+    "NARRATIVE_EMIT_SKIPPED_KEY",
+    "RunEventRow",
+    "RunEventReader",
+    "ReplayPlan",
+    "plan_replay",
     # review-surface seam (M13.1 Tier-1 review; impl in clue_research.review, wired at api root)
     "ReviewSessionId",
     "ClaimAnnotation",

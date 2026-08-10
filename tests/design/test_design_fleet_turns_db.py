@@ -23,6 +23,7 @@ here is the claim/fence/takeover machinery, which HTTP would only obscure.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 import time
 from datetime import timedelta
@@ -398,6 +399,272 @@ def test_the_generation_fence_refuses_stale_terminal_writes_and_stale_events() -
             await conn.rollback()
 
     run_async(scenario())
+
+
+class _CheckpointingRunner:
+    """A stub turn body that is a REAL LangGraph graph on the REAL Postgres saver.
+
+    ``_GatedRunner`` above proves the claim/fence/takeover machinery with
+    ``checkpointer_factory=None`` — deliberately, because its stub never builds a graph. That
+    leaves one production composition no test exercises: the handler's checkpointer seam wired to
+    ``postgres_design_checkpointer``, with graph state actually landing in Postgres under the run's
+    ``checkpoint_thread_id``. This runner closes that gap.
+
+    Attempt 1 blocks inside the graph's second node — *after* the first superstep's checkpoint has
+    been written — and is then abandoned. Attempt 2 (the takeover) reads the thread back through a
+    fresh saver, records what it found, and drives the turn through the production
+    :func:`~lumen_agent.checkpoint.invoke_turn_graph` seam.
+    """
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.attempt_1_started = threading.Event()
+        self.attempt_1_returned = threading.Event()
+        self.attempts = 0
+        #: What the TAKEOVER saw on the thread before it did anything to it.
+        self.takeover_saw_checkpoint: bool | None = None
+        self.takeover_checkpoint_rows: int | None = None
+        self._lock = threading.Lock()
+
+    def _graph(self, saver: Any, block: bool) -> Any:
+        from langgraph.graph import END, START, StateGraph
+
+        release = self.release
+
+        def _first(state: dict[str, Any]) -> dict[str, Any]:
+            return {"steps": [*state["steps"], "first"]}
+
+        def _second(state: dict[str, Any]) -> dict[str, Any]:
+            if block:
+                # The doomed attempt parks here. The checkpoint for the FIRST superstep is already
+                # committed, which is the state the takeover has to be able to see.
+                release.wait(timeout=30)
+            return {"steps": [*state["steps"], "second"]}
+
+        graph = StateGraph(dict)
+        graph.add_node("first", _first)
+        graph.add_node("second", _second)
+        graph.add_edge(START, "first")
+        graph.add_edge("first", "second")
+        graph.add_edge("second", END)
+        return graph.compile(checkpointer=saver)
+
+    def __call__(self, payload: Any, root: Any) -> dict[str, Any]:
+        from lumen_agent.checkpoint import invoke_turn_graph
+
+        saver = _checkpointer_for_this_thread()
+        thread_id = _thread_id_for_this_thread()
+        config = {"configurable": {"thread_id": thread_id}}
+        with self._lock:
+            self.attempts += 1
+            attempt = self.attempts
+
+        if attempt == 1:
+            self.attempt_1_started.set()
+            agent = self._graph(saver, block=True)
+            agent.invoke({"steps": []}, config=config)
+            self.attempt_1_returned.set()
+            return {"schema_version": 1, "status": "proposed", "summary": "zombie attempt"}
+
+        # --- the takeover. Look at the thread BEFORE touching it: this is the certification.
+        agent = self._graph(saver, block=False)
+        snapshot = agent.get_state(config)
+        self.takeover_saw_checkpoint = getattr(snapshot, "created_at", None) is not None
+        self.takeover_checkpoint_rows = len(list(saver.list(config)))
+
+        # …then drive it through the PRODUCTION seam, which clears the thread and re-runs from the
+        # top (resume-as-restart — see ``lumen_agent/checkpoint.py`` for why).
+        state = invoke_turn_graph(
+            agent,
+            {"steps": []},
+            invoke_config=config,
+            checkpointer=saver,
+            thread_id=thread_id,
+        )
+        return {
+            "schema_version": 1,
+            "status": "proposed",
+            "summary": f"attempt {attempt}",
+            "steps": state["steps"],
+        }
+
+
+#: The saver the handler opened for the turn running on THIS thread. Thread-local because the
+#: abandoned attempt's thread and the takeover's thread are alive at the same time and each is
+#: inside its own ``postgres_design_checkpointer`` context.
+_CHECKPOINTER_LOCAL = threading.local()
+
+
+def _checkpointer_for_this_thread() -> Any:
+    saver = getattr(_CHECKPOINTER_LOCAL, "saver", None)
+    assert saver is not None, "the handler did not open a checkpointer for this turn"
+    return saver
+
+
+def _thread_id_for_this_thread() -> str:
+    thread_id = getattr(_CHECKPOINTER_LOCAL, "thread_id", None)
+    assert isinstance(thread_id, str)
+    return thread_id
+
+
+@contextlib.contextmanager
+def _publishing_checkpointer(thread_id: str) -> Any:
+    """The PRODUCTION factory, with the opened saver published to the turn body.
+
+    ``postgres_design_checkpointer`` is called verbatim — the real sync ``PostgresSaver`` on the
+    real platform database, opened inside the turn thread, keyed by the run's
+    ``checkpoint_thread_id``. The only thing added is the publish, which exists because the stub
+    runner seam (``DesignTurnHost.agent_turn_runner``) receives ``(payload, root)`` and not the
+    checkpointer the real ``run_agent_turn_preview`` is handed.
+    """
+    from lumen_api.fleet_handler import postgres_design_checkpointer
+
+    with postgres_design_checkpointer(thread_id) as saver:
+        _CHECKPOINTER_LOCAL.saver = saver
+        _CHECKPOINTER_LOCAL.thread_id = thread_id
+        try:
+            yield saver
+        finally:
+            _CHECKPOINTER_LOCAL.saver = None
+
+
+def test_a_taken_over_run_finds_its_checkpoint_thread_on_the_real_postgres_saver(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Kill-and-resume with the REAL checkpointer composed — the one D5 left unexercised.
+
+    WHAT THIS CERTIFIES, EXACTLY: **resume-as-restart with checkpoint continuity.** The takeover
+    worker finds the dead attempt's graph state durably present in Postgres, addressed by the SAME
+    ``checkpoint_thread_id`` (which is the run id — the D5 ruling), loadable through a fresh saver
+    on a different worker, and it then drives the turn through the production
+    ``invoke_turn_graph`` seam, which clears that thread and re-runs the frozen envelope from the
+    top.
+
+    WHAT THIS DOES **NOT** CERTIFY: mid-turn resume. Design turns are not resumable — the tool
+    substrate (scene, trace dir, ``final.json``) is not in the checkpoint and cannot be
+    reconstructed — and ``lumen_agent/checkpoint.py`` documents that as a measured finding, not a
+    gap. Continuity here means "the state is there, addressable and readable across a worker
+    death", which is what makes the restart *deliberate* rather than accidental.
+    """
+    from lumen_api.fleet_handler import DesignTurnHost, build_design_job_handler
+
+    caplog.set_level("WARNING", logger="lumen_agent.checkpoint")
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            async with transaction() as conn:
+                workspace_id = await _seed_workspace(conn, "ckpt")
+            run_id, _work_id = await _offer_turn(workspace_id, "checkpointed poster")
+
+            runner = _CheckpointingRunner()
+            handler = build_design_job_handler(
+                host_provider=lambda: DesignTurnHost(agent_turn_runner=runner),
+                # The REAL production factory, wrapped only so the stub body can reach the saver.
+                checkpointer_factory=_publishing_checkpointer,
+            )
+
+            worker_a = _build_worker(handler, "worker-ckpt-a", leases=_KilledWorkerLeases())
+            task_a = asyncio.create_task(worker_a.run())
+
+            async def claimed_by_a() -> dict[str, Any] | None:
+                row = await _read_run(workspace_id, run_id)
+                claimed = row["status"] == "running" and row["leased_by"] == "worker-ckpt-a"
+                return row if claimed else None
+
+            first = await _await_condition(claimed_by_a, label="worker A claims the run")
+            assert first["lease_generation"] == 1
+
+            async def attempt_1_running() -> bool | None:
+                return True if runner.attempt_1_started.is_set() else None
+
+            await _await_condition(attempt_1_running, label="A's graph is mid-flight")
+
+            # The first superstep's checkpoint has to be DURABLE before A dies, or the takeover
+            # would have nothing to find and this test would pass vacuously.
+            async def checkpoint_landed() -> bool | None:
+                return True if await _checkpoint_rows(run_id) else None
+
+            await _await_condition(checkpoint_landed, label="A's first checkpoint is committed")
+
+            task_a.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task_a
+            await asyncio.sleep(_LEASE_TTL.total_seconds() + 0.5)
+
+            worker_b = _build_worker(handler, "worker-ckpt-b")
+            task_b = asyncio.create_task(worker_b.run())
+            try:
+
+                async def finished_by_b() -> dict[str, Any] | None:
+                    row = await _read_run(workspace_id, run_id)
+                    return row if row["status"] in ("succeeded", "failed") else None
+
+                terminal = await _await_condition(finished_by_b, label="worker B finishes the run")
+                assert terminal["status"] == "succeeded"
+                assert terminal["leased_by"] == "worker-ckpt-b"
+                assert terminal["lease_generation"] > first["lease_generation"]
+                assert terminal["result"]["summary"] == "attempt 2"
+                # The restart really ran the whole graph, not a resumed tail.
+                assert terminal["result"]["steps"] == ["first", "second"]
+
+                # THE CERTIFICATION: the takeover, on a different worker at a higher generation,
+                # loaded the dead attempt's graph state from Postgres under this run's thread id.
+                assert runner.takeover_saw_checkpoint is True, (
+                    "the takeover found no graph state on the run's checkpoint thread"
+                )
+                assert (runner.takeover_checkpoint_rows or 0) >= 1
+
+                # And it restarted deliberately, through the production seam, saying so.
+                restarts = [
+                    record
+                    for record in caplog.records
+                    if "turn.checkpoint_restart" in str(record.msg)
+                ]
+                assert restarts, "the takeover did not go through the checkpoint-restart branch"
+            finally:
+                runner.release.set()
+                worker_b.stop()
+                task_b.cancel()
+                await asyncio.gather(task_b, return_exceptions=True)
+                await _drop_checkpoint_thread(run_id)
+
+    run_async(scenario())
+
+
+async def _checkpoint_rows(thread_id: str) -> int:
+    """How many LangGraph checkpoint rows exist for this thread (0 when the saver table is absent).
+
+    Read straight off ``checkpoints`` rather than through a saver: the point is that the state is
+    durable in the platform database, visible to any process, not merely reachable from the object
+    that wrote it.
+    """
+    async with transaction() as conn:
+        present = (
+            await conn.execute(text("SELECT to_regclass('public.checkpoints')"))
+        ).scalar_one()
+        if present is None:
+            return 0
+        return int(
+            (
+                await conn.execute(
+                    text("SELECT count(*) FROM checkpoints WHERE thread_id = :t"),
+                    {"t": thread_id},
+                )
+            ).scalar_one()
+        )
+
+
+async def _drop_checkpoint_thread(thread_id: str) -> None:
+    """The saver's tables sit outside Alembic and outside the rollback — clean up by hand."""
+    async with transaction() as conn:
+        for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+            present = (
+                await conn.execute(text(f"SELECT to_regclass('public.{table}')"))
+            ).scalar_one()
+            if present is not None:
+                await conn.execute(
+                    text(f"DELETE FROM {table} WHERE thread_id = :t"), {"t": thread_id}
+                )
 
 
 def test_two_workspaces_drain_concurrently_without_blocking_each_other() -> None:
