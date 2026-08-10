@@ -42,10 +42,14 @@ only). Nothing pushed, per branch rules.
 
 - `tests/api/test_agent_registry_wiring.py::test_resolved_snapshot_materializes_through_c61_backend`
   — the environmental `WorkspaceSecurityError` failure tracked since Lane E E0.
-- **5 mypy errors in Lane D chat files** (`chat/router.py` ×3,
-  `projections/threads.py`, `account_research_turn_wiring.py`) — landed with
-  the Lane D merge (`137a9d61`); dict-vs-wire-model type mismatches. Needs an
-  owner (Lane D follow-up); `make typecheck` is red on the hub until fixed.
+- **5 mypy errors in Lane D chat files** — RESOLVED (`cbe42b96`, 2026-08-10):
+  wire models constructed where declared (router), one `ConversationStatus`
+  Literal alias single-sourcing the derived status vocabulary at
+  `thread_status()` (a sixth latent mismatch the dicts had hidden), the
+  `created_at` cast (threads projection), and the explicit body-fallback
+  narrowing (turn wiring). No behavior change; mypy 627 files clean;
+  chat/projections/context suites green on a fresh DB. `make typecheck` is
+  green on the hub again.
 - One fleet test failed once on the polluted shared throwaway DB and passed on
   both re-runs — the documented cross-suite DB-pollution class from
   `2026-08-09-lane-b-merge-and-suite-debt.md` (suite-determinism debt still
