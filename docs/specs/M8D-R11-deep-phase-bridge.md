@@ -21,6 +21,28 @@ integration. **The fix is forward integration with the M8D fleet. Unquarantining
 any M8C code path is out of the question; the R1 quarantine handler leaves the DEEP slot only
 when the R11 adapter replaces it.**
 
+## 1a. Interim verification-scope ruling (founder, 2026-08-10)
+
+For the time being, deployments run with **`CLUE_VERIFICATION_ENABLED=false`** — the
+temporary M9 runtime-verification toggle (landed 2026-08-08, extended by the A+B
+toggle-compat change 2026-08-09). With the flag off: M9.2 deterministic corroboration and
+the M9.3 faithfulness judge are skipped at **every** call site (the VERIFICATION phase, the
+reverse-profiling judge, toolbelt entailment, and the M12.1/Lane-E synthesis writers — zero
+judge spend), and the one merge chokepoint (`claimstore.active_merge_policy()`) relaxes only
+`require_verified_tier4` so unverified tier-4 claims serve. Structural protections stay on
+in both modes: pre-spend authorization, born contact identity binding, freshness/retention,
+M10's use gate, and the rejected/weak-binding merge exclusions. The disabled VERIFICATION
+phase still *runs and advances*, recording `verification_enabled=false` + `accounts_skipped`
+honestly.
+
+**Consequence for R11 — binding:** the bridge is built and accepted against **both toggle
+states**. The DEEP adapter's COMPLETED→VERIFICATION advance, the R11.2 wake source, and the
+R11.3 selector must behave identically in both modes; in disabled mode the phase records the
+skip and advances (never a silent full-verification claim), and R11.3's fail-loud
+missing-fleet-run error fires in both modes — the toggle bypasses *judging*, never the
+selector's honesty. Nothing in R11 may construct a judge or gateway dependency that makes
+disabled-mode composition fail (Lane E's optional-judge pattern is the precedent).
+
 ## 2. Boundary
 
 In scope:
@@ -134,6 +156,10 @@ recommended — the legacy shape keeps validating historical checkpoints byte-fo
 6. Every quarantined address still refuses a cache-miss invocation (R1 regression gate re-run).
 7. Crash/replay: SIGKILL during WAITING_EXTERNAL and during COMPLETED-finalize replays to the
    same terminal state (existing phase-ledger discipline).
+8. Every criterion above holds under `CLUE_VERIFICATION_ENABLED` **true and false** (§1a).
+   In disabled mode the run advances DEEP → VERIFICATION → (HANDOFF-reachable) with the
+   verification checkpoint recording `verification_enabled=false` + `accounts_skipped`, zero
+   judge calls anywhere in the flow, and R11.3's typed missing-fleet-run error still firing.
 
 ## 6. Open decisions for ratification
 
