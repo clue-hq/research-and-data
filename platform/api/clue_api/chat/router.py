@@ -1230,7 +1230,12 @@ def build_chat_router(
             thread_id=thread_id,
             conn_factory=conn_factory,
         )
-        return GateListResponse(data=tuple(gate_wire(view) for view in views))
+        return GateListResponse(
+            data=tuple(
+                gate_wire(view, budget_controls_enabled=settings.budget_controls_enabled)
+                for view in views
+            )
+        )
 
     # --- the dev-lens turn-context inspector (dev-only; never registered in production) ---------
     #
@@ -1476,7 +1481,14 @@ def build_chat_router(
                 code="GATE_SUBJECT_STALE",
                 message="the reviewed subject revision differs from the current gate",
             )
-        if response.expected_estimated_cost_cents != view.gate.max_spend_cents:
+        # FI pilot budget-controls: with the switch off the amount never reached the card, so the
+        # client has no number to echo and this check could only refuse every approval. It is the
+        # *courier* half of staleness; the digest check above is the load-bearing half and stays
+        # armed in both modes, so a redrafted directive still cannot be approved by a stale click.
+        if (
+            settings.budget_controls_enabled
+            and response.expected_estimated_cost_cents != view.gate.max_spend_cents
+        ):
             raise _refuse(
                 status_code=409,
                 code="GATE_AMOUNT_STALE",

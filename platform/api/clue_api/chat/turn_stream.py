@@ -138,6 +138,12 @@ class TurnStreamPolicy:
     #: own ``reasoning`` part. The gate lives on the emitter rather than only on the callback
     #: handler so that *every* path to a reasoning delta, present and future, passes one check.
     reasoning_trace: bool = False
+    #: ``Settings.budget_controls_enabled`` (FI pilot budget-controls, ratified 2026-08-11).
+    #: ``False`` is the pilot posture: the rich ``gate`` part leaves ``amount_cents``/``currency``
+    #: unset, so no cost number reaches a human surface. §3.4's contract already declares both
+    #: optional (the thin gate part has always omitted them), so this is an allowed payload, not a
+    #: contract change. The amount stays on the immutable gate row either way.
+    gate_amount_visible: bool = True
 
 
 @dataclass(slots=True)
@@ -806,6 +812,12 @@ class TurnStreamEmitter:
         **``permitted_decisions`` is the full vocabulary even on a closed gate**: what a gate
         *permits* is a property of the gate, and "this one is finished" is said by ``decision`` and
         ``state``, not by silently emptying the option list.
+
+        A third absence is conditional: with FI pilot budget-controls off
+        (``TurnStreamPolicy.gate_amount_visible`` False) ``amount_cents`` and ``currency`` are left
+        unset too. Everything the card needs to be *answerable* — the ref, the kind, the subject ref
+        and its digest, the addressee, the permitted decisions — is unaffected; only the price
+        disappears.
         """
 
         part_id = gate_part_id(
@@ -826,8 +838,12 @@ class TurnStreamEmitter:
                 state="responded" if answer is not None else "requested",
                 subject_refs=(_gate_subject_ref(view),),
                 expected_subject_sha256=view.expected_subject_sha256,
-                amount_cents=_cent_ceiling(view.max_spend_cents),
-                currency=view.currency,
+                amount_cents=(
+                    _cent_ceiling(view.max_spend_cents)
+                    if self._policy.gate_amount_visible
+                    else None
+                ),
+                currency=view.currency if self._policy.gate_amount_visible else None,
                 addressee_user_id=view.addressee_user_id,
                 permitted_decisions=DECISIONS,
                 decision=None if answer is None else answer.decision,

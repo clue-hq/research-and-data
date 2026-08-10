@@ -21,9 +21,20 @@ __all__ = ["register_agent_gate_tools"]
 
 
 def register_agent_gate_tools(
-    registry: ToolRegistry, *, conn_factory: ConnFactory = transaction
+    registry: ToolRegistry,
+    *,
+    conn_factory: ConnFactory = transaction,
+    budget_controls_enabled: bool = True,
 ) -> None:
-    """Register ``open_directive_confirmation_gate@1`` as the default for its name."""
+    """Register ``open_directive_confirmation_gate@1`` as the default for its name.
 
-    for tool in build_agent_gate_tools(conn_factory=conn_factory):
+    ``budget_controls_enabled`` is ``Settings.budget_controls_enabled`` (FI pilot budget-controls).
+    It changes only the *value* the tool result carries for ``max_spend_cents`` — never the
+    descriptor — so the registered contract, and every profile pin over it, is identical in both
+    modes."""
+
+    for tool in build_agent_gate_tools(
+        conn_factory=conn_factory,
+        budget_controls_enabled=budget_controls_enabled,
+    ):
         registry.register(tool, make_default=True)

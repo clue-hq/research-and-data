@@ -525,6 +525,12 @@ class GateWire(_Wire):
     numerically, and a float round-trip is the one way a client could send back an amount it never
     saw. :func:`~clue_api.agent_gate.money_text` is the same function the digest and the captured
     request bytes use, so one amount has exactly one spelling everywhere.
+
+    It is ``None`` — absent from the JSON — when FI pilot budget-controls are off: the amount stays
+    on the immutable row, but no human surface may see it, and the answer route correspondingly
+    stops requiring the echo (the ``expected_subject_sha256`` digest check, which is the
+    load-bearing stale-approval guard, is untouched in both modes). ``None`` rather than ``"0"`` or
+    ``""`` deliberately: a withheld amount must not be readable as a real one.
     """
 
     gate_id: str
@@ -537,7 +543,7 @@ class GateWire(_Wire):
     subject_revision: int | None
     expected_subject_sha256: str
     subject_snapshot: dict[str, Any]
-    max_spend_cents: str
+    max_spend_cents: str | None
     currency: str
     addressee_user_id: str
     created_at: str
@@ -549,8 +555,12 @@ class GateListResponse(_Wire):
     data: tuple[GateWire, ...]
 
 
-def gate_wire(view: GateView) -> GateWire:
-    """One thread gate on the wire."""
+def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWire:
+    """One thread gate on the wire.
+
+    ``budget_controls_enabled`` is ``Settings.budget_controls_enabled``; False withholds the amount
+    (FI pilot budget-controls). Everything that makes the gate *answerable* — the id, the subject
+    ref, its digest, the addressee — crosses in both modes."""
 
     return GateWire(
         gate_id=view.gate_id,
@@ -563,7 +573,7 @@ def gate_wire(view: GateView) -> GateWire:
         subject_revision=view.subject_revision,
         expected_subject_sha256=view.expected_subject_sha256,
         subject_snapshot=dict(view.subject_snapshot),
-        max_spend_cents=money_text(view.max_spend_cents),
+        max_spend_cents=(money_text(view.max_spend_cents) if budget_controls_enabled else None),
         currency=view.currency,
         addressee_user_id=view.addressee_user_id,
         created_at=view.created_at.isoformat(),

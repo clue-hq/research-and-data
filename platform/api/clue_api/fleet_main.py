@@ -661,6 +661,8 @@ async def _serve() -> None:
                     # outside a dev deployment, so a production worker composes ``False`` here or
                     # does not start at all.
                     reasoning_trace=settings.chat_reasoning_trace_mode == "raw",
+                    # FI pilot budget-controls: with the switch off the gate card carries no price.
+                    gate_amount_visible=settings.budget_controls_enabled,
                 ),
                 stop_poll_interval_s=settings.chat_turn_stop_poll_interval_s,
             )
