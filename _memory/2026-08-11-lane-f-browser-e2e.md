@@ -63,3 +63,44 @@ Branch: `platform/pilot-budget-controls` at Lane F head `642064e6`.
   presenter/answer action (including revise semantics) before integrating, per branch charter.
 - Continue non-browser Lane F acceptance and account-flow inspection while the gate decision is open;
   then resume discovery/deep research browser flow only after a real active ICP exists.
+
+## Backend acceptance and Account-screen join
+
+- Lane-F/R11 composition and bridge tests pass (55 cases across acceptance, committee bridge, deep
+  fleet wake/phase bridge, and verification resolver). The account-research API/fleet selection
+  suite passes (43 cases). The contact-research C0-C7 and V0 manifest suite passes (63 cases), all
+  against the isolated database.
+- The authenticated `/accounts` screen initially rendered 14 unrelated frontend fixtures
+  (Anthropic, OpenAI, Cohere, etc.) because `CLUE_ACCOUNTS_API_BASE_URL` was unset. This is not Lane-F
+  evidence and is logged as `LF-ACCOUNT-001`.
+- Enabling the documented Account HTTP adapter exposed a real auth cutover gap: its transport still
+  sends legacy `X-Workspace-Id` directly to FastAPI with no provider proof. The ratified principal
+  resolver requires `Authorization` plus `X-Clue-Workspace-Id`, so `/frontend/v1/accounts` returns
+  `403 WORKSPACE_FORBIDDEN: a workspace selection is required`. Project chat already uses the
+  centralized same-origin BFF; Accounts does not. Logged as `LF-ACCOUNT-002`; do not weaken auth to
+  make it pass.
+- The Account page turns that deterministic 403 into a generic page crash/reload loop (and a Next
+  runtime overlay in development), logged as `LF-ACCOUNT-003`.
+- Isolation is now explicit: 111 frontend-read list/detail/contact contract tests and the 4-case real
+  Lane-B/D principal join suite pass. The missing piece is the Account repository's auth cutover,
+  not either substrate in isolation.
+
+## Fixture-only authored Account/Contact journeys
+
+- Walked every authored route because the live join is blocked: list, preview, overview, contacts,
+  one valid contact profile, governed withheld/unnamed contact routes, Insights, Artifacts, Activity.
+  These observations are presentation coverage only, never live research evidence.
+- Five of six contact rows are guaranteed 404s in fixture mode: the list offers six links but the
+  detail fixture repository serves Denise Dresser only. The “Look up” email action is a 700-ms
+  client timer that claims “Email found” without a backend call or value. Account “New account” is
+  likewise a random local React row that disappears on reload and links to an unknown id.
+- Account Insights display exact-looking post/article paths but link to site/company/profile roots;
+  contact Evidence is non-link provider/date chips with no span or claim mapping. Raw backend tokens
+  (`1b_plus`, `product_led`, `c_level`, etc.) leak into results, and neither identity-binding nor
+  allowed-use governance is reviewable.
+- Activity contradicts the other fixture tabs (14 contacts versus six; summary updated versus summary
+  not composed). Artifact sort/grid/list controls are inert and the latter two are unlabeled.
+- Root-caused the project composer corruption: the parent clears `prompt`, but the focused Slate
+  editor ignores prop replacement; blur then writes its stale prompt back. The layout overlap is
+  structural too: the whole workspace composer is fixed at 126 px while the editor alone may grow to
+  120 px plus padding/footer, with overflow visible.
