@@ -15,6 +15,7 @@ from clue_api.exa_websets_lifecycle import ExaWebhookIngestor, build_exa_webhook
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.observability_wiring import build_observability_surface
+from clue_api.phase_c_wiring import build_stage0_scrape_binder
 from clue_api.projections_app import create_projections_app
 from clue_api.research_view_runtime import (
     ProductionResearchViewRuntime,
@@ -26,7 +27,9 @@ from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Secrets, Settings, load_settings
 from clue_db import transaction
 from clue_obs import get_logger
+from clue_research.adapters import CallableClaimExtractor, default_scrape_backend
 from clue_research.durable import BudgetEngine, DbBudgetStore
+from clue_research.resolvers import ScrapePolicy
 from clue_toolbelt import DbIdempotencyStore
 
 log = get_logger("clue_api.projections_main")
@@ -59,9 +62,23 @@ def build_application(
     if research_views is not None:
         register_compliance_wiring()
         register_narrative_wiring()
+    # FI-4 slice 2 (charter composition-backlog item 2): the live Stage-0 official-surface
+    # scrape composition — without it every production `start_recon` refuses before spend.
+    # The extractor is EXPLICITLY empty: no production ClaimExtractor exists yet (the LLM
+    # extractor is its own scoped work item), so recon resolves the client, scrapes the
+    # official site under target-lock, and captures durable snapshot evidence — but drafts
+    # no client.* values from it. The interview remains the tier-1 client.* fill path.
+    stage0_scrape_binder = build_stage0_scrape_binder(
+        extractor=CallableClaimExtractor(lambda normalized, entity, field: []),
+        # Pass the resolved settings' backend explicitly — a None scraper would construct a
+        # fresh Settings() inside the resolver registration (one settings truth per process).
+        scraper=default_scrape_backend(resolved),
+        policy=ScrapePolicy(),
+    )
     registry = build_toolbelt(
         storage=storage,
         settings=resolved,
+        stage0_scrape_binder=stage0_scrape_binder,
         research_view_composer=(research_views.composer if research_views is not None else None),
         research_view_snapshots=(research_views.snapshots if research_views is not None else None),
         research_view_recheck=(research_views.recheck if research_views is not None else None),

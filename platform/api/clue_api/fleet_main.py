@@ -89,6 +89,7 @@ from clue_api.external_research_wake import (
 from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, register_boot_handlers
 from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
 from clue_api.narrative_wiring import build_client_knowledge_retriever, register_narrative_wiring
+from clue_api.phase_c_wiring import build_stage0_scrape_binder
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
     Recipe1ProjectExecutionRouter,
@@ -124,8 +125,10 @@ from clue_execution import (
 from clue_fleet import DbTaskQueue, DbWorkQueue, run_worker
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
+from clue_research.adapters import CallableClaimExtractor, default_scrape_backend
 from clue_research.adapters.exa_websets import ExaWebsetsClient
 from clue_research.narrative import ProseSynthesizer
+from clue_research.resolvers import ScrapePolicy
 from clue_research.verification import FaithfulnessJudgeImpl
 from clue_storage import StorageBackend
 from clue_toolbelt import DbIdempotencyStore
@@ -547,6 +550,13 @@ async def _serve() -> None:
             storage=storage,
             settings=settings,
             gateway=gateway,
+            # FI-4 slice 2: same live scrape composition as projections_main (empty extractor
+            # — no production ClaimExtractor exists; snapshots are captured, values are not).
+            stage0_scrape_binder=build_stage0_scrape_binder(
+                extractor=CallableClaimExtractor(lambda normalized, entity, field: []),
+                scraper=default_scrape_backend(settings),
+                policy=ScrapePolicy(),
+            ),
             pre_spend_gate=pre_spend_gate,
             research_directive_memory_write_factory=memory_write_factory_builder(settings, gateway),
             queue=task_queue,
