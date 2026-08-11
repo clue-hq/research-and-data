@@ -80,6 +80,7 @@ from clue_research.durable import (
     insert_account_run,
     save_references,
 )
+from clue_research.icp import load_starter_packs
 from clue_research.identity import (
     insert_account_entity,
     insert_contact_entity,
@@ -87,7 +88,12 @@ from clue_research.identity import (
     stamp_reuse,
 )
 from clue_research.membership import ensure_project_account
-from clue_research.narrative import VALUE_NARRATIVE, load_narrative_pack
+from clue_research.narrative import (
+    ACCOUNT_SUMMARY,
+    VALUE_NARRATIVE,
+    load_narrative_pack,
+    load_prose_pack,
+)
 from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE, load_committee_pack
 from clue_spine import Project
 from tests._workspace import seed_project, seed_workspace
@@ -255,6 +261,44 @@ async def _account_claim(
         claim.model_copy(update={"reuse_scope": ReuseScope.TENANT_PRIVATE, "workspace_id": _WS})
         if private
         else stamp_reuse(claim, workspace_id=None)
+    )
+    await insert_claim(conn, claim)
+
+
+async def _account_summary_claim(
+    conn: AsyncConnection,
+    *,
+    account_id: EntityId,
+    paragraphs: Sequence[str],
+    status: VerificationStatus = VerificationStatus.VERIFIED,
+    research_outcome: str = "completed",
+) -> None:
+    """One Lane-E-shaped summary claim with its real tenant-private/verification stamps."""
+
+    claim = account_claim(
+        entity_id=account_id,
+        field_key=ACCOUNT_SUMMARY,
+        value_json={
+            "paragraphs": list(paragraphs),
+            "prompt_version": "account_summary_v1",
+            "synthesized_from_job_id": str(uuid.uuid4()),
+            "research_outcome": research_outcome,
+            "project_id": None,
+        },
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        confidence=Confidence(0.7),
+        run_id=await _run(conn, kind="entity_research", project_id=None),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        source_url="clue://narrative/prose",
+        evidence_span="verified account facts",
+    ).model_copy(
+        update={
+            "source_key": "llm_synthesis",
+            "verification_status": status,
+            "reuse_scope": ReuseScope.TENANT_PRIVATE,
+            "workspace_id": _WS,
+        }
     )
     await insert_claim(conn, claim)
 
@@ -609,7 +653,9 @@ class _Fixture:
 async def _build(conn: AsyncConnection) -> _Fixture:
     await seed_workspace(conn, _WS)
     await load_narrative_pack(conn)
+    await load_prose_pack(conn)
     await load_committee_pack(conn)
+    await load_starter_packs(conn)
     await _register_insight_field(conn)
 
     project_a = await seed_project(conn, _WS, name="Detail project A")
@@ -807,6 +853,60 @@ def test_the_identity_block_comes_from_the_entity_row() -> None:
 
 
 # --- neutral vs relative --------------------------------------------------------------------
+
+
+def test_account_summary_is_a_typed_current_claim_not_a_generic_fact() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            await _account_summary_claim(
+                conn,
+                account_id=fixture.acme,
+                paragraphs=(
+                    "Acme operates a multi-site care network.",
+                    "Its current research record highlights expansion and staffing pressure.",
+                ),
+            )
+
+            payload = (await _get(conn, fixture.acme)).json()
+            assert payload["summary"] == {
+                "state": "available",
+                "paragraphs": [
+                    "Acme operates a multi-site care network.",
+                    "Its current research record highlights expansion and staffing pressure.",
+                ],
+                "researchOutcome": "completed",
+            }
+            assert ACCOUNT_SUMMARY not in _facts(payload)
+
+    run_async(scenario())
+
+
+def test_account_summary_distinguishes_not_composed_from_restricted() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            assert (await _get(conn, fixture.acme)).json()["summary"] == {
+                "state": "not_composed",
+                "paragraphs": [],
+                "researchOutcome": None,
+            }
+
+            await _account_summary_claim(
+                conn,
+                account_id=fixture.acme,
+                paragraphs=("This rejected prose must never be served.",),
+                status=VerificationStatus.REJECTED,
+            )
+            summary = (await _get(conn, fixture.acme)).json()["summary"]
+            assert summary == {
+                "state": "restricted",
+                "paragraphs": [],
+                "researchOutcome": None,
+            }
+            assert "rejected prose" not in str(summary)
+
+    run_async(scenario())
 
 
 def test_neutral_facts_are_served_once_not_once_per_project() -> None:
@@ -1168,6 +1268,41 @@ def test_coverage_reports_only_the_accounts_own_unresolved_fields() -> None:
             coverage = (await _get(conn, subject)).json()["coverage"]
             assert coverage["unresolvedFieldKeys"] == [_REQUESTED_FIELD]
             assert "contact.current_title" not in coverage["unresolvedFieldKeys"]
+
+    run_async(scenario())
+
+
+def test_unresolved_pack_fields_carry_their_registry_description() -> None:
+    """A new industry-pack key needs no frontend label map: its registry row explains the gap."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            subject = await _account(conn, name="Pack gap", domain="pack-gap.test")
+            await ensure_project_account(
+                conn,
+                workspace_id=_WS,
+                project_id=fixture.project_a.project_id,
+                account_entity_id=subject,
+                added_via="manual",
+            )
+            await _plant_research_result_fields(
+                conn,
+                account_id=subject,
+                project_id=fixture.project_a.project_id,
+                fields=(("healthcare.npi", "account", subject),),
+            )
+
+            coverage = (await _get(conn, subject)).json()["coverage"]
+            assert coverage["unresolvedFieldKeys"] == ["healthcare.npi"]
+            assert coverage["unresolvedFields"] == [
+                {
+                    "fieldKey": "healthcare.npi",
+                    "description": (
+                        "National Provider Identifier (deterministic registry id; tier-1)."
+                    ),
+                }
+            ]
 
     run_async(scenario())
 

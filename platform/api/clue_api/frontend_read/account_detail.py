@@ -78,6 +78,7 @@ from clue_api.frontend_read.accounts_list import (
 )
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.committee import read_governed_committee
+from clue_api.frontend_read.prose import ACCOUNT_SUMMARY_FIELD, ProseRead, read_prose
 from clue_core import (
     EntityId,
     EntityType,
@@ -89,6 +90,8 @@ from clue_core import (
 )
 from clue_db import ConnFactory
 from clue_research.claimstore import (
+    FieldFilters,
+    FieldRegistryScope,
     WorkspaceScope,
     claims_by_ids,
     current_values,
@@ -97,6 +100,7 @@ from clue_research.claimstore import (
     # the Sumble gap ladder) must answer "is this field project-relative?" exactly as this read
     # layer does, and a research-path module importing a BFF module was the wrong direction.
     field_species,
+    list_effective_fields,
 )
 from clue_research.identity import get_account, get_contacts, surviving_id
 from clue_research.membership import ProjectMembership, memberships_for_accounts
@@ -181,6 +185,13 @@ class CommitteeMemberRow(WireModel):
     project_ids: tuple[str, ...] = ()
 
 
+class UnresolvedField(WireModel):
+    """A research gap plus the registry-authored explanation of what was requested."""
+
+    field_key: str
+    description: str | None = None
+
+
 class AccountCoverage(WireModel):
     """How much of this account is actually researched — a confidence report, not a guarantee.
 
@@ -193,6 +204,7 @@ class AccountCoverage(WireModel):
 
     researched_field_count: int
     unresolved_field_keys: tuple[str, ...] = ()
+    unresolved_fields: tuple[UnresolvedField, ...] = ()
 
 
 class AccountDetail(WireModel):
@@ -207,6 +219,7 @@ class AccountDetail(WireModel):
     # Set when the requested id was a merged loser: the body is the survivor's, and this names what
     # the caller asked for so a bookmarked/linked id resolves visibly rather than silently.
     redirected_from: uuid.UUID | None = None
+    summary: ProseRead
     neutral_facts: tuple[NeutralFact, ...] = ()
     project_sections: tuple[AccountProjectSection, ...] = ()
     committee: tuple[CommitteeMemberRow, ...] = ()
@@ -464,8 +477,31 @@ async def _read_coverage(
     held = set(held_field_keys)
     # A field research once failed on but has since been answered is not unresolved.
     unresolved = sorted({str(key) for key in rows.scalars()} - held)
+    definitions = (
+        {
+            item.field_def.field_key: item
+            for item in await list_effective_fields(
+                conn,
+                scope=FieldRegistryScope.for_workspace(workspace_id),
+                filters=FieldFilters(active=None),
+                include_retired=True,
+            )
+        }
+        if unresolved
+        else {}
+    )
     return AccountCoverage(
-        researched_field_count=len(held), unresolved_field_keys=tuple(unresolved)
+        researched_field_count=len(held),
+        unresolved_field_keys=tuple(unresolved),
+        unresolved_fields=tuple(
+            UnresolvedField(
+                field_key=field_key,
+                description=(
+                    definitions[field_key].description if field_key in definitions else None
+                ),
+            )
+            for field_key in unresolved
+        ),
     )
 
 
@@ -534,9 +570,10 @@ async def read_account_detail(
 
     scope = WorkspaceScope.for_workspace(workspace_id)
     field_keys = await _read_distinct_field_keys(conn, entity_id=canonical, scope=scope)
-    species = await field_species(conn, workspace_id=workspace_id, field_keys=field_keys)
-    neutral_keys = [key for key in field_keys if species[key] is ResearchScope.PROJECT_NEUTRAL]
-    relative_keys = [key for key in field_keys if species[key] is ResearchScope.PROJECT_RELATIVE]
+    fact_keys = tuple(key for key in field_keys if key != ACCOUNT_SUMMARY_FIELD)
+    species = await field_species(conn, workspace_id=workspace_id, field_keys=fact_keys)
+    neutral_keys = [key for key in fact_keys if species[key] is ResearchScope.PROJECT_NEUTRAL]
+    relative_keys = [key for key in fact_keys if species[key] is ResearchScope.PROJECT_RELATIVE]
 
     memberships = (
         await memberships_for_accounts(
@@ -546,6 +583,12 @@ async def read_account_detail(
 
     neutral_facts = await _read_neutral_facts(
         conn, entity_id=canonical, field_keys=neutral_keys, scope=scope
+    )
+    summary = await read_prose(
+        conn,
+        entity_id=canonical,
+        field_key=ACCOUNT_SUMMARY_FIELD,
+        scope=scope,
     )
     relative = await _read_relative_claims(
         conn,
@@ -579,6 +622,7 @@ async def read_account_detail(
         registry_ids=account.registry_ids,
         hq_geo=account.hq_geo,
         redirected_from=None if canonical == requested else account_id,
+        summary=summary,
         neutral_facts=neutral_facts,
         project_sections=_sections(memberships, relative, names),
         committee=committee,

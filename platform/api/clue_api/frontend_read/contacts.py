@@ -70,6 +70,7 @@ from clue_api.frontend_read.committee import (
     current_claims,
     read_governed_committee,
 )
+from clue_api.frontend_read.prose import CONTACT_OVERVIEW_FIELD, ProseRead, read_prose
 from clue_api.research_view_governance import display_allowed
 from clue_core import (
     CONTACT_PROFESSIONAL_FIELD_KEYS,
@@ -81,6 +82,7 @@ from clue_core import (
     reference_time,
 )
 from clue_db import ConnFactory
+from clue_research.claimstore import WorkspaceScope
 from clue_research.compliance import WorkspacePolicy
 from clue_research.identity import get_account, get_contacts, surviving_id
 from clue_research.membership import memberships_for_accounts
@@ -191,6 +193,7 @@ class ContactProfile(ContactRow):
 
     account_id: uuid.UUID
     account_name: str
+    overview: ProseRead
     professional_facts: tuple[GovernedFact, ...] = ()
     evidence: tuple[EvidenceChip, ...] = ()
     # Set when the requested contact id was a merged loser: the body is the survivor's.
@@ -413,6 +416,13 @@ async def read_contact_profile(
         raise ContactNotFound(str(contact_id))
 
     claims = current_claims(member)
+    overview = await read_prose(
+        conn,
+        entity_id=canonical_contact,
+        field_key=CONTACT_OVERVIEW_FIELD,
+        scope=WorkspaceScope.for_workspace(workspace_id),
+        display_allowed=lambda claim: display_allowed(claim, policy),
+    )
     row = _build_row(
         member,
         entity=(await get_contacts(conn, (canonical_contact,))).get(canonical_contact),
@@ -424,6 +434,7 @@ async def read_contact_profile(
         **row.model_dump(),
         account_id=uuid.UUID(str(canonical_account)),
         account_name=account_name,
+        overview=overview,
         professional_facts=_professional_facts(claims, policy),
         evidence=_evidence(claims, policy),
         redirected_from=None if canonical_contact == EntityId(contact_id) else contact_id,

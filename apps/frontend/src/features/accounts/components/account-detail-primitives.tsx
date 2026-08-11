@@ -2,7 +2,8 @@ import Link from "next/link";
 import { SidebarIcon } from "@/components/shell/sidebar-icon";
 import type { AccountDetail, CommitteeMember } from "../model/account-detail";
 import { contactPersonaLabel } from "../model/account-contact";
-import { formatToken } from "../model/formatting";
+import { formatFieldKeyLabel, formatToken } from "../model/formatting";
+import { prosePresentation, type ProseRead } from "../model/prose";
 import readability from "./account-readability.module.css";
 import { AccountAvatar } from "./account-avatar";
 import { Absent, FactList, FactValue } from "./account-facts";
@@ -225,9 +226,17 @@ export function AccountDetailsList({
  *
  * `researchedFieldCount` counts fields holding a value from ANY writer and has
  * no denominator, so it is never rendered as progress or as a completion
- * meter. `unresolvedFieldKeys` is the honest research-side companion.
+ * meter. `unresolvedFields` is the honest, registry-described research-side
+ * companion; the key-only list remains a compatibility fallback.
  */
 export function AccountCoveragePanel({ account }: { account: AccountDetail }) {
+  const unresolvedFields = account.coverage.unresolvedFields.length
+    ? account.coverage.unresolvedFields
+    : account.coverage.unresolvedFieldKeys.map((fieldKey) => ({
+        description: null,
+        fieldKey,
+      }));
+
   return (
     <section>
       <h2
@@ -240,20 +249,28 @@ export function AccountCoveragePanel({ account }: { account: AccountDetail }) {
         {account.coverage.researchedFieldCount === 1 ? "" : "s"} hold a value
         for this account.
       </p>
-      {account.coverage.unresolvedFieldKeys.length ? (
+      {unresolvedFields.length ? (
         <div className="mt-2">
           <p
             className={`${readability.uiRegular} text-[var(--clue-content-subtle)]`}
           >
             Research asked for these and could not answer them:
           </p>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {account.coverage.unresolvedFieldKeys.map((fieldKey) => (
-              <TokenBadge compact key={fieldKey}>
-                {fieldKey}
-              </TokenBadge>
+          <ul className="mt-2 space-y-2">
+            {unresolvedFields.map((field) => (
+              <li key={field.fieldKey} title={field.fieldKey}>
+                <span className={readability.uiMedium}>
+                  {formatFieldKeyLabel(field.fieldKey)}
+                </span>
+                <p
+                  className={`${readability.fieldLabel} text-[var(--clue-content-subtle)]`}
+                >
+                  {field.description ??
+                    `Research could not determine ${formatFieldKeyLabel(field.fieldKey).toLocaleLowerCase()}.`}
+                </p>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       ) : null}
     </section>
@@ -263,27 +280,33 @@ export function AccountCoveragePanel({ account }: { account: AccountDetail }) {
 /**
  * A prose section.
  *
- * Slice 1 serves no account or contact prose: per D-10, an honest empty state
- * renders until deep research completes and a real synthesis step composes
- * prose claims. Nothing is fabricated in an adapter to fill this.
+ * The state comes from the live Lane-E prose claim, never from the presence of
+ * adjacent facts or a guessed research-completion state.
  */
 export function AccountTextSection({
   emptyNote,
-  paragraphs,
+  prose,
+  restrictedNote,
   title,
 }: {
   emptyNote: string;
-  paragraphs?: string[];
+  prose: ProseRead;
+  restrictedNote: string;
   title: string;
 }) {
+  const presentation = prosePresentation(prose, {
+    empty: emptyNote,
+    restricted: restrictedNote,
+  });
+
   return (
     <section>
       <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
         {title}
       </h2>
-      {paragraphs?.length ? (
+      {presentation.kind === "paragraphs" ? (
         <div className={`${readability.bodyCopy} mt-3 space-y-5`}>
-          {paragraphs.map((paragraph) => (
+          {presentation.paragraphs.map((paragraph) => (
             <p key={paragraph}>{paragraph}</p>
           ))}
         </div>
@@ -291,7 +314,7 @@ export function AccountTextSection({
         <p
           className={`${readability.uiRegular} mt-3 text-[var(--clue-content-subtle)]`}
         >
-          {emptyNote}
+          {presentation.message}
         </p>
       )}
     </section>

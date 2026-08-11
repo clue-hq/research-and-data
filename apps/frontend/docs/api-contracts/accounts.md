@@ -456,6 +456,11 @@ Account detail:
   "registryIds": {},
   "hqGeo": null,
   "redirectedFrom": null,
+  "summary": {
+    "state": "available",
+    "paragraphs": ["Acme is a multi-site healthcare operator."],
+    "researchOutcome": "completed"
+  },
   "neutralFacts": [
     {
       "fieldKey": "core.employee_count",
@@ -510,7 +515,16 @@ Account detail:
       "projectIds": ["prj_a", "prj_b"]
     }
   ],
-  "coverage": { "researchedFieldCount": 6, "unresolvedFieldKeys": [] }
+  "coverage": {
+    "researchedFieldCount": 6,
+    "unresolvedFieldKeys": ["healthcare.npi"],
+    "unresolvedFields": [
+      {
+        "fieldKey": "healthcare.npi",
+        "description": "National Provider Identifier (deterministic registry id; tier-1)."
+      }
+    ]
+  }
 }
 ```
 
@@ -536,6 +550,7 @@ Contacts row and profile:
 ```
 
 The profile is that row plus `accountId`, `accountName`, `redirectedFrom`,
+`overview` (the same typed prose state as Account `summary`),
 `professionalFacts` (`{ fieldKey, value, observedAt, provider, restricted }`),
 and `evidence` (`{ provider, observedAt }`, no URLs).
 
@@ -685,6 +700,8 @@ empty page, not a `404`, and the rows it does return still carry their full
   by registration). Do not render it as research progress or drive a completion
   meter from it; the honest research-side companion is `unresolvedFieldKeys`,
   which names fields research *asked for* and could not answer.
+  `unresolvedFields` carries the same keys with their field-registry descriptions,
+  so a new dynamic/industry-pack field can explain itself without a frontend map.
 - **`updatedAt` is the `account_entity` row's update time, not research or claim
   recency.** It moves when the entity record itself changes (identity
   resolution, a merge, an alias or registry-id write) and does **not** move when
@@ -894,10 +911,9 @@ refused an unlisted one. One live finding is recorded for whoever runs
 server on the SAME host string it prints (`localhost`), not `127.0.0.1`, or
 server actions are refused.
 
-**Prose renders an honest empty state (D-10).** The account summary, the
-business description and the contact overview have no wire field; each shows
-"composed once this research completes" rather than a fabricated paragraph. The
-contact page's hard-coded "Last updated yesterday" is gone for the same reason.
+**SUPERSEDED by FI-2 slice 4.** Account summary and Contact overview now have
+typed live prose fields. The contact page's hard-coded "Last updated yesterday"
+remains removed; no unsupported recency is inferred.
 
 ### Typed Account recovery (FI-2 slice 2, 2026-08-11)
 
@@ -954,3 +970,28 @@ and absent from the accessibility tree. Contacts-grid rows are named
 `Open <name> profile`, so the avatar, row and link no longer concatenate the
 same person name. Selection behavior is unchanged and remains owned by its
 separate bulk-actions slice.
+
+### Live prose and user-facing vocabulary (FI-2 slice 4, 2026-08-12)
+
+Account detail serves `summary`; Contact detail serves `overview`. Both are a
+discriminated union derived from the current Lane-E synthesis claim:
+
+| `state` | `paragraphs` | `researchOutcome` | Meaning |
+| --- | --- | --- | --- |
+| `available` | one or more strings | `completed` or `needs_review` | Current synthesis is displayable. |
+| `not_composed` | `[]` | `null` | No live synthesis claim exists. |
+| `restricted` | `[]` | `null` | A synthesis record exists but cannot be served. |
+
+`account.summary` is excluded from `neutralFacts`, and `contact.overview` is
+excluded from `professionalFacts`; prose is never rendered as a generic fact.
+The UI selects the summary/overview copy from this state alone. In particular,
+it does not infer “research incomplete” from project status while displaying a
+completed synthesis.
+
+The backend keeps semantic values unchanged (`1b_plus`, `product_led`,
+`c_level`, `economic_buyer`). The frontend owns stable labels (`$1B+`,
+`Product-led`, `C-level`, `Economic buyer`) and applies them at render time, so
+filters and model data retain the machine values. Unknown ordinary prose is not
+sentence-cased. Dynamic research gaps use `coverage.unresolvedFields[].description`
+from the effective field registry; the key-to-label prettifier remains only a
+fallback heading.

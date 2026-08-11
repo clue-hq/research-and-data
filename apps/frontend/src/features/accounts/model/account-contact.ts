@@ -5,6 +5,7 @@ import {
   PersonaSchema,
   type Persona,
 } from "./vocabulary";
+import { ProseReadSchema } from "./prose";
 
 /**
  * Presentation-only persona tone. It is a frontend display decision (D-5) and
@@ -108,6 +109,11 @@ export const ContactEvidenceSchema = z.object({
 export const AccountContactDetailSchema = AccountContactSummarySchema.extend({
   accountId: z.string(),
   accountName: z.string().nullable().default(null),
+  overview: ProseReadSchema.default({
+    state: "not_composed",
+    paragraphs: [],
+    researchOutcome: null,
+  }),
   professionalFacts: z.array(GovernedFactSchema).default([]),
   evidence: z.array(ContactEvidenceSchema).default([]),
   redirectedFrom: z.string().nullable().default(null),

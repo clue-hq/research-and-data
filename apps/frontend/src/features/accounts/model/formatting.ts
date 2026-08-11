@@ -34,6 +34,23 @@ export function formatToken(token: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/** Stable customer-facing labels for machine values that need more than sentence casing. */
+const semanticTokenLabels: Record<string, string> = {
+  "1b_plus": "$1B+",
+  product_led: "Product-led",
+  c_level: "C-level",
+  economic_buyer: "Economic buyer",
+};
+
+export function formatSemanticToken(token: string): string {
+  return semanticTokenLabels[token] ?? formatToken(token);
+}
+
+/** Preserve ordinary prose verbatim; replace only known machine values. */
+export function formatSemanticValue(value: string): string {
+  return semanticTokenLabels[value] ?? value;
+}
+
 /**
  * Turns a field-registry key into a human label without enumerating anything:
  * `core.employee_count` → `Employee count`, `dental.chair_count` → `Chair count`.
@@ -113,7 +130,7 @@ export function formatConfidence(confidence: number | null): string | null {
  */
 export function formatJsonScalar(value: JsonValue): string | null {
   if (value === null) return null;
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return formatSemanticValue(value);
   if (typeof value === "number") return employeeCountFormatter.format(value);
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return null;

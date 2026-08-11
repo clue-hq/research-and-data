@@ -32,6 +32,13 @@ from clue_api.frontend_read.app import (
     install_frontend_read_surface,
 )
 from clue_api.frontend_read.committee import latest_project_run_context
+from clue_api.frontend_read.prose import (
+    ACCOUNT_SUMMARY_FIELD,
+    CONTACT_OVERVIEW_FIELD,
+    ProseRead,
+    ProseState,
+    read_prose,
+)
 
 __all__ = [
     "CORS_ALLOW_METHODS",
@@ -43,7 +50,11 @@ __all__ = [
     "AccountNotFound",
     "AccountProjectSection",
     "AccountResearchStatusValue",
+    "ACCOUNT_SUMMARY_FIELD",
+    "CONTACT_OVERVIEW_FIELD",
     "InvalidCursorError",
+    "ProseRead",
+    "ProseState",
     "WorkspaceDep",
     "build_frontend_read_probe_router",
     "build_frontend_read_router",
@@ -52,4 +63,5 @@ __all__ = [
     "latest_project_run_context",
     "list_accounts",
     "read_account_detail",
+    "read_prose",
 ]

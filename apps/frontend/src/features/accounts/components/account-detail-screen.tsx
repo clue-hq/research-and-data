@@ -253,7 +253,9 @@ export function AccountDetailScreen({
             <AccountIdentity account={account} />
             <div className="mt-9">
               <AccountTextSection
-                emptyNote="A written account summary is composed once this account's deep research completes."
+                emptyNote="No written account summary has been composed yet."
+                prose={account.summary}
+                restrictedNote="The account summary is unavailable for display."
                 title="Account summary"
               />
             </div>

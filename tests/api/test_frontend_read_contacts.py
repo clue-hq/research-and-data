@@ -54,6 +54,7 @@ from clue_core import (
     Persona,
     ProjectRunId,
     ResearchMode,
+    ReuseScope,
     RunId,
     UseClass,
     VerificationStatus,
@@ -75,6 +76,7 @@ from clue_research.identity import (
     stamp_reuse,
 )
 from clue_research.membership import ensure_project_account
+from clue_research.narrative import CONTACT_OVERVIEW, load_prose_pack
 from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE, load_committee_pack
 from clue_research.profiling.fields import load_deep_profiling_pack
 from clue_spine import Project
@@ -209,6 +211,47 @@ async def _contact_claim(
     return uuid.UUID(str(claim.id))
 
 
+async def _contact_overview_claim(
+    conn: AsyncConnection,
+    *,
+    contact_id: EntityId,
+    run_id: RunId,
+    paragraphs: Sequence[str],
+    status: VerificationStatus = VerificationStatus.VERIFIED,
+    research_outcome: str = "completed",
+) -> None:
+    """One Lane-E-shaped contact overview, independent of committee reference indexing."""
+
+    claim = contact_claim(
+        entity_id=contact_id,
+        field_key=CONTACT_OVERVIEW,
+        value_json={
+            "paragraphs": list(paragraphs),
+            "prompt_version": "contact_overview_v1",
+            "synthesized_from_job_id": str(uuid.uuid4()),
+            "research_outcome": research_outcome,
+            "project_id": None,
+        },
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        confidence=Confidence(0.7),
+        run_id=run_id,
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        identity_binding=IdentityBinding.STRONG,
+        use_class=UseClass.PROFESSIONAL_PUBLIC,
+        source_url="clue://narrative/prose",
+        evidence_span="verified professional contact facts",
+    ).model_copy(
+        update={
+            "source_key": "llm_synthesis",
+            "verification_status": status,
+            "reuse_scope": ReuseScope.TENANT_PRIVATE,
+            "workspace_id": _WS,
+        }
+    )
+    await insert_claim(conn, claim)
+
+
 async def _member(
     conn: AsyncConnection,
     *,
@@ -306,6 +349,7 @@ async def _build(conn: AsyncConnection) -> _Fixture:
     await load_core_pack(conn)  # `contact.facet.recent_post` lives in the core pack
     await load_committee_pack(conn)
     await load_deep_profiling_pack(conn)
+    await load_prose_pack(conn)
 
     project_a = await seed_project(conn, _WS, name="Contacts project A")
     project_b = await seed_project(conn, _WS, name="Contacts project B")
@@ -672,6 +716,63 @@ def test_the_profile_adds_account_identity_professional_facts_and_evidence() -> 
 
             providers = {chip["provider"] for chip in payload["evidence"]}
             assert providers == {"committee_inference", "linkedin_snapshot", "sumble"}
+
+    run_async(scenario())
+
+
+def test_contact_overview_is_a_typed_current_claim_not_a_professional_fact() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            await _contact_overview_claim(
+                conn,
+                contact_id=fixture.shared,
+                run_id=new_run_id(),
+                paragraphs=(
+                    "Dana leads financial evaluation for Acme's buying committee.",
+                    "The current record identifies procurement as a relevant professional theme.",
+                ),
+                research_outcome="needs_review",
+            )
+
+            payload = (await _profile(conn, fixture.acme, fixture.shared)).json()
+            assert payload["overview"] == {
+                "state": "available",
+                "paragraphs": [
+                    "Dana leads financial evaluation for Acme's buying committee.",
+                    "The current record identifies procurement as a relevant professional theme.",
+                ],
+                "researchOutcome": "needs_review",
+            }
+            assert CONTACT_OVERVIEW not in _facts(payload)
+
+    run_async(scenario())
+
+
+def test_contact_overview_distinguishes_not_composed_from_restricted() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            assert (await _profile(conn, fixture.acme, fixture.shared)).json()["overview"] == {
+                "state": "not_composed",
+                "paragraphs": [],
+                "researchOutcome": None,
+            }
+
+            await _contact_overview_claim(
+                conn,
+                contact_id=fixture.shared,
+                run_id=new_run_id(),
+                paragraphs=("This rejected overview must never be served.",),
+                status=VerificationStatus.REJECTED,
+            )
+            overview = (await _profile(conn, fixture.acme, fixture.shared)).json()["overview"]
+            assert overview == {
+                "state": "restricted",
+                "paragraphs": [],
+                "researchOutcome": None,
+            }
+            assert "rejected overview" not in str(overview)
 
     run_async(scenario())
 

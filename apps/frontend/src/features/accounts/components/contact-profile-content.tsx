@@ -4,6 +4,7 @@ import { contactDisplayName } from "../model/contact-accessibility";
 import {
   formatConfidence,
   formatIsoDate,
+  formatSemanticToken,
   formatToken,
 } from "../model/formatting";
 import {
@@ -13,6 +14,7 @@ import {
 import { Absent, FactList, Restricted } from "./account-facts";
 import readability from "./account-readability.module.css";
 import { ContactAvatar } from "./contact-avatar";
+import { AccountTextSection } from "./account-detail-primitives";
 
 function ProfileRow({
   icon,
@@ -81,7 +83,7 @@ export function ContactProfileContent({
         </ProfileRow>
         <ProfileRow icon="influence" label="Committee role">
           <span className="flex items-center gap-2">
-            {formatToken(contact.roleOnCommittee.value)}
+            {formatSemanticToken(contact.roleOnCommittee.value)}
             {confidence ? (
               <span className="text-[var(--clue-content-subtle)]">
                 {confidence} confidence
@@ -118,19 +120,14 @@ export function ContactProfileContent({
         </ProfileRow>
       </div>
 
-      <section className="mt-9">
-        <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
-          Overview
-        </h2>
-        {/* D-10: an honest empty state until this contact's deep research
-            completes and a real synthesis step composes prose claims. */}
-        <p
-          className={`${readability.uiRegular} mt-4 text-[var(--clue-content-subtle)]`}
-        >
-          A written overview is composed once this contact&rsquo;s research
-          completes.
-        </p>
-      </section>
+      <div className="mt-9">
+        <AccountTextSection
+          emptyNote="No written contact overview has been composed yet."
+          prose={contact.overview}
+          restrictedNote="The contact overview is unavailable for display."
+          title="Overview"
+        />
+      </div>
 
       <section className="mt-9">
         <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
