@@ -909,18 +909,24 @@ def test_contacts_never_scope_a_claim_read_by_claim_workspace_id() -> None:
 
 
 def test_the_committee_reader_is_the_governed_resolver_not_the_identity_helper() -> None:
-    """FI-1 §4.5 ruling — and the per-project context rule is *imported* from the account-detail
-    module, never re-derived (there is exactly one recorded latest-run-wins rule)."""
+    """FI-1 §4.5 and Slice-3 addressability: every linked surface imports one committee reader."""
 
     from pathlib import Path
 
+    import clue_api.frontend_read.account_detail as account_detail
+    import clue_api.frontend_read.committee as committee
     import clue_api.frontend_read.contacts as module
 
-    body = Path(module.__file__).read_text().split('"""', 2)[2]
-    assert "contact_ids_for_account" not in body
-    assert "ContactEligibilityResolver" in body
-    assert "latest_project_run_context" in body
-    assert "FROM project_run" not in body
+    contact_body = Path(module.__file__).read_text().split('"""', 2)[2]
+    detail_body = Path(account_detail.__file__).read_text().split('"""', 2)[2]
+    committee_body = Path(committee.__file__).read_text().split('"""', 2)[2]
+    assert "contact_ids_for_account" not in contact_body + detail_body + committee_body
+    assert "read_governed_committee" in contact_body
+    assert "read_governed_committee" in detail_body
+    assert "ContactEligibilityResolver" in committee_body
+    assert "latest_project_run_context" in committee_body
+    assert "FROM project_run" in committee_body
+    assert "FROM project_run" not in contact_body + detail_body
 
 
 def test_the_display_gate_is_the_shared_c7_predicate() -> None:

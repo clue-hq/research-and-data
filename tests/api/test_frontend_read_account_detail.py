@@ -1292,17 +1292,18 @@ def test_a_non_uuid_id_is_an_enveloped_validation_error() -> None:
 
 
 def test_the_committee_reader_is_not_the_ungoverned_identity_helper() -> None:
-    """FI-1 §4.5 ruling: the committee is read through ``ContactEligibilityResolver``, never
-    ``identity.contact_ids_for_account`` (which knows nothing about display governance)."""
+    """FI-1 §4.5 and Slice-3: Account detail delegates to the one governed committee seam."""
 
     from pathlib import Path
 
     import clue_api.frontend_read.account_detail as module
+    import clue_api.frontend_read.committee as committee
 
-    source = Path(module.__file__).read_text()
-    body = source.split('"""', 2)[2]
-    assert "contact_ids_for_account" not in body
-    assert "ContactEligibilityResolver" in body
+    body = Path(module.__file__).read_text().split('"""', 2)[2]
+    committee_body = Path(committee.__file__).read_text().split('"""', 2)[2]
+    assert "contact_ids_for_account" not in body + committee_body
+    assert "read_governed_committee" in body
+    assert "ContactEligibilityResolver" in committee_body
 
 
 def test_the_unattributed_section_is_absent_when_everything_is_attributed() -> None:
@@ -1402,7 +1403,7 @@ def test_the_project_run_context_rule_is_latest_run_wins() -> None:
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
-            from clue_api.frontend_read.account_detail import latest_project_run_context
+            from clue_api.frontend_read.committee import latest_project_run_context
 
             fixture = await _build(conn)
             newer = new_project_run_id()

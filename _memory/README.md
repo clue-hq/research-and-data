@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-12-fi2-slice3-contact-journey.md` — FI-2 Slice 3 closes LF-CONTACT-001 and
+  LF-CONTACT-003 with one shared governed committee/addressability seam, named/withheld/unnamed and
+  merged-link coverage, concise row/link accessibility names, full terminal gates, and an
+  authenticated browser-to-API-to-Postgres acceptance run.
 - `2026-08-12-fi2-slice2-account-recovery.md` — FI-2 Slice 2 closes LF-ACCOUNT-003
   with five typed recovery states, explicit workspace selection, request-correlated flag-off errors,
   safe expired-session reauthentication, pagination parity, focused/full gates, and an authenticated

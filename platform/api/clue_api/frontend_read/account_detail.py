@@ -69,7 +69,6 @@ from pydantic import JsonValue
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.contact_eligibility import ContactEligibilityResolver
 from clue_api.frontend_read.accounts_list import (
     SCORE_FIELD_KEYS,
     ProjectScore,
@@ -78,16 +77,12 @@ from clue_api.frontend_read.accounts_list import (
     project_names,
 )
 from clue_api.frontend_read.app import WorkspaceDep
-from clue_api.frontend_read.committee import (
-    committee_member_displayable,
-    request_bound_conn_factory,
-)
+from clue_api.frontend_read.committee import read_governed_committee
 from clue_core import (
     EntityId,
     EntityType,
     FreshnessState,
     Persona,
-    ProjectRunId,
     ResearchScope,
     decode_jsonb_scalar,
     reference_time,
@@ -103,7 +98,6 @@ from clue_research.claimstore import (
     # layer does, and a research-path module importing a BFF module was the wrong direction.
     field_species,
 )
-from clue_research.compliance import load_workspace_policy
 from clue_research.identity import get_account, get_contacts, surviving_id
 from clue_research.membership import ProjectMembership, memberships_for_accounts
 
@@ -219,13 +213,6 @@ class AccountDetail(WireModel):
     coverage: AccountCoverage
 
 
-class ProjectRunContext(WireModel):
-    """The ``(project_run, product)`` pair a project's governed reads run under."""
-
-    project_run_id: ProjectRunId
-    product_id: str | None = None
-
-
 # --- SQL --------------------------------------------------------------------------------------
 
 # Every field this account holds a live, promotable claim for. Eligibility mirrors the merge's
@@ -286,43 +273,7 @@ _UNRESOLVED_FIELDS = text(
     """
 )
 
-_LATEST_PROJECT_RUN = text(
-    """
-    SELECT id, product_id
-    FROM project_run
-    WHERE workspace_id = :workspace_id AND project_id = :project_id
-    ORDER BY created_at DESC, id DESC
-    LIMIT 1
-    """
-)
-
-
 # --- composition helpers ----------------------------------------------------------------------
-
-
-async def latest_project_run_context(
-    conn: AsyncConnection, *, workspace_id: str, project_id: str
-) -> ProjectRunContext | None:
-    """THE per-project governed-read context rule, recorded in one place (FI-2 §7).
-
-    ``ContactEligibilityResolver`` resolves a committee against an exact ``(project_run, product)``
-    pair, but a *project* has many runs over its life. The recorded rule is **latest run wins**: a
-    project's most recent ``project_run`` row supplies both. It is a rule, not a guess — the newest
-    run is the one whose committee the operator is looking at — and putting it here means the
-    detail view, the contacts endpoints (Task 4) and any later project-lens surface cannot each
-    invent their own.
-
-    Returns ``None`` for a project that has never started a run (its committee is genuinely
-    unknown, not empty-because-we-guessed-wrong).
-    """
-    row = (
-        await conn.execute(
-            _LATEST_PROJECT_RUN, {"workspace_id": workspace_id, "project_id": project_id}
-        )
-    ).first()
-    if row is None:
-        return None
-    return ProjectRunContext(project_run_id=ProjectRunId(row[0]), product_id=row[1])
 
 
 def _reference_time(observed_at: datetime | None, collected_at: datetime) -> datetime:
@@ -468,73 +419,32 @@ async def _read_committee(
     workspace_id: str,
     memberships: Sequence[ProjectMembership],
 ) -> tuple[CommitteeMemberRow, ...]:
-    """The union of every targeting project's governed committee.
+    """Project the shared governed committee into Account-detail rows.
 
-    One ``ContactEligibilityResolver`` per project, each bound to that project's latest-run context
-    (:func:`latest_project_run_context`). The resolver owns *membership* eligibility end to end — a
-    member whose role/persona binding is not STRONG, whose role is implausible, or whose contact row
-    is erased simply does not come back — so this function never re-derives that.
-
-    It does, however, apply :func:`~clue_api.frontend_read.committee.committee_member_displayable`,
-    the workspace **display** policy over the member's role/persona claims. The resolver stops at
-    "is this person really on this committee?"; whether this workspace may *show* them is a separate
-    axis (C7's, applied per statement), and skipping it here was a real leak: the contacts endpoints
-    apply it, so a workspace with professional-public display off would have seen an empty contacts
-    table beside a fully populated committee block for the same account.
-
-    The connection is the request's own, lent to the resolver rather than letting it take a second
-    one from the pool — see ``committee.request_bound_conn_factory`` for the deadlock class.
+    Addressability is not re-derived here: the Contacts list and Contact profile consume the same
+    :func:`read_governed_committee` result, so every member linked from this response is a valid
+    Contact-detail subject under the same workspace policy.
     """
-    policy = await load_workspace_policy(conn, workspace_id=workspace_id)
-    bound = request_bound_conn_factory(conn)
-    by_contact: dict[EntityId, CommitteeMemberRow] = {}
-    projects: dict[EntityId, list[str]] = defaultdict(list)
-    # Memberships only — deliberate, and an asymmetry worth naming against this same response:
-    # ``project_sections`` (and the list's ``researchStatus``) honestly surface a project that
-    # produced research on this account *without* a membership row, but this loop never visits such
-    # a project, so its committee members can surface nowhere. That state should not occur (it is an
-    # anomaly, not a mode); iterating research lineage instead would attribute one project's
-    # committee to an account it does not target, which is the worse failure.
-    for membership in memberships:
-        context = await latest_project_run_context(
-            conn, workspace_id=workspace_id, project_id=membership.project_id
-        )
-        if context is None:
-            continue
-        resolver = ContactEligibilityResolver(
-            project_run_id=context.project_run_id,
-            product_id=context.product_id,
-            conn_factory=bound,
-        )
-        for member in await resolver.resolve_account(
-            account_entity_id=account_id, workspace_id=workspace_id
-        ):
-            if not committee_member_displayable(member, policy):
-                continue
-            projects[member.contact_entity_id].append(membership.project_id)
-            by_contact.setdefault(
-                member.contact_entity_id,
-                CommitteeMemberRow(
-                    contact_id=uuid.UUID(str(member.contact_entity_id)),
-                    persona=member.persona,
-                    role_on_committee=member.role_on_committee,
-                ),
-            )
-    if not by_contact:
+    union, _policy = await read_governed_committee(
+        conn,
+        account_id=account_id,
+        workspace_id=workspace_id,
+        memberships=memberships,
+    )
+    if not union.members:
         return ()
-    contacts = await get_contacts(conn, tuple(by_contact))
+    contacts = await get_contacts(conn, tuple(union.members))
     return tuple(
         sorted(
             (
-                row.model_copy(
-                    update={
-                        "name": (
-                            contacts[contact_id].full_name if contact_id in contacts else None
-                        ),
-                        "project_ids": tuple(projects[contact_id]),
-                    }
+                CommitteeMemberRow(
+                    contact_id=uuid.UUID(str(contact_id)),
+                    name=contacts[contact_id].full_name if contact_id in contacts else None,
+                    persona=member.persona,
+                    role_on_committee=member.role_on_committee,
+                    project_ids=tuple(union.project_ids[contact_id]),
                 )
-                for contact_id, row in by_contact.items()
+                for contact_id, member in union.members.items()
             ),
             key=lambda member: (member.persona.value, str(member.contact_id)),
         )

@@ -7,6 +7,11 @@ import {
   contactPersonaTone,
   type AccountContactSummary,
 } from "../../model/account-contact";
+import {
+  contactDisplayName,
+  contactProfileLinkAccessibleName,
+  contactRowAccessibleName,
+} from "../../model/contact-accessibility";
 import type { AccountTableDensity } from "../../model/account-table-view";
 import { formatConfidence, formatToken } from "../../model/formatting";
 import readability from "../../components/account-readability.module.css";
@@ -40,9 +45,11 @@ export function ContactRow({
   gridTemplateColumns: string;
 }) {
   const confidence = formatConfidence(contact.roleOnCommittee.confidence);
+  const displayName = contactDisplayName(contact.name);
 
   return (
     <div
+      aria-label={contactRowAccessibleName(contact.name)}
       className={`${readability.uiRegular} ${readability.densityTransition} ${densityHeightClasses[density]} group isolate grid border-b-[0.5px] border-[var(--clue-border-table)] hover:bg-[var(--clue-background-page)]`}
       role="row"
       style={{ gridTemplateColumns }}
@@ -58,12 +65,13 @@ export function ContactRow({
           profile is fetched, so the affordance is real on row 1 and row n
           alike — it used to be a button wired to a single featured contact. */}
       <Link
+        aria-label={contactProfileLinkAccessibleName(contact.name)}
         className="sticky left-14 z-20 flex min-w-0 items-center gap-2 overflow-hidden border-r-[0.5px] border-[var(--clue-border-table)] bg-white px-4 text-left outline-none group-hover:bg-[var(--clue-background-page)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#cdd5c4]"
         href={`/accounts/${accountId}/contacts/${contact.id}`}
       >
-        <ContactAvatar name={contact.name} size={24} />
+        <ContactAvatar decorative name={contact.name} size={24} />
         <span className={`${readability.uiMedium} truncate`}>
-          {contact.name ?? "Unnamed contact"}
+          {displayName}
         </span>
         <span className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
           <DesignIcon name="arrow-up-right" size={12} />

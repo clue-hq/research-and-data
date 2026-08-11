@@ -9,14 +9,10 @@ their verdicts to Band-2:
 
 1. **membership** — ``project_account`` says which projects target this account, in the recorded
    first-add-wins order (element 0 is the primary project);
-2. **committee membership + product/run scoping** — :class:`ContactEligibilityResolver`, one per
-   targeting project, each bound to that project's ``(project_run, product)`` via
-   :func:`~clue_api.frontend_read.account_detail.latest_project_run_context` — THE recorded
-   per-project context rule, **imported, never re-derived**. The resolver is the FI-1 §4.5 ruling
-   made structural: ``identity.contact_ids_for_account`` knows nothing about run membership,
-   product scope, canonicalization or governance, so it is never used here. A member whose
-   role/persona claim is not strongly bound, whose role is implausible, or whose contact row is
-   erased does not come back — and this module does not second-guess that;
+2. **committee membership + product/run scoping** —
+   :func:`~clue_api.frontend_read.committee.read_governed_committee`, the shared addressability seam
+   used by Account detail, Contacts list and Contact detail. It owns the latest-run context,
+   governed resolver and display-policy decision once; this module only projects its members;
 3. **display governance** — :func:`~clue_api.research_view_governance.display_allowed`, the *same*
    predicate C7 statement governance applies, imported rather than copied. A copy would be free to
    drift from the policy C7 enforces, which is the one thing a second read surface over the same
@@ -59,7 +55,6 @@ missing account).
 from __future__ import annotations
 
 import uuid
-from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime
 
@@ -67,14 +62,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.contact_eligibility import ContactEligibilityResolver, GovernedCommitteeContact
-from clue_api.frontend_read.account_detail import AccountNotFound, latest_project_run_context
+from clue_api.contact_eligibility import GovernedCommitteeContact
+from clue_api.frontend_read.account_detail import AccountNotFound
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.committee import (
-    committee_member_displayable,
     current_claims,
-    request_bound_conn_factory,
+    read_governed_committee,
 )
 from clue_api.research_view_governance import display_allowed
 from clue_core import (
@@ -87,9 +81,9 @@ from clue_core import (
     reference_time,
 )
 from clue_db import ConnFactory
-from clue_research.compliance import WorkspacePolicy, load_workspace_policy
+from clue_research.compliance import WorkspacePolicy
 from clue_research.identity import get_account, get_contacts, surviving_id
-from clue_research.membership import ProjectMembership, memberships_for_accounts
+from clue_research.membership import memberships_for_accounts
 from clue_research.profiling.committee import CURRENT_TITLE
 from clue_research.profiling.fields import FACET_PUBLIC_APPEARANCES
 
@@ -220,25 +214,6 @@ class ContactListResponse(WireModel):
 # --- composition ------------------------------------------------------------------------------
 
 
-class _CommitteeUnion:
-    """Every governed member of this account, with the projects that target them.
-
-    A member reached through several projects is held **once**, in their *primary* (first-add-wins)
-    targeting project's governed view: that project's run decided which claims are in scope, and
-    blending two runs' claim sets would risk showing product A's title beside product B's role.
-    The projects are unioned; the claims are not.
-    """
-
-    def __init__(self) -> None:
-        self.members: dict[EntityId, GovernedCommitteeContact] = {}
-        self.project_ids: dict[EntityId, list[str]] = defaultdict(list)
-
-    def add(self, member: GovernedCommitteeContact, *, project_id: str) -> None:
-        self.members.setdefault(member.contact_entity_id, member)
-        if project_id not in self.project_ids[member.contact_entity_id]:
-            self.project_ids[member.contact_entity_id].append(project_id)
-
-
 async def _resolve_account(
     conn: AsyncConnection, *, workspace_id: str, account_id: uuid.UUID
 ) -> tuple[EntityId, str]:
@@ -252,46 +227,6 @@ async def _resolve_account(
     if account is None or account.workspace_id != workspace_id:
         raise AccountNotFound(str(account_id))
     return canonical, account.canonical_name
-
-
-async def _resolve_union(
-    conn: AsyncConnection,
-    *,
-    account_id: EntityId,
-    workspace_id: str,
-    memberships: Sequence[ProjectMembership],
-) -> _CommitteeUnion:
-    # The resolver reads through the request's OWN connection, never a second one from the pool: a
-    # request that already holds a pool connection and then asks for another (once per targeting
-    # project) can self-deadlock on an exhausted pool under load — see
-    # ``committee.request_bound_conn_factory``.
-    bound = request_bound_conn_factory(conn)
-    union = _CommitteeUnion()
-    # Memberships only — deliberate, and an asymmetry worth naming: the account detail's
-    # ``researchStatus``/``projectSections`` honestly surface a project that produced research on
-    # this account *without* a membership row, but this union never visits such a project, so its
-    # committee members can surface nowhere on this surface. That state should not occur (it is an
-    # anomaly, not a mode); iterating research lineage instead would attribute one project's
-    # committee to an account it does not target, which is the worse failure.
-    for membership in memberships:
-        context = await latest_project_run_context(
-            conn, workspace_id=workspace_id, project_id=membership.project_id
-        )
-        if context is None:
-            # A project that has never started a run has no committee context — its committee is
-            # genuinely unknown, which is not the same as empty, and guessing another project's run
-            # would attribute one project's research to another.
-            continue
-        resolver = ContactEligibilityResolver(
-            project_run_id=context.project_run_id,
-            product_id=context.product_id,
-            conn_factory=bound,
-        )
-        for member in await resolver.resolve_account(
-            account_entity_id=account_id, workspace_id=workspace_id
-        ):
-            union.add(member, project_id=membership.project_id)
-    return union
 
 
 def _role_confidence(member: GovernedCommitteeContact) -> float | None:
@@ -421,13 +356,12 @@ async def read_account_contacts(
             conn, workspace_id=workspace_id, account_ids=[uuid.UUID(str(canonical))]
         )
     ).get(uuid.UUID(str(canonical)), ())
-    union = await _resolve_union(
+    union, policy = await read_governed_committee(
         conn,
         account_id=canonical,
         workspace_id=workspace_id,
         memberships=memberships,
     )
-    policy = await load_workspace_policy(conn, workspace_id=workspace_id)
     entities = await get_contacts(conn, tuple(union.members))
 
     rows = [
@@ -439,7 +373,6 @@ async def read_account_contacts(
             policy=policy,
         )
         for contact_id, member in union.members.items()
-        if committee_member_displayable(member, policy)
     ]
     rows.sort(key=lambda row: (row.persona.value, str(row.id)))
     return ContactListResponse(data=tuple(rows), meta=ContactListMeta(total=len(rows)))
@@ -469,15 +402,14 @@ async def read_contact_profile(
             conn, workspace_id=workspace_id, account_ids=[uuid.UUID(str(canonical_account))]
         )
     ).get(uuid.UUID(str(canonical_account)), ())
-    union = await _resolve_union(
+    union, policy = await read_governed_committee(
         conn,
         account_id=canonical_account,
         workspace_id=workspace_id,
         memberships=memberships,
     )
     member = union.members.get(canonical_contact)
-    policy = await load_workspace_policy(conn, workspace_id=workspace_id)
-    if member is None or not committee_member_displayable(member, policy):
+    if member is None:
         raise ContactNotFound(str(contact_id))
 
     claims = current_claims(member)

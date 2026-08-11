@@ -12,7 +12,6 @@ from clue_api.frontend_read.account_detail import (
     AccountDetail,
     AccountNotFound,
     AccountProjectSection,
-    latest_project_run_context,
     read_account_detail,
 )
 from clue_api.frontend_read.accounts_list import (
@@ -32,6 +31,7 @@ from clue_api.frontend_read.app import (
     frontend_read_workspace_resolver,
     install_frontend_read_surface,
 )
+from clue_api.frontend_read.committee import latest_project_run_context
 
 __all__ = [
     "CORS_ALLOW_METHODS",

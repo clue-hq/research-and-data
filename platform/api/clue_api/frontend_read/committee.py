@@ -1,8 +1,8 @@
-"""The seam both `/frontend/v1` surfaces share for reading a **governed committee**.
+"""The seam every `/frontend/v1` surface shares for reading a **governed committee**.
 
-Its own module because the two consumers already point one way — ``contacts`` imports
-``account_detail`` for :func:`~clue_api.frontend_read.account_detail.latest_project_run_context` —
-so anything they *both* need cannot live in either without a cycle. Three things qualify:
+Account detail, Contacts list and Contact detail all author links to the same people. Their
+addressability rule therefore lives here rather than in three composition loops that can drift.
+Five things qualify:
 
 1. :func:`current_claims` — a member's current claim per field, the unit every gate below reasons
    over;
@@ -13,8 +13,12 @@ so anything they *both* need cannot live in either without a cycle. Three things
    off would see an empty contacts table beside a fully populated committee block on the account it
    belongs to — the same data, two answers. (That was live: the detail endpoint applied no display
    gate at all until this module existed.)
-3. :func:`request_bound_conn_factory` — the ``ConnFactory`` that hands the resolver the request's
+3. :func:`latest_project_run_context` — the one recorded latest-run-wins project scope rule;
+4. :func:`request_bound_conn_factory` — the ``ConnFactory`` that hands the resolver the request's
    **already-open** connection instead of letting it take a second one from the pool.
+5. :func:`read_governed_committee` — the exact member union and display-policy decision consumed by
+   every linked surface. A person absent here is never linked; a person present here is resolvable
+   by Contact detail, including a member whose name or professional fields are absent.
 
 **Why (3) is a correctness fix, not a micro-optimisation.** ``ContactEligibilityResolver`` opens a
 connection through the factory it is constructed with. Passing the app's pool factory means a
@@ -30,17 +34,57 @@ the same transaction (one consistent snapshot) as the rest of the response.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections import defaultdict
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.contact_eligibility import GovernedCommitteeContact
+from clue_api.contact_eligibility import ContactEligibilityResolver, GovernedCommitteeContact
+from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.research_view_governance import display_allowed
-from clue_core import Claim
+from clue_core import Claim, EntityId, ProjectRunId
 from clue_db import ConnFactory
-from clue_research.compliance import WorkspacePolicy
+from clue_research.compliance import WorkspacePolicy, load_workspace_policy
+from clue_research.membership import ProjectMembership
 from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE
+
+
+class ProjectRunContext(WireModel):
+    """The ``(project_run, product)`` pair a project's governed reads run under."""
+
+    project_run_id: ProjectRunId
+    product_id: str | None = None
+
+
+_LATEST_PROJECT_RUN = text(
+    """
+    SELECT id, product_id
+    FROM project_run
+    WHERE workspace_id = :workspace_id AND project_id = :project_id
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+    """
+)
+
+
+async def latest_project_run_context(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> ProjectRunContext | None:
+    """Return the latest run's governed ``(project_run, product)`` scope for a project.
+
+    ``None`` means the project has never started a run. This is the only implementation of the
+    latest-run-wins rule, shared by every committee consumer.
+    """
+    row = (
+        await conn.execute(
+            _LATEST_PROJECT_RUN, {"workspace_id": workspace_id, "project_id": project_id}
+        )
+    ).first()
+    if row is None:
+        return None
+    return ProjectRunContext(project_run_id=ProjectRunId(row[0]), product_id=row[1])
 
 
 def request_bound_conn_factory(conn: AsyncConnection) -> ConnFactory:
@@ -78,8 +122,64 @@ def committee_member_displayable(member: GovernedCommitteeContact, policy: Works
     )
 
 
+class GovernedCommitteeUnion:
+    """The displayable committee and each member's targeting projects.
+
+    The first project that reaches a contact supplies that member's governed claim view. Later
+    projects add attribution only; combining their claim sets could mix two product/run scopes.
+    """
+
+    def __init__(self) -> None:
+        self.members: dict[EntityId, GovernedCommitteeContact] = {}
+        self.project_ids: dict[EntityId, list[str]] = defaultdict(list)
+
+    def add(self, member: GovernedCommitteeContact, *, project_id: str) -> None:
+        self.members.setdefault(member.contact_entity_id, member)
+        if project_id not in self.project_ids[member.contact_entity_id]:
+            self.project_ids[member.contact_entity_id].append(project_id)
+
+
+async def read_governed_committee(
+    conn: AsyncConnection,
+    *,
+    account_id: EntityId,
+    workspace_id: str,
+    memberships: Sequence[ProjectMembership],
+) -> tuple[GovernedCommitteeUnion, WorkspacePolicy]:
+    """Resolve the one committee union every linked frontend read is allowed to expose.
+
+    Memberships are intentionally authoritative. A project with no current membership cannot
+    contribute committee members to this account, even if historical run lineage exists. Members
+    whose role/persona claims are not displayable are omitted from every surface together.
+    """
+    policy = await load_workspace_policy(conn, workspace_id=workspace_id)
+    bound = request_bound_conn_factory(conn)
+    union = GovernedCommitteeUnion()
+    for membership in memberships:
+        context = await latest_project_run_context(
+            conn, workspace_id=workspace_id, project_id=membership.project_id
+        )
+        if context is None:
+            continue
+        resolver = ContactEligibilityResolver(
+            project_run_id=context.project_run_id,
+            product_id=context.product_id,
+            conn_factory=bound,
+        )
+        for member in await resolver.resolve_account(
+            account_entity_id=account_id, workspace_id=workspace_id
+        ):
+            if committee_member_displayable(member, policy):
+                union.add(member, project_id=membership.project_id)
+    return union, policy
+
+
 __all__ = [
+    "GovernedCommitteeUnion",
+    "ProjectRunContext",
     "committee_member_displayable",
     "current_claims",
+    "latest_project_run_context",
+    "read_governed_committee",
     "request_bound_conn_factory",
 ]

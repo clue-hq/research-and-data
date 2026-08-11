@@ -927,3 +927,30 @@ schema failures get a non-retryable support state. Authentication expiry and
 membership refusal continue through the established sign-in and access-denied
 routes. An absent, stale, or ambiguous workspace cookie routes to the explicit
 workspace chooser; the frontend no longer silently selects the first membership.
+
+### Linked Contact integrity and accessibility (FI-2 slice 3, 2026-08-12)
+
+Account detail, the Contacts list and Contact detail now consume one governed
+committee composition seam. That seam owns project membership, latest-run/product
+scope, canonical Contact survival, strongly-bound role/persona eligibility and
+workspace display policy once. The resulting invariant is structural: every
+`committee[].contactId` and every Contacts-row `id` is addressable through
+`GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` under the same
+workspace and policy. A member that does not clear that rule is omitted from
+every linked surface together; the frontend does not author a broken link or
+invent a non-navigable profile.
+
+Addressability does not require a display name, title, LinkedIn identity,
+signals, or completed deep research. An eligible Contact may therefore serve
+`name: null`, unknown professional fields and zero signal types while retaining
+a valid profile. A policy-withheld title remains `null` with
+`titleRestricted: true`. A stale merged-Contact URL serves the canonical
+survivor and sets `redirectedFrom` to the requested loser id.
+
+The visible fallback for `name: null` is “Unnamed contact”; the opaque id is
+never rendered as a name. Contact avatars beside a visible name are decorative
+and absent from the accessibility tree. Contacts-grid rows are named
+`Contact <name>` and their profile links are separately named
+`Open <name> profile`, so the avatar, row and link no longer concatenate the
+same person name. Selection behavior is unchanged and remains owned by its
+separate bulk-actions slice.

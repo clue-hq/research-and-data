@@ -1,5 +1,6 @@
 import type { AccountContactDetail } from "../model/account-contact";
 import { contactPersonaLabel } from "../model/account-contact";
+import { contactDisplayName } from "../model/contact-accessibility";
 import {
   formatConfidence,
   formatIsoDate,
@@ -45,11 +46,11 @@ export function ContactProfileContent({
   return (
     <div>
       <div className="flex items-center gap-3">
-        <ContactAvatar name={contact.name} priority size={48} />
+        <ContactAvatar decorative name={contact.name} priority size={48} />
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <h1 className={readability.detailTitle}>
-          {contact.name ?? "Unnamed contact"}
+          {contactDisplayName(contact.name)}
         </h1>
         <span className={`${readability.pillMedium} rounded-xl bg-[#f0f3cf] px-2 py-1 shadow-[var(--clue-shadow-low)]`}>
           {contactPersonaLabel(contact.persona)}

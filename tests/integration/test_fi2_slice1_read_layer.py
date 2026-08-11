@@ -17,8 +17,9 @@ composition rules turn on:
   multiplicity FI-2 §7 refuses to collapse to a representative run);
 * narratives per persona and a registry-declared ``project_relative`` insight per project, plus one
   insight from a project-less manual run (the honest ``unattributed`` bucket);
-* a governed committee with a member reached through **both** projects, a member holding a
-  display-denied (special-category) title, and a member whose role/persona binding is WEAK;
+* a governed committee with a member reached through **both** projects, an unnamed partially
+  researched member, a member holding a display-denied (special-category) title, a merged stale
+  identity link, and a member whose role/persona binding is WEAK;
 * mixed research statuses across the two projects and the two researched accounts.
 
 Then it drives every slice-1 endpoint through the real ASGI app (flag on, in-process over the
@@ -350,8 +351,8 @@ async def _member(
     *,
     account_id: EntityId,
     account_run: RunId,
-    name: str,
-    suffix: str,
+    name: str | None,
+    suffix: str | None,
     persona: Persona,
     binding: IdentityBinding = IdentityBinding.STRONG,
     role_confidence: float = 0.87,
@@ -362,7 +363,7 @@ async def _member(
         conn,
         account_entity_id=account_id,
         full_name=name,
-        linkedin_url=f"https://linkedin.com/in/{suffix}",
+        linkedin_url=None if suffix is None else f"https://linkedin.com/in/{suffix}",
         status=AccountStatus.ACTIVE,
     )
     base = datetime(2026, 8, 1, 9, 0, tzinfo=UTC)
@@ -489,6 +490,8 @@ class _Fixture:
     seedling: EntityId
     shared: EntityId
     masked: EntityId
+    unnamed: EntityId
+    merged_loser: EntityId
     unbound: EntityId
 
 
@@ -695,6 +698,27 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         role_confidence=0.62,
         extra=((CURRENT_TITLE, "Head Chaplain", UseClass.SENSITIVE),),
     )
+    # A valid committee identity can be intentionally unnamed and only partially researched. Its
+    # role/persona are sufficient for governed membership and Contact-detail addressability; name,
+    # title, LinkedIn and signal fields remain honestly absent.
+    unnamed, unnamed_refs = await _member(
+        conn,
+        account_id=acme,
+        account_run=account_run_a,
+        name=None,
+        suffix=None,
+        persona=Persona.TECHNICAL_EVALUATOR,
+        role_confidence=0.71,
+    )
+    # A stale link to a merged contact remains addressable and visibly resolves to the survivor.
+    merged_loser = await insert_contact_entity(
+        conn,
+        account_entity_id=acme,
+        full_name="Dana Buyer (duplicate)",
+        linkedin_url="https://linkedin.com/in/dana-buyer-duplicate",
+        status=AccountStatus.ACTIVE,
+    )
+    await mark_merged(conn, EntityType.CONTACT, loser_id=merged_loser, survivor_id=shared)
     # Membership is identity-bearing: a WEAK role/persona binding is dropped by the governed
     # reader — on *both* surfaces, which is the agreement this fixture exists to prove.
     unbound, unbound_refs = await _member(
@@ -710,7 +734,9 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         conn,
         account_run_a,
         references_index={
-            "committee": [str(item) for item in shared_refs + masked_refs + unbound_refs]
+            "committee": [
+                str(item) for item in shared_refs + masked_refs + unnamed_refs + unbound_refs
+            ]
         },
         cost_cents=Decimal("0"),
         status=AccountRunStatus.DONE,
@@ -745,6 +771,8 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         seedling=seedling,
         shared=shared,
         masked=masked,
+        unnamed=unnamed,
+        merged_loser=merged_loser,
         unbound=unbound,
     )
 
@@ -946,9 +974,17 @@ def test_the_detail_committee_and_the_contacts_list_are_the_same_governed_people
 
             in_detail = {member["contactId"]: member for member in detail["committee"]}
             in_list = {row["id"]: row for row in contacts["data"]}
-            assert set(in_detail) == set(in_list) == {str(fixture.shared), str(fixture.masked)}
+            assert (
+                set(in_detail)
+                == set(in_list)
+                == {
+                    str(fixture.shared),
+                    str(fixture.masked),
+                    str(fixture.unnamed),
+                }
+            )
             assert str(fixture.unbound) not in in_detail
-            assert contacts["meta"]["total"] == len(contacts["data"]) == 2
+            assert contacts["meta"]["total"] == len(contacts["data"]) == 3
 
             for contact_id, member in in_detail.items():
                 row = in_list[contact_id]
@@ -959,12 +995,31 @@ def test_the_detail_committee_and_the_contacts_list_are_the_same_governed_people
                 assert member["roleOnCommittee"] == row["roleOnCommittee"]["value"]
                 assert member["projectIds"] == row["projectIds"]
 
+                # This is the authored-link invariant: every id emitted by either Account detail
+                # or Contacts list resolves through the account-scoped Contact profile endpoint.
+                profile_response = await _profile(conn, fixture.acme, contact_id)
+                assert profile_response.status_code == 200
+                profile = profile_response.json()
+                assert profile["id"] == contact_id
+                assert profile["accountId"] == str(fixture.acme)
+
             # The member both projects' runs reference appears ONCE, carrying both projects.
             assert in_list[str(fixture.shared)]["projectIds"] == [
                 fixture.project_a.project_id,
                 fixture.project_b.project_id,
             ]
             assert in_list[str(fixture.masked)]["projectIds"] == [fixture.project_a.project_id]
+            unnamed = in_list[str(fixture.unnamed)]
+            assert unnamed["name"] is None
+            assert unnamed["title"] is None
+            assert unnamed["titleRestricted"] is False
+            assert unnamed["linkedinUrl"] is None
+            assert unnamed["signals"] == {"typeCount": 0}
+
+            merged = await _profile(conn, fixture.acme, fixture.merged_loser)
+            assert merged.status_code == 200
+            assert merged.json()["id"] == str(fixture.shared)
+            assert merged.json()["redirectedFrom"] == str(fixture.merged_loser)
 
             # ...and they agree on *nobody*, too: role and persona are what make someone a committee
             # member, so a workspace that will not display those claims empties both surfaces at

@@ -123,7 +123,7 @@ export function CommitteeInline({
     <div className="flex flex-wrap items-center gap-2.5">
       {committee.map((member) => (
         <span className="flex items-center gap-2" key={member.contactId}>
-          <ContactAvatar name={member.name} size={24} />
+          <ContactAvatar decorative name={member.name} size={24} />
           <span>{member.name ?? "Unnamed contact"}</span>
         </span>
       ))}
