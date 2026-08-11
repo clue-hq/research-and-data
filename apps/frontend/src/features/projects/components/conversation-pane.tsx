@@ -45,7 +45,12 @@ export function ConversationPane({
   // turns. `available` is false in every deployment that did not register the
   // routes, which is every production deployment.
   const turnInspector = useTurnInspector({ projectId, threadId: chat.activeThreadId });
+  const activeUserMessageId = chat.transcript.reduce<string | null>(
+    (latest, message) => (message.role === "user" ? message.id : latest),
+    null,
+  );
   const { transcriptScrollRef } = useTranscriptAutoScroll({
+    activeMessageRevision: activeUserMessageId,
     revision: chat.transcript.reduce(
       (total, message) => total + message.parts.length + (message.body ? 1 : 0),
       chat.transcript.length,
@@ -96,14 +101,26 @@ export function ConversationPane({
           >
             <ProjectIcon name="plus" size={14} />
           </button>
-          <button
-            aria-label="Expand conversation"
-            aria-pressed={controller.focusPane === "conversation"}
-            onClick={controller.toggleConversationFocus}
-            type="button"
-          >
-            <ProjectIcon name="expand" size={14} />
-          </button>
+          {controller.focusPane === "conversation" ? (
+            <button
+              aria-label="Open Gallery"
+              className={styles.galleryReopenButton}
+              onClick={controller.showSplitWorkspace}
+              type="button"
+            >
+              <ProjectIcon name="gallery" size={14} />
+              <span>Gallery</span>
+            </button>
+          ) : (
+            <button
+              aria-label="Expand conversation"
+              aria-pressed={false}
+              onClick={controller.toggleConversationFocus}
+              type="button"
+            >
+              <ProjectIcon name="expand" size={14} />
+            </button>
+          )}
         </div>
       </header>
 
@@ -124,8 +141,10 @@ export function ConversationPane({
       ) : null}
       <div className={styles.transcriptScroll} ref={transcriptScrollRef}>
         <ChatTranscript
+          activeUserMessageId={activeUserMessageId}
           actions={partActions}
           contextEntities={workspace.entities}
+          gateAnswerForTurn={chat.gateAnswerForTurn}
           messages={chat.transcript}
           onInspectTurn={turnInspector.available ? turnInspector.open : undefined}
         />
@@ -175,15 +194,13 @@ export function ConversationPane({
                 objectType: entity.type,
                 version: null,
               }));
-            void chat.submitMessage(prompt ?? controller.prompt, {
+            return chat.submitMessage(prompt, {
               contextRefs,
               agentProfileId:
                 workspace.composerCapabilities.agentProfileSelection
                   ? (controller.selectedModel?.id ?? null)
                   : null,
             });
-            controller.setPrompt("");
-            controller.resetSubmissionContext();
           }}
           prompt={controller.prompt}
           selectedEntities={controller.selectedEntities}

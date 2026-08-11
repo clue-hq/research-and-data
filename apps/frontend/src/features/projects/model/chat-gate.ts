@@ -114,6 +114,11 @@ export interface ChatGate {
   launches: readonly ChatGateLaunch[];
 }
 
+export interface GateAnswerDisplay {
+  detail: string | null;
+  label: string;
+}
+
 function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
   return {
     gateId: wire.gate_id,
@@ -591,6 +596,23 @@ export function gateDecisionCopy(
   return recorded
     ? RESEARCH_DECISION_RECORDED[decision]
     : RESEARCH_DECISION_COPY[decision];
+}
+
+/** Human presentation of a durable answer receipt, keyed by its answer turn. */
+export function gateAnswerDisplay(gate: ChatGate): GateAnswerDisplay | null {
+  if (gate.answer === null) return null;
+  const decision = decisionOf(gate.answer.decision);
+  if (decision === null) {
+    return { detail: null, label: "Decision recorded" };
+  }
+  const revisionRequest = gate.answer.decisionPayload.revision_request;
+  return {
+    detail:
+      decision === "revised" && typeof revisionRequest === "string"
+        ? revisionRequest.trim() || null
+        : null,
+    label: gateDecisionCopy(gate.kind, decision, true),
+  };
 }
 
 export function gateAnswerResponse(

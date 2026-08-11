@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ChatGateListResponseSchema,
   agentGateIdFromPart,
+  gateAnswerDisplay,
   gateAnswerResponse,
   gateAuthorityFailure,
   gateCardModel,
@@ -243,8 +244,7 @@ test("answered gates stay in history from their immutable receipt", () => {
 });
 
 test("a revised answer projects its immutable requested changes", () => {
-  const card = model({
-    gate: {
+  const revisedGate: ChatGate = {
       ...openGate,
       kind: "icp_confirmation",
       answer: {
@@ -256,12 +256,16 @@ test("a revised answer projects its immutable requested changes", () => {
         answeredByUserId: "usr_demo",
         answeredAt: "2026-08-09T11:12:00Z",
       },
-    },
-  });
+    };
+  const card = model({ gate: revisedGate });
   assert.ok(card);
   assert.equal(card.state, "denied");
   assert.equal(card.decision, "revised");
   assert.equal(card.revisionRequest, "Focus on multi-site practices.");
+  assert.deepEqual(gateAnswerDisplay(revisedGate), {
+    detail: "Focus on multi-site practices.",
+    label: "Changes requested",
+  });
 });
 
 test("a corrupt answer digest cannot masquerade as an immutable receipt", () => {

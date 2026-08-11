@@ -235,7 +235,7 @@ export function useProjectHomeController(data: ProjectHome) {
 
   async function submit(promptOverride?: string, entityIdsOverride?: string[]) {
     const message = promptOverride ?? prompt;
-    if (loading) return;
+    if (loading) return false;
     const submittedEntities = (entityIdsOverride ?? selectedEntityIds)
       .map((id) => home.entities.find((entity) => entity.id === id))
       .filter((entity): entity is ProjectEntity => Boolean(entity));
@@ -252,13 +252,13 @@ export function useProjectHomeController(data: ProjectHome) {
     });
     if (!parsed.success) {
       setError(parsed.message);
-      return;
+      return false;
     }
     const attempt = submissions.current.begin(
       parsed.fingerprint,
       () => newIdempotencyKey("home-project"),
     );
-    if (!attempt) return;
+    if (!attempt) return false;
     setInFlightFingerprints((current) =>
       new Set(current).add(parsed.fingerprint),
     );
@@ -269,7 +269,7 @@ export function useProjectHomeController(data: ProjectHome) {
         idempotencyKey: attempt.idempotencyKey,
       });
       const outcome = submissions.current.succeeded(attempt);
-      if (!mounted.current) return;
+      if (!mounted.current) return true;
       const latestDraft = parseHomeBootstrapDraft(draft.current);
       if (latestDraft.success && latestDraft.fingerprint === parsed.fingerprint) {
         draft.current = { ...draft.current, contextRefs: [], message: "" };
@@ -281,9 +281,10 @@ export function useProjectHomeController(data: ProjectHome) {
         setAttachments([]);
       }
       if (outcome.navigate) router.push(created.href);
+      return true;
     } catch (failure) {
       const outcome = submissions.current.failed(attempt);
-      if (!mounted.current || !outcome.display) return;
+      if (!mounted.current || !outcome.display) return false;
       if (failure instanceof ClueChatApiError) {
         setError(
           failure.requestId
@@ -293,6 +294,7 @@ export function useProjectHomeController(data: ProjectHome) {
       } else {
         setError(failure instanceof Error ? failure.message : String(failure));
       }
+      return false;
     } finally {
       if (mounted.current) {
         setInFlightFingerprints((current) => {

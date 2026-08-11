@@ -21,6 +21,7 @@ export default async function ProjectGalleryPage({
   return (
     <ProjectWorkspaceShell
       initial={{
+        focusPane: "artifacts",
         threadId: query.thread,
       }}
       projectId={projectId}

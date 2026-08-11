@@ -33,6 +33,7 @@ import type {
   ProjectComposerParagraphElement,
 } from "../model/project-composer";
 import {
+  clearSubmittedComposerDraft,
   createComposerMention,
   createComposerValue,
   getComposerMentionIds,
@@ -44,6 +45,10 @@ import { EntityPicker } from "./entity-picker";
 import styles from "./project-flow.module.css";
 
 export interface ProjectComposerEditorHandle {
+  clearSubmittedDraft: (
+    prompt: string,
+    entityIds: readonly string[],
+  ) => boolean;
   focus: () => void;
   getEntityIds: () => string[];
   getPrompt: () => string;
@@ -119,7 +124,6 @@ export const ProjectComposerEditor = forwardRef<
     disabled?: boolean;
     entities: ProjectEntity[];
     onContextChange: (entityIds: string[]) => void;
-    onDraftChange: (hasContent: boolean) => void;
     onPromptChange: (value: string) => void;
     onSubmit: (value: string) => void;
     prompt: string;
@@ -131,7 +135,6 @@ export const ProjectComposerEditor = forwardRef<
     disabled = false,
     entities,
     onContextChange,
-    onDraftChange,
     onPromptChange,
     onSubmit,
     prompt,
@@ -200,9 +203,8 @@ export const ProjectComposerEditor = forwardRef<
         );
       });
       lastEmittedPrompt.current = nextPrompt;
-      onDraftChange(Boolean(nextPrompt.trim() || retainedMentions.length));
     },
-    [editor, onDraftChange],
+    [editor],
   );
 
   const detectMentionTarget = useCallback(() => {
@@ -275,6 +277,21 @@ export const ProjectComposerEditor = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
+      clearSubmittedDraft(submittedPrompt, submittedEntityIds) {
+        const cleared = clearSubmittedComposerDraft(editor, {
+          entityIds: submittedEntityIds,
+          prompt: submittedPrompt,
+        });
+        if (!cleared) return false;
+
+        lastEmittedPrompt.current = "";
+        lastMentionIds.current = [];
+        setMentionIds([]);
+        closeMentionPicker();
+        onPromptChange("");
+        onContextChange([]);
+        return true;
+      },
       focus() {
         ReactEditor.focus(editor);
       },
@@ -293,15 +310,19 @@ export const ProjectComposerEditor = forwardRef<
         Transforms.insertText(editor, "@");
       },
     }),
-    [disabled, editor],
+    [
+      closeMentionPicker,
+      disabled,
+      editor,
+      onContextChange,
+      onPromptChange,
+    ],
   );
 
   useEffect(() => {
-    if (prompt === lastEmittedPrompt.current || ReactEditor.isFocused(editor)) {
-      return;
-    }
+    if (prompt === lastEmittedPrompt.current) return;
     replacePromptText(prompt);
-  }, [editor, prompt, replacePromptText]);
+  }, [prompt, replacePromptText]);
 
   const renderElement = useCallback((props: RenderElementProps) => {
     if (props.element.type === "mention") {
@@ -329,7 +350,13 @@ export const ProjectComposerEditor = forwardRef<
           const nextPrompt = getComposerPromptText(value);
           const nextMentionIds = getComposerMentionIds(value);
 
-          onDraftChange(Boolean(nextPrompt.trim() || nextMentionIds.length));
+          const promptChanged = nextPrompt !== lastEmittedPrompt.current;
+          const contextChanged =
+            lastMentionIds.current.length !== nextMentionIds.length ||
+            lastMentionIds.current.some(
+              (entityId, index) => entityId !== nextMentionIds[index],
+            );
+
           lastMentionIds.current = nextMentionIds;
           setMentionIds((current) =>
             current.length === nextMentionIds.length &&
@@ -338,19 +365,17 @@ export const ProjectComposerEditor = forwardRef<
               : nextMentionIds,
           );
 
-          if (nextPrompt !== lastEmittedPrompt.current) {
+          if (promptChanged) {
             lastEmittedPrompt.current = nextPrompt;
+            onPromptChange(nextPrompt);
           }
+          if (contextChanged) onContextChange(nextMentionIds);
           detectMentionTarget();
         }}
       >
         <Editable
           aria-label="Project prompt"
           className={styles.composerEditor}
-          onBlur={() => {
-            onPromptChange(lastEmittedPrompt.current);
-            onContextChange(lastMentionIds.current);
-          }}
           onKeyDown={(event) => {
             if (
               (event.key === "Backspace" || event.key === "Delete") &&

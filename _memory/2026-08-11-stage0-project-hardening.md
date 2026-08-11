@@ -44,8 +44,8 @@ Base: Singapore head `8949058f46ddfbcefede85abacfc503fb60dc61c`
 
 ## Open state
 
-- The founder approved Slice 0 only. The contract amendment is ratified; Slices
-  1-6 remain pending and must not be implemented without the next instruction.
+- The founder has now approved and completed Slices 0-4. Naming and remaining
+  hardening in Slices 5-6 still require a separate instruction.
 
 ## Slice 0 closeout — contract and test foundation
 
@@ -334,3 +334,60 @@ Verification:
   shapes sampled from the isolated Insight Health browser database;
 - the authenticated frontend development server was restored on port 3000 after
   verification.
+
+## Slice 4 closeout — composer and project-workspace layout
+
+Root causes were structural rather than isolated CSS symptoms:
+
+- the focused Slate editor kept an independent value while the parent learned
+  about edits only on blur; a successful submit cleared the parent, the focused
+  editor ignored that prop update, and a later blur restored the stale draft;
+- the fixed 126px form height competed with a 120px editor plus padding and
+  footer, so long drafts could not have a coherent layout;
+- a non-shrinking message flex child expanded to a long inline profile name,
+  which created horizontal overflow inside the narrow split conversation;
+- empty projects opened a Gallery split that consumed most of the Stage-0 chat
+  width, and new-turn scrolling targeted the bottom instead of the user turn
+  below the two sticky headers;
+- historical structured gate answers were canonical JSON message bodies, so
+  the normal transcript exposed immutable hashes, ids and transport fields.
+
+Implemented:
+
+- Slate now reports draft/context changes immediately. Successful submission
+  clears the exact accepted prompt and ordered mentions from the parent and the
+  focused editor without adding that reset to undo history. A newer in-flight
+  draft is preserved; blur no longer writes stale text.
+- The composer is a bounded content-driven flex layout. Long drafts scroll
+  inside the editor and remain above the non-shrinking footer.
+- Conversation/split flex children can shrink, prose and inline code wrap, and
+  horizontal overflow is hidden while vertical transcript scrolling remains.
+  Project and thread headers are sticky, and a new user message becomes the
+  scroll anchor below them.
+- An empty Gallery defaults to conversation-only with an **Open Gallery**
+  control; an explicit Gallery route still opens the empty workspace.
+- Normal chat projects durable gate answers as **Profile approved**, **Profile
+  declined**, or **Changes requested**. Legacy canonical JSON is fail-closed to
+  the same human receipt, and assistant prose is scrubbed of repeated UUIDs,
+  SHA-256 values and internal object ids. Raw receipts remain inspectable.
+
+Verification:
+
+- frontend: 165 tests passed, including submit-clear-next-message, empty Gallery
+  focus, exact approved/revised JSON projection and assistant-id redaction;
+- ESLint, design-system token generation, `git diff --check`, and the Next.js 16
+  webpack production build with TypeScript passed. The build retained only the
+  existing multiple-lockfile workspace-root warning;
+- fixture Browser journey at 1024px submitted two consecutive messages and
+  proved the second contained only new text; the cleared editor stayed cleared,
+  and a new draft survived blur. An 18-line/2,437-character draft produced a
+  120px internally scrolling editor, a 174px form, no footer overlap, and no
+  document overflow;
+- at 800px both sticky headers occupied 0-48px and 48-96px, the active user turn
+  landed below them, and no element overflowed the right viewport edge. The
+  fixture browser console had zero warnings/errors;
+- the exact authenticated Insight Health transcript had already shown the new
+  human gate receipts with raw answer JSON and repeated gate UUIDs removed.
+  After the fixture run the authenticated browser session itself had expired,
+  so no fresh secured interaction was claimed; the authenticated development
+  server was restored on port 3000.

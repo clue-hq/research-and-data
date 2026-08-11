@@ -17,10 +17,12 @@ import type { ChatMessage } from "../model/chat-message";
 import type { ChatGatePart, GateDecision } from "../model/chat-parts";
 import {
   agentGateIdFromPart,
+  gateAnswerDisplay,
   gateAnswerResponse,
   gateAuthorityFailure,
   gateCardModel,
   type ChatGate,
+  type GateAnswerDisplay,
   type GateAuthorityFailure,
   type GateCardModel,
 } from "../model/chat-gate";
@@ -96,6 +98,7 @@ export interface ProjectChatController {
   queuedTurns: readonly ChatTurn[];
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
+  gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
   submitMessage(
     text: string,
     options?: {
@@ -106,7 +109,7 @@ export interface ProjectChatController {
       }[];
       agentProfileId?: string | null;
     },
-  ): Promise<void>;
+  ): Promise<boolean>;
   answerGate(
     card: GateCardModel,
     decision: GateDecision,
@@ -502,7 +505,7 @@ export function useProjectChatController({
       } = {},
     ) => {
       const trimmed = text.trim();
-      if (!trimmed || !activeThreadId) return;
+      if (!trimmed || !activeThreadId) return false;
       const contextRefs = options.contextRefs ?? [];
       const agentProfileId = options.agentProfileId ?? null;
       const attempt = messageSubmissions.current.begin(
@@ -510,20 +513,28 @@ export function useProjectChatController({
         { message: trimmed, contextRefs, agentProfileId },
         () => newIdempotencyKey("turn"),
       );
-      if (!attempt) return;
+      if (!attempt) return false;
       try {
-        const accepted = await repositories.turns.submit({
-          projectId,
-          threadId: activeThreadId,
-          submission: {
-            kind: "message",
-            message: trimmed,
-            contextRefs,
-            agentProfileId,
-          },
-          idempotencyKey: attempt.idempotencyKey,
-        });
-        if (!mounted.current) return;
+        let accepted: Awaited<
+          ReturnType<typeof repositories.turns.submit>
+        >;
+        try {
+          accepted = await repositories.turns.submit({
+            projectId,
+            threadId: activeThreadId,
+            submission: {
+              kind: "message",
+              message: trimmed,
+              contextRefs,
+              agentProfileId,
+            },
+            idempotencyKey: attempt.idempotencyKey,
+          });
+        } catch (failure) {
+          report(failure);
+          return false;
+        }
+        if (!mounted.current) return true;
         setOptimistic((current) => [
           ...current.filter((item) => item.turnId !== accepted.turnId),
           {
@@ -533,9 +544,14 @@ export function useProjectChatController({
           },
         ]);
         attach(activeThreadId, accepted.turnId);
-        await loadConversation(activeThreadId);
-      } catch (failure) {
-        report(failure);
+        try {
+          await loadConversation(activeThreadId);
+        } catch (failure) {
+          // The durable accept already succeeded. Rehydration failure must not
+          // make the composer retain and resubmit the accepted message.
+          report(failure);
+        }
+        return true;
       } finally {
         messageSubmissions.current.finish(attempt);
       }
@@ -769,6 +785,21 @@ export function useProjectChatController({
     ],
   );
 
+  const gateAnswersByTurn = useMemo(() => {
+    const map = new Map<string, GateAnswerDisplay>();
+    for (const gate of gateRead.gates) {
+      if (gate.answer === null) continue;
+      const display = gateAnswerDisplay(gate);
+      if (display !== null) map.set(gate.answer.turnId, display);
+    }
+    return map;
+  }, [gateRead.gates]);
+
+  const gateAnswerForTurn = useCallback(
+    (turnId: string) => gateAnswersByTurn.get(turnId) ?? null,
+    [gateAnswersByTurn],
+  );
+
   const activeThread = useMemo(
     () => threads.find((thread) => thread.id === activeThreadId) ?? null,
     [activeThreadId, threads],
@@ -788,6 +819,7 @@ export function useProjectChatController({
     queuedTurns: queue.queuedTurns,
     submitting,
     gateFor,
+    gateAnswerForTurn,
     submitMessage,
     answerGate,
     recoverGate,

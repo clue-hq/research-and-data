@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-3 implemented. Hardening Slices 4-6 remain pending. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-4 implemented. Hardening Slices 5-6 remain pending. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -67,6 +67,27 @@ answer lifecycle; rendering and remaining UI changes stay owned by Slices 3-6.
   explicit reopen control. Composer submission clears both browser-owned draft
   state and the focused Slate value; layout permits bounded editor scrolling
   without horizontal conversation overflow or sticky-header clipping.
+
+#### Slice 4 presentation and workspace invariants
+
+- A successful submission clears the exact accepted prompt and ordered mention
+  set from both controlled draft state and Slate history. A newer draft typed
+  while the request is in flight is not cleared, and blur is not a second
+  draft-authority path.
+- Canonical structured gate-response messages remain immutable in storage, but
+  the default transcript projects the fetched durable answer as **Profile
+  approved**, **Profile declined**, or **Changes requested**. The normal chat
+  never renders the gate id, expected digest, subject id, or transport JSON;
+  those details remain available through the explicit turn inspector.
+- The composer height is content-driven and bounded. The editor scrolls
+  internally before it can overlap the mention/model/send footer.
+- Every split-pane and transcript flex boundary may shrink (`min-width: 0`),
+  message prose and inline code wrap, and only vertical conversation scrolling
+  is permitted. New user turns are positioned below the project and thread
+  headers rather than under them.
+- A project with no artifacts opens conversation-first and exposes an obvious
+  **Open Gallery** control. The explicit `/gallery` route still honors the
+  user's request to open the Gallery, including its empty state.
 
 The amendment supersedes the earlier `Untitled project` and initially-open empty
 Gallery rules retained later in this document as implementation history.
