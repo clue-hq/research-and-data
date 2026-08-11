@@ -31,7 +31,10 @@ auth/workspace/brand provisioning). Full evidence with file:line cites is in the
 
 ## Ratified (founder, this session)
 Brand-kit checklist item stays dummy/omitted (design branch owns it); no-fake-progress
-re-affirmed (1:1 real event ticks). Recorded in FI-4 §9. Everything in §8 (D-1…D-9) awaits
+re-affirmed (1:1 real event ticks); **onboarding screens visually frozen + Clerk strictly
+headless/auth-only** (ratifies D-1's visual half — no Clerk-rendered UI anywhere in
+onboarding; open: /sign-in route disposition, CAPTCHA element, email-verification step).
+Recorded in FI-4 §9. Everything else in §8 (D-2…D-9) awaits
 founder sign-off — esp. D-5 (lane-level MVP vs granular per-field events; doc proposes
 granular) and D-2 (provisioning endpoint shape, lazy vs explicit identity provisioning).
 
