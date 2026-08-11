@@ -36,9 +36,18 @@ Branch: `platform/fi2-accounts-cutover` in the Monterrey worktree.
 - Browser, signed out: `/accounts` redirected to `/sign-in?reason=session_expired`; a browser call to
   `/api/clue/frontend/v1/accounts` returned `401 AUTHENTICATION_REQUIRED`, and its request carried
   neither authorization nor workspace headers.
-- Browser, signed in: pending. The local Playwright profile had no Clerk session and the connected
-  Chrome control path timed out. Creating a short-lived Clerk sign-in token from another worktree's
-  secret was rejected because it needs explicit user approval; no workaround was attempted.
+- Browser, signed in: passed on `http://localhost:3000/accounts`. The authenticated page identified
+  Aakash Shrivastava, selected `ws_fixture_insight_health_browser`, rendered zero Account rows and
+  the exact empty-state copy before and after reload, contained none of the known fixture company
+  names, exposed no framework overlay, and logged no browser errors. The same-origin
+  `/api/clue/frontend/v1/accounts` request returned 200; FastAPI logged 200 for session, principal,
+  and Accounts. Desktop and 390x844 mobile checks passed the data/empty-state assertions; the mobile
+  page had no document-level horizontal overflow. The global session controls remain crowded at
+  390px (workspace select begins about 13px offscreen and Sign out wraps), a separate shell layout
+  observation rather than an LF-ACCOUNT-001/002 failure.
+- Auth-origin diagnosis: a partial retry on `http://127.0.0.1:3000` was correctly rejected with
+  `SESSION_INVALID` because `.env` authorizes the exact `http://localhost:3000` Clerk `azp`.
+  Retrying on that configured origin recovered the existing session without weakening validation.
 - Root `make check`: formatting, Ruff, mypy, and all 25 import contracts passed. Pytest completed
   with 4,352 passed, 23 skipped, and 35 failures in untouched backend/design paths. Failures include
   the known shared-state/migration cluster plus independently reproducible pre-existing failures
@@ -53,8 +62,7 @@ Branch: `platform/fi2-accounts-cutover` in the Monterrey worktree.
   `monterrey_clue_pgdata`; removal was not authorized, so both remain. The accidental empty
   misnamed database created during setup was verified to contain no schema/data and dropped.
 
-## Remaining acceptance
+## Acceptance result
 
-Run one signed-in browser pass for the seeded Clerk subject and verify: zero-account copy, no demo
-companies, `/api/clue` same-origin browser calls, FastAPI `X-Clue-Workspace-Id`, no legacy header,
-and denied unauthenticated/cross-workspace requests. Then LF-ACCOUNT-001/002 can be marked closed.
+LF-ACCOUNT-001 and LF-ACCOUNT-002 are closed. The browser, API logs, database, focused contracts,
+frontend suite, lint, and webpack production build agree on the same durable zero-account state.

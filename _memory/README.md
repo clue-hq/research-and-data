@@ -30,7 +30,7 @@ The central architecture bet is that verification must be modeled at the claim/d
 - `2026-08-11-fi2-slice1-accounts-auth-cutover.md` — FI-2 Slice 1 removes every
   Accounts/Contacts runtime fixture and legacy workspace-header path, shares one authenticated
   server/BFF transport, renders the durable zero-account state, records focused/frontend/build/DB
-  evidence, and leaves the signed-in browser acceptance explicitly pending.
+  evidence, and closes signed-in desktop/mobile browser acceptance on the exact allowed origin.
 - `2026-08-06-m8d-r9-parallel-execution.md` — R9 accepted: exact-wave dependency checks,
   atomic budget/provider admission, concurrent Exa/Sumble execution, partial-result joining,
   callback-race-safe composite waits, cold-resume/crash replay, DSAR, and isolated-DB evidence.
