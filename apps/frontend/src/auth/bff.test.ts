@@ -72,11 +72,20 @@ test("BFF response never forwards backend cookies or authentication headers", ()
       "Content-Type": "application/json",
       "Set-Cookie": "backend=secret",
       Authorization: "Bearer secret",
+      "Content-Disposition": "inline",
+      "Content-Security-Policy": "sandbox; default-src 'none'",
+      "X-Content-Type-Options": "nosniff",
       "X-Request-Id": "request-1",
     }),
   );
   assert.equal(outgoing.get("content-type"), "application/json");
   assert.equal(outgoing.get("x-request-id"), "request-1");
+  assert.equal(outgoing.get("content-disposition"), "inline");
+  assert.equal(
+    outgoing.get("content-security-policy"),
+    "sandbox; default-src 'none'",
+  );
+  assert.equal(outgoing.get("x-content-type-options"), "nosniff");
   assert.equal(outgoing.get("set-cookie"), null);
   assert.equal(outgoing.get("authorization"), null);
 });

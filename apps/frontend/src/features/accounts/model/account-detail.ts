@@ -7,6 +7,7 @@ import {
   PersonaSchema,
 } from "./vocabulary";
 import { ProseReadSchema } from "./prose";
+import { EvidenceReferenceSchema } from "./evidence";
 
 /**
  * A project-neutral fact about the account: whatever the merge currently holds.
@@ -24,6 +25,7 @@ export const NeutralFactSchema = z.object({
   observedAt: IsoTimestampSchema.nullable().default(null),
   /** The raw backend source key (`clearbit`, `sumble`, …) — no display-name surface exists yet. */
   provider: z.string().nullable().default(null),
+  evidence: EvidenceReferenceSchema,
 });
 
 /** A project-relative fact: an insight or a value narrative inside one project section. */
@@ -32,6 +34,7 @@ export const RelativeFactSchema = z.object({
   value: JsonValueSchema,
   observedAt: IsoTimestampSchema.nullable().default(null),
   provider: z.string().nullable().default(null),
+  evidence: EvidenceReferenceSchema,
 });
 
 /** A score inside a project section — the project is the section, so it is not repeated. */

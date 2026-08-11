@@ -56,9 +56,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -70,11 +70,19 @@ from clue_api.frontend_read.committee import (
     current_claims,
     read_governed_committee,
 )
+from clue_api.frontend_read.evidence import (
+    EvidenceReference,
+    evidence_artifact_response,
+    evidence_reference,
+    live_artifact_claim_ids,
+    read_live_artifact,
+)
 from clue_api.frontend_read.prose import CONTACT_OVERVIEW_FIELD, ProseRead, read_prose
 from clue_api.research_view_governance import display_allowed
 from clue_core import (
     CONTACT_PROFESSIONAL_FIELD_KEYS,
     Claim,
+    ClaimId,
     ContactEntity,
     EntityId,
     EntityType,
@@ -82,12 +90,21 @@ from clue_core import (
     reference_time,
 )
 from clue_db import ConnFactory
-from clue_research.claimstore import WorkspaceScope
+from clue_research.claimstore import (
+    FieldFilters,
+    FieldRegistryScope,
+    WorkspaceScope,
+    active_merge_policy,
+    claims_by_ids,
+    list_effective_fields,
+    merge_claims,
+)
 from clue_research.compliance import WorkspacePolicy
 from clue_research.identity import get_account, get_contacts, surviving_id
 from clue_research.membership import memberships_for_accounts
 from clue_research.profiling.committee import CURRENT_TITLE
 from clue_research.profiling.fields import FACET_PUBLIC_APPEARANCES
+from clue_storage import StorageBackend
 
 #: ``contact.facet.recent_post`` is registered in ``claimstore.CORE_PACK`` (the two proof rows of
 #: the facet field-class live there, not in the M8 facet pack) and has no exported constant, so the
@@ -150,17 +167,11 @@ class GovernedFact(WireModel):
     """
 
     field_key: str
+    claim_id: str | None = None
     value: JsonValue | None = None
     observed_at: datetime | None = None
     provider: str | None = None
     restricted: bool = False
-
-
-class EvidenceChip(WireModel):
-    """A non-link provenance chip (FI-1 G4 v1): which source, and when it stated it."""
-
-    provider: str
-    observed_at: datetime
 
 
 class ContactRow(WireModel):
@@ -195,7 +206,7 @@ class ContactProfile(ContactRow):
     account_name: str
     overview: ProseRead
     professional_facts: tuple[GovernedFact, ...] = ()
-    evidence: tuple[EvidenceChip, ...] = ()
+    evidence: tuple[EvidenceReference, ...] = ()
     # Set when the requested contact id was a merged loser: the body is the survivor's.
     redirected_from: uuid.UUID | None = None
 
@@ -269,6 +280,7 @@ def _professional_facts(
         facts.append(
             GovernedFact(
                 field_key=field_key,
+                claim_id=str(claim.id),
                 value=claim.value_json,
                 observed_at=reference_time(claim),
                 provider=claim.source_key,
@@ -286,28 +298,54 @@ def _signal_type_count(claims: dict[str, Claim], policy: WorkspacePolicy) -> int
     )
 
 
-def _evidence(claims: dict[str, Claim], policy: WorkspacePolicy) -> tuple[EvidenceChip, ...]:
-    """One chip per distinct source backing something we actually showed, newest statement wins.
+async def _evidence(
+    conn: AsyncConnection,
+    *,
+    claims: dict[str, Claim],
+    policy: WorkspacePolicy,
+    workspace_id: str,
+) -> tuple[EvidenceReference, ...]:
+    """One evidence record per displayed current claim, never per provider bucket.
 
-    "Display-eligible" here means the workspace-policy sense — :func:`display_allowed` over the
-    resolver's current claims — not ``GovernedContactClaim.display_eligible``, which the resolver
-    sets ``True`` on everything it selects and which therefore gates nothing on its own. A
-    policy-withheld claim must not announce itself through its provenance, so it contributes no
-    chip. One chip per provider (rather than per claim) because the chip answers "who told us
-    this?", and repeating a source once per field would be noise, not provenance.
+    Mapping the item to ``claim_id`` + ``field_key`` is what lets a reviewer tell which statement
+    the span supports.  A policy-withheld claim contributes no record at all, so neither its value
+    nor its provider, timestamp, URL, span, confidence, or retained-artifact existence leaks.
     """
-    latest: dict[str, datetime] = {}
-    for claim in claims.values():
-        if claim.source_key is None or not display_allowed(claim, policy):
-            continue
-        at = reference_time(claim)
-        known = latest.get(claim.source_key)
-        if known is None or at > known:
-            latest[claim.source_key] = at
-    return tuple(
-        EvidenceChip(provider=provider, observed_at=observed_at)
-        for provider, observed_at in sorted(latest.items())
+
+    displayed = tuple(claim for claim in claims.values() if display_allowed(claim, policy))
+    if not displayed:
+        return ()
+    artifact_claim_ids = await live_artifact_claim_ids(
+        conn, claims=displayed, workspace_id=workspace_id
     )
+    definitions = {
+        str(item.field_def.field_key): item.field_def
+        for item in await list_effective_fields(
+            conn,
+            scope=FieldRegistryScope.for_workspace(workspace_id),
+            filters=FieldFilters(active=None),
+            include_retired=True,
+        )
+    }
+    now = datetime.now(UTC)
+    merge_policy = active_merge_policy()
+    references: list[EvidenceReference] = []
+    for claim in sorted(displayed, key=lambda item: (str(item.field_key), str(item.id))):
+        definition = definitions.get(str(claim.field_key))
+        current = merge_claims(
+            (claim,),
+            None if definition is None else definition.freshness_ttl,
+            merge_policy,
+            now,
+        )
+        references.append(
+            evidence_reference(
+                claim,
+                freshness=None if current is None else current.freshness_state,
+                artifact_available=str(claim.id) in artifact_claim_ids,
+            )
+        )
+    return tuple(references)
 
 
 def _build_row(
@@ -436,7 +474,12 @@ async def read_contact_profile(
         account_name=account_name,
         overview=overview,
         professional_facts=_professional_facts(claims, policy),
-        evidence=_evidence(claims, policy),
+        evidence=await _evidence(
+            conn,
+            claims=claims,
+            policy=policy,
+            workspace_id=workspace_id,
+        ),
         redirected_from=None if canonical_contact == EntityId(contact_id) else contact_id,
     )
 
@@ -451,7 +494,12 @@ def _account_404() -> HTTPException:
     )
 
 
-def register_contact_routes(router: APIRouter, *, conn_factory: ConnFactory) -> None:
+def register_contact_routes(
+    router: APIRouter,
+    *,
+    conn_factory: ConnFactory,
+    evidence_storage: StorageBackend | None = None,
+) -> None:
     """Register the two account-scoped contact routes on the `/frontend/v1` router."""
 
     @router.get("/accounts/{account_id}/contacts")
@@ -490,3 +538,78 @@ def register_contact_routes(router: APIRouter, *, conn_factory: ConnFactory) -> 
                         "message": "no such contact on this account's committee",
                     },
                 ) from exc
+
+    @router.get("/accounts/{account_id}/contacts/{contact_id}/evidence/{claim_id}")
+    async def get_contact_evidence_artifact(
+        workspace_id: WorkspaceDep,
+        account_id: uuid.UUID,
+        contact_id: uuid.UUID,
+        claim_id: uuid.UUID,
+    ) -> Response:
+        """Stream evidence only while the same governed Contact profile still exposes it."""
+
+        if evidence_storage is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "EVIDENCE_SERVICE_UNAVAILABLE",
+                    "message": "retained evidence is temporarily unavailable",
+                },
+            )
+        async with conn_factory() as conn:
+            try:
+                profile = await read_contact_profile(
+                    conn,
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    contact_id=contact_id,
+                )
+            except (AccountNotFound, ContactNotFound) as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                ) from exc
+            if not any(
+                reference.claim_id == str(claim_id) and reference.protected_artifact_available
+                for reference in profile.evidence
+            ):
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            typed_claim_id = ClaimId(claim_id)
+            resolved = await claims_by_ids(
+                conn,
+                (typed_claim_id,),
+                scope=WorkspaceScope.for_workspace(workspace_id),
+            )
+            claim = resolved.get(typed_claim_id)
+            if claim is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            artifact = await read_live_artifact(
+                conn,
+                claim=claim,
+                workspace_id=workspace_id,
+                storage=evidence_storage,
+            )
+            if artifact is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            return evidence_artifact_response(artifact)

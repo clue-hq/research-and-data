@@ -9,7 +9,10 @@ const FORWARDED_REQUEST_HEADERS = [
 const FORWARDED_RESPONSE_HEADERS = [
   "content-type",
   "cache-control",
+  "content-disposition",
+  "content-security-policy",
   "x-request-id",
+  "x-content-type-options",
   "x-projections-schema-version",
 ] as const;
 

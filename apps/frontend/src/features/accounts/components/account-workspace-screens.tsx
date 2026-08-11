@@ -8,6 +8,8 @@ import type {
   AccountWorkspace,
   WorkspaceInsight,
 } from "../model/account-workspace";
+import { accountEvidenceArtifactHref } from "../model/evidence";
+import { EvidenceList } from "./evidence-list";
 import readability from "./account-readability.module.css";
 import { AccountWorkspaceShell } from "./account-workspace-shell";
 
@@ -46,16 +48,20 @@ export function AccountInsightsScreen({
   account: AccountDetail;
   workspace: AccountWorkspace;
 }) {
+  const liveEvidence = [
+    ...account.neutralFacts.map((fact) => fact.evidence),
+    ...account.projectSections.flatMap((section) =>
+      section.insights.map((fact) => fact.evidence),
+    ),
+  ];
   return (
     <AccountWorkspaceShell account={account} activeTab="insights">
       <div className="clue-scrollbar-hidden h-full overflow-y-auto">
         <article className="mx-auto w-full max-w-[720px] px-8 pt-12 pb-16">
           <h1 className={readability.detailTitle}>Insights</h1>
-          {workspace.insights.length ? null : (
+          {workspace.insights.length || liveEvidence.length ? null : (
             <WorkspaceTabEmptyState>
-              No insights are served for this account yet. Account research
-              insights currently arrive on the Overview tab, grouped by the
-              project that produced them.
+              No inspectable account evidence is served yet.
             </WorkspaceTabEmptyState>
           )}
           <div className="mt-6 space-y-7">
@@ -71,13 +77,26 @@ export function AccountInsightsScreen({
                 <div className={`${readability.uiRegular} min-w-0`}>
                   <h2 className={readability.uiMedium}>{insight.title}</h2>
                   <p className="truncate text-[var(--clue-content-subtle)] underline underline-offset-2">
-                    {insight.sourceLabel}
+                    {insight.url}
                   </p>
                   <p className="mt-1">{insight.summary}</p>
                 </div>
               </a>
             ))}
           </div>
+          {liveEvidence.length ? (
+            <section className="mt-8">
+              <h2 className={readability.sectionHeading}>Research evidence</h2>
+              <div className="mt-4">
+                <EvidenceList
+                  artifactHref={(evidence) =>
+                    accountEvidenceArtifactHref(account.id, evidence.claimId)
+                  }
+                  evidence={liveEvidence}
+                />
+              </div>
+            </section>
+          ) : null}
         </article>
       </div>
     </AccountWorkspaceShell>

@@ -27,6 +27,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-12-fi2-slice5-evidence.md` — FI-2 Slice 5 maps exact safe source URLs, evidence spans,
+  confidence/freshness and protected artifact actions to display-approved Account/Contact claims;
+  terminal and authenticated-browser closeout are recorded there as they complete.
 - `2026-08-12-fi2-slice4-live-prose-formatting.md` — FI-2 Slice 4 implements typed current
   Account/Contact prose states, stable frontend enum labels and registry-described dynamic gaps;
   terminal/database gates plus authenticated browser-to-API-to-Postgres acceptance are complete,

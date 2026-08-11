@@ -551,8 +551,9 @@ Contacts row and profile:
 
 The profile is that row plus `accountId`, `accountName`, `redirectedFrom`,
 `overview` (the same typed prose state as Account `summary`),
-`professionalFacts` (`{ fieldKey, value, observedAt, provider, restricted }`),
-and `evidence` (`{ provider, observedAt }`, no URLs).
+`professionalFacts` (`{ fieldKey, claimId, value, observedAt, provider,
+restricted }`), and the claim-mapped `evidence` records specified by the FI-2
+slice-5 section below.
 
 The error envelope is the one documented above. Codes in use:
 `UNAUTHORIZED` (401, missing workspace in the isolated development resolver;
@@ -1007,3 +1008,66 @@ Every browser request resolved through the authenticated session-to-principal
 chain and `/frontend/v1` with `200`, and the same-origin BFF Account-detail
 request returned `200`. Browser rendering used the stable labels above while
 API/model contract coverage retained the raw semantic values.
+
+### Exact source and claim-mapped evidence (FI-2 slice 5, 2026-08-12)
+
+Every rendered Account `neutralFact`, Account project `narrative`/`insight`,
+and display-eligible Contact current claim carries an evidence record mapped to
+the exact claim it supports:
+
+```json
+{
+  "claimId": "0f0f4e8c-4d1a-4f0b-9f2d-2b7a1c0d5e11",
+  "fieldKey": "contact.current_title",
+  "sourceTitle": "sumble",
+  "provider": "sumble",
+  "sourceUrl": "https://evidence.example/reports/committee?version=2#finding",
+  "evidenceSpan": "Dana Buyer is the current VP of Finance.",
+  "confidence": 0.94,
+  "freshness": "fresh",
+  "observedAt": "2026-08-01T12:00:00Z",
+  "protectedArtifactAvailable": true
+}
+```
+
+`claimId` and `fieldKey` are the support mapping. `sourceTitle` is the registered
+source identity, or the hostname when no registered source key exists; the
+claim substrate does not hold fetched-page titles, so the API never invents
+one from a URL path. `sourceUrl` is nullable and crosses the wire only when it
+is an HTTP(S) URL with a hostname and no embedded credentials. The frontend
+uses the complete `sourceUrl` as both the visible label and the `href`; it never
+authors a more-specific label. A domain or profile root therefore remains a
+domain or profile-root label instead of looking like a post or evidence span.
+The legacy Account-workspace schema enforces the same invariant with
+`sourceLabel === url`.
+
+`evidenceSpan` is emitted only after the owning read has passed the same current
+merge, retention and display policy used for the value. Contact evidence is one
+record per displayed claim, not one chip per provider. A withheld or
+retention-expired Contact claim contributes no value, `claimId`, provider, URL,
+span, confidence, timestamp or artifact-existence signal.
+
+`protectedArtifactAvailable` is only an opaque action capability. It never
+contains a storage key or signed URL. The frontend derives one same-origin BFF
+path from the Account/Contact and claim ids:
+
+- `GET /api/clue/frontend/v1/accounts/{accountId}/evidence/{claimId}`
+- `GET /api/clue/frontend/v1/accounts/{accountId}/contacts/{contactId}/evidence/{claimId}`
+
+The corresponding FastAPI route reconstructs the current Account or governed
+Contact read, requires that exact claim to remain displayed with a live
+workspace-scoped artifact, re-resolves the retention-aware claim, validates the
+artifact row and its content address/size, and then streams a bounded safe media
+type. It does not redirect or presign. Responses are `private, no-store`,
+`nosniff`, and CSP-sandboxed; active HTML/SVG is downgraded to plain text.
+Unknown, foreign-workspace, erased, expired, withheld and no-longer-addressable
+requests all return the same `404 EVIDENCE_NOT_FOUND` shape. A deployment with
+no storage backend returns `503 EVIDENCE_SERVICE_UNAVAILABLE` rather than a
+fabricated link.
+
+The BFF forwards only the required response metadata (`Content-Type`,
+`Content-Disposition`, `Cache-Control`, CSP and `X-Content-Type-Options`) while
+retaining the authenticated server-derived provider proof and
+`X-Clue-Workspace-Id` path. Browser-authored authorization/workspace headers
+are still stripped. The provider bearer and artifact storage locator never
+enter browser state.

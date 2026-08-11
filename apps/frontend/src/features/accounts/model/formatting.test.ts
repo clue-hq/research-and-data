@@ -30,10 +30,22 @@ test("Account and Contact models retain raw machine values from the wire", () =>
       {
         fieldKey: "core.revenue_band",
         value: "1b_plus",
+        evidence: {
+          claimId: "claim-revenue",
+          fieldKey: "core.revenue_band",
+          confidence: 0.9,
+          observedAt: "2026-08-01T00:00:00Z",
+        },
       },
       {
         fieldKey: "fi2read.growth_model",
         value: "product_led",
+        evidence: {
+          claimId: "claim-growth",
+          fieldKey: "fi2read.growth_model",
+          confidence: 0.8,
+          observedAt: "2026-08-01T00:00:00Z",
+        },
       },
     ],
   });

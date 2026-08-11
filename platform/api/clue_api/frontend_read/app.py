@@ -58,6 +58,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from clue_config import Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
+from clue_storage import StorageBackend
 
 log = get_logger("clue_api.frontend_read")
 
@@ -194,7 +195,12 @@ def _validation_message(exc: RequestValidationError) -> str:
     return "; ".join(parts) if parts else "request validation failed"
 
 
-def build_frontend_read_router(*, settings: Settings, conn_factory: ConnFactory) -> APIRouter:
+def build_frontend_read_router(
+    *,
+    settings: Settings,
+    conn_factory: ConnFactory,
+    evidence_storage: StorageBackend | None = None,
+) -> APIRouter:
     """Build the workspace-scoped `/frontend/v1` router — **empty** unless the flag is on.
 
     Every slice-1 endpoint (Tasks 2–4) registers here and inherits the workspace dependency, so
@@ -216,8 +222,10 @@ def build_frontend_read_router(*, settings: Settings, conn_factory: ConnFactory)
     from clue_api.frontend_read.contacts import register_contact_routes
 
     register_accounts_list_routes(router, conn_factory=conn_factory)
-    register_account_detail_routes(router, conn_factory=conn_factory)
-    register_contact_routes(router, conn_factory=conn_factory)
+    register_account_detail_routes(
+        router, conn_factory=conn_factory, evidence_storage=evidence_storage
+    )
+    register_contact_routes(router, conn_factory=conn_factory, evidence_storage=evidence_storage)
     return router
 
 
@@ -245,7 +253,11 @@ def build_frontend_read_probe_router(*, settings: Settings) -> APIRouter:
 
 
 def install_frontend_read_surface(
-    app: FastAPI, *, settings: Settings, conn_factory: ConnFactory
+    app: FastAPI,
+    *,
+    settings: Settings,
+    conn_factory: ConnFactory,
+    evidence_storage: StorageBackend | None = None,
 ) -> None:
     """Mount enabled routers and always own errors under the reserved frontend-read prefix.
 
@@ -257,7 +269,13 @@ def install_frontend_read_surface(
 
     if settings.frontend_read_enabled:
         app.include_router(build_frontend_read_probe_router(settings=settings))
-        app.include_router(build_frontend_read_router(settings=settings, conn_factory=conn_factory))
+        app.include_router(
+            build_frontend_read_router(
+                settings=settings,
+                conn_factory=conn_factory,
+                evidence_storage=evidence_storage,
+            )
+        )
 
     @app.middleware("http")
     async def _frontend_read_envelope(

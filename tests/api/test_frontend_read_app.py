@@ -24,11 +24,21 @@ from clue_api.frontend_read import (
     build_frontend_read_router,
 )
 from clue_api.projections_app import create_projections_app
+from clue_api.research_view_governance import safe_public_url
 from clue_config import Settings, load_settings
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
 
 ORIGIN = "http://localhost:3000"
+
+
+def test_public_evidence_urls_are_http_only_and_credential_free() -> None:
+    assert safe_public_url("https://evidence.example/report/1?version=2#claim")
+    assert safe_public_url("http://evidence.example/")
+    assert not safe_public_url("javascript:alert(1)")
+    assert not safe_public_url("file:///tmp/evidence")
+    assert not safe_public_url("https://user:secret@evidence.example/report")
+    assert not safe_public_url("https:///missing-host")
 
 
 def _settings(**kwargs: object) -> Settings:

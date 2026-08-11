@@ -6,6 +6,7 @@ import {
   type Persona,
 } from "./vocabulary";
 import { ProseReadSchema } from "./prose";
+import { EvidenceReferenceSchema } from "./evidence";
 
 /**
  * Presentation-only persona tone. It is a frontend display decision (D-5) and
@@ -86,17 +87,14 @@ export const AccountContactSummarySchema = z.object({
 /** A professional fact on the contact profile, with the same redaction marker. */
 export const GovernedFactSchema = z.object({
   fieldKey: z.string(),
+  claimId: z.string().nullable().default(null),
   value: JsonValueSchema.nullable().default(null),
   observedAt: IsoTimestampSchema.nullable().default(null),
   provider: z.string().nullable().default(null),
   restricted: z.boolean().default(false),
 });
 
-/** A non-link evidence chip: provider and time only — evidence URLs stay off this wire (G4). */
-export const ContactEvidenceSchema = z.object({
-  provider: z.string(),
-  observedAt: IsoTimestampSchema.nullable().default(null),
-});
+export const ContactEvidenceSchema = EvidenceReferenceSchema;
 
 /**
  * `GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` — the object

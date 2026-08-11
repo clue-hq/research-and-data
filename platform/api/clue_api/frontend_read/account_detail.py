@@ -61,10 +61,10 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import JsonValue
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -78,14 +78,21 @@ from clue_api.frontend_read.accounts_list import (
 )
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.committee import read_governed_committee
+from clue_api.frontend_read.evidence import (
+    EvidenceReference,
+    evidence_artifact_response,
+    evidence_reference,
+    live_artifact_claim_ids,
+    read_live_artifact,
+)
 from clue_api.frontend_read.prose import ACCOUNT_SUMMARY_FIELD, ProseRead, read_prose
 from clue_core import (
+    ClaimId,
     EntityId,
     EntityType,
     FreshnessState,
     Persona,
     ResearchScope,
-    decode_jsonb_scalar,
     reference_time,
 )
 from clue_db import ConnFactory
@@ -93,6 +100,7 @@ from clue_research.claimstore import (
     FieldFilters,
     FieldRegistryScope,
     WorkspaceScope,
+    active_merge_policy,
     claims_by_ids,
     current_values,
     # FI-2 P3's one species derivation, which now lives beside ``list_effective_fields`` in the
@@ -101,9 +109,11 @@ from clue_research.claimstore import (
     # layer does, and a research-path module importing a BFF module was the wrong direction.
     field_species,
     list_effective_fields,
+    merge_claims,
 )
 from clue_research.identity import get_account, get_contacts, surviving_id
 from clue_research.membership import ProjectMembership, memberships_for_accounts
+from clue_storage import StorageBackend
 
 #: ``account.value_narrative`` gets its own slot in a project section: it is the FI-2 §5.2 relative
 #: family that is an *argument* rather than a fact, and the frontend renders it as prose, not as a
@@ -133,6 +143,7 @@ class NeutralFact(WireModel):
     freshness: FreshnessState
     observed_at: datetime
     provider: str | None = None
+    evidence: EvidenceReference
 
 
 class RelativeFact(WireModel):
@@ -147,6 +158,7 @@ class RelativeFact(WireModel):
     value: JsonValue
     observed_at: datetime
     provider: str | None = None
+    evidence: EvidenceReference
 
 
 class AccountProjectSection(WireModel):
@@ -248,9 +260,9 @@ _DISTINCT_FIELD_KEYS_TEMPLATE = """
 # dispatches on ``project_id`` alone — ``run_lineage.kind`` is advisory, first-writer-wins metadata
 # over a mixed run-id space and must never decide attribution (FI-2 slice-0 handoff).
 RELATIVE_CLAIMS_TEMPLATE = """
-    SELECT c.field_key, c.value_json, c.observed_at, c.collected_at, c.source_key, l.project_id
+    SELECT c.id, l.project_id
     FROM (
-        SELECT id, field_key, value_json, observed_at, collected_at, source_key, run_id
+        SELECT id, run_id, collected_at
         FROM claim
         WHERE entity_id = :entity_id
           AND field_key IN :field_keys
@@ -289,19 +301,6 @@ _UNRESOLVED_FIELDS = text(
 # --- composition helpers ----------------------------------------------------------------------
 
 
-def _reference_time(observed_at: datetime | None, collected_at: datetime) -> datetime:
-    """:func:`~clue_core.reference_time`'s rule, over loose columns.
-
-    Where a whole :class:`~clue_core.Claim` is in hand, call ``core.reference_time(claim)``
-    directly — it is the M9.5 DRY consolidation the merge and the freshness engine share, and this
-    module does exactly that for the neutral-fact winners. The relative-claims read, though,
-    projects five columns out of SQL rather than hydrating claims, so it has an
-    ``(observed_at, collected_at)`` pair and no claim; this restates the same rule for that shape
-    instead of hydrating a claim purely to ask it a two-field question.
-    """
-    return observed_at or collected_at
-
-
 async def _read_distinct_field_keys(
     conn: AsyncConnection, *, entity_id: EntityId, scope: WorkspaceScope
 ) -> tuple[str, ...]:
@@ -334,18 +333,26 @@ async def _read_neutral_facts(
     winners = await claims_by_ids(
         conn, [value.provenance.claim_id for value in merged.values()], scope=scope
     )
+    artifact_claim_ids = await live_artifact_claim_ids(
+        conn, claims=winners.values(), workspace_id=scope.workspace_id or ""
+    )
     facts: list[NeutralFact] = []
     for (_entity, field_key), value in merged.items():
         winner = winners.get(value.provenance.claim_id)
+        if winner is None:
+            continue
         facts.append(
             NeutralFact(
                 field_key=field_key,
                 value=value.value_json,
                 freshness=value.freshness_state,
-                observed_at=(
-                    reference_time(winner) if winner is not None else value.provenance.collected_at
+                observed_at=reference_time(winner),
+                provider=winner.source_key,
+                evidence=evidence_reference(
+                    winner,
+                    freshness=value.freshness_state,
+                    artifact_available=str(winner.id) in artifact_claim_ids,
                 ),
-                provider=None if winner is None else winner.source_key,
             )
         )
     return tuple(sorted(facts, key=lambda fact: fact.field_key))
@@ -401,20 +408,52 @@ async def _read_relative_claims(
         )
     ).all()
 
+    claim_ids = [row[0] for row in rows]
+    claims = await claims_by_ids(conn, claim_ids, scope=scope)
+    artifact_claim_ids = await live_artifact_claim_ids(
+        conn, claims=claims.values(), workspace_id=workspace_id
+    )
+    definitions = {
+        str(item.field_def.field_key): item.field_def
+        for item in await list_effective_fields(
+            conn,
+            scope=FieldRegistryScope.for_workspace(workspace_id),
+            filters=FieldFilters(active=None),
+            include_retired=True,
+        )
+    }
+    now = datetime.now(UTC)
+    policy = active_merge_policy()
+
     score_rows: list[tuple[uuid.UUID, str | None, str, Any, datetime]] = []
-    for field_key, raw_value, observed_at, collected_at, source_key, project_id in rows:
-        key = str(field_key)
-        value = decode_jsonb_scalar(raw_value)
+    for claim_id, project_id in rows:
+        claim = claims.get(claim_id)
+        if claim is None:
+            continue
+        key = str(claim.field_key)
+        value = claim.value_json
         project = None if project_id is None else str(project_id)
-        at = _reference_time(observed_at, collected_at)
+        at = reference_time(claim)
         if key in SCORE_FIELD_KEYS:
             score_rows.append((uuid.UUID(str(entity_id)), project, key, value, at))
             continue
+        definition = definitions.get(key)
+        current = merge_claims(
+            (claim,),
+            None if definition is None else definition.freshness_ttl,
+            policy,
+            now,
+        )
         fact = RelativeFact(
             field_key=key,
             value=value,
             observed_at=at,
-            provider=None if source_key is None else str(source_key),
+            provider=claim.source_key,
+            evidence=evidence_reference(
+                claim,
+                freshness=None if current is None else current.freshness_state,
+                artifact_available=str(claim.id) in artifact_claim_ids,
+            ),
         )
         target = partitioned.narratives if key == NARRATIVE_FIELD_KEY else partitioned.insights
         target[project].append(fact)
@@ -633,7 +672,12 @@ async def read_account_detail(
 # --- the route --------------------------------------------------------------------------------
 
 
-def register_account_detail_routes(router: APIRouter, *, conn_factory: ConnFactory) -> None:
+def register_account_detail_routes(
+    router: APIRouter,
+    *,
+    conn_factory: ConnFactory,
+    evidence_storage: StorageBackend | None = None,
+) -> None:
     """Register ``GET /accounts/{account_id}`` on the workspace-scoped `/frontend/v1` router."""
 
     @router.get("/accounts/{account_id}")
@@ -655,3 +699,80 @@ def register_account_detail_routes(router: APIRouter, *, conn_factory: ConnFacto
                         "message": "no such account in this workspace",
                     },
                 ) from exc
+
+    @router.get("/accounts/{account_id}/evidence/{claim_id}")
+    async def get_account_evidence_artifact(
+        workspace_id: WorkspaceDep,
+        account_id: uuid.UUID,
+        claim_id: uuid.UUID,
+    ) -> Response:
+        """Stream retained evidence only when the current Account read actually exposes it."""
+
+        if evidence_storage is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "EVIDENCE_SERVICE_UNAVAILABLE",
+                    "message": "retained evidence is temporarily unavailable",
+                },
+            )
+        async with conn_factory() as conn:
+            try:
+                detail = await read_account_detail(
+                    conn, workspace_id=workspace_id, account_id=account_id
+                )
+            except AccountNotFound as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                ) from exc
+            references = [fact.evidence for fact in detail.neutral_facts]
+            references.extend(
+                fact.evidence
+                for section in detail.project_sections
+                for fact in (*section.narratives, *section.insights)
+            )
+            if not any(
+                reference.claim_id == str(claim_id) and reference.protected_artifact_available
+                for reference in references
+            ):
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            typed_claim_id = ClaimId(claim_id)
+            claims = await claims_by_ids(
+                conn,
+                (typed_claim_id,),
+                scope=WorkspaceScope.for_workspace(workspace_id),
+            )
+            claim = claims.get(typed_claim_id)
+            if claim is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            artifact = await read_live_artifact(
+                conn,
+                claim=claim,
+                workspace_id=workspace_id,
+                storage=evidence_storage,
+            )
+            if artifact is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            return evidence_artifact_response(artifact)

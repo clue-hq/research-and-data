@@ -816,7 +816,12 @@ def create_projections_app(
     # FI-2 slice 1: the `/frontend/v1` read surface — its own router, error envelope, request id,
     # and the process's CORS policy. Both halves are default-off (flag / empty origins), so an
     # unconfigured deployment is byte-identical to the pre-FI-2 app.
-    install_frontend_read_surface(app, settings=resolved, conn_factory=conn_factory)
+    install_frontend_read_surface(
+        app,
+        settings=resolved,
+        conn_factory=conn_factory,
+        evidence_storage=ingestion_storage,
+    )
     if auth_service is not None:
         install_auth_wiring(app, service=auth_service)
         if workspace_resolver is None and actor_resolver is None:

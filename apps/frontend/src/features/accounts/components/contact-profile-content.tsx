@@ -1,11 +1,10 @@
 import type { AccountContactDetail } from "../model/account-contact";
 import { contactPersonaLabel } from "../model/account-contact";
 import { contactDisplayName } from "../model/contact-accessibility";
+import { contactEvidenceArtifactHref } from "../model/evidence";
 import {
   formatConfidence,
-  formatIsoDate,
   formatSemanticToken,
-  formatToken,
 } from "../model/formatting";
 import {
   AccountFlowIcon,
@@ -15,6 +14,7 @@ import { Absent, FactList, Restricted } from "./account-facts";
 import readability from "./account-readability.module.css";
 import { ContactAvatar } from "./contact-avatar";
 import { AccountTextSection } from "./account-detail-primitives";
+import { EvidenceList } from "./evidence-list";
 
 function ProfileRow({
   icon,
@@ -142,23 +142,17 @@ export function ContactProfileContent({
         <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
           Evidence
         </h2>
-        {/* Non-link provenance chips: evidence URLs stay off this wire (G4). */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {contact.evidence.length ? (
-            contact.evidence.map((evidence, index) => (
-              <span
-                className={`${readability.pillMedium} rounded-xl bg-[var(--clue-background-pressed)] px-2 py-1`}
-                key={`${evidence.provider}-${index}`}
-              >
-                {formatToken(evidence.provider)}
-                {formatIsoDate(evidence.observedAt)
-                  ? ` · ${formatIsoDate(evidence.observedAt)}`
-                  : ""}
-              </span>
-            ))
-          ) : (
-            <Absent label="No evidence recorded yet" />
-          )}
+        <div className="mt-4">
+          <EvidenceList
+            artifactHref={(evidence) =>
+              contactEvidenceArtifactHref(
+                contact.accountId,
+                contact.id,
+                evidence.claimId,
+              )
+            }
+            evidence={contact.evidence}
+          />
         </div>
       </section>
     </div>

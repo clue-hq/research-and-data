@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -96,6 +96,7 @@ from clue_research.narrative import (
 )
 from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE, load_committee_pack
 from clue_spine import Project
+from clue_storage import artifact_key, content_address, record_artifact
 from tests._workspace import seed_project, seed_workspace
 from tests.db.conftest import run_async
 from tests.fleet.entity_research_r2_helpers import lifecycle_fixture
@@ -119,17 +120,45 @@ _INSIGHT_FIELD = "fi2read.campaign_insight"
 #: arbitrary key; ``account.recent_funding`` is a real registered (``project_neutral``) field, so
 #: the "unresolved until answered" test can answer it with a real claim.
 _REQUESTED_FIELD = "account.recent_funding"
+_EMPLOYEE_ARTIFACT_BODY = b"Acme Detail reports 1,200 employees."
+_EMPLOYEE_ARTIFACT_KEY = artifact_key(_WS, content_address(_EMPLOYEE_ARTIFACT_BODY))
 
 
 # --- harness --------------------------------------------------------------------------------
 
 
-def _app(conn: AsyncConnection):
+class _MemoryStorage:
+    def __init__(self, blobs: dict[str, bytes] | None = None) -> None:
+        self.blobs = dict(blobs or {})
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        del media_type
+        self.blobs[key] = data
+
+    async def get(self, key: str) -> bytes:
+        return self.blobs[key]
+
+    async def delete(self, key: str) -> None:
+        self.blobs.pop(key, None)
+
+    async def exists(self, key: str) -> bool:
+        return key in self.blobs
+
+    async def presign(self, key: str, *, expires_in: int = 3600) -> str:
+        raise AssertionError(f"must not presign {key!r} for {expires_in}s")
+
+    async def list_blobs(self) -> AsyncIterator[tuple[str, datetime]]:
+        if False:
+            yield "", datetime.min.replace(tzinfo=UTC)
+
+
+def _app(conn: AsyncConnection, *, evidence_storage: _MemoryStorage | None = None):
     return create_projections_app(
         surface=None,  # type: ignore[arg-type]
         tool_invoker=None,  # type: ignore[arg-type]
         settings=load_settings(_env_file=None, frontend_read_enabled=True),
         conn_factory=conn_session_factory(conn),
+        ingestion_storage=evidence_storage,
         manage_db_lifespan=False,
     )
 
@@ -139,9 +168,13 @@ def _client(app) -> httpx.AsyncClient:
 
 
 async def _get(
-    conn: AsyncConnection, account_id: uuid.UUID | str, *, workspace_id: str = _WS
+    conn: AsyncConnection,
+    account_id: uuid.UUID | str,
+    *,
+    workspace_id: str = _WS,
+    evidence_storage: _MemoryStorage | None = None,
 ) -> httpx.Response:
-    async with _client(_app(conn)) as client:
+    async with _client(_app(conn, evidence_storage=evidence_storage)) as client:
         return await client.get(f"{_BASE}/{account_id}", headers={"X-Workspace-Id": workspace_id})
 
 
@@ -239,7 +272,22 @@ async def _account_claim(
     source_key: str = "seed_source",
     private: bool = False,
     observed_at: datetime | None = None,
-) -> None:
+    artifact_body: bytes | None = None,
+) -> uuid.UUID:
+    retained_key: str | None = None
+    if artifact_body is not None:
+        digest = content_address(artifact_body)
+        retained_key = artifact_key(_WS, digest)
+        await record_artifact(
+            conn,
+            storage_key=retained_key,
+            workspace_id=_WS,
+            content_sha256=digest,
+            media_type="text/plain",
+            size_bytes=len(artifact_body),
+            source_key=source_key,
+            source_url="https://example.test/facts",
+        )
     claim = account_claim(
         entity_id=account_id,
         field_key=field_key,
@@ -252,7 +300,7 @@ async def _account_claim(
         source_url="https://example.test/facts",
         evidence_span="seeded",
         observed_at=observed_at,
-    ).model_copy(update={"source_key": source_key})
+    ).model_copy(update={"source_key": source_key, "artifact_key": retained_key})
     # The reuse class is stamped explicitly rather than inferred: ``account.value_narrative`` and
     # the test pack field both declare ``tenant_private`` at the field, and the default
     # ``stamp_reuse`` prefix policy does not match either (M12.1 injects its own policy for the
@@ -263,6 +311,7 @@ async def _account_claim(
         else stamp_reuse(claim, workspace_id=None)
     )
     await insert_claim(conn, claim)
+    return uuid.UUID(str(claim.id))
 
 
 async def _account_summary_claim(
@@ -689,6 +738,7 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         run_id=await _run(conn, kind="scoring", project_id=project_a.project_id),
         source_key="clearbit",
         observed_at=base,
+        artifact_body=_EMPLOYEE_ARTIFACT_BODY,
     )
     await _account_claim(
         conn,
@@ -928,12 +978,62 @@ def test_neutral_facts_are_served_once_not_once_per_project() -> None:
             assert facts["core.employee_count"]["freshness"] in {"fresh", "stale"}
             assert facts["core.employee_count"]["provider"] == "clearbit"
             assert facts["core.employee_count"]["observedAt"].startswith("2026-08-01")
+            evidence = facts["core.employee_count"]["evidence"]
+            assert evidence["fieldKey"] == "core.employee_count"
+            assert evidence["sourceTitle"] == "clearbit"
+            assert evidence["sourceUrl"] == "https://example.test/facts"
+            assert evidence["evidenceSpan"] == "seeded"
+            assert evidence["confidence"] == pytest.approx(0.9)
+            assert evidence["freshness"] == facts["core.employee_count"]["freshness"]
+            assert evidence["protectedArtifactAvailable"] is True
+            assert evidence["claimId"]
 
             # ...and no neutral field leaks into a project section.
             for section in payload["projectSections"]:
                 keys = {entry["fieldKey"] for entry in section["insights"]}
                 assert "core.employee_count" not in keys
                 assert "core.revenue_band" not in keys
+
+    run_async(scenario())
+
+
+def test_retained_account_evidence_is_streamed_after_current_authorization_only() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            storage = _MemoryStorage({_EMPLOYEE_ARTIFACT_KEY: _EMPLOYEE_ARTIFACT_BODY})
+            payload = (await _get(conn, fixture.acme, evidence_storage=storage)).json()
+            evidence = _facts(payload)["core.employee_count"]["evidence"]
+            assert evidence["protectedArtifactAvailable"] is True
+            assert _EMPLOYEE_ARTIFACT_KEY not in str(payload)
+
+            path = f"{_BASE}/{fixture.acme}/evidence/{evidence['claimId']}"
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                response = await client.get(path, headers={"X-Workspace-Id": _WS})
+                crossed = await client.get(path, headers={"X-Workspace-Id": _OTHER_WS})
+                unknown = await client.get(
+                    f"{_BASE}/{fixture.acme}/evidence/{uuid.uuid4()}",
+                    headers={"X-Workspace-Id": _WS},
+                )
+
+            assert response.status_code == 200
+            assert response.content == _EMPLOYEE_ARTIFACT_BODY
+            assert response.headers["cache-control"] == "private, no-store"
+            assert response.headers["content-security-policy"].startswith("sandbox")
+            assert response.headers["x-content-type-options"] == "nosniff"
+            assert "signed" not in str(response.headers).lower()
+            assert crossed.status_code == 404
+            assert crossed.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
+            assert unknown.status_code == 404
+
+            await conn.execute(
+                text("UPDATE artifact SET erased_at=now() WHERE storage_key=:key"),
+                {"key": _EMPLOYEE_ARTIFACT_KEY},
+            )
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                erased = await client.get(path, headers={"X-Workspace-Id": _WS})
+            assert erased.status_code == 404
+            assert erased.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
 
     run_async(scenario())
 
@@ -960,6 +1060,10 @@ def test_each_projects_relative_claims_stay_inside_its_own_section() -> None:
 
             assert _values(section_a["insights"]) == ["insight for A"]
             assert _values(section_b["insights"]) == ["insight for B"]
+            for insight in (*section_a["insights"], *section_b["insights"]):
+                assert insight["evidence"]["fieldKey"] == _INSIGHT_FIELD
+                assert insight["evidence"]["sourceUrl"] == "https://example.test/facts"
+                assert insight["evidence"]["evidenceSpan"] == "seeded"
 
             assert [entry["value"]["argument"] for entry in section_a["narratives"]] == [
                 "narrative for A"
