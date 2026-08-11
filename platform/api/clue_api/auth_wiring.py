@@ -7,7 +7,7 @@ provider claim.
 
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Literal
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, Header, Request
@@ -54,6 +54,7 @@ class SessionResponse(BaseModel):
 
     user_id: str
     memberships: tuple[SessionMembershipResponse, ...]
+    has_inactive_memberships: bool
 
 
 class PrincipalResponse(BaseModel):
@@ -88,10 +89,12 @@ class ProvisionRequest(BaseModel):
     @field_validator("company_website")
     @classmethod
     def _normalize_website(cls, value: str | None) -> str | None:
-        """Normalize to an http(s) URL; scheme-less input ("www.acme.com") gains https://.
+        """Normalize to a canonical http(s) URL; scheme-less input gains ``https://``.
 
-        This is submission hygiene, not the SSRF boundary — the Stage-0 scrape path applies
-        its own network guard before any fetch.
+        Refuses userinfo (catches ``mailto:a@b``-shaped junk), dotless hosts (catches
+        ``javascript:...`` and bare ``localhost``), and non-http(s) schemes; lowercases the
+        scheme and host. This is submission hygiene, not the SSRF boundary — the Stage-0
+        scrape path applies its own network guard before any fetch.
         """
         if value is None:
             return None
@@ -99,10 +102,22 @@ class ProvisionRequest(BaseModel):
         if not cleaned:
             return None
         candidate = cleaned if "://" in cleaned else f"https://{cleaned}"
-        parsed = urlsplit(candidate)
-        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        try:
+            parsed = urlsplit(candidate)
+            host = parsed.hostname
+            port = parsed.port
+        except ValueError as error:
+            raise ValueError("company_website must be an http(s) URL") from error
+        if (
+            parsed.scheme.lower() not in ("http", "https")
+            or not host
+            or "." not in host
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
             raise ValueError("company_website must be an http(s) URL")
-        return candidate
+        netloc = host.lower() + (f":{port}" if port is not None else "")
+        return urlunsplit((parsed.scheme.lower(), netloc, parsed.path, parsed.query, ""))
 
 
 class ProvisionResponse(BaseModel):
@@ -119,6 +134,10 @@ class ProvisionResponse(BaseModel):
     last_name: str | None
     job_role: str | None
     created: bool
+    # True on a replay whose submitted company_name differs from the recorded workspace name.
+    # Workspace/brand names are fixed at creation (review ruling 2026-08-12); this flag makes
+    # the divergence detectable instead of silently echoing the old name as if accepted.
+    company_name_ignored: bool
 
 
 def authentication_request(request: Request) -> AuthenticationRequest:
@@ -281,6 +300,7 @@ def build_auth_router(
                 )
                 for item in session.memberships
             ),
+            has_inactive_memberships=session.has_inactive_memberships,
         )
 
     @router.get("/principal", response_model=PrincipalResponse)
@@ -301,7 +321,12 @@ def build_auth_router(
         async def provision(request: Request, body: ProvisionRequest) -> ProvisionResponse:
             """FI-4 D-2: one replay-safe operation from a live provider session to an owned
             workspace with its first brand. Requires authentication but deliberately NOT a
-            provisioned identity or membership — this route is how both come to exist."""
+            provisioned identity or membership — this route is how both come to exist.
+
+            Correctness note: this route relies on ``conn_factory`` having commit-on-exit
+            semantics (``clue_db.transaction``) — the whole operation is one transaction and
+            the 409 path must roll everything back. Wiring ``clue_db.connection`` here would
+            silently roll back every successful provision."""
             session = await service.external_session(authentication_request(request))
             try:
                 async with conn_factory() as conn:
@@ -329,6 +354,9 @@ def build_auth_router(
                 last_name=provisioned.user.last_name,
                 job_role=provisioned.user.job_role,
                 created=provisioned.created,
+                company_name_ignored=(
+                    not provisioned.created and provisioned.workspace.name != body.company_name
+                ),
             )
 
     return router

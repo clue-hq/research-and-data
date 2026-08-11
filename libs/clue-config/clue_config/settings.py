@@ -440,6 +440,11 @@ class Settings(BaseSettings):
     auth_clerk_jwks_url: str | None = None
     auth_clerk_issuer: str | None = None
     auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
+    # FI-4 slice 1: gates POST /auth/v1/provision (self-serve workspace creation). Default-off
+    # like every neighbouring write surface — an unconfigured deployment serves session reads
+    # only; enabling requires an explicit operator decision because each valid provider session
+    # can mint one workspace+brand. Env: ``CLUE_SELF_SERVE_PROVISIONING_ENABLED``.
+    self_serve_provisioning_enabled: bool = False
 
     # --- Lane E E3 value-narrative synthesis ------------------------------------------------
     # One default-off gate over the on-completion positioning step (the M12.1 Positioner behind

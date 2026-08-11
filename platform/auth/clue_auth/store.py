@@ -137,31 +137,38 @@ async def update_platform_user_profile(
     job_role: str | None,
     display_name: str | None = None,
 ) -> PlatformUser:
-    """Write the onboarding profile fields (PUT semantics — every field is set as given).
+    """Update the onboarding profile fields (uniform PATCH semantics).
 
-    ``display_name`` is only ever *filled*, never clobbered: an explicit value wins, else a
-    "first last" composition fills an empty column, and an existing user-set display name is
-    preserved (COALESCE) so a provisioning replay cannot overwrite what the user chose.
+    ``None`` (or whitespace-only) means "not supplied — preserve the stored value" for every
+    field; there is no clear-a-field path here (review ruling: one semantics, not three).
+    ``display_name`` handling: an explicit value wins; otherwise the column is recomposed from
+    the effective "first last" only when it is empty OR still equals the previous automatic
+    composition — a display name a user chose by hand is never overwritten, while an
+    auto-composed one follows name corrections.
     """
 
-    first = _optional(first_name)
-    last = _optional(last_name)
-    explicit_display = _optional(display_name)
-    composed = " ".join(part for part in (first, last) if part) or None
     result = await conn.execute(
         text(
-            f"UPDATE platform_user SET first_name = :first_name, last_name = :last_name, "
-            f"job_role = :job_role, "
-            f"display_name = COALESCE(:explicit_display, display_name, :composed_display) "
+            f"UPDATE platform_user SET "
+            f"first_name = COALESCE(CAST(:first_name AS text), first_name), "
+            f"last_name = COALESCE(CAST(:last_name AS text), last_name), "
+            f"job_role = COALESCE(CAST(:job_role AS text), job_role), "
+            f"display_name = CASE "
+            f"  WHEN CAST(:explicit_display AS text) IS NOT NULL "
+            f"    THEN CAST(:explicit_display AS text) "
+            f"  WHEN display_name IS NULL OR display_name = NULLIF(btrim("
+            f"    COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), '') "
+            f"  THEN NULLIF(btrim(COALESCE(CAST(:first_name AS text), first_name, '') || ' ' || "
+            f"    COALESCE(CAST(:last_name AS text), last_name, '')), '') "
+            f"  ELSE display_name END "
             f"WHERE user_id = :user_id RETURNING {_USER_COLUMNS}"
         ),
         {
             "user_id": user_id,
-            "first_name": first,
-            "last_name": last,
+            "first_name": _optional(first_name),
+            "last_name": _optional(last_name),
             "job_role": _optional(job_role),
-            "explicit_display": explicit_display,
-            "composed_display": composed,
+            "explicit_display": _optional(display_name),
         },
     )
     row = result.mappings().first()
@@ -862,6 +869,12 @@ async def erase_platform_user(
     The Clue ``user_id`` and membership rows survive because domain receipts must remain
     attributable. External subjects and accepted invitation addresses are replaced with stable,
     non-personal tombstones; every authentication mapping and membership is revoked.
+
+    ``workspace.name``/``brand.name`` deliberately survive even though self-serve provisioning
+    copies the submitted company name into both: a workspace is a shared org object other
+    members may still administer, so renaming it is not this function's call (review ruling
+    2026-08-12). ``self_serve_provisioning.company_website`` IS erased — it can identify a
+    solo founder and nothing else depends on it after slice-2 setup consumes it.
     """
     at = now or datetime.now(UTC)
     user_result = await conn.execute(

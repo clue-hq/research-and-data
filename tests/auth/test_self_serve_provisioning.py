@@ -250,6 +250,79 @@ def test_erasure_clears_the_new_profile_fields() -> None:
     run_async(scenario())
 
 
+def test_provision_route_is_absent_without_conn_factory_and_flag() -> None:
+    """The conditional registration is a guarantee, not an accident (review finding 5)."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+
+            @asynccontextmanager
+            async def conn_factory() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            service = PrincipalService(
+                authenticator=LocalFixtureAuthenticator(),
+                identity_resolver=DatabaseIdentityResolver(conn_factory=conn_factory),
+                authorizer=DatabaseAuthorizer(conn_factory=conn_factory),
+                memberships_for_user=DatabaseMembershipLoader(conn_factory=conn_factory),
+            )
+            app = FastAPI()
+            install_auth_wiring(app, service=service)
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                absent = await client.post(
+                    "/auth/v1/provision",
+                    json=dict(PROFILE, **{"job_role": "Founder"}),
+                    headers={"X-Clue-Local-Auth-Subject": "absent-route-subject"},
+                )
+                assert absent.status_code == 404
+
+    run_async(scenario())
+
+
+def test_session_read_reports_inactive_memberships() -> None:
+    """Lost-access users are distinguishable from never-provisioned users (ruling FE7)."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+
+            @asynccontextmanager
+            async def conn_factory() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            provisioned = await provision_self_serve_workspace(
+                conn,
+                provider_key="local_fixture",
+                provider_subject="revoked-subject",
+                **PROFILE,
+            )
+            from clue_auth.store import revoke_workspace_membership
+
+            await revoke_workspace_membership(conn, provisioned.membership.membership_id)
+            service = PrincipalService(
+                authenticator=LocalFixtureAuthenticator(),
+                identity_resolver=DatabaseIdentityResolver(conn_factory=conn_factory),
+                authorizer=DatabaseAuthorizer(conn_factory=conn_factory),
+                memberships_for_user=DatabaseMembershipLoader(conn_factory=conn_factory),
+            )
+            app = FastAPI()
+            install_auth_wiring(app, service=service)
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                session = await client.get(
+                    "/auth/v1/session",
+                    headers={"X-Clue-Local-Auth-Subject": "revoked-subject"},
+                )
+                assert session.status_code == 200
+                payload = session.json()
+                assert payload["memberships"] == []
+                assert payload["has_inactive_memberships"] is True
+
+    run_async(scenario())
+
+
 def test_provision_route_end_to_end_with_replay_and_errors() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -289,6 +362,7 @@ def test_provision_route_end_to_end_with_replay_and_errors() -> None:
                 assert first["brand_id"].startswith("brd_")
                 assert first["role_key"] == "owner"
                 assert first["job_role"] == "Founder"
+                assert first["company_name_ignored"] is False
 
                 replay = await client.post("/auth/v1/provision", json=body, headers=headers)
                 assert replay.status_code == 200
@@ -296,6 +370,19 @@ def test_provision_route_end_to_end_with_replay_and_errors() -> None:
                 assert second["created"] is False
                 assert second["workspace_id"] == first["workspace_id"]
                 assert second["brand_id"] == first["brand_id"]
+                assert second["company_name_ignored"] is False
+
+                # A corrected company name on replay is not silently swallowed: the workspace
+                # name stays fixed and the divergence is flagged (review ruling 2026-08-12).
+                renamed = await client.post(
+                    "/auth/v1/provision",
+                    json={**body, "company_name": "Insight Health Corrected"},
+                    headers=headers,
+                )
+                assert renamed.status_code == 200
+                third = renamed.json()
+                assert third["company_name"] == "Insight Health"
+                assert third["company_name_ignored"] is True
 
                 # The freshly provisioned identity now serves a normal session read.
                 session = await client.get("/auth/v1/session", headers=headers)

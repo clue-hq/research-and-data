@@ -89,13 +89,20 @@ class ServicePrincipal(BaseModel):
 
 
 class AuthenticatedSessionView(BaseModel):
-    """Provider-free session data safe for the Next.js server DAL."""
+    """Provider-free session data safe for the Next.js server DAL.
+
+    ``memberships`` carries ACTIVE memberships only. ``has_inactive_memberships`` lets the
+    frontend distinguish "never had access" (route to self-serve onboarding) from "had access,
+    lost it" (route to access-denied) without exposing the inactive rows themselves —
+    FI-4 slice-1 review ruling, 2026-08-12.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     user_id: str
     memberships: tuple[WorkspaceMembership, ...]
     authenticated_at: UtcDatetime
+    has_inactive_memberships: bool = False
 
 
 class Authenticator(Protocol):
@@ -151,15 +158,15 @@ class PrincipalService:
 
     async def session_view(self, request: AuthenticationRequest) -> AuthenticatedSessionView:
         identity = await self.identity(request)
+        all_memberships = await self._memberships_for_user(identity.user_id)
         memberships = tuple(
-            membership
-            for membership in await self._memberships_for_user(identity.user_id)
-            if membership.status == "active"
+            membership for membership in all_memberships if membership.status == "active"
         )
         return AuthenticatedSessionView(
             user_id=identity.user_id,
             memberships=memberships,
             authenticated_at=identity.authenticated_at,
+            has_inactive_memberships=len(memberships) < len(all_memberships),
         )
 
     async def principal(

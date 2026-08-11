@@ -246,22 +246,27 @@ async def provision_self_serve_workspace(
     """The FI-4 D-2 operation: one replay-safe transaction from Clerk subject to owned workspace.
 
     Links the external identity to a Clue user, creates the company workspace, creates its first
-    brand, makes the user the workspace owner, and saves the submitted profile. Idempotent on the
-    ``self_serve_provisioning`` record keyed by the auth identity: a replay (browser retry,
-    double-click) returns the workspace and brand recorded there — never a second workspace. A
-    per-subject advisory transaction lock serializes concurrent first calls so exactly one of
-    them creates; the loser observes the record and takes the replay path.
+    brand, makes the user the workspace owner, and saves the submitted profile. Idempotent on
+    the ``self_serve_provisioning`` record keyed by the durable ``user_id`` (UNIQUE): a replay
+    (browser retry, double-click, or a second linked identity of the same human) returns the
+    workspace and brand recorded there — never a second workspace. A per-subject advisory
+    transaction lock serializes concurrent first calls; a loser that races past it under a
+    snapshot isolation level is caught at the record INSERT, rolls back its own creations to a
+    savepoint, and returns the winner's workspace as a normal replay.
 
-    Profile fields carry PUT semantics on every call (a replay with corrected spelling updates
-    the user's own profile), and so does ``company_website`` — it is a mutable setup input the
-    slice-2 recon composition reads, so a corrected resubmission must stick. Workspace/brand
-    names are fixed at creation and never renamed here.
+    Every supplied field carries uniform PATCH semantics: a provided value is written (a replay
+    with corrected spelling updates the profile; a corrected ``company_website`` sticks — the
+    slice-2 recon composition reads it), and ``None`` preserves the stored value. The one
+    exception is ``company_name``: workspace/brand names are fixed at creation and never
+    renamed here — the HTTP layer surfaces a divergent replayed name via
+    ``company_name_ignored`` rather than pretending it was accepted.
 
-    The idempotency record is keyed on the durable ``user_id`` (UNIQUE), so linking a second
-    auth identity to the same human still replays the first workspace. A user who already
-    holds an active membership without a provisioning record (e.g. invited, or provisioned by
-    an operator path) is refused — self-serve provisioning is first-time setup only, never a
-    second-workspace factory.
+    Only a user who currently holds an ACTIVE membership (and has no provisioning record) is
+    refused — self-serve provisioning is first-time setup, never a second-workspace factory.
+    Invited/suspended/revoked memberships do not block: those are per-workspace states about
+    someone else's workspace and must not prevent a first self-serve signup; the frontend
+    separately routes users with inactive memberships away from onboarding via the session
+    view's ``has_inactive_memberships``.
     """
     at = now or datetime.now(UTC)
     name = _required(company_name, label="company_name")
@@ -294,6 +299,7 @@ async def provision_self_serve_workspace(
             "user already holds an active workspace membership; "
             "self-serve provisioning only performs first-time setup"
         )
+    savepoint = await conn.begin_nested()
     workspace = await create_workspace(conn, name=name)
     brand = await create_brand(conn, workspace_id=workspace.workspace_id, name=name)
     membership = await create_workspace_membership(
@@ -321,9 +327,17 @@ async def provision_self_serve_workspace(
     )
     if inserted.rowcount == 0:
         # A concurrent transaction won under an isolation level where the advisory lock's
-        # post-lock read could not see its row. Abort (rolling back our workspace/brand)
-        # rather than commit a duplicate; the caller's retry takes the replay path.
-        raise IdentityConflictError("concurrent provisioning detected; retry the request")
+        # post-lock read could not see its row. Roll back OUR creations to the savepoint and
+        # return the winner's workspace as an ordinary replay (never a duplicate, never a
+        # spurious conflict for a transient race).
+        await savepoint.rollback()
+        replay = await _replay_self_serve_record(
+            conn, user=user, identity=identity, company_website=website
+        )
+        if replay is None:
+            raise IdentityConflictError("concurrent provisioning detected; retry the request")
+        return replay
+    await savepoint.commit()
     return ProvisionedSelfServeWorkspace(
         workspace=workspace,
         brand=brand,

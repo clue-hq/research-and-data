@@ -818,7 +818,13 @@ def create_projections_app(
     # unconfigured deployment is byte-identical to the pre-FI-2 app.
     install_frontend_read_surface(app, settings=resolved, conn_factory=conn_factory)
     if auth_service is not None:
-        install_auth_wiring(app, service=auth_service, conn_factory=conn_factory)
+        # The provision route (workspace-creating write) mounts only behind its default-off
+        # flag, matching the rollout discipline of every neighbouring surface.
+        install_auth_wiring(
+            app,
+            service=auth_service,
+            conn_factory=(conn_factory if resolved.self_serve_provisioning_enabled else None),
+        )
         if workspace_resolver is None and actor_resolver is None:
             workspace_resolver, actor_resolver = authenticated_route_resolvers(auth_service)
 
