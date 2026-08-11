@@ -1,23 +1,26 @@
 import { Button } from "@/components/ui/button";
-import type { OnboardingFlow } from "../model/onboarding";
-import type { OnboardingDraft } from "../hooks/use-onboarding-controller";
+import type { OnboardingDraft, OnboardingFlow } from "../model/onboarding";
 import styles from "./onboarding.module.css";
 
 type AuthCopy = OnboardingFlow["auth"]["signIn"];
 
 export function AuthScreen({
+  busy = false,
   copy,
   draft,
   emailMode,
+  error = null,
   onChooseEmail,
   onChooseGoogle,
   onDraftChange,
   onSubmit,
   onSwitchMode,
 }: {
+  busy?: boolean;
   copy: AuthCopy;
   draft: OnboardingDraft;
   emailMode: boolean;
+  error?: string | null;
   onChooseEmail: () => void;
   onChooseGoogle: () => void;
   onDraftChange: <Key extends keyof OnboardingDraft>(
@@ -84,7 +87,12 @@ export function AuthScreen({
               />
             </span>
           </AuthField>
-          <Button className={styles.authButton} size="lg" type="submit">
+          {error ? (
+            <p className={styles.authError} role="alert">
+              {error}
+            </p>
+          ) : null}
+          <Button className={styles.authButton} disabled={busy} size="lg" type="submit">
             {copy.submitLabel}
           </Button>
         </>

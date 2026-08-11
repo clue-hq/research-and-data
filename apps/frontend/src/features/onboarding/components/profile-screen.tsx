@@ -1,15 +1,18 @@
 import { Button } from "@/components/ui/button";
-import type { OnboardingFlow } from "../model/onboarding";
-import type { OnboardingDraft } from "../hooks/use-onboarding-controller";
+import type { OnboardingDraft, OnboardingFlow } from "../model/onboarding";
 import styles from "./onboarding.module.css";
 
 export function ProfileScreen({
+  busy = false,
   draft,
+  error = null,
   profile,
   onDraftChange,
   onSubmit,
 }: {
+  busy?: boolean;
   draft: OnboardingDraft;
+  error?: string | null;
   profile: OnboardingFlow["profile"];
   onDraftChange: <Key extends keyof OnboardingDraft>(
     key: Key,
@@ -81,7 +84,13 @@ export function ProfileScreen({
         />
       </ProfileField>
 
-      <Button className={styles.profileSubmit} size="lg" type="submit">
+      {error ? (
+        <p className={styles.authError} role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <Button className={styles.profileSubmit} disabled={busy} size="lg" type="submit">
         Continue
         <ArrowRight />
       </Button>

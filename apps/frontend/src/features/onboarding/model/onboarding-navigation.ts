@@ -5,12 +5,13 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   "sign-in-email",
   "sign-up",
   "sign-up-email",
+  "verify-email",
   "profile",
   "setting-up",
   "finalizing",
 ];
 
-export function onboardingStepHref(step: OnboardingStep) {
+export function onboardingStepHref(step: OnboardingStep): string {
   return `/onboarding/${step}`;
 }
 
@@ -27,7 +28,9 @@ export function authSwitchTarget(step: OnboardingStep): OnboardingStep {
 }
 
 export function submitTarget(step: OnboardingStep): OnboardingStep | null {
-  if (step === "sign-in-email" || step === "sign-up-email") return "profile";
+  if (step === "sign-in-email") return "profile";
+  if (step === "sign-up-email") return "verify-email";
+  if (step === "verify-email") return "profile";
   if (step === "profile") return "setting-up";
   if (step === "setting-up") return "finalizing";
   return null;

@@ -19,11 +19,16 @@ import {
 function handleAuthenticationError(error: unknown): never {
   if (error instanceof ClueAuthenticationError) {
     if (error.status === 401) redirect("/sign-in?reason=session_expired");
+    // FI-4 slice 1 routing repair: an authenticated user who simply has no Clue footprint
+    // yet (fresh Clerk identity, or identity without a workspace) belongs in onboarding —
+    // the provisioning profile step — not at a dead-end access-denied page.
     if (
       error.code === "IDENTITY_NOT_PROVISIONED" ||
-      error.code === "USER_DISABLED" ||
-      error.code === "WORKSPACE_FORBIDDEN"
+      error.code === "WORKSPACE_MEMBERSHIP_REQUIRED"
     ) {
+      redirect("/onboarding/profile");
+    }
+    if (error.code === "USER_DISABLED" || error.code === "WORKSPACE_FORBIDDEN") {
       redirect(`/access-denied?code=${encodeURIComponent(error.code)}`);
     }
   }
@@ -51,9 +56,12 @@ export async function loadProtectedSession(
   );
   const membership = resolveWorkspaceMembership(session, requestedWorkspaceId);
   if (!membership) {
+    // Zero memberships is the provisioning-needed state, distinct from WORKSPACE_FORBIDDEN
+    // (which means a selected workspace refused an existing member). Pages route this to
+    // /onboarding/profile; the BFF re-emits it as a 403 access error.
     throw new ClueAuthenticationError(
       "User has no active Clue workspace membership",
-      { code: "WORKSPACE_FORBIDDEN", status: 403 },
+      { code: "WORKSPACE_MEMBERSHIP_REQUIRED", status: 403 },
     );
   }
   const principal = RequestPrincipalSchema.parse(

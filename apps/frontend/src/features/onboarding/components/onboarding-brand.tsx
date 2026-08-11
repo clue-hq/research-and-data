@@ -16,9 +16,11 @@ export function OnboardingLogo({ large = false }: { large?: boolean }) {
 
 export function OnboardingHeader({
   accountEmail,
+  onLogOut,
   showAccount = false,
 }: {
   accountEmail: string;
+  onLogOut?: () => void;
   showAccount?: boolean;
 }) {
   return (
@@ -27,7 +29,9 @@ export function OnboardingHeader({
       {showAccount ? (
         <div className={styles.accountActions}>
           <span>{accountEmail}</span>
-          <button type="button">Log out</button>
+          <button onClick={onLogOut} type="button">
+            Log out
+          </button>
         </div>
       ) : null}
     </header>

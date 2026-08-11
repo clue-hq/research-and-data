@@ -26,6 +26,14 @@ export const onboardingFixture: OnboardingFlow = {
       emailLabel: "Continue with email",
       submitLabel: "Sign up",
     },
+    verifyEmail: {
+      title: "Verify your email",
+      subtitle: "Enter the code we just sent to",
+      codeLabel: "Verification code",
+      submitLabel: "Verify",
+      resendPrompt: "Didn’t get a code?",
+      resendAction: "Resend",
+    },
   },
   profile: {
     title: "Welcome to Clue!",

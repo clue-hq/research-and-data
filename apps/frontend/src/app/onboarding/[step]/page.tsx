@@ -13,6 +13,7 @@ const screenTitles: Record<OnboardingStep, string> = {
   "sign-in-email": "Sign in with email",
   "sign-up": "Create an account",
   "sign-up-email": "Create an account with email",
+  "verify-email": "Verify your email",
   profile: "Set up your profile",
   "setting-up": "Setting up your workspace",
   finalizing: "Finalizing your workspace",

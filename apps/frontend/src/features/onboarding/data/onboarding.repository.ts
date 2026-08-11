@@ -1,9 +1,18 @@
 import {
   OnboardingFlowSchema,
+  ProvisionedWorkspaceSchema,
   type OnboardingFlow,
+  type ProvisionWorkspaceInput,
+  type ProvisionedWorkspace,
 } from "../model/onboarding";
 import { onboardingFixture } from "./onboarding.fixture";
 
+/**
+ * The onboarding flow copy (titles, labels, role options, setup checklist art) is
+ * frontend-owned and always served from the fixture — the earlier `GET /api/v1/onboarding`
+ * HTTP read is retired per FI-4 D-7 (serving button copy over HTTP earned nothing, and its
+ * direct-origin fetch crashed every auth-configured environment).
+ */
 export interface OnboardingRepository {
   getFlow(): Promise<OnboardingFlow>;
 }
@@ -14,32 +23,68 @@ export const fixtureOnboardingRepository: OnboardingRepository = {
   },
 };
 
-export function createHttpOnboardingRepository(
-  apiBaseUrl: string,
-): OnboardingRepository {
-  const baseUrl = `${apiBaseUrl.replace(/\/$/, "")}/`;
-
-  return {
-    async getFlow() {
-      const response = await fetch(new URL("api/v1/onboarding", baseUrl), {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Onboarding API returned ${response.status}`);
-      }
-
-      return OnboardingFlowSchema.parse(await response.json());
-    },
-  };
+export function getOnboardingFlow(): Promise<OnboardingFlow> {
+  return fixtureOnboardingRepository.getFlow();
 }
 
-export function getOnboardingFlow() {
-  const apiBaseUrl = process.env.CLUE_API_BASE_URL;
-  const repository = apiBaseUrl
-    ? createHttpOnboardingRepository(apiBaseUrl)
-    : fixtureOnboardingRepository;
+export class OnboardingProvisionError extends Error {
+  readonly code: string;
+  readonly status: number;
 
-  return repository.getFlow();
+  constructor(message: string, options: { code: string; status: number }) {
+    super(message);
+    this.name = "OnboardingProvisionError";
+    this.code = options.code;
+    this.status = options.status;
+  }
+}
+
+/**
+ * FI-4 D-2 over the same-origin server route (`/api/onboarding/provision`), which resolves the
+ * Clerk session token server-side and forwards to the backend `POST /auth/v1/provision`.
+ * Replay-safe: the backend returns the same workspace for a retried call.
+ */
+export async function provisionWorkspace(
+  input: ProvisionWorkspaceInput,
+): Promise<ProvisionedWorkspace> {
+  const response = await fetch("/api/onboarding/provision", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    let code = "HTTP_ERROR";
+    let message = `Provisioning failed with status ${response.status}`;
+    try {
+      const payload = (await response.json()) as {
+        error?: { code?: string; message?: string };
+      };
+      if (payload.error?.code) code = payload.error.code;
+      if (payload.error?.message) message = payload.error.message;
+    } catch {
+      // Non-JSON error body; keep the status-based message.
+    }
+    throw new OnboardingProvisionError(message, { code, status: response.status });
+  }
+  return ProvisionedWorkspaceSchema.parse(await response.json());
+}
+
+/** Fixture twin used when authentication is off: no network, deterministic ids. */
+export async function provisionWorkspaceFixture(
+  input: ProvisionWorkspaceInput,
+): Promise<ProvisionedWorkspace> {
+  return ProvisionedWorkspaceSchema.parse({
+    user_id: "usr_fixture",
+    workspace_id: "ws_fixture",
+    brand_id: "brd_fixture",
+    membership_id: "wsm_fixture",
+    role_key: "owner",
+    company_name: input.company_name,
+    company_website: input.company_website,
+    first_name: input.first_name,
+    last_name: input.last_name,
+    job_role: input.job_role,
+    created: true,
+  });
 }
