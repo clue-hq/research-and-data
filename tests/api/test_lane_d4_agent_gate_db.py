@@ -389,6 +389,7 @@ def test_a_gate_is_answerable_exactly_once(tmp_path: Path) -> None:
                 turn_id=seeded.turn_id,
                 action_ref=derive_turn_action_ref(seeded.turn_id),
                 decision="approved",
+                expected_subject_sha256=gate.expected_subject_sha256,
                 answered_by_user_id=USER_ID,
             )
             assert answer.decision == "approved"
@@ -402,6 +403,7 @@ def test_a_gate_is_answerable_exactly_once(tmp_path: Path) -> None:
                         turn_id=seeded.turn_id,
                         action_ref=derive_turn_action_ref(seeded.turn_id),
                         decision="rejected",
+                        expected_subject_sha256=gate.expected_subject_sha256,
                         answered_by_user_id=USER_ID,
                     )
             # The refusal carries the standing answer, so a caller can tell a retry from a race.
@@ -448,6 +450,7 @@ def test_open_and_answered_are_derived_from_the_answer_record(tmp_path: Path) ->
                 turn_id=seeded.turn_id,
                 action_ref=derive_turn_action_ref(seeded.turn_id),
                 decision="revised",
+                expected_subject_sha256=gate.expected_subject_sha256,
                 answered_by_user_id=USER_ID,
             )
 
@@ -501,6 +504,7 @@ def test_an_answer_cannot_invent_a_name_for_the_act_it_cites(tmp_path: Path) -> 
                         turn_id=seeded.turn_id,
                         action_ref=f"turn-action:{uuid4()}",
                         decision="approved",
+                        expected_subject_sha256=gate.expected_subject_sha256,
                         answered_by_user_id=USER_ID,
                     )
 
@@ -556,6 +560,7 @@ def test_a_gate_answer_receipt_names_its_own_gate_and_its_own_addressee(tmp_path
                 turn_id=seeded.turn_id,
                 action_ref=ref,
                 decision="approved",
+                expected_subject_sha256=gate.expected_subject_sha256,
                 answered_by_user_id=USER_ID,
             )
 

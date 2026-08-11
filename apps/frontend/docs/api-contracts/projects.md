@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-1 implemented. Hardening Slices 2-6 remain pending. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-2 implemented. Hardening Slices 3-6 remain pending. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -29,7 +29,8 @@ This amendment replaces the browser-probe defects documented in
 `.context/defect-log.md` with one durable authority chain. Slice 0 freezes the
 contracts and repairs the two stale test signals. Slice 1 registers the trusted
 readiness and synthesis tools, persists their durable records, and promotes the
-active Stage-0 recipe/profile. Gate and UI changes remain owned by Slices 2-6.
+active Stage-0 recipe/profile. Slice 2 implements the durable ICP gate and
+answer lifecycle; rendering and remaining UI changes stay owned by Slices 3-6.
 
 - `synthesize_icps` is available to the governed Stage-0 conversation profile.
   A successful call persists one or more draft, versioned `icp_spec` rows and
@@ -131,11 +132,37 @@ decision tuple `approved | rejected | revised`, and `addressee_user_id`.
 satisfy this contract.
 
 The normal turn route carries an ICP answer as
-`gate_response={gate_id, decision, expected_subject_sha256}`. The shared
-`expected_estimated_cost_cents` echo is nullable for this non-spend gate; it
-remains governed by the existing directive/budget-gate rules when that gate
-stores a spend amount. Actor, addressee, action reference, subject and authority
-remain server-derived and are never accepted from the browser or model.
+`gate_response={gate_id, decision, expected_subject_sha256,
+expected_estimated_cost_cents:null}`. A `revised` decision additionally requires
+one bounded, non-blank `revision_request`; that text is persisted in the answer
+receipt and the gated draft remains byte-identical. Approve and Reject accept no
+revision payload. The shared cost echo remains governed by the existing
+directive/budget-gate rules when that gate stores a spend amount. Actor,
+addressee, action reference, subject and authority remain server-derived and
+are never accepted from the browser or model.
+
+#### Slice 2 implementation status (2026-08-12)
+
+- `open_icp_confirmation_gate@1` is registered in the promoted Stage-0 profile
+  and recipe. The model supplies only a synthesized `icp_key` and version; the
+  runtime derives the project, thread, exact draft snapshot/digest, supported
+  decisions and human addressee.
+- `agent_gate.permitted_decisions` is durable data. Non-spend gates store a
+  paired null amount/currency rather than a fabricated zero. Each immutable
+  answer receipt echoes the reviewed digest and stores a bounded structured
+  decision payload.
+- Route checks and a database trigger independently enforce the exact digest,
+  permitted decision and addressee. The route also re-resolves the current
+  product/client/Client-KB lineage and compares the complete draft snapshot
+  before accepting a new answer.
+- Approve activates exactly the gated draft in the same transaction as the
+  receipt. Reject leaves it draft. Revise stores the requested changes and
+  leaves the original draft unchanged so a later synthesis must create a new
+  version.
+- Until Slice 3 provides the typed ICP decision surface (including the Revise
+  input), the frontend parses and shows the durable gate as a non-interactive
+  **Human action required** recovery card. Slice 2 does not merely enable the
+  existing generic buttons.
 
 ### R3 implementation status (2026-08-10)
 
@@ -239,7 +266,7 @@ remain server-derived and are never accepted from the browser or model.
   reload.
 - The composer keeps one visible model selector, as explicitly ruled for R8.
   Its only option is the server-advertised promoted profile
-  `head-of-abm@v24`, labelled **GPT-5.6 Terra** and backed by
+  `head-of-abm@v25`, labelled **GPT-5.6 Terra** and backed by
   `openai/gpt-5.6-terra`. The chosen profile id is accepted, persisted, and
   checked by the detached worker before the promoted profile is executed.
 - Attachments remain unavailable because this deployment has no durable upload
@@ -300,12 +327,12 @@ remain server-derived and are never accepted from the browser or model.
 - The amount does not gate answerability. `expected_subject_sha256` is the one
   field that makes a card answerable in both postures; a card missing only the
   amount stays clickable.
-- The answer still sends `expected_estimated_cost_cents` (the field is required
-  by `GateResponseRequest` and no tool/route schema changed), but with controls
-  off the server does **not** validate it — `GATE_AMOUNT_STALE` is unreachable
-  in that mode. The `expected_subject_sha256` digest check remains armed in both
-  modes and is the load-bearing stale-approval guard. When the amount was
-  withheld the client sends `0` purely as the courier value.
+- `expected_estimated_cost_cents` is nullable at the shared request seam. A
+  non-spend ICP gate must send null/omit it; sending any amount is
+  `GATE_AMOUNT_UNEXPECTED`. For a spend-bearing gate with controls enabled it
+  must echo the exact displayed amount; with controls off the amount check is
+  skipped. The `expected_subject_sha256` digest check remains armed in every
+  posture and is the load-bearing stale-approval guard.
 
 ## Ownership model
 
@@ -425,14 +452,14 @@ nothing. It requires `project.read`.
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v24",
+        "id": "head-of-abm@v25",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v24",
+    "default_agent_profile_id": "head-of-abm@v25",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,
@@ -486,7 +513,7 @@ accepts:
     }
   ],
   "attachment_refs": [],
-  "agent_profile_id": "head-of-abm@v24"
+  "agent_profile_id": "head-of-abm@v25"
 }
 ```
 
@@ -623,14 +650,14 @@ project shell:
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v24",
+        "id": "head-of-abm@v25",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v24",
+    "default_agent_profile_id": "head-of-abm@v25",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,

@@ -66,8 +66,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # FI Lane D D4 minted head-of-abm@v23: it pins `open_directive_confirmation_gate@1` and
         # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
         # gate, end the turn, and launch only after the human's own confirming turn.
-        # Stage-0 hardening v24 replaces ambiguous v1 readiness/synthesis with trusted v2 tools.
-        AgentRole.HEAD_OF_ABM: ("eb16d66a83dde501dff010185a1402fe1c3571c9645a0ced85ce089340f420ce"),
+        # Stage-0 hardening v24 replaces ambiguous v1 readiness/synthesis with trusted v2 tools;
+        # v25 adds the exact-subject ICP confirmation gate.
+        AgentRole.HEAD_OF_ABM: ("fdcc72b3c7e9802c3d5d77c25540d72f8c0bafccab970983d78b74c963be70ff"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -141,7 +142,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # `synthesize_value_narrative@1` is the same shape for the same reason. Merged count: the
     # 55-address base + Lane D's 5 (four thread tools + the confirmation gate) + Lane E's 2,
     # plus historical v1 and current v2 addresses for readiness and synthesis.
-    assert len(by_address) == 64
+    assert len(by_address) == 65
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -162,6 +163,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "launch_account_research@1",
         "launch_contact_research@1",
         "open_directive_confirmation_gate@1",
+        "open_icp_confirmation_gate@1",
         "propose_field@2",
         "propose_source@1",
         "read_account_research_run@1",
@@ -224,7 +226,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v11"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v12"
     assert disclosures[1].resource.address == "skill:account-deep-steering@v3"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -309,7 +311,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v11")
+    body = head.open_skill("skill:stage0-interview@v12")
 
     assert required_guidance in body
 

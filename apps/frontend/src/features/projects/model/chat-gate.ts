@@ -11,11 +11,9 @@ import {
  *
  * **Why this is a repository read and not just the stream part.** A gate is
  * answered by echoing back exactly what was on the screen: `gate_response`
- * requires `expected_subject_sha256` and `expected_estimated_cost_cents`, and
- * the server refuses anything that does not match the immutable gate row —
- * except that with the pilot's budget controls off the amount never reaches the
- * card, so the server stops checking the cost echo and the subject digest is
- * the whole stale-approval guard (`chat/router.py::_gate_for_answer`). The
+ * requires `expected_subject_sha256` and, for spend-bearing gates only,
+ * `expected_estimated_cost_cents`; the server refuses anything that does not
+ * match the immutable gate row. The
  * `gate` part the turn stream currently emits carries only the ref, the kind
  * and `state="requested"` (`conversation_turns.py::_project_turn_close` passes
  * nothing else), so the stream alone cannot produce an answerable card. The
@@ -31,6 +29,8 @@ const GateAnswerWireSchema = z.object({
   turn_id: z.string(),
   action_ref: z.string(),
   decision: z.string(),
+  expected_subject_sha256: z.string(),
+  decision_payload: z.record(z.string(), z.unknown()).default({}),
   answered_by_user_id: z.string(),
   answered_at: z.string(),
 });
@@ -54,6 +54,7 @@ const GateWireSchema = z.object({
   subject_revision: z.number().int().nullable().default(null),
   expected_subject_sha256: z.string(),
   subject_snapshot: z.record(z.string(), z.unknown()).default({}),
+  permitted_decisions: z.array(GateDecisionSchema),
   // Optional because the amount is *withheld*, not missing: with the pilot's
   // `CLUE_BUDGET_CONTROLS_ENABLED` off no cost number may reach a human
   // surface, so the route serves `null` while the immutable gate row keeps its
@@ -61,7 +62,7 @@ const GateWireSchema = z.object({
   // amount must never be readable as a real one, and the card must render no
   // cost row at all rather than a fabricated zero.
   max_spend_cents: z.union([z.number(), z.string()]).nullish().default(null),
-  currency: z.string(),
+  currency: z.string().nullable(),
   addressee_user_id: z.string(),
   created_at: z.string(),
   answer: GateAnswerWireSchema.nullable().default(null),
@@ -72,6 +73,8 @@ export interface ChatGateAnswer {
   turnId: string;
   actionRef: string;
   decision: string;
+  expectedSubjectSha256: string;
+  decisionPayload: Record<string, unknown>;
   answeredByUserId: string;
   answeredAt: string;
 }
@@ -96,7 +99,8 @@ export interface ChatGate {
   expectedSubjectSha256: string;
   subjectSnapshot: Record<string, unknown>;
   maxSpendCents: number | null;
-  currency: string;
+  currency: string | null;
+  permittedDecisions: readonly GateDecision[];
   addresseeUserId: string;
   createdAt: string;
   answer: ChatGateAnswer | null;
@@ -116,6 +120,7 @@ function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
     subjectSnapshot: wire.subject_snapshot,
     maxSpendCents: parseCentAmount(wire.max_spend_cents),
     currency: wire.currency,
+    permittedDecisions: wire.permitted_decisions,
     addresseeUserId: wire.addressee_user_id,
     createdAt: wire.created_at,
     answer:
@@ -125,6 +130,8 @@ function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
             turnId: wire.answer.turn_id,
             actionRef: wire.answer.action_ref,
             decision: wire.answer.decision,
+            expectedSubjectSha256: wire.answer.expected_subject_sha256,
+            decisionPayload: wire.answer.decision_payload,
             answeredByUserId: wire.answer.answered_by_user_id,
             answeredAt: wire.answer.answered_at,
           },
@@ -201,6 +208,7 @@ function decisionOf(value: string | null): GateDecision | null {
 
 const GATE_TITLES: Record<string, string> = {
   directive_confirmation: "Confirm research launch",
+  icp_confirmation: "Confirm ICP",
   plan_approval: "Approve plan",
   budget_approval: "Approve budget",
 };
@@ -248,7 +256,14 @@ export function gateCardModel({
   // a digest but no amount while controls are *on* is the rare read-failure
   // case; it stays clickable and the server answers with `GATE_AMOUNT_STALE`
   // rather than the client guessing which posture the deployment is in.
-  const answerable = expectedSubjectSha256 !== null && decision === null;
+  // Slice 2 exposes the complete ICP backend lifecycle, but the client still
+  // lacks the typed revision-request input that makes all three decisions
+  // usable. Keep that gate visible and deliberately non-interactive until the
+  // dedicated rendering slice lands; do not accidentally turn the existing
+  // generic buttons into a half-implemented authority surface.
+  const clientSupportsKind = kind === "directive_confirmation";
+  const answerable =
+    clientSupportsKind && expectedSubjectSha256 !== null && decision === null;
 
   let state: GateCardState;
   if (decision === "approved") state = "responded";
@@ -266,7 +281,9 @@ export function gateCardModel({
     currency,
     expectedSubjectSha256,
     permittedDecisions:
-      part && part.permittedDecisions.length > 0
+      gate !== null
+        ? gate.permittedDecisions
+        : part && part.permittedDecisions.length > 0
         ? part.permittedDecisions.filter((value): value is GateDecision =>
             ALL_DECISIONS.includes(value as GateDecision),
           )
@@ -278,7 +295,9 @@ export function gateCardModel({
     unavailableReason:
       state === "unavailable"
         ? (unavailableReason ??
-          "this deployment did not serve the gate's subject digest")
+          (!clientSupportsKind
+            ? "Human action required: this gate kind is not supported by this client yet"
+            : "this deployment did not serve the gate's subject digest"))
         : null,
     launches: gate?.launches ?? [],
   };

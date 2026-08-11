@@ -255,6 +255,7 @@ async def _recipe_runner(
             pin_provider=Stage0StepPinProvider(
                 compatibility=compatibility,
                 conn_factory=factory,
+                tools=registry,
             ),
         ),
         executor,

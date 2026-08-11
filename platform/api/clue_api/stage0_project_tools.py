@@ -185,7 +185,10 @@ class EvaluateStage0ReadinessV2Tool(_Stage0ProjectTool):
     )
     effect_class = ToolEffectClass.WRITE
     parameter_policy = JournalParameterPolicy(safe_display_fields=("gate",))
-    pin_requirements = ("readiness_policy", "project")
+    # ``brand_id`` is persisted on the readiness decision even though the model never supplies
+    # it. Keep every trusted scope value the tool consumes in the descriptor so the generic
+    # Stage-0 pin provider can freeze the complete authority boundary without knowing tool names.
+    pin_requirements = ("readiness_policy", "brand", "project")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -318,7 +321,14 @@ class SynthesizeIcpsV2Tool(_Stage0ProjectTool):
     )
     effect_class = ToolEffectClass.SPEND
     parameter_policy = JournalParameterPolicy()
-    pin_requirements = ("project", "product", "client_kb", "field_registry", "model_prompt")
+    pin_requirements = (
+        "brand",
+        "project",
+        "product",
+        "client_kb",
+        "field_registry",
+        "model_prompt",
+    )
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext

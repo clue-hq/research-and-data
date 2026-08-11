@@ -6,25 +6,16 @@ import { fixtureGates } from "./chat.fixture";
 /**
  * The durable gate read behind the approval card.
  *
- * **Contract status — reported, not assumed.** The projection this reads
- * (`clue_projections.gates.thread_gates`, whose docstring says it "is the
- * transcript's question … the shape a `gate` part and the `task` part that
- * follows an approval both read") exists and is complete, but **no HTTP route
- * serves it**: the chat surface's ten endpoints are thread CRUD, messages,
- * turns, the stream, stop and retry. At the same time the `gate` part that does
- * reach the client carries only `gate_ref`, `gate_kind` and `state`, because
- * `conversation_turns.py::_project_turn_close` calls
- * `emit_gate_part(ref=…, gate_kind=…)` and passes nothing else.
+ * The HTTP route serves the persisted `agent_gate` projection, including the
+ * exact subject revision/digest, stored decision vocabulary and immutable
+ * answer receipt. A streamed `gate` part is only a reference; this durable read
+ * is the authority the card validates before rendering controls.
  *
- * A gate answer requires `expected_subject_sha256` and
- * `expected_estimated_cost_cents`, and the server refuses anything that does
- * not match the immutable row. So against a real backend today the card can be
- * *shown* and cannot be *answered*. This repository is therefore written
- * against the natural projection of the read that already exists, and its HTTP
- * adapter reports `available: false` rather than inventing a digest or an
- * amount — the card then renders the request with its controls disabled and
- * says exactly why. The gap is in the slice report for founder review; this
- * file does not edit the contract document.
+ * Slice 2 intentionally leaves the new ICP gate non-interactive in this client:
+ * its Approve/Reject/Revise form (especially the required Revise text) lands in
+ * Slice 3. The repository still returns the durable payload now, allowing the
+ * renderer to distinguish that supported authority object from malformed,
+ * model-only or unavailable references without inventing any gate fields.
  */
 export interface ChatGateRead {
   /** False when this deployment served no durable gate payload. */
@@ -95,6 +86,8 @@ export function createFixtureChatGatesRepository(
                 turnId: answered.turnId,
                 actionRef: `turn-action:${answered.turnId}`,
                 decision: answered.decision,
+                expectedSubjectSha256: gate.expectedSubjectSha256,
+                decisionPayload: {},
                 answeredByUserId: gate.addresseeUserId,
                 answeredAt: new Date().toISOString(),
               },

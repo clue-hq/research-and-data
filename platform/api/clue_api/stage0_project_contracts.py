@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 from decimal import Decimal
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
@@ -32,16 +32,18 @@ __all__ = [
     "Stage0ReadinessV2Output",
     "SynthesizeIcpsV2Input",
     "SynthesizeIcpsV2Output",
+    "TrustedStage0ProjectScopeInput",
     "canonical_subject_sha256",
 ]
 
 EVALUATE_STAGE0_READINESS_V2 = "evaluate_stage0_readiness@2"
 SYNTHESIZE_ICPS_V2 = "synthesize_icps@2"
 ICP_CONFIRMATION_GATE_KIND = "icp_confirmation"
-ICP_GATE_DECISIONS = ("approved", "rejected", "revised")
 
 type IcpGateDecision = Literal["approved", "rejected", "revised"]
 type Sha256 = str
+
+ICP_GATE_DECISIONS: tuple[IcpGateDecision, ...] = ("approved", "rejected", "revised")
 
 _UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 
@@ -62,7 +64,19 @@ class _FrozenContract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
 
-class EvaluateStage0ReadinessV2Input(ToolInput):
+class TrustedStage0ProjectScopeInput(ToolInput):
+    """Marker for tools whose compatibility pins come from the execution-bound project.
+
+    The marker is deliberately on the input contract rather than a list of tool names in the pin
+    provider.  A new Stage-0 capability therefore opts into the same trusted scope boundary once;
+    the provider then derives the exact project/product/Client-KB pins from the live descriptor's
+    declared ``pin_requirements``.
+    """
+
+    requires_trusted_stage0_project_scope: ClassVar[bool] = True
+
+
+class EvaluateStage0ReadinessV2Input(TrustedStage0ProjectScopeInput):
     """The model chooses when and which permitted readiness gate to evaluate.
 
     Workspace, project, product, client, Client-KB lineage, claims, policy and every metric are
@@ -99,7 +113,7 @@ class Stage0ReadinessV2Output(ToolOutput):
         return values
 
 
-class SynthesizeIcpsV2Input(ToolInput):
+class SynthesizeIcpsV2Input(TrustedStage0ProjectScopeInput):
     """No model-authored authority: the runtime supplies the exact ready Stage-0 scope."""
 
 
@@ -159,3 +173,13 @@ class Stage0GateResponseContract(_FrozenContract):
     decision: IcpGateDecision
     expected_subject_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     expected_estimated_cost_cents: Decimal | None = Field(default=None, ge=0)
+    revision_request: str | None = Field(default=None, min_length=1, max_length=4_000)
+
+    @model_validator(mode="after")
+    def revision_has_one_explicit_request(self) -> Stage0GateResponseContract:
+        if self.decision == "revised":
+            if self.revision_request is None or not self.revision_request.strip():
+                raise ValueError("an ICP revision requires a non-blank revision_request")
+        elif self.revision_request is not None:
+            raise ValueError("revision_request is only valid for a revised decision")
+        return self

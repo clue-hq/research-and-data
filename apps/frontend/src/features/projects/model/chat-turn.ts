@@ -255,9 +255,10 @@ export function turnStateForStreamEvent(
 /**
  * The structured gate answer the turn endpoint accepts instead of a message.
  *
- * The two `expected*` fields are the client's statement of *what it was looking
- * at*: the server refuses the answer unless both match the immutable gate. That
- * is what makes "Approve" mean the card that was on the screen. Note what can
+ * The expected digest is the client's statement of *what it was looking at*.
+ * Spend-bearing gates also echo the displayed amount; non-spend gates send
+ * null. The server refuses stale authority. That is what makes "Approve" mean
+ * the card that was on the screen. Note what can
  * never appear here on any slice — `actor_id`, `action_ref`, or the amount to
  * *use*: authority is ambient and server-derived.
  */
@@ -265,7 +266,8 @@ export const GateResponseSchema = z.object({
   gateId: z.string().min(1),
   decision: GateDecisionSchema,
   expectedSubjectSha256: z.string().regex(/^[0-9a-f]{64}$/),
-  expectedEstimatedCostCents: z.number(),
+  expectedEstimatedCostCents: z.number().nullable(),
+  revisionRequest: z.string().min(1).optional(),
 });
 
 export type GateResponse = z.infer<typeof GateResponseSchema>;
@@ -297,13 +299,17 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
       agent_profile_id: submission.agentProfileId ?? null,
     };
   }
+  const gateResponse: Record<string, unknown> = {
+    gate_id: submission.response.gateId,
+    decision: submission.response.decision,
+    expected_subject_sha256: submission.response.expectedSubjectSha256,
+    expected_estimated_cost_cents:
+      submission.response.expectedEstimatedCostCents,
+  };
+  if (submission.response.revisionRequest !== undefined) {
+    gateResponse.revision_request = submission.response.revisionRequest;
+  }
   return {
-    gate_response: {
-      gate_id: submission.response.gateId,
-      decision: submission.response.decision,
-      expected_subject_sha256: submission.response.expectedSubjectSha256,
-      expected_estimated_cost_cents:
-        submission.response.expectedEstimatedCostCents,
-    },
+    gate_response: gateResponse,
   };
 }

@@ -5,6 +5,7 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
+from clue_api.conversation_turns import CONVERSATION_RECIPE_VERSION
 from clue_api.execution_tools import AdvanceProjectPhaseTool, ExecutionControlServices
 from clue_api.recipe_contracts import (
     ACCOUNT_RESEARCH_TOOL_ADDRESSES,
@@ -38,6 +39,12 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
         if not descriptor.has_typed_output
     ]
     assert missing == []
+
+
+def test_conversation_runtime_pins_the_promoted_slice2_recipe() -> None:
+    """A new recipe asset is inert if the detached turn runner still asks for its predecessor."""
+
+    assert CONVERSATION_RECIPE_VERSION == 8
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:

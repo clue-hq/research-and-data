@@ -22,13 +22,13 @@ test("Home HTTP repository maps the real workspace capabilities", async () => {
           version: 3,
         }],
         agent_profiles: [{
-          id: "head-of-abm@v24",
+          id: "head-of-abm@v25",
           label: "GPT-5.6 Terra",
           short_label: "GPT-5.6 Terra",
           description: "Clue's governed GPT-5.6 Terra conversation profile",
           model_id: "openai/gpt-5.6-terra",
         }],
-        default_agent_profile_id: "head-of-abm@v24",
+        default_agent_profile_id: "head-of-abm@v25",
         composer_capabilities: {
           context_refs: true,
           attachments: false,
@@ -47,7 +47,7 @@ test("Home HTTP repository maps the real workspace capabilities", async () => {
       attachments: false,
       agentProfileSelection: true,
     });
-    assert.equal(home.defaultAgentProfileId, "head-of-abm@v24");
+    assert.equal(home.defaultAgentProfileId, "head-of-abm@v25");
     assert.deepEqual(home.entities.map((entity) => entity.id), ["acct_1"]);
     assert.deepEqual(home.models.map((model) => model.shortLabel), [
       "GPT-5.6 Terra",
@@ -105,7 +105,7 @@ test("Home create sends one atomic request and trusts only the returned href", a
         objectType: "account",
         version: 3,
       }],
-      agentProfileId: "head-of-abm@v24",
+      agentProfileId: "head-of-abm@v25",
       idempotencyKey: "home-project:test",
     });
     assert.equal(requestUrl, "/api/clue/api/v1/projects");
@@ -123,7 +123,7 @@ test("Home create sends one atomic request and trusts only the returned href", a
         version: 3,
       }],
       attachment_refs: [],
-      agent_profile_id: "head-of-abm@v24",
+      agent_profile_id: "head-of-abm@v25",
     });
     assert.equal(created.href, "/projects/prj_real?thread=thr_real");
     assert.equal(created.project.title, "Untitled project");

@@ -151,3 +151,83 @@ Verification:
 Browser observation retained for later slices: the focused Slate composer still
 shows the submitted prompt after the turn. This is LF-COMPOSER-001 and was not
 changed in Slice 1.
+
+## Slice 2 closeout — durable ICP gate and immutable answer lifecycle
+
+Implemented LF-STAGE0-005 and the backend portion of LF-STAGE0-006:
+
+- Migration `70e67fc26a3f` adds `icp_confirmation` as a real `agent_gate` kind,
+  persists a non-empty permitted-decision vocabulary, supports non-spend gates,
+  and records the client-echoed digest plus typed decision payload on the
+  immutable `agent_gate_answer` receipt. A conditional unique index permits
+  only one gate over one exact project/draft/digest.
+- The database answer trigger now enforces the stored decision vocabulary,
+  exact digest, exact addressee, revision-payload shape, and the relationship
+  between the answering submission and the gate's project/thread/addressee.
+  Application checks are not the only authority boundary.
+- `open_icp_confirmation_gate@1` resolves scope from the execution, binds the
+  exact project synthesis ledger entry, canonicalizes the complete persisted
+  draft `icp_spec`, calculates its SHA-256, derives one stable gate id, and
+  derives the human addressee from the presenting turn. The model supplies only
+  the durable ICP key/version.
+- Structured Approve/Reject/Revise answers recheck tenant, project, thread,
+  addressee, gate state, decision, revision, snapshot and digest before any
+  write. Approve activates exactly the reviewed draft in the same transaction
+  as the receipt. Reject leaves it draft. Revise stores one non-blank change
+  request and leaves the snapshot immutable for a later synthesis version.
+- The active project-conversation resources are Recipe 0 v8,
+  `head-of-abm@v25`, and `stage0-interview@v12`. Historical recipes/profiles/
+  skills remain replayable.
+- The durable gate read and stream projection now carry stored decisions,
+  nullable spend, subject identity and answer receipt. The frontend parses that
+  authority but intentionally renders the ICP gate as a non-interactive
+  `Human action required` notice until Slice 3 supplies the typed Revise form;
+  Slice 2 does not merely enable incomplete buttons.
+
+The authenticated browser journey caught two live composition defects that
+focused tool tests missed:
+
+1. the conversation worker still requested Recipe 0 v7 after v8 was seeded and
+   promoted; `CONVERSATION_RECIPE_VERSION` now points at v8 and has a regression
+   assertion;
+2. the central Stage-0 pin provider derived trusted project scope for two
+   hard-coded tool names, so the new gate reached plan review with only its ICP
+   pin. Project-scoped input contracts now declare one reusable marker, and the
+   provider derives the exact brand/project/product/Client-KB pins from the live
+   descriptor. Future project-scoped Stage-0 tools inherit the boundary without
+   another name-based exception.
+
+Browser/API/Postgres evidence on the isolated Insight Health runtime:
+
+- project `prj_cae36664dfbf5ce086331eaeb56261f9`, thread
+  `thr_4cf4367f423c5a58a58481cb116f90d9`;
+- `open_icp_confirmation_gate@1` completed through the real fleet worker and
+  produced gate `6fae9039-bbaf-50ff-81bc-b0ba66155f6c`;
+- the persisted subject is
+  `icp-spec:ws_fixture_insight_health_browser:independent_neurosurgery_spine_practices:v1`,
+  revision 1, digest
+  `90f10d1e7105b20e53fabc4278dc2c10d70cf1588b791f00f8ca6ed44b7055b5`,
+  decisions `approved,rejected,revised`, exact user addressee, no spend, zero
+  answers and a still-draft ICP;
+- the execution froze `brand`, `project`, `product`, `client_kb` and `icp` pins;
+  the gate and explicit recovery notice survived a full browser reload, and
+  Approve/Reject/Revise were all disabled as intended for the Slice-2 client.
+
+Final verification:
+
+- broad backend matrix: 154 passed on isolated migrated database
+  `copenhagen_stage0_slice2_20260812a`;
+- dedicated lifecycle acceptance: 10 passed, covering all three decisions,
+  replay, exact activation, immutable receipts, stale/tampered/foreign answers,
+  project synthesis binding and direct database bypass attempts;
+- migration downgrade `70e67fc26a3f -> 2fb8e2479183` and re-upgrade passed;
+- frontend: 144 passed; ESLint and design-system token build passed; the webpack
+  production build had already passed after the Slice-2 frontend contract
+  changes;
+- Ruff/format: 33 changed Python files clean; mypy strict: 18 source files
+  clean; import-linter: 25 kept, 0 broken; `git diff --check`: green.
+
+The browser again reproduced LF-COMPOSER-001: Slate retained the prior submitted
+text and concatenated the first retry. That remains intentionally deferred to
+its composer slice; the final gate retry used select-all/replace solely as a
+test workaround.

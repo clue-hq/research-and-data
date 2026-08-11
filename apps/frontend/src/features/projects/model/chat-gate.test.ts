@@ -80,6 +80,8 @@ test("an approved gate stays in history as responded, with its decision", () => 
       turnId: "t2",
       actionRef: "turn-action:t2",
       decision: "approved",
+      expectedSubjectSha256: openGate.expectedSubjectSha256,
+      decisionPayload: {},
       answeredByUserId: "usr_demo",
       answeredAt: "2026-08-09T11:10:00Z",
     },
@@ -110,6 +112,11 @@ test("a rejected or revised gate is denied — closed, recorded, never re-answer
           turnId: "t3",
           actionRef: "turn-action:t3",
           decision,
+          expectedSubjectSha256: openGate.expectedSubjectSha256,
+          decisionPayload:
+            decision === "revised"
+              ? { revision_request: "Narrow the target segment" }
+              : {},
           answeredByUserId: "usr_demo",
           answeredAt: "2026-08-09T11:12:00Z",
         },
@@ -128,9 +135,25 @@ test("no gate and no part is no card at all", () => {
 
 test("permitted decisions narrow to the ones the backend allowed", () => {
   const card = gateCardModel({
-    gate: openGate,
-    part: part({ permitted_decisions: ["approved", "rejected", "nonsense"] }),
+    gate: { ...openGate, permittedDecisions: ["approved", "rejected"] },
+    part: part({ permitted_decisions: ["approved", "rejected", "revised"] }),
   });
   assert.ok(card);
   assert.deepEqual(card.permittedDecisions, ["approved", "rejected"]);
+});
+
+test("an ICP gate remains visible but non-interactive until its full client flow lands", () => {
+  const card = gateCardModel({
+    gate: {
+      ...openGate,
+      kind: "icp_confirmation",
+      maxSpendCents: null,
+      currency: null,
+    },
+    part: part(),
+  });
+  assert.ok(card);
+  assert.equal(card.title, "Confirm ICP");
+  assert.equal(card.state, "unavailable");
+  assert.match(card.unavailableReason ?? "", /Human action required/);
 });

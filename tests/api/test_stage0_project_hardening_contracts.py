@@ -153,9 +153,27 @@ def test_each_icp_decision_uses_the_structured_digest_bound_answer(decision: str
         gate_id=_GATE_ID,
         decision=decision,  # type: ignore[arg-type]
         expected_subject_sha256=payload["expected_subject_sha256"],
+        revision_request=("Focus on independent practices." if decision == "revised" else None),
     )
 
     assert response.expected_estimated_cost_cents is None
+
+
+def test_icp_revision_requires_the_requested_changes_and_only_revision_accepts_them() -> None:
+    digest = _gate_payload()["expected_subject_sha256"]
+    with pytest.raises(ValidationError, match="revision_request"):
+        Stage0GateResponseContract(
+            gate_id=_GATE_ID,
+            decision="revised",
+            expected_subject_sha256=digest,
+        )
+    with pytest.raises(ValidationError, match="only valid"):
+        Stage0GateResponseContract(
+            gate_id=_GATE_ID,
+            decision="approved",
+            expected_subject_sha256=digest,
+            revision_request="Change it",
+        )
 
 
 @pytest.mark.parametrize(
@@ -187,7 +205,7 @@ def test_each_icp_decision_uses_the_structured_digest_bound_answer(decision: str
         ),
         (
             Stage0GateResponseContract,
-            "b86a71f85f27040e52aab49d8e7ee32704b1c359f2884646c2f7bf269ad616a4",
+            "53fa90216942fba805e345fa8cc73e282630fbc797f6e9992383613db53774f3",
         ),
     ),
 )

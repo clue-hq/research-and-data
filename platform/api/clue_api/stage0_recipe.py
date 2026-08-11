@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import text
 
+from clue_api.stage0_project_contracts import TrustedStage0ProjectScopeInput
 from clue_api.stage0_project_scope import resolve_stage0_project_scope
 from clue_core import EntityId
 from clue_db import ConnFactory
@@ -19,7 +20,7 @@ from clue_execution import (
     RecipeExecutor,
 )
 from clue_research.stage0 import current_kb_version
-from clue_toolbelt import ToolContext, ToolResult
+from clue_toolbelt import ToolContext, ToolRegistry, ToolResult
 
 _STAGE0_SLOT = "stage0_interactions"
 
@@ -58,9 +59,11 @@ class Stage0StepPinProvider:
         *,
         compatibility: CompatibilityLoader,
         conn_factory: ConnFactory,
+        tools: ToolRegistry,
     ) -> None:
         self._compatibility = compatibility
         self._conn_factory = conn_factory
+        self._tools = tools
 
     async def _current(
         self,
@@ -126,11 +129,8 @@ class Stage0StepPinProvider:
         scope_body = nested_scope if isinstance(nested_scope, dict) else {}
         ingestion_context = declared_context if isinstance(declared_context, dict) else {}
 
-        trusted_stage0_scope = None
-        if step.tool_version == "2" and step.tool_name in {
-            "evaluate_stage0_readiness",
-            "synthesize_icps",
-        }:
+        descriptor = self._tools.descriptor(step.tool_name, step.tool_version)
+        if issubclass(descriptor.input_model, TrustedStage0ProjectScopeInput):
             async with self._conn_factory() as conn:
                 trusted_stage0_scope = await resolve_stage0_project_scope(
                     conn,
@@ -141,24 +141,40 @@ class Stage0StepPinProvider:
                 raise ExecutionConflict(
                     "cannot pin a Stage-0 v2 tool without an execution-bound project"
                 )
-            requested.extend(
-                (
-                    await self._current(kind="brand", key=trusted_stage0_scope.brand_id, ctx=ctx),
+            required_scope_kinds = set(descriptor.pin_requirements) & {
+                "brand",
+                "project",
+                "product",
+                "client_kb",
+            }
+            if "brand" in required_scope_kinds:
+                requested.append(
+                    await self._current(kind="brand", key=trusted_stage0_scope.brand_id, ctx=ctx)
+                )
+            if "project" in required_scope_kinds:
+                requested.append(
                     await self._current(
                         kind="project", key=trusted_stage0_scope.project_id, ctx=ctx
-                    ),
+                    )
                 )
-            )
-            if trusted_stage0_scope.product_id is not None:
+            if "product" in required_scope_kinds:
+                if trusted_stage0_scope.product_id is None:
+                    raise ExecutionConflict(
+                        "cannot pin a project-scoped Stage-0 tool before product confirmation"
+                    )
                 requested.append(
                     await self._current(
                         kind="product", key=trusted_stage0_scope.product_id, ctx=ctx
                     )
                 )
-            if (
-                trusted_stage0_scope.client_entity_id is not None
-                and trusted_stage0_scope.client_kb_version is not None
-            ):
+            if "client_kb" in required_scope_kinds:
+                if (
+                    trusted_stage0_scope.client_entity_id is None
+                    or trusted_stage0_scope.client_kb_version is None
+                ):
+                    raise ExecutionConflict(
+                        "cannot pin a project-scoped Stage-0 tool without a Client Knowledge Base"
+                    )
                 requested.append(
                     await self._exact(
                         kind="client_kb",

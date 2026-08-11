@@ -36,9 +36,8 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # v24 (Stage-0 hardening Slice 1): replaces model-authored readiness metrics with the trusted
-    # @2 evaluator and exposes @2 synthesis, whose proposals are durable draft icp_spec rows.
-    AgentRole.HEAD_OF_ABM: "v24",
+    # v25 (Stage-0 hardening Slice 2): adds the durable exact-subject ICP confirmation gate.
+    AgentRole.HEAD_OF_ABM: "v25",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -100,6 +99,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # it confirms nothing, spends nothing, and cannot address a gate to anybody but the human whose
     # turn it is answering (the addressee is derived from the durable submission, not proposed).
     "open_directive_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
+    "open_icp_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
     "pause_run": (),
     "profile_contact": (),

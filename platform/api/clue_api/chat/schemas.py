@@ -131,7 +131,8 @@ class GateResponseRequest(_Request):
     gate_id: str = Field(min_length=1, max_length=64)
     decision: Literal["approved", "rejected", "revised"]
     expected_subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    expected_estimated_cost_cents: Decimal = Field(ge=0)
+    expected_estimated_cost_cents: Decimal | None = Field(default=None, ge=0)
+    revision_request: str | None = Field(default=None, min_length=1, max_length=4_000)
 
 
 class ContextRefRequest(_Request):
@@ -223,14 +224,21 @@ def gate_response_message(response: GateResponseRequest) -> str:
     message under a used key.
     """
 
+    payload: dict[str, str | None] = {
+        "kind": "gate_response",
+        "gate_id": response.gate_id,
+        "decision": response.decision,
+        "expected_subject_sha256": response.expected_subject_sha256,
+        "expected_estimated_cost_cents": (
+            None
+            if response.expected_estimated_cost_cents is None
+            else money_text(response.expected_estimated_cost_cents)
+        ),
+    }
+    if response.revision_request is not None:
+        payload["revision_request"] = response.revision_request
     return json.dumps(
-        {
-            "kind": "gate_response",
-            "gate_id": response.gate_id,
-            "decision": response.decision,
-            "expected_subject_sha256": response.expected_subject_sha256,
-            "expected_estimated_cost_cents": money_text(response.expected_estimated_cost_cents),
-        },
+        payload,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -503,6 +511,8 @@ class GateAnswerWire(_Wire):
     turn_id: str
     action_ref: str
     decision: str
+    expected_subject_sha256: str
+    decision_payload: dict[str, Any]
     answered_by_user_id: str
     answered_at: str
 
@@ -543,8 +553,9 @@ class GateWire(_Wire):
     subject_revision: int | None
     expected_subject_sha256: str
     subject_snapshot: dict[str, Any]
+    permitted_decisions: tuple[str, ...]
     max_spend_cents: str | None
-    currency: str
+    currency: str | None
     addressee_user_id: str
     created_at: str
     answer: GateAnswerWire | None
@@ -573,7 +584,12 @@ def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWi
         subject_revision=view.subject_revision,
         expected_subject_sha256=view.expected_subject_sha256,
         subject_snapshot=dict(view.subject_snapshot),
-        max_spend_cents=(money_text(view.max_spend_cents) if budget_controls_enabled else None),
+        permitted_decisions=view.permitted_decisions,
+        max_spend_cents=(
+            money_text(view.max_spend_cents)
+            if budget_controls_enabled and view.max_spend_cents is not None
+            else None
+        ),
         currency=view.currency,
         addressee_user_id=view.addressee_user_id,
         created_at=view.created_at.isoformat(),
@@ -584,6 +600,8 @@ def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWi
                 turn_id=view.answer.turn_id,
                 action_ref=view.answer.action_ref,
                 decision=view.answer.decision,
+                expected_subject_sha256=view.answer.expected_subject_sha256,
+                decision_payload=dict(view.answer.decision_payload),
                 answered_by_user_id=view.answer.answered_by_user_id,
                 answered_at=view.answer.answered_at.isoformat(),
             )

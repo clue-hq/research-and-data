@@ -17,13 +17,17 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import EntityId, ExecutionId
 from clue_research.stage0 import current_kb_version
 
-__all__ = ["Stage0ProjectScope", "resolve_stage0_project_scope"]
+__all__ = [
+    "Stage0ProjectScope",
+    "resolve_stage0_project_scope",
+    "resolve_stage0_project_scope_for_project",
+]
 
 
 @dataclass(frozen=True, slots=True)
 class Stage0ProjectScope:
     workspace_id: str
-    execution_id: ExecutionId
+    execution_id: ExecutionId | None
     project_id: str
     brand_id: str
     product_id: str | None
@@ -47,6 +51,38 @@ async def resolve_stage0_project_scope(
 
     if execution_id is None:
         return None
+    project_id = (
+        await conn.execute(
+            text(
+                """
+                    SELECT e.project_id
+                    FROM execution e
+                    WHERE e.id = :execution_id
+                      AND e.workspace_id = :workspace_id
+                    """
+            ),
+            {"execution_id": execution_id, "workspace_id": workspace_id},
+        )
+    ).scalar_one_or_none()
+    if project_id is None:
+        return None
+    return await resolve_stage0_project_scope_for_project(
+        conn,
+        workspace_id=workspace_id,
+        project_id=str(project_id),
+        execution_id=execution_id,
+    )
+
+
+async def resolve_stage0_project_scope_for_project(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    execution_id: ExecutionId | None = None,
+) -> Stage0ProjectScope | None:
+    """Resolve trusted Stage-0 scope when the authenticated route already proved the project."""
+
     row = (
         (
             await conn.execute(
@@ -62,14 +98,12 @@ async def resolve_stage0_project_scope(
                                ORDER BY i.created_at DESC, i.id DESC
                                LIMIT 1
                            ) AS client_entity_id
-                    FROM execution e
-                    JOIN project p ON p.project_id = e.project_id
-                    WHERE e.id = :execution_id
-                      AND e.workspace_id = :workspace_id
+                    FROM project p
+                    WHERE p.project_id = :project_id
                       AND p.workspace_id = :workspace_id
                     """
                 ),
-                {"execution_id": execution_id, "workspace_id": workspace_id},
+                {"project_id": project_id, "workspace_id": workspace_id},
             )
         )
         .mappings()
