@@ -87,11 +87,6 @@ export function AuthScreen({
               />
             </span>
           </AuthField>
-          {error ? (
-            <p className={styles.authError} role="alert">
-              {error}
-            </p>
-          ) : null}
           <Button className={styles.authButton} disabled={busy} size="lg" type="submit">
             {copy.submitLabel}
           </Button>
@@ -108,6 +103,12 @@ export function AuthScreen({
           {copy.emailLabel}
         </Button>
       )}
+
+      {error ? (
+        <p className={styles.authError} role="alert">
+          {error}
+        </p>
+      ) : null}
     </form>
   );
 }

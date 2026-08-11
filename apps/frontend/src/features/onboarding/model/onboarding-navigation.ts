@@ -27,11 +27,7 @@ export function authSwitchTarget(step: OnboardingStep): OnboardingStep {
   return step === "sign-in" || step === "sign-in-email" ? "sign-up" : "sign-in";
 }
 
-export function submitTarget(step: OnboardingStep): OnboardingStep | null {
-  if (step === "sign-in-email") return "profile";
-  if (step === "sign-up-email") return "verify-email";
-  if (step === "verify-email") return "profile";
-  if (step === "profile") return "setting-up";
-  if (step === "setting-up") return "finalizing";
-  return null;
-}
+// Note: there is no submitTarget map anymore — every submit transition is an explicit
+// outcome-driven decision in useOnboardingController (a credential result, a verification
+// result, or a provisioning result), and the only timer-driven hop (setting-up → finalizing)
+// lives with the fixture theatre it belongs to.

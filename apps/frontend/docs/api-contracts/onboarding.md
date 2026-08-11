@@ -94,6 +94,27 @@ branch merges — see `brand-kit.md`). Until slice 2 lands, the setting-up/final
 remain presentation-only theatre reachable in fixture mode; the authenticated flow exits to
 the app straight from the profile step and does not traverse them.
 
+## Freeze-record notes (round-2 review)
+
+- In-flight submits render the design system's standard disabled state (50% opacity) on the
+  approved buttons — a transient interaction state, named here so the visual freeze record is
+  complete; no resting appearance changed. Errors render via the additive `.authError` line at
+  the card foot in every mode (including the Google-only screens).
+- The fixture walkthrough now includes the ratified `verify-email` addition
+  (`sign-up-email → verify-email → profile`); everything else in the design-review theatre is
+  unchanged, and the profile step remains click-through-able unvalidated in fixture mode.
+- With authentication enabled, `/onboarding/setting-up` and `/onboarding/finalizing` redirect
+  to the profile step (no fake progress is reachable by a real user); they remain fixture-mode
+  QA surfaces until slice 2 replaces them with real recon progress.
+- A replayed provision whose submitted company name differs from the recorded workspace name
+  returns `company_name_ignored: true` (names are fixed at creation); the response schema is
+  deliberately non-strict so additive backend fields can never fail a successful provision.
+- `GET /auth/v1/session` carries `has_inactive_memberships`: the session DAL routes lost-access
+  users (revoked/suspended) to `/access-denied` and only membership-history-free users to
+  `/onboarding/profile`.
+- `POST /auth/v1/provision` mounts only when `CLUE_SELF_SERVE_PROVISIONING_ENABLED=true`
+  (default off, like every neighbouring write surface).
+
 ## Integration notes
 
 - Passwords touch Clerk only; they never reach a Clue backend or fixture.

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { isAuthenticationEnabled } from "@/auth/config";
 import { OnboardingScreen } from "@/features/onboarding/components/onboarding-screen";
 import { getOnboardingFlow } from "@/features/onboarding/data/onboarding.repository";
 import {
@@ -46,6 +47,13 @@ export default async function OnboardingStepPage({
   ]);
 
   if (!isOnboardingStep(step)) notFound();
+
+  // The setting-up/finalizing steps are presentation-only fixture theatre until FI-4 slice 2
+  // replaces them with real recon progress. A real (auth-enabled) deployment never shows fake
+  // progress — deep links and back-button visits land on the profile step instead.
+  if (isAuthenticationEnabled() && (step === "setting-up" || step === "finalizing")) {
+    redirect("/onboarding/profile");
+  }
 
   return (
     <OnboardingScreen

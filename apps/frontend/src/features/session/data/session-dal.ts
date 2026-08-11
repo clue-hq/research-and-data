@@ -56,11 +56,18 @@ export async function loadProtectedSession(
   );
   const membership = resolveWorkspaceMembership(session, requestedWorkspaceId);
   if (!membership) {
-    // Zero memberships is the provisioning-needed state, distinct from WORKSPACE_FORBIDDEN
-    // (which means a selected workspace refused an existing member). Pages route this to
-    // /onboarding/profile; the BFF re-emits it as a 403 access error.
+    // Zero ACTIVE memberships splits two ways (review ruling FE7): a user who HAD access and
+    // lost it (revoked/suspended) belongs at access-denied exactly as before this flow
+    // existed; only a user with no membership history at all is the provisioning-needed
+    // state routed to /onboarding/profile. The BFF re-emits either as a 403 access error.
+    if (session.has_inactive_memberships) {
+      throw new ClueAuthenticationError(
+        "User no longer has an active Clue workspace membership",
+        { code: "WORKSPACE_FORBIDDEN", status: 403 },
+      );
+    }
     throw new ClueAuthenticationError(
-      "User has no active Clue workspace membership",
+      "User has no Clue workspace membership yet",
       { code: "WORKSPACE_MEMBERSHIP_REQUIRED", status: 403 },
     );
   }

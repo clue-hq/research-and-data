@@ -472,3 +472,8 @@
   font-weight: 400;
   line-height: 18px;
 }
+
+.authHeading button:disabled {
+  cursor: default;
+  opacity: .5;
+}

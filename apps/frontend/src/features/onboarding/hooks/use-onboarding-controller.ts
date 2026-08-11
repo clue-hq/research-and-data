@@ -1,21 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { OnboardingStep } from "../model/onboarding";
+import { validateProfileDraft } from "../model/onboarding";
 import {
   authChoiceTarget,
   authSwitchTarget,
   onboardingStepHref,
-  submitTarget,
 } from "../model/onboarding-navigation";
 import { useOnboardingAuth } from "../data/onboarding-auth";
 import { useOnboardingDraft } from "../data/onboarding-draft";
 import {
   OnboardingProvisionError,
   provisionWorkspace,
-  provisionWorkspaceFixture,
 } from "../data/onboarding.repository";
+import { clearWorkspaceSelection } from "@/features/session/data/session-actions";
 
 export type { OnboardingDraft } from "../model/onboarding";
 
@@ -24,9 +24,8 @@ const SESSION_ESTABLISH_PATH = "/session/establish";
 /**
  * Orchestrates the frozen screens over the headless auth adapter (FI-4 D-1) and the D-2
  * provisioning call. In fixture mode (auth off) it preserves the original design-review
- * navigation exactly; in clerk mode every transition is the result of a real credential or
- * provisioning outcome — nothing advances on a timer except the untouched setup theatre,
- * which slice 2 replaces with real recon progress.
+ * navigation exactly — including the unvalidated profile walkthrough; in clerk mode every
+ * transition is the result of a real credential or provisioning outcome.
  */
 export function useOnboardingController({
   step,
@@ -40,10 +39,12 @@ export function useOnboardingController({
   const { draft, updateDraft } = useOnboardingDraft();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Ref latch, not render-state: two clicks inside one React batch must not both pass.
+  const inFlight = useRef(false);
 
-  // The presentation-only setup timer survives slice 1 untouched: with auth off it keeps the
-  // approved review flow alive, and with auth on the profile step exits to the app before
-  // these steps are reached. Slice 2 (real recon progress) deletes it.
+  // The presentation-only setup timer survives for fixture mode's design-review theatre;
+  // in clerk mode the setting-up/finalizing steps are server-redirected away (slice 2
+  // replaces them with real recon progress).
   useEffect(() => {
     if (!autoAdvance || step !== "setting-up") return;
 
@@ -57,6 +58,8 @@ export function useOnboardingController({
 
   // Leaving a step clears its error/busy state (render-time reset, per React guidance);
   // the draft itself survives via the provider.
+  // (inFlight is not reset here: refs must not be written during render, and run()'s
+  // finally block always releases the latch when its action settles.)
   const [lastStep, setLastStep] = useState(step);
   if (lastStep !== step) {
     setLastStep(step);
@@ -68,13 +71,20 @@ export function useOnboardingController({
     router.push(onboardingStepHref(nextStep));
   }
 
+  function establishSession() {
+    // A Route Handler target: use an explicit document navigation, not an RSC push.
+    window.location.assign(SESSION_ESTABLISH_PATH);
+  }
+
   async function run(action: () => Promise<void>) {
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setError(null);
     try {
       await action();
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
@@ -86,7 +96,7 @@ export function useOnboardingController({
       return;
     }
     if (auth.mode === "clerk") {
-      router.push(SESSION_ESTABLISH_PATH);
+      establishSession();
       return;
     }
     navigate("profile");
@@ -115,21 +125,15 @@ export function useOnboardingController({
     navigate("profile");
   }
 
-  function validateProfile(): string | null {
-    if (!draft.firstName.trim() || !draft.lastName.trim()) {
-      return "Please enter your first and last name.";
-    }
-    if (!draft.role.trim()) return "Please select your role.";
-    if (!draft.companyName.trim()) return "Please enter your company name.";
-    if (!draft.companyWebsite.trim()) return "Please enter your company website.";
-    return null;
-  }
-
   async function submitProfile() {
-    const invalid = validateProfile();
-    if (invalid) {
-      setError(invalid);
-      return;
+    if (auth.mode === "clerk") {
+      // Fixture mode deliberately skips validation: the design-review walkthrough must
+      // click through empty screens exactly as it did pre-integration.
+      const invalid = validateProfileDraft(draft);
+      if (invalid) {
+        setError(invalid);
+        return;
+      }
     }
     const input = {
       first_name: draft.firstName.trim(),
@@ -141,10 +145,9 @@ export function useOnboardingController({
     try {
       if (auth.mode === "clerk") {
         await provisionWorkspace(input);
-        router.push(SESSION_ESTABLISH_PATH);
+        establishSession();
         return;
       }
-      await provisionWorkspaceFixture(input);
       navigate("setting-up");
     } catch (caught) {
       setError(
@@ -161,19 +164,24 @@ export function useOnboardingController({
     busy,
     error,
     accountEmail: auth.email,
+    pendingEmail: auth.pendingEmail,
+    authMode: auth.mode,
     chooseAuthMethod: (method: "google" | "email") => {
-      if (step !== "sign-in" && step !== "sign-up") return;
       if (method === "email") {
-        navigate(authChoiceTarget(step, "email"));
+        if (step === "sign-in" || step === "sign-up") {
+          navigate(authChoiceTarget(step, "email"));
+        }
         return;
       }
+      // Google is live on all four auth screens (review finding FE2) — the email screens
+      // render the same button and it must work there too.
       void run(async () => {
         const result = await auth.signInWithGoogle();
         if (result.status === "error") {
           setError(result.message);
           return;
         }
-        if (auth.mode === "fixture") navigate(authChoiceTarget(step, "google"));
+        if (auth.mode === "fixture") navigate("profile");
         // In clerk mode the OAuth redirect is already in flight.
       });
     },
@@ -186,7 +194,13 @@ export function useOnboardingController({
     },
     logOut: () => {
       void run(async () => {
-        await auth.signOut();
+        // Same discipline as the app's sign-out: erase the workspace selection first, then
+        // end the provider session even if the cookie clear failed.
+        try {
+          await clearWorkspaceSelection();
+        } finally {
+          await auth.signOut();
+        }
         if (auth.mode === "fixture") navigate("sign-in");
       });
     },
@@ -195,8 +209,7 @@ export function useOnboardingController({
       if (step === "sign-up-email") return void run(submitSignUp);
       if (step === "verify-email") return void run(submitVerification);
       if (step === "profile") return void run(submitProfile);
-      const nextStep = submitTarget(step);
-      if (nextStep) navigate(nextStep);
+      if (step === "setting-up") navigate("finalizing");
     },
   };
 }

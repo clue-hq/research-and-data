@@ -43,7 +43,13 @@ export function OnboardingScreen({
       className={`${styles.page} ${isCardScreen ? styles.authPage : styles.subtlePage}`}
     >
       <OnboardingHeader
-        accountEmail={controller.accountEmail ?? flow.account.email}
+        // The fixture designer's address is theatre-only; a real session shows the real
+        // email or nothing while it loads — never "hello@aakash.design" (review finding FE6).
+        accountEmail={
+          controller.authMode === "clerk"
+            ? (controller.accountEmail ?? "")
+            : flow.account.email
+        }
         onLogOut={controller.logOut}
         showAccount={step === "profile"}
       />
@@ -69,7 +75,13 @@ export function OnboardingScreen({
             busy={controller.busy}
             code={controller.draft.verificationCode}
             copy={flow.auth.verifyEmail}
-            email={controller.draft.email || (controller.accountEmail ?? flow.account.email)}
+            // After a refresh the draft is gone but Clerk rehydrates the sign-up attempt —
+            // its address is the truthful source; the fixture address is fixture-only.
+            email={
+              controller.draft.email ||
+              controller.pendingEmail ||
+              (controller.authMode === "clerk" ? "your email" : flow.account.email)
+            }
             error={controller.error}
             onCodeChange={(value) => controller.updateDraft("verificationCode", value)}
             onResend={controller.resendVerification}

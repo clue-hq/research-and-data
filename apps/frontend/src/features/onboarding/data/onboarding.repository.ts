@@ -1,6 +1,7 @@
 import {
   OnboardingFlowSchema,
   ProvisionedWorkspaceSchema,
+  ProvisionWorkspaceInputSchema,
   type OnboardingFlow,
   type ProvisionWorkspaceInput,
   type ProvisionedWorkspace,
@@ -47,15 +48,19 @@ export class OnboardingProvisionError extends Error {
 export async function provisionWorkspace(
   input: ProvisionWorkspaceInput,
 ): Promise<ProvisionedWorkspace> {
+  const body = ProvisionWorkspaceInputSchema.parse(input);
   const response = await fetch("/api/onboarding/provision", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
     cache: "no-store",
   });
   if (!response.ok) {
     let code = "HTTP_ERROR";
-    let message = `Provisioning failed with status ${response.status}`;
+    let message =
+      response.status === 422
+        ? "Please check your details and try again."
+        : `Provisioning failed with status ${response.status}`;
     try {
       const payload = (await response.json()) as {
         error?: { code?: string; message?: string };
@@ -63,7 +68,7 @@ export async function provisionWorkspace(
       if (payload.error?.code) code = payload.error.code;
       if (payload.error?.message) message = payload.error.message;
     } catch {
-      // Non-JSON error body; keep the status-based message.
+      // Non-JSON error body (e.g. FastAPI's bare 422 detail); keep the friendly message.
     }
     throw new OnboardingProvisionError(message, { code, status: response.status });
   }

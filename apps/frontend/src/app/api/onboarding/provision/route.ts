@@ -22,7 +22,8 @@ export async function POST(request: Request): Promise<Response> {
     return errorResponse(401, "AUTHENTICATION_REQUIRED", "Sign in to continue");
   }
   const body = await request.arrayBuffer();
-  const response = await fetch(new URL("/auth/v1/provision", `${clueApiBaseUrl()}/`), {
+  // Path-prefix-preserving join, same discipline as src/auth/backend.ts:backendUrl.
+  const response = await fetch(`${clueApiBaseUrl()}/auth/v1/provision`, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -33,13 +34,13 @@ export async function POST(request: Request): Promise<Response> {
     cache: "no-store",
     redirect: "manual",
   });
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      "content-type": response.headers.get("content-type") ?? "application/json",
-      "cache-control": "no-store",
-    },
-  });
+  const headers: Record<string, string> = {
+    "content-type": response.headers.get("content-type") ?? "application/json",
+    "cache-control": "no-store",
+  };
+  const requestId = response.headers.get("x-request-id");
+  if (requestId) headers["x-request-id"] = requestId;
+  return new Response(response.body, { status: response.status, headers });
 }
 
 function errorResponse(status: number, code: string, message: string): NextResponse {

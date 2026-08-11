@@ -17,6 +17,7 @@ test("session wire schema contains only Clue-owned identity values", () => {
         permissions: ["thread.read"],
       },
     ],
+    has_inactive_memberships: false,
   });
   assert.equal(parsed.user_id, "usr_123");
   assert.equal(parsed.memberships[0]?.workspace_id, "ws_123");
@@ -45,6 +46,7 @@ test("workspace selection falls back when the cookie is absent or revoked", () =
         permissions: ["project.read"],
       },
     ],
+    has_inactive_memberships: true,
   });
 
   assert.equal(resolveWorkspaceMembership(session, null)?.workspace_id, "ws_active");
