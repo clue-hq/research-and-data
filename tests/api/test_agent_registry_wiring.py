@@ -357,6 +357,9 @@ def test_resolved_snapshot_materializes_through_c61_backend(
     tmp_path: Path,
 ) -> None:
     resolved = registry.resolve(AgentRole.HEAD_OF_ABM)
+    stage0_skill = next(
+        skill for skill in resolved.profile.skills if skill.resource.name == "stage0-interview"
+    )
     harness = make_workspace(tmp_path, active_policy=resolved.profile.workspace)
     try:
         AgentResourceMaterializer().materialize(
@@ -365,10 +368,8 @@ def test_resolved_snapshot_materializes_through_c61_backend(
         )
         assert harness.lease.resources_frozen
         assert (
-            harness.lease.backend.stat_entry_sync(
-                ".deepagent/skills/stage0-interview/v9/SKILL.md"
-            ).sha256
-            == resolved.profile.skills[0].resource.sha256
+            harness.lease.backend.stat_entry_sync(stage0_skill.materialized_path).sha256
+            == stage0_skill.resource.sha256
         )
     finally:
         harness.close()

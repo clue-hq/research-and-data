@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R9 implemented. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slice 0 implemented. Hardening Slices 1-6 remain pending. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -12,15 +12,124 @@ project deliberately returns and renders an empty Gallery.
 
 Authority order inside this document is:
 
-1. **Executable integration contract (2026-08-10)** below.
-2. **As-built thread-shell contract (2026-08-08)** for endpoints the executable
+1. **Stage-0/project hardening amendment (2026-08-11)** below.
+2. **Executable integration contract (2026-08-10)** where the amendment does not supersede it.
+3. **As-built thread-shell contract (2026-08-08)** for endpoints the executable
    section does not amend.
-3. Earlier read/write/preview proposals, retained only as design history.
+4. Earlier read/write/preview proposals, retained only as design history.
 
 When `CLUE_PROJECTS_API_BASE_URL` is configured, every projects repository must
 use the same-origin authenticated BFF and validate the corresponding wire
 schema. HTTP mode never falls back to fixtures after a refusal, parse error, or
 network failure. Presentation components do not call the API directly.
+
+### Ratified Stage-0/project hardening amendment (2026-08-11)
+
+This amendment replaces the browser-probe defects documented in
+`.context/defect-log.md` with one durable authority chain. Slice 0 freezes the
+contracts and repairs the two stale test signals; it does **not** register the
+new tool versions, migrate a table, alter runtime behavior, or enable a control.
+Those changes remain owned by hardening Slices 1-6.
+
+- `synthesize_icps` is available to the governed Stage-0 conversation profile.
+  A successful call persists one or more draft, versioned `icp_spec` rows and
+  returns their exact durable proposal references. A readiness-policy revision
+  is never described or serialized as an ICP version; no ICP exists until an
+  `icp_spec` row exists.
+- ICP confirmation is a supported durable `agent_gate` kind. Its immutable row
+  stores the exact ICP subject reference, ICP revision, canonical subject
+  snapshot SHA-256, permitted decisions, and human addressee. Only the stored
+  gate may produce interactive Approve, Reject, or Revise controls.
+- A gate response travels through the existing structured `gate_response`
+  route. The server revalidates workspace/addressee, permitted decision,
+  subject revision, and expected digest before inserting the immutable answer
+  receipt. Approve activates the exact draft ICP; Reject and Revise preserve
+  the receipt without activating it.
+- Thin model references, malformed ids such as `human_only`, unsupported gate
+  kinds, missing durable rows, and stale subjects render as non-interactive
+  **Human action required** recovery notices. A model-emitted digest is not
+  authority.
+- Stage-0 readiness input metrics are engine-derived from the pinned,
+  product-scoped Client-KB claims. Coverage and verified-claim counts use the
+  substantive Client-KB field policy; an empty configured required-field list
+  cannot turn an empty knowledge base into a misleading ready state. The wire
+  field is named `readiness_policy_version`.
+- Home project creation accepts an optional explicit `project_name`. When it is
+  absent, the server derives a bounded durable name from the initial brief.
+  The same stored title feeds bootstrap, project header, and sidebar reads;
+  `Untitled project` is no longer the creation default.
+- The authenticated session membership includes `workspace_name`. Shell
+  controls render that display name while retaining `workspace_id` only as the
+  internal selection value.
+- During text-only Stage 0 an empty Gallery is collapsed by default, with an
+  explicit reopen control. Composer submission clears both browser-owned draft
+  state and the focused Slate value; layout permits bounded editor scrolling
+  without horizontal conversation overflow or sticky-header clipping.
+
+The amendment supersedes the earlier `Untitled project` and initially-open empty
+Gallery rules retained later in this document as implementation history.
+
+#### Frozen Stage-0 authority contracts
+
+The existing `evaluate_stage0_readiness@1` and `synthesize_icps@1` schemas remain
+unchanged for historical replay. Their corrected successors are new versioned
+contracts; Slice 1 must register them rather than silently changing an `@1`
+schema already pinned by profiles and receipts.
+
+`evaluate_stage0_readiness@2` exposes exactly one model-authored input:
+
+```json
+{ "gate": "icp_synthesis" }
+```
+
+Workspace, project, product, client entity, pinned Client-KB version, claim set,
+field policy, metrics and verdict are trusted runtime/backend values. The model
+cannot supply or override them. Its reference-first output is:
+
+```json
+{
+  "readiness_decision_id": "<uuid>",
+  "gate": "icp_synthesis",
+  "verdict": "ready",
+  "coverage_ratio": 0.78,
+  "verified_claims": 7,
+  "available_field_keys": ["client.differentiator", "client.product"],
+  "reason_codes": [],
+  "readiness_policy_version": 1
+}
+```
+
+`synthesize_icps@2` has no model-authored input fields. The runtime supplies the
+exact ready Stage-0 scope and links the write to the readiness decision. It
+returns one or more persisted draft references, never transient proposal bodies:
+
+```json
+{
+  "readiness_decision_id": "<uuid>",
+  "icp_specs": [
+    {
+      "workspace_id": "<internal-workspace-id>",
+      "icp_key": "independent-neurosurgery-practices",
+      "icp_version": 1,
+      "status": "draft"
+    }
+  ]
+}
+```
+
+An interactive ICP gate has kind `icp_confirmation` and stores the durable
+`icp_spec` composite reference, the same ICP version as `subject_revision`, the
+canonical subject snapshot, its matching SHA-256 digest, the exact permitted
+decision tuple `approved | rejected | revised`, and `addressee_user_id`.
+`human_only`, a model-produced digest, or an unfetched `open_gate_ref` cannot
+satisfy this contract.
+
+The normal turn route carries an ICP answer as
+`gate_response={gate_id, decision, expected_subject_sha256}`. The shared
+`expected_estimated_cost_cents` echo is nullable for this non-spend gate; it
+remains governed by the existing directive/budget-gate rules when that gate
+stores a spend amount. Actor, addressee, action reference, subject and authority
+remain server-derived and are never accepted from the browser or model.
 
 ### R3 implementation status (2026-08-10)
 
