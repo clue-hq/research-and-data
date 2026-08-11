@@ -53,7 +53,7 @@ export function ChatTranscript({
               {assistantName}
               {onInspectTurn && !message.optimistic ? (
                 <button
-                  aria-label={`Inspect turn ${message.turnId}`}
+                  aria-label="Inspect response details"
                   className={styles.turnLensTrigger}
                   onClick={() => onInspectTurn(message.turnId)}
                   type="button"
@@ -75,9 +75,13 @@ export function ChatTranscript({
                         candidate.id === ref.objectId &&
                         candidate.type === ref.objectType,
                     );
+                    const fallbackLabel =
+                      ref.objectType === "contact"
+                        ? "Selected contact"
+                        : "Selected account";
                     return (
                       <span key={`${ref.ordinal}:${ref.objectType}:${ref.objectId}`}>
-                        @{entity?.label ?? `${ref.objectType} ${ref.objectId}`}
+                        @{entity?.label ?? fallbackLabel}
                       </span>
                     );
                   })}

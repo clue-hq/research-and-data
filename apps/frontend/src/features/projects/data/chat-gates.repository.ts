@@ -28,7 +28,7 @@ export interface ChatGatesRepository {
 }
 
 const UNSERVED =
-  "The durable gate service is not available for this conversation.";
+  "We couldn't load the approval details for this conversation.";
 
 export function createHttpChatGatesRepository(
   transport: Extract<ChatTransport, { mode: "http" }>,

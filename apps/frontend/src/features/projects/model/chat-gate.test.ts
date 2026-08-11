@@ -6,6 +6,7 @@ import {
   gateAnswerResponse,
   gateAuthorityFailure,
   gateCardModel,
+  gateDecisionCopy,
   type ChatGate,
 } from "./chat-gate";
 import { ChatPartSnapshotSchema, type ChatGatePart } from "./chat-parts";
@@ -49,7 +50,6 @@ function model({
   expectedProjectId?: string;
   expectedThreadId?: string;
   gateReadAvailable?: boolean;
-  gateReadReason?: string | null;
   gateReadLoading?: boolean;
   authorityFailure?: ReturnType<typeof gateAuthorityFailure> | null;
 } = {}) {
@@ -111,7 +111,7 @@ test("human_only and non-agent refs are model-only notices, never object ids", (
     assert.ok(card);
     assert.equal(card.state, "unavailable");
     assert.deepEqual(card.permittedDecisions, []);
-    assert.match(card.unavailableReason ?? "", /model-only reference/);
+    assert.match(card.unavailableReason ?? "", /incomplete/);
   }
 });
 
@@ -123,11 +123,13 @@ test("a missing row and a failed gate read have distinct recovery actions", () =
   const failed = model({
     gate: null,
     gateReadAvailable: false,
-    gateReadReason: "The durable gate service is temporarily unavailable.",
   });
   assert.ok(failed);
   assert.equal(failed.recovery?.kind, "retry_gate_read");
-  assert.match(failed.unavailableReason ?? "", /temporarily unavailable/);
+  assert.equal(
+    failed.unavailableReason,
+    "We couldn't load the approval details. Please try again.",
+  );
 });
 
 test("scope, conversation, addressee and revision are all required", () => {
@@ -165,9 +167,40 @@ test("a durable ICP confirmation exposes all three typed decisions", () => {
     },
   });
   assert.ok(card);
-  assert.equal(card.title, "Confirm ICP");
+  assert.equal(card.title, "Review your ideal customer profile");
   assert.equal(card.state, "requested");
+  assert.equal(
+    card.summary,
+    `Independent Neurosurgery Practices · Version ${openGate.subjectRevision}`,
+  );
   assert.deepEqual(card.permittedDecisions, ["approved", "rejected", "revised"]);
+});
+
+test("gate presentation copy is human-facing while authority stays internal", () => {
+  const card = model({
+    gate: {
+      ...openGate,
+      kind: "icp_confirmation",
+      subjectRef: `icp-spec:ws-demo:${openGate.gateId}:v1`,
+      subjectSnapshot: { icp_key: openGate.gateId },
+      maxSpendCents: null,
+      currency: null,
+    },
+  });
+  assert.ok(card);
+  assert.equal(card.title, "Review your ideal customer profile");
+  assert.equal(
+    card.summary,
+    `Ideal customer profile · Version ${openGate.subjectRevision}`,
+  );
+  assert.equal(gateDecisionCopy(card.kind, "approved"), "Approve profile");
+  assert.equal(gateDecisionCopy(card.kind, "rejected"), "Reject proposal");
+  assert.equal(gateDecisionCopy(card.kind, "revised"), "Request changes");
+  assert.equal(
+    gateDecisionCopy(card.kind, "approved", true),
+    "Profile approved",
+  );
+  assert.equal(`${card.title} ${card.summary}`.includes(openGate.gateId), false);
 });
 
 test("unsupported durable kinds are non-interactive recovery notices", () => {
@@ -248,7 +281,7 @@ test("a corrupt answer digest cannot masquerade as an immutable receipt", () => 
   });
   assert.ok(card);
   assert.equal(card.state, "unavailable");
-  assert.match(card.unavailableReason ?? "", /does not match/);
+  assert.match(card.unavailableReason ?? "", /saved decision/);
 });
 
 test("a receipt recorded for someone other than the addressee is rejected", () => {
@@ -268,7 +301,7 @@ test("a receipt recorded for someone other than the addressee is rejected", () =
   });
   assert.ok(card);
   assert.equal(card.state, "unavailable");
-  assert.match(card.unavailableReason ?? "", /does not match/);
+  assert.match(card.unavailableReason ?? "", /saved decision/);
 });
 
 test("answer payloads preserve the gate digest and enforce typed ICP revision text", () => {
@@ -297,10 +330,10 @@ test("answer payloads preserve the gate digest and enforce typed ICP revision te
     expectedSubjectSha256: openGate.expectedSubjectSha256,
     expectedEstimatedCostCents: null,
   });
-  assert.throws(() => gateAnswerResponse(icp, "revised", "   "), /describe/);
+  assert.throws(() => gateAnswerResponse(icp, "revised", "   "), /Describe/);
   assert.throws(
     () => gateAnswerResponse(icp, "approved", "unexpected"),
-    /only when revising/,
+    /requesting a revision/,
   );
 });
 

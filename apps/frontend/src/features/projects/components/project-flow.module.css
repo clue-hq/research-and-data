@@ -3171,6 +3171,10 @@
   font-size: 12px;
 }
 
+.toolActivityTrigger:disabled {
+  cursor: default;
+}
+
 .toolActivityContent {
   margin: 6px 0 0 18px;
   border-left: 1px solid var(--clue-ds-color-border-neutral);

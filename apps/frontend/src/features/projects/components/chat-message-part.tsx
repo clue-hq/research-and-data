@@ -127,16 +127,19 @@ export function ChatMessagePartView({
             />
           </SourcesTrigger>
           <SourcesContent className={styles.projectSourcesContent}>
-            {part.items.map((item) => (
-              <Source
-                href={item.url ?? undefined}
-                key={item.sourceId}
-                title={item.title ?? item.sourceId}
-              >
-                <span>{item.title ?? item.sourceId}</span>
-                {item.url ? <ProjectIcon name="link" size={10} /> : null}
-              </Source>
-            ))}
+            {part.items.map((item, index) => {
+              const label = item.title?.trim() || `Source ${index + 1}`;
+              return (
+                <Source
+                  href={item.url ?? undefined}
+                  key={item.sourceId}
+                  title={label}
+                >
+                  <span>{label}</span>
+                  {item.url ? <ProjectIcon name="link" size={10} /> : null}
+                </Source>
+              );
+            })}
           </SourcesContent>
         </Sources>
       );

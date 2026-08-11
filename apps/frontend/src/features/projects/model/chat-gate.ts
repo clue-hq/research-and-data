@@ -6,6 +6,7 @@ import {
   type GateDecision,
 } from "./chat-parts";
 import type { GateResponse } from "./chat-turn";
+import { profileDisplayName } from "./chat-tool-presentation";
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const DURABLE_GATE_ID_PATTERN =
@@ -220,10 +221,10 @@ function decisionOf(value: string | null): GateDecision | null {
 }
 
 const GATE_TITLES: Record<string, string> = {
-  directive_confirmation: "Confirm research launch",
-  icp_confirmation: "Confirm ICP",
-  plan_approval: "Approve plan",
-  budget_approval: "Approve budget",
+  directive_confirmation: "Review the research plan",
+  icp_confirmation: "Review your ideal customer profile",
+  plan_approval: "Review the plan",
+  budget_approval: "Review the budget",
 };
 
 const SUPPORTED_GATE_KINDS: ReadonlySet<string> = new Set([
@@ -233,16 +234,16 @@ const SUPPORTED_GATE_KINDS: ReadonlySet<string> = new Set([
 
 const RETRY_GATE_READ: GateRecoveryAction = {
   kind: "retry_gate_read",
-  label: "Retry gate verification",
+  label: "Try again",
 };
 
 const REQUEST_NEW_GATE: GateRecoveryAction = {
   kind: "request_new_gate",
-  label: "Ask Stage 0 to regenerate",
+  label: "Create a new proposal",
 };
 
 export function gateTitle(kind: string): string {
-  return GATE_TITLES[kind] ?? kind.replaceAll("_", " ");
+  return GATE_TITLES[kind] ?? "Review requested";
 }
 
 export function agentGateIdFromPart(part: ChatGatePart): string | null {
@@ -259,21 +260,22 @@ export function agentGateIdFromPart(part: ChatGatePart): string | null {
 
 function durableGateSummary(gate: ChatGate): string {
   if (gate.kind === "icp_confirmation") {
-    const label =
-      typeof gate.subjectSnapshot.icp_key === "string"
-        ? gate.subjectSnapshot.icp_key.replaceAll("_", " ")
-        : gate.subjectRef;
-    return `ICP proposal ${label} · revision ${gate.subjectRevision}`;
+    const label = profileDisplayName(gate.subjectSnapshot.icp_key);
+    return gate.subjectRevision === null
+      ? label
+      : `${label} · Version ${gate.subjectRevision}`;
   }
   if (gate.kind === "directive_confirmation") {
     const accountCount = gate.subjectSnapshot.account_count;
     const scope =
       typeof accountCount === "number"
         ? `${accountCount} ${accountCount === 1 ? "account" : "accounts"}`
-        : gate.subjectRef;
-    return `Research directive for ${scope} · revision ${gate.subjectRevision}`;
+        : "the selected accounts";
+    return gate.subjectRevision === null
+      ? `Research plan for ${scope}`
+      : `Research plan for ${scope} · Version ${gate.subjectRevision}`;
   }
-  return `${gate.subjectRef} · revision ${gate.subjectRevision}`;
+  return "A decision is needed before work can continue.";
 }
 
 function notice({
@@ -325,7 +327,6 @@ export function gateCardModel({
   expectedProjectId,
   expectedThreadId,
   gateReadAvailable,
-  gateReadReason = null,
   gateReadLoading = false,
   authorityFailure = null,
 }: {
@@ -336,7 +337,6 @@ export function gateCardModel({
   expectedProjectId: string;
   expectedThreadId: string;
   gateReadAvailable: boolean;
-  gateReadReason?: string | null;
   gateReadLoading?: boolean;
   authorityFailure?: GateAuthorityFailure | null;
 }): GateCardModel | null {
@@ -349,7 +349,7 @@ export function gateCardModel({
       gate: null,
       part,
       reason:
-        "This request is not backed by a durable agent gate. A model-only reference cannot authorize a human decision.",
+        "This review request is incomplete, so it cannot be approved yet.",
       recovery: REQUEST_NEW_GATE,
     });
   }
@@ -358,7 +358,7 @@ export function gateCardModel({
       return notice({
         gate: null,
         part,
-        reason: "Verifying the durable gate before showing any decision controls.",
+        reason: "Checking that this proposal is ready for your review…",
         recovery: null,
       });
     }
@@ -366,9 +366,8 @@ export function gateCardModel({
       gate: null,
       part,
       reason: gateReadAvailable
-        ? "The referenced durable gate is missing from this conversation. It cannot be answered safely."
-        : (gateReadReason ??
-          "The durable gate could not be verified, so no decision controls are available."),
+        ? "This proposal is no longer available. Create a new one to continue."
+        : "We couldn't load the approval details. Please try again.",
       recovery: gateReadAvailable ? REQUEST_NEW_GATE : RETRY_GATE_READ,
     });
   }
@@ -376,7 +375,7 @@ export function gateCardModel({
     return notice({
       gate,
       part,
-      reason: "The rendered reference does not match the fetched durable gate.",
+      reason: "This review request is out of date. Please try again.",
       recovery: RETRY_GATE_READ,
     });
   }
@@ -388,7 +387,7 @@ export function gateCardModel({
     return notice({
       gate,
       part,
-      reason: "The durable gate does not belong to the active workspace conversation.",
+      reason: "This review request belongs to a different conversation.",
       recovery: RETRY_GATE_READ,
     });
   }
@@ -396,7 +395,7 @@ export function gateCardModel({
     return notice({
       gate,
       part,
-      reason: `This client does not support decisions for ${gateTitle(gate.kind)} gates.`,
+      reason: "This type of review is not available here yet.",
       recovery: REQUEST_NEW_GATE,
     });
   }
@@ -404,7 +403,7 @@ export function gateCardModel({
     return notice({
       gate,
       part,
-      reason: "The durable gate does not identify an exact positive subject revision.",
+      reason: "This proposal is incomplete. Create a new one to continue.",
       recovery: REQUEST_NEW_GATE,
     });
   }
@@ -412,7 +411,7 @@ export function gateCardModel({
     return notice({
       gate,
       part,
-      reason: "The durable gate contains a duplicated human decision.",
+      reason: "This proposal has conflicting actions. Create a new one to continue.",
       recovery: REQUEST_NEW_GATE,
     });
   }
@@ -422,7 +421,7 @@ export function gateCardModel({
     return notice({
       gate,
       part,
-      reason: "The durable answer receipt contains an unsupported decision.",
+      reason: "We couldn't confirm the saved decision for this proposal.",
       recovery: null,
     });
   }
@@ -435,8 +434,7 @@ export function gateCardModel({
       return notice({
         gate,
         part,
-        reason:
-          "The durable answer receipt does not match the gate authority it claims to answer.",
+        reason: "We couldn't confirm the saved decision for this proposal.",
         recovery: null,
       });
     }
@@ -477,8 +475,8 @@ export function gateCardModel({
       part,
       reason:
         currentUserId === null
-          ? "The current user identity could not be verified."
-          : "This confirmation is addressed to another workspace member.",
+          ? "We couldn't confirm who should review this proposal."
+          : "This proposal is waiting for another workspace member.",
       recovery: null,
     });
   }
@@ -486,7 +484,7 @@ export function gateCardModel({
     return notice({
       gate,
       part,
-      reason: "The durable gate offers no supported human decision.",
+      reason: "This proposal has no available actions. Create a new one to continue.",
       recovery: REQUEST_NEW_GATE,
     });
   }
@@ -515,31 +513,84 @@ export function gateCardModel({
 
 export function gateAuthorityFailure(
   code: string,
-  message: string,
+  backendMessage: string,
 ): GateAuthorityFailure {
+  // The backend message belongs in correlated logs, not customer-facing copy.
+  // Touch it here only to make that intentional non-disclosure explicit.
+  void backendMessage;
   switch (code) {
     case "GATE_SUBJECT_STALE":
     case "GATE_NOT_FOUND":
+      return {
+        reason:
+          "This proposal changed or is no longer available. Create a new one to continue.",
+        recovery: REQUEST_NEW_GATE,
+      };
     case "GATE_KIND_UNSUPPORTED":
     case "GATE_DECISION_UNSUPPORTED":
       return {
-        reason: `${message} The current card cannot be used safely.`,
+        reason:
+          "This proposal can no longer be reviewed here. Create a new one to continue.",
         recovery: REQUEST_NEW_GATE,
       };
     case "GATE_ALREADY_ANSWERED":
+      return {
+        reason: "This proposal was already answered. Refresh to see the saved decision.",
+        recovery: RETRY_GATE_READ,
+      };
     case "GATE_AMOUNT_STALE":
       return {
-        reason: `${message} Refresh the durable gate before taking another action.`,
+        reason: "The research plan changed while you were reviewing it. Please try again.",
         recovery: RETRY_GATE_READ,
       };
     case "GATE_FORBIDDEN":
-      return { reason: message, recovery: null };
+      return {
+        reason: "This proposal is waiting for another workspace member.",
+        recovery: null,
+      };
     default:
       return {
-        reason: `${message} The durable gate must be verified again before retrying.`,
+        reason: "We couldn't save your decision. Please try again.",
         recovery: RETRY_GATE_READ,
       };
   }
+}
+
+const ICP_DECISION_COPY: Readonly<Record<GateDecision, string>> = {
+  approved: "Approve profile",
+  rejected: "Reject proposal",
+  revised: "Request changes",
+};
+
+const RESEARCH_DECISION_COPY: Readonly<Record<GateDecision, string>> = {
+  approved: "Start research",
+  rejected: "Don't start",
+  revised: "Request changes",
+};
+
+const ICP_DECISION_RECORDED: Readonly<Record<GateDecision, string>> = {
+  approved: "Profile approved",
+  rejected: "Proposal rejected",
+  revised: "Changes requested",
+};
+
+const RESEARCH_DECISION_RECORDED: Readonly<Record<GateDecision, string>> = {
+  approved: "Research approved",
+  rejected: "Research not approved",
+  revised: "Changes requested",
+};
+
+export function gateDecisionCopy(
+  kind: string,
+  decision: GateDecision,
+  recorded = false,
+): string {
+  if (kind === "icp_confirmation") {
+    return recorded ? ICP_DECISION_RECORDED[decision] : ICP_DECISION_COPY[decision];
+  }
+  return recorded
+    ? RESEARCH_DECISION_RECORDED[decision]
+    : RESEARCH_DECISION_COPY[decision];
 }
 
 export function gateAnswerResponse(
@@ -548,21 +599,21 @@ export function gateAnswerResponse(
   revisionRequest?: string,
 ): GateResponse {
   if (card.state !== "requested" || card.expectedSubjectSha256 === null) {
-    throw new Error("only a verified, unanswered durable gate may be answered");
+    throw new Error("This proposal is no longer ready for a decision.");
   }
   if (!card.permittedDecisions.includes(decision)) {
-    throw new Error("this decision was not offered by the durable gate");
+    throw new Error("That option is no longer available for this proposal.");
   }
   const trimmedRevision = revisionRequest?.trim();
   if (trimmedRevision && trimmedRevision.length > 4_000) {
-    throw new Error("an ICP revision request must be at most 4000 characters");
+    throw new Error("Please keep the requested changes under 4,000 characters.");
   }
   if (card.kind === "icp_confirmation" && decision === "revised") {
     if (!trimmedRevision) {
-      throw new Error("describe the ICP changes you want before requesting a revision");
+      throw new Error("Describe what you would like changed before continuing.");
     }
   } else if (trimmedRevision) {
-    throw new Error("revision text is valid only when revising an ICP");
+    throw new Error("Changes can only be added when requesting a revision.");
   }
   return {
     gateId: card.gateId,

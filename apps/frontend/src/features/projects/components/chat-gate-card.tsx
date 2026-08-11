@@ -7,9 +7,13 @@ import {
   ConfirmationRequest,
   ConfirmationTitle,
 } from "@/components/ai-elements/confirmation";
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 import type { GateDecision } from "../model/chat-parts";
-import { formatCents, type GateCardModel } from "../model/chat-gate";
+import {
+  formatCents,
+  gateDecisionCopy,
+  type GateCardModel,
+} from "../model/chat-gate";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
@@ -31,18 +35,6 @@ import styles from "./project-flow.module.css";
  * withheld (pilot budget controls off) renders *no* cost row: no `$0.00`, no
  * empty currency, no dash standing in for a number nobody may see.
  */
-
-const DECISION_COPY: Record<GateDecision, string> = {
-  approved: "Approve",
-  rejected: "Reject",
-  revised: "Revise",
-};
-
-const DECISION_RECORDED: Record<GateDecision, string> = {
-  approved: "Approved",
-  rejected: "Rejected",
-  revised: "Revision requested",
-};
 
 /** The card's own state, mapped onto the vendored primitive's lifecycle. */
 const PRIMITIVE_STATE = {
@@ -67,6 +59,7 @@ export function ChatGateCard({
   ) => void;
   onRecover: (card: GateCardModel) => void;
 }) {
+  const revisionFieldId = useId();
   const [revising, setRevising] = useState(false);
   const [revisionRequest, setRevisionRequest] = useState("");
   const amount = formatCents(card.amountCents, card.currency);
@@ -124,22 +117,22 @@ export function ChatGateCard({
                 key={decision}
                 onClick={() => choose(decision)}
               >
-                {DECISION_COPY[decision]}
+                {gateDecisionCopy(card.kind, decision)}
               </ConfirmationAction>
             ))}
           </ConfirmationActions>
         ) : null}
         {card.state === "requested" && revising ? (
           <form className={styles.gateRevisionForm} onSubmit={submitRevision}>
-            <label htmlFor={`gate-revision-${card.gateId}`}>
-              Requested ICP changes
+            <label htmlFor={revisionFieldId}>
+              What would you like changed?
             </label>
             <textarea
               autoFocus
-              id={`gate-revision-${card.gateId}`}
+              id={revisionFieldId}
               maxLength={4_000}
               onChange={(event) => setRevisionRequest(event.target.value)}
-              placeholder="Describe what Stage 0 should change in the next ICP version."
+              placeholder="For example: focus on multi-site practices with at least three providers."
               rows={3}
               value={revisionRequest}
             />
@@ -156,7 +149,7 @@ export function ChatGateCard({
                 Cancel
               </button>
               <button disabled={!answerable || !revisionText} type="submit">
-                Request revision
+                Send changes
               </button>
             </div>
           </form>
@@ -179,7 +172,7 @@ export function ChatGateCard({
             size={14}
           />
           <span>
-            {DECISION_RECORDED[card.decision]}
+            {gateDecisionCopy(card.kind, card.decision, true)}
             {amount && card.decision === "approved" ? ` — up to ${amount}` : ""}
           </span>
           {card.launches.length > 0 ? (

@@ -185,6 +185,24 @@ are never accepted from the browser or model.
   echoes the gate digest and one of the gate's permitted decisions. The recorded
   ICP revision request is projected from that receipt.
 
+#### Human-facing receipt presentation (2026-08-12)
+
+- Durable gate and tool receipts remain authoritative transport records, not
+  presentation models. Normal chat projects them through an explicit allowlist
+  of business facts such as coverage, proposal name, account count and status.
+- Internal ids, object references, hashes, digests, operation keys, tool schema
+  versions and backend refusal details never render in the normal transcript,
+  gate card, activity labels, recovery copy, source fallbacks or accessibility
+  labels. The turn inspector retains those diagnostics behind an explicit
+  developer-oriented action.
+- Known operations receive stable human labels. Unknown operations fail closed:
+  the transcript shows only a generic activity label and completion state; it
+  never renders an arbitrary tool name, input or output payload.
+- Decision controls use action language appropriate to the reviewed subject
+  (for example, **Approve profile** or **Start research**). Integrity checks
+  still send and verify the fetched durable identifiers and digest internally;
+  hiding them from the card does not weaken gate authority.
+
 ### R3 implementation status (2026-08-10)
 
 - `GET /api/v1/projects/{project_id}` returns the real tenant-scoped project

@@ -257,14 +257,10 @@ export function useProjectChatController({
           throw failure;
         }
         globalThis.console.error("Durable gate read failed", failure);
-        const detail =
-          failure instanceof ClueChatApiError && failure.requestId
-            ? ` Request ${failure.requestId}.`
-            : "";
         const read: ChatGateRead = {
           available: false,
           gates: [],
-          reason: `The durable gate could not be verified.${detail}`,
+          reason: "We couldn't load the approval details. Please try again.",
         };
         if (mounted.current) setGateRead(read);
         return read;
@@ -628,8 +624,8 @@ export function useProjectChatController({
       try {
         const prompt =
           card.kind === "icp_confirmation"
-            ? "Please resynthesize the ICP as a new version and open a new durable ICP confirmation gate. The current gate cannot be used; do not reuse its subject revision or digest."
-            : "Please regenerate the current Stage 0 proposal and open a new durable confirmation gate. The current reference cannot be used for a human decision.";
+            ? "Please create a fresh ideal customer profile proposal for me to review. The current proposal is no longer available."
+            : "Please create a fresh proposal for me to review. The current one is no longer available.";
         await submitMessage(prompt);
       } finally {
         if (mounted.current) setSubmitting(false);
@@ -756,7 +752,6 @@ export function useProjectChatController({
         expectedProjectId: projectId,
         expectedThreadId: activeThreadId ?? "",
         gateReadAvailable: gateRead.available,
-        gateReadReason: gateRead.reason,
         gateReadLoading,
         authorityFailure:
           gateId === null ? null : (gateFailures.get(gateId) ?? null),
@@ -766,7 +761,6 @@ export function useProjectChatController({
       activeThreadId,
       gateFailures,
       gateRead.available,
-      gateRead.reason,
       gateReadLoading,
       gatesById,
       projectId,

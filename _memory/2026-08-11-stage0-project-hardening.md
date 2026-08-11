@@ -292,3 +292,45 @@ Final verification:
 Remaining hardening starts at Slice 4. Composer clearing, chat sizing/overflow,
 sticky offsets, Gallery behavior and naming defects were observed but were not
 changed in this slice.
+
+## Slice 3 follow-up — human-facing gate and receipt presentation
+
+The default transcript had a second presentation path outside the durable gate
+card: `ChatToolCall` enumerated every input/output field in the immutable tool
+receipt. Real Stage-0 receipts therefore exposed operation ids, object ids,
+artifact keys, gate references, SHA-256 digests and tool schema versions even
+though the gate authority logic itself was correct. Activity step labels,
+recovery messages, source fallbacks, context fallbacks and the inspector button's
+accessible label also had smaller technical leaks.
+
+Implemented one fail-closed presentation boundary rather than filtering known
+technical key names:
+
+- known Stage-0 operations project only explicitly allowlisted business facts;
+  unknown tools show one generic activity label and never render their name or
+  arbitrary payload;
+- gate titles, summaries, decisions, recorded states and recovery actions use
+  user intent (`Approve profile`, `Start research`, `Request changes`) while
+  the fetched gate id, revision and digest remain intact in the structured
+  answer payload and server verification path;
+- backend refusal messages and request ids remain in logs/turn inspection, not
+  normal card copy; opaque references cannot become profile, source, context or
+  accessibility labels;
+- raw immutable receipts remain available only through the explicit turn
+  inspector for developer diagnostics.
+
+Verification:
+
+- 159 frontend tests passed, including receipt-shape regressions for readiness,
+  ICP synthesis, ICP gate creation, unknown tools and backend failures;
+- ESLint, design-system token build, `git diff --check` and the Next.js webpack
+  production build passed. The build emitted only the existing multiple-lockfile
+  workspace-root warning;
+- the in-app Browser rendered the full fixture research-plan gate. Its visible
+  and accessibility snapshot contained no UUID, 64-character SHA-256, internal
+  `*_id` field, digest label or versioned tool name; the browser console had no
+  warning/error. The authenticated session had expired, so this follow-up visual
+  check used the project fixture while regression inputs retained the exact
+  shapes sampled from the isolated Insight Health browser database;
+- the authenticated frontend development server was restored on port 3000 after
+  verification.

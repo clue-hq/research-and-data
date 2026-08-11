@@ -2,6 +2,10 @@ import { Tool, ToolContent } from "@/components/ai-elements/tool";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { ChatToolPart, ToolPartState } from "../model/chat-parts";
+import {
+  toolPresentation,
+  type ToolDisplayRow,
+} from "../model/chat-tool-presentation";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
@@ -13,8 +17,9 @@ import styles from "./project-flow.module.css";
  * nothing alike to a user, and the backend has always distinguished them.
  *
  * The output is structured JSON (§3.4), so the *adapter* chooses the disclosure
- * copy. It renders the receipt's own keys and values rather than a sentence the
- * backend pre-wrote, which is the rule that keeps display copy off the wire.
+ * copy. The normal chat surface projects only explicitly allowlisted business
+ * facts. Operation ids, hashes, artifact paths, refs and schema versions remain
+ * in the developer inspector and never become customer-facing copy by default.
  */
 
 const STATE_COPY: Record<ToolPartState, string> = {
@@ -37,23 +42,14 @@ const FAILED: ReadonlySet<ToolPartState> = new Set([
   "output-error",
 ]);
 
-function renderValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (Array.isArray(value)) return value.map(renderValue).join(", ");
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
-}
-
-function Entries({ payload }: { payload: Record<string, unknown> }) {
-  const entries = Object.entries(payload);
-  if (entries.length === 0) return null;
+function Entries({ rows }: { rows: readonly ToolDisplayRow[] }) {
+  if (rows.length === 0) return null;
   return (
     <dl>
-      {entries.map(([key, value]) => (
-        <div key={key}>
-          <dt>{key.replaceAll("_", " ")}</dt>
-          <dd>{renderValue(value)}</dd>
+      {rows.map((row, index) => (
+        <div key={`${row.label}:${index}`}>
+          <dt>{row.label}</dt>
+          <dd>{row.value}</dd>
         </div>
       ))}
     </dl>
@@ -63,19 +59,21 @@ function Entries({ payload }: { payload: Record<string, unknown> }) {
 export function ChatToolCall({ part }: { part: ChatToolPart }) {
   const running = ACTIVE.has(part.state);
   const failed = FAILED.has(part.state);
-  const label = part.toolVersion
-    ? `${part.toolName}@${part.toolVersion}`
-    : part.toolName;
+  const presentation = toolPresentation(part);
+  const hasDetails = presentation.rows.length > 0 || presentation.failureMessage !== null;
 
   return (
     <Tool className={styles.toolActivity} defaultOpen={false}>
-      <CollapsibleTrigger className={styles.toolActivityTrigger}>
+      <CollapsibleTrigger
+        className={styles.toolActivityTrigger}
+        disabled={!hasDetails}
+      >
         <ProjectIcon
           className={running ? styles.rotatingLoader : styles.statusCheck}
           name={running ? "loader" : failed ? "close" : "status-check"}
           size={running ? 13 : 14}
         />
-        <span>{label}</span>
+        <span>{presentation.label}</span>
         <small>
           {running ? (
             <Shimmer duration={1.4}>{STATE_COPY[part.state]}</Shimmer>
@@ -83,18 +81,20 @@ export function ChatToolCall({ part }: { part: ChatToolPart }) {
             STATE_COPY[part.state]
           )}
         </small>
-        <ProjectIcon className={styles.reasoningChevron} name="chevron-down" size={11} />
-      </CollapsibleTrigger>
-      <ToolContent className={styles.toolActivityContent}>
-        {part.input ? <Entries payload={part.input} /> : null}
-        {part.output ? <Entries payload={part.output} /> : null}
-        {part.errorCode ? (
-          <p>
-            {part.errorCode}
-            {part.errorReasons.length > 0 ? `: ${part.errorReasons[0]}` : ""}
-          </p>
+        {hasDetails ? (
+          <ProjectIcon
+            className={styles.reasoningChevron}
+            name="chevron-down"
+            size={11}
+          />
         ) : null}
-      </ToolContent>
+      </CollapsibleTrigger>
+      {hasDetails ? (
+        <ToolContent className={styles.toolActivityContent}>
+          <Entries rows={presentation.rows} />
+          {presentation.failureMessage ? <p>{presentation.failureMessage}</p> : null}
+        </ToolContent>
+      ) : null}
     </Tool>
   );
 }
