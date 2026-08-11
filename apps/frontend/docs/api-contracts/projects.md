@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-4 implemented. Hardening Slices 5-6 remain pending. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-4 implemented. Slice 5 is explicitly deferred. Slice 6 automated/adversarial acceptance is complete, but authenticated browser acceptance remains pending. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -91,6 +91,32 @@ answer lifecycle; rendering and remaining UI changes stay owned by Slices 3-6.
 
 The amendment supersedes the earlier `Untitled project` and initially-open empty
 Gallery rules retained later in this document as implementation history.
+
+#### Slice 6 acceptance checkpoint (2026-08-12)
+
+Slice 6 tests Slices 0-4 only. The workspace-display-name and durable-project-name
+changes assigned to Slice 5 are deliberately excluded from both acceptance and
+adversarial conclusions.
+
+- A fresh isolated PostgreSQL database completed head → previous revision → head
+  across the two Stage-0 migrations, and Alembic reported one head.
+- The focused backend/adversarial matrix passes 165 tests. It includes the trusted
+  readiness inputs, versioned ICP synthesis, exact-subject gate lifecycle, all
+  three human decisions, replay/tenancy/digest refusals, durable-turn fixture,
+  active skill materialization, the complete tool-authority registry, and the
+  promoted-recipe lifecycle.
+- Frontend acceptance passes 165 tests, ESLint, design-system token generation,
+  and the Next.js webpack production build.
+- The complete repository suite passes 4,381 tests and skips 23. Its remaining
+  failures are classified separately: shared-database/order-sensitive legacy
+  tests, the pre-existing clue-design logging-discipline scan, and an untouched
+  mypy failure in `agent_gate_tools.py`. Slice-owned registry/recipe failures
+  found by this run were repaired and pass in isolation and in the focused
+  matrix.
+- Authenticated browser acceptance remains open. The in-app Clerk session was
+  expired; Chrome could enumerate tabs but could not establish a controllable
+  acceptance tab even after the one supported recovery attempt. No fixture-only
+  browser run is accepted as a substitute for browser → API → PostgreSQL proof.
 
 #### Frozen Stage-0 authority contracts
 

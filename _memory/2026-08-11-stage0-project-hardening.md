@@ -391,3 +391,57 @@ Verification:
   After the fixture run the authenticated browser session itself had expired,
   so no fresh secured interaction was claimed; the authenticated development
   server was restored on port 3000.
+
+## Slice 6 checkpoint — cross-cutting acceptance and adversarial review
+
+Scope was frozen to LF-STAGE0-004..009, LF-COMPOSER-001,
+LF-LAYOUT-001..003, LF-UX-001, LF-TEST-002 and LF-TEST-004. Slice 5's
+LF-UX-002 workspace name and LF-UX-003 project name were explicitly excluded at
+the founder's request and remain deferred.
+
+Isolated runtime and migration proof:
+
+- acceptance database `copenhagen_stage0_slice6_20260812a` on the dedicated
+  local Postgres port and an isolated filesystem artifact root;
+- base Insight Health workspace/product/user fixture seeded without creating a
+  project, preserving the requirement that the browser create it through Home;
+- Alembic reported the single head `70e67fc26a3f`; head → `2fb8e2479183` → head
+  passed on the isolated database;
+- API, fleet worker and frontend were composed against that exact database and
+  artifact root. Contact-channel enrichment was disabled because it is outside
+  the Stage-0 acceptance surface.
+
+Automated/adversarial proof:
+
+- focused backend matrix: 161 passed initially. The full-suite audit then found
+  four Slice-owned stale signals: the ICP gate was missing from two whole-tool
+  registry tests, the authority count did not name it explicitly, and the
+  promoted Stage-0 recipe test hard-coded v6. Repairs made the current @2
+  readiness/synthesis authority shapes explicit, added the gate to the
+  fail-closed matrix, and derived the promoted recipe from the resolved latest
+  revision. The final expanded Slice matrix passes 165 tests;
+- frontend: 165 tests, ESLint, design-system token generation and the Next.js 16
+  webpack production build passed. The only build output was the existing
+  multiple-lockfile root warning;
+- root Ruff passed over 1,341 files and all 25 import-linter contracts passed.
+  Mypy found one untouched baseline error in
+  `platform/api/clue_api/agent_gate_tools.py` (`Decimal | None` supplied to
+  `money_text(Decimal)`);
+- full repository suite: 4,381 passed, 23 skipped, 37 failed. After repairing
+  the four Slice-owned static failures, the residual failures are the known
+  shared-database/order-sensitive classes plus the pre-existing clue-design
+  logging scan. They are not attributed to this slice and were not broadened
+  into its scope.
+
+Browser blocker and open completion condition:
+
+- the Browser skill was used against the real isolated stack. The in-app
+  browser reached `/sign-in?reason=session_expired`;
+- Chrome's extension could enumerate existing tabs but timed out when naming a
+  session or creating a controllable localhost tab. The one supported recovery
+  (open a blank window in the selected Default profile, then retry once) also
+  timed out. Unsupported Playwright/shell/AppleScript substitutes were not used;
+- Slice 6 is therefore not complete. Completion still requires an authenticated
+  Insight Health journey through Home → Stage-0 readiness → ICP synthesis →
+  gate → Revise/new version → Approve, followed by browser/API/Postgres
+  correlation, responsive composer/layout checks, reload, and a next message.
