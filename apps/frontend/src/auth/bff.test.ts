@@ -9,6 +9,10 @@ import {
 
 test("BFF path encoding cannot escape the configured backend origin", () => {
   assert.equal(
+    backendPath(["frontend", "v1", "accounts"]),
+    "/frontend/v1/accounts",
+  );
+  assert.equal(
     backendPath(["v1", "projects", "../other"]),
     "/v1/projects/..%2Fother",
   );

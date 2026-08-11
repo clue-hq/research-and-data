@@ -39,7 +39,8 @@ src/features/<feature>/model/
   Zod response schemas, domain types, and view-state types.
 
 src/features/<feature>/data/
-  Repository interfaces, fixture adapters, and HTTP adapters.
+  Repository interfaces and transport adapters. A feature may be live-only;
+  fixture adapters are optional and must never be an implicit production fallback.
 
 src/features/<feature>/hooks/
   Feature-level client state and interaction controllers.
@@ -87,12 +88,15 @@ Every backend-owned payload has:
 
 1. a Zod schema under `model`;
 2. a repository interface under `data`;
-3. a fixture adapter for frontend development;
-4. an HTTP adapter selected by the base-URL variable of the flow it belongs to
-   (the accounts flow reads `CLUE_ACCOUNTS_API_BASE_URL`; a flow whose backend
-   does not exist yet is pinned to fixtures and reads none — the projects
-   repositories are pinned until phase 2);
+3. an authenticated HTTP adapter when a live backend contract exists;
+4. an explicit unavailable/empty model when a backend capability does not yet
+   exist — never unrelated demo data selected by missing configuration;
 5. a written contract under `docs/api-contracts`.
+
+Accounts and Contacts are live-only. Their Server Component repositories use
+the authenticated server request seam, while browser-originated requests use
+the same-origin `/api/clue` BFF. Other flows may retain explicitly configured
+fixtures until their own cutover, but that choice remains feature-owned.
 
 Aryan can replace or extend HTTP adapters without changing presentation
 components. Fixtures must never be imported by components or routes.

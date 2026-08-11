@@ -1,14 +1,21 @@
 # Accounts API contract
 
-Status: frontend-ready proposal for backend implementation.
+Status: implemented FI-2 read contract with authenticated frontend cutover.
 
 Owner for backend integration: Aaryan.
 
-The frontend currently uses `fixtureAccountsRepository` and
-`fixtureAccountDetailsRepository`, plus dedicated contact and account-workspace
-repositories. Setting `CLUE_ACCOUNTS_API_BASE_URL` activates the corresponding
-HTTP repositories without changing page or component code. (This flow reads its
-own variable — see the as-built section below for why.)
+As of the 2026-08-11 FI-2 cutover, Accounts and Contacts have no runtime fixture
+mode. Their repositories always use the live `/frontend/v1` read surface.
+Server Component reads derive the Clerk provider proof on the Next server,
+resolve the selected workspace through Clue's membership store, and send
+`Authorization` plus `X-Clue-Workspace-Id` to FastAPI. Browser-originated API
+requests use the same resolver through the same-origin `/api/clue/**` BFF.
+`CLUE_ACCOUNTS_API_BASE_URL`, `CLUE_WORKSPACE_ID`, legacy `X-Workspace-Id`, and
+the unauthenticated Next rewrite are no longer part of this flow.
+
+The frontend-authored proposal below is retained as history. The “As-built
+backend read API” and “Authenticated frontend cutover” sections are the current
+contract where the proposal differs.
 
 ## Shared response conventions
 
@@ -338,11 +345,13 @@ authored filter rules. Project IDs must remain opaque stable identifiers.
 
 1. Implement both frontend read contracts exactly as the validated shapes
    above.
-2. Configure `CLUE_ACCOUNTS_API_BASE_URL` only on the Next.js server.
-3. Confirm CORS/network topology if the Next server and API use different
-   origins.
-4. Add the chosen authentication header or server session inside
-   `createHttpAccountsRepository`.
+2. Configure authentication plus the server-only `CLUE_API_BASE_URL`; there is
+   no Accounts-specific origin or workspace environment variable.
+3. Keep browser calls same-origin through `/api/clue`; Server Components call
+   the same authenticated backend primitive directly and never loop back
+   through their own Route Handler.
+4. Derive provider proof and `X-Clue-Workspace-Id` on the Next server. Never
+   accept a browser-authored workspace or authorization header.
 5. Replace `logoPath` only through the schema and repository boundary.
 6. Add contract tests using representative success, empty, and error payloads.
 7. Keep table and detail records independently fetchable so list responses do
@@ -362,9 +371,11 @@ drives all four endpoints over one seeded workspace, and
 `tests/api/test_frontend_read_*.py` cover each endpoint on its own.
 
 The surface is flag-gated (`frontend_read_enabled`, default off; the routes 404
-when it is off), is served under `/frontend/v1`, and requires the tenant header
-`X-Workspace-Id` on every data request (the one exception is
-`GET /frontend/v1/health`, an unscoped liveness probe that carries no tenant).
+when it is off) and is served under `/frontend/v1`. The router's isolated
+development fallback accepts `X-Workspace-Id`; an authenticated application
+overrides that resolver with Lane B's principal service, which requires provider
+proof plus `X-Clue-Workspace-Id`. The production frontend uses only the latter.
+`GET /frontend/v1/health` remains an unscoped liveness probe.
 It is read-only: no create, update, delete,
 research-launch, query-POST, table-config, `search`, or `sort` endpoint exists
 yet, and the only list query parameters are `projectId`, `cursor`, and `limit`.
@@ -529,7 +540,9 @@ The profile is that row plus `accountId`, `accountName`, `redirectedFrom`,
 and `evidence` (`{ provider, observedAt }`, no URLs).
 
 The error envelope is the one documented above. Codes in use:
-`UNAUTHORIZED` (401, missing `X-Workspace-Id`), `INVALID_CURSOR` (400),
+`UNAUTHORIZED` (401, missing workspace in the isolated development resolver;
+the authenticated application instead rejects missing provider proof or
+`X-Clue-Workspace-Id` through its principal resolver), `INVALID_CURSOR` (400),
 `ACCOUNT_NOT_FOUND` (404), `CONTACT_NOT_FOUND` (404), `VALIDATION_ERROR` (422,
 malformed identifier or out-of-range `limit`), `INTERNAL_ERROR` (500). Every
 response also carries an `X-Request-Id` header matching `error.requestId`.
@@ -788,22 +801,16 @@ implicit.
    sentence-cased through a generic prettifier with no lookup table to drift.
    `researchStatus`, `persona` and `freshness` — closed backend enums — are the
    only `z.enum`s on this surface, plus `not_launchable`, ratified forward.
-3. **The accounts flow owns its own base-URL variable,
-   `CLUE_ACCOUNTS_API_BASE_URL`.** It is deliberately not one app-wide switch.
-   The projects repositories used to key off `CLUE_API_BASE_URL` and call
-   `api/v1/home` and `api/v1/projects/*`, which slice 1 serves nothing for and
-   which throw on any non-2xx — so configuring the accounts flow also broke the
-   home and project routes. Those repositories are now pinned to fixtures and
-   read no variable at all until phase 2 gives them a backend surface, and each
-   flow gets its own switch when it gets its own backend.
-4. **Tenancy is a build-time env for MVP: `CLUE_WORKSPACE_ID`.** Every
-   `/frontend/v1` data request carries `X-Workspace-Id`, and the frontend has no
-   session or tenant surface yet. The transport module reads the workspace from
-   the environment and throws at the seam when `CLUE_ACCOUNTS_API_BASE_URL` is
-   set without it, instead of shipping a `401` to a screen. When a real session
-   layer exists, `data/frontend-api.ts::workspaceId` is the single function that
-   changes. Both variables are server-only — never `NEXT_PUBLIC_*`, because the
-   workspace *is* the tenancy boundary.
+3. **SUPERSEDED 2026-08-11 — no Accounts-specific base URL or fixture
+   switch.** Accounts and Contacts always use `/frontend/v1` through the shared
+   server-only `CLUE_API_BASE_URL`. Removing `CLUE_ACCOUNTS_API_BASE_URL` means
+   an unset variable can no longer silently substitute unrelated demo data.
+4. **SUPERSEDED 2026-08-11 — tenancy comes from the authenticated session.**
+   `CLUE_WORKSPACE_ID` and legacy `X-Workspace-Id` are removed from the
+   frontend. The Next server resolves the provider session and selected Clue
+   membership, then emits `Authorization` and `X-Clue-Workspace-Id`. FastAPI
+   remains the final authorization authority and refuses missing, revoked, or
+   cross-workspace memberships.
 5. **`error.code` is carried, never switched on — and a `404` is not
    automatically an empty workspace.** A failed read raises
    `ClueApiError { code, status, requestId }` with `code` typed as a plain
@@ -828,41 +835,30 @@ implicit.
    are not dead clicks. The gated preview drawer — which could only ever open
    for one hard-coded contact — was removed rather than left as an affordance
    that works on one row.
-8. **No workspace endpoint exists, so the Insights / Artifacts / Activity tabs
-   stay on fixtures.** Slice 1 serves no activity feed or artifact index, and
-   account insights arrive on the detail's `projectSections[].insights` instead.
-   `account-workspace.repository.ts` is therefore fixture-only and resolves an
-   uncovered account to an *empty* workspace rather than `null` — with a live
-   backend the account plainly exists, so 404-ing one of its tabs would be a
-   lie. Each tab renders an explicit "not served yet" empty state instead of a
-   blank page. It grows an HTTP adapter when that endpoint is specified.
+8. **SUPERSEDED 2026-08-11 — workspace tabs carry no runtime fixture data.**
+   Slice 1 still serves no activity feed or artifact index, and account insights
+   arrive on the Overview detail contract. `account-workspace.repository.ts`
+   therefore returns an explicit empty model for every real account, with each
+   tab explaining that the capability is not served yet. It neither invents a
+   URL nor preserves the former OpenAI demo workspace.
 
-**Dev setup (CORS / proxy).** The preferred and default path is the Next.js
-rewrite, which matches the production same-origin posture: with
-`CLUE_ACCOUNTS_API_BASE_URL` set, `next.config.ts` forwards `/frontend/v1/:path*` from
-the frontend origin to the backend, so a browser-side caller makes no
-cross-origin request and needs no CORS grant at all. It is a transport
-passthrough — `X-Workspace-Id` is added by the repositories (which run
-server-side), never by the rewrite. Today every accounts read happens in a
-Server Component and therefore calls `CLUE_ACCOUNTS_API_BASE_URL` directly, so the
-rewrite matters only for browser-side callers and for hitting the API through
-the dev server. If you do call cross-origin instead, list the exact dev origin
-— `http://localhost:3000` (and `http://127.0.0.1:3000` if you use that host;
-they are distinct origins) — in the backend's
-`CLUE_FRONTEND_CORS_ALLOW_ORIGINS`. Never `"*"`: the backend refuses it
-structurally, because Starlette echoes the origin when a wildcard is combined
-with credentials, which under trusted-header tenancy is a cross-tenant
-exposure.
+### Authenticated frontend cutover (2026-08-11)
 
-**Fixture mode is unchanged and still the default.** With
-`CLUE_ACCOUNTS_API_BASE_URL` unset every screen renders from `src/features/accounts/data/*.fixture.ts`,
-which were regenerated to the wire shapes above — including the states a live
-workspace produces and a fixture set is normally too tidy to have: an account
-scored by two projects under different ICPs, a membership whose project has no
-resolvable name, a `researchStatus` entry for a project the account is no
-longer a member of, a committee member whose title is withheld by policy
-(`titleRestricted`) beside one whose name is simply absent, and a
-membership-less account with every enrichment field null.
+Server Component reads call the authenticated backend primitive directly; they
+do not perform a loopback HTTP request to Next. Browser-originated reads and
+mutations use `/api/clue/**`, whose Route Handler uses that same primitive. The
+shared path proves the Clerk session, re-loads Clue membership, strips
+browser-authored authorization/workspace headers, and sends only the server
+bearer plus `X-Clue-Workspace-Id` to FastAPI. `next.config.ts` no longer carries
+the unauthenticated `/frontend/v1` rewrite.
+
+There is no runtime fixture mode. The former Accounts, Account detail, Contact,
+and Account-workspace fixture modules were removed. Test-local payload builders
+may exercise Zod and repository contracts, and browser acceptance may seed
+durable Postgres rows, but neither is reachable as an application fallback.
+With the Insight Health onboarding-only seed, `GET /frontend/v1/accounts`
+returns `{data: [], meta: {total: 0, nextCursor: null}}` and the page renders
+“No accounts exist in this workspace yet.”
 
 **Fields dropped from the frontend schemas (D-7).** `referralFit`,
 `directAccessFit`, `recallFit`, `overallFit`, `locationCount`, `employeeBand`,

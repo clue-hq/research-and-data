@@ -115,6 +115,11 @@ export function AccountsScreen({
             onToggleAll={controller.toggleAllVisibleAccounts}
             selectedAccountIds={controller.selectedAccountIds}
             visibleColumns={controller.visibleColumns}
+            workspaceIsEmpty={
+              controller.loadedCount === 0 &&
+              controller.totalCount === 0 &&
+              !controller.hasActiveFilter
+            }
           />
         </div>
         <AccountsFooter

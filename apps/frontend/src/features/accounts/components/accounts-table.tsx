@@ -379,6 +379,7 @@ interface AccountsTableProps {
   onToggleAccount: (accountId: string) => void;
   onToggleAll: () => void;
   selectedAccountIds: Set<string>;
+  workspaceIsEmpty?: boolean;
   visibleColumns?: Record<AccountColumnKey, boolean>;
 }
 
@@ -392,6 +393,7 @@ export function AccountsTable({
   onToggleAccount,
   onToggleAll,
   selectedAccountIds,
+  workspaceIsEmpty = false,
   visibleColumns = defaultAccountColumns,
 }: AccountsTableProps) {
   const allSelected =
@@ -477,7 +479,9 @@ export function AccountsTable({
         <div
           className={`${readability.densityTransition} ${densityHeightClasses[density]} flex items-center border-b-[0.5px] border-[var(--clue-border-table)] px-6 text-[var(--clue-content-subtle)]`}
         >
-          No accounts match this search.
+          {workspaceIsEmpty
+            ? "No accounts exist in this workspace yet."
+            : "No accounts match this search."}
         </div>
       )}
     </div>

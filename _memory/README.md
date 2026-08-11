@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-11-fi2-slice1-accounts-auth-cutover.md` — FI-2 Slice 1 removes every
+  Accounts/Contacts runtime fixture and legacy workspace-header path, shares one authenticated
+  server/BFF transport, renders the durable zero-account state, records focused/frontend/build/DB
+  evidence, and leaves the signed-in browser acceptance explicitly pending.
 - `2026-08-06-m8d-r9-parallel-execution.md` — R9 accepted: exact-wave dependency checks,
   atomic budget/provider admission, concurrent Exa/Sumble execution, partial-result joining,
   callback-race-safe composite waits, cold-resume/crash replay, DSAR, and isolated-DB evidence.

@@ -8,10 +8,9 @@ import { z } from "zod";
  * rule. The repositories above it choose fixture-or-HTTP; nothing below it
  * (models, hooks, components) knows a network exists.
  *
- * **Configuration — `CLUE_PROJECTS_API_BASE_URL`.** Per-flow, exactly like the
- * accounts flow's `CLUE_ACCOUNTS_API_BASE_URL`, and for the same reason: one
- * app-wide switch meant configuring one flow broke another. Unset means
- * fixtures.
+ * **Configuration — `CLUE_PROJECTS_API_BASE_URL`.** This remains a project-flow
+ * switch until that flow completes its own cutover. Accounts/Contacts are
+ * live-only and no longer share this fixture-selection pattern.
  *
  * **It is a same-origin path prefix, not an origin.** The chat surface is
  * driven from the browser (streaming, turn submission, gate answers), and Lane
