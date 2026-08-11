@@ -85,14 +85,28 @@ Errors use the standard envelope `{"error": {"code", "message", "requestId"}}`; 
 codes: `AUTHENTICATION_REQUIRED` (401), `PROVISIONING_CONFLICT` (409), 422 for validation.
 On success the frontend exits to `/session/establish`, which lands the user in the app.
 
-## Workspace setup (slice 2 — NOT yet implemented)
+## Workspace setup (slice 2 — implemented 2026-08-12)
 
-The proposed `POST …/setup` + progress read survive in spirit but bind to the real Stage-0
-recon surface (FI-4 D-4/D-5, ratified: granular per-field events, no fake progress; checklist
-groups per D-6 incl. the competitors/buyers group; brand-kit item dummy until the design
-branch merges — see `brand-kit.md`). Until slice 2 lands, the setting-up/finalizing screens
-remain presentation-only theatre reachable in fixture mode; the authenticated flow exits to
-the app straight from the profile step and does not traverse them.
+`POST /stage0/setup` (BFF: `/api/clue/stage0/setup`, 202) captures the provisioned company
+website as a durable artifact, records the `onboarding_input` (kind `website`, actor `human`),
+and drives the governed `start_recon` — fast lane (≤ tier 2, 5¢ envelope) then background lane
+(≤ tier 3, 100¢) via the D-4c kicker, all ids deterministic so retries are replays.
+`GET /stage0/setup/current` serves lane-level truth resolved through the provisioning record:
+`{status, recon_run_id, fast_status, background_status, company_website}` where
+`status: "complete"` means the FAST lane finished — the release-into-the-app signal. The
+setting-up screen polls it at 1.5s; every tick maps 1:1 to a durable lane row; the 3.2s timer
+survives only in fixture mode. Items shown in clerk mode: the fast company-research lane, the
+background deep-research lane, and the brand-kit item as the ratified explicit dummy.
+
+**Honest limitation, recorded:** recon currently runs with an EMPTY claim extractor — no
+production ClaimExtractor exists in the repo. The fast lane resolves the client, scrapes the
+official site under target-lock, captures durable snapshot evidence, and accounts cost, but
+drafts **no `client.*` facts from scraped text**; `GET /stage0/recon/{id}/brief` returns
+`facts: {}`. The interview (project kickoff) remains the tier-1 `client.*` source; the
+LLM extractor is a named, separately-scoped work item (rides naturally with slice 3's
+granular-events work). `CLUE_SCRAPE_BACKEND=scrapling` (cost 0) is the honest backend until
+that lands. Slice 3 (D-5/D-6): per-field events + the four ratified checklist groups +
+Exa-search-backed competitors/buyers fields; brand-kit flips real per `brand-kit.md`.
 
 ## Freeze-record notes (round-2 review)
 
