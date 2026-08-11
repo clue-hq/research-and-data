@@ -15,7 +15,9 @@ composition root:
 * **The error envelope** — FI-1's ``{"error": {"code", "message", "requestId"}}``, the shape
   `apps/frontend/docs/api-contracts/accounts.md` already documents. Handlers are **path-scoped** to
   :data:`FRONTEND_READ_PREFIX` and delegate every other path back to the framework default, so the
-  B4 projection routes keep their ``{"detail": …}`` shape.
+  B4 projection routes keep their ``{"detail": …}`` shape. The envelope remains installed when the
+  feature flag is off: routes are still absent/404, but an operator can correlate that configuration
+  failure by request id instead of receiving an opaque framework response.
 * **CORS** — standard ``CORSMiddleware``, added only when ``settings.frontend_cors_allow_origins``
   is non-empty. Empty is the default and adds no middleware at all, so a same-origin/Next-proxy
   deployment is byte-identical to today.
@@ -245,87 +247,79 @@ def build_frontend_read_probe_router(*, settings: Settings) -> APIRouter:
 def install_frontend_read_surface(
     app: FastAPI, *, settings: Settings, conn_factory: ConnFactory
 ) -> None:
-    """Mount the routers and, when enabled, the envelope middleware + exception handlers.
+    """Mount enabled routers and always own errors under the reserved frontend-read prefix.
 
-    Both halves stay inert by default (flag off, origins empty). CORS is installed independently of
-    the router flag — it is a transport concern of the whole process — and is added **last** so it
-    ends up outermost, wrapping the envelope middleware whose 500 responses a browser must be able
-    to read.
+    The flag controls route availability only. Even while it is off, the prefix returns the stable
+    error envelope and request id so the frontend can distinguish configuration from an empty
+    workspace. Every handler delegates off-prefix unchanged. CORS is installed independently of the
+    router flag and is added **last** so it wraps the envelope middleware.
     """
 
     if settings.frontend_read_enabled:
         app.include_router(build_frontend_read_probe_router(settings=settings))
         app.include_router(build_frontend_read_router(settings=settings, conn_factory=conn_factory))
 
-        @app.middleware("http")
-        async def _frontend_read_envelope(
-            request: Request, call_next: Callable[[Request], Awaitable[Response]]
-        ) -> Response:
-            """Stamp the request id and turn an in-prefix unhandled error into the envelope here —
-            inside the CORS layer, so the response carries the CORS headers a browser needs."""
+    @app.middleware("http")
+    async def _frontend_read_envelope(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """Stamp the request id and envelope in-prefix crashes inside the CORS layer."""
 
-            if not _in_scope(request):
-                return await call_next(request)
-            resolved = request_id(request)
-            try:
-                response = await call_next(request)
-            except Exception:
-                # Swallowed on purpose: ``ServerErrorMiddleware`` would answer outside CORS. The
-                # traceback is logged here so nothing is lost by not re-raising.
-                log.exception(
-                    "frontend_read.unhandled_error",
-                    path=request.url.path,
-                    request_id=resolved,
-                )
-                return error_envelope(
-                    request,
-                    status_code=500,
-                    code="INTERNAL_ERROR",
-                    message="internal server error",
-                )
-            response.headers.setdefault(REQUEST_ID_HEADER, resolved)
-            return response
-
-        async def _http_exception_handler(request: Request, exc: Exception) -> Response:
-            http_exc = cast(StarletteHTTPException, exc)
-            if not _in_scope(request):
-                return await default_http_exception_handler(request, http_exc)
-            code, message = _envelope_parts(http_exc)
-            return error_envelope(
-                request, status_code=http_exc.status_code, code=code, message=message
+        if not _in_scope(request):
+            return await call_next(request)
+        resolved = request_id(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            # Swallowed on purpose: ``ServerErrorMiddleware`` would answer outside CORS. The
+            # traceback is logged here so nothing is lost by not re-raising.
+            log.exception(
+                "frontend_read.unhandled_error",
+                path=request.url.path,
+                request_id=resolved,
             )
-
-        async def _validation_exception_handler(request: Request, exc: Exception) -> Response:
-            validation_exc = cast(RequestValidationError, exc)
-            if not _in_scope(request):
-                return await default_validation_exception_handler(request, validation_exc)
-            return error_envelope(
-                request,
-                status_code=422,
-                code="VALIDATION_ERROR",
-                message=_validation_message(validation_exc),
-            )
-
-        async def _unhandled_exception_handler(request: Request, exc: Exception) -> Response:
-            """The outer backstop. In practice the middleware above answers every in-prefix error;
-            this catches only what escapes it (an error raised inside CORS, or in that error path).
-
-            Off-prefix it re-raises, so behaviour stays equivalent to this surface not existing —
-            the server's own fallback produces the 500 response and logs the traceback.
-            """
-
-            if not _in_scope(request):
-                raise exc
             return error_envelope(
                 request,
                 status_code=500,
                 code="INTERNAL_ERROR",
                 message="internal server error",
             )
+        response.headers.setdefault(REQUEST_ID_HEADER, resolved)
+        return response
 
-        app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
-        app.add_exception_handler(RequestValidationError, _validation_exception_handler)
-        app.add_exception_handler(Exception, _unhandled_exception_handler)
+    async def _http_exception_handler(request: Request, exc: Exception) -> Response:
+        http_exc = cast(StarletteHTTPException, exc)
+        if not _in_scope(request):
+            return await default_http_exception_handler(request, http_exc)
+        code, message = _envelope_parts(http_exc)
+        return error_envelope(request, status_code=http_exc.status_code, code=code, message=message)
+
+    async def _validation_exception_handler(request: Request, exc: Exception) -> Response:
+        validation_exc = cast(RequestValidationError, exc)
+        if not _in_scope(request):
+            return await default_validation_exception_handler(request, validation_exc)
+        return error_envelope(
+            request,
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message=_validation_message(validation_exc),
+        )
+
+    async def _unhandled_exception_handler(request: Request, exc: Exception) -> Response:
+        """Outer backstop for in-prefix failures that escape the envelope middleware."""
+
+        if not _in_scope(request):
+            raise exc
+        return error_envelope(
+            request,
+            status_code=500,
+            code="INTERNAL_ERROR",
+            message="internal server error",
+        )
+
+    app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
+    app.add_exception_handler(RequestValidationError, _validation_exception_handler)
+    app.add_exception_handler(Exception, _unhandled_exception_handler)
 
     # Added last so it is the outermost user middleware: it must wrap the envelope middleware, and
     # answer a preflight before anything else sees it.

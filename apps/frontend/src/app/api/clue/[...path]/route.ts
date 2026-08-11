@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { ClueAuthenticationError } from "@/auth/backend";
+import { ClueAuthenticationError } from "@/auth/errors";
 import { isAuthenticationEnabled } from "@/auth/config";
 import {
   backendPath,
@@ -14,8 +14,19 @@ import { WORKSPACE_COOKIE } from "@/features/session/model/session";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
-function errorResponse(status: number, code: string, message: string) {
-  return Response.json({ error: { code, message } }, { status });
+function errorResponse(
+  status: number,
+  code: string,
+  message: string,
+  requestId: string | null = null,
+) {
+  return Response.json(
+    { error: { code, message, requestId } },
+    {
+      status,
+      headers: requestId ? { "X-Request-Id": requestId } : undefined,
+    },
+  );
 }
 
 async function proxyRequest(request: Request, context: RouteContext) {
@@ -31,7 +42,12 @@ async function proxyRequest(request: Request, context: RouteContext) {
     backendContext = await authenticatedBackendContext();
   } catch (error) {
     if (error instanceof ClueAuthenticationError) {
-      return errorResponse(error.status, error.code, error.message);
+      return errorResponse(
+        error.status,
+        error.code,
+        error.message,
+        error.requestId,
+      );
     }
     throw error;
   }

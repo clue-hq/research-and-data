@@ -1,7 +1,9 @@
 "use server";
 
-import type { AccountsResponse } from "../model/account";
-import { getAccounts } from "./accounts.repository";
+import {
+  readAccountsResult,
+  type AccountsReadResult,
+} from "./accounts-read-result";
 
 /**
  * Fetches the next keyset page for the accounts table.
@@ -16,6 +18,6 @@ import { getAccounts } from "./accounts.repository";
  */
 export async function loadMoreAccounts(
   cursor: string,
-): Promise<AccountsResponse> {
-  return getAccounts({ cursor });
+): Promise<AccountsReadResult> {
+  return readAccountsResult({ cursor });
 }

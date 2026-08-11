@@ -898,3 +898,32 @@ server actions are refused.
 business description and the contact overview have no wire field; each shows
 "composed once this research completes" rather than a fabricated paragraph. The
 contact page's hard-coded "Last updated yesterday" is gone for the same reason.
+
+### Typed Account recovery (FI-2 slice 2, 2026-08-11)
+
+Expected Account-list bootstrap failures are return values at the Accounts
+data seam, not uncaught Server Component exceptions. The page renders one of
+five recovery states from this closed frontend vocabulary; it never renders a
+backend message, framework trace, exception digest, status code, or stack.
+
+| Recovery kind | Transport evidence | User action |
+| --- | --- | --- |
+| `session_expired` | `401`, `AUTHENTICATION_REQUIRED`, or `SESSION_INVALID` | Sign in again. |
+| `workspace_selection` | `WORKSPACE_SELECTION_REQUIRED`; during the auth-contract transition, the existing `WORKSPACE_FORBIDDEN` plus the exact safe server reason `a workspace selection is required` | Focus the authenticated workspace selector and choose a membership. |
+| `forbidden` | `WORKSPACE_FORBIDDEN`, `PERMISSION_DENIED`, `IDENTITY_NOT_PROVISIONED`, `USER_DISABLED`, `MEMBERSHIP_STATE_CHANGED`, or another `403` | Open the access-denied recovery surface; never retry in place. |
+| `service_unavailable` | Network refusal/timeout, `AUTHENTICATION_UNAVAILABLE`, `408`, `429`, or `5xx` | Retry the Account read. This is the only state with a retry action. |
+| `contract_error` | Generic route `404`, validation/configuration status, malformed success JSON, Zod mismatch, or missing frontend/backend configuration | Contact support with the safe request reference when one exists; no reload loop. |
+
+The open backend `error.code` set remains intact below this mapping. Unknown
+expected HTTP refusals fail closed into `contract_error`; unexpected programming
+exceptions still throw so engineering error boundaries and observability see a
+real defect. The request id is copied into the recovery value, but the backend
+message is discarded before the value reaches a component.
+
+The protected session bootstrap uses the same distinction for failures that
+occur before an Account page can render: provider/session service outages get a
+retryable protected-service state, and frontend/backend configuration or wire
+schema failures get a non-retryable support state. Authentication expiry and
+membership refusal continue through the established sign-in and access-denied
+routes. An absent, stale, or ambiguous workspace cookie routes to the explicit
+workspace chooser; the frontend no longer silently selects the first membership.

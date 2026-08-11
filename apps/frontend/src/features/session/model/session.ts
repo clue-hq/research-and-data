@@ -43,11 +43,12 @@ export function resolveWorkspaceMembership(
   session: AuthenticatedSession,
   requestedWorkspaceId: string | null | undefined,
 ): SessionMembership | null {
-  return (
-    session.memberships.find(
-      (membership) => membership.workspace_id === requestedWorkspaceId,
-    ) ??
-    session.memberships[0] ??
-    null
-  );
+  if (requestedWorkspaceId) {
+    return (
+      session.memberships.find(
+        (membership) => membership.workspace_id === requestedWorkspaceId,
+      ) ?? null
+    );
+  }
+  return null;
 }

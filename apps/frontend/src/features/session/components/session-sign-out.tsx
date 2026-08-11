@@ -5,10 +5,16 @@ import { useTransition } from "react";
 
 export function SessionSignOut({
   className,
+  label = "Sign out",
   onClearWorkspace,
+  pendingLabel = "Signing out…",
+  redirectUrl = "/sign-in",
 }: Readonly<{
   className?: string;
+  label?: string;
   onClearWorkspace: () => Promise<void>;
+  pendingLabel?: string;
+  redirectUrl?: string;
 }>) {
   const { signOut } = useClerk();
   const [pending, startTransition] = useTransition();
@@ -22,13 +28,13 @@ export function SessionSignOut({
           try {
             await onClearWorkspace();
           } finally {
-            await signOut({ redirectUrl: "/sign-in" });
+            await signOut({ redirectUrl });
           }
         });
       }}
       type="button"
     >
-      {pending ? "Signing out…" : "Sign out"}
+      {pending ? pendingLabel : label}
     </button>
   );
 }

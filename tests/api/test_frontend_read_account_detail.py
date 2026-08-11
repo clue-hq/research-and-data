@@ -1390,6 +1390,8 @@ def test_the_route_is_absent_when_the_flag_is_off() -> None:
                     f"{_BASE}/{fixture.acme}", headers={"X-Workspace-Id": _WS}
                 )
             assert response.status_code == 404
+            assert response.json()["error"]["code"] == "NOT_FOUND"
+            assert response.json()["error"]["requestId"] == response.headers["X-Request-Id"]
 
     run_async(scenario())
 

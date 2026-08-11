@@ -105,9 +105,21 @@ def test_the_flag_mounts_the_probe_router() -> None:
     assert ("GET", f"{FRONTEND_READ_PREFIX}/accounts") in _scoped_paths(enabled)
 
 
-def test_flag_off_the_app_serves_no_frontend_routes() -> None:
+def test_flag_off_keeps_routes_absent_but_returns_a_correlatable_error() -> None:
     with TestClient(_app(_settings())) as client:
-        assert client.get(f"{FRONTEND_READ_PREFIX}/health").status_code == 404
+        response = client.get(f"{FRONTEND_READ_PREFIX}/health")
+        assert response.status_code == 404
+        request_id = _assert_envelope(response.json(), code="NOT_FOUND")
+        assert response.headers[REQUEST_ID_HEADER] == request_id
+
+
+def test_flag_off_error_ownership_remains_prefix_scoped() -> None:
+    with TestClient(_app(_settings())) as client:
+        response = client.get("/not-a-frontend-read-route")
+        assert response.status_code == 404
+        assert "detail" in response.json()
+        assert "error" not in response.json()
+        assert REQUEST_ID_HEADER not in response.headers
 
 
 def test_flag_on_the_app_serves_the_router_health_probe() -> None:

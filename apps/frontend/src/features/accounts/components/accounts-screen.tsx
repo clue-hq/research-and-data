@@ -1,8 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { ApplicationShell } from "@/components/shell/application-shell";
 import type { Account, AccountsResponse } from "../model/account";
 import type { AccountDetail } from "../model/account-detail";
+import {
+  ACCOUNT_RECOVERY_COPY,
+  type AccountRecovery,
+} from "../model/account-recovery";
 import { useAccountsScreenController } from "../hooks/use-accounts-screen-controller";
 import readability from "./account-readability.module.css";
 import { AccountPreviewDrawer } from "./account-preview-drawer";
@@ -23,7 +28,7 @@ function AccountsFooter({
   hasMore,
   isLoadingMore,
   loadedCount,
-  loadError,
+  loadRecovery,
   onLoadMore,
   totalCount,
 }: {
@@ -32,7 +37,7 @@ function AccountsFooter({
   hasMore: boolean;
   isLoadingMore: boolean;
   loadedCount: number;
-  loadError: string | null;
+  loadRecovery: AccountRecovery | null;
   onLoadMore: () => void;
   totalCount: number;
 }) {
@@ -63,9 +68,35 @@ function AccountsFooter({
           {isLoadingMore ? "Loading…" : "Load more"}
         </button>
       ) : null}
-      {loadError ? (
+      {loadRecovery ? (
         <span role="alert" className="text-[var(--clue-content-subtle)]">
-          {loadError}
+          {ACCOUNT_RECOVERY_COPY[loadRecovery.kind].title}.{" "}
+          {loadRecovery.kind === "session_expired" ? (
+            <Link className="underline" href="/sign-in?reason=session_expired">
+              Sign in
+            </Link>
+          ) : loadRecovery.kind === "workspace_selection" ? (
+            <a className="underline" href="#clue-workspace-selector">
+              Choose workspace
+            </a>
+          ) : loadRecovery.kind === "forbidden" ? (
+            <Link
+              className="underline"
+              href="/access-denied?code=WORKSPACE_FORBIDDEN"
+            >
+              View access options
+            </Link>
+          ) : loadRecovery.kind === "contract_error" ? (
+            <>
+              Contact support
+              {loadRecovery.requestId
+                ? ` with reference ${loadRecovery.requestId}`
+                : ""}
+              .
+            </>
+          ) : (
+            "Use Load more to try again."
+          )}
         </span>
       ) : null}
     </div>
@@ -128,7 +159,7 @@ export function AccountsScreen({
           hasMore={controller.hasMore}
           isLoadingMore={controller.isLoadingMore}
           loadedCount={controller.loadedCount}
-          loadError={controller.loadError}
+          loadRecovery={controller.loadRecovery}
           onLoadMore={controller.loadMore}
           totalCount={controller.totalCount}
         />

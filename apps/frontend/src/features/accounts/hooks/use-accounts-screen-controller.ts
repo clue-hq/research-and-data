@@ -1,5 +1,6 @@
 import { useMemo, useState, useTransition } from "react";
 import type { Account, AccountsResponse } from "../model/account";
+import type { AccountRecovery } from "../model/account-recovery";
 import { loadMoreAccounts } from "../data/accounts.actions";
 import {
   defaultAccountColumnOrder,
@@ -55,7 +56,8 @@ export function useAccountsScreenController(
   // are reported separately because they are different numbers.
   const [nextCursor, setNextCursor] = useState(initialMeta.nextCursor);
   const [totalCount, setTotalCount] = useState(initialMeta.total);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadRecovery, setLoadRecovery] =
+    useState<AccountRecovery | null>(null);
   const [isLoadingMore, startLoadingMore] = useTransition();
   const [filters, setFilters] = useState(createDefaultAccountFilterRules);
   const [sort, setSort] = useState<AccountSort>("default");
@@ -177,7 +179,12 @@ export function useAccountsScreenController(
 
     startLoadingMore(async () => {
       try {
-        const response = await loadMoreAccounts(cursor);
+        const result = await loadMoreAccounts(cursor);
+        if (result.status === "recovery") {
+          setLoadRecovery(result.recovery);
+          return;
+        }
+        const { response } = result;
         setAccountRows((current) => {
           // The backend can only append here, but a retried action must not
           // duplicate rows the table already holds.
@@ -189,11 +196,14 @@ export function useAccountsScreenController(
         });
         setNextCursor(response.meta.nextCursor);
         setTotalCount(response.meta.total);
-        setLoadError(null);
+        setLoadRecovery(null);
       } catch (error) {
-        setLoadError(
-          error instanceof Error ? error.message : "Could not load more accounts.",
-        );
+        console.error("Unexpected Accounts pagination failure", error);
+        setLoadRecovery({
+          kind: "contract_error",
+          requestId: null,
+          retryable: false,
+        });
       }
     });
   }
@@ -230,7 +240,7 @@ export function useAccountsScreenController(
     hasMore: nextCursor !== null,
     isLoadingMore,
     loadedCount: accountRows.length,
-    loadError,
+    loadRecovery,
     loadMore,
     totalCount,
     columnWidths,
