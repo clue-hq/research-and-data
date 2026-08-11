@@ -16,12 +16,20 @@ RoleKey = Literal["owner", "admin", "operator", "viewer"]
 
 
 class PlatformUser(BaseModel):
-    """A durable Clue human identity; provider identifiers never replace ``user_id``."""
+    """A durable Clue human identity; provider identifiers never replace ``user_id``.
+
+    ``first_name``/``last_name``/``job_role`` are the onboarding profile (FI-4 D-3). They are
+    personal data — ``erase_platform_user`` clears all three alongside ``display_name``.
+    ``job_role`` is a self-described job title and never an authorization role.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     user_id: str
     display_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    job_role: str | None = None
     status: UserStatus
     created_at: UtcDatetime
     suspended_at: UtcDatetime | None = None

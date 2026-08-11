@@ -139,6 +139,16 @@ class PrincipalService:
         session = await self._authenticator.authenticate(request)
         return await self._identity_resolver.resolve(session)
 
+    async def external_session(self, request: AuthenticationRequest) -> ExternalSession:
+        """Authenticate the provider session WITHOUT requiring a provisioned Clue identity.
+
+        This is the provisioning seam (FI-4 D-2): a brand-new Clerk user has no
+        ``auth_identity`` yet, so ``identity()`` would refuse with IDENTITY_NOT_PROVISIONED.
+        The returned session is short-lived provider material — callers may hand its subject
+        to the provisioning transaction and must never persist it as domain identity.
+        """
+        return await self._authenticator.authenticate(request)
+
     async def session_view(self, request: AuthenticationRequest) -> AuthenticatedSessionView:
         identity = await self.identity(request)
         memberships = tuple(

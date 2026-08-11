@@ -74,3 +74,10 @@ class PermissionDenied(PrincipalError):
 class MembershipStateChanged(PrincipalError):
     code = "MEMBERSHIP_STATE_CHANGED"
     status_code = 409
+
+
+class ProvisioningConflict(PrincipalError):
+    """Self-serve provisioning cannot proceed for this identity (suspended/inconsistent state)."""
+
+    code = "PROVISIONING_CONFLICT"
+    status_code = 409

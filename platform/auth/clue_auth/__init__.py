@@ -53,9 +53,11 @@ from clue_auth.principal import (
 )
 from clue_auth.provisioning import (
     ProvisionedIdentity,
+    ProvisionedSelfServeWorkspace,
     ProvisionedWorkspaceOwner,
     accept_workspace_invitation,
     hash_invitation_token,
+    provision_self_serve_workspace,
     provision_workspace_owner,
 )
 from clue_auth.resolution import (
@@ -95,6 +97,7 @@ from clue_auth.store import (
     suspend_workspace_membership,
     unlink_auth_identity,
     update_platform_user_display_name,
+    update_platform_user_profile,
 )
 
 __all__ = [
@@ -129,6 +132,7 @@ __all__ = [
     "PrincipalError",
     "PrincipalService",
     "ProvisionedIdentity",
+    "ProvisionedSelfServeWorkspace",
     "ProvisionedWorkspaceOwner",
     "ROLE_PERMISSIONS",
     "ROLE_POLICY_VERSION",
@@ -165,6 +169,7 @@ __all__ = [
     "new_membership_id",
     "new_user_id",
     "permissions_for_role",
+    "provision_self_serve_workspace",
     "provision_workspace_owner",
     "reactivate_platform_user",
     "reactivate_workspace_membership",
@@ -180,4 +185,5 @@ __all__ = [
     "suspend_workspace_membership",
     "unlink_auth_identity",
     "update_platform_user_display_name",
+    "update_platform_user_profile",
 ]

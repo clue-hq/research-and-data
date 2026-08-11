@@ -44,7 +44,10 @@ def new_invitation_id() -> str:
     return "wsi_" + uuid4().hex
 
 
-_USER_COLUMNS = "user_id, display_name, status, created_at, suspended_at, disabled_at"
+_USER_COLUMNS = (
+    "user_id, display_name, first_name, last_name, job_role, "
+    "status, created_at, suspended_at, disabled_at"
+)
 _IDENTITY_COLUMNS = (
     "auth_identity_id, user_id, provider_key, provider_subject, status, linked_at, revoked_at"
 )
@@ -107,6 +110,55 @@ async def update_platform_user_display_name(
         {
             "user_id": user_id,
             "display_name": display_name.strip() if display_name and display_name.strip() else None,
+        },
+    )
+    row = result.mappings().first()
+    if row is None:
+        raise LifecycleTransitionError(f"platform_user {user_id!r} does not exist")
+    return _model(PlatformUser, row)
+
+
+def _optional(value: str | None) -> str | None:
+    """Normalize an optional profile value: whitespace-only and empty become NULL."""
+
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+async def update_platform_user_profile(
+    conn: AsyncConnection,
+    user_id: str,
+    *,
+    first_name: str | None,
+    last_name: str | None,
+    job_role: str | None,
+    display_name: str | None = None,
+) -> PlatformUser:
+    """Write the onboarding profile fields (PUT semantics — every field is set as given).
+
+    ``display_name`` defaults to "first last" when not supplied explicitly, so existing
+    ``display_name`` consumers keep working without reading the split fields.
+    """
+
+    first = _optional(first_name)
+    last = _optional(last_name)
+    display = _optional(display_name)
+    if display is None and (first or last):
+        display = " ".join(part for part in (first, last) if part)
+    result = await conn.execute(
+        text(
+            f"UPDATE platform_user SET first_name = :first_name, last_name = :last_name, "
+            f"job_role = :job_role, display_name = :display_name "
+            f"WHERE user_id = :user_id RETURNING {_USER_COLUMNS}"
+        ),
+        {
+            "user_id": user_id,
+            "first_name": first,
+            "last_name": last,
+            "job_role": _optional(job_role),
+            "display_name": display,
         },
     )
     row = result.mappings().first()
@@ -798,7 +850,8 @@ async def erase_platform_user(
     at = now or datetime.now(UTC)
     user_result = await conn.execute(
         text(
-            "UPDATE platform_user SET display_name = NULL, status = 'disabled', "
+            "UPDATE platform_user SET display_name = NULL, first_name = NULL, "
+            "last_name = NULL, job_role = NULL, status = 'disabled', "
             "disabled_at = COALESCE(disabled_at, :now) WHERE user_id = :user_id RETURNING user_id"
         ),
         {"user_id": user_id, "now": at},
