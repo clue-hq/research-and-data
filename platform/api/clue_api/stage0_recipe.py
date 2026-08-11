@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import text
 
+from clue_api.stage0_project_scope import resolve_stage0_project_scope
 from clue_core import EntityId
 from clue_db import ConnFactory
 from clue_execution import (
@@ -124,6 +125,51 @@ class Stage0StepPinProvider:
         declared_context = body.get("declared_context")
         scope_body = nested_scope if isinstance(nested_scope, dict) else {}
         ingestion_context = declared_context if isinstance(declared_context, dict) else {}
+
+        trusted_stage0_scope = None
+        if step.tool_version == "2" and step.tool_name in {
+            "evaluate_stage0_readiness",
+            "synthesize_icps",
+        }:
+            async with self._conn_factory() as conn:
+                trusted_stage0_scope = await resolve_stage0_project_scope(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    execution_id=ctx.execution_id,
+                )
+            if trusted_stage0_scope is None:
+                raise ExecutionConflict(
+                    "cannot pin a Stage-0 v2 tool without an execution-bound project"
+                )
+            requested.extend(
+                (
+                    await self._current(kind="brand", key=trusted_stage0_scope.brand_id, ctx=ctx),
+                    await self._current(
+                        kind="project", key=trusted_stage0_scope.project_id, ctx=ctx
+                    ),
+                )
+            )
+            if trusted_stage0_scope.product_id is not None:
+                requested.append(
+                    await self._current(
+                        kind="product", key=trusted_stage0_scope.product_id, ctx=ctx
+                    )
+                )
+            if (
+                trusted_stage0_scope.client_entity_id is not None
+                and trusted_stage0_scope.client_kb_version is not None
+            ):
+                requested.append(
+                    await self._exact(
+                        kind="client_kb",
+                        key=(
+                            f"{trusted_stage0_scope.client_entity_id}|"
+                            f"{trusted_stage0_scope.product_id or '-'}"
+                        ),
+                        version=str(trusted_stage0_scope.client_kb_version),
+                        ctx=ctx,
+                    )
+                )
 
         artifact_pairs: set[tuple[str, str]] = set()
         artifact_key = body.get("artifact_key")

@@ -111,30 +111,16 @@ async def confirm_icp(
         await load_icp_feedback_pack(conn)  # the icp.* feedback field must exist before we write it
 
         base = _select(proposal, _EMPTY_EDITS)
-        confirmed = _select(proposal, edits)
-        diff = _diff(base, confirmed, notes=edits.notes)
-
-        rubric = _build_rubric(confirmed)
-        # The full would-be spec (all five slots), built once and reused for pre-validation, the
-        # idempotency comparison, and the write — so they can never disagree.
-        draft = ICPSpec(
+        confirmed, draft = await _compile_proposal_spec(
+            conn,
+            proposal,
+            edits,
             workspace_id=workspace_id,
-            icp_key=confirmed.icp_key,
-            created_from=ICPCreatedFrom.SYNTHESIS,
-            field_keys=confirmed.field_keys,
-            enabled_packs=confirmed.packs,
-            discovery_strategy=_discovery_strategy(confirmed),
-            source_profile_ref={"packs": list(confirmed.packs)},
-            scoring_rubric=rubric_to_slot(rubric),
-            client_entity_id=client_entity_id if client_kb_version is not None else None,
+            client_entity_id=client_entity_id,
             client_kb_version=client_kb_version,
             product_id=product_id,
         )
-        # Pre-validate against the compiled plan BEFORE persisting (append-only → no rollback of a
-        # bad spec): the compiler checks every field_key/pack exists; validate_rubric checks the
-        # rubric reads only Pass-A scoring fields. The compiler owns the plan — not authored here.
-        plan = await compile_field_plan(conn, draft)
-        validate_rubric(rubric, plan)
+        diff = _diff(base, confirmed, notes=edits.notes)
 
         active = await get_active_icp(conn, workspace_id, confirmed.icp_key)
         if active is not None and _same_selection(active, draft):
@@ -181,6 +167,86 @@ async def confirm_icp(
         diff=diff,
         estimate=estimate_campaign(estimate_inputs),
     )
+
+
+async def persist_icp_proposal_draft(
+    conn: AsyncConnection,
+    proposal: ICPProposal,
+    *,
+    workspace_id: str,
+    client_entity_id: EntityId,
+    client_kb_version: int,
+    product_id: str,
+    created_by: str | None = None,
+) -> ICPSpec:
+    """Compile and persist one synthesized proposal as an immutable draft ``icp_spec``.
+
+    This is the durable half of synthesis.  It deliberately uses the same compiler path as human
+    confirmation, but leaves the row ``draft``: synthesis may propose an executable contract;
+    only the later structured human gate may activate it.
+    """
+
+    _selection, draft = await _compile_proposal_spec(
+        conn,
+        proposal,
+        _EMPTY_EDITS,
+        workspace_id=workspace_id,
+        client_entity_id=client_entity_id,
+        client_kb_version=client_kb_version,
+        product_id=product_id,
+    )
+    return await create_icp_spec(
+        conn,
+        workspace_id=workspace_id,
+        icp_key=draft.icp_key,
+        created_from=ICPCreatedFrom.SYNTHESIS,
+        field_keys=draft.field_keys,
+        enabled_packs=draft.enabled_packs,
+        discovery_strategy=draft.discovery_strategy,
+        source_profile_ref=draft.source_profile_ref,
+        scoring_rubric=draft.scoring_rubric,
+        created_by=created_by,
+        label=proposal.label,
+        description=proposal.rationale,
+        activate=False,
+        client_entity_id=draft.client_entity_id,
+        client_kb_version=draft.client_kb_version,
+        product_id=draft.product_id,
+    )
+
+
+async def _compile_proposal_spec(
+    conn: AsyncConnection,
+    proposal: ICPProposal,
+    edits: ICPProposalEdits,
+    *,
+    workspace_id: str,
+    client_entity_id: EntityId,
+    client_kb_version: int | None,
+    product_id: str | None,
+) -> tuple[_Selection, ICPSpec]:
+    """Build and validate the one spec shape shared by draft and confirmation writes."""
+
+    confirmed = _select(proposal, edits)
+    rubric = _build_rubric(confirmed)
+    draft = ICPSpec(
+        workspace_id=workspace_id,
+        icp_key=confirmed.icp_key,
+        created_from=ICPCreatedFrom.SYNTHESIS,
+        field_keys=confirmed.field_keys,
+        enabled_packs=confirmed.packs,
+        discovery_strategy=_discovery_strategy(confirmed),
+        source_profile_ref={"packs": list(confirmed.packs)},
+        scoring_rubric=rubric_to_slot(rubric),
+        client_entity_id=client_entity_id if client_kb_version is not None else None,
+        client_kb_version=client_kb_version,
+        product_id=product_id,
+    )
+    # Validate before the append-only write. The compiler owns the field plan; the proposal and
+    # API layers never author an executable plan inline.
+    plan = await compile_field_plan(conn, draft)
+    validate_rubric(rubric, plan)
+    return confirmed, draft
 
 
 def _same_selection(active: ICPSpec, draft: ICPSpec) -> bool:

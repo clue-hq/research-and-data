@@ -112,6 +112,7 @@ from clue_api.prose_synthesis_tools import (
 from clue_api.research_directive_tools import build_research_directive_tools
 from clue_api.research_view_tools import build_research_view_tools
 from clue_api.stage0_inspection_tools import build_stage0_inspection_tools
+from clue_api.stage0_project_tools import stage0_project_tools
 from clue_api.stage0_tools import stage0_tools
 from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
@@ -2716,7 +2717,7 @@ def build_toolbelt(
     for tool_type in _TOOL_TYPES:
         # C6 keeps the v1 address for exact historical pins, but the name-only alias must elect
         # the governed v2 implementation.  ToolRegistry deliberately refuses two defaults.
-        make_default = tool_type is not ProfileContactTool
+        make_default = tool_type not in {ProfileContactTool, SynthesizeIcpsTool}
         registry.register(
             quarantine_entity_research_tool(
                 tool_type(
@@ -2843,6 +2844,19 @@ def build_toolbelt(
         # value is then refused rather than written unvouched-for — which is exactly the pre-§6c
         # behaviour, so an ungatewayed composition is never *worse* than before.
         entailment_judge=entailment_judge,
+    ):
+        registry.register(
+            tool,
+            # Slice 1 retains @1 for historical recipe replay; the trusted @2 evaluator is the
+            # name-only default and the only version pinned by the active agent profile.
+            make_default=tool.name != "evaluate_stage0_readiness",
+        )
+    for tool in stage0_project_tools(
+        conn_factory=conn_factory,
+        policy=DEFAULT_STAGE0_POLICY,
+        gateway=gateway,
+        synthesis_model=resolved_settings.synthesis_model,
+        statement_evidence=statement_evidence,
     ):
         registry.register(tool, make_default=True)
     for tool in build_research_directive_tools(

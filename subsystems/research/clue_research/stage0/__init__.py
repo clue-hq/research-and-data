@@ -88,7 +88,7 @@ from clue_research.stage0.governed import (
     submit_onboarding_input,
     transition_recon_lane,
 )
-from clue_research.stage0.icp_confirm import confirm_icp
+from clue_research.stage0.icp_confirm import confirm_icp, persist_icp_proposal_draft
 from clue_research.stage0.icp_estimate import EstimateInputs, estimate_campaign
 from clue_research.stage0.icp_fields import (
     ICP_CONFIRM_DIFF,
@@ -249,6 +249,7 @@ __all__ = [
     "MAX_PROJECT_STATEMENTS",
     "DEFAULT_SYNTHESIS_MODEL",
     "confirm_icp",
+    "persist_icp_proposal_draft",
     "estimate_campaign",
     "EstimateInputs",
     "IcpConfirmedHandler",

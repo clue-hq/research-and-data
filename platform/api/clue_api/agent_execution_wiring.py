@@ -79,6 +79,7 @@ from clue_toolbelt import (
     ToolInvoker,
     ToolRegistry,
     ToolResult,
+    validate_tool_output_references,
 )
 
 __all__ = [
@@ -1760,9 +1761,13 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             action_ref=self._action_ref,
         )
         descriptor = self._tools.descriptor(step.tool.name, step.tool.version)
-        validated_output = descriptor.output_model.model_validate(result.references)
         canonical_result = result.model_copy(
-            update={"references": validated_output.model_dump(mode="json")}
+            update={
+                "references": validate_tool_output_references(
+                    descriptor.output_model,
+                    result.references,
+                )
+            }
         )
         result_ref = await self._artifacts.persist_body(
             workspace_id=self._constitution.workspace_id,

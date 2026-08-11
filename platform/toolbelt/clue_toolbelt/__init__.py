@@ -67,7 +67,7 @@ from clue_toolbelt.invoker import (
     ToolInvoker,
 )
 from clue_toolbelt.registry import ToolRegistry
-from clue_toolbelt.runner import invoke_tool
+from clue_toolbelt.runner import invoke_tool, validate_tool_output_references
 
 __all__ = [
     # envelope
@@ -91,6 +91,7 @@ __all__ = [
     "ToolRegistry",
     # runner
     "invoke_tool",
+    "validate_tool_output_references",
     # idempotency (A9)
     "IdempotencyStore",
     "DbIdempotencyStore",

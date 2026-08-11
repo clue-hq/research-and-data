@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slice 0 implemented. Hardening Slices 1-6 remain pending. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-1 implemented. Hardening Slices 2-6 remain pending. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -27,9 +27,9 @@ network failure. Presentation components do not call the API directly.
 
 This amendment replaces the browser-probe defects documented in
 `.context/defect-log.md` with one durable authority chain. Slice 0 freezes the
-contracts and repairs the two stale test signals; it does **not** register the
-new tool versions, migrate a table, alter runtime behavior, or enable a control.
-Those changes remain owned by hardening Slices 1-6.
+contracts and repairs the two stale test signals. Slice 1 registers the trusted
+readiness and synthesis tools, persists their durable records, and promotes the
+active Stage-0 recipe/profile. Gate and UI changes remain owned by Slices 2-6.
 
 - `synthesize_icps` is available to the governed Stage-0 conversation profile.
   A successful call persists one or more draft, versioned `icp_spec` rows and
@@ -51,9 +51,10 @@ Those changes remain owned by hardening Slices 1-6.
   authority.
 - Stage-0 readiness input metrics are engine-derived from the pinned,
   product-scoped Client-KB claims. Coverage and verified-claim counts use the
-  substantive Client-KB field policy; an empty configured required-field list
-  cannot turn an empty knowledge base into a misleading ready state. The wire
-  field is named `readiness_policy_version`.
+  effective expected-field set: the substantive Client-KB baseline plus any
+  tenant-local required-field extensions. An empty configured extension list
+  cannot erase the baseline or turn an empty knowledge base into a misleading
+  ready state. The wire field is named `readiness_policy_version`.
 - Home project creation accepts an optional explicit `project_name`. When it is
   absent, the server derives a bounded durable name from the initial brief.
   The same stored title feeds bootstrap, project header, and sidebar reads;
@@ -73,8 +74,8 @@ Gallery rules retained later in this document as implementation history.
 
 The existing `evaluate_stage0_readiness@1` and `synthesize_icps@1` schemas remain
 unchanged for historical replay. Their corrected successors are new versioned
-contracts; Slice 1 must register them rather than silently changing an `@1`
-schema already pinned by profiles and receipts.
+contracts. Slice 1 registers their `@2` successors without silently changing an
+`@1` schema already pinned by profiles and receipts.
 
 `evaluate_stage0_readiness@2` exposes exactly one model-authored input:
 
@@ -92,12 +93,17 @@ cannot supply or override them. Its reference-first output is:
   "gate": "icp_synthesis",
   "verdict": "ready",
   "coverage_ratio": 0.78,
-  "verified_claims": 7,
+  "verified_claims": 0,
   "available_field_keys": ["client.differentiator", "client.product"],
   "reason_codes": [],
   "readiness_policy_version": 1
 }
 ```
+
+The Insight Health fixture currently has seven available baseline fields out of
+nine, but those official-site claims are not independently verified; its
+authoritative metrics are therefore `coverage_ratio=7/9`,
+`available_field_keys` containing seven entries, and `verified_claims=0`.
 
 `synthesize_icps@2` has no model-authored input fields. The runtime supplies the
 exact ready Stage-0 scope and links the write to the readiness decision. It
@@ -233,7 +239,7 @@ remain server-derived and are never accepted from the browser or model.
   reload.
 - The composer keeps one visible model selector, as explicitly ruled for R8.
   Its only option is the server-advertised promoted profile
-  `head-of-abm@v23`, labelled **GPT-5.6 Terra** and backed by
+  `head-of-abm@v24`, labelled **GPT-5.6 Terra** and backed by
   `openai/gpt-5.6-terra`. The chosen profile id is accepted, persisted, and
   checked by the detached worker before the promoted profile is executed.
 - Attachments remain unavailable because this deployment has no durable upload
@@ -419,14 +425,14 @@ nothing. It requires `project.read`.
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v23",
+        "id": "head-of-abm@v24",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v23",
+    "default_agent_profile_id": "head-of-abm@v24",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,
@@ -480,7 +486,7 @@ accepts:
     }
   ],
   "attachment_refs": [],
-  "agent_profile_id": "head-of-abm@v23"
+  "agent_profile_id": "head-of-abm@v24"
 }
 ```
 
@@ -617,14 +623,14 @@ project shell:
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v23",
+        "id": "head-of-abm@v24",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v23",
+    "default_agent_profile_id": "head-of-abm@v24",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,

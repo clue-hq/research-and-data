@@ -63,9 +63,10 @@ def test_operation_id_requirements_are_explicit() -> None:
         # Its durable identity *is* the operation (``ResearchDirectiveId(operation_id)``), so a
         # retry lands on the same directive. The gate and the launch are domain-idempotent —
         # a gate is identified by the turn plus the exact revision it presents, and a launch by
-        # the confirmed directive plus its account set and budget.
+        # the confirmed directive plus its account set and budget. Slice 1's trusted readiness
+        # decision and synthesis ledger are also operation-bound.
         "draft_account_research_directive@2",
-        "evaluate_stage0_readiness@1",
+        "evaluate_stage0_readiness@2",
         "import_accounts@1",
         "profile_contact@1",
         "record_interview_answer@1",
@@ -77,6 +78,7 @@ def test_operation_id_requirements_are_explicit() -> None:
         "start_project_run@1",
         "start_recon@1",
         "submit_onboarding_input@1",
+        "synthesize_icps@2",
     }
 
     exactly_operation_idempotent = {

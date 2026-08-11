@@ -708,6 +708,13 @@ def test_materialization_is_typed_replay_safe_open_to_reads_and_version_safe() -
             assert "client.document_formats" not in available
             assert baseline_metrics["coverage_ratio"] == 0.0
 
+            effective_metrics = client_kb_readiness_metrics(
+                claims,
+                required_field_keys=("client.document_formats",),
+            )
+            assert effective_metrics["available_field_keys"] == ["client.document_formats"]
+            assert effective_metrics["coverage_ratio"] == pytest.approx(1 / 10)
+
             with pytest.raises(PermissionError, match="human authority"):
                 await set_workspace_client_kb_readiness_policy(
                     conn,

@@ -65,6 +65,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:research-task@v4",
         # Lexical, not numeric: the folder catalog sorts by address, so v10 sits beside v1.
         "skill:stage0-interview@v10",
+        "skill:stage0-interview@v11",
         "skill:stage0-interview@v2",
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
@@ -102,6 +103,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v21",
         "profile:head-of-abm@v22",
         "profile:head-of-abm@v23",
+        "profile:head-of-abm@v24",
         "profile:head-of-abm@v3",
         "profile:head-of-abm@v4",
         "profile:head-of-abm@v5",

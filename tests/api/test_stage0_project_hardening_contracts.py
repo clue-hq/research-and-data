@@ -99,6 +99,7 @@ def test_readiness_v2_returns_backend_metrics_and_never_calls_policy_an_icp_vers
 
     assert value.verified_claims == 7
     assert "readiness_policy_version" in value.model_dump(mode="json")
+    assert Stage0ReadinessV2Output.model_validate_json(value.model_dump_json()) == value
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         Stage0ReadinessV2Output.model_validate({**value.model_dump(mode="json"), "spec_version": 1})
 
@@ -120,6 +121,7 @@ def test_synthesis_v2_has_no_model_authored_scope_and_returns_durable_draft_refs
         ),
     )
     assert result.icp_specs[0].status == "draft"
+    assert SynthesizeIcpsV2Output.model_validate_json(result.model_dump_json()) == result
 
 
 def test_icp_gate_requires_a_durable_exact_subject_digest_and_stored_decisions() -> None:

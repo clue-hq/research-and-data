@@ -934,6 +934,7 @@ async def evaluate_readiness(
     ingestion_refs: Sequence[str] = (),
     agent_sufficiency_status: str = "not_evaluated",
     agent_sufficiency_ref: str | None = None,
+    additional_reason_codes: Sequence[str] = (),
     readiness_decision_id: ReadinessDecisionId | None = None,
 ) -> ReadinessSnapshotRef:
     workspace_policy = await get_workspace_client_kb_readiness_policy(
@@ -963,7 +964,11 @@ async def evaluate_readiness(
             "workspace_required_missing_field_keys": cast(list[JsonValue], workspace_missing),
         }
     )
-    reasons: list[str] = []
+    # Trusted callers may add deterministic scope/configuration failures which are not numeric
+    # floor measurements (for example, no project-bound Client KB).  They are function arguments,
+    # not a key hidden inside ``metrics``, so the v1 model-authored metric map cannot manufacture
+    # or clear them.
+    reasons: list[str] = list(dict.fromkeys(additional_reason_codes))
     if coverage < floor.min_coverage_ratio:
         reasons.append("coverage_below_floor")
     if verified < floor.min_verified_claims:
@@ -979,6 +984,7 @@ async def evaluate_readiness(
     if missing := sorted(set(floor.required_field_keys) - available_fields):
         reasons.extend(f"missing_field:{key}" for key in missing)
     reasons.extend(f"missing_workspace_field:{key}" for key in workspace_missing)
+    reasons = list(dict.fromkeys(reasons))
     spec_version = await ensure_readiness_spec(conn, workspace_id=workspace_id, spec=spec)
     decision_id = (
         readiness_decision_id if readiness_decision_id is not None else new_readiness_decision_id()
