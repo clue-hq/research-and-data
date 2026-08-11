@@ -21,10 +21,13 @@ from clue_auth import (
     PrincipalService,
     erase_platform_user,
     get_platform_user,
+    identity_bundle,
+    link_auth_identity,
     provision_self_serve_workspace,
+    provision_workspace_owner,
 )
 from clue_auth.errors import IdentityConflictError
-from clue_auth.store import suspend_platform_user
+from clue_auth.store import suspend_platform_user, suspend_workspace_membership
 
 from .conftest import rollback_conn, run_async
 
@@ -95,6 +98,107 @@ def test_provision_replay_returns_the_same_workspace_and_brand() -> None:
     run_async(scenario())
 
 
+def test_second_identity_for_the_same_user_replays_the_same_workspace() -> None:
+    """Adversarial finding 3: idempotency keys on the durable human, not the identity row."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            first = await provision_self_serve_workspace(
+                conn,
+                provider_key="clerk",
+                provider_subject="multi-identity-subject",
+                **PROFILE,
+            )
+            await link_auth_identity(
+                conn,
+                user_id=first.user.user_id,
+                provider_key="google",
+                provider_subject="multi-identity-google",
+            )
+            replay = await provision_self_serve_workspace(
+                conn,
+                provider_key="google",
+                provider_subject="multi-identity-google",
+                **PROFILE,
+            )
+            assert replay.created is False
+            assert replay.workspace.workspace_id == first.workspace.workspace_id
+
+    run_async(scenario())
+
+
+def test_provision_refuses_a_user_who_already_belongs_to_a_workspace() -> None:
+    """Adversarial finding 3b: an operator-path or invited user gets no second workspace."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            owner = await provision_workspace_owner(
+                conn,
+                workspace_name="Existing Co",
+                provider_key="clerk",
+                provider_subject="legacy-owner-subject",
+            )
+            assert owner.membership.status == "active"
+            with pytest.raises(IdentityConflictError):
+                await provision_self_serve_workspace(
+                    conn,
+                    provider_key="clerk",
+                    provider_subject="legacy-owner-subject",
+                    **PROFILE,
+                )
+
+    run_async(scenario())
+
+
+def test_replay_updates_the_company_website_and_refuses_inactive_membership() -> None:
+    """Adversarial findings 4 and 6: website corrections stick; dead memberships fail loud."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            first = await provision_self_serve_workspace(
+                conn,
+                provider_key="clerk",
+                provider_subject="website-fix-subject",
+                **PROFILE,
+            )
+            corrected = await provision_self_serve_workspace(
+                conn,
+                provider_key="clerk",
+                provider_subject="website-fix-subject",
+                **{**PROFILE, "company_website": "https://insight-health.com"},
+            )
+            assert corrected.created is False
+            assert corrected.company_website == "https://insight-health.com"
+            await suspend_workspace_membership(conn, first.membership.membership_id)
+            with pytest.raises(IdentityConflictError):
+                await provision_self_serve_workspace(
+                    conn,
+                    provider_key="clerk",
+                    provider_subject="website-fix-subject",
+                    **PROFILE,
+                )
+
+    run_async(scenario())
+
+
+def test_whitespace_only_profile_values_are_refused_by_the_database() -> None:
+    """Adversarial finding 8: the CHECKs use a non-whitespace regex, not space-only btrim."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            from sqlalchemy.exc import DBAPIError
+
+            with pytest.raises(DBAPIError):
+                await conn.execute(
+                    text(
+                        "INSERT INTO platform_user (user_id, first_name) "
+                        "VALUES ('usr_ws_probe', E'\\t')"
+                    ),
+                )
+
+    run_async(scenario())
+
+
 def test_provision_refuses_a_suspended_user() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -125,7 +229,13 @@ def test_erasure_clears_the_new_profile_fields() -> None:
                 provider_subject="self-serve-subject-4",
                 **PROFILE,
             )
-            await erase_platform_user(conn, result.user.user_id)
+            bundle_before = await identity_bundle(conn, result.user.user_id)
+            assert bundle_before is not None
+            assert bundle_before.self_serve_provisionings[0].company_website == (
+                "https://insight.health"
+            )
+            erasure = await erase_platform_user(conn, result.user.user_id)
+            assert erasure.provisioning_websites_erased == 1
             erased = await get_platform_user(conn, result.user.user_id)
             assert erased is not None
             assert erased.display_name is None
@@ -133,6 +243,9 @@ def test_erasure_clears_the_new_profile_fields() -> None:
             assert erased.last_name is None
             assert erased.job_role is None
             assert erased.status == "disabled"
+            bundle_after = await identity_bundle(conn, result.user.user_id)
+            assert bundle_after is not None
+            assert bundle_after.self_serve_provisionings[0].company_website is None
 
     run_async(scenario())
 
@@ -202,5 +315,19 @@ def test_provision_route_end_to_end_with_replay_and_errors() -> None:
                     headers=headers,
                 )
                 assert invalid.status_code == 422
+
+                whitespace = await client.post(
+                    "/auth/v1/provision",
+                    json={**body, "company_name": "   "},
+                    headers=headers,
+                )
+                assert whitespace.status_code == 422
+
+                bad_website = await client.post(
+                    "/auth/v1/provision",
+                    json={**body, "company_website": "file:///etc/passwd"},
+                    headers=headers,
+                )
+                assert bad_website.status_code == 422
 
     run_async(scenario())

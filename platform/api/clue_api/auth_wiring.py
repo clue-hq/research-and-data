@@ -7,11 +7,12 @@ provider claim.
 
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from clue_auth import (
     AuthenticatedSessionView,
@@ -75,6 +76,33 @@ class ProvisionRequest(BaseModel):
     job_role: str = Field(min_length=1, max_length=200)
     company_name: str = Field(min_length=1, max_length=200)
     company_website: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("first_name", "last_name", "job_role", "company_name")
+    @classmethod
+    def _strip_required(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must contain non-whitespace characters")
+        return cleaned
+
+    @field_validator("company_website")
+    @classmethod
+    def _normalize_website(cls, value: str | None) -> str | None:
+        """Normalize to an http(s) URL; scheme-less input ("www.acme.com") gains https://.
+
+        This is submission hygiene, not the SSRF boundary — the Stage-0 scrape path applies
+        its own network guard before any fetch.
+        """
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        candidate = cleaned if "://" in cleaned else f"https://{cleaned}"
+        parsed = urlsplit(candidate)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError("company_website must be an http(s) URL")
+        return candidate
 
 
 class ProvisionResponse(BaseModel):

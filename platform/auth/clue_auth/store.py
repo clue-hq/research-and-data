@@ -22,6 +22,7 @@ from clue_auth.models import (
     IdentityBundle,
     IdentityErasureResult,
     PlatformUser,
+    SelfServeProvisioningRecord,
     WorkspaceInvitation,
     WorkspaceMembership,
 )
@@ -138,19 +139,20 @@ async def update_platform_user_profile(
 ) -> PlatformUser:
     """Write the onboarding profile fields (PUT semantics — every field is set as given).
 
-    ``display_name`` defaults to "first last" when not supplied explicitly, so existing
-    ``display_name`` consumers keep working without reading the split fields.
+    ``display_name`` is only ever *filled*, never clobbered: an explicit value wins, else a
+    "first last" composition fills an empty column, and an existing user-set display name is
+    preserved (COALESCE) so a provisioning replay cannot overwrite what the user chose.
     """
 
     first = _optional(first_name)
     last = _optional(last_name)
-    display = _optional(display_name)
-    if display is None and (first or last):
-        display = " ".join(part for part in (first, last) if part)
+    explicit_display = _optional(display_name)
+    composed = " ".join(part for part in (first, last) if part) or None
     result = await conn.execute(
         text(
             f"UPDATE platform_user SET first_name = :first_name, last_name = :last_name, "
-            f"job_role = :job_role, display_name = :display_name "
+            f"job_role = :job_role, "
+            f"display_name = COALESCE(:explicit_display, display_name, :composed_display) "
             f"WHERE user_id = :user_id RETURNING {_USER_COLUMNS}"
         ),
         {
@@ -158,7 +160,8 @@ async def update_platform_user_profile(
             "first_name": first,
             "last_name": last,
             "job_role": _optional(job_role),
-            "display_name": display,
+            "explicit_display": explicit_display,
+            "composed_display": composed,
         },
     )
     row = result.mappings().first()
@@ -830,11 +833,24 @@ async def identity_bundle(conn: AsyncConnection, user_id: str) -> IdentityBundle
             {"user_id": user_id},
         )
     ).mappings()
+    provisioning_rows = (
+        await conn.execute(
+            text(
+                "SELECT auth_identity_id, user_id, workspace_id, brand_id, company_website, "
+                "created_at FROM self_serve_provisioning WHERE user_id = :user_id "
+                "ORDER BY created_at, auth_identity_id"
+            ),
+            {"user_id": user_id},
+        )
+    ).mappings()
     return IdentityBundle(
         user=user,
         auth_identities=await list_auth_identities(conn, user_id),
         memberships=await list_user_memberships(conn, user_id),
         accepted_invitations=tuple(_model(WorkspaceInvitation, row) for row in invitation_rows),
+        self_serve_provisionings=tuple(
+            _model(SelfServeProvisioningRecord, row) for row in provisioning_rows
+        ),
     )
 
 
@@ -881,9 +897,17 @@ async def erase_platform_user(
         ),
         {"user_id": user_id},
     )
+    provisionings = await conn.execute(
+        text(
+            "UPDATE self_serve_provisioning SET company_website = NULL "
+            "WHERE user_id = :user_id AND company_website IS NOT NULL"
+        ),
+        {"user_id": user_id},
+    )
     return IdentityErasureResult(
         user_id=user_id,
         auth_identities_revoked=identities.rowcount,
         memberships_revoked=memberships.rowcount,
         invitation_addresses_erased=invitations.rowcount,
+        provisioning_websites_erased=provisionings.rowcount,
     )

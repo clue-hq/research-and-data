@@ -83,6 +83,19 @@ class WorkspaceInvitation(BaseModel):
     revoked_at: UtcDatetime | None = None
 
 
+class SelfServeProvisioningRecord(BaseModel):
+    """The FI-4 D-2 idempotency record; part of the DSAR bundle (website may identify)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    auth_identity_id: str
+    user_id: str
+    workspace_id: str
+    brand_id: str
+    company_website: str | None
+    created_at: UtcDatetime
+
+
 class IdentityBundle(BaseModel):
     """The internal identity part of the B1 DSAR/access surface."""
 
@@ -92,6 +105,7 @@ class IdentityBundle(BaseModel):
     auth_identities: tuple[AuthIdentity, ...]
     memberships: tuple[WorkspaceMembership, ...]
     accepted_invitations: tuple[WorkspaceInvitation, ...]
+    self_serve_provisionings: tuple[SelfServeProvisioningRecord, ...] = ()
 
 
 class IdentityErasureResult(BaseModel):
@@ -103,3 +117,4 @@ class IdentityErasureResult(BaseModel):
     auth_identities_revoked: int
     memberships_revoked: int
     invitation_addresses_erased: int
+    provisioning_websites_erased: int = 0

@@ -20,6 +20,7 @@ from clue_auth.store import (
     get_platform_user,
     get_workspace_membership,
     link_auth_identity,
+    list_user_memberships,
     lock_invitation_by_digest,
     mark_invitation_accepted,
     update_platform_user_profile,
@@ -252,7 +253,15 @@ async def provision_self_serve_workspace(
     them creates; the loser observes the record and takes the replay path.
 
     Profile fields carry PUT semantics on every call (a replay with corrected spelling updates
-    the user's own profile); workspace/brand names are fixed at creation and never renamed here.
+    the user's own profile), and so does ``company_website`` — it is a mutable setup input the
+    slice-2 recon composition reads, so a corrected resubmission must stick. Workspace/brand
+    names are fixed at creation and never renamed here.
+
+    The idempotency record is keyed on the durable ``user_id`` (UNIQUE), so linking a second
+    auth identity to the same human still replays the first workspace. A user who already
+    holds an active membership without a provisioning record (e.g. invited, or provisioned by
+    an operator path) is refused — self-serve provisioning is first-time setup only, never a
+    second-workspace factory.
     """
     at = now or datetime.now(UTC)
     name = _required(company_name, label="company_name")
@@ -274,43 +283,16 @@ async def provision_self_serve_workspace(
         last_name=last_name,
         job_role=job_role,
     )
-    existing = (
-        await conn.execute(
-            text(
-                "SELECT workspace_id, brand_id, company_website FROM self_serve_provisioning "
-                "WHERE auth_identity_id = :auth_identity_id"
-            ),
-            {"auth_identity_id": identity.auth_identity_id},
-        )
-    ).mappings().first()
-    if existing is not None:
-        workspace = await get_workspace(conn, existing["workspace_id"])
-        brand = (
-            None
-            if workspace is None
-            else await get_brand(
-                conn, workspace_id=workspace.workspace_id, brand_id=existing["brand_id"]
-            )
-        )
-        membership = (
-            None
-            if workspace is None
-            else await get_workspace_membership(
-                conn, workspace_id=workspace.workspace_id, user_id=user.user_id
-            )
-        )
-        if workspace is None or brand is None or membership is None:
-            raise IdentityConflictError(
-                "self-serve provisioning record is inconsistent with its workspace"
-            )
-        return ProvisionedSelfServeWorkspace(
-            workspace=workspace,
-            brand=brand,
-            user=user,
-            auth_identity=identity,
-            membership=membership,
-            company_website=existing["company_website"],
-            created=False,
+    replay = await _replay_self_serve_record(
+        conn, user=user, identity=identity, company_website=website
+    )
+    if replay is not None:
+        return replay
+    memberships = await list_user_memberships(conn, user.user_id)
+    if any(membership.status == "active" for membership in memberships):
+        raise IdentityConflictError(
+            "user already holds an active workspace membership; "
+            "self-serve provisioning only performs first-time setup"
         )
     workspace = await create_workspace(conn, name=name)
     brand = await create_brand(conn, workspace_id=workspace.workspace_id, name=name)
@@ -322,19 +304,26 @@ async def provision_self_serve_workspace(
         status="active",
         now=at,
     )
-    await conn.execute(
+    inserted = await conn.execute(
         text(
             "INSERT INTO self_serve_provisioning "
-            "(auth_identity_id, workspace_id, brand_id, company_website) "
-            "VALUES (:auth_identity_id, :workspace_id, :brand_id, :company_website)"
+            "(auth_identity_id, user_id, workspace_id, brand_id, company_website) "
+            "VALUES (:auth_identity_id, :user_id, :workspace_id, :brand_id, :company_website) "
+            "ON CONFLICT DO NOTHING"
         ),
         {
             "auth_identity_id": identity.auth_identity_id,
+            "user_id": user.user_id,
             "workspace_id": workspace.workspace_id,
             "brand_id": brand.brand_id,
             "company_website": website,
         },
     )
+    if inserted.rowcount == 0:
+        # A concurrent transaction won under an isolation level where the advisory lock's
+        # post-lock read could not see its row. Abort (rolling back our workspace/brand)
+        # rather than commit a duplicate; the caller's retry takes the replay path.
+        raise IdentityConflictError("concurrent provisioning detected; retry the request")
     return ProvisionedSelfServeWorkspace(
         workspace=workspace,
         brand=brand,
@@ -343,4 +332,68 @@ async def provision_self_serve_workspace(
         membership=membership,
         company_website=website,
         created=True,
+    )
+
+
+async def _replay_self_serve_record(
+    conn: AsyncConnection,
+    *,
+    user: PlatformUser,
+    identity: AuthIdentity,
+    company_website: str | None,
+) -> ProvisionedSelfServeWorkspace | None:
+    existing = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT workspace_id, brand_id, company_website "
+                    "FROM self_serve_provisioning WHERE user_id = :user_id"
+                ),
+                {"user_id": user.user_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if existing is None:
+        return None
+    workspace = await get_workspace(conn, existing["workspace_id"])
+    brand = (
+        None
+        if workspace is None
+        else await get_brand(
+            conn, workspace_id=workspace.workspace_id, brand_id=existing["brand_id"]
+        )
+    )
+    membership = (
+        None
+        if workspace is None
+        else await get_workspace_membership(
+            conn, workspace_id=workspace.workspace_id, user_id=user.user_id
+        )
+    )
+    if workspace is None or brand is None or membership is None:
+        raise IdentityConflictError(
+            "self-serve provisioning record is inconsistent with its workspace"
+        )
+    if membership.status != "active":
+        raise IdentityConflictError("the provisioned workspace membership is no longer active")
+    stored_website = existing["company_website"]
+    if company_website is not None and company_website != stored_website:
+        await conn.execute(
+            text(
+                "UPDATE self_serve_provisioning SET company_website = :company_website "
+                "WHERE user_id = :user_id"
+            ),
+            {"company_website": company_website, "user_id": user.user_id},
+        )
+        stored_website = company_website
+    return ProvisionedSelfServeWorkspace(
+        workspace=workspace,
+        brand=brand,
+        user=user,
+        auth_identity=identity,
+        membership=membership,
+        company_website=stored_website,
+        created=False,
     )
