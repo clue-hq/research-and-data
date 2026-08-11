@@ -209,6 +209,11 @@ when either identifier is unknown.
 
 ### `GET /api/v1/accounts/:accountId/workspace`
 
+> Historical proposal. FI-2 Slice 6 supersedes the Activity portion with the
+> dedicated durable `GET /frontend/v1/accounts/{accountId}/activity` contract
+> below. The workspace model now covers only the still-unserved Insights and
+> Artifacts fixture-era proposal; it is not an Activity source.
+
 Returns the modular payload used by the Insights, Artifacts, and Activity tabs:
 
 ```json
@@ -388,6 +393,7 @@ yet, and the only list query parameters are `projectId`, `cursor`, and `limit`.
 | `GET /frontend/v1/accounts/{accountId}` | the account object itself, no `data` wrapper |
 | `GET /frontend/v1/accounts/{accountId}/contacts` | `{ data: [...], meta: { total } }` |
 | `GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` | the contact object itself, no `data` wrapper |
+| `GET /frontend/v1/accounts/{accountId}/activity` | the durable activity object itself, no `data` wrapper |
 
 List row:
 
@@ -759,9 +765,9 @@ called out rather than assumed.
    surface because slice 1 serves no email data at all (G3). **`overallFit` is
    NOT invented** — the backend serves raw `scores[].fit`, and no tier badge,
    band cut, or adapter constant is introduced on this slice. `activity.kind`
-   widens to the backend event kinds with a projection-layer label map (no
-   activity endpoint exists in slice 1). `freshness` and `addedVia` are new enums
-   this slice introduces.
+   widens to the backend event kinds with a projection-layer label map (landed
+   in Slice 6 on the dedicated Activity endpoint). `freshness` and `addedVia`
+   are new enums this slice introduces.
 4. **D-7 RATIFIED — the fixture-only fields are DROPPED for MVP, because they
    were placeholders for industry-pack custom fields.** That is the founder's
    clarification and it changes what "dropped" means: the hardcoded fixture
@@ -853,12 +859,12 @@ implicit.
    are not dead clicks. The gated preview drawer — which could only ever open
    for one hard-coded contact — was removed rather than left as an affordance
    that works on one row.
-8. **SUPERSEDED 2026-08-11 — workspace tabs carry no runtime fixture data.**
-   Slice 1 still serves no activity feed or artifact index, and account insights
-   arrive on the Overview detail contract. `account-workspace.repository.ts`
-   therefore returns an explicit empty model for every real account, with each
-   tab explaining that the capability is not served yet. It neither invents a
-   URL nor preserves the former OpenAI demo workspace.
+8. **SUPERSEDED 2026-08-12 — unserved workspace tabs carry no runtime fixture
+   data.** Account insights arrive on the Overview detail contract and no
+   artifact index exists, so `account-workspace.repository.ts` returns an
+   explicit empty model for those two tabs. Activity left that model in Slice 6
+   and always reads its dedicated durable endpoint. No tab invents a URL or
+   preserves the former OpenAI demo workspace.
 
 ### Authenticated frontend cutover (2026-08-11)
 
@@ -1071,3 +1077,75 @@ retaining the authenticated server-derived provider proof and
 `X-Clue-Workspace-Id` path. Browser-authored authorization/workspace headers
 are still stripped. The provider bearer and artifact storage locator never
 enter browser state.
+
+### Durable Account activity (FI-2 slice 6, 2026-08-12)
+
+`GET /frontend/v1/accounts/{accountId}/activity` is a read projection over the
+append-only `research_subject_activity` ledger. It includes Account events and
+Contact events for members of the Account's governed committee. A row is served
+only when it resolves to the exact `research_view_event`, project, project run
+and parent Account run named by that ledger row. A Contact event is additionally
+required to belong to a project that selected that committee member. Unknown
+event kinds, unresolved owner references, ungoverned Contacts and human rows
+without a durable principal id are omitted rather than assigned invented copy
+or actor identity. The response is newest-first by `(occurredAt, id)` and capped
+at 100 events.
+
+```json
+{
+  "accountId": "0f0f4e8c-4d1a-4f0b-9f2d-2b7a1c0d5e11",
+  "state": {
+    "committeeCount": 6,
+    "summary": {
+      "state": "available",
+      "paragraphs": ["Acme is a multi-site healthcare operator."],
+      "researchOutcome": "completed"
+    }
+  },
+  "events": [
+    {
+      "id": "b5a9a584-e844-48d9-a964-e0b289dc4b8d",
+      "kind": "research_view.updated",
+      "occurredAt": "2026-08-12T09:02:00Z",
+      "actorCategory": "system",
+      "subject": {
+        "type": "account",
+        "id": "0f0f4e8c-4d1a-4f0b-9f2d-2b7a1c0d5e11",
+        "name": "Acme"
+      },
+      "project": {
+        "id": "prj_a",
+        "name": "Insight Health campaign"
+      },
+      "projectRunId": "9dfa7ff6-8dd2-4e95-a0b0-461a2dfcf535",
+      "accountRunId": "f84ac206-ec48-4c57-981f-e2f958f26b10",
+      "reference": {
+        "target": "account_insights",
+        "eventId": "1f8cd58b-c545-4aa1-ac2b-dba68b51d5d3",
+        "snapshotId": "e3b8e570-7705-4f2d-bc52-fb730773564f",
+        "reportId": null,
+        "sectionIds": ["summary"],
+        "itemIds": ["summary-1"]
+      }
+    }
+  ]
+}
+```
+
+`state.committeeCount` is `len(AccountDetail.committee)` and `state.summary` is
+the same `read_prose(account.summary)` result returned by Account detail. It is
+not an activity event and makes no historical claim; it exists so the Activity,
+Contacts and Overview/Insights tabs cannot present contradictory current state.
+An Account with no qualifying ledger rows returns `events: []`, and the browser
+renders “No durable activity exists for this account yet.”
+
+The backend sends machine values and absolute ISO-8601 timestamps. The frontend
+maps the three event kinds (`research_view.updated`,
+`research_view.section_stale`, `research_view.recheck_completed`) and the
+non-human actor categories (`system`, `agent`, `worker`) to stable labels, then
+renders the timestamp in UTC. Account event titles drill into Account Insights;
+Contact event titles and subject names drill into the governed Contact profile.
+The current summary state links to Account Overview, and the resolved project
+name links to `/projects/{projectId}`. Raw owner/fetch
+references, payload bodies and relative `timeLabel` strings never cross the
+contract.

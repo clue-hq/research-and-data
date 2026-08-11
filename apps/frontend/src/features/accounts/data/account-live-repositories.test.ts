@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createHttpAccountActivityRepository } from "./account-activity.repository";
 import { createHttpAccountContactsRepository } from "./account-contacts.repository";
 import { createHttpAccountDetailsRepository } from "./account-details.repository";
 import { getAccountWorkspace } from "./account-workspace.repository";
@@ -15,6 +16,56 @@ test("account detail is fetched by encoded live id", async () => {
 
   assert.equal(requestedPath, "/accounts/account%2Fone");
   assert.equal(detail?.name, "Account One");
+});
+
+test("account activity is fetched by encoded live id and preserves durable context", async () => {
+  let requestedPath = "";
+  const repository = createHttpAccountActivityRepository(async (path) => {
+    requestedPath = path;
+    return {
+      accountId: "account/one",
+      state: {
+        committeeCount: 2,
+        summary: {
+          state: "not_composed",
+          paragraphs: [],
+          researchOutcome: null,
+        },
+      },
+      events: [
+        {
+          id: "activity-1",
+          kind: "research_view.updated",
+          occurredAt: "2026-08-12T09:02:00Z",
+          actorCategory: "system",
+          subject: {
+            type: "account",
+            id: "account/one",
+            name: "Account One",
+          },
+          project: { id: "project-1", name: "Insight Health campaign" },
+          projectRunId: "project-run-1",
+          accountRunId: "account-run-1",
+          reference: {
+            target: "account_insights",
+            eventId: "event-1",
+            snapshotId: "snapshot-1",
+            reportId: null,
+            sectionIds: ["summary"],
+            itemIds: ["summary-1"],
+          },
+        },
+      ],
+    };
+  });
+
+  const activity = await repository.get("account/one");
+
+  assert.equal(requestedPath, "/accounts/account%2Fone/activity");
+  assert.equal(activity?.state.committeeCount, 2);
+  assert.equal(activity?.events[0]?.occurredAt, "2026-08-12T09:02:00Z");
+  assert.equal(activity?.events[0]?.project.name, "Insight Health campaign");
+  assert.equal(activity?.events[0]?.reference.eventId, "event-1");
 });
 
 test("domain account and contact misses stay honest", async () => {
@@ -133,6 +184,5 @@ test("unserved workspace tabs contain no runtime demo data", async () => {
     accountId: "account-1",
     insights: [],
     artifacts: [],
-    activity: [],
   });
 });

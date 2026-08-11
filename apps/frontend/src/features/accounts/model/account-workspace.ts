@@ -27,18 +27,10 @@ export const AccountArtifactSchema = z.object({
   lastEditedLabel: z.string().min(1),
 });
 
-export const WorkspaceActivitySchema = z.object({
-  id: z.string().min(1),
-  kind: z.enum(["contacts", "summary", "created"]),
-  text: z.string().min(1),
-  timeLabel: z.string().min(1),
-});
-
 export const AccountWorkspaceSchema = z.object({
   accountId: z.string().min(1),
   insights: z.array(WorkspaceInsightSchema),
   artifacts: z.array(AccountArtifactSchema),
-  activity: z.array(WorkspaceActivitySchema),
 });
 
 export const AccountWorkspaceResponseSchema = z.object({

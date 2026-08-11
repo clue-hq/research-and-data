@@ -19,12 +19,33 @@ const dateFormatter = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
 });
 
+const dateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  hour: "2-digit",
+  hour12: false,
+  minute: "2-digit",
+  month: "short",
+  timeZone: "UTC",
+  timeZoneName: "short",
+  year: "numeric",
+});
+
 /** `2026-08-01T12:00:00Z` → `1 Aug 2026`. Returns `null` for absent or unparseable input. */
 export function formatIsoDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return null;
   return dateFormatter.format(parsed);
+}
+
+/** `2026-08-12T09:02:00Z` -> `12 Aug 2026, 09:02 UTC`. */
+export function formatIsoDateTime(
+  iso: string | null | undefined,
+): string | null {
+  if (!iso) return null;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return dateTimeFormatter.format(parsed);
 }
 
 /** Sentence-cases a snake_case / kebab-case backend token: `needs_review` → `Needs review`. */

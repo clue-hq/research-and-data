@@ -1,7 +1,17 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useAccountArtifactsController } from "../hooks/use-account-artifacts-controller";
+import {
+  accountActivityActorLabel,
+  accountActivityEventHref,
+  accountActivityEventLabel,
+  accountActivitySubjectLabel,
+  accountActivitySummaryLabel,
+  type AccountActivity,
+  type AccountActivityKind,
+} from "../model/account-activity";
 import type { AccountDetail } from "../model/account-detail";
 import type {
   AccountArtifact,
@@ -9,6 +19,7 @@ import type {
   WorkspaceInsight,
 } from "../model/account-workspace";
 import { accountEvidenceArtifactHref } from "../model/evidence";
+import { formatIsoDateTime } from "../model/formatting";
 import { EvidenceList } from "./evidence-list";
 import readability from "./account-readability.module.css";
 import { AccountWorkspaceShell } from "./account-workspace-shell";
@@ -248,14 +259,14 @@ export function AccountArtifactsScreen({
 function ActivityMark({
   kind,
 }: {
-  kind: AccountWorkspace["activity"][number]["kind"];
+  kind: AccountActivityKind;
 }) {
   const path =
-    kind === "contacts"
-      ? "/icons/detail/contacts.png"
-      : kind === "summary"
-        ? "/icons/artifacts.svg"
-        : "/icons/progress-75.svg";
+    kind === "research_view.recheck_completed"
+      ? "/icons/check.svg"
+      : kind === "research_view.section_stale"
+        ? "/icons/progress-75.svg"
+        : "/icons/research.svg";
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img alt="" aria-hidden="true" className="size-4 object-contain" src={path} />
@@ -264,36 +275,87 @@ function ActivityMark({
 
 export function AccountActivityScreen({
   account,
-  workspace,
+  activity,
 }: {
   account: AccountDetail;
-  workspace: AccountWorkspace;
+  activity: AccountActivity;
 }) {
   return (
     <AccountWorkspaceShell account={account} activeTab="activity">
       <div className="clue-scrollbar-hidden h-full overflow-y-auto">
         <section className="mx-auto w-full max-w-[720px] px-8 pt-12">
           <h1 className={readability.detailTitle}>Activity</h1>
-          {workspace.activity.length ? null : (
+          <p
+            className={`${readability.uiRegular} mt-3 text-[var(--clue-content-subtle)]`}
+          >
+            Current state: {" "}
+            <Link
+              className="text-[var(--clue-content-default)] underline decoration-[var(--clue-border-neutral)] underline-offset-2"
+              href={`/accounts/${account.id}/contacts`}
+            >
+              {activity.state.committeeCount}{" "}
+              {activity.state.committeeCount === 1 ? "contact" : "contacts"}
+            </Link>
+            {" · "}
+            <Link
+              className="text-[var(--clue-content-default)] underline decoration-[var(--clue-border-neutral)] underline-offset-2"
+              href={`/accounts/${account.id}`}
+            >
+              {accountActivitySummaryLabel(activity.state.summary)}
+            </Link>
+          </p>
+          {activity.events.length ? null : (
             <WorkspaceTabEmptyState>
-              No activity feed is served for this account yet.
+              No durable activity exists for this account yet.
             </WorkspaceTabEmptyState>
           )}
           <div className="relative mt-7 space-y-5 before:absolute before:top-2 before:bottom-2 before:left-[7.5px] before:w-px before:bg-[var(--clue-border-neutral)]">
-            {workspace.activity.map((item) => (
-              <div
-                className={`${readability.uiRegular} relative z-10 flex items-center gap-3 bg-white`}
-                key={item.id}
-              >
-                <ActivityMark kind={item.kind} />
-                <p>
-                  {item.text}{" "}
-                  <span className="text-[var(--clue-content-subtle)]">
-                    {item.timeLabel}
-                  </span>
-                </p>
-              </div>
-            ))}
+            {activity.events.map((item) => {
+              const timestamp = formatIsoDateTime(item.occurredAt);
+              return (
+                <div
+                  className={`${readability.uiRegular} relative z-10 grid grid-cols-[16px_minmax(0,1fr)] items-start gap-3 bg-white`}
+                  key={item.id}
+                >
+                  <ActivityMark kind={item.kind} />
+                  <div>
+                    <Link
+                      className="font-medium text-[var(--clue-content-default)] hover:underline"
+                      href={accountActivityEventHref(account.id, item)}
+                    >
+                      {accountActivityEventLabel(item.kind)}
+                    </Link>
+                    <p className="mt-0.5 text-[var(--clue-content-subtle)]">
+                      {accountActivityActorLabel(item.actorCategory)}
+                      {item.subject.type === "contact" ? (
+                        <>
+                          {" · "}
+                          <Link
+                            className="hover:text-[var(--clue-content-default)] hover:underline"
+                            href={accountActivityEventHref(account.id, item)}
+                          >
+                            {accountActivitySubjectLabel(item)}
+                          </Link>
+                        </>
+                      ) : null}
+                      {" · "}
+                      <Link
+                        className="hover:text-[var(--clue-content-default)] hover:underline"
+                        href={`/projects/${item.project.id}`}
+                      >
+                        {item.project.name}
+                      </Link>
+                      {timestamp ? (
+                        <>
+                          {" · "}
+                          <time dateTime={item.occurredAt}>{timestamp}</time>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
       </div>
