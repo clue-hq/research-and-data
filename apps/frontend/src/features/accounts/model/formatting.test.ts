@@ -13,6 +13,9 @@ test("stable labels format backend enum tokens without changing ordinary prose",
   assert.equal(formatJsonScalar("product_led"), "Product-led");
   assert.equal(formatSemanticToken("c_level"), "C-level");
   assert.equal(formatSemanticToken("economic_buyer"), "Economic buyer");
+  assert.equal(formatJsonScalar("champion"), "Champion");
+  assert.equal(formatJsonScalar("technical_evaluator"), "Technical evaluator");
+  assert.equal(formatJsonScalar("blocker"), "Blocker");
   assert.equal(
     formatSemanticValue("Dana leads Acme's economic buyer evaluation."),
     "Dana leads Acme's economic buyer evaluation.",

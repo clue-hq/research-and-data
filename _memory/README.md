@@ -29,8 +29,8 @@ The central architecture bet is that verification must be modeled at the claim/d
 ## Topic notes
 - `2026-08-12-fi2-slice4-live-prose-formatting.md` — FI-2 Slice 4 implements typed current
   Account/Contact prose states, stable frontend enum labels and registry-described dynamic gaps;
-  terminal/database gates and a local code commit are complete, while authenticated browser
-  acceptance awaits explicit permission for local Clerk development-credential reuse.
+  terminal/database gates plus authenticated browser-to-API-to-Postgres acceptance are complete,
+  including every linked Contact shape and direct reload.
 - `2026-08-12-fi2-slice3-contact-journey.md` — FI-2 Slice 3 closes LF-CONTACT-001 and
   LF-CONTACT-003 with one shared governed committee/addressability seam, named/withheld/unnamed and
   merged-link coverage, concise row/link accessibility names, full terminal gates, and an

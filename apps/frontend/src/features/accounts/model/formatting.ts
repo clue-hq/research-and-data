@@ -37,9 +37,12 @@ export function formatToken(token: string): string {
 /** Stable customer-facing labels for machine values that need more than sentence casing. */
 const semanticTokenLabels: Record<string, string> = {
   "1b_plus": "$1B+",
-  product_led: "Product-led",
+  blocker: "Blocker",
   c_level: "C-level",
+  champion: "Champion",
   economic_buyer: "Economic buyer",
+  product_led: "Product-led",
+  technical_evaluator: "Technical evaluator",
 };
 
 export function formatSemanticToken(token: string): string {

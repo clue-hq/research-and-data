@@ -724,7 +724,9 @@ async def _build(conn: AsyncConnection) -> _Fixture:
                 field_key=VALUE_NARRATIVE,
                 value={
                     "persona": persona.value,
-                    "argument": f"narrative for {label}/{persona.value}",
+                    "argument": (
+                        f"Narrative for project {label}'s {persona.value.replace('_', ' ')}."
+                    ),
                     "angle_label": "roi",
                     "icp_key": "alpha" if label == "A" else "beta",
                     "icp_spec_version": 1,

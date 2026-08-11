@@ -989,9 +989,21 @@ it does not infer “research incomplete” from project status while displaying
 completed synthesis.
 
 The backend keeps semantic values unchanged (`1b_plus`, `product_led`,
-`c_level`, `economic_buyer`). The frontend owns stable labels (`$1B+`,
-`Product-led`, `C-level`, `Economic buyer`) and applies them at render time, so
-filters and model data retain the machine values. Unknown ordinary prose is not
-sentence-cased. Dynamic research gaps use `coverage.unresolvedFields[].description`
-from the effective field registry; the key-to-label prettifier remains only a
-fallback heading.
+`c_level`, `economic_buyer`, `champion`, `technical_evaluator`, `blocker`). The
+frontend owns stable labels (`$1B+`, `Product-led`, `C-level`, `Economic buyer`,
+`Champion`, `Technical evaluator`, `Blocker`) and applies them at render time,
+so filters and model data retain the machine values. Unknown ordinary prose is
+not sentence-cased. Dynamic research gaps use
+`coverage.unresolvedFields[].description` from the effective field registry;
+the key-to-label prettifier remains only a fallback heading.
+
+Authenticated browser acceptance used the durable Insight Health workspace and
+followed the live Accounts row into Northstar's preview, its Contacts table, and
+all served Contact shapes. The Account summary and Dana Buyer overview rendered
+their completed prose without contradictory incomplete-research copy; Chris
+Blocker and the unnamed Contact rendered the not-composed state honestly. Named,
+withheld, unnamed and stale-merged Contact URLs all survived a direct reload.
+Every browser request resolved through the authenticated session-to-principal
+chain and `/frontend/v1` with `200`, and the same-origin BFF Account-detail
+request returned `200`. Browser rendering used the stable labels above while
+API/model contract coverage retained the raw semantic values.

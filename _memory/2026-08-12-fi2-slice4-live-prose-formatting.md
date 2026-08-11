@@ -10,9 +10,10 @@
 - Account summary and Contact overview have dedicated wire/model slots and are excluded from generic
   fact rendering. Contact overview is read directly from current Contact truth rather than from the
   older committee reference index.
-- Added stable frontend mappings for `1b_plus`, `product_led`, `c_level` and `economic_buyer` while
-  preserving raw tokens in API/model data. Dynamic unresolved fields now carry effective-registry
-  descriptions; the browser uses the description rather than exposing a raw key as the explanation.
+- Added stable frontend mappings for `1b_plus`, `product_led`, `c_level`, and all four committee
+  personas (`economic_buyer`, `champion`, `technical_evaluator`, `blocker`) while preserving raw
+  tokens in API/model data. Dynamic unresolved fields now carry effective-registry descriptions;
+  the browser uses the description rather than exposing a raw key as the explanation.
 - Recorded the contract in `apps/frontend/docs/api-contracts/accounts.md` and committed the coherent
   implementation as `b8477bb4` (`feat(accounts): serve live research summaries`).
 
@@ -26,13 +27,26 @@
   accounts, four active Contact identities, two live verified prose claims, and one unsupported
   `healthcare.npi` result whose registry description is present.
 
-## Browser acceptance blocker
+## Authenticated browser acceptance
 
-- This worktree has no Clerk frontend credentials. An attempt to reuse the two development values
-  from an already-running local frontend process was blocked as sensitive credential reuse and was
-  not bypassed.
-- Browser/API/accessibility acceptance remains pending explicit user authorization to reuse those
-  local development credentials (without printing or storing them), or equivalent credentials
-  configured directly by the user. The temporary API server was stopped; the isolated database and
-  artifact directory were preserved together.
-- Do not close the two defect-log rows until the authenticated browser pass is complete.
+- After explicit user authorization, the local Clerk development values were reused only in the
+  frontend process environment; they were never printed, stored, or committed. The frontend also
+  required `CLUE_AUTH_ENABLED=true`; without that explicit flag the sign-in route correctly showed
+  authentication-disabled. Restarting with the flag produced the real Clerk form and successful
+  `session -> principal` bootstrap for the Insight Health workspace.
+- The browser followed `/accounts` -> Northstar preview -> Contacts and verified the completed
+  two-paragraph Account summary, the registry-described `healthcare.npi` gap, `$1B+`, `Product-led`,
+  all Contact persona labels, Dana's completed overview and `C-level` job level. Raw tokens and
+  contradictory incomplete-research copy were absent from the rendered pages.
+- The named, policy-withheld, unnamed/partially-researched and stale-merged Contact routes all
+  returned live pages and survived direct reload. Withheld/unnamed records rendered the honest
+  not-composed state; the stale id visibly resolved to Dana's survivor. Contact links had distinct
+  concise accessible names and adjacent avatars were decorative.
+- Next and FastAPI logs recorded `200` throughout the authenticated session-to-principal chain and
+  `/frontend/v1`, including every Contact shape and a same-origin BFF Account-detail request.
+  No browser runtime error dialog or server error page appeared; the only browser log message was
+  Clerk's expected development-key warning.
+- Browser acceptance exposed two test-only defects that were repaired before closeout: the fixture
+  narrative used raw persona tokens inside synthetic prose, and the stable semantic map covered
+  only `economic_buyer`. Fixture prose is now human-authored text and all four persona values have
+  explicit display labels with unit coverage.
