@@ -7,6 +7,7 @@ import {
   OnboardingFooter,
   OnboardingHeader,
 } from "./onboarding-brand";
+import { LiveSetupScreen } from "./live-setup-screen";
 import { ProfileScreen } from "./profile-screen";
 import { SetupScreen } from "./setup-screen";
 import { VerifyEmailScreen } from "./verify-email-screen";
@@ -33,7 +34,12 @@ export function OnboardingScreen({
   if (step === "setting-up" || step === "finalizing") {
     return (
       <main className={`${styles.page} ${styles.subtlePage}`}>
-        <SetupScreen compact={step === "finalizing"} setup={flow.setup} />
+        {controller.authMode === "clerk" ? (
+          // Slice 2: real lane-level recon truth; the presentation timer never runs here.
+          <LiveSetupScreen setup={flow.setup} />
+        ) : (
+          <SetupScreen compact={step === "finalizing"} setup={flow.setup} />
+        )}
       </main>
     );
   }

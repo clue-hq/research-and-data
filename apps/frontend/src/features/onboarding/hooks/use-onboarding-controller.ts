@@ -42,11 +42,12 @@ export function useOnboardingController({
   // Ref latch, not render-state: two clicks inside one React batch must not both pass.
   const inFlight = useRef(false);
 
-  // The presentation-only setup timer survives for fixture mode's design-review theatre;
-  // in clerk mode the setting-up/finalizing steps are server-redirected away (slice 2
-  // replaces them with real recon progress).
+  // The presentation-only setup timer exists ONLY for fixture mode's design-review theatre;
+  // in clerk mode the setting-up screen renders LiveSetupScreen, driven by durable recon
+  // lanes (slice 2) — nothing advances because time passed.
+  const timerEligible = auth.mode === "fixture";
   useEffect(() => {
-    if (!autoAdvance || step !== "setting-up") return;
+    if (!timerEligible || !autoAdvance || step !== "setting-up") return;
 
     const timeout = window.setTimeout(
       () => router.push(onboardingStepHref("finalizing")),
@@ -54,7 +55,7 @@ export function useOnboardingController({
     );
 
     return () => window.clearTimeout(timeout);
-  }, [autoAdvance, router, step]);
+  }, [autoAdvance, router, step, timerEligible]);
 
   // Leaving a step clears its error/busy state (render-time reset, per React guidance);
   // the draft itself survives via the provider.
@@ -145,7 +146,9 @@ export function useOnboardingController({
     try {
       if (auth.mode === "clerk") {
         await provisionWorkspace(input);
-        establishSession();
+        // Slice 2: continue to the real setting-up screen; LiveSetupScreen owns starting
+        // the (replay-safe) setup and releases into the app when the fast lane completes.
+        navigate("setting-up");
         return;
       }
       navigate("setting-up");
