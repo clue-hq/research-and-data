@@ -2689,6 +2689,11 @@
   color: #a23a31;
 }
 
+.planApprovalActions .gateRejectButton {
+  margin-right: auto;
+  color: var(--clue-text-critical, #b42318);
+}
+
 .planApprovalActions button {
   height: 26px;
   border: 0.5px solid var(--clue-ds-color-border-subtle);
@@ -2704,6 +2709,48 @@
   border-color: var(--clue-ds-color-bg-brand);
   background: var(--clue-ds-color-bg-brand);
   color: white;
+}
+
+.gateRevisionForm {
+  display: grid;
+  width: 100%;
+  gap: 6px;
+}
+
+.gateRevisionForm label {
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gateRevisionForm textarea {
+  width: 100%;
+  min-height: 74px;
+  resize: vertical;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 6px;
+  background: var(--clue-ds-color-bg-page);
+  color: var(--clue-ds-color-content-neutral);
+  font: inherit;
+  line-height: 1.45;
+  padding: 8px;
+}
+
+.gateRevisionForm textarea:focus-visible {
+  outline: 2px solid var(--clue-ds-color-bg-brand);
+  outline-offset: 1px;
+}
+
+.gateRevisionFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.gateRevisionFooter small {
+  margin-right: auto;
+  color: var(--clue-ds-color-content-subtle);
 }
 
 .reasoning,
@@ -3426,6 +3473,11 @@
 }
 
 /* An answered gate stays in history; its controls are visibly spent. */
+.planApproval[data-gate-state="requested"] {
+  height: auto;
+  min-height: 94px;
+}
+
 .planApproval[data-gate-state="responded"],
 .planApproval[data-gate-state="denied"] {
   height: auto;

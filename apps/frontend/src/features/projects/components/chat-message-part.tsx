@@ -35,7 +35,12 @@ import styles from "./project-flow.module.css";
 export interface ChatPartActions {
   busy: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
-  onGateDecision(card: GateCardModel, decision: GateDecision): void;
+  onGateDecision(
+    card: GateCardModel,
+    decision: GateDecision,
+    revisionRequest?: string,
+  ): void;
+  onGateRecovery(card: GateCardModel): void;
 }
 
 export function ChatMessagePartView({
@@ -100,6 +105,7 @@ export function ChatMessagePartView({
           busy={actions.busy}
           card={card}
           onDecide={actions.onGateDecision}
+          onRecover={actions.onGateRecovery}
         />
       );
     }

@@ -1,19 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ChatGateListResponseSchema, gateCardModel } from "./chat-gate";
+import {
+  ChatGateListResponseSchema,
+  agentGateIdFromPart,
+  gateAnswerResponse,
+  gateAuthorityFailure,
+  gateCardModel,
+  type ChatGate,
+} from "./chat-gate";
 import { ChatPartSnapshotSchema, type ChatGatePart } from "./chat-parts";
 import { fixtureGates } from "../data/chat.fixture";
 
-/** The gate-card state machine: requested → responded / denied, plus unavailable. */
+/** Durable authority, not stream richness, drives every interactive state. */
+
+const [openGate] = ChatGateListResponseSchema.parse({ data: fixtureGates });
+
+const SCOPE = {
+  currentUserId: "usr_demo",
+  currentWorkspaceId: "ws-demo",
+  expectedProjectId: openGate.projectId,
+  expectedThreadId: openGate.threadId,
+  gateReadAvailable: true,
+} as const;
 
 function part(overrides: Record<string, unknown> = {}): ChatGatePart {
   const parsed = ChatPartSnapshotSchema.parse({
-    part_id: "gate:agent_gate:g1",
+    part_id: `gate:agent_gate:${openGate.gateId}`,
     kind: "gate",
     revision: 1,
-    gate_ref: { object_type: "agent_gate", object_id: "g1" },
-    // What the backend actually sends today: the ref's object type as the kind,
-    // and nothing else. The card must survive it.
+    gate_ref: { object_type: "agent_gate", object_id: openGate.gateId },
     gate_kind: "agent_gate",
     state: "requested",
     ...overrides,
@@ -22,59 +37,150 @@ function part(overrides: Record<string, unknown> = {}): ChatGatePart {
   return parsed as ChatGatePart;
 }
 
-const [openGate] = ChatGateListResponseSchema.parse({ data: fixtureGates });
+function model({
+  gate = openGate,
+  gatePart = part(),
+  ...scope
+}: {
+  gate?: ChatGate | null;
+  gatePart?: ChatGatePart | null;
+  currentUserId?: string | null;
+  currentWorkspaceId?: string | null;
+  expectedProjectId?: string;
+  expectedThreadId?: string;
+  gateReadAvailable?: boolean;
+  gateReadReason?: string | null;
+  gateReadLoading?: boolean;
+  authorityFailure?: ReturnType<typeof gateAuthorityFailure> | null;
+} = {}) {
+  return gateCardModel({
+    gate,
+    part: gatePart,
+    ...SCOPE,
+    ...scope,
+  });
+}
 
-test("a durable gate makes the card answerable", () => {
-  const card = gateCardModel({ gate: openGate, part: part() });
+test("a fetched, supported, exactly scoped and addressed gate is answerable", () => {
+  const card = model();
   assert.ok(card);
   assert.equal(card.state, "requested");
   assert.equal(card.kind, "directive_confirmation");
   assert.equal(card.amountCents, 24000);
   assert.equal(card.expectedSubjectSha256, openGate.expectedSubjectSha256);
   assert.deepEqual(card.permittedDecisions, ["approved", "rejected", "revised"]);
+  assert.equal(card.recovery, null);
 });
 
-test("a durable gate with a withheld amount is still answerable, with no cost", () => {
-  // The pilot posture (`CLUE_BUDGET_CONTROLS_ENABLED` off): the amount stays on
-  // the immutable row and never crosses. The digest does, so the card works.
-  const card = gateCardModel({
-    gate: { ...openGate, maxSpendCents: null },
-    part: part(),
-  });
+test("a durable gate with a withheld amount remains answerable without a cost", () => {
+  const card = model({ gate: { ...openGate, maxSpendCents: null } });
   assert.ok(card);
   assert.equal(card.state, "requested");
   assert.equal(card.amountCents, null);
-  assert.equal(card.unavailableReason, null);
 });
 
-test("a part with no durable payload is unavailable, not answerable", () => {
-  const card = gateCardModel({ gate: null, part: part() });
-  assert.ok(card);
-  assert.equal(card.state, "unavailable");
-  assert.ok(card.unavailableReason);
-  assert.equal(card.expectedSubjectSha256, null);
-  assert.equal(card.amountCents, null);
-});
-
-test("a gate part that carries the full snapshot is answerable without the read", () => {
-  const card = gateCardModel({
+test("a rich stream part can never substitute for the durable gate read", () => {
+  const card = model({
     gate: null,
-    part: part({
+    gatePart: part({
       gate_kind: "directive_confirmation",
       expected_subject_sha256: "b".repeat(64),
       amount_cents: 500,
       currency: "USD",
-      title: "Confirm the launch",
+      title: "Pretend authority",
+      permitted_decisions: ["approved", "rejected", "revised"],
     }),
   });
   assert.ok(card);
-  assert.equal(card.state, "requested");
-  assert.equal(card.title, "Confirm the launch");
-  assert.equal(card.amountCents, 500);
+  assert.equal(card.state, "unavailable");
+  assert.equal(card.title, "Human action required");
+  assert.equal(card.expectedSubjectSha256, null);
+  assert.deepEqual(card.permittedDecisions, []);
+  assert.equal(card.recovery?.kind, "request_new_gate");
 });
 
-test("an approved gate stays in history as responded, with its decision", () => {
-  const answered = {
+test("human_only and non-agent refs are model-only notices, never object ids", () => {
+  for (const gateRef of [
+    { object_type: "icp_confirmation", object_id: "human_only" },
+    { object_type: "agent_gate", object_id: "human_only" },
+    { object_type: "stage0_readiness_decision", object_id: openGate.gateId },
+  ]) {
+    const gatePart = part({ gate_ref: gateRef });
+    assert.equal(agentGateIdFromPart(gatePart), null);
+    const card = model({ gate: null, gatePart });
+    assert.ok(card);
+    assert.equal(card.state, "unavailable");
+    assert.deepEqual(card.permittedDecisions, []);
+    assert.match(card.unavailableReason ?? "", /model-only reference/);
+  }
+});
+
+test("a missing row and a failed gate read have distinct recovery actions", () => {
+  const missing = model({ gate: null });
+  assert.ok(missing);
+  assert.equal(missing.recovery?.kind, "request_new_gate");
+
+  const failed = model({
+    gate: null,
+    gateReadAvailable: false,
+    gateReadReason: "The durable gate service is temporarily unavailable.",
+  });
+  assert.ok(failed);
+  assert.equal(failed.recovery?.kind, "retry_gate_read");
+  assert.match(failed.unavailableReason ?? "", /temporarily unavailable/);
+});
+
+test("scope, conversation, addressee and revision are all required", () => {
+  const cases = [
+    model({ currentWorkspaceId: "ws_other" }),
+    model({ expectedProjectId: "prj_other" }),
+    model({ expectedThreadId: "thr_other" }),
+    model({ currentUserId: "usr_other" }),
+    model({ currentUserId: null }),
+    model({ gate: { ...openGate, subjectRevision: null } }),
+    model({ gate: { ...openGate, subjectRevision: 0 } }),
+    model({
+      gate: {
+        ...openGate,
+        permittedDecisions: ["approved", "approved"],
+      },
+    }),
+  ];
+  for (const card of cases) {
+    assert.ok(card);
+    assert.equal(card.state, "unavailable");
+    assert.deepEqual(card.permittedDecisions, []);
+  }
+});
+
+test("a durable ICP confirmation exposes all three typed decisions", () => {
+  const card = model({
+    gate: {
+      ...openGate,
+      kind: "icp_confirmation",
+      subjectRef: "icp_spec:independent-neurosurgery-practices:v1",
+      subjectSnapshot: { icp_key: "independent_neurosurgery_practices" },
+      maxSpendCents: null,
+      currency: null,
+    },
+  });
+  assert.ok(card);
+  assert.equal(card.title, "Confirm ICP");
+  assert.equal(card.state, "requested");
+  assert.deepEqual(card.permittedDecisions, ["approved", "rejected", "revised"]);
+});
+
+test("unsupported durable kinds are non-interactive recovery notices", () => {
+  const card = model({ gate: { ...openGate, kind: "plan_approval" } });
+  assert.ok(card);
+  assert.equal(card.state, "unavailable");
+  assert.equal(card.title, "Human action required");
+  assert.equal(card.recovery?.kind, "request_new_gate");
+  assert.deepEqual(card.permittedDecisions, []);
+});
+
+test("answered gates stay in history from their immutable receipt", () => {
+  const answered: ChatGate = {
     ...openGate,
     answer: {
       turnId: "t2",
@@ -95,7 +201,7 @@ test("an approved gate stays in history as responded, with its decision", () => 
       },
     ],
   };
-  const card = gateCardModel({ gate: answered, part: part() });
+  const card = model({ gate: answered });
   assert.ok(card);
   assert.equal(card.state, "responded");
   assert.equal(card.decision, "approved");
@@ -103,57 +209,129 @@ test("an approved gate stays in history as responded, with its decision", () => 
   assert.equal(card.launches.length, 1);
 });
 
-test("a rejected or revised gate is denied — closed, recorded, never re-answerable", () => {
-  for (const decision of ["rejected", "revised"] as const) {
-    const card = gateCardModel({
-      gate: {
-        ...openGate,
-        answer: {
-          turnId: "t3",
-          actionRef: "turn-action:t3",
-          decision,
-          expectedSubjectSha256: openGate.expectedSubjectSha256,
-          decisionPayload:
-            decision === "revised"
-              ? { revision_request: "Narrow the target segment" }
-              : {},
-          answeredByUserId: "usr_demo",
-          answeredAt: "2026-08-09T11:12:00Z",
-        },
+test("a revised answer projects its immutable requested changes", () => {
+  const card = model({
+    gate: {
+      ...openGate,
+      kind: "icp_confirmation",
+      answer: {
+        turnId: "t3",
+        actionRef: "turn-action:t3",
+        decision: "revised",
+        expectedSubjectSha256: openGate.expectedSubjectSha256,
+        decisionPayload: { revision_request: "Focus on multi-site practices." },
+        answeredByUserId: "usr_demo",
+        answeredAt: "2026-08-09T11:12:00Z",
       },
-      part: part(),
-    });
-    assert.ok(card);
-    assert.equal(card.state, "denied");
-    assert.equal(card.decision, decision);
-  }
-});
-
-test("no gate and no part is no card at all", () => {
-  assert.equal(gateCardModel({ gate: null, part: null }), null);
-});
-
-test("permitted decisions narrow to the ones the backend allowed", () => {
-  const card = gateCardModel({
-    gate: { ...openGate, permittedDecisions: ["approved", "rejected"] },
-    part: part({ permitted_decisions: ["approved", "rejected", "revised"] }),
+    },
   });
   assert.ok(card);
-  assert.deepEqual(card.permittedDecisions, ["approved", "rejected"]);
+  assert.equal(card.state, "denied");
+  assert.equal(card.decision, "revised");
+  assert.equal(card.revisionRequest, "Focus on multi-site practices.");
 });
 
-test("an ICP gate remains visible but non-interactive until its full client flow lands", () => {
-  const card = gateCardModel({
+test("a corrupt answer digest cannot masquerade as an immutable receipt", () => {
+  const card = model({
+    gate: {
+      ...openGate,
+      answer: {
+        turnId: "t4",
+        actionRef: "turn-action:t4",
+        decision: "approved",
+        expectedSubjectSha256: "f".repeat(64),
+        decisionPayload: {},
+        answeredByUserId: "usr_demo",
+        answeredAt: "2026-08-09T11:14:00Z",
+      },
+    },
+  });
+  assert.ok(card);
+  assert.equal(card.state, "unavailable");
+  assert.match(card.unavailableReason ?? "", /does not match/);
+});
+
+test("a receipt recorded for someone other than the addressee is rejected", () => {
+  const card = model({
+    gate: {
+      ...openGate,
+      answer: {
+        turnId: "t5",
+        actionRef: "turn-action:t5",
+        decision: "approved",
+        expectedSubjectSha256: openGate.expectedSubjectSha256,
+        decisionPayload: {},
+        answeredByUserId: "usr_other",
+        answeredAt: "2026-08-09T11:15:00Z",
+      },
+    },
+  });
+  assert.ok(card);
+  assert.equal(card.state, "unavailable");
+  assert.match(card.unavailableReason ?? "", /does not match/);
+});
+
+test("answer payloads preserve the gate digest and enforce typed ICP revision text", () => {
+  const icp = model({
     gate: {
       ...openGate,
       kind: "icp_confirmation",
       maxSpendCents: null,
       currency: null,
     },
-    part: part(),
   });
-  assert.ok(card);
-  assert.equal(card.title, "Confirm ICP");
-  assert.equal(card.state, "unavailable");
-  assert.match(card.unavailableReason ?? "", /Human action required/);
+  assert.ok(icp);
+  assert.deepEqual(
+    gateAnswerResponse(icp, "revised", "  Narrow to multi-site practices.  "),
+    {
+      gateId: openGate.gateId,
+      decision: "revised",
+      expectedSubjectSha256: openGate.expectedSubjectSha256,
+      expectedEstimatedCostCents: null,
+      revisionRequest: "Narrow to multi-site practices.",
+    },
+  );
+  assert.deepEqual(gateAnswerResponse(icp, "rejected"), {
+    gateId: openGate.gateId,
+    decision: "rejected",
+    expectedSubjectSha256: openGate.expectedSubjectSha256,
+    expectedEstimatedCostCents: null,
+  });
+  assert.throws(() => gateAnswerResponse(icp, "revised", "   "), /describe/);
+  assert.throws(
+    () => gateAnswerResponse(icp, "approved", "unexpected"),
+    /only when revising/,
+  );
+});
+
+test("stale answers request regeneration while concurrent answers request a refresh", () => {
+  assert.equal(
+    gateAuthorityFailure("GATE_SUBJECT_STALE", "The ICP changed.").recovery?.kind,
+    "request_new_gate",
+  );
+  assert.equal(
+    gateAuthorityFailure("GATE_ALREADY_ANSWERED", "Already answered.").recovery?.kind,
+    "retry_gate_read",
+  );
+  assert.equal(
+    gateAuthorityFailure("GATE_FORBIDDEN", "Addressed elsewhere.").recovery,
+    null,
+  );
+});
+
+test("malformed durable digests and gate ids fail at the repository seam", () => {
+  assert.throws(() =>
+    ChatGateListResponseSchema.parse({
+      data: [{ ...fixtureGates[0], expected_subject_sha256: "not-a-digest" }],
+    }),
+  );
+  assert.throws(() =>
+    ChatGateListResponseSchema.parse({
+      data: [{ ...fixtureGates[0], gate_id: "human_only" }],
+    }),
+  );
+});
+
+test("no gate and no part produces no card", () => {
+  assert.equal(model({ gate: null, gatePart: null }), null);
 });

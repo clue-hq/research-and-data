@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-2 implemented. Hardening Slices 3-6 remain pending. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-3 implemented. Hardening Slices 4-6 remain pending. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -159,10 +159,31 @@ are never accepted from the browser or model.
   receipt. Reject leaves it draft. Revise stores the requested changes and
   leaves the original draft unchanged so a later synthesis must create a new
   version.
-- Until Slice 3 provides the typed ICP decision surface (including the Revise
-  input), the frontend parses and shows the durable gate as a non-interactive
-  **Human action required** recovery card. Slice 2 does not merely enable the
-  existing generic buttons.
+- Slice 2 deliberately stopped at the backend authority boundary. Slice 3 now
+  provides the typed ICP decision surface, including the required Revise input,
+  without treating rich stream fields as authority.
+
+#### Slice 3 implementation status (2026-08-12)
+
+- A gate part is only a signal to resolve an `agent_gate` UUID. Decision controls
+  are derived exclusively from the fetched durable gate after exact workspace,
+  project, thread, subject revision/digest, supported kind, permitted decision,
+  unanswered state and authenticated addressee checks.
+- `human_only`, non-`agent_gate` refs, malformed UUIDs, rich-but-unfetched parts,
+  missing rows, unsupported kinds, wrong addressees and invalid authority
+  records render **Human action required** notices with no decision controls.
+- A gate-read failure no longer fails the transcript/turn read. The notice
+  offers **Retry gate verification**; a missing, unsupported, model-only or
+  stale proposal offers **Ask Stage 0 to regenerate**, which submits an ordinary
+  human-authored recovery turn rather than manufacturing a gate locally.
+- ICP **Revise** opens a bounded required-text form and posts
+  `decision=revised`, the exact fetched digest, null spend and the trimmed
+  `revision_request` through the structured turn route. Approve and Reject send
+  no revision text. Backend `GATE_SUBJECT_STALE` and related refusals replace the
+  card with an explicit per-gate recovery state.
+- An answered gate stays in history only when its immutable answer receipt
+  echoes the gate digest and one of the gate's permitted decisions. The recorded
+  ICP revision request is projected from that receipt.
 
 ### R3 implementation status (2026-08-10)
 
@@ -417,10 +438,10 @@ The stable errors this integration branches on are:
 |---|---|---|
 | 400 | `IDEMPOTENCY_KEY_REQUIRED` | A required write omitted a usable idempotency header. |
 | 401 | `AUTHENTICATION_REQUIRED` / `SESSION_INVALID` | No valid authenticated session. |
-| 403 | `WORKSPACE_FORBIDDEN` / `PERMISSION_DENIED` / `MEMBERSHIP_STATE_CHANGED` | The internal principal cannot act in the selected workspace. |
-| 404 | `BRAND_NOT_FOUND` / `PROJECT_NOT_FOUND` / `THREAD_NOT_FOUND` / `TURN_NOT_FOUND` / `CONTEXT_REF_NOT_FOUND` / `ATTACHMENT_NOT_FOUND` / `AGENT_PROFILE_NOT_FOUND` | The scoped object cannot be used; foreign-object existence is not disclosed. |
+| 403 | `WORKSPACE_FORBIDDEN` / `PERMISSION_DENIED` / `MEMBERSHIP_STATE_CHANGED` / `GATE_FORBIDDEN` | The internal principal cannot act in the selected workspace or answer a gate addressed to another user. |
+| 404 | `BRAND_NOT_FOUND` / `PROJECT_NOT_FOUND` / `THREAD_NOT_FOUND` / `TURN_NOT_FOUND` / `CONTEXT_REF_NOT_FOUND` / `ATTACHMENT_NOT_FOUND` / `AGENT_PROFILE_NOT_FOUND` / `GATE_NOT_FOUND` | The scoped object cannot be used; foreign-object existence is not disclosed. |
 | 409 | `IDEMPOTENCY_CONFLICT` / `CAPABILITY_UNAVAILABLE` / `THREAD_ARCHIVED` / `TURN_NOT_RUNNING` / `GATE_ALREADY_ANSWERED` / `GATE_SUBJECT_STALE` / `GATE_AMOUNT_STALE` | The request is valid JSON but conflicts with durable state or advertised capability. |
-| 422 | `VALIDATION_ERROR` / `INVALID_CURSOR` | The request shape, value, or pagination cursor is invalid. |
+| 422 | `VALIDATION_ERROR` / `INVALID_CURSOR` / `GATE_ID_MALFORMED` / `GATE_KIND_UNSUPPORTED` / `GATE_DECISION_UNSUPPORTED` / `GATE_REVISION_REQUEST_REQUIRED` / `GATE_REVISION_REQUEST_UNEXPECTED` / `GATE_AMOUNT_UNEXPECTED` | The request shape, value, gate kind/decision, or pagination cursor is invalid. |
 | 500 | `INTERNAL_ERROR` | An unexpected server failure; details stay in correlated logs. |
 | 503 | `BODIES_UNAVAILABLE` | This deployment cannot hydrate transcript bodies. |
 

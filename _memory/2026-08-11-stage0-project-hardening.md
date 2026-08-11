@@ -231,3 +231,64 @@ The browser again reproduced LF-COMPOSER-001: Slate retained the prior submitted
 text and concatenated the first retry. That remains intentionally deferred to
 its composer slice; the final gate retry used select-all/replace solely as a
 test workaround.
+
+## Slice 3 closeout — authoritative gate rendering and explicit recovery
+
+Implemented LF-STAGE0-009 and the frontend portion of LF-STAGE0-006:
+
+- A transcript gate part is now only a signal to resolve one canonical
+  `agent_gate` UUID. Decision controls derive exclusively from the durable gate
+  read after exact workspace/project/thread, supported-kind, positive-revision,
+  permitted-decision, answer-state and authenticated-addressee validation.
+- The client rejects malformed IDs and SHA-256 digests at the repository seam.
+  `human_only`, non-agent/model-only refs, rich but unfetched parts, missing
+  rows, unsupported kinds, wrong scope/addressee, duplicate decisions and
+  mismatched answer receipts become non-interactive **Human action required**
+  notices. Stream-authored titles, summaries, digests and decision lists never
+  enter the authority path.
+- A gate-read failure no longer suppresses an otherwise valid transcript. The
+  notice offers a durable-read retry. Missing, stale or unservable proposals
+  offer an ordinary human-authored Stage-0 regeneration turn; the browser never
+  manufactures a replacement gate.
+- ICP Revise uses a required, trimmed, 4,000-character bounded form and sends
+  the selected decision, exact fetched digest, null spend and typed
+  `revision_request` through the existing structured gate-answer route.
+  Approve and Reject carry no revision text. Backend `GATE_*` refusals become a
+  per-gate recovery state.
+- Answered cards rehydrate only from an immutable receipt whose digest,
+  decision and answering user match the fetched gate. The recorded revision
+  request remains visible in history.
+
+Authenticated Browser/API/Postgres evidence on the isolated Insight Health
+runtime:
+
+- the original ICP gate
+  `6fae9039-bbaf-50ff-81bc-b0ba66155f6c` rendered Approve, Reject and Revise only
+  after the durable gate read completed;
+- blank Revise submission stayed disabled. The submitted request to narrow the
+  ICP to independent multi-site neurosurgery/spine practices with at least
+  three providers was stored once with the exact original digest. The original
+  ICP remained draft and its gated snapshot was unchanged;
+- the fleet synthesized a new durable ICP proposal and gate
+  `42f784b0-d602-5c65-b568-2a7fcc90b18b`. Approve stored one exact answer and
+  activated only that replacement ICP;
+- after a full page reload the transcript showed one durable **Revision
+  requested** receipt and one durable **Approved** receipt, with zero remaining
+  decision controls. Relevant gate reads returned 200, turn submissions 202,
+  and streams 200; no application runtime error appeared.
+
+Final verification:
+
+- frontend: 151 tests passed; ESLint and design-system token build passed;
+- Next.js 16 webpack production build compiled, type-checked and generated all
+  routes successfully. The only output was the pre-existing multiple-lockfile
+  workspace-root warning;
+- the live browser journey exercised Revise and Approve through UI, API, fleet
+  and Postgres. Reject uses the same structured route and is covered by focused
+  payload/authority tests; recovery notices are covered by model tests because
+  the healthy live runtime did not produce a missing durable gate;
+- `git diff --check` passed before closeout.
+
+Remaining hardening starts at Slice 4. Composer clearing, chat sizing/overflow,
+sticky offsets, Gallery behavior and naming defects were observed but were not
+changed in this slice.

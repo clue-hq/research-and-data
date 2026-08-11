@@ -11,11 +11,9 @@ import { fixtureGates } from "./chat.fixture";
  * answer receipt. A streamed `gate` part is only a reference; this durable read
  * is the authority the card validates before rendering controls.
  *
- * Slice 2 intentionally leaves the new ICP gate non-interactive in this client:
- * its Approve/Reject/Revise form (especially the required Revise text) lands in
- * Slice 3. The repository still returns the durable payload now, allowing the
- * renderer to distinguish that supported authority object from malformed,
- * model-only or unavailable references without inventing any gate fields.
+ * Slice 3 makes this read the exclusive authority for decision controls. Even
+ * a rich stream part cannot substitute for it; malformed, model-only,
+ * unsupported, missing and stale references remain recovery notices.
  */
 export interface ChatGateRead {
   /** False when this deployment served no durable gate payload. */
@@ -30,8 +28,7 @@ export interface ChatGatesRepository {
 }
 
 const UNSERVED =
-  "this deployment serves no durable gate read, so the approval card cannot " +
-  "send the subject digest the server requires";
+  "The durable gate service is not available for this conversation.";
 
 export function createHttpChatGatesRepository(
   transport: Extract<ChatTransport, { mode: "http" }>,

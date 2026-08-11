@@ -5,6 +5,11 @@ import {
   type ChatGatePart,
   type GateDecision,
 } from "./chat-parts";
+import type { GateResponse } from "./chat-turn";
+
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const DURABLE_GATE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * The durable gate object the approval card renders (charter §3-P5(a), §3.4).
@@ -29,7 +34,7 @@ const GateAnswerWireSchema = z.object({
   turn_id: z.string(),
   action_ref: z.string(),
   decision: z.string(),
-  expected_subject_sha256: z.string(),
+  expected_subject_sha256: z.string().regex(SHA256_PATTERN),
   decision_payload: z.record(z.string(), z.unknown()).default({}),
   answered_by_user_id: z.string(),
   answered_at: z.string(),
@@ -44,15 +49,15 @@ const GateLaunchWireSchema = z.object({
 });
 
 const GateWireSchema = z.object({
-  gate_id: z.string().min(1),
-  workspace_id: z.string(),
-  project_id: z.string(),
-  thread_id: z.string(),
-  turn_id: z.string(),
-  kind: z.string(),
-  subject_ref: z.string(),
+  gate_id: z.string().regex(DURABLE_GATE_ID_PATTERN),
+  workspace_id: z.string().min(1),
+  project_id: z.string().min(1),
+  thread_id: z.string().min(1),
+  turn_id: z.string().min(1),
+  kind: z.string().min(1),
+  subject_ref: z.string().min(1),
   subject_revision: z.number().int().nullable().default(null),
-  expected_subject_sha256: z.string(),
+  expected_subject_sha256: z.string().regex(SHA256_PATTERN),
   subject_snapshot: z.record(z.string(), z.unknown()).default({}),
   permitted_decisions: z.array(GateDecisionSchema),
   // Optional because the amount is *withheld*, not missing: with the pilot's
@@ -63,7 +68,7 @@ const GateWireSchema = z.object({
   // cost row at all rather than a fabricated zero.
   max_spend_cents: z.union([z.number(), z.string()]).nullish().default(null),
   currency: z.string().nullable(),
-  addressee_user_id: z.string(),
+  addressee_user_id: z.string().min(1),
   created_at: z.string(),
   answer: GateAnswerWireSchema.nullable().default(null),
   launches: z.array(GateLaunchWireSchema).default([]),
@@ -89,6 +94,7 @@ export interface ChatGateLaunch {
 
 export interface ChatGate {
   gateId: string;
+  workspaceId: string;
   projectId: string;
   threadId: string;
   /** The turn that *presented* the gate — not the turn that answered it. */
@@ -110,6 +116,7 @@ export interface ChatGate {
 function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
   return {
     gateId: wire.gate_id,
+    workspaceId: wire.workspace_id,
     projectId: wire.project_id,
     threadId: wire.thread_id,
     turnId: wire.turn_id,
@@ -164,17 +171,25 @@ export function isGateOpen(gate: ChatGate): boolean {
  * `unavailable` is a first-class state and not an error: it is what the surface
  * shows when the transcript knows a gate exists (the stream said so, or a
  * message carries an `open_gate` ref) but the durable payload could not be
- * read. The card then renders the request with its controls **disabled** and
- * says why, because an approve button that cannot send the required subject
- * digest would refuse at the server anyway — and a card that guessed it would
- * be worse. A withheld *amount* is not that case: it is the pilot's normal
- * posture and leaves the card fully answerable.
+ * read. The card then renders a non-interactive human-action notice and an
+ * explicit recovery where one is safe. It never renders disabled decision
+ * chrome that implies the reference could become authority by itself. A
+ * withheld *amount* is not that case: it is the pilot's normal posture and
+ * leaves an otherwise verified card fully answerable.
  */
-export type GateCardState =
-  | "requested"
-  | "responded"
-  | "denied"
-  | "unavailable";
+export type GateCardState = "requested" | "responded" | "denied" | "unavailable";
+
+export type GateRecoveryKind = "retry_gate_read" | "request_new_gate";
+
+export interface GateRecoveryAction {
+  kind: GateRecoveryKind;
+  label: string;
+}
+
+export interface GateAuthorityFailure {
+  reason: string;
+  recovery: GateRecoveryAction | null;
+}
 
 export interface GateCardModel {
   gateId: string;
@@ -182,6 +197,8 @@ export interface GateCardModel {
   kind: string;
   title: string;
   summary: string | null;
+  subjectRef: string | null;
+  subjectRevision: number | null;
   amountCents: number | null;
   currency: string | null;
   expectedSubjectSha256: string | null;
@@ -191,15 +208,11 @@ export interface GateCardModel {
   answeredByUserId: string | null;
   /** Non-null only in `unavailable`; the exact reason the card cannot act. */
   unavailableReason: string | null;
+  recovery: GateRecoveryAction | null;
+  revisionRequest: string | null;
   /** The research run an approved gate's authority actually launched. */
   launches: readonly ChatGateLaunch[];
 }
-
-const ALL_DECISIONS: readonly GateDecision[] = [
-  "approved",
-  "rejected",
-  "revised",
-];
 
 function decisionOf(value: string | null): GateDecision | null {
   const parsed = GateDecisionSchema.safeParse(value);
@@ -213,93 +226,351 @@ const GATE_TITLES: Record<string, string> = {
   budget_approval: "Approve budget",
 };
 
+const SUPPORTED_GATE_KINDS: ReadonlySet<string> = new Set([
+  "directive_confirmation",
+  "icp_confirmation",
+]);
+
+const RETRY_GATE_READ: GateRecoveryAction = {
+  kind: "retry_gate_read",
+  label: "Retry gate verification",
+};
+
+const REQUEST_NEW_GATE: GateRecoveryAction = {
+  kind: "request_new_gate",
+  label: "Ask Stage 0 to regenerate",
+};
+
 export function gateTitle(kind: string): string {
   return GATE_TITLES[kind] ?? kind.replaceAll("_", " ");
 }
 
+export function agentGateIdFromPart(part: ChatGatePart): string | null {
+  if (
+    part.gateRef.objectType !== "agent_gate" ||
+    part.gateRef.objectId === null
+  ) {
+    return null;
+  }
+  return DURABLE_GATE_ID_PATTERN.test(part.gateRef.objectId)
+    ? part.gateRef.objectId
+    : null;
+}
+
+function durableGateSummary(gate: ChatGate): string {
+  if (gate.kind === "icp_confirmation") {
+    const label =
+      typeof gate.subjectSnapshot.icp_key === "string"
+        ? gate.subjectSnapshot.icp_key.replaceAll("_", " ")
+        : gate.subjectRef;
+    return `ICP proposal ${label} · revision ${gate.subjectRevision}`;
+  }
+  if (gate.kind === "directive_confirmation") {
+    const accountCount = gate.subjectSnapshot.account_count;
+    const scope =
+      typeof accountCount === "number"
+        ? `${accountCount} ${accountCount === 1 ? "account" : "accounts"}`
+        : gate.subjectRef;
+    return `Research directive for ${scope} · revision ${gate.subjectRevision}`;
+  }
+  return `${gate.subjectRef} · revision ${gate.subjectRevision}`;
+}
+
+function notice({
+  gate,
+  part,
+  reason,
+  recovery,
+}: {
+  gate: ChatGate | null;
+  part: ChatGatePart;
+  reason: string;
+  recovery: GateRecoveryAction | null;
+}): GateCardModel {
+  return {
+    gateId: gate?.gateId ?? part.gateRef.objectId ?? part.partId,
+    state: "unavailable",
+    kind: gate?.kind ?? part.gateKind,
+    title: "Human action required",
+    summary: gate === null ? null : durableGateSummary(gate),
+    subjectRef: gate?.subjectRef ?? null,
+    subjectRevision: gate?.subjectRevision ?? null,
+    amountCents: null,
+    currency: null,
+    expectedSubjectSha256: null,
+    permittedDecisions: [],
+    decision: null,
+    answeredAt: null,
+    answeredByUserId: null,
+    unavailableReason: reason,
+    recovery,
+    revisionRequest: null,
+    launches: [],
+  };
+}
+
 /**
- * Build the card model from whichever of the two sources exist.
+ * Build one card from a stream signal plus its fetched durable authority.
  *
- * The durable gate wins wherever it is present; the stream part is the fallback
- * and the "a gate exists here" signal. A card with no durable gate and no
- * digest is `unavailable` — it cannot legally be answered, so it must not offer
- * to be.
+ * The stream part is never a fallback authority, even when it carries a rich
+ * snapshot. It only identifies which persisted gate the repository must have
+ * returned. This keeps model-authored refs and stale streamed fields outside
+ * the decision path by construction.
  */
 export function gateCardModel({
   gate,
   part,
-  unavailableReason = null,
+  currentUserId,
+  currentWorkspaceId,
+  expectedProjectId,
+  expectedThreadId,
+  gateReadAvailable,
+  gateReadReason = null,
+  gateReadLoading = false,
+  authorityFailure = null,
 }: {
   gate: ChatGate | null;
   part: ChatGatePart | null;
-  unavailableReason?: string | null;
+  currentUserId: string | null;
+  currentWorkspaceId: string | null;
+  expectedProjectId: string;
+  expectedThreadId: string;
+  gateReadAvailable: boolean;
+  gateReadReason?: string | null;
+  gateReadLoading?: boolean;
+  authorityFailure?: GateAuthorityFailure | null;
 }): GateCardModel | null {
   if (gate === null && part === null) return null;
+  if (part === null) return null;
 
-  const gateId =
-    gate?.gateId ?? part?.gateRef.objectId ?? part?.partId ?? "unknown-gate";
-  const kind =
-    gate?.kind ??
-    (part && part.gateKind !== "agent_gate" ? part.gateKind : null) ??
-    "directive_confirmation";
-  const expectedSubjectSha256 =
-    gate?.expectedSubjectSha256 ?? part?.expectedSubjectSha256 ?? null;
-  const amountCents = gate?.maxSpendCents ?? part?.amountCents ?? null;
-  const currency = gate?.currency ?? part?.currency ?? null;
-  const decision =
-    decisionOf(gate?.answer?.decision ?? null) ?? decisionOf(part?.decision ?? null);
+  const referencedGateId = agentGateIdFromPart(part);
+  if (referencedGateId === null) {
+    return notice({
+      gate: null,
+      part,
+      reason:
+        "This request is not backed by a durable agent gate. A model-only reference cannot authorize a human decision.",
+      recovery: REQUEST_NEW_GATE,
+    });
+  }
+  if (gate === null) {
+    if (gateReadLoading) {
+      return notice({
+        gate: null,
+        part,
+        reason: "Verifying the durable gate before showing any decision controls.",
+        recovery: null,
+      });
+    }
+    return notice({
+      gate: null,
+      part,
+      reason: gateReadAvailable
+        ? "The referenced durable gate is missing from this conversation. It cannot be answered safely."
+        : (gateReadReason ??
+          "The durable gate could not be verified, so no decision controls are available."),
+      recovery: gateReadAvailable ? REQUEST_NEW_GATE : RETRY_GATE_READ,
+    });
+  }
+  if (gate.gateId !== referencedGateId) {
+    return notice({
+      gate,
+      part,
+      reason: "The rendered reference does not match the fetched durable gate.",
+      recovery: RETRY_GATE_READ,
+    });
+  }
+  if (
+    gate.workspaceId !== currentWorkspaceId ||
+    gate.projectId !== expectedProjectId ||
+    gate.threadId !== expectedThreadId
+  ) {
+    return notice({
+      gate,
+      part,
+      reason: "The durable gate does not belong to the active workspace conversation.",
+      recovery: RETRY_GATE_READ,
+    });
+  }
+  if (!SUPPORTED_GATE_KINDS.has(gate.kind)) {
+    return notice({
+      gate,
+      part,
+      reason: `This client does not support decisions for ${gateTitle(gate.kind)} gates.`,
+      recovery: REQUEST_NEW_GATE,
+    });
+  }
+  if (gate.subjectRevision === null || gate.subjectRevision < 1) {
+    return notice({
+      gate,
+      part,
+      reason: "The durable gate does not identify an exact positive subject revision.",
+      recovery: REQUEST_NEW_GATE,
+    });
+  }
+  if (new Set(gate.permittedDecisions).size !== gate.permittedDecisions.length) {
+    return notice({
+      gate,
+      part,
+      reason: "The durable gate contains a duplicated human decision.",
+      recovery: REQUEST_NEW_GATE,
+    });
+  }
 
-  // The subject digest alone decides answerability. It is the load-bearing
-  // stale-approval guard in both deployment postures, whereas the amount is
-  // absent by design whenever budget controls are off — requiring it here would
-  // make every pilot gate permanently unanswerable. A card that reached us with
-  // a digest but no amount while controls are *on* is the rare read-failure
-  // case; it stays clickable and the server answers with `GATE_AMOUNT_STALE`
-  // rather than the client guessing which posture the deployment is in.
-  // Slice 2 exposes the complete ICP backend lifecycle, but the client still
-  // lacks the typed revision-request input that makes all three decisions
-  // usable. Keep that gate visible and deliberately non-interactive until the
-  // dedicated rendering slice lands; do not accidentally turn the existing
-  // generic buttons into a half-implemented authority surface.
-  const clientSupportsKind = kind === "directive_confirmation";
-  const answerable =
-    clientSupportsKind && expectedSubjectSha256 !== null && decision === null;
-
-  let state: GateCardState;
-  if (decision === "approved") state = "responded";
-  else if (decision !== null) state = "denied";
-  else if (answerable) state = "requested";
-  else state = "unavailable";
+  const decision = decisionOf(gate.answer?.decision ?? null);
+  if (gate.answer !== null && decision === null) {
+    return notice({
+      gate,
+      part,
+      reason: "The durable answer receipt contains an unsupported decision.",
+      recovery: null,
+    });
+  }
+  if (decision !== null) {
+    if (
+      gate.answer?.expectedSubjectSha256 !== gate.expectedSubjectSha256 ||
+      !gate.permittedDecisions.includes(decision) ||
+      gate.answer.answeredByUserId !== gate.addresseeUserId
+    ) {
+      return notice({
+        gate,
+        part,
+        reason:
+          "The durable answer receipt does not match the gate authority it claims to answer.",
+        recovery: null,
+      });
+    }
+    const revisionRequest = gate.answer?.decisionPayload.revision_request;
+    return {
+      gateId: gate.gateId,
+      state: decision === "approved" ? "responded" : "denied",
+      kind: gate.kind,
+      title: gateTitle(gate.kind),
+      summary: durableGateSummary(gate),
+      subjectRef: gate.subjectRef,
+      subjectRevision: gate.subjectRevision,
+      amountCents: gate.maxSpendCents,
+      currency: gate.currency,
+      expectedSubjectSha256: gate.expectedSubjectSha256,
+      permittedDecisions: gate.permittedDecisions,
+      decision,
+      answeredAt: gate.answer?.answeredAt ?? null,
+      answeredByUserId: gate.answer?.answeredByUserId ?? null,
+      unavailableReason: null,
+      recovery: null,
+      revisionRequest:
+        typeof revisionRequest === "string" ? revisionRequest : null,
+      launches: gate.launches,
+    };
+  }
+  if (authorityFailure !== null) {
+    return notice({
+      gate,
+      part,
+      reason: authorityFailure.reason,
+      recovery: authorityFailure.recovery,
+    });
+  }
+  if (currentUserId === null || gate.addresseeUserId !== currentUserId) {
+    return notice({
+      gate,
+      part,
+      reason:
+        currentUserId === null
+          ? "The current user identity could not be verified."
+          : "This confirmation is addressed to another workspace member.",
+      recovery: null,
+    });
+  }
+  if (gate.permittedDecisions.length === 0) {
+    return notice({
+      gate,
+      part,
+      reason: "The durable gate offers no supported human decision.",
+      recovery: REQUEST_NEW_GATE,
+    });
+  }
 
   return {
-    gateId,
-    state,
-    kind,
-    title: part?.title ?? gateTitle(kind),
-    summary: part?.summary ?? null,
-    amountCents,
-    currency,
-    expectedSubjectSha256,
-    permittedDecisions:
-      gate !== null
-        ? gate.permittedDecisions
-        : part && part.permittedDecisions.length > 0
-        ? part.permittedDecisions.filter((value): value is GateDecision =>
-            ALL_DECISIONS.includes(value as GateDecision),
-          )
-        : ALL_DECISIONS,
+    gateId: gate.gateId,
+    state: "requested",
+    kind: gate.kind,
+    title: gateTitle(gate.kind),
+    summary: durableGateSummary(gate),
+    subjectRef: gate.subjectRef,
+    subjectRevision: gate.subjectRevision,
+    amountCents: gate.maxSpendCents,
+    currency: gate.currency,
+    expectedSubjectSha256: gate.expectedSubjectSha256,
+    permittedDecisions: gate.permittedDecisions,
+    decision: null,
+    answeredAt: null,
+    answeredByUserId: null,
+    unavailableReason: null,
+    recovery: null,
+    revisionRequest: null,
+    launches: gate.launches,
+  };
+}
+
+export function gateAuthorityFailure(
+  code: string,
+  message: string,
+): GateAuthorityFailure {
+  switch (code) {
+    case "GATE_SUBJECT_STALE":
+    case "GATE_NOT_FOUND":
+    case "GATE_KIND_UNSUPPORTED":
+    case "GATE_DECISION_UNSUPPORTED":
+      return {
+        reason: `${message} The current card cannot be used safely.`,
+        recovery: REQUEST_NEW_GATE,
+      };
+    case "GATE_ALREADY_ANSWERED":
+    case "GATE_AMOUNT_STALE":
+      return {
+        reason: `${message} Refresh the durable gate before taking another action.`,
+        recovery: RETRY_GATE_READ,
+      };
+    case "GATE_FORBIDDEN":
+      return { reason: message, recovery: null };
+    default:
+      return {
+        reason: `${message} The durable gate must be verified again before retrying.`,
+        recovery: RETRY_GATE_READ,
+      };
+  }
+}
+
+export function gateAnswerResponse(
+  card: GateCardModel,
+  decision: GateDecision,
+  revisionRequest?: string,
+): GateResponse {
+  if (card.state !== "requested" || card.expectedSubjectSha256 === null) {
+    throw new Error("only a verified, unanswered durable gate may be answered");
+  }
+  if (!card.permittedDecisions.includes(decision)) {
+    throw new Error("this decision was not offered by the durable gate");
+  }
+  const trimmedRevision = revisionRequest?.trim();
+  if (trimmedRevision && trimmedRevision.length > 4_000) {
+    throw new Error("an ICP revision request must be at most 4000 characters");
+  }
+  if (card.kind === "icp_confirmation" && decision === "revised") {
+    if (!trimmedRevision) {
+      throw new Error("describe the ICP changes you want before requesting a revision");
+    }
+  } else if (trimmedRevision) {
+    throw new Error("revision text is valid only when revising an ICP");
+  }
+  return {
+    gateId: card.gateId,
     decision,
-    answeredAt: gate?.answer?.answeredAt ?? part?.answeredAt ?? null,
-    answeredByUserId:
-      gate?.answer?.answeredByUserId ?? part?.answeredByUserId ?? null,
-    unavailableReason:
-      state === "unavailable"
-        ? (unavailableReason ??
-          (!clientSupportsKind
-            ? "Human action required: this gate kind is not supported by this client yet"
-            : "this deployment did not serve the gate's subject digest"))
-        : null,
-    launches: gate?.launches ?? [],
+    expectedSubjectSha256: card.expectedSubjectSha256,
+    expectedEstimatedCostCents:
+      card.kind === "directive_confirmation" ? card.amountCents : null,
+    ...(trimmedRevision ? { revisionRequest: trimmedRevision } : {}),
   };
 }
 
