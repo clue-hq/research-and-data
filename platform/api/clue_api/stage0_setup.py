@@ -380,7 +380,7 @@ def create_stage0_setup_router(
                 run_id=ProjectRunId(recon_run_id),
             )
         latest_field: dict[str, tuple[int, str, str]] = {}
-        budgets: dict[str, bool] = {}
+        latest_budget: dict[str, tuple[int, bool]] = {}
         for event in events:
             payload = event.payload
             kind = payload.get("kind")
@@ -395,8 +395,13 @@ def create_stage0_setup_router(
                     )
             elif kind == RECON_TRANSITION_KIND and payload.get("status") == "completed":
                 exhausted = payload.get("budget_exhausted")
-                if isinstance(exhausted, bool):
-                    budgets[str(payload.get("lane", ""))] = exhausted
+                lane = str(payload.get("lane", ""))
+                held = latest_budget.get(lane)
+                # Both reductions compare on seq rather than trusting arrival order, so
+                # neither depends on how `list_run_events` happens to sort its page.
+                if isinstance(exhausted, bool) and (held is None or held[0] < event.seq):
+                    latest_budget[lane] = (event.seq, exhausted)
+        budgets = {lane: value for lane, (_, value) in latest_budget.items()}
         order = {key: index for index, key in enumerate(CLIENT_BASELINE_FIELDS)}
         fields = [
             SetupFieldState(field_key=field_key, lane=lane, status=status)

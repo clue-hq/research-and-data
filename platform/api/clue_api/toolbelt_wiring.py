@@ -2829,6 +2829,23 @@ def build_toolbelt(
         conn_factory=conn_factory,
         budget_controls_enabled=resolved_settings.budget_controls_enabled,
     )
+    # FI-4 slice 3: recon field progress commits on its OWN connection so the setup screen sees
+    # motion while the lane runs (the lane's own transaction stays uncommitted until it ends).
+    # That second checkout is only safe against the real pooled factory — an injected
+    # single-connection / lock-guarded factory (every DB test harness) would have the lane wait
+    # on a connection it is itself holding. So the autonomous path is composed only for
+    # `transaction`; anything else falls back to the emitter's lane-connection write, which is
+    # correct everywhere, just post-commit-visible — and post-commit-visible means the
+    # onboarding screen shows nothing for the whole fast lane, so say so out loud rather than
+    # degrading in silence (a future request-scoped/instrumented production factory would
+    # otherwise kill the feature with green tests and green logs).
+    stage0_field_progress_factory = conn_factory if conn_factory is transaction else None
+    if stage0_field_progress_factory is None:
+        log.info(
+            "toolbelt.stage0_field_progress_lane_bound",
+            reason="conn_factory is not clue_db.transaction",
+            effect="recon per-field progress is visible only after the lane commits",
+        )
     for tool in stage0_tools(
         conn_factory=conn_factory,
         policy=DEFAULT_STAGE0_POLICY,
@@ -2843,14 +2860,7 @@ def build_toolbelt(
         # value is then refused rather than written unvouched-for — which is exactly the pre-§6c
         # behaviour, so an ungatewayed composition is never *worse* than before.
         entailment_judge=entailment_judge,
-        # FI-4 slice 3: recon field progress commits on its OWN connection so the setup screen
-        # sees motion while the lane runs (the lane's own transaction stays uncommitted until it
-        # ends). That second checkout is only safe against the real pooled factory — an injected
-        # single-connection / lock-guarded factory (every DB test harness) would have the lane
-        # wait on a connection it is itself holding. So the autonomous path is composed only for
-        # `transaction`; anything else falls back to the emitter's lane-connection write, which
-        # is correct everywhere, just post-commit-visible.
-        field_progress_factory=conn_factory if conn_factory is transaction else None,
+        field_progress_factory=stage0_field_progress_factory,
     ):
         registry.register(tool, make_default=True)
     for tool in build_research_directive_tools(
