@@ -90,9 +90,16 @@ crates/lumen-wasm    Rust engine in WASM; owns the local scene.
    `canvaskit/loadCanvasKit`, `wasmEngine`) and dynamically by
    `engine/__tests__/workspaceHeaderDefaults.test.ts`, which calls the
    data layer WITHOUT injected transports and asserts the header on the wire.
-   Known open hole (API-surface decision pending, do not point-fix):
-   `<img src>` URLs against `/assets/{id}/bytes|thumbnail` cannot carry the
-   header at all.
+   The `<img src>` corollary (closed 2026-08-12): an `<img>` cannot carry the
+   header at all, so image `src` URLs must be PUBLIC content-addressed ones —
+   `/asset-store/{digest}` — never registry URLs. Sites holding an
+   `AssetRecord` build them with `publicAssetBytesUrl` /
+   `publicAssetThumbnailUrl` (engine/assetLibrary); id-only sites resolve the
+   record through `useAssetPreviewUrl` (hooks/), which fetches
+   `GET /assets/{id}` via lumenFetch and caches. The API stamps
+   `media.thumbnail.digest` at its DTO boundary (`public_asset_record`) so no
+   client ever parses a storage ref. Null means unfetchable — render nothing,
+   never a guaranteed-401 URL.
 
 9. **Comments state invariants, not history.** Good: "engine owns local
    scene application." Bad: "added in Phase 2a." No new Phase/Wave/Track

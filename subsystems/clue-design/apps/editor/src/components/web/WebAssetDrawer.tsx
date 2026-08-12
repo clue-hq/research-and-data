@@ -4,9 +4,9 @@ import React, { useCallback, useEffect, useState } from "react";
 
 import { editorApiBaseUrl } from "@/engine/editorConfig";
 import {
-  assetStoreBytesUrl,
-  assetThumbnailUrl,
   fetchAssets,
+  publicAssetBytesUrl,
+  publicAssetThumbnailUrl,
   uploadAsset
 } from "@/engine/assetLibrary";
 import type { AssetRecord } from "@/engine/contracts";
@@ -32,17 +32,14 @@ interface WebAssetDrawerProps {
 
 /** The asset kinds the drawer surfaces — anything image-shaped. */
 const IMAGE_KINDS = new Set(["raster_image", "logo", "vector"]);
-const SHA256_HEX = /^[0-9a-f]{64}$/;
 
-/** The best thumbnail URL for a record: its content digest under
- * `/asset-store/{digest}` when present (immutable + cache-friendly), else the
- * registry thumbnail endpoint. */
-function thumbnailUrl(apiBaseUrl: string, record: AssetRecord): string {
-  const digest = record.media?.digest;
-  if (digest && digest.algorithm === "sha256" && SHA256_HEX.test(digest.value)) {
-    return assetStoreBytesUrl(apiBaseUrl, digest.value);
-  }
-  return assetThumbnailUrl(apiBaseUrl, record.id);
+/** The best public preview URL for a record: full bytes when the digest is
+ * known (immutable + cache-friendly), else the thumbnail digest; null when
+ * neither exists — a registry URL would 401 from an <img>. */
+function thumbnailUrl(apiBaseUrl: string, record: AssetRecord): string | null {
+  return (
+    publicAssetBytesUrl(apiBaseUrl, record) ?? publicAssetThumbnailUrl(apiBaseUrl, record)
+  );
 }
 
 type DrawerTab = "library" | "upload";
@@ -163,7 +160,7 @@ export function WebAssetDrawer({ mode, onPick, onClose }: WebAssetDrawerProps): 
                   onClick={() => onPick(record)}
                 >
                   <img
-                    src={thumbnailUrl(apiBaseUrl, record)}
+                    src={thumbnailUrl(apiBaseUrl, record) ?? undefined}
                     alt={record.label}
                     loading="lazy"
                   />

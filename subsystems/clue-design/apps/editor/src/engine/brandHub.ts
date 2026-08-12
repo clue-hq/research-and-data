@@ -171,8 +171,3 @@ export async function setBrandKitLogo(
   }
 }
 
-/** The raw-bytes URL for an asset (`{base}/assets/{id}/bytes`) — the src for
- * logo/image thumbnails on the review page. */
-export function assetBytesUrl(apiBaseUrl: string, assetId: string): string {
-  return new URL(`/assets/${encodeURIComponent(assetId)}/bytes`, apiBaseUrl).toString();
-}

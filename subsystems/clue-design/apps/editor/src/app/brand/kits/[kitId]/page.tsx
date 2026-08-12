@@ -169,7 +169,6 @@ export default function BrandKitDetailPage(): React.ReactElement {
       <KitTypographySection kitJson={detail.kitJson} />
       <KitLogosSection
         kitJson={detail.kitJson}
-        apiBaseUrl={apiBaseUrl}
         onChoose={(slot) => {
           setLogoError(null);
           setLogoPickerSlot(slot);
@@ -187,7 +186,7 @@ export default function BrandKitDetailPage(): React.ReactElement {
           />
         </section>
       ) : null}
-      <KitImagesSection kitJson={detail.kitJson} apiBaseUrl={apiBaseUrl} />
+      <KitImagesSection kitJson={detail.kitJson} />
       <KitVoiceSection kitJson={detail.kitJson} ingestionReport={ingestionReport} />
       <KitIngestionReport ingestionReport={ingestionReport} />
       <KitDiagnostics diagnostics={detail.diagnostics} />

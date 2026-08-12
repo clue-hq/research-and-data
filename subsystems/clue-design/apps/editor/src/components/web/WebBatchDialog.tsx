@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 
 import { editorApiBaseUrl } from "@/engine/editorConfig";
-import { assetThumbnailUrl } from "@/engine/assetLibrary";
+import { useAssetPreviewUrl } from "@/hooks/useAssetPreviewUrl";
 import {
   createWebAccount,
   deleteWebAccount,
@@ -498,6 +498,9 @@ function AccountForm({
   onCancel: () => void;
 }): React.ReactElement {
   const [values, setValues] = useState<AccountFormValues>(() => toFormValues(account));
+  // The form stores only the logo's asset id (an existing account row carries
+  // nothing more); the hook resolves it to a public /asset-store/{digest} URL.
+  const logoPreviewUrl = useAssetPreviewUrl(values.logoAssetId, "thumbnail");
   const [logoOpen, setLogoOpen] = useState(false);
 
   const setField = <K extends keyof AccountFormValues>(key: K, value: AccountFormValues[K]) =>
@@ -565,12 +568,8 @@ function AccountForm({
       <div className="web-modal-field">
         <span className="web-modal-field-label">Logo</span>
         <div className="web-logo-field">
-          {values.logoAssetId ? (
-            <img
-              className="web-logo-thumb"
-              src={assetThumbnailUrl(apiBaseUrl, values.logoAssetId)}
-              alt="Account logo"
-            />
+          {values.logoAssetId && logoPreviewUrl ? (
+            <img className="web-logo-thumb" src={logoPreviewUrl} alt="Account logo" />
           ) : null}
           <button
             type="button"

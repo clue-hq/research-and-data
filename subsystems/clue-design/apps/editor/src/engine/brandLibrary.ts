@@ -1,5 +1,5 @@
 import type { AssetRecord } from "./contracts";
-import { assetBytesUrl, assetThumbnailUrl, fetchAssets } from "./assetLibrary";
+import { fetchAssets } from "./assetLibrary";
 import { lumenFetch } from "./editorConfig";
 
 /**
@@ -210,14 +210,4 @@ export async function fetchIngestJobs(
   }
   const payload = (await response.json()) as { jobs?: IngestJob[] };
   return payload.jobs ?? [];
-}
-
-// -- asset preview urls (thumbnail preferred, /bytes fallback) -------------
-
-export function assetPreviewUrl(apiBaseUrl: string, assetId: string): string {
-  return assetThumbnailUrl(apiBaseUrl, assetId);
-}
-
-export function assetFullUrl(apiBaseUrl: string, assetId: string): string {
-  return assetBytesUrl(apiBaseUrl, assetId);
 }

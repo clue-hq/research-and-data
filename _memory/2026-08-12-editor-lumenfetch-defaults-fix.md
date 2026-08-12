@@ -71,15 +71,32 @@ with two factual errors, now corrected in place — in
   exists in the canonical doc, naming both enforcement layers and the open `<img src>` hole.
   Full-module enumeration in the dynamic suite is deliberately NOT done — the static guard
   owns enumeration; the pins own per-module wiring proof.
-- **`<img src>` 401 class (NOT fixable by lumenFetch):** `GET /assets/{id}/bytes|thumbnail`
-  are workspace-gated but consumed as `<img src>` at 8 component sites (KitLogoPicker,
-  KitLogosSection, KitImagesSection, AssetBrowserPanel, ImageInspectorSection ×2,
-  WebAssetDrawer, WebBatchDialog) — browsers can't attach headers to `<img>`. Needs an API
-  surface decision (extend `/asset-store/{digest}` content-addressing vs token carrier vs
-  `/w/{ws}/` path scope). Same class D7 solved for SSE. Related: `assetLibrary.
-  sceneAssetBytesUrl` falls back to `/assets/{id}/bytes` for digest-less assets → latent 401
-  inside the sanctioned imageCache exception.
+- **`<img src>` 401 class — RESOLVED 2026-08-12 (founder-ratified: extend `/asset-store/{digest}`
+  content-addressing).** Full trail in `2026-08-12-asset-img-serving-and-editor-ci.md`. Summary:
+  the API stamps `media.thumbnail.digest` at the DTO boundary (`public_asset_record` in
+  `lumen_api/main.py`, applied at all 8 record-returning sites; ref parsing stays server-owned
+  via `location_digest`); the editor gained `publicAssetBytesUrl`/`publicAssetThumbnailUrl` +
+  `fetchAssetRecord` (engine/assetLibrary) and the cached id→record resolver hook
+  `useAssetPreviewUrl` (hooks/); all NINE `<img>` surfaces swapped (the audit's 8 + a missed
+  `AssetPreviewImage`, whose registry-onError dance is retired); the registry URL builders
+  (`assetBytesUrl`/`assetThumbnailUrl`, in assetLibrary AND brandHub AND brandLibrary's
+  wrappers) are DELETED so the class is unrepresentable; `sceneAssetBytesUrl`'s digest-less
+  fallback now returns null (imageCache models null = skipped load) closing the latent 401
+  inside the imageCache exception. Browser-verified live end-to-end (uploaded asset →
+  brand kit referencing it → kit logos/images/picker + editor Assets panel all render from
+  `/asset-store/{digest}` 200, one deduped `GET /assets/{id}` 200 via lumenFetch, zero 401s;
+  headerless `curl /asset-store/{digest}` 200). Residual unchanged: R-D4-7 —
+  `/asset-store/{digest}` still resolves across tenants; Part-IV auth owns serving policy.
 - `docs/frontend-practices.md` predates the seam — the workspace-header rule exists nowhere
   in the canonical doc; add it (+ the guard) when Part B lands.
-- Editor has no CI at all (`make check` is Python-only) — belongs to Step-2/week-one hygiene.
-- 26 pre-existing editor test failures above.
+- Editor CI — RESOLVED 2026-08-12: the editor's original gate
+  (`subsystems/clue-design/.github/workflows/conformance.yml`, job browser-wasm-core) had been
+  DEAD since the subtree merge (GitHub only runs root `.github/`). Ported to
+  `.github/workflows/editor-checks.yml` (root): paths-filtered on `subsystems/clue-design/**`,
+  runs npm ci → wasm build+budget → `npm run lint` (hex + lumenFetch guards + tsc) → vitest
+  with the two documented pre-existing red files excluded (loud header comment; removing the
+  excludes is part of fixing those 26) → production build. The old subsystem-level
+  conformance.yml is left untouched as history (its rust/api jobs are a separate porting
+  decision). Details in `2026-08-12-asset-img-serving-and-editor-ci.md`.
+- 26 pre-existing editor test failures above (now also pinned as CI exclusions — fixing them
+  deletes the two `--exclude` flags in editor-checks.yml).

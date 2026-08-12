@@ -5496,6 +5496,41 @@ def create_app(
             "repairs": repo.list_repair_queue(template_revision_id, status),
         }
 
+    def public_asset_record(record: JsonObject) -> JsonObject:
+        """DTO-boundary enrichment: stamp the content digests the editor's
+        public serving needs (`/asset-store/{digest}` — the only URL an
+        `<img src>` can use, since it cannot send `X-Workspace-Id`) as
+        explicit fields. Ref parsing stays server-owned policy
+        (`clue_design.storage.location_digest`); no client ever takes the
+        tail of an `opaque_ref`. Read-time and non-mutating — stored rows
+        keep their written shape.
+        """
+        media = record.get("media")
+        if not isinstance(media, dict):
+            return record
+        enriched = None
+        thumbnail = media.get("thumbnail")
+        if isinstance(thumbnail, dict) and not thumbnail.get("digest"):
+            thumb_digest = location_digest(thumbnail.get("location"))
+            if thumb_digest:
+                enriched = {
+                    **media,
+                    "thumbnail": {
+                        **thumbnail,
+                        "digest": {"algorithm": "sha256", "value": thumb_digest},
+                    },
+                }
+        if not (enriched or media).get("digest"):
+            full_digest = location_digest(media.get("location"))
+            if full_digest:
+                enriched = {
+                    **(enriched or media),
+                    "digest": {"algorithm": "sha256", "value": full_digest},
+                }
+        if enriched is None:
+            return record
+        return {**record, "media": enriched}
+
     @app.post("/assets")
     def upload_asset(
         file: UploadFile = File(...),
@@ -5595,7 +5630,7 @@ def create_app(
         )
         return {
             "schema_version": 1,
-            "asset": stored["asset"],
+            "asset": public_asset_record(stored["asset"]),
             "deduplicated": asset_payload.get("deduplicated", False),
             "diagnostics": diagnostics,
         }
@@ -5682,7 +5717,7 @@ def create_app(
         )
         return {
             "schema_version": 1,
-            "asset": stored["asset"],
+            "asset": public_asset_record(stored["asset"]),
             "qr": asset_payload.get("qr") or {},
             "deduplicated": asset_payload.get("deduplicated", False),
             "diagnostics": diagnostics,
@@ -5782,7 +5817,7 @@ def create_app(
                 )
                 return {
                     "schema_version": 1,
-                    "asset": cached_record,
+                    "asset": public_asset_record(cached_record),
                     "provider": {"id": payload.provider},
                     "deduplicated": True,
                     "diagnostics": [],
@@ -5939,7 +5974,7 @@ def create_app(
         )
         return {
             "schema_version": 1,
-            "asset": stored["asset"],
+            "asset": public_asset_record(stored["asset"]),
             "provider": asset_payload.get("provider") or {"id": payload.provider},
             "deduplicated": asset_payload.get("deduplicated", False),
             "diagnostics": diagnostics,
@@ -5963,7 +5998,7 @@ def create_app(
         )
         return {
             "schema_version": 1,
-            "assets": [row["asset"] for row in rows],
+            "assets": [public_asset_record(row["asset"]) for row in rows],
             "count": len(rows),
             "limit": limit,
             "offset": offset,
@@ -5981,7 +6016,7 @@ def create_app(
             "asset_archived",
             asset_id=asset_id,
         )
-        return {"schema_version": 1, "asset": stored["asset"]}
+        return {"schema_version": 1, "asset": public_asset_record(stored["asset"])}
 
     @app.post("/assets/{asset_id}/restore")
     def restore_asset(
@@ -5995,7 +6030,7 @@ def create_app(
             "asset_restored",
             asset_id=asset_id,
         )
-        return {"schema_version": 1, "asset": stored["asset"]}
+        return {"schema_version": 1, "asset": public_asset_record(stored["asset"])}
 
     @app.delete("/assets/{asset_id}")
     def hard_delete_asset(
@@ -6087,7 +6122,7 @@ def create_app(
         stored = repo.require_asset_record(asset_id)
         return {
             "schema_version": 1,
-            "asset": stored["asset"],
+            "asset": public_asset_record(stored["asset"]),
             "created_at": stored["created_at"],
             "updated_at": stored["updated_at"],
         }

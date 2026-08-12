@@ -8,6 +8,7 @@ import {
   setBrandKitApproval,
   setBrandKitLogo
 } from "../brandHub";
+import { fetchAssetRecord } from "../assetLibrary";
 import { createApiBrandGovernanceRunner } from "../brandGovernance";
 import {
   createDocument,
@@ -79,6 +80,7 @@ const CASES: Array<[name: string, call: () => Promise<unknown>]> = [
   // The other Pattern-B modules (injectable `fetchImpl`, already defaulting
   // lumenFetch): one representative per module pins the wiring; enumeration
   // of every function is the static guard's job (check_editor_bare_fetch.mjs).
+  ["assetLibrary.fetchAssetRecord", () => fetchAssetRecord({ apiBaseUrl: API }, "asset_1")],
   ["webDocuments.fetchWebDocument", () => fetchWebDocument({ apiBaseUrl: API }, "doc_1")],
   ["webDocuments.listWebTemplates", () => listWebTemplates({ apiBaseUrl: API })],
   [

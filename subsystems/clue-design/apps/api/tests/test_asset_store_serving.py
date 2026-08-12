@@ -271,3 +271,99 @@ def test_promotion_never_fabricates_rows_for_mismatched_keys(client: TestClient)
     # coherent record.
     if replaced.status_code == 200:
         assert client.get("/assets/asset_wrong_key").status_code == 404
+
+
+# --- <img src> serving: explicit digests at the DTO boundary ---------------------------------
+# The editor renders asset previews as plain <img src> — a context that cannot send
+# X-Workspace-Id — so it builds public content-addressed URLs (/asset-store/{digest}). The
+# digest for FULL bytes is already an explicit DTO field (media.digest); the THUMBNAIL's was
+# only derivable by parsing media.thumbnail.location's opaque_ref, and ref parsing is
+# server-owned policy (clue_design.storage.location_digest). These pin the contract: the API
+# stamps media.thumbnail.digest at the response boundary, and the digest serves headerless.
+
+
+def _record_with_thumbnail(asset_id: str, full_digest: str, thumb_digest: str) -> dict:
+    return {
+        "id": asset_id,
+        "label": "thumb fixture",
+        "kind": "raster_image",
+        "status": "ready",
+        "tags": [],
+        "media": {
+            "mime_type": "image/png",
+            "byte_length": len(TINY_PNG),
+            "digest": {"algorithm": "sha256", "value": full_digest},
+            "location": {
+                "provider": "local-store",
+                "opaque_ref": f"sha256/{full_digest[:2]}/{full_digest}",
+                "url": None,
+            },
+            "thumbnail": {
+                "location": {
+                    "provider": "local-store",
+                    "opaque_ref": f"sha256/{thumb_digest[:2]}/{thumb_digest}",
+                    "url": None,
+                },
+                "mime_type": "image/png",
+            },
+        },
+    }
+
+
+def test_asset_dtos_carry_the_thumbnail_digest(client: TestClient) -> None:
+    from lumen_api.design_store import HybridRepository
+
+    full_digest = store_bytes(client, TINY_PNG)
+    thumb_bytes = TINY_PNG + b"#thumb"
+    thumb_digest = store_bytes(client, thumb_bytes)
+    HybridRepository().create_asset_record(
+        _record_with_thumbnail("asset_thumb_dto_1", full_digest, thumb_digest)
+    )
+
+    detail = client.get("/assets/asset_thumb_dto_1")
+    assert detail.status_code == 200, detail.text
+    media = detail.json()["asset"]["media"]
+    assert media["thumbnail"]["digest"] == {"algorithm": "sha256", "value": thumb_digest}
+    assert media["digest"]["value"] == full_digest
+
+    listed = client.get("/assets").json()["assets"]
+    row = next(a for a in listed if a["id"] == "asset_thumb_dto_1")
+    assert row["media"]["thumbnail"]["digest"]["value"] == thumb_digest
+
+
+def test_thumbnail_digest_serves_headerless_like_an_img_tag(client: TestClient) -> None:
+    from lumen_api.design_store import HybridRepository
+
+    full_digest = store_bytes(client, TINY_PNG)
+    thumb_bytes = TINY_PNG + b"#thumb-serve"
+    thumb_digest = store_bytes(client, thumb_bytes)
+    HybridRepository().create_asset_record(
+        _record_with_thumbnail("asset_thumb_serve_1", full_digest, thumb_digest)
+    )
+
+    served_digest = client.get("/assets/asset_thumb_serve_1").json()["asset"]["media"][
+        "thumbnail"
+    ]["digest"]["value"]
+    headerless = TestClient(client.app)  # no X-Workspace-Id — the browser's <img> reality
+    response = headerless.get(f"/asset-store/{served_digest}")
+    assert response.status_code == 200
+    assert response.content == thumb_bytes
+
+
+def test_thumbnailless_and_foreign_provider_records_stay_unstamped(client: TestClient) -> None:
+    from lumen_api.design_store import HybridRepository
+
+    full_digest = store_bytes(client, TINY_PNG)
+    bare = _record_with_thumbnail("asset_thumb_none_1", full_digest, full_digest)
+    del bare["media"]["thumbnail"]
+    foreign = _record_with_thumbnail("asset_thumb_foreign_1", full_digest, full_digest)
+    foreign["media"]["thumbnail"]["location"]["provider"] = "https"
+    foreign["media"]["thumbnail"]["location"]["opaque_ref"] = "https://cdn.example/x.png"
+    repo = HybridRepository()
+    repo.create_asset_record(bare)
+    repo.create_asset_record(foreign)
+
+    none_media = client.get("/assets/asset_thumb_none_1").json()["asset"]["media"]
+    assert "thumbnail" not in none_media or none_media["thumbnail"] is None
+    foreign_media = client.get("/assets/asset_thumb_foreign_1").json()["asset"]["media"]
+    assert foreign_media["thumbnail"].get("digest") is None

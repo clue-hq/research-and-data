@@ -29,7 +29,9 @@ type Entry =
   | { state: "failed"; url: string | null };
 
 export interface CanvasKitImageCacheOptions {
-  /** Build the bytes URL for an asset id (`/assets/{id}/bytes`); null = unfetchable. */
+  /** Build the bytes URL for an asset id (`/asset-store/{digest}` via
+   * sceneAssetBytesUrl); null = unfetchable (no digest — the bare fetcher
+   * below cannot send the workspace header a registry URL would need). */
   resolveUrl: (assetId: string) => string | null;
   /** Called once a decode succeeds so the stage can re-render. */
   onLoad?: () => void;
