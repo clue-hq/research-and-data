@@ -4,115 +4,34 @@ import Link from "next/link";
 import { ApplicationShell } from "@/components/shell/application-shell";
 import type { Account, AccountsResponse } from "../model/account";
 import type { AccountDetail } from "../model/account-detail";
-import {
-  ACCOUNT_RECOVERY_COPY,
-  type AccountRecovery,
-} from "../model/account-recovery";
+import type { AccountBulkCapabilities } from "../model/bulk-actions";
+import { ACCOUNT_RECOVERY_COPY } from "../model/account-recovery";
 import { useAccountsScreenController } from "../hooks/use-accounts-screen-controller";
 import readability from "./account-readability.module.css";
 import { AccountPreviewDrawer } from "./account-preview-drawer";
 import { AccountsTable } from "./accounts-table";
 import { AccountsToolbar } from "./accounts-toolbar";
-
-/**
- * The loaded-vs-total footer.
- *
- * The table holds one keyset page until more is asked for, and the authored
- * filters and search run over the rows it holds — so a filtered count is a
- * count of *loaded* rows, never of the workspace. Saying so is the point: the
- * truncation has to be visible, not silent.
- */
-function AccountsFooter({
-  filteredCount,
-  hasActiveFilter,
-  hasMore,
-  isLoadingMore,
-  loadedCount,
-  loadRecovery,
-  onLoadMore,
-  totalCount,
-}: {
-  filteredCount: number;
-  hasActiveFilter: boolean;
-  hasMore: boolean;
-  isLoadingMore: boolean;
-  loadedCount: number;
-  loadRecovery: AccountRecovery | null;
-  onLoadMore: () => void;
-  totalCount: number;
-}) {
-  const filtered = filteredCount !== loadedCount;
-  // The caveat is about unfetched rows, so it keys on an authored filter plus a
-  // page still pending — not on whether the filter excluded anything here. A
-  // filter that happens to match every loaded row is precisely the one whose
-  // result looks complete and is not.
-  const showTruncationCaveat = hasActiveFilter && hasMore;
-
-  return (
-    <div
-      className={`${readability.uiRegular} flex shrink-0 flex-wrap items-center gap-3 border-t-[0.5px] border-[var(--clue-border-table)] px-6 py-2.5`}
-    >
-      <span className="text-[var(--clue-content-subtle)]">
-        Showing {filtered ? `${filteredCount} of ` : ""}
-        {loadedCount} loaded
-        {totalCount > loadedCount ? ` of ${totalCount} accounts` : " accounts"}
-        {showTruncationCaveat ? " · filters apply to loaded rows only" : ""}
-      </span>
-      {hasMore ? (
-        <button
-          className={`${readability.actionMedium} flex h-7 items-center rounded-md border-[0.5px] border-[var(--clue-border-neutral)] px-2.5 hover:bg-[var(--clue-background-hover)] disabled:opacity-60`}
-          disabled={isLoadingMore}
-          onClick={onLoadMore}
-          type="button"
-        >
-          {isLoadingMore ? "Loading…" : "Load more"}
-        </button>
-      ) : null}
-      {loadRecovery ? (
-        <span role="alert" className="text-[var(--clue-content-subtle)]">
-          {ACCOUNT_RECOVERY_COPY[loadRecovery.kind].title}.{" "}
-          {loadRecovery.kind === "session_expired" ? (
-            <Link className="underline" href="/sign-in?reason=session_expired">
-              Sign in
-            </Link>
-          ) : loadRecovery.kind === "workspace_selection" ? (
-            <a className="underline" href="#clue-workspace-selector">
-              Choose workspace
-            </a>
-          ) : loadRecovery.kind === "forbidden" ? (
-            <Link
-              className="underline"
-              href="/access-denied?code=WORKSPACE_FORBIDDEN"
-            >
-              View access options
-            </Link>
-          ) : loadRecovery.kind === "contract_error" ? (
-            <>
-              Contact support
-              {loadRecovery.requestId
-                ? ` with reference ${loadRecovery.requestId}`
-                : ""}
-              .
-            </>
-          ) : (
-            "Use Load more to try again."
-          )}
-        </span>
-      ) : null}
-    </div>
-  );
-}
+import { TablePagination } from "./table-pagination";
 
 export function AccountsScreen({
   accounts,
+  bulkCapabilities,
   meta,
   previewAccount,
 }: {
   accounts: Account[];
+  bulkCapabilities: AccountBulkCapabilities;
   meta: AccountsResponse["meta"];
   previewAccount?: AccountDetail;
 }) {
-  const controller = useAccountsScreenController(accounts, meta);
+  const controller = useAccountsScreenController(
+    accounts,
+    meta,
+    bulkCapabilities,
+  );
+  const selectedCount = controller.selectedAccountIds.size;
+  const overLimit =
+    selectedCount > controller.bulkCapabilities.addToProject.maxItems;
 
   return (
     <ApplicationShell activeHref="/accounts">
@@ -134,6 +53,70 @@ export function AccountsScreen({
           sort={controller.sort}
           visibleColumns={controller.visibleColumns}
         />
+
+        {selectedCount > 0 ? (
+          <div
+            aria-label="Account bulk actions"
+            className={`${readability.uiRegular} flex min-h-11 shrink-0 flex-wrap items-center gap-3 border-b-[0.5px] border-[var(--clue-border-table)] bg-[var(--clue-background-hover)] px-6 py-2`}
+          >
+            <span className={readability.uiMedium}>{selectedCount} selected</span>
+            <select
+              aria-label="Project for selected Accounts"
+              className="h-7 min-w-48 rounded-md border-[0.5px] border-[var(--clue-border-input)] bg-white px-2"
+              onChange={(event) =>
+                controller.setSelectedProjectId(event.target.value)
+              }
+              value={controller.selectedProjectId}
+            >
+              {controller.bulkCapabilities.projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className={`${readability.actionMedium} h-7 rounded-md bg-[var(--clue-content-neutral)] px-3 text-white disabled:cursor-not-allowed disabled:opacity-50`}
+              disabled={
+                overLimit ||
+                controller.isBulkSubmitting ||
+                !controller.selectedProjectId
+              }
+              onClick={controller.executeAddToProject}
+              type="button"
+            >
+              {controller.isBulkSubmitting ? "Adding…" : "Add to project"}
+            </button>
+            <button
+              className={`${readability.actionMedium} h-7 rounded-md px-2 hover:bg-white`}
+              onClick={controller.clearSelection}
+              type="button"
+            >
+              Clear
+            </button>
+            {overLimit ? (
+              <span role="alert" className="text-[var(--clue-content-subtle)]">
+                Select at most {controller.bulkCapabilities.addToProject.maxItems} Accounts.
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {controller.bulkNotice ? (
+          <div
+            aria-live="polite"
+            className={`${readability.uiRegular} flex min-h-9 items-center justify-between gap-3 border-b-[0.5px] border-[var(--clue-border-table)] px-6 py-1.5 text-[var(--clue-content-subtle)]`}
+          >
+            <span>{controller.bulkNotice}</span>
+            <button
+              className="underline"
+              onClick={controller.clearBulkNotice}
+              type="button"
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
+
         <div className="clue-scrollbar-hidden min-h-0 min-w-0 flex-1 overflow-auto">
           <AccountsTable
             accounts={controller.visibleAccounts}
@@ -145,28 +128,63 @@ export function AccountsScreen({
             onToggleAccount={controller.toggleAccount}
             onToggleAll={controller.toggleAllVisibleAccounts}
             selectedAccountIds={controller.selectedAccountIds}
+            selectableAccountIds={controller.selectableAccountIds}
+            selectionEnabled={controller.selectionEnabled}
             visibleColumns={controller.visibleColumns}
             workspaceIsEmpty={
-              controller.loadedCount === 0 &&
-              controller.totalCount === 0 &&
-              !controller.hasActiveFilter
+              controller.totalCount === 0 && !controller.hasActiveFilter
             }
           />
         </div>
-        <AccountsFooter
-          filteredCount={controller.visibleAccounts.length}
-          hasActiveFilter={controller.hasActiveFilter}
-          hasMore={controller.hasMore}
-          isLoadingMore={controller.isLoadingMore}
-          loadedCount={controller.loadedCount}
-          loadRecovery={controller.loadRecovery}
-          onLoadMore={controller.loadMore}
-          totalCount={controller.totalCount}
+
+        {controller.loadRecovery ? (
+          <div
+            className={`${readability.uiRegular} border-t-[0.5px] border-[var(--clue-border-table)] px-6 py-2 text-[var(--clue-content-subtle)]`}
+            role="alert"
+          >
+            {ACCOUNT_RECOVERY_COPY[controller.loadRecovery.kind].title}.{" "}
+            {controller.loadRecovery.kind === "session_expired" ? (
+              <Link className="underline" href="/sign-in?reason=session_expired">
+                Sign in
+              </Link>
+            ) : controller.loadRecovery.kind === "workspace_selection" ? (
+              <a className="underline" href="#clue-workspace-selector">
+                Choose workspace
+              </a>
+            ) : controller.loadRecovery.kind === "forbidden" ? (
+              <Link
+                className="underline"
+                href="/access-denied?code=WORKSPACE_FORBIDDEN"
+              >
+                View access options
+              </Link>
+            ) : controller.loadRecovery.kind === "contract_error" ? (
+              "Contact support."
+            ) : (
+              "Use the page controls to try again."
+            )}
+          </div>
+        ) : null}
+
+        <TablePagination
+          currentCount={controller.visibleAccounts.length}
+          isLoading={controller.isPageLoading}
+          onPageChange={controller.loadPage}
+          onPageSizeChange={(nextPageSize) =>
+            controller.loadPage(1, nextPageSize)
+          }
+          page={controller.page}
+          pageSize={controller.pageSize}
+          totalItems={controller.totalCount}
+          totalPages={controller.totalPages}
+          summary={
+            controller.hasActiveFilter
+              ? `${controller.visibleAccounts.length} matching rows on this page · ${controller.totalCount} total Accounts`
+              : undefined
+          }
         />
       </main>
-      {previewAccount ? (
-        <AccountPreviewDrawer account={previewAccount} />
-      ) : null}
+      {previewAccount ? <AccountPreviewDrawer account={previewAccount} /> : null}
     </ApplicationShell>
   );
 }

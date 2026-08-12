@@ -580,13 +580,15 @@ a string, branch on the known values, and fall back to the message for anything
 else; a closed `z.enum([...])` turns a new backend code into a client-side
 parse crash instead of a displayable error.
 
-Pagination is keyset over `(createdAt, id)` descending, newest account first.
-`limit` defaults to 50 and is capped at **200** (this supersedes the maximum of
-100 proposed above); a value outside `1..200` is a `422`. `cursor` is opaque and
-must not be parsed; a cursor the endpoint did not issue is a `400`, never a
-silent restart. `projectId` filters by membership; an unknown project returns an
-empty page, not a `404`, and the rows it does return still carry their full
-`projects` array. `meta.nextCursor` is `null` on the last page.
+The read supports two explicitly exclusive pagination modes over `(createdAt,
+id)` descending. Existing internal consumers may use opaque keyset `cursor`
+pagination; a cursor the endpoint did not issue is a `400`. The browser table
+uses one-based `page` plus `limit`, and receives `{ page, pageSize, totalPages }`
+in `meta`; combining `page` and `cursor` is `400 INVALID_PAGINATION`. `limit`
+defaults to 50 and is capped at **200** at the API, while the browser offers the
+fixed page sizes 10, 20, 30, 50, 75 and 100. `projectId` filters by membership;
+an unknown project returns an empty page, not a `404`, and returned rows still
+carry their full `projects` array.
 
 ### Ratified deviations from the proposal
 
@@ -851,12 +853,12 @@ implicit.
    there always throws. Errors are parsed leniently: a non-envelope body (a
    proxy error page) degrades to a status-only message that names the three
    things worth checking.
-6. **The list is paginated, visibly.** The table renders one keyset page and a
-   "Showing X loaded of Y accounts" footer with a Load-more control that appends
-   through `meta.nextCursor` (a server action, so the workspace header and base
-   URL never reach the browser). The authored filters and search run over the
-   rows already loaded, and the footer says so when a filter is active —
-   truncation is stated, not silent.
+6. **The list is paginated, visibly.** The browser requests one numbered page
+   through a server action, so the workspace header and base URL never reach
+   the browser. Its footer renders first page, previous, editable current page,
+   next, last page and the fixed 10/20/30/50/75/100 page-size choices. Authored
+   filters/search still run over the current page and the footer says so when
+   active. Changing any table view input clears selection before the next view.
 7. **Every contacts row links to its own contact route.** The row's name cell is
    the link and the route param drives which profile is fetched, so rows 2..n
    are not dead clicks. The gated preview drawer — which could only ever open
@@ -980,8 +982,7 @@ never rendered as a name. Contact avatars beside a visible name are decorative
 and absent from the accessibility tree. Contacts-grid rows are named
 `Contact <name>` and their profile links are separately named
 `Open <name> profile`, so the avatar, row and link no longer concatenate the
-same person name. Selection behavior is unchanged and remains owned by its
-separate bulk-actions slice.
+same person name. Selection behavior is defined by the Slice-9A contract below.
 
 ### Contact email enrichment (FI-2 slice 10, 2026-08-12)
 
@@ -1028,6 +1029,48 @@ independent Slice-10 deployment switch is
 credentials become an honest provider-unavailable state, not a fake success.
 The browser may schedule polling while the backend says `pending`; the timer
 never changes state by itself.
+
+### Account and Contact bulk actions (FI-2 slice 9A, 2026-08-13)
+
+Selection is available only when the authenticated backend capability says the
+user may perform the corresponding action. It is page-scoped: the header
+checkbox selects only selectable rows currently rendered on that numbered page.
+Changing search, filters, sort, page or page size clears selection before the
+new view is applied, so a hidden selected row cannot exist. The header control
+reports checked, unchecked and mixed states. Workspace/account navigation also
+creates a fresh controller and therefore an empty selection.
+
+Capability reads:
+
+- `GET /frontend/v1/accounts/bulk-capabilities` returns
+  `{ addToProject: { allowed, maxItems: 100 }, projects }`. `projects` contains
+  the workspace's non-archived projects; authorization is derived from
+  `project.write`, never from a frontend role guess.
+- `GET /frontend/v1/accounts/{accountId}/contacts/bulk-capabilities` returns
+  `{ lookupWorkEmails: { allowed, maxItems: 20 } }`. It requires a valid
+  account-scoped read and is false unless `research.launch` is held and the
+  Slice-10 service is configured.
+
+Mutations use the same-origin BFF and require a nonempty `Idempotency-Key`:
+
+- `POST /frontend/v1/accounts/bulk-actions/add-to-project` accepts one project
+  and 1–100 explicit Account ids. It inserts only live canonical same-workspace
+  Accounts with `project_account.added_via='manual'`. Existing membership is
+  `unchanged`; missing, merged or foreign ids are item-level `ineligible`.
+  It neither removes another membership nor launches research.
+- `POST /frontend/v1/accounts/{accountId}/contacts/bulk-actions/email-lookup`
+  accepts 1–20 explicit committee Contact ids, presents the one intent
+  confirmation, and delegates each eligible strongly-anchored Contact to the
+  existing governed Exa/Sumble service. Current-window lookups are `unchanged`;
+  no-result is a completed empty outcome. There is no spend-approval screen.
+
+Both return `{ operationId, state, counts, items }`. The parent operation and
+every item outcome are durable in `frontend_bulk_action_operation` and
+`frontend_bulk_action_item`. Reusing a key with the same canonical request
+replays the stored response and does not dispatch providers again; reusing it
+for another request is `409 IDEMPOTENCY_KEY_REUSED`. Partial success is explicit
+through item outcomes and aggregate counts. Internal exception messages and
+provider details never enter the browser response.
 
 ### Live prose and user-facing vocabulary (FI-2 slice 4, 2026-08-12)
 

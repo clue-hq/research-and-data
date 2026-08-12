@@ -956,6 +956,42 @@ def test_two_pages_cover_the_workspace_with_no_duplicate_and_no_skip() -> None:
     run_async(scenario())
 
 
+def test_numbered_pages_expose_stable_page_metadata_and_no_cursor() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _build(conn)
+
+            first = (await _get(conn, limit=2, page=1)).json()
+            second = (await _get(conn, limit=2, page=2)).json()
+
+            assert [row["name"] for row in first["data"]] == ["Seedling", "Zephyr"]
+            assert [row["name"] for row in second["data"]] == ["Acme"]
+            assert first["meta"] == {
+                "total": 3,
+                "nextCursor": None,
+                "page": 1,
+                "pageSize": 2,
+                "totalPages": 2,
+            }
+            assert second["meta"]["page"] == 2
+            assert second["meta"]["totalPages"] == 2
+
+    run_async(scenario())
+
+
+def test_numbered_page_and_cursor_cannot_be_combined() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _build(conn)
+            first = (await _get(conn, limit=1)).json()
+            response = await _get(conn, limit=1, page=2, cursor=first["meta"]["nextCursor"])
+
+            assert response.status_code == 400
+            assert response.json()["error"]["code"] == "INVALID_PAGINATION"
+
+    run_async(scenario())
+
+
 def test_the_project_filter_and_the_cursor_compose() -> None:
     """Paging *within* a filter must page the filtered set — the cursor predicate and the
     membership predicate are ANDed, so a filtered walk can neither leak a non-member nor skip a

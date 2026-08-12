@@ -83,6 +83,9 @@ export const AccountsResponseSchema = z.object({
   meta: z.object({
     total: z.number().int().nonnegative(),
     nextCursor: z.string().nullable().default(null),
+    page: z.number().int().positive().nullable().default(null),
+    pageSize: z.number().int().positive().nullable().default(null),
+    totalPages: z.number().int().positive().nullable().default(null),
   }),
 });
 

@@ -12,7 +12,13 @@ import {
 
 const EMPTY_RESPONSE: AccountsResponse = {
   data: [],
-  meta: { nextCursor: null, total: 0 },
+  meta: {
+    nextCursor: null,
+    page: null,
+    pageSize: null,
+    total: 0,
+    totalPages: null,
+  },
 };
 
 test("an honest empty Account response remains a ready result", async () => {

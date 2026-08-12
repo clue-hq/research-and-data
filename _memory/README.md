@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-13-fi2-slice9a-bulk-actions.md` — FI-2 Slice 9A closes LF-ACCOUNT-005
+  with capability-gated current-page selection, durable idempotent Account-to-project and Contact
+  email actions, explicit numbered pagination, matching 40 px shell/footer alignment, and complete
+  terminal plus authenticated-browser acceptance evidence.
 - `2026-08-12-fi2-slice10-contact-email-enrichment.md` — FI-2 Slice 10 replaces the false
   timer-only Contact email cue with authenticated durable Exa + Sumble acquisition, preserves
   provider conflict and governance metadata without verified-email promotion, and records focused,

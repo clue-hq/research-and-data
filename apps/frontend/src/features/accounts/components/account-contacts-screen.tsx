@@ -10,6 +10,7 @@ import { ContactRow } from "../contacts/components/contact-row";
 import { useAccountContactsController } from "../contacts/hooks/use-account-contacts-controller";
 import type { AccountContactSummary } from "../model/account-contact";
 import type { AccountDetail } from "../model/account-detail";
+import type { ContactBulkCapabilities } from "../model/bulk-actions";
 import readability from "./account-readability.module.css";
 import { TableDensitySelector } from "./table-density-selector";
 import { ColumnResizeHandle } from "./column-resize-handle";
@@ -19,6 +20,8 @@ import {
   type ContactColumnKey,
   type ContactColumnWidths,
 } from "../model/contact-table-view";
+import { AccountCheckbox } from "./account-checkbox";
+import { TablePagination } from "./table-pagination";
 
 const headers: Array<{
   key: ContactColumnKey;
@@ -33,8 +36,11 @@ const headers: Array<{
   { key: "social", label: "Social" },
 ];
 
-function contactGridTemplate(columnWidths: ContactColumnWidths) {
-  return ["56px"]
+function contactGridTemplate(
+  columnWidths: ContactColumnWidths,
+  selectionEnabled: boolean,
+) {
+  return (selectionEnabled ? ["56px"] : [])
     .concat(
       contactColumnOrder.map((column, index) =>
         index === contactColumnOrder.length - 1
@@ -45,9 +51,12 @@ function contactGridTemplate(columnWidths: ContactColumnWidths) {
     .join(" ");
 }
 
-function contactTableMinWidth(columnWidths: ContactColumnWidths) {
+function contactTableMinWidth(
+  columnWidths: ContactColumnWidths,
+  selectionEnabled: boolean,
+) {
   return (
-    56 +
+    (selectionEnabled ? 56 : 0) +
     contactColumnOrder.reduce(
       (total, column) => total + columnWidths[column],
       0,
@@ -57,13 +66,18 @@ function contactTableMinWidth(columnWidths: ContactColumnWidths) {
 
 export function AccountContactsScreen({
   account,
+  bulkCapabilities,
   contacts,
 }: {
   account: AccountDetail;
+  bulkCapabilities: ContactBulkCapabilities;
   contacts: AccountContactSummary[];
 }) {
   const [controller, displayControlsRef] =
-    useAccountContactsController(contacts);
+    useAccountContactsController(account.id, contacts, bulkCapabilities);
+  const selectedCount = controller.selectedContactIds.size;
+  const overLimit =
+    selectedCount > controller.bulkCapabilities.lookupWorkEmails.maxItems;
 
   return (
     <AccountWorkspaceShell account={account} activeTab="contacts">
@@ -108,13 +122,61 @@ export function AccountContactsScreen({
               </div>
             </div>
           </div>
+          {selectedCount > 0 ? (
+            <div
+              aria-label="Contact bulk actions"
+              className={`${readability.uiRegular} flex min-h-11 shrink-0 flex-wrap items-center gap-3 border-b-[0.5px] border-[var(--clue-border-table)] bg-[var(--clue-background-hover)] px-6 py-2`}
+            >
+              <span className={readability.uiMedium}>{selectedCount} selected</span>
+              <button
+                className={`${readability.actionMedium} h-7 rounded-md bg-[var(--clue-content-neutral)] px-3 text-white disabled:cursor-not-allowed disabled:opacity-50`}
+                disabled={overLimit || controller.isBulkSubmitting}
+                onClick={controller.executeEmailLookup}
+                type="button"
+              >
+                {controller.isBulkSubmitting
+                  ? "Starting lookups…"
+                  : "Look up work emails"}
+              </button>
+              <button
+                className={`${readability.actionMedium} h-7 rounded-md px-2 hover:bg-white`}
+                onClick={controller.clearSelection}
+                type="button"
+              >
+                Clear
+              </button>
+              {overLimit ? (
+                <span role="alert" className="text-[var(--clue-content-subtle)]">
+                  Select at most {controller.bulkCapabilities.lookupWorkEmails.maxItems} Contacts.
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          {controller.bulkNotice ? (
+            <div
+              aria-live="polite"
+              className={`${readability.uiRegular} flex min-h-9 items-center justify-between gap-3 border-b-[0.5px] border-[var(--clue-border-table)] px-6 py-1.5 text-[var(--clue-content-subtle)]`}
+            >
+              <span>{controller.bulkNotice}</span>
+              <button
+                className="underline"
+                onClick={controller.clearBulkNotice}
+                type="button"
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : null}
           <div className="min-h-0 flex-1 overflow-auto">
             <div
               aria-label="Account contacts"
               className={readability.uiRegular}
               role="grid"
               style={{
-                minWidth: contactTableMinWidth(controller.columnWidths),
+                minWidth: contactTableMinWidth(
+                  controller.columnWidths,
+                  controller.selectionEnabled,
+                ),
               }}
             >
               <div
@@ -123,19 +185,35 @@ export function AccountContactsScreen({
                 style={{
                   gridTemplateColumns: contactGridTemplate(
                     controller.columnWidths,
+                    controller.selectionEnabled,
                   ),
                 }}
               >
-                <div
-                  className="sticky left-0 z-40 flex items-center justify-center border-b-[0.5px] border-r-[0.5px] border-[var(--clue-border-table)] bg-white"
-                  role="columnheader"
-                >
-                  <input
-                    aria-label="Select all contacts"
-                    className="size-4 appearance-none rounded border-[0.5px] border-[#b5bcc6]"
-                    type="checkbox"
-                  />
-                </div>
+                {controller.selectionEnabled ? (
+                  <div
+                    className="sticky left-0 z-40 flex items-center justify-center border-b-[0.5px] border-r-[0.5px] border-[var(--clue-border-table)] bg-white"
+                    role="columnheader"
+                  >
+                    <AccountCheckbox
+                      checked={
+                        controller.visibleContacts.length > 0 &&
+                        controller.visibleContacts.every((contact) =>
+                          controller.selectedContactIds.has(contact.id),
+                        )
+                      }
+                      indeterminate={
+                        controller.visibleContacts.some((contact) =>
+                          controller.selectedContactIds.has(contact.id),
+                        ) &&
+                        !controller.visibleContacts.every((contact) =>
+                          controller.selectedContactIds.has(contact.id),
+                        )
+                      }
+                      label="Select all Contacts on this page"
+                      onChange={controller.toggleAllVisibleContacts}
+                    />
+                  </div>
+                ) : null}
                 {headers.map((header) => {
                   const constraints =
                     contactColumnWidthConstraints[header.key];
@@ -145,7 +223,7 @@ export function AccountContactsScreen({
                   <div
                     className={`relative flex items-center border-b-[0.5px] border-r-[0.5px] border-[var(--clue-border-table)] bg-white px-4 ${
                       pinned
-                        ? "sticky left-14 z-30 overflow-hidden"
+                        ? `sticky ${controller.selectionEnabled ? "left-14" : "left-0"} z-30 overflow-hidden`
                         : ""
                     }`}
                     key={header.key}
@@ -176,8 +254,12 @@ export function AccountContactsScreen({
                     density={controller.density}
                     gridTemplateColumns={contactGridTemplate(
                       controller.columnWidths,
+                      controller.selectionEnabled,
                     )}
                     key={contact.id}
+                    onToggle={() => controller.toggleContact(contact.id)}
+                    selected={controller.selectedContactIds.has(contact.id)}
+                    selectionEnabled={controller.selectionEnabled}
                   />
                 ))
               ) : (
@@ -189,6 +271,16 @@ export function AccountContactsScreen({
               )}
             </div>
           </div>
+          <TablePagination
+            currentCount={controller.visibleContacts.length}
+            isLoading={false}
+            onPageChange={controller.setPage}
+            onPageSizeChange={controller.setPageSize}
+            page={controller.page}
+            pageSize={controller.pageSize}
+            totalItems={controller.filteredCount}
+            totalPages={controller.totalPages}
+          />
         </section>
         <AccountDetailsRail className="xl:!w-[410px]">
           <section className="border-b-[0.5px] border-[var(--clue-border-neutral)] p-4">

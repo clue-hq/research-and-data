@@ -17,6 +17,7 @@ test("the Accounts repository always reads the live endpoint", async () => {
   const response = await repository.list({
     cursor: "cursor-1",
     limit: 25,
+    page: 3,
     projectId: "project-1",
   });
 
@@ -25,12 +26,19 @@ test("the Accounts repository always reads the live endpoint", async () => {
     searchParams: {
       cursor: "cursor-1",
       limit: 25,
+      page: 3,
       projectId: "project-1",
     },
   });
   assert.deepEqual(response, {
     data: [],
-    meta: { total: 0, nextCursor: null },
+    meta: {
+      total: 0,
+      nextCursor: null,
+      page: null,
+      pageSize: null,
+      totalPages: null,
+    },
   });
 });
 

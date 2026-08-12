@@ -8,13 +8,14 @@ import { fetchRead } from "./frontend-api";
  * The only query parameters the as-built list endpoint accepts.
  *
  * No `search`, no `sort`, no filter-rule POST: those surfaces do not exist yet,
- * and the authored filter/sort shell runs client-side over the loaded page
- * (`model/account-query.ts`). `limit` defaults to 50 and is capped at 200 —
- * a value outside `1..200` is a `422`.
+ * and the authored filter/sort shell runs client-side over the numbered page
+ * (`model/account-query.ts`). `page` is one-based. `limit` defaults to 50 and
+ * is capped at 200 by the API; the browser offers only its fixed 10–100 choices.
  */
 export interface AccountsQuery {
   cursor?: string;
   limit?: number;
+  page?: number;
   projectId?: string;
 }
 
@@ -34,6 +35,7 @@ export function createHttpAccountsRepository(
         searchParams: {
           cursor: query.cursor,
           limit: query.limit,
+          page: query.page,
           projectId: query.projectId,
         },
       });

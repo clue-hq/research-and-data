@@ -15,6 +15,7 @@ import {
 import type { AccountTableDensity } from "../../model/account-table-view";
 import { formatConfidence, formatToken } from "../../model/formatting";
 import readability from "../../components/account-readability.module.css";
+import { AccountCheckbox } from "../../components/account-checkbox";
 import { LookupEmailButton } from "./lookup-email-button";
 
 const personaColors = {
@@ -38,11 +39,17 @@ export function ContactRow({
   contact,
   density,
   gridTemplateColumns,
+  onToggle,
+  selected,
+  selectionEnabled,
 }: {
   accountId: string;
   contact: AccountContactSummary;
   density: AccountTableDensity;
   gridTemplateColumns: string;
+  onToggle: () => void;
+  selected: boolean;
+  selectionEnabled: boolean;
 }) {
   const confidence = formatConfidence(contact.roleOnCommittee.confidence);
   const displayName = contactDisplayName(contact.name);
@@ -54,19 +61,21 @@ export function ContactRow({
       role="row"
       style={{ gridTemplateColumns }}
     >
-      <div className="sticky left-0 z-30 flex items-center justify-center border-r-[0.5px] border-[var(--clue-border-table)] bg-white group-hover:bg-[var(--clue-background-page)]">
-        <input
-          aria-label={`Select ${contact.name ?? "unnamed contact"}`}
-          className="size-4 appearance-none rounded border-[0.5px] border-[#b5bcc6] checked:border-[#567644] checked:bg-[#567644]"
-          type="checkbox"
-        />
-      </div>
+      {selectionEnabled ? (
+        <div className="sticky left-0 z-30 flex items-center justify-center border-r-[0.5px] border-[var(--clue-border-table)] bg-white group-hover:bg-[var(--clue-background-page)]">
+          <AccountCheckbox
+            checked={selected}
+            label={`Select ${contact.name ?? "unnamed contact"}`}
+            onChange={onToggle}
+          />
+        </div>
+      ) : null}
       {/* Every row opens its own contact page. The route is what drives which
           profile is fetched, so the affordance is real on row 1 and row n
           alike — it used to be a button wired to a single featured contact. */}
       <Link
         aria-label={contactProfileLinkAccessibleName(contact.name)}
-        className="sticky left-14 z-20 flex min-w-0 items-center gap-2 overflow-hidden border-r-[0.5px] border-[var(--clue-border-table)] bg-white px-4 text-left outline-none group-hover:bg-[var(--clue-background-page)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#cdd5c4]"
+        className={`sticky ${selectionEnabled ? "left-14" : "left-0"} z-20 flex min-w-0 items-center gap-2 overflow-hidden border-r-[0.5px] border-[var(--clue-border-table)] bg-white px-4 text-left outline-none group-hover:bg-[var(--clue-background-page)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#cdd5c4]`}
         href={`/accounts/${accountId}/contacts/${contact.id}`}
       >
         <ContactAvatar decorative name={contact.name} size={24} />
@@ -121,6 +130,7 @@ export function ContactRow({
           accountId={accountId}
           contactId={contact.id}
           initialLookup={contact.emailLookup}
+          key={`${contact.id}:${contact.emailLookup?.lookupId ?? "none"}:${contact.emailLookup?.state ?? "none"}`}
         />
       </div>
       <div className="flex items-center gap-2 px-4">

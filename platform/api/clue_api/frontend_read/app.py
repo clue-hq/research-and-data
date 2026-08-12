@@ -223,9 +223,21 @@ def build_frontend_read_router(
     from clue_api.frontend_read.account_activity import register_account_activity_routes
     from clue_api.frontend_read.account_detail import register_account_detail_routes
     from clue_api.frontend_read.accounts_list import register_accounts_list_routes
+    from clue_api.frontend_read.bulk_actions import register_bulk_action_routes
     from clue_api.frontend_read.contacts import register_contact_routes
 
+    allow_local_mutations = (
+        settings.projections_auth_mode == "local_header" and not settings.auth_enabled
+    )
     register_accounts_list_routes(router, conn_factory=conn_factory)
+    # Static ``/accounts/bulk-*`` paths must be registered before the Account/Contact UUID routes,
+    # otherwise Starlette would match a capability segment as ``{account_id}`` and return a 422.
+    register_bulk_action_routes(
+        router,
+        conn_factory=conn_factory,
+        contact_email_lookup=contact_email_lookup,
+        allow_local_mutations=allow_local_mutations,
+    )
     register_account_activity_routes(router, conn_factory=conn_factory)
     register_account_detail_routes(
         router, conn_factory=conn_factory, evidence_storage=evidence_storage
@@ -235,9 +247,7 @@ def build_frontend_read_router(
         conn_factory=conn_factory,
         evidence_storage=evidence_storage,
         contact_email_lookup=contact_email_lookup,
-        allow_local_mutations=(
-            settings.projections_auth_mode == "local_header" and not settings.auth_enabled
-        ),
+        allow_local_mutations=allow_local_mutations,
     )
     return router
 
