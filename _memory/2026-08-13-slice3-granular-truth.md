@@ -22,9 +22,14 @@ code tasks, each adversarially reviewed, four of them through one fix round). Pl
 4. `9b922285`/`83997645` — the production `LlmClaimExtractor`
    (`platform/api/clue_api/claim_extraction.py`): grounded (span AND `source_url` must be
    literal substrings of the full normalized document), drop-never-raise.
-5. `fa5f1426`/`f9405c83` — composed at BOTH roots through `build_optional_platform_gateway`
-   (no key → loud `stage0.claim_extraction_disabled_no_gateway` warn + empty extractor, never
-   a raise); the Lane-D2 guard's prose narrowed to name the one exception.
+5. `fa5f1426`/`f9405c83` — composed at BOTH roots through the single
+   `build_stage0_claim_extractor(gateway)`, but each root sources its gateway per its OWN boot
+   contract: `projections_main` (HTTP) uses the **degrading** `build_optional_platform_gateway`
+   (no key → loud `stage0.claim_extraction_disabled_no_gateway` warn + empty extractor, never a
+   raise); `fleet_main` (worker, `:465`) passes the **mandatory** `build_platform_gateway`
+   gateway `_serve` already built (`:500`), which deliberately RAISES without a key — fail at
+   boot is correct for a worker that cannot do its job otherwise. Do not "unify" these.
+   The Lane-D2 guard's prose was narrowed to name the one HTTP-root exception.
 6. `b77e7713` — `client.competitor` + `client.buyer_profile` registered (object-typed,
    `tier_plan=("exa_search",)`, THIRD_PARTY surface), **appended at the END** of
    `CLIENT_BASELINE_FIELDS` so no existing field's budget position moves. Baseline = 11.
@@ -83,12 +88,14 @@ code tasks, each adversarially reviewed, four of them through one fix round). Pl
   honestly (no fabricated motion), but overall status stays `running`, polling continues, and
   no paragraph says why. Closing it needs a 4th annotation or a hook change
   (`hooks/use-setup-progress.ts`). Deliberately deferred out of task 8/9 scope.
-- **Two import-discipline guards are unenforced repo-wide (PRE-EXISTING ROT).**
+- **Import-discipline guards are unenforced repo-wide (PRE-EXISTING ROT).** Both
   `tests/resolvers/test_static.py` and `tests/sources/test_static_invariants.py` scan a `src/`
-  path that no longer exists post-monorepo-move, so
-  `test_resolvers_never_branch_on_provider_name` and
-  `test_no_provider_subpackage_imports_another` assert over an EMPTY file set. Slice-3
-  compliance was verified by inspection instead. Worth a dedicated fix.
+  path that no longer exists post-monorepo-move, so the guards assert over an EMPTY file set:
+  `test_resolvers_never_branch_on_provider_name` (`tests/resolvers/test_static.py:95`) and
+  `test_no_provider_subpackage_imports_another` (same file, `:107`) on the resolvers side, and
+  `test_nothing_outside_sources_or_obs_branches_on_provider`
+  (`tests/sources/test_static_invariants.py:18`) on the sources side. Slice-3 compliance was
+  verified by inspection instead. Worth a dedicated fix.
 - **Stale dev-DB rows.** The local dev DB carries committed `crm` source-manifest and
   `recipe0-stage0@2` recipe rows that conflict with current definitions → 8 pre-existing
   failures in `tests/{resolvers,sources}` (+2 in `tests/execution`). A dev DB reset clears
@@ -97,6 +104,23 @@ code tasks, each adversarially reviewed, four of them through one fix round). Pl
 - **A refused Exa call still charges 1¢**, engine-consistent but unasserted; the lane test
   does not pin `result.cost_cents`, and the refusal test covers `client.competitor` only, not
   `client.buyer_profile`.
+- **Snapshot capture for Exa records is DEFERRED.**
+  `subsystems/research/clue_research/resolvers/exa_search/__init__.py` has **zero**
+  snapshot/artifact/storage wiring — unlike the snapshot-wrapped scrape lane, which captures
+  sha-256'd bytes through the B2 storage seam. So `client.competitor` / `client.buyer_profile`
+  claims cite a `source_url` + verbatim `evidence_span` with **no durable evidence blob**: if
+  the cited page changes or vanishes, the span cannot be re-verified from our own bytes. Not a
+  fabrication risk (the three fail-closed guards — attributable, span-grounded in the *cited*
+  record, target-locked — still hold), but an evidence-*durability* gap, and a precondition for
+  any evidence-serving surface (presign, review annotations) built over recon claims. Note this
+  interacts with the [B2×presign] charter item: a claim citing no artifact at all is a
+  different hole from one citing a workspace-scoped artifact.
+- **No env-backed override for `Stage0Policy` exists today.** The 2026-08-13 ruling names
+  `CLUE_STAGE0_FAST_BUDGET`, but that env var does not exist —
+  `libs/clue-config/clue_config/stage0.py` is a frozen model of constants injected at the
+  composition root (`toolbelt_wiring.py`, `DEFAULT_STAGE0_POLICY`). "Raise the envelope per
+  deployment" is a code/composition change right now. Adding the override is the small
+  follow-up that makes the ruling literally executable; recorded in FI-4 §9 item 6.
 - **`recon_brief` reads at `fast_client_kb_version` only.** Background-lane facts — which is
   where `client.competitor` / `client.buyer_profile` necessarily land (tier 3 > the fast
   lane's tier-2 ceiling) — never appear in the brief, and `fact_count` on the setup read

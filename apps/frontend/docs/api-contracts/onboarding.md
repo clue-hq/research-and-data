@@ -237,12 +237,24 @@ The slice-2 limitation is **resolved**: a production `LlmClaimExtractor`
 It is grounded (every drafted `evidence_span` must be a literal substring of the normalized
 document, and `source_url` is grounded in the full document text) and **drop-never-raise** — an
 ungrounded or unparseable draft is dropped, never promoted, and never fails the lane;
-`GET /stage0/recon/{id}/brief` now returns real facts. Both composition roots
-(`projections_main`, `fleet_main`) build it through `build_optional_platform_gateway`: with no
-`OPENROUTER_API_KEY` (and no `CLUE_GATEWAY_ALLOW_STUB` opt-in) the builder logs
-`stage0.claim_extraction_disabled_no_gateway` and returns `None`, and the composition degrades
-to slice 2's explicitly-empty extractor — snapshots without values. It never raises: a keyless
-deployment must not take the HTTP process down at import.
+`GET /stage0/recon/{id}/brief` now returns real facts — **but the brief reads at
+`fast_client_kb_version` only**, so a fact the *background* lane derived never appears in it or
+in `fact_count`; `client.competitor` / `client.buyer_profile` are tier-3 and therefore always
+background-lane, so they can never show up there. Read the Client KB itself, not the brief, for
+those.
+
+Both composition roots build the extractor through the single
+`build_stage0_claim_extractor(gateway)` — one function, so the two processes cannot drift into
+extracting differently — but they **source that gateway differently on purpose**. The HTTP root
+(`projections_main`) uses the degrading `build_optional_platform_gateway`: with no
+`OPENROUTER_API_KEY` (and no `CLUE_GATEWAY_ALLOW_STUB` opt-in) it logs
+`stage0.claim_extraction_disabled_no_gateway`, returns `None`, and the composition falls back to
+slice 2's explicitly-empty extractor — snapshots without values. It never raises: a keyless
+deployment must not take the whole web process down at import over one tool's optional LLM step.
+The fleet worker (`fleet_main`) passes the mandatory `build_platform_gateway` gateway it already
+built for every other model consumer in that process, and that builder **deliberately raises**
+without a credential — a worker that cannot call a model cannot do its job, so failing at boot
+is its designed contract, not a regression.
 
 Two new baseline fields ship with it — `client.competitor` and `client.buyer_profile`
 (object-typed, appended at the END of `CLIENT_BASELINE_FIELDS` so no existing field's budget
@@ -255,6 +267,17 @@ spend, so they are background-lane fields for free. The resolver is bound only w
 and the two fields end honestly empty — a keyless deployment must not lose onboarding over an
 optional enrichment. A hard provider refusal (revoked key, 402, 400) is likewise an honest
 empty miss, not a dead recon lane.
+
+**Evidence-serving posture differs by field, and the difference is deferred work.** The scrape
+lane is snapshot-wrapped: its claims cite a durable, sha-256'd artifact captured through the
+storage seam. The `exa_search` resolver carries **no snapshot/artifact wiring at all**, so
+`client.competitor` / `client.buyer_profile` claims cite a `source_url` plus a verbatim
+`evidence_span` and nothing durable behind them — if the cited page changes or disappears, the
+span cannot be re-verified from our own bytes. The claims are still fail-closed grounded
+(attributable to a url this call retrieved, span-checked against that record's own text,
+target-locked), so this is an evidence-*durability* gap, not a fabrication risk. Any evidence
+serving built over recon claims must treat the two tier-3 fields as URL-cited-only until Exa
+records get snapshot capture.
 
 **Deployment stance (founder ruling 2026-08-13, FI-4 §9 — onboarding is budget-unconstrained).**
 Onboarding recon forms the base of everything downstream, so research quality is never traded
