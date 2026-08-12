@@ -4,13 +4,14 @@ import {
 } from "../model/account-workspace";
 
 /**
- * The Insights / Artifacts tabs.
+ * The remaining legacy Insights workspace payload.
  *
- * Slice 1 serves no Insights-workspace or Artifact index endpoint; Account
- * insights arrive on the Overview detail contract. Activity has its own live
- * repository and is intentionally absent from this model. Until the remaining
- * live contracts land, every real account receives an explicit empty workspace
- * model. It contains no demo data and performs no guessed request.
+ * Slice 1 serves no Insights-workspace endpoint; Account insights arrive on
+ * the Overview detail contract. Activity has its own live repository, while
+ * Artifacts has an explicit capability-unavailable state in its route. Both
+ * are intentionally absent here. Until the Insights contract lands, every
+ * real account receives an explicit empty model with no demo data or guessed
+ * request.
  */
 export interface AccountWorkspaceRepository {
   get(accountId: string): Promise<AccountWorkspace | null>;
@@ -19,7 +20,7 @@ export interface AccountWorkspaceRepository {
 export const emptyAccountWorkspaceRepository: AccountWorkspaceRepository = {
   async get(accountId) {
     return AccountWorkspaceResponseSchema.parse({
-      data: { accountId, insights: [], artifacts: [] },
+      data: { accountId, insights: [] },
     }).data;
   },
 };

@@ -19,24 +19,14 @@ export const WorkspaceInsightSchema = z
     }
   });
 
-export const AccountArtifactSchema = z.object({
-  id: z.string().min(1),
-  title: z.string().min(1),
-  type: z.enum(["presentation", "document", "web"]),
-  thumbnailPath: z.string().startsWith("/"),
-  lastEditedLabel: z.string().min(1),
-});
-
 export const AccountWorkspaceSchema = z.object({
   accountId: z.string().min(1),
   insights: z.array(WorkspaceInsightSchema),
-  artifacts: z.array(AccountArtifactSchema),
 });
 
 export const AccountWorkspaceResponseSchema = z.object({
   data: AccountWorkspaceSchema,
 });
 
-export type AccountArtifact = z.infer<typeof AccountArtifactSchema>;
 export type AccountWorkspace = z.infer<typeof AccountWorkspaceSchema>;
 export type WorkspaceInsight = z.infer<typeof WorkspaceInsightSchema>;

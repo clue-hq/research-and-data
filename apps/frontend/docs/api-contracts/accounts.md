@@ -211,10 +211,11 @@ when either identifier is unknown.
 
 > Historical proposal. FI-2 Slice 6 supersedes the Activity portion with the
 > dedicated durable `GET /frontend/v1/accounts/{accountId}/activity` contract
-> below. The workspace model now covers only the still-unserved Insights and
-> Artifacts fixture-era proposal; it is not an Activity source.
+> below. FI-2 Slice 7 removes Artifacts from the workspace model because no live
+> Account-artifact read contract exists. The model now covers only the
+> still-unserved legacy Insights proposal.
 
-Returns the modular payload used by the Insights, Artifacts, and Activity tabs:
+The remaining placeholder payload is:
 
 ```json
 {
@@ -229,31 +230,15 @@ Returns the modular payload used by the Insights, Artifacts, and Activity tabs:
         "url": "https://openai.com/",
         "summary": "Evidence summary"
       }
-    ],
-    "artifacts": [
-      {
-        "id": "finance-review",
-        "title": "10x revenue ad",
-        "type": "presentation",
-        "thumbnailPath": "/artifacts/finance-review.png",
-        "lastEditedLabel": "Last edited today"
-      }
-    ],
-    "activity": [
-      {
-        "id": "contacts-added",
-        "kind": "contacts",
-        "text": "Clue added 14 new contacts",
-        "timeLabel": "1 hour ago"
-      }
     ]
   }
 }
 ```
 
-The schema is in `src/features/accounts/model/account-workspace.ts`. The
-endpoint can later be split by tab if payload size or update frequency warrants
-it without changing the presentation components.
+The remaining schema is in `src/features/accounts/model/account-workspace.ts`.
+Artifacts and Activity are no longer represented by this payload. A future
+artifact integration adds its own typed live repository rather than reviving
+this fixture-era aggregate.
 
 ## Planned write and configuration endpoints
 
@@ -860,11 +845,13 @@ implicit.
    for one hard-coded contact — was removed rather than left as an affordance
    that works on one row.
 8. **SUPERSEDED 2026-08-12 — unserved workspace tabs carry no runtime fixture
-   data.** Account insights arrive on the Overview detail contract and no
-   artifact index exists, so `account-workspace.repository.ts` returns an
-   explicit empty model for those two tabs. Activity left that model in Slice 6
-   and always reads its dedicated durable endpoint. No tab invents a URL or
-   preserves the former OpenAI demo workspace.
+   data.** Account insights arrive on the Overview detail contract, so
+   `account-workspace.repository.ts` retains only an explicit empty Insights
+   model. Activity left that model in Slice 6 and always reads its dedicated
+   durable endpoint. Artifacts left it in Slice 7: until a live Account-artifact
+   contract exists, the route renders `capability_unavailable` and performs no
+   artifact request. No tab invents a URL or preserves the former OpenAI demo
+   workspace.
 
 ### Authenticated frontend cutover (2026-08-11)
 
@@ -1149,3 +1136,26 @@ The current summary state links to Account Overview, and the resolved project
 name links to `/projects/{projectId}`. Raw owner/fetch
 references, payload bodies and relative `timeLabel` strings never cross the
 contract.
+
+### Account Artifact availability (FI-2 slice 7, 2026-08-12)
+
+There is no live Account-artifact read surface in this slice. The Account
+Artifacts route still authenticates and reads the Account detail so an unknown
+or cross-workspace Account remains a domain `404`, then renders the typed
+`capability_unavailable` state: “Account artifacts are not connected yet.” It
+does not render a search field, sort/view buttons, fixture cards, preview modal
+or images, and it does not issue a guessed artifact request.
+
+The presentation contract reserves three exact states for a future live
+adapter:
+
+- `capability_unavailable`: this deployment has no live Account-artifact
+  capability.
+- `empty`: the live service authoritatively returned zero Account artifacts.
+- `service_unavailable`: the live artifact service failed and the result is not
+  known to be empty.
+
+Those states have distinct titles and descriptions. Adding a live Account
+artifact endpoint, sorting, grid/list presentation, and preview behavior is a
+separate integration slice; it must introduce typed repository data and real
+handlers together rather than restoring dormant controls.

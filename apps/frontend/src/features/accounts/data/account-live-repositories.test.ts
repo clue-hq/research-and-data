@@ -177,12 +177,11 @@ test("a stale merged Contact URL resolves visibly to its survivor", async () => 
   assert.equal(detail?.redirectedFrom, "merged-contact");
 });
 
-test("unserved workspace tabs contain no runtime demo data", async () => {
+test("the unserved Insights workspace contains no runtime demo data", async () => {
   const workspace = await getAccountWorkspace("account-1");
 
   assert.deepEqual(workspace, {
     accountId: "account-1",
     insights: [],
-    artifacts: [],
   });
 });
