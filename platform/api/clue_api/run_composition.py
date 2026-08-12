@@ -50,6 +50,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from clue_api.claim_extraction import LlmClaimExtractor
 from clue_api.contact_eligibility import (
     build_contact_eligibility_resolver,
     build_production_handoff_committee_reader,
@@ -92,6 +93,7 @@ from clue_core import (
 from clue_db import ConnFactory, transaction
 from clue_gateway import build_gateway
 from clue_obs import get_logger
+from clue_research.adapters import CallableClaimExtractor, ClaimExtractor
 from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.durable import (
     BudgetEngine,
@@ -110,6 +112,8 @@ from clue_storage import StorageBackend
 
 __all__ = [
     "build_platform_gateway",
+    "build_optional_platform_gateway",
+    "build_stage0_claim_extractor",
     "ComposingRunDriver",
     "ComposedRun",
     "CompositionUnavailable",
@@ -232,6 +236,52 @@ def build_platform_gateway(settings: Settings) -> LLMGateway:
 
 # Backward-compatible test/internal name; production composition uses the public API-root builder.
 _default_gateway = build_platform_gateway
+
+
+def build_optional_platform_gateway(settings: Settings) -> LLMGateway | None:
+    """The platform gateway when one is *configured*, else ``None`` — never a raise.
+
+    :func:`build_platform_gateway` refuses to build without an ``OPENROUTER_API_KEY`` (or the
+    explicit stub opt-in), which is exactly right for the fleet worker: a worker that cannot call a
+    model cannot do its job, so it must fail at boot rather than drive runs on canned output. It is
+    the wrong contract for a *degradable* consumer. Stage-0 recon is one: without an extractor it
+    still resolves the client, scrapes the official surfaces under target-lock and captures durable
+    snapshot evidence — it simply drafts no ``client.*`` values (the slice-2 posture, and the
+    interview remains the tier-1 fill path). Taking the whole HTTP process down at import because
+    one tool's optional LLM step has no credential would be a strictly worse outcome.
+
+    So this mirrors :func:`build_platform_gateway`'s own key check — same secret, same
+    ``gateway_allow_stub`` opt-in, so the two can only ever agree — and turns the refusal into a
+    loud, greppable ``stage0.claim_extraction_disabled_no_gateway`` warning plus ``None``. Deployed
+    without a key the fallback is silent-shaped (no values are drafted), so this warning is the
+    operator's only signal: it names the cause and the fix.
+    """
+    if Secrets().openrouter_api_key is None and not settings.gateway_allow_stub:
+        log.warning(
+            "stage0.claim_extraction_disabled_no_gateway",
+            reason=(
+                "no OPENROUTER_API_KEY secret and CLUE_GATEWAY_ALLOW_STUB is not set; Stage-0 "
+                "recon will scrape and snapshot but draft no client.* claims"
+            ),
+        )
+        return None
+    return build_platform_gateway(settings)
+
+
+def build_stage0_claim_extractor(gateway: LLMGateway | None) -> ClaimExtractor:
+    """The Stage-0 recon extractor for a deployment that has (or has not) a model gateway.
+
+    With a gateway this is the production :class:`~clue_api.claim_extraction.LlmClaimExtractor`
+    (grounded, drop-never-raise, honest-empty on an outage). Without one it is the explicitly empty
+    extractor both roots wired in slice 2 — snapshots without values — so a keyless deployment keeps
+    working, just without drafted claims.
+
+    One function, called by both composition roots, so the HTTP and fleet processes cannot drift
+    into extracting differently from the same scraped page.
+    """
+    if gateway is None:
+        return CallableClaimExtractor(lambda normalized, entity, field: [])
+    return LlmClaimExtractor(gateway=gateway)
 
 
 class ComposingRunDriver:

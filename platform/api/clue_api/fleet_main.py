@@ -89,7 +89,7 @@ from clue_api.external_research_wake import (
 from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, register_boot_handlers
 from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
 from clue_api.narrative_wiring import build_client_knowledge_retriever, register_narrative_wiring
-from clue_api.phase_c_wiring import build_stage0_scrape_binder
+from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
     Recipe1ProjectExecutionRouter,
@@ -102,7 +102,11 @@ from clue_api.recipe_wiring import (
     seed_system_recipes,
 )
 from clue_api.research_view_runtime import build_production_research_view_runtime
-from clue_api.run_composition import ComposingRunDriver, build_platform_gateway
+from clue_api.run_composition import (
+    ComposingRunDriver,
+    build_platform_gateway,
+    build_stage0_claim_extractor,
+)
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
@@ -111,6 +115,7 @@ from clue_api.toolbelt_wiring import build_toolbelt
 from clue_api.value_narrative_tools import ValueNarrativeServices
 from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
 from clue_core import ProjectPhase
+from clue_core.gateway import LLMGateway
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import (
     CompatibilityLoader,
@@ -125,7 +130,7 @@ from clue_execution import (
 from clue_fleet import DbTaskQueue, DbWorkQueue, run_worker
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
-from clue_research.adapters import CallableClaimExtractor, default_scrape_backend
+from clue_research.adapters import default_scrape_backend
 from clue_research.adapters.exa_websets import ExaWebsetsClient
 from clue_research.narrative import ProseSynthesizer
 from clue_research.resolvers import ScrapePolicy
@@ -440,6 +445,25 @@ def _start_exa_targeted_enrichment(
     )
 
 
+def _build_stage0_scrape_binder(
+    settings: Settings, *, gateway: LLMGateway | None
+) -> Stage0ScrapeBinder | None:
+    """The worker's live Stage-0 scrape composition — the HTTP root's, with the same extractor.
+
+    Flag-gated exactly as ``projections_main`` is: with ``self_serve_provisioning_enabled`` off
+    there is no binder and ``start_recon`` keeps refusing before any spend. The ``gateway`` is the
+    one ``_serve`` already built for every other model consumer in this process — this seam takes it
+    rather than building a second client for the same credential.
+    """
+    if not settings.self_serve_provisioning_enabled:
+        return None
+    return build_stage0_scrape_binder(
+        extractor=build_stage0_claim_extractor(gateway),
+        scraper=default_scrape_backend(settings),
+        policy=ScrapePolicy(),
+    )
+
+
 async def _serve() -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
@@ -550,18 +574,11 @@ async def _serve() -> None:
             storage=storage,
             settings=settings,
             gateway=gateway,
-            # FI-4 slice 2: same live scrape composition as projections_main, behind the same
-            # flag (empty extractor — no production ClaimExtractor exists; snapshots are
-            # captured, values are not; when the flag is off start_recon keeps refusing).
-            stage0_scrape_binder=(
-                build_stage0_scrape_binder(
-                    extractor=CallableClaimExtractor(lambda normalized, entity, field: []),
-                    scraper=default_scrape_backend(settings),
-                    policy=ScrapePolicy(),
-                )
-                if settings.self_serve_provisioning_enabled
-                else None
-            ),
+            # FI-4 slice 2 / slice 3: same live scrape composition as projections_main, behind the
+            # same flag, and now with the same REAL extractor — reusing the gateway built above, so
+            # recon drafts grounded client.* values instead of capturing snapshots nobody claims
+            # from. When the flag is off start_recon keeps refusing.
+            stage0_scrape_binder=_build_stage0_scrape_binder(settings, gateway=gateway),
             pre_spend_gate=pre_spend_gate,
             research_directive_memory_write_factory=memory_write_factory_builder(settings, gateway),
             queue=task_queue,

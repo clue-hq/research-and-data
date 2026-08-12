@@ -21,13 +21,17 @@ from clue_api.research_view_runtime import (
     ProductionResearchViewRuntime,
     build_production_research_view_runtime,
 )
+from clue_api.run_composition import (
+    build_optional_platform_gateway,
+    build_stage0_claim_extractor,
+)
 from clue_api.storage_wiring import build_storage_backend
 from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Secrets, Settings, load_settings
 from clue_db import transaction
 from clue_obs import get_logger
-from clue_research.adapters import CallableClaimExtractor, default_scrape_backend
+from clue_research.adapters import default_scrape_backend
 from clue_research.durable import BudgetEngine, DbBudgetStore
 from clue_research.resolvers import ScrapePolicy
 from clue_toolbelt import DbIdempotencyStore
@@ -68,13 +72,26 @@ def build_application(
     # deployment is byte-identical to pre-slice-2 — `start_recon` keeps refusing everywhere,
     # including via the generic POST /tools route, so the flag bounds the whole new paid
     # scrape surface, not just the onboarding entry point.
-    # The extractor is EXPLICITLY empty: no production ClaimExtractor exists yet (the LLM
-    # extractor is its own scoped work item), so recon resolves the client, scrapes the
-    # official site under target-lock, and captures durable snapshot evidence — but drafts
-    # no client.* values from it. The interview remains the tier-1 client.* fill path.
+    # Slice 3: the extractor is the REAL one — `LlmClaimExtractor` — whenever this deployment has a
+    # model credential, so recon now drafts grounded `client.*` values from what it scraped instead
+    # of storing snapshots nobody ever claimed from. Without a credential
+    # `build_optional_platform_gateway` warns and returns None, and the composition degrades to the
+    # slice-2 empty extractor (scrape + snapshot, no values) rather than failing this process's
+    # import. The gateway is built only when the binder will exist, so a flag-off deployment warms
+    # no client and stays byte-identical to before.
+    #
+    # Lane D2 note: this composes a gateway *instance* in the HTTP process for the Stage-0 scrape
+    # resolver, but the D2 boundary is untouched — the toolbelt is still built with no `gateway=`
+    # argument, and no chat/turn-serving module reaches this wiring (both guarded by
+    # tests/api/test_lane_d2_http_gateway_isolation.py).
+    stage0_gateway = (
+        build_optional_platform_gateway(resolved)
+        if resolved.self_serve_provisioning_enabled
+        else None
+    )
     stage0_scrape_binder = (
         build_stage0_scrape_binder(
-            extractor=CallableClaimExtractor(lambda normalized, entity, field: []),
+            extractor=build_stage0_claim_extractor(stage0_gateway),
             # Pass the resolved settings' backend explicitly — a None scraper would construct
             # a fresh Settings() inside the resolver registration (one settings truth per
             # process).
