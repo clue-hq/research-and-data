@@ -126,3 +126,14 @@ document-save and brand-kit reads 401 against the strict seam (`EditorApp.tsx:25
 standalone editor's persistence path has been broken since D2.5A went strict; nobody live-drove
 it until this run. Fix is mechanical: default `fetchImpl = lumenFetch` in those modules (or
 inject at call sites). Owner: design subsystem / pre-Part-IV hygiene.
+
+**CORRECTION + RESOLUTION (2026-08-12, see `2026-08-12-editor-lumenfetch-defaults-fix.md`):**
+two errors in the paragraph above. (1) `webDocuments` was NOT un-migrated — D2.5A itself
+flipped all 24 of its defaults to `lumenFetch`; the true un-migrated set was exactly
+`documentStore.ts` (8 sites) + `brandHub.ts` (4 sites), and the pages break only by composing
+those modules' defaults. (2) The migrated-list is also wrong — D2.5A covered 13 engine modules
+(commit `09eff3a0`), not 5. Root cause of the miss: the D2.5A enumeration grepped `fetch(`;
+these two files' only fetch token is the parenless default `= fetch`. FIXED 2026-08-12 on
+`integration/frontend-design-part-ii`: defaults flipped, guarded by
+`apps/editor/src/engine/__tests__/workspaceHeaderDefaults.test.ts`, browser-verified live
+(save → reload → 200; /brand list 200).

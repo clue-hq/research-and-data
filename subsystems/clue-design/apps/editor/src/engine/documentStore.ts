@@ -1,4 +1,5 @@
 import type { BrandKitSummary, Operation, Scene } from "./contracts";
+import { lumenFetch } from "./editorConfig";
 import type { BrandKitDetailPayload } from "./tokenColors";
 
 /**
@@ -10,6 +11,11 @@ import type { BrandKitDetailPayload } from "./tokenColors";
  * the document id (the local scene carries only the `doc_untitled`
  * placeholder), and loading returns the authoritative scene for
  * `EditorApp initialScene`.
+ *
+ * Every fetcher defaults `fetchImpl = lumenFetch` — the API's O4 workspace
+ * seam refuses headerless requests (401 `workspace.header_required`), and
+ * production callers never inject a transport, so the default IS the wire.
+ * Guarded by `__tests__/workspaceHeaderDefaults.test.ts`.
  */
 
 export interface DocumentStoreOptions {
@@ -33,7 +39,7 @@ export interface LoadedDocument {
 }
 
 export async function createDocument(
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: DocumentStoreOptions,
   scene: Scene
 ): Promise<CreatedDocument> {
   // Strip the local placeholder id so the server mints the real document id
@@ -75,7 +81,7 @@ export async function revertDocument(
   documentId: string,
   checkpoint: string
 ): Promise<RevertOutcome> {
-  const { apiBaseUrl, fetchImpl = fetch } = options;
+  const { apiBaseUrl, fetchImpl = lumenFetch } = options;
   const url = new URL(`/documents/${encodeURIComponent(documentId)}/revert`, apiBaseUrl);
   url.searchParams.set("checkpoint", checkpoint);
   const response = await fetchImpl(url, { method: "POST" });
@@ -116,7 +122,7 @@ export async function revertDocument(
 }
 
 export async function fetchDocument(
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: DocumentStoreOptions,
   documentId: string
 ): Promise<LoadedDocument> {
   const response = await fetchImpl(
@@ -156,7 +162,7 @@ export async function fetchDocument(
  * list only gates the dropdown, not the canvas.
  */
 export async function fetchBrandKits(
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions
+  { apiBaseUrl, fetchImpl = lumenFetch }: DocumentStoreOptions
 ): Promise<BrandKitSummary[]> {
   const response = await fetchImpl(new URL("/brand-kits", apiBaseUrl));
   if (!response.ok) {
@@ -175,7 +181,7 @@ export async function fetchBrandKits(
  * string-heuristic fallback) rather than block anything on it.
  */
 export async function fetchBrandKitDetail(
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: DocumentStoreOptions,
   brandKitId: string
 ): Promise<BrandKitDetailPayload | null> {
   const response = await fetchImpl(
@@ -202,7 +208,7 @@ export interface AcceptBakeResult {
 }
 
 export async function resolveAndFreezeScene(
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: DocumentStoreOptions,
   scene: Scene
 ): Promise<AcceptBakeResult | null> {
   const response = await fetchImpl(new URL("/preflight-preview", apiBaseUrl), {
@@ -235,7 +241,7 @@ export async function resolveAndFreezeScene(
 
 /** 2e: persist the document's standing agent instructions (blank clears). */
 export async function saveAgentInstructions(
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: DocumentStoreOptions,
   documentId: string,
   instructions: string | null
 ): Promise<string | null> {
@@ -257,7 +263,7 @@ export async function saveAgentInstructions(
 /** Persist the document's layout-managed-editing opt-out (see
  * LoadedDocument.layoutManagedEditing). Returns the persisted value. */
 export async function saveLayoutManagedEditing(
-  { apiBaseUrl, fetchImpl = fetch }: DocumentStoreOptions,
+  { apiBaseUrl, fetchImpl = lumenFetch }: DocumentStoreOptions,
   documentId: string,
   enabled: boolean
 ): Promise<boolean> {

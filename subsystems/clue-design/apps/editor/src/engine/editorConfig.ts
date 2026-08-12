@@ -22,16 +22,6 @@ export function editorWorkspaceId(): string {
 }
 
 /**
- * `fetch` with the workspace header attached — the ONE way the editor talks to
- * the design API.
- *
- * Caller-supplied headers win, so a call site can still override the workspace
- * (nothing does today). Do NOT use this for `/asset-store/{digest}`: those
- * bytes are public and are fetched from contexts whose origin is "null" (the
- * web-preview srcdoc iframe), where adding a custom header would turn the
- * request into a preflight the wildcard CORS response cannot satisfy.
- */
-/**
  * The run-stream handshake pair (design-integration Part II, D7).
  *
  * The stream used to carry its tenant in the query string, because `EventSource`
@@ -54,6 +44,16 @@ export function runEventsUrl(apiBaseUrl: string, runId: string, streamToken: str
   return url.toString();
 }
 
+/**
+ * `fetch` with the workspace header attached — the ONE way the editor talks to
+ * the design API.
+ *
+ * Caller-supplied headers win, so a call site can still override the workspace
+ * (nothing does today). Do NOT use this for `/asset-store/{digest}`: those
+ * bytes are public and are fetched from contexts whose origin is "null" (the
+ * web-preview srcdoc iframe), where adding a custom header would turn the
+ * request into a preflight the wildcard CORS response cannot satisfy.
+ */
 export function lumenFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   return fetch(input, {
     ...init,
