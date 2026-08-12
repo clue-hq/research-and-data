@@ -167,6 +167,30 @@ test("the default script opens on starting with no field events yet", () => {
   assert.equal(first?.recon_run_id, null);
 });
 
+test("the fast lane's walk is served as starting with no visible recon run", () => {
+  // The fast lane lives inside one transaction, so its recon_run row is invisible until it
+  // commits: the backend's "captured" branch serves per-field motion under `starting` with every
+  // lane column null. Overall `running` is not part of a healthy fast lane, and the script must
+  // not invent it (`platform/api/clue_api/stage0_setup.py`).
+  const walking = FIXTURE_SETUP_PROGRESS_SCRIPT.filter(
+    (candidate) => candidate.fields.some((field) => field.status === "started"),
+  );
+  const fastWalk = walking.filter((candidate) =>
+    candidate.fields.every((field) => field.lane === "fast"),
+  );
+  assert.equal(fastWalk.length, 11);
+  for (const candidate of fastWalk) {
+    assert.equal(candidate.status, "starting");
+    assert.equal(candidate.recon_run_id, null);
+    assert.equal(candidate.fast_status, null);
+    assert.equal(candidate.fact_count, null);
+  }
+  assert.ok(
+    FIXTURE_SETUP_PROGRESS_SCRIPT.every((candidate) => candidate.status !== "running"),
+    "a healthy fast lane never surfaces overall `running`",
+  );
+});
+
 test("the default script's final frame is complete with all eleven field terminals", () => {
   const last = FIXTURE_SETUP_PROGRESS_SCRIPT[FIXTURE_SETUP_PROGRESS_SCRIPT.length - 1];
   assert.equal(last?.status, "complete");

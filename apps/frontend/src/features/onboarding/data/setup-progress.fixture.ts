@@ -16,9 +16,15 @@
  *    events at all, so the checklist shows its warm-up row and claims nothing else).
  * 2. the FAST lane walking the Client-KB baseline fields in budget order, announcing `started`
  *    as it reaches each one and exactly one terminal after (`resolved`, or `empty` — a field no
- *    source could answer is a *correct* outcome, not a failure).
- * 3. `complete` — the fast lane finished; this is the release-into-the-app signal, and it
- *    carries `fact_count` plus a terminal for all eleven baseline fields.
+ *    source could answer is a *correct* outcome, not a failure). This whole walk is still served
+ *    as `starting` with a null `recon_run_id`: the fast lane lives inside one transaction, so its
+ *    `recon_run` row is invisible until it commits, and the autonomously-committed per-field
+ *    events are the only motion there is to show (`platform/api/clue_api/stage0_setup.py`, the
+ *    "captured" branch). Overall `running` is therefore NOT part of a healthy fast lane's
+ *    vocabulary, and this script does not fabricate it.
+ * 3. `complete` — the lane's transaction committed and the fast lane finished; this is the
+ *    release-into-the-app signal, and it carries `fact_count` plus a terminal for all eleven
+ *    baseline fields.
  * 4. the BACKGROUND lane re-deriving the two tier-3-only fields the fast lane's
  *    `max_source_tier=2` walk reached at zero spend, `started` → `empty`, after the release.
  */
@@ -45,7 +51,15 @@ export const FIXTURE_SETUP_BASELINE_FIELDS = [
   "client.buyer_profile",
 ] as const;
 
+/** The two tier-3-only fields the fast lane cannot spend on — the tail of the budget order, and
+ * the only fields the background lane's second pass changes here. */
+const TIER3_ONLY_FIELDS = ["client.competitor", "client.buyer_profile"] as const;
+/** How many fields the fast lane's tier≤2 pass is the last word on. */
+const FAST_PASS_FIELD_COUNT =
+  FIXTURE_SETUP_BASELINE_FIELDS.length - TIER3_ONLY_FIELDS.length;
+
 const FIXTURE_RECON_RUN_ID = "5c1f0a2e-0000-4000-8000-0000000000f4";
+const FIXTURE_COMPANY_WEBSITE = "https://cluehq.ai";
 
 /** How the fast lane's zero-to-tier-2 pass ends for each field. Review surfaces have no tier≤2
  * resolver bound, so they come back empty — the honest outcome, not a failure. */
@@ -99,10 +113,11 @@ function fastTerminals(count: number): SetupStatus["fields"] {
   );
 }
 
-const RUNNING_BASE = {
-  recon_run_id: FIXTURE_RECON_RUN_ID,
-  company_website: "https://cluehq.ai",
-  fast_status: "running",
+/** What the "captured, run not yet visible" branch serves: the website and the field events,
+ * every lane column still null — it has no recon row to read them from. */
+const FAST_LANE_BASE = {
+  status: "starting" as const,
+  company_website: FIXTURE_COMPANY_WEBSITE,
 };
 
 /**
@@ -111,23 +126,21 @@ const RUNNING_BASE = {
  */
 const FAST_LANE_FRAMES: SetupStatus[] = FIXTURE_SETUP_BASELINE_FIELDS.map((key, index) =>
   frame({
-    ...RUNNING_BASE,
-    status: "running",
+    ...FAST_LANE_BASE,
     fields: [...fastTerminals(index), fastField(key, "started")],
   }),
 );
 
-/** All eleven attempted, the lane transition not landed yet — a real snapshot, briefly. */
+/** All eleven attempted, the lane's transaction not committed yet — a real snapshot, briefly. */
 const FAST_LANE_SETTLED: SetupStatus = frame({
-  ...RUNNING_BASE,
-  status: "running",
+  ...FAST_LANE_BASE,
   fields: fastTerminals(FIXTURE_SETUP_BASELINE_FIELDS.length),
 });
 
 /** The release: the fast lane completed, the background lane picked up behind it. */
 const FAST_LANE_COMPLETE: SetupStatus = frame({
   recon_run_id: FIXTURE_RECON_RUN_ID,
-  company_website: "https://cluehq.ai",
+  company_website: FIXTURE_COMPANY_WEBSITE,
   status: "complete",
   fast_status: "completed",
   background_status: "running",
@@ -137,31 +150,30 @@ const FAST_LANE_COMPLETE: SetupStatus = frame({
   fields: fastTerminals(FIXTURE_SETUP_BASELINE_FIELDS.length),
 });
 
-/** After the release: the background lane re-derives the two tier-3-only fields. The user has
- * normally left the screen by now — these frames exist because the stream is honest about what
- * the run is still doing, not because the screen waits for them. */
-function backgroundFrame(
-  competitor: "started" | "empty",
-  buyerProfile: "started" | "empty" | null,
-  over: Partial<SetupStatus> = {},
-): SetupStatus {
+function backgroundField(field_key: string, status: "started" | "empty"): FieldFrame {
+  return { field_key, lane: "background", status };
+}
+
+/** After the release: the fast lane's nine tier≤2 fields keep their fast-lane truth, and the two
+ * tier-3-only fields carry whatever the background lane has reached. The user has normally left
+ * the screen by now — these frames exist because the stream stays honest about what the run is
+ * still doing, not because the screen waits for them. */
+function afterRelease(tier3: readonly FieldFrame[], over: Partial<SetupStatus> = {}): SetupStatus {
   return frame({
     ...FAST_LANE_COMPLETE,
-    fields: [
-      ...fastTerminals(9),
-      { field_key: "client.competitor", lane: "background", status: competitor },
-      buyerProfile === null
-        ? fastField("client.buyer_profile", "empty")
-        : { field_key: "client.buyer_profile", lane: "background", status: buyerProfile },
-    ],
+    fields: [...fastTerminals(FAST_PASS_FIELD_COUNT), ...tier3],
     ...over,
   });
 }
 
+const [COMPETITOR, BUYER_PROFILE] = TIER3_ONLY_FIELDS;
+
 const BACKGROUND_LANE_FRAMES: SetupStatus[] = [
-  backgroundFrame("started", null),
-  backgroundFrame("empty", "started"),
-  backgroundFrame("empty", "empty", {
+  // One field at a time, exactly as the fast lane walked: the second tier-3 field still shows the
+  // fast lane's zero-spend `empty` until the background lane reaches it.
+  afterRelease([backgroundField(COMPETITOR, "started"), fastField(BUYER_PROFILE, "empty")]),
+  afterRelease([backgroundField(COMPETITOR, "empty"), backgroundField(BUYER_PROFILE, "started")]),
+  afterRelease([backgroundField(COMPETITOR, "empty"), backgroundField(BUYER_PROFILE, "empty")], {
     background_status: "completed",
     background_budget_exhausted: false,
   }),
@@ -174,7 +186,7 @@ const BACKGROUND_LANE_FRAMES: SetupStatus[] = [
  */
 export const FIXTURE_SETUP_PROGRESS_SCRIPT: readonly SetupStatus[] = [
   // Durably captured, no recon row visible yet — the warm-up state, and a real durable signal.
-  frame({ status: "starting", company_website: "https://cluehq.ai" }),
+  frame({ ...FAST_LANE_BASE }),
   ...FAST_LANE_FRAMES,
   FAST_LANE_SETTLED,
   FAST_LANE_COMPLETE,
