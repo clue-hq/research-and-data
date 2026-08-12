@@ -19,6 +19,7 @@ from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api import stage0_field_events
 from clue_api.stage0_field_events import ReconFieldProgressEmitter
 from clue_core import ProjectRunId
 from clue_db import db_lifespan, transaction
@@ -156,6 +157,43 @@ def test_an_emission_failure_never_fails_the_lane() -> None:
                 # Observability never fails the lane: swallowed with a log, nothing propagates.
                 await emitter(lane_conn, _FIELD, FieldProgressStatus.FAILED)
                 assert await _events(lane_conn, workspace_id, recon_run_id) == []
+            finally:
+                await lane_conn.close()
+                await _purge(workspace_id)
+
+    run_async(scenario())
+
+
+def test_a_failed_lane_write_does_not_poison_the_lane_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The factory-less path contains its own failure in a savepoint.
+
+    Swallowing a failed INSERT on the caller's connection without one would leave the recon lane
+    holding an aborted transaction — observability failing the lane one statement later, which is
+    exactly what the swallow promises never to happen."""
+
+    async def scenario() -> None:
+        async with db_lifespan() as engine:
+            workspace_id = f"ws-field-events-{uuid4()}"
+            lane_conn = await engine.connect()
+            try:
+                trans = await lane_conn.begin()
+
+                async def exploding_emit(conn: AsyncConnection, **_kwargs: object) -> None:
+                    await conn.execute(text("SELECT 1 / 0"))
+
+                monkeypatch.setattr(stage0_field_events, "emit_run_event", exploding_emit)
+                emitter = ReconFieldProgressEmitter(
+                    workspace_id=workspace_id,
+                    recon_run_id=uuid4(),
+                    lane="fast",
+                )
+                await emitter(lane_conn, _FIELD, FieldProgressStatus.STARTED)
+
+                # the lane transaction is still alive and usable
+                assert (await lane_conn.execute(text("SELECT 1"))).scalar_one() == 1
+                await trans.rollback()
             finally:
                 await lane_conn.close()
                 await _purge(workspace_id)

@@ -67,7 +67,11 @@ class ReconFieldProgressEmitter:
                 async with self._conn_factory() as own:
                     await self._emit(own, payload)
             else:
-                await self._emit(conn, payload)
+                # The event rides the lane's own transaction, so a failed INSERT is contained in a
+                # savepoint: swallowing it otherwise leaves the caller with an *aborted*
+                # transaction — observability failing the lane after all, one statement later.
+                async with conn.begin_nested():
+                    await self._emit(conn, payload)
         except Exception:  # noqa: BLE001 - a progress event may never fail the recon lane
             log.warning(
                 "stage0.recon.field_event_emit_failed",
