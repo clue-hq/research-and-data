@@ -24,7 +24,7 @@ here).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from decimal import Decimal
 from typing import cast
 from uuid import NAMESPACE_URL, uuid5
@@ -99,6 +99,7 @@ from clue_research.stage0.types import (
     ClientInput,
     ClientKnowledgeBaseRef,
     CoverageReport,
+    FieldProgressStatus,
     ReverseProfileResult,
     SurfaceCoverage,
     VolunteeredMaterial,
@@ -116,6 +117,12 @@ _EVIDENCE_SPAN_MAX = 2000  # cap a raw excerpt used as an evidence_span
 # workspace-identity
 # reuse knob for the (degenerate) no-registrable-domain case.
 _CLIENT_REUSE_MIN_SCORE = 0.85
+
+# The per-field progress seam: called once with STARTED as the loop reaches a field, then exactly
+# once more with its terminal status (RESOLVED / EMPTY / FAILED). The **lane connection** is the
+# first argument so a same-transaction sink can write on it without opening (and deadlocking on) a
+# second connection; a sink wanting mid-lane visibility to other readers brings its own factory.
+FieldProgress = Callable[[AsyncConnection, str, FieldProgressStatus], Awaitable[None]]
 
 
 class ClientKbWriteTarget(BaseModel):
@@ -140,6 +147,7 @@ async def reverse_profile(
     product_id: str | None = None,
     max_source_tier: int | None = None,
     on_client_resolved: Callable[[AccountEntity], None] | None = None,
+    on_field_progress: FieldProgress | None = None,
 ) -> ReverseProfileResult:
     """Reverse-profile a client into a versioned Client Knowledge Base.
 
@@ -163,6 +171,14 @@ async def reverse_profile(
 
     ``judge`` is the injected M9 seam used only for tier-4 client claims (consumed behind the judge
     — the tier-4 *synthesis* is M11). It is optional: the default tiers-1–3 pass needs no judge.
+
+    ``on_field_progress`` is the optional per-field progress seam (D-5 Path B): the loop announces
+    ``STARTED`` as it reaches each field and exactly one terminal status after — ``RESOLVED`` when
+    the field gained a claim, ``EMPTY`` when no source could answer it (a *correct* outcome, not a
+    failure), ``FAILED`` when the resolution attempt itself errored (announced, then re-raised —
+    progress reporting never swallows a lane failure). Fields the run never attempts — shortcut by
+    a volunteered material, or cut off by the budget halt — announce **nothing**, so a consumer
+    reads honest absence rather than fabricated motion.
     """
     scope = WorkspaceScope.for_workspace(workspace_id)
     run = run_id if run_id is not None else new_run_id()
@@ -228,24 +244,37 @@ async def reverse_profile(
             if field_def is None:
                 continue  # defensive: pack load above guarantees presence
             attempted_fields.add(field_key)
-            result = await resolve_field(
-                conn,
-                _entity_ref(client_entity_id),
-                field_def,
-                mode=_MODE,
-                run_id=run,
-                workspace_id=workspace_id,
-                budget_envelope=budget_cap_cents,
-                cost_so_far=budget.spent_cents,
-                reuse_policy=CLIENT_KNOWLEDGE_REUSE_POLICY,
-                product_id=product_id,
-                source_gate=_source_gate(
-                    pre_spend_gate,
-                    entity_id=client_entity_id,
-                    field_key=field_key,
+            await _announce(on_field_progress, conn, field_key, FieldProgressStatus.STARTED)
+            try:
+                result = await resolve_field(
+                    conn,
+                    _entity_ref(client_entity_id),
+                    field_def,
+                    mode=_MODE,
                     run_id=run,
-                    max_source_tier=max_source_tier,
-                ),
+                    workspace_id=workspace_id,
+                    budget_envelope=budget_cap_cents,
+                    cost_so_far=budget.spent_cents,
+                    reuse_policy=CLIENT_KNOWLEDGE_REUSE_POLICY,
+                    product_id=product_id,
+                    source_gate=_source_gate(
+                        pre_spend_gate,
+                        entity_id=client_entity_id,
+                        field_key=field_key,
+                        run_id=run,
+                        max_source_tier=max_source_tier,
+                    ),
+                )
+            except Exception:
+                # Announce the failure, then let it fail the lane exactly as before: the progress
+                # seam reports what happened, it never decides whether the run survives.
+                await _announce(on_field_progress, conn, field_key, FieldProgressStatus.FAILED)
+                raise
+            await _announce(
+                on_field_progress,
+                conn,
+                field_key,
+                FieldProgressStatus.RESOLVED if result.claim_refs else FieldProgressStatus.EMPTY,
             )
             budget.spend(result.total_cost_cents)
             claims_written += len(result.claim_refs)
@@ -291,6 +320,17 @@ async def reverse_profile(
 
 def _entity_ref(entity_id: EntityId) -> Entity:
     return Entity(entity_id=entity_id, entity_type=EntityType.ACCOUNT)
+
+
+async def _announce(
+    on_field_progress: FieldProgress | None,
+    conn: AsyncConnection,
+    field_key: str,
+    status: FieldProgressStatus,
+) -> None:
+    """Report one per-field status through the optional progress seam (no-op when unwired)."""
+    if on_field_progress is not None:
+        await on_field_progress(conn, field_key, status)
 
 
 def _source_gate(

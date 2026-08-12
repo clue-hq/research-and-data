@@ -12,6 +12,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     ExtractionMethod,
@@ -31,16 +32,19 @@ from clue_research.claimstore import (
 from clue_research.identity import stamp_reuse
 from clue_research.sources import bind_resolver
 from clue_research.stage0 import (
+    CLIENT_BASELINE_FIELDS,
     CLIENT_KB_VERSION,
     CLIENT_KNOWLEDGE_FIELDS,
     CLIENT_KNOWLEDGE_REUSE_POLICY,
     ClientInput,
+    FieldProgressStatus,
     SurfaceClass,
     VolunteeredMaterial,
     current_kb_version,
     read_client_kb,
     reverse_profile,
 )
+from clue_research.stage0 import client_kb as client_kb_module
 from clue_research.stage0.client_kb import _judge_tier4_claims
 from clue_research.stage0.fields import (
     CLIENT_CUSTOMER,
@@ -464,6 +468,106 @@ def test_client_customer_is_multi_valued_list() -> None:
             )
             assert cv is not None
             assert isinstance(cv.value_json, list) and len(cv.value_json) == 2  # 1-to-N preserved
+
+    run_async(_run())
+
+
+def test_per_field_progress_events_are_emitted_in_flight() -> None:
+    """D-5 Path B: every field the loop *attempts* announces itself before the lane finishes."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            _bind_firecrawl(_owned_values())
+            seen: list[tuple[str, FieldProgressStatus]] = []
+
+            async def record(
+                progress_conn: AsyncConnection, field_key: str, status: FieldProgressStatus
+            ) -> None:
+                # The callback receives the LANE connection — a factory-less emitter writes
+                # same-transaction on it (and every test conn-factory shape stays deadlock-free).
+                assert progress_conn is conn
+                seen.append((field_key, status))
+
+            await reverse_profile(conn, _input(), workspace_id=_CLIENT, on_field_progress=record)
+
+            starts = [k for k, s in seen if s is FieldProgressStatus.STARTED]
+            assert starts  # the loop attempted fields, and each announced its start
+            assert starts == [k for k in CLIENT_BASELINE_FIELDS if k in starts]  # loop order
+            assert len(starts) == len(set(starts))  # exactly one start per attempted field
+            for key in starts:
+                terminals = [
+                    s for k, s in seen if k == key and s is not FieldProgressStatus.STARTED
+                ]
+                assert len(terminals) == 1
+                assert terminals[0] in (FieldProgressStatus.RESOLVED, FieldProgressStatus.EMPTY)
+
+            # honest statuses: a field the fake scraper answered is RESOLVED, an unwired one EMPTY
+            resolved = {k for k, s in seen if s is FieldProgressStatus.RESOLVED}
+            empty = {k for k, s in seen if s is FieldProgressStatus.EMPTY}
+            assert CLIENT_VALUE_PROP in resolved
+            assert empty  # third-party/review surfaces have no resolver bound
+
+    run_async(_run())
+
+
+def test_a_raising_resolver_emits_failed_before_propagating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A blown resolution is announced as FAILED, then still fails the lane (no swallowing)."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            seen: list[tuple[str, FieldProgressStatus]] = []
+
+            async def record(_c: AsyncConnection, field_key: str, s: FieldProgressStatus) -> None:
+                seen.append((field_key, s))
+
+            async def boom(*_args: object, **_kwargs: object) -> None:
+                raise RuntimeError("resolver exploded")
+
+            monkeypatch.setattr(client_kb_module, "resolve_field", boom)
+            with pytest.raises(RuntimeError, match="resolver exploded"):
+                await reverse_profile(
+                    conn, _input(), workspace_id=_CLIENT, on_field_progress=record
+                )
+
+            assert len(seen) == 2  # the first field: started, then failed — nothing after
+            assert seen[0][1] is FieldProgressStatus.STARTED
+            assert seen[1][1] is FieldProgressStatus.FAILED
+            assert seen[0][0] == seen[1][0] == CLIENT_BASELINE_FIELDS[0]
+
+    run_async(_run())
+
+
+def test_unattempted_fields_emit_nothing() -> None:
+    """Honest absence: a material-shortcut field and budget-cut fields announce nothing."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            bind_resolver(
+                "firecrawl_site",
+                FakeResolver(tier=2, values=_owned_values(), cost_cents=Decimal("1.0")),
+            )
+            deck = VolunteeredMaterial(asserted_fields={CLIENT_VALUE_PROP: "from the deck"})
+            seen: list[tuple[str, FieldProgressStatus]] = []
+
+            async def record(_c: AsyncConnection, field_key: str, s: FieldProgressStatus) -> None:
+                seen.append((field_key, s))
+
+            result = await reverse_profile(
+                conn,
+                _input((deck,)),
+                workspace_id=_CLIENT,
+                budget_cap_cents=Decimal("1.5"),
+                on_field_progress=record,
+            )
+
+            assert result.budget_exhausted is True
+            announced = {k for k, _ in seen}
+            # shortcut by the volunteered tier-1 fact — never attempted, so never announced
+            assert CLIENT_VALUE_PROP not in announced
+            # the budget halt left later fields un-attempted; they announce nothing either
+            assert announced < set(CLIENT_BASELINE_FIELDS)
 
     run_async(_run())
 

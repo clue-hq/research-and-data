@@ -35,6 +35,7 @@ from __future__ import annotations
 from clue_config.settings import DEFAULT_SYNTHESIS_MODEL
 from clue_research.stage0.client_kb import (
     ClientKbWriteTarget,
+    FieldProgress,
     client_kb_readiness_metrics,
     client_kb_write_target_for_materialization,
     current_kb_version,
@@ -207,6 +208,7 @@ __all__ = [
     "client_kb_readiness_metrics",
     "current_kb_version",
     "ClientKbWriteTarget",
+    "FieldProgress",
     "client_kb_write_target_for_materialization",
     "DynamicClientKbRefused",
     "FieldMaterializationPlan",
