@@ -16,7 +16,12 @@ One narrow, flag-gated surface for the onboarding "setting up your workspace" sc
     enclosing transaction), ``running``/``complete``/``failed`` from the durable lane rows,
     ``none`` (nothing requested), ``unavailable`` (no provisioning record). ``complete``
     additionally carries ``fast_client_kb_version`` and ``fact_count`` so a lane that ran
-    but derived nothing is distinguishable from real coverage (review BE-M5).
+    but derived nothing is distinguishable from real coverage (review BE-M5). FI-4 slice 3
+    adds honest granularity on top: ``fields`` is the per-field state reverse profiling
+    actually reached (reduced last-writer-wins from the ``stage0.recon.field`` events, in
+    Client-KB baseline order), and ``{fast,background}_budget_exhausted`` say whether a
+    lane "completed" by finishing or by hitting its cap — ``None`` until that lane's
+    terminal event exists, never a guessed ``False``.
 
 Identity/replay model (review BE-B1/BE-B2):
 
@@ -56,11 +61,26 @@ from sqlalchemy import text
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import principal_from_request
-from clue_core import OnboardingInputId, OnboardingInputKind, ReconRunId, operation_id_from_key
+from clue_core import (
+    OnboardingInputId,
+    OnboardingInputKind,
+    ProjectRunId,
+    ReconRunId,
+    operation_id_from_key,
+)
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_projections import PROJECTIONS_SCHEMA_VERSION, recon_brief, stage0_progress
-from clue_research.stage0 import recon_dedupe_hash, submit_onboarding_input
+from clue_research.durable import (
+    RECON_FIELD_PROGRESS_KIND,
+    RECON_TRANSITION_KIND,
+    list_run_events,
+)
+from clue_research.stage0 import (
+    CLIENT_BASELINE_FIELDS,
+    recon_dedupe_hash,
+    submit_onboarding_input,
+)
 from clue_storage import StorageBackend
 from clue_toolbelt import PreconditionFailed, ToolContext, ToolInvoker
 
@@ -91,6 +111,14 @@ class SetupStartResponse(BaseModel):
     status: Literal["started"]
 
 
+class SetupFieldState(BaseModel):
+    """One Client-KB field's latest reported state, from the recon lane that reported it."""
+
+    field_key: str
+    lane: str
+    status: str
+
+
 class SetupStatusResponse(BaseModel):
     """Lane-level truth for the setting-up screen; ``complete`` == the fast lane finished
     (the release-into-the-app signal) — the background lane keeps running behind it."""
@@ -105,6 +133,13 @@ class SetupStatusResponse(BaseModel):
     # distinguishable from real coverage. None until the fast lane completes.
     fast_client_kb_version: int | None = None
     fact_count: int | None = None
+    # FI-4 slice 3: real per-field motion — what reverse profiling actually reached, in
+    # Client-KB baseline order. Empty until the running lane emits its first field.
+    fields: list[SetupFieldState] = []
+    # None while a lane has not reached a terminal COMPLETED state (or for a run that
+    # predates the flag): "we do not know yet", never a fabricated False.
+    fast_budget_exhausted: bool | None = None
+    background_budget_exhausted: bool | None = None
 
 
 class _ProvisioningScope(BaseModel):
@@ -324,6 +359,52 @@ def create_stage0_setup_router(
         task.add_done_callback(driver_tasks.discard)
         return SetupStartResponse(schema_version=PROJECTIONS_SCHEMA_VERSION, status="started")
 
+    async def _field_truth(
+        workspace_id: str, recon_run_id: UUID
+    ) -> tuple[list[SetupFieldState], dict[str, bool]]:
+        """Reduce the recon run's progress events into per-field state + per-lane budget truth.
+
+        The events are an at-least-once outbox, so both reductions are last-writer-wins by
+        ``seq``: a field's terminal status supersedes its ``started``, and the newest COMPLETED
+        transition per lane carries that lane's budget verdict. A lane's own field row wins over
+        an earlier lane's for the same field — the background lane re-derives what the capped
+        fast lane reached, and the later answer is the truer one."""
+        async with conn_factory() as conn:
+            events = await list_run_events(
+                conn,
+                workspace_id=workspace_id,
+                run_id=ProjectRunId(recon_run_id),
+            )
+        latest_field: dict[str, tuple[int, str, str]] = {}
+        budgets: dict[str, bool] = {}
+        for event in events:
+            payload = event.payload
+            kind = payload.get("kind")
+            if kind == RECON_FIELD_PROGRESS_KIND:
+                field_key = str(payload.get("field_key", ""))
+                seen = latest_field.get(field_key)
+                if field_key and (seen is None or seen[0] < event.seq):
+                    latest_field[field_key] = (
+                        event.seq,
+                        str(payload.get("lane", "")),
+                        str(payload.get("status", "")),
+                    )
+            elif kind == RECON_TRANSITION_KIND and payload.get("status") == "completed":
+                exhausted = payload.get("budget_exhausted")
+                if isinstance(exhausted, bool):
+                    budgets[str(payload.get("lane", ""))] = exhausted
+        order = {key: index for index, key in enumerate(CLIENT_BASELINE_FIELDS)}
+        fields = [
+            SetupFieldState(field_key=field_key, lane=lane, status=status)
+            for field_key, (_, lane, status) in sorted(
+                latest_field.items(),
+                # Baseline order is the order the screen shows them in; anything outside the
+                # baseline (a future pack field) sorts after it, alphabetically.
+                key=lambda item: (order.get(item[0], len(order)), item[0]),
+            )
+        ]
+        return fields, budgets
+
     async def _serve_lane_truth(
         workspace_id: str, scope: _ProvisioningScope, recon_run_id: Any
     ) -> SetupStatusResponse | None:
@@ -349,6 +430,7 @@ def create_stage0_setup_router(
             )
             if brief is not None:
                 fact_count = len(brief.facts)
+        fields, budgets = await _field_truth(workspace_id, UUID(view.recon_run_id))
         return SetupStatusResponse(
             schema_version=PROJECTIONS_SCHEMA_VERSION,
             status=status,
@@ -358,6 +440,9 @@ def create_stage0_setup_router(
             company_website=scope.company_website,
             fast_client_kb_version=view.fast_client_kb_version,
             fact_count=fact_count,
+            fields=fields,
+            fast_budget_exhausted=budgets.get("fast"),
+            background_budget_exhausted=budgets.get("background"),
         )
 
     @router.get("/stage0/setup/current", response_model=SetupStatusResponse)

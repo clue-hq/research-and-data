@@ -20,7 +20,13 @@ from clue_api.execution_wiring import build_tool_invoker
 from clue_api.stage0_setup import create_stage0_setup_router, setup_workspace_resolver
 from clue_auth import RequestPrincipal, permissions_for_role, provision_self_serve_workspace
 from clue_auth.errors import PermissionDenied
-from clue_core import OnboardingInputId, ReconRunId
+from clue_core import OnboardingInputId, ProjectRunId, ReconRunId
+from clue_research.durable import (
+    RECON_FIELD_PROGRESS_KIND,
+    RECON_TRANSITION_KIND,
+    RunEventTopic,
+    emit_run_event,
+)
 from clue_research.stage0 import (
     ReconLaneStatus,
     recon_dedupe_hash,
@@ -68,6 +74,48 @@ class _MemoryStorage:
     async def presign(self, key: str, *, expires_in: int = 3600) -> str:
         del expires_in
         return f"memory://{key}"
+
+
+async def _emit_lane_progress(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    recon_run_id: UUID,
+    lane: str,
+) -> None:
+    """The per-field + terminal events the REAL start_recon tool writes for one lane.
+
+    The setup surface reads only durable rows, so a lane stand-in that skips these leaves the
+    progress read with nothing to serve. Two fields with a status correction each (started →
+    terminal) also exercise the reader's last-writer-wins reduction."""
+    for field_key, terminal in (("client.value_prop", "resolved"), ("client.product", "empty")):
+        for status in ("started", terminal):
+            await emit_run_event(
+                conn,
+                workspace_id=workspace_id,
+                run_id=ProjectRunId(recon_run_id),
+                topic=RunEventTopic.STEP_PROGRESS.value,
+                payload={
+                    "kind": RECON_FIELD_PROGRESS_KIND,
+                    "recon_run_id": str(recon_run_id),
+                    "lane": lane,
+                    "field_key": field_key,
+                    "status": status,
+                },
+            )
+    await emit_run_event(
+        conn,
+        workspace_id=workspace_id,
+        run_id=ProjectRunId(recon_run_id),
+        topic=RunEventTopic.STEP_PROGRESS.value,
+        payload={
+            "kind": RECON_TRANSITION_KIND,
+            "recon_run_id": str(recon_run_id),
+            "lane": lane,
+            "status": "completed",
+            "budget_exhausted": False,
+        },
+    )
 
 
 class _LaneDrivingInvoker:
@@ -127,6 +175,12 @@ class _LaneDrivingInvoker:
                     status=ReconLaneStatus.COMPLETED,
                     cost_cents=3,
                     client_kb_version=1,
+                )
+                await _emit_lane_progress(
+                    conn,
+                    workspace_id=context.workspace_id,
+                    recon_run_id=recon.id,
+                    lane=lane,
                 )
         refreshed_fast = "completed" if lane in ("fast", None) else recon.fast_status.value
         refreshed_background = "completed" if lane in ("background", None) else "queued"
@@ -193,6 +247,25 @@ def test_setup_route_captures_drives_lanes_and_serves_lane_truth() -> None:
                 assert payload["fast_status"] == "completed"
                 assert payload["background_status"] == "completed"
                 assert payload["recon_run_id"] is not None
+                # Per-field truth: what the recon lanes actually reached, one row per field
+                # (last writer by seq wins — a field's `started` is superseded by its
+                # terminal status, never listed twice).
+                fields = payload["fields"]
+                assert isinstance(fields, list)
+                assert fields
+                assert len({entry["field_key"] for entry in fields}) == len(fields)
+                for entry in fields:
+                    assert entry["field_key"].startswith("client.")
+                    assert entry["lane"] in {"fast", "background"}
+                    assert entry["status"] in {"started", "resolved", "empty", "failed"}
+                assert {entry["field_key"]: entry["status"] for entry in fields} == {
+                    "client.value_prop": "resolved",
+                    "client.product": "empty",
+                }
+                # Budget honesty: both lanes finished inside their caps, and the surface says
+                # so rather than leaving the caller to assume it.
+                assert payload["fast_budget_exhausted"] is False
+                assert payload["background_budget_exhausted"] is False
 
             # Capture-before-use is durable: the website submission is an onboarding_input
             # whose artifact FK proves the bytes existed first.
@@ -343,6 +416,12 @@ class _FakeStartReconTool(Tool):
                     status=ReconLaneStatus.COMPLETED,
                     cost_cents=3,
                     client_kb_version=1,
+                )
+                await _emit_lane_progress(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    recon_run_id=recon.id,
+                    lane=lane,
                 )
             refreshed = await start_recon(
                 conn,

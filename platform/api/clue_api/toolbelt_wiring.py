@@ -2843,6 +2843,14 @@ def build_toolbelt(
         # value is then refused rather than written unvouched-for — which is exactly the pre-§6c
         # behaviour, so an ungatewayed composition is never *worse* than before.
         entailment_judge=entailment_judge,
+        # FI-4 slice 3: recon field progress commits on its OWN connection so the setup screen
+        # sees motion while the lane runs (the lane's own transaction stays uncommitted until it
+        # ends). That second checkout is only safe against the real pooled factory — an injected
+        # single-connection / lock-guarded factory (every DB test harness) would have the lane
+        # wait on a connection it is itself holding. So the autonomous path is composed only for
+        # `transaction`; anything else falls back to the emitter's lane-connection write, which
+        # is correct everywhere, just post-commit-visible.
+        field_progress_factory=conn_factory if conn_factory is transaction else None,
     ):
         registry.register(tool, make_default=True)
     for tool in build_research_directive_tools(
