@@ -251,10 +251,19 @@ def build_optional_platform_gateway(settings: Settings) -> LLMGateway | None:
     one tool's optional LLM step has no credential would be a strictly worse outcome.
 
     So this mirrors :func:`build_platform_gateway`'s own key check — same secret, same
-    ``gateway_allow_stub`` opt-in, so the two can only ever agree — and turns the refusal into a
-    loud, greppable ``stage0.claim_extraction_disabled_no_gateway`` warning plus ``None``. Deployed
-    without a key the fallback is silent-shaped (no values are drafted), so this warning is the
-    operator's only signal: it names the cause and the fix.
+    ``gateway_allow_stub`` opt-in — and turns the refusal into a loud, greppable
+    ``stage0.claim_extraction_disabled_no_gateway`` warning plus ``None``. Deployed without a key
+    the fallback is silent-shaped (no values are drafted), so this warning is the operator's only
+    signal: it names the cause and the fix.
+
+    **"Never a raise" is enforced, not merely intended.** The pre-check is a *copy* of the
+    refusal condition, and a copy can drift: were ``build_platform_gateway`` to start refusing on a
+    condition this one does not test, the delegation would raise and take the HTTP root down at
+    import — precisely the failure this function exists to prevent. So the delegation is wrapped:
+    the pre-check keeps the common path's specific reason, and the wrapper makes the contract true
+    by construction for any refusal the pre-check does not (yet) know about.
+    ``test_the_two_gateway_builders_agree_on_the_no_key_case`` pins the two against each other so
+    drift is *also* caught loudly at test time rather than only degraded silently in production.
     """
     if Secrets().openrouter_api_key is None and not settings.gateway_allow_stub:
         log.warning(
@@ -265,7 +274,19 @@ def build_optional_platform_gateway(settings: Settings) -> LLMGateway | None:
             ),
         )
         return None
-    return build_platform_gateway(settings)
+    try:
+        return build_platform_gateway(settings)
+    except RuntimeError as exc:
+        # The documented refusal (and any future sibling of it). A degradable consumer degrades.
+        log.warning(
+            "stage0.claim_extraction_disabled_no_gateway",
+            reason=(
+                "the platform gateway refused to build; Stage-0 recon will scrape and snapshot "
+                "but draft no client.* claims"
+            ),
+            detail=str(exc),
+        )
+        return None
 
 
 def build_stage0_claim_extractor(gateway: LLMGateway | None) -> ClaimExtractor:

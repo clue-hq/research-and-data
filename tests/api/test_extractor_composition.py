@@ -120,6 +120,40 @@ def test_optional_gateway_returns_the_real_gateway_when_a_key_is_configured(
     assert run_composition.build_optional_platform_gateway(settings) is not None
 
 
+def test_the_two_gateway_builders_agree_on_the_no_key_case(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The optional builder's pre-check is a *copy* of ``build_platform_gateway``'s refusal
+    condition. Pin them against each other: wherever the strict builder raises for a missing
+    credential, the optional one must return ``None`` — never propagate. (The delegation is also
+    wrapped in ``except RuntimeError``, so this test catches drift loudly instead of drift merely
+    degrading silently.)"""
+    monkeypatch.setattr(run_composition, "Secrets", _NoKeySecrets)
+    settings = Settings(_env_file=None, gateway_allow_stub=False)
+    with pytest.raises(RuntimeError):
+        run_composition.build_platform_gateway(settings)
+    assert run_composition.build_optional_platform_gateway(settings) is None
+
+
+def test_optional_gateway_degrades_when_the_strict_builder_refuses_for_any_other_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The contract is "never a raise", not "never a raise for the one condition we copied": a
+    refusal the pre-check does not know about still degrades to ``None`` + the warning."""
+
+    def refusing(settings: Settings) -> Any:
+        raise RuntimeError("some future refusal the pre-check does not test")
+
+    monkeypatch.setattr(run_composition, "Secrets", _NoKeySecrets)
+    monkeypatch.setattr(run_composition, "build_platform_gateway", refusing)
+    with capture_events(mode="info") as cap:
+        gateway = run_composition.build_optional_platform_gateway(
+            Settings(_env_file=None, gateway_allow_stub=True)
+        )
+    assert gateway is None
+    assert cap.has("stage0.claim_extraction_disabled_no_gateway")
+
+
 # --- the extractor selector ----------------------------------------------------------------------
 
 
@@ -216,12 +250,21 @@ def test_the_fleet_worker_builds_exactly_one_gateway() -> None:
     """The worker's extractor must reuse the gateway ``_serve`` already built — a second
     ``build_platform_gateway`` would mean a second client (and a second stub-mode warning) for the
     same credential."""
-    source = inspect.getsource(fleet_main)
+    builders = {"build_platform_gateway", "build_optional_platform_gateway"}
+
+    def _called_name(node: ast.Call) -> str | None:
+        # Both spellings: the bare import (`build_platform_gateway(...)`) and a qualified call
+        # (`run_composition.build_platform_gateway(...)`) — a guard blind to the second would
+        # wave through exactly the "just build another one here" edit it exists to stop.
+        if isinstance(node.func, ast.Name):
+            return node.func.id
+        if isinstance(node.func, ast.Attribute):
+            return node.func.attr
+        return None
+
     calls = [
         node
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id in {"build_platform_gateway", "build_optional_platform_gateway"}
+        for node in ast.walk(ast.parse(inspect.getsource(fleet_main)))
+        if isinstance(node, ast.Call) and _called_name(node) in builders
     ]
     assert len(calls) == 1
