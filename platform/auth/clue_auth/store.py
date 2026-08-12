@@ -874,7 +874,12 @@ async def erase_platform_user(
     copies the submitted company name into both: a workspace is a shared org object other
     members may still administer, so renaming it is not this function's call (review ruling
     2026-08-12). ``self_serve_provisioning.company_website`` IS erased — it can identify a
-    solo founder and nothing else depends on it after slice-2 setup consumes it.
+    solo founder. Known residual (slice-2 review BE-M7): the workspace-setup capture stores
+    the submitted URL as artifact BYTES (content-addressed blob + ``artifact`` row); those are
+    not reachable from here (append-only capture substrate, cross-package seam) and survive
+    erasure. The setup surface deliberately writes no ``onboarding_input.source_ref`` copy so
+    the un-redactable append-only row carries no URL; full artifact tombstoning rides the
+    B2/DSAR artifact machinery — tracked in ``_memory`` until that lands.
     """
     at = now or datetime.now(UTC)
     user_result = await conn.execute(

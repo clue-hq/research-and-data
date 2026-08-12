@@ -488,7 +488,15 @@ async def transition_recon_lane(
     client_entity_id: EntityId | None = None,
     failure_code: str | None = None,
 ) -> ReconRunRow:
-    """Advance one lane without letting a retry manufacture a second transition."""
+    """Advance one lane without letting a retry manufacture a second transition.
+
+    A FAST-lane failure additionally releases the run's dedupe slot
+    (``dedupe_expires_at = now()``): a run that produced no fast Client-KB is not a live
+    equivalent worth sharing, and releasing the slot is what makes a user-initiated retry
+    able to mint a fresh recon instead of replaying the failure forever (FI-4 slice-2
+    review, BE-B2). The terminal-state latch on the lane itself is untouched — a failed
+    lane never transitions again; retry means a NEW run.
+    """
     if lane not in {"fast", "background"}:
         raise ValueError("lane must be 'fast' or 'background'")
     status_column = f"{lane}_status"
@@ -496,6 +504,7 @@ async def transition_recon_lane(
     started_column = f"{lane}_started_at"
     completed_column = f"{lane}_completed_at"
     kb_column = "fast_client_kb_version" if lane == "fast" else "client_kb_version"
+    release_dedupe = lane == "fast" and status is ReconLaneStatus.FAILED
     await conn.execute(
         text(
             f"""
@@ -505,6 +514,10 @@ async def transition_recon_lane(
                 {kb_column} = COALESCE(:kb_version, {kb_column}),
                 client_entity_id = COALESCE(:client_entity_id, client_entity_id),
                 failure_code = COALESCE(:failure_code, failure_code),
+                dedupe_expires_at = CASE
+                    WHEN :release_dedupe THEN now()
+                    ELSE dedupe_expires_at
+                END,
                 {started_column} = CASE
                     WHEN :status = 'running' THEN COALESCE({started_column}, now())
                     ELSE {started_column}
@@ -528,6 +541,7 @@ async def transition_recon_lane(
             "kb_version": client_kb_version,
             "client_entity_id": client_entity_id,
             "failure_code": failure_code,
+            "release_dedupe": release_dedupe,
         },
     )
     row = await get_recon(conn, recon_run_id, workspace_id=workspace_id)

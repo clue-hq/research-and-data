@@ -64,16 +64,25 @@ def build_application(
         register_narrative_wiring()
     # FI-4 slice 2 (charter composition-backlog item 2): the live Stage-0 official-surface
     # scrape composition — without it every production `start_recon` refuses before spend.
+    # Gated on the SAME flag as the /stage0/setup routes (review BE-M4): an unconfigured
+    # deployment is byte-identical to pre-slice-2 — `start_recon` keeps refusing everywhere,
+    # including via the generic POST /tools route, so the flag bounds the whole new paid
+    # scrape surface, not just the onboarding entry point.
     # The extractor is EXPLICITLY empty: no production ClaimExtractor exists yet (the LLM
     # extractor is its own scoped work item), so recon resolves the client, scrapes the
     # official site under target-lock, and captures durable snapshot evidence — but drafts
     # no client.* values from it. The interview remains the tier-1 client.* fill path.
-    stage0_scrape_binder = build_stage0_scrape_binder(
-        extractor=CallableClaimExtractor(lambda normalized, entity, field: []),
-        # Pass the resolved settings' backend explicitly — a None scraper would construct a
-        # fresh Settings() inside the resolver registration (one settings truth per process).
-        scraper=default_scrape_backend(resolved),
-        policy=ScrapePolicy(),
+    stage0_scrape_binder = (
+        build_stage0_scrape_binder(
+            extractor=CallableClaimExtractor(lambda normalized, entity, field: []),
+            # Pass the resolved settings' backend explicitly — a None scraper would construct
+            # a fresh Settings() inside the resolver registration (one settings truth per
+            # process).
+            scraper=default_scrape_backend(resolved),
+            policy=ScrapePolicy(),
+        )
+        if resolved.self_serve_provisioning_enabled
+        else None
     )
     registry = build_toolbelt(
         storage=storage,

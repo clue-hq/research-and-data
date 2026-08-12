@@ -550,12 +550,17 @@ async def _serve() -> None:
             storage=storage,
             settings=settings,
             gateway=gateway,
-            # FI-4 slice 2: same live scrape composition as projections_main (empty extractor
-            # — no production ClaimExtractor exists; snapshots are captured, values are not).
-            stage0_scrape_binder=build_stage0_scrape_binder(
-                extractor=CallableClaimExtractor(lambda normalized, entity, field: []),
-                scraper=default_scrape_backend(settings),
-                policy=ScrapePolicy(),
+            # FI-4 slice 2: same live scrape composition as projections_main, behind the same
+            # flag (empty extractor — no production ClaimExtractor exists; snapshots are
+            # captured, values are not; when the flag is off start_recon keeps refusing).
+            stage0_scrape_binder=(
+                build_stage0_scrape_binder(
+                    extractor=CallableClaimExtractor(lambda normalized, entity, field: []),
+                    scraper=default_scrape_backend(settings),
+                    policy=ScrapePolicy(),
+                )
+                if settings.self_serve_provisioning_enabled
+                else None
             ),
             pre_spend_gate=pre_spend_gate,
             research_directive_memory_write_factory=memory_write_factory_builder(settings, gateway),
