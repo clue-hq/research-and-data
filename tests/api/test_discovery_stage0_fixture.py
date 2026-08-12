@@ -165,7 +165,10 @@ def test_discovery_fixture_is_real_db_backed_provenance_complete_and_replay_safe
             )
             assert decision is not None
             assert decision.verdict is ReadinessVerdict.READY
-            assert decision.metrics["coverage_ratio"] == pytest.approx(7 / 9)
+            # 7 of the 11 baseline client fields are filled by this fixture. The denominator grew
+            # 9 → 11 when client.competitor / client.buyer_profile were registered: both are
+            # tier-3-only (exa_search), so this tier-2 fixture leaves them honestly empty.
+            assert decision.metrics["coverage_ratio"] == pytest.approx(7 / 11)
             assert decision.metrics["verified_claims"] == 0
             assert decision.metrics["workspace_readiness_policy_version"] == 0
             assert decision.metrics["workspace_required_field_keys"] == []

@@ -58,6 +58,7 @@ from clue_research.profiling.committee import CommitteeAspectWorker, CommitteeSo
 from clue_research.profiling.contact import ContactProfileAspectWorker
 from clue_research.profiling.contact.binding import BindingClassifier, BindingInput
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from clue_research.synthesis import guard_synthesis_resolution
 from clue_research.verification import (
     DEFAULT_BINDING_POLICY,
@@ -95,6 +96,10 @@ RESEARCH_PACK_LOADERS: list[PackLoader] = [
     load_core_pack,  # M1 core pack
     load_deep_profiling_pack,  # M8 account.resonance.* / contact.facet.*
     load_committee_pack,  # M8.3 contact.role_on_committee / contact.persona
+    # M5.1 client.* — the client pack must precede ``seed_source_manifests`` because source
+    # ``yields`` validate against the field registry (a manifest naming a client.* yield would
+    # crash a fresh-DB boot otherwise); mirrors the tests/stage0/conftest.py ordering contract.
+    load_client_knowledge_pack,
 ]
 
 # The frozen order verification gates apply to a claim (phase-3 pre-flight PF-7; Doc D §7). The use

@@ -10,6 +10,7 @@ from clue_core import ExtractionMethod, ReuseScope, can_be_promoted, new_project
 from clue_core.field import classify_field_key, is_valid_field_key
 from clue_research.identity import DEFAULT_REUSE_POLICY, classify_reuse_scope
 from clue_research.stage0 import (
+    CLIENT_BASELINE_FIELDS,
     CLIENT_KB_VERSION,
     CLIENT_KNOWLEDGE_FIELDS,
     CLIENT_KNOWLEDGE_PACK,
@@ -20,6 +21,7 @@ from clue_research.stage0 import (
     VolunteeredMaterial,
     reverse_profiling_run_id,
 )
+from clue_research.stage0.fields import CLIENT_BUYER_PROFILE, CLIENT_COMPETITOR
 from clue_research.stage0.reverse_profiling_handler import _client_input_from_params
 from tests.stage0._fakes import make_tier4_claim
 
@@ -77,6 +79,15 @@ def test_surface_taxonomy_covers_all_four_surfaces_and_all_fields() -> None:
     assert mapped == set(CLIENT_KNOWLEDGE_FIELDS)
     counts = [f for fields in SURFACE_CLASS_FIELDS.values() for f in fields]
     assert len(counts) == len(set(counts)), "a field is double-mapped across surfaces"
+
+
+def test_competitor_and_buyer_fields_are_baseline_tier3_only() -> None:
+    assert CLIENT_BASELINE_FIELDS[-2:] == (CLIENT_COMPETITOR, CLIENT_BUYER_PROFILE)
+    for key in (CLIENT_COMPETITOR, CLIENT_BUYER_PROFILE):
+        seed = next(s for s in CLIENT_KNOWLEDGE_PACK if s.field_def.field_key == key)
+        assert seed.field_def.tier_plan == ("exa_search",)
+        assert seed.field_def.reuse_scope is ReuseScope.TENANT_PRIVATE
+        assert key in SURFACE_CLASS_FIELDS[SurfaceClass.THIRD_PARTY]
 
 
 def test_reverse_profiling_run_id_is_deterministic() -> None:

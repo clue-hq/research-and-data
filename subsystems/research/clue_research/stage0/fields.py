@@ -50,6 +50,8 @@ CLIENT_CUSTOMER = "client.customer"
 CLIENT_ICP_EVIDENCE = "client.icp_evidence"
 CLIENT_MARKET_REPUTATION = "client.market_reputation"
 CLIENT_DELIVERED_VALUE = "client.delivered_value"
+CLIENT_COMPETITOR = "client.competitor"
+CLIENT_BUYER_PROFILE = "client.buyer_profile"
 # Internal marker field: the Client-KB version ledger, modelled as a claim (no new table). Its
 # value carries {version, run_id, ...}; see clue_research.stage0.client_kb.
 CLIENT_KB_VERSION = "client.kb_version"
@@ -66,6 +68,12 @@ CLIENT_BASELINE_FIELDS: tuple[str, ...] = (
     CLIENT_ICP_EVIDENCE,
     CLIENT_MARKET_REPUTATION,
     CLIENT_DELIVERED_VALUE,
+    # Appended at the END on purpose: this tuple is the outer *budget order* the recon lane walks,
+    # so a new field must never displace an existing one's position (the outer-budget pre-check
+    # test pins field[0]). These two are open-web/tier-3 only — the fast lane's max_source_tier=2
+    # gate walks past them at zero spend, so they are background-lane fields for free.
+    CLIENT_COMPETITOR,
+    CLIENT_BUYER_PROFILE,
 )
 
 # Backward-compatible import name for callers that have not yet migrated. It is the baseline set
@@ -191,6 +199,30 @@ CLIENT_KNOWLEDGE_PACK: tuple[SeedField, ...] = (
         value_schema=_STR,
         description="What the client's own customers say they bought it for (reviews-as-signal).",
     ),
+    # The two open-web recon fields. tier_plan names only the tier-3 ``exa_search`` source, so the
+    # fast lane (max_source_tier=2) walks past them at zero spend and only the background lane can
+    # fill them. Until that manifest is registered they resolve UNREGISTERED → NO_RESOLVER, i.e.
+    # honestly empty at zero cost — the same posture ``client.market_reputation`` has held.
+    _seed(
+        CLIENT_COMPETITOR,
+        "object",
+        tier_plan=("exa_search",),
+        value_schema=_OBJ,
+        description=(
+            "Named competitor / alternative to the client (open-web comparison surfaces) — one "
+            "claim per competitor, grounded in a record naming the client."
+        ),
+    ),
+    _seed(
+        CLIENT_BUYER_PROFILE,
+        "object",
+        tier_plan=("exa_search",),
+        value_schema=_OBJ,
+        description=(
+            "Likely-buyer persona / segment evidence (open-web) — persona claims only, never "
+            "invented account entities (discovery doctrine)."
+        ),
+    ),
     # The version marker. tier_plan is empty: it is never resolved through the waterfall — it is
     # written directly by the reverse-profiling orchestration to label each KB version.
     SeedField(
@@ -237,7 +269,14 @@ SURFACE_CLASS_FIELDS: dict[SurfaceClass, tuple[str, ...]] = {
         CLIENT_CUSTOMER,
         CLIENT_ICP_EVIDENCE,
     ),
-    SurfaceClass.THIRD_PARTY: (CLIENT_MARKET_REPUTATION,),
+    # Competitor + buyer-profile evidence is open-web footprint (comparison pages, directories,
+    # news, analyst/vendor round-ups), so they join the existing third-party surface rather than
+    # minting a fifth surface class.
+    SurfaceClass.THIRD_PARTY: (
+        CLIENT_MARKET_REPUTATION,
+        CLIENT_COMPETITOR,
+        CLIENT_BUYER_PROFILE,
+    ),
     SurfaceClass.REVIEWS: (CLIENT_DELIVERED_VALUE,),
 }
 
