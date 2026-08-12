@@ -87,16 +87,26 @@ On success the frontend exits to `/session/establish`, which lands the user in t
 
 ## Workspace setup (slice 2 — implemented 2026-08-12)
 
-`POST /stage0/setup` (BFF: `/api/clue/stage0/setup`, 202) captures the provisioned company
-website as a durable artifact, records the `onboarding_input` (kind `website`, actor `human`),
-and drives the governed `start_recon` — fast lane (≤ tier 2, 5¢ envelope) then background lane
-(≤ tier 3, 100¢) via the D-4c kicker, all ids deterministic so retries are replays.
-`GET /stage0/setup/current` serves lane-level truth resolved through the provisioning record:
-`{status, recon_run_id, fast_status, background_status, company_website}` where
-`status: "complete"` means the FAST lane finished — the release-into-the-app signal. The
-setting-up screen polls it at 1.5s; every tick maps 1:1 to a durable lane row; the 3.2s timer
-survives only in fixture mode. Items shown in clerk mode: the fast company-research lane, the
-background deep-research lane, and the brand-kit item as the ratified explicit dummy.
+`POST /stage0/setup` (BFF: `/api/clue/stage0/setup`, 202; requires `research.launch` — recon
+is spend) captures the provisioned company website as a durable artifact, records the
+`onboarding_input` (kind `website`, actor `human`, no URL copy in the un-redactable
+`source_ref`), and drives the governed `start_recon` — fast lane (≤ tier 2, 5¢) then
+background lane (≤ tier 3, 100¢) via the D-4c kicker. Ids are deterministic per
+`(workspace, website, attempt, iteration)`: idle retries are replays, while a retry after a
+failed fast lane mints a genuinely new attempt (the failed run releases its dedupe slot).
+`GET /stage0/setup/current` serves lane-level truth: `{status, recon_run_id, fast_status,
+background_status, company_website, fast_client_kb_version, fact_count}` with
+`status ∈ unavailable|none|starting|running|complete|failed` — `starting` means the
+submission is durably captured but the recon row is not yet visible (driver warm-up / the
+lane's enclosing transaction), and `complete` (the release signal) carries the fact count so
+a lane that ran but derived nothing is distinguishable. The setting-up screen polls at 1.5s;
+every tick maps to durable state; terminal failures render real recovery controls ("Try
+again" = a fresh attempt; "Continue anyway" = into the app; expired sessions link to
+sign-in). The 3.2s timer survives only in fixture mode. Items in clerk mode: the fast
+company-research lane, the background deep-research lane (honestly annotated when it stops),
+and the brand-kit explicit dummy. Both the routes AND the scrape-binder composition ride
+`CLUE_SELF_SERVE_PROVISIONING_ENABLED` — an unconfigured deployment refuses `start_recon`
+everywhere, exactly as before slice 2.
 
 **Honest limitation, recorded:** recon currently runs with an EMPTY claim extractor — no
 production ClaimExtractor exists in the repo. The fast lane resolves the client, scrapes the
