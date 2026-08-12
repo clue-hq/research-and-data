@@ -212,7 +212,8 @@ export function useOnboardingController({
       if (step === "sign-up-email") return void run(submitSignUp);
       if (step === "verify-email") return void run(submitVerification);
       if (step === "profile") return void run(submitProfile);
-      if (step === "setting-up") navigate("finalizing");
+      // setting-up/finalizing have no submit control; their transitions are the fixture
+      // timer (fixture mode) or durable lane truth (clerk mode) — never a submit.
     },
   };
 }

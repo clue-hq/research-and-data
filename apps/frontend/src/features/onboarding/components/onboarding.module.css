@@ -477,3 +477,11 @@
   cursor: default;
   opacity: .5;
 }
+
+.setupStack {
+  display: grid;
+  gap: 20px;
+  align-self: center;
+  justify-self: center;
+  justify-items: center;
+}

@@ -36,7 +36,7 @@ export function OnboardingScreen({
       <main className={`${styles.page} ${styles.subtlePage}`}>
         {controller.authMode === "clerk" ? (
           // Slice 2: real lane-level recon truth; the presentation timer never runs here.
-          <LiveSetupScreen setup={flow.setup} />
+          <LiveSetupScreen compact={step === "finalizing"} setup={flow.setup} />
         ) : (
           <SetupScreen compact={step === "finalizing"} setup={flow.setup} />
         )}
