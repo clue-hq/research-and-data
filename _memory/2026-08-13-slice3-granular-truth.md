@@ -115,12 +115,17 @@ code tasks, each adversarially reviewed, four of them through one fix round). Pl
   any evidence-serving surface (presign, review annotations) built over recon claims. Note this
   interacts with the [B2×presign] charter item: a claim citing no artifact at all is a
   different hole from one citing a workspace-scoped artifact.
-- **No env-backed override for `Stage0Policy` exists today.** The 2026-08-13 ruling names
-  `CLUE_STAGE0_FAST_BUDGET`, but that env var does not exist —
-  `libs/clue-config/clue_config/stage0.py` is a frozen model of constants injected at the
-  composition root (`toolbelt_wiring.py`, `DEFAULT_STAGE0_POLICY`). "Raise the envelope per
-  deployment" is a code/composition change right now. Adding the override is the small
-  follow-up that makes the ruling literally executable; recorded in FI-4 §9 item 6.
+- ~~**No env-backed override for `Stage0Policy` exists today.**~~ **RESOLVED in the final fix
+  wave (2026-08-13, commit `aea52fba`).** The whole-branch review found the day-one envelope
+  actually truncating onboarding (firecrawl ~1¢/fetch × 11 fields vs the 5¢ fast cap → the
+  user released with checklist groups 3–4 annotated "stopped at the research budget"), so the
+  mechanism landed: `Settings.stage0_fast_budget_cents` / `.stage0_background_budget_cents`
+  (env `CLUE_STAGE0_FAST_BUDGET_CENTS` / `CLUE_STAGE0_BACKGROUND_BUDGET_CENTS`, `gt=0`),
+  `clue_config.stage0_policy_from_settings`, and `build_toolbelt` composing the Stage-0 tools
+  under it. **Production default fast = 25¢** (the whole eleven-field walk with headroom);
+  `DEFAULT_STAGE0_POLICY` stays 5¢/100¢ as the library default many tests pin. Only the
+  budgets are settings — dedupe TTL and readiness floors stay versioned constants. FI-4 §9
+  item 6's phantom-var note is superseded by item 8.
 - **`recon_brief` reads at `fast_client_kb_version` only.** Background-lane facts — which is
   where `client.competitor` / `client.buyer_profile` necessarily land (tier 3 > the fast
   lane's tier-2 ceiling) — never appear in the brief, and `fact_count` on the setup read
@@ -145,6 +150,39 @@ reasoning-trace mode, 8 `tests/{resolvers,sources}` from the stale dev DB); no n
 `make lint` clean (1342 files), mypy clean. Frontend
 `design-system:build && lint && build && test` — all green, **204/204**.
 
+## Final fix wave (2026-08-13, after the whole-branch review)
+
+The review returned three Important findings; all three are closed, plus three minors.
+
+1. **Stalled fast lane spun forever (frontend).** The poll hook bounded only consecutive `none`
+   reads, but the durable input row makes `none` unreachable after start and a healthy fast lane
+   lives its whole life in `starting` — so a dead backend driver left the screen spinning with no
+   recovery controls. The stall decision is now a pure, unit-tested function
+   (`model/setup-stall.ts`: `progressSignature` / `stallAdvance` / `isStalled`, 40 unchanged
+   in-flight ticks = 60s, the same budget the `none` path uses) and the hook surfaces the same
+   recoverable terminal. Commit `db9a1afd`.
+2. **Sync LLM calls block the web process's event loop — RECORDED, not fixed** (the review's
+   accepted alternative). `_drive_recon` runs on the serving loop; the waterfall calls
+   `resolver.resolve` synchronously and the extractor's `LLMGateway.complete` is sync, so each
+   extraction blocks every other request in the process — one completion per field. Gated today
+   by `self_serve_provisioning_enabled` **and** a real `OPENROUTER_API_KEY`. Loud comment at the
+   `asyncio.create_task` site + a `[slice3×stage0]` charter backlog bullet naming the owner (the
+   flag-enablement PR) and the two options (fleet-driven recon; an `asyncio.to_thread` hop at the
+   waterfall seam). The same wave folded the `exa_search`-as-second-consumer-of-`names_present`
+   note into the charter's [M9.4×M9.6] bullet, cross-referenced the Exa snapshot gap from
+   [B2×presign/frontend], and recorded the `src/`-path rot that makes three import-discipline
+   static guards assert over an empty file set (`[tooling]`, deliberately not fixed here).
+3. **Day-one envelope truncated onboarding.** See the resolved residual above (commit `aea52fba`).
+
+Minors: the two Exa field guidance descriptions now quote the registry verbatim; `_field_truth`
+reads `ReconLaneStatus.COMPLETED.value`; `ExaSearchConfig.query_templates` is `Mapping[str, str]`.
+
+**Gates.** Backend `tests/stage0 tests/api tests/resolvers tests/sources` — **exactly the 15 known
+pre-existing failures**, byte-identical to the pre-change baseline (the earlier 296-failure run in
+this workspace was a stale dev DB; `make db-fresh && make migrate` restored it). `make lint`,
+mypy (635 files) and `lint-imports` (25 contracts) clean. Frontend gate green, **214/214** (204 +
+10 new stall tests).
+
 ## Remaining
 
-Final whole-branch adversarial review over `b2fda5e9^..HEAD`.
+Nothing on slice 3. Next: slice-3 close-out sign-off, then the phase-2 project-level flow.

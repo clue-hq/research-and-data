@@ -281,15 +281,20 @@ records get snapshot capture.
 
 **Deployment stance (founder ruling 2026-08-13, FI-4 §9 — onboarding is budget-unconstrained).**
 Onboarding recon forms the base of everything downstream, so research quality is never traded
-for spend here. The `Stage0Policy` envelopes (5¢ fast / 100¢ background / 24h dedupe;
-`libs/clue-config/clue_config/stage0.py`, injected at the composition root — policy-as-data
-constants today, not env vars) are **floors to raise per deployment** the moment they truncate
-onboarding research; no new throttles, caps, or gates are added on the onboarding path. With a
-real extractor, `CLUE_SCRAPE_BACKEND=firecrawl` (the settings default) becomes viable
-per-deployment — at ~1¢/scrape the 5¢ fast envelope walks only ~5 of the 11 fields, which is
-exactly the case the ruling says to fix by raising the envelope, not by degrading the backend.
-`CLUE_SCRAPE_BACKEND=scrapling` (local, zero-cost) remains the choice for a deployment that
-would rather walk every field free. The honesty surfaces (`*_budget_exhausted`) and the tier ≤3
+for spend here. The `Stage0Policy` envelopes are **floors to raise per deployment** the moment
+they truncate onboarding research; no new throttles, caps, or gates are added on the onboarding
+path. Since the slice-3 close-out that is an actual mechanism, not a code change: the two lane
+budgets are env-backed settings — **`CLUE_STAGE0_FAST_BUDGET_CENTS` (default `25`) and
+`CLUE_STAGE0_BACKGROUND_BUDGET_CENTS` (default `100`)** — read by
+`clue_config.stage0_policy_from_settings` and composed into the recon tools at
+`build_toolbelt`. The dedupe TTL (24h) and the readiness floors stay versioned constants
+(correctness/governance, not cost), and the library default `DEFAULT_STAGE0_POLICY` keeps its
+old 5¢/100¢ values for uncomposed callers. The 25¢ production default exists because the
+default `CLUE_SCRAPE_BACKEND=firecrawl` costs ~1¢/fetch: the full eleven-field fast walk is
+~11¢, so the old 5¢ envelope reached only ~5 fields and released the user with the last
+checklist groups reading "stopped at the research budget" — exactly the truncation the ruling
+forbids. `CLUE_SCRAPE_BACKEND=scrapling` (local, zero-cost) remains the choice for a deployment
+that would rather walk every field free. The honesty surfaces (`*_budget_exhausted`) and the tier ≤3
 pre-confirmation ceiling are unaffected — truth and compliance, not cost governance. Extractor
 LLM spend is observable on `llm.gateway_call` spans but is **not** charged to the recon
 envelopes; that residual is founder-accepted, not merely parked.

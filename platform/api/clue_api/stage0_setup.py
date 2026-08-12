@@ -347,6 +347,22 @@ def create_stage0_setup_router(
                 status_code=409,
                 detail={"error": "setup_capture_conflict", "reason": str(error)},
             ) from error
+        # !! THE RECON LANE RUNS ON THIS WEB PROCESS'S OWN EVENT LOOP, AND IT BLOCKS IT. !!
+        #
+        # `_drive_recon` awaits `start_recon`, whose waterfall calls `resolver.resolve`
+        # SYNCHRONOUSLY, and the slice-3 claim extractor's `LLMGateway.complete` is a sync,
+        # network-bound call. Nothing yields to the loop for its duration, so **every other
+        # request served by this process — including this screen's own 1.5s setup polls — waits**.
+        # The multiplier is one completion per Client-KB field: the eleven-field fast walk is
+        # eleven serialized blocking calls, and the background lane walks them again.
+        #
+        # Tolerable today only because the extractor's gate is closed by default: it needs both
+        # `CLUE_SELF_SERVE_PROVISIONING_ENABLED` (these routes) and a real `OPENROUTER_API_KEY`
+        # (without one the HTTP root composes the empty extractor and no completion happens at
+        # all). **This must be fixed before that pair is true in a shared web process** — either
+        # drive recon on the fleet (the binder is already composed there) or put an
+        # `asyncio.to_thread` hop at the waterfall's resolver call. Recorded with an owner in the
+        # repo-root CLAUDE.md backlog, tag `[slice3×stage0]`.
         task = asyncio.create_task(
             _drive_recon(
                 workspace_id=workspace_id,
