@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyScene } from "@/fixtures/emptyScene";
+import type { Operation } from "../contracts";
 import { editorWorkspaceId } from "../editorConfig";
 import {
   fetchBrandKitDetailFull,
@@ -7,6 +8,7 @@ import {
   setBrandKitApproval,
   setBrandKitLogo
 } from "../brandHub";
+import { createApiBrandGovernanceRunner } from "../brandGovernance";
 import {
   createDocument,
   fetchBrandKitDetail,
@@ -17,6 +19,10 @@ import {
   saveAgentInstructions,
   saveLayoutManagedEditing
 } from "../documentStore";
+import { createEditQueue } from "../editQueue";
+import { loadKitFontFaces, resetKitDomFontsForTests } from "../kitFonts";
+import { fetchFontLibrary, resetFontLibraryForTests } from "../libraryFonts";
+import { fetchWebDocument, listWebTemplates } from "../webDocuments";
 
 /**
  * The O4 workspace seam is strict: the API refuses any request without
@@ -69,6 +75,53 @@ const CASES: Array<[name: string, call: () => Promise<unknown>]> = [
   [
     "brandHub.setBrandKitLogo",
     () => setBrandKitLogo({ apiBaseUrl: API }, "kit_1", { assetId: "asset_1" })
+  ],
+  // The other Pattern-B modules (injectable `fetchImpl`, already defaulting
+  // lumenFetch): one representative per module pins the wiring; enumeration
+  // of every function is the static guard's job (check_editor_bare_fetch.mjs).
+  ["webDocuments.fetchWebDocument", () => fetchWebDocument({ apiBaseUrl: API }, "doc_1")],
+  ["webDocuments.listWebTemplates", () => listWebTemplates({ apiBaseUrl: API })],
+  [
+    "libraryFonts.fetchFontLibrary",
+    () => {
+      resetFontLibraryForTests(); // module-level memo would replay a prior test's promise
+      return fetchFontLibrary({ apiBaseUrl: API });
+    }
+  ],
+  [
+    "kitFonts.loadKitFontFaces",
+    () => {
+      resetKitDomFontsForTests();
+      const kit = {
+        assets: { fonts: { body: { family: "Inter", faces: [{ asset_id: "asset_1" }] } } }
+      } as Parameters<typeof loadKitFontFaces>[1];
+      return loadKitFontFaces({ apiBaseUrl: API }, kit);
+    }
+  ],
+  [
+    "editQueue (constructor default)",
+    () => {
+      const queue = createEditQueue({
+        apiBaseUrl: API,
+        documentId: "doc_1",
+        localScene: () => emptyScene,
+        onReconcile: () => undefined
+      });
+      queue.enqueueOperations([{ kind: "noop" } as unknown as Operation]);
+      return queue.idle();
+    }
+  ],
+  // Pattern-A representative (no injection seam — the module calls lumenFetch
+  // directly): proves the direct path lands the header on the wire too.
+  [
+    "brandGovernance (direct lumenFetch)",
+    () =>
+      Promise.resolve(
+        createApiBrandGovernanceRunner({ apiBaseUrl: API, documentId: "doc_1" })({
+          scene: emptyScene,
+          brandKit: null
+        })
+      )
   ]
 ];
 

@@ -11,8 +11,9 @@
     "build:canvaskit": "bash ../../scripts/copy_canvaskit_assets.sh",
     "build:fonts": "bash ../../scripts/fetch_fonts.sh",
     "build:web-rich-text": "vite build --config vite.web-rich-text.config.ts",
-    "lint": "node ../../scripts/check_editor_hex.mjs && tsc --noEmit -p tsconfig.lint.json",
+    "lint": "node ../../scripts/check_editor_hex.mjs && node ../../scripts/check_editor_bare_fetch.mjs && tsc --noEmit -p tsconfig.lint.json",
     "lint:css": "node ../../scripts/check_editor_hex.mjs",
+    "lint:fetch": "node ../../scripts/check_editor_bare_fetch.mjs",
     "pretest": "bash ../../scripts/build_wasm_core.sh --if-missing",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -52,10 +52,25 @@ with two factual errors, now corrected in place — in
 
 ## Follow-ups (agreed plan, NOT yet done)
 
-- **Part B (approved in discussion, awaiting go):** `check_editor_bare_fetch.mjs` guard
-  cloned from `scripts/check_editor_hex.mjs` (allowlist: `editorConfig.ts`,
-  `runEventStream.ts`, `canvaskit/imageCache.ts`, `canvaskit/loadCanvasKit.ts`,
-  `wasmEngine.ts` + add the missing why-exempt comment there), wired into `npm run lint`.
+- **Part B — DONE 2026-08-12 (same branch, follow-up commit).** Delivered:
+  (1) `subsystems/clue-design/scripts/check_editor_bare_fetch.mjs` — hex-guard clone flagging
+  the global fetch in BOTH token shapes (`fetch(` call AND `= fetch`/`?? fetch` value — the
+  shape split that caused the escape) plus `globalThis|window|self.fetch`; `typeof fetch`
+  stays legal (probe, not transport); comment-stripped scan of `apps/editor/src/**/*.ts(x)`
+  excluding tests; allowlist = editorConfig / runEventStream / canvaskit/imageCache /
+  canvaskit/loadCanvasKit / wasmEngine, each justified in-script AND at the site
+  (wasmEngine's missing why-exempt comment added). Proven both ways: clean tree exit 0;
+  planted 4-shape scratch file → exit 1 naming it. Wired as second link in
+  `npm run lint` (+ standalone `lint:fetch`).
+  (2) `workspaceHeaderDefaults.test.ts` extended 12→18: one wiring pin per remaining
+  Pattern-B module (webDocuments ×2, libraryFonts w/ memo reset, kitFonts w/ one-face kit,
+  editQueue constructor default via enqueue→idle) + one Pattern-A representative
+  (brandGovernance, direct-lumenFetch path). Pins proven able to fail by mutation check
+  (flipped one webDocuments default → exactly that pin failed → restored).
+  (3) `docs/frontend-practices.md` rule 8a added — the workspace-header convention now
+  exists in the canonical doc, naming both enforcement layers and the open `<img src>` hole.
+  Full-module enumeration in the dynamic suite is deliberately NOT done — the static guard
+  owns enumeration; the pins own per-module wiring proof.
 - **`<img src>` 401 class (NOT fixable by lumenFetch):** `GET /assets/{id}/bytes|thumbnail`
   are workspace-gated but consumed as `<img src>` at 8 component sites (KitLogoPicker,
   KitLogosSection, KitImagesSection, AssetBrowserPanel, ImageInspectorSection ×2,
