@@ -33,6 +33,15 @@ export interface SetupProgressSnapshot {
 const TERMINAL = new Set<SetupFieldSnapshot["status"]>(["resolved", "empty", "failed"]);
 
 /**
+ * Overall statuses after which nothing is running any more — `useSetupProgress` stops polling
+ * on both and surfaces them with recovery controls. A group left mid-flight by one of them
+ * renders as unfinished (`queued`) rather than spinning on work no lane is doing: the frozen
+ * vocabulary has no "stopped" state, and the surfaced failure paragraph carries the why (the
+ * slice-2 precedent for a stopped lane). "No fake progress" applies to the end of a run too.
+ */
+const HALTED = new Set(["failed", "unavailable"]);
+
+/**
  * Detail-line annotations. The frozen `SetupItemSchema.status` vocabulary
  * (complete/running/queued) is the ONLY visual state there is, so every nuance — failure,
  * budget exhaustion, a background re-run — is carried as copy on the detail line (the slice-2
@@ -66,6 +75,8 @@ export function laneItemStatus(lane: string | null): SetupItem["status"] | "stop
  * - Anything in between → `running`.
  * - `overall === "complete"` (the fast lane finished — the release-into-the-app signal) forces
  *   `complete`, so the screen the user is released from never contradicts the release.
+ * - A halted overall status demotes an unfinished group to `queued`: nothing is running any
+ *   more, so a spinner would be fabricated motion (see `HALTED`).
  *
  * The backend has already reduced the event stream to one entry per field; this must NOT
  * re-reduce (it never sees the event `seq`).
@@ -83,12 +94,12 @@ function reduceMembers(
   overall: string,
 ): SetupItem["status"] {
   if (overall === "complete") return "complete";
-  if (member.some((state) => state !== null)) {
-    return member.every((state) => state !== null && TERMINAL.has(state.status))
-      ? "complete"
-      : "running";
-  }
-  return "queued";
+  const reached = member.some((state) => state !== null);
+  const finished =
+    reached && member.every((state) => state !== null && TERMINAL.has(state.status));
+  if (finished) return "complete";
+  // Unfinished: `running` only while something is actually running.
+  return reached && !HALTED.has(overall) ? "running" : "queued";
 }
 
 function memberStates(

@@ -123,6 +123,32 @@ test("overall complete forces every group complete (release consistency)", () =>
   );
 });
 
+test("a halted run never leaves a spinner running on work nothing is doing", () => {
+  const fields = [
+    field(GROUP_1.fieldKeys[0]!, "resolved"),
+    field(GROUP_1.fieldKeys[1]!, "failed"),
+    // GROUP_1.fieldKeys[2] and every later group were never reached.
+  ];
+  for (const status of ["failed", "unavailable"]) {
+    const items = deriveSetupItems(SETUP, { status, fields });
+    assert.deepEqual(
+      items.map((item) => item.status),
+      ["queued", "queued", "queued", "queued", "queued"],
+      `${status} must not fabricate motion`,
+    );
+    // The truth of what happened stays on the detail line (plus the screen's failure block).
+    assert.equal(items[0]?.detail, `${GROUP_1.detail}${FAILED_MEMBER_ANNOTATION}`);
+  }
+});
+
+test("a halted run still credits a group that genuinely finished", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "failed",
+    fields: GROUP_2.fieldKeys.map((key) => field(key, "resolved")),
+  });
+  assert.equal(items[1]?.status, "complete");
+});
+
 test("a failed member is annotated on the detail line, never as a new visual state", () => {
   const items = deriveSetupItems(SETUP, {
     status: "running",
