@@ -1,0 +1,182 @@
+/**
+ * Local preview data for the FI-4 setting-up flow.
+ *
+ * Fixtures are wire-shaped: every frame below is exactly what `GET /api/clue/stage0/setup/current`
+ * serves, so the fixture source validates through the same `SetupStatusSchema` the HTTP adapter
+ * does. A fixture that skipped validation would let the two drift, which is the failure the
+ * repository seam exists to prevent.
+ *
+ * The script is a **state stream, not a lifecycle model**: the poll tick is transport, the frame
+ * is the state. Nothing here advances because time passed — every state the checklist renders
+ * comes from a frame, exactly as it does against a live backend.
+ *
+ * What it replays is the honest slice-3 vocabulary, end to end:
+ *
+ * 1. `starting` — the submission is durably captured, no recon row is visible yet (no field
+ *    events at all, so the checklist shows its warm-up row and claims nothing else).
+ * 2. the FAST lane walking the Client-KB baseline fields in budget order, announcing `started`
+ *    as it reaches each one and exactly one terminal after (`resolved`, or `empty` — a field no
+ *    source could answer is a *correct* outcome, not a failure).
+ * 3. `complete` — the fast lane finished; this is the release-into-the-app signal, and it
+ *    carries `fact_count` plus a terminal for all eleven baseline fields.
+ * 4. the BACKGROUND lane re-deriving the two tier-3-only fields the fast lane's
+ *    `max_source_tier=2` walk reached at zero spend, `started` → `empty`, after the release.
+ */
+
+import type { SetupStatus } from "./setup";
+
+/** The Client-KB baseline field order — the order the recon lane walks (its outer budget order)
+ * and the order the backend serves the reduced per-field list in. Mirrors
+ * `clue_research.stage0.fields.CLIENT_BASELINE_FIELDS`; the client never re-sorts. */
+export const FIXTURE_SETUP_BASELINE_FIELDS = [
+  "client.value_prop",
+  "client.product",
+  "client.differentiator",
+  "client.pricing_posture",
+  "client.proof_point",
+  "client.customer",
+  "client.icp_evidence",
+  "client.market_reputation",
+  "client.delivered_value",
+  // Tier-3-only, appended at the end of the budget order on purpose: the fast lane's
+  // max_source_tier=2 gate walks past them at zero spend (so: `empty`), and the background lane
+  // is where they get a real attempt.
+  "client.competitor",
+  "client.buyer_profile",
+] as const;
+
+const FIXTURE_RECON_RUN_ID = "5c1f0a2e-0000-4000-8000-0000000000f4";
+
+/** How the fast lane's zero-to-tier-2 pass ends for each field. Review surfaces have no tier≤2
+ * resolver bound, so they come back empty — the honest outcome, not a failure. */
+const FAST_LANE_OUTCOME: Record<string, "resolved" | "empty"> = {
+  "client.value_prop": "resolved",
+  "client.product": "resolved",
+  "client.differentiator": "resolved",
+  "client.pricing_posture": "resolved",
+  "client.proof_point": "resolved",
+  "client.customer": "resolved",
+  "client.icp_evidence": "resolved",
+  "client.market_reputation": "empty",
+  "client.delivered_value": "resolved",
+  "client.competitor": "empty",
+  "client.buyer_profile": "empty",
+};
+
+/** One claim per field the fast lane resolved — what the fast Client-KB version carries. */
+const FIXTURE_FACT_COUNT = Object.values(FAST_LANE_OUTCOME).filter(
+  (outcome) => outcome === "resolved",
+).length;
+
+/** Every key the endpoint serves, explicit nulls included — the wire shape, not a partial. */
+const EMPTY_FRAME: SetupStatus = {
+  status: "none",
+  recon_run_id: null,
+  fast_status: null,
+  background_status: null,
+  company_website: null,
+  fast_client_kb_version: null,
+  fact_count: null,
+  fields: [],
+  fast_budget_exhausted: null,
+  background_budget_exhausted: null,
+};
+
+function frame(over: Partial<SetupStatus>): SetupStatus {
+  return { ...EMPTY_FRAME, ...over };
+}
+
+type FieldFrame = SetupStatus["fields"][number];
+
+function fastField(field_key: string, status: "started" | "resolved" | "empty"): FieldFrame {
+  return { field_key, lane: "fast", status };
+}
+
+/** The fast lane's per-field state after it has finished `count` fields and started nothing else. */
+function fastTerminals(count: number): SetupStatus["fields"] {
+  return FIXTURE_SETUP_BASELINE_FIELDS.slice(0, count).map((key) =>
+    fastField(key, FAST_LANE_OUTCOME[key]),
+  );
+}
+
+const RUNNING_BASE = {
+  recon_run_id: FIXTURE_RECON_RUN_ID,
+  company_website: "https://cluehq.ai",
+  fast_status: "running",
+};
+
+/**
+ * The fast lane in flight: one frame per field, each showing the fields already finished plus the
+ * one currently being resolved. A real 1.5s poll tick sees about this much motion.
+ */
+const FAST_LANE_FRAMES: SetupStatus[] = FIXTURE_SETUP_BASELINE_FIELDS.map((key, index) =>
+  frame({
+    ...RUNNING_BASE,
+    status: "running",
+    fields: [...fastTerminals(index), fastField(key, "started")],
+  }),
+);
+
+/** All eleven attempted, the lane transition not landed yet — a real snapshot, briefly. */
+const FAST_LANE_SETTLED: SetupStatus = frame({
+  ...RUNNING_BASE,
+  status: "running",
+  fields: fastTerminals(FIXTURE_SETUP_BASELINE_FIELDS.length),
+});
+
+/** The release: the fast lane completed, the background lane picked up behind it. */
+const FAST_LANE_COMPLETE: SetupStatus = frame({
+  recon_run_id: FIXTURE_RECON_RUN_ID,
+  company_website: "https://cluehq.ai",
+  status: "complete",
+  fast_status: "completed",
+  background_status: "running",
+  fast_client_kb_version: 1,
+  fact_count: FIXTURE_FACT_COUNT,
+  fast_budget_exhausted: false,
+  fields: fastTerminals(FIXTURE_SETUP_BASELINE_FIELDS.length),
+});
+
+/** After the release: the background lane re-derives the two tier-3-only fields. The user has
+ * normally left the screen by now — these frames exist because the stream is honest about what
+ * the run is still doing, not because the screen waits for them. */
+function backgroundFrame(
+  competitor: "started" | "empty",
+  buyerProfile: "started" | "empty" | null,
+  over: Partial<SetupStatus> = {},
+): SetupStatus {
+  return frame({
+    ...FAST_LANE_COMPLETE,
+    fields: [
+      ...fastTerminals(9),
+      { field_key: "client.competitor", lane: "background", status: competitor },
+      buyerProfile === null
+        ? fastField("client.buyer_profile", "empty")
+        : { field_key: "client.buyer_profile", lane: "background", status: buyerProfile },
+    ],
+    ...over,
+  });
+}
+
+const BACKGROUND_LANE_FRAMES: SetupStatus[] = [
+  backgroundFrame("started", null),
+  backgroundFrame("empty", "started"),
+  backgroundFrame("empty", "empty", {
+    background_status: "completed",
+    background_budget_exhausted: false,
+  }),
+];
+
+/**
+ * The default scripted stream. Frame-per-read: the fixture source hands out the next frame on
+ * every poll and sticks at the last one — a stream that has run out of states does not invent
+ * more.
+ */
+export const FIXTURE_SETUP_PROGRESS_SCRIPT: readonly SetupStatus[] = [
+  // Durably captured, no recon row visible yet — the warm-up state, and a real durable signal.
+  frame({ status: "starting", company_website: "https://cluehq.ai" }),
+  ...FAST_LANE_FRAMES,
+  FAST_LANE_SETTLED,
+  FAST_LANE_COMPLETE,
+  ...BACKGROUND_LANE_FRAMES,
+];

@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SetupApiError, type SetupStatus } from "../data/setup";
 import {
-  SetupApiError,
-  readSetupStatus,
-  startWorkspaceSetup,
-  type SetupStatus,
-} from "../data/setup";
+  httpSetupProgressSource,
+  type SetupProgressSource,
+} from "../data/setup-progress.repository";
 
 const POLL_INTERVAL_MS = 1500;
 /** Consecutive `none` reads tolerated after a successful start before surfacing (60s —
@@ -32,8 +31,13 @@ export interface SetupProgress {
  * wipe a start failure it knows nothing about (review FE-B1) — and every terminal state is
  * surfaced with real recovery controls (review FE-B2). Polling stops on terminal states and
  * after release; `location.replace` avoids the back-button trap (review FE-N6).
+ *
+ * Where the frames come from is the `source`'s business, not this hook's (slice 3): the live BFF
+ * transport is the default, and a scripted local stream satisfies the same contract.
  */
-export function useSetupProgress(): SetupProgress {
+export function useSetupProgress(
+  source: SetupProgressSource = httpSetupProgressSource,
+): SetupProgress {
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [terminal, setTerminal] = useState<SetupTerminalKind>(null);
@@ -45,6 +49,10 @@ export function useSetupProgress(): SetupProgress {
   const released = useRef(false);
   const startedOnce = useRef(false);
   const stopped = useRef(false);
+  // The transport is fixed for the hook's lifetime, exactly as the effect's empty deps say: a
+  // caller handing a fresh source object to a re-render must not restart the run (that would
+  // re-enter start and reset the pending/error counters mid-flight).
+  const sourceRef = useRef(source);
 
   useEffect(() => {
     let interval: number | null = null;
@@ -62,7 +70,7 @@ export function useSetupProgress(): SetupProgress {
       if (startedOnce.current) return;
       startedOnce.current = true;
       try {
-        await startWorkspaceSetup();
+        await sourceRef.current.start();
       } catch (caught) {
         startFailure.current =
           caught instanceof SetupApiError && caught.status === 409
@@ -83,7 +91,7 @@ export function useSetupProgress(): SetupProgress {
       }
       let current: SetupStatus;
       try {
-        current = await readSetupStatus();
+        current = await sourceRef.current.read();
       } catch (caught) {
         if (caught instanceof SetupApiError && (caught.status === 401 || caught.status === 403)) {
           surface("Your session has expired. Please sign in again.", "session");
