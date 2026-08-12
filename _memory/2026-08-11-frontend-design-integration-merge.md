@@ -99,3 +99,30 @@ DB-gated batches on exclusive fresh DBs: db ✓, durable+projections+execution �
   passes in isolation and in the D8-style groupings. Pre-existing flake class, not merge-caused.
 - **Pipe discipline**: `pytest … | tail` swallows the exit code — three early "green" runs were
   unverified because of this. Capture to a file and echo `$?`; never trust a piped pytest.
+
+## Post-merge standalone live run (2026-08-12) — design subsystem driven end to end
+
+Launch recipe that works in THIS worktree (the design README's venv-era commands are stale):
+fresh DB `lumen_design_dev` migrated to head, then
+`CLUE_DATABASE_URL=postgresql+asyncpg://127.0.0.1:5432/lumen_design_dev
+CLUE_STORAGE_FS_ROOT=/tmp/lumen-dev-storage LUMEN_API_CORS_ORIGINS=… uv run uvicorn
+lumen_api.main:app --port 8002` from the repo root (lumen-api is a workspace member; no
+PYTHONPATH needed), and `npm --prefix apps/editor run dev -- --port 3002` from
+`subsystems/clue-design` with `NEXT_PUBLIC_LUMEN_API_BASE_URL=http://127.0.0.1:8002` +
+`NEXT_PUBLIC_LUMEN_WASM_CORE=1` + `NEXT_PUBLIC_LUMEN_CANVASKIT=1` (predev self-provisions
+canvaskit/fonts/wasm; editor `npm ci` + cargo/wasm32 required; wasm-pack rides in node_modules).
+
+Verified live: `/build-info` engine_commit `7b992f8c6ec8` == freshly built browser WASM stamp
+(W5 handshake); strict O4 seam behaves exactly as designed (401 bare / 200 scoped / 404
+cross-tenant, workspace auto-ensured); document CRUD works via curl with `X-Workspace-Id`;
+editor UI + wasm engine fully live (artboard create, layers, undo, CanvasKit canvas).
+
+**Pre-existing gap surfaced (design line, NOT merge-caused — editor tree byte-identical to the
+pre-merge tip):** the D2.5A strict-header migration to `lumenFetch` only covered
+exportRunner / preflightRunner / agentRunner / libraryFonts / runEventStream. `documentStore`,
+`brandHub`, `webDocuments`, and the app pages (`app/new`, `app/brand/kits/*`) still default
+`fetchImpl = fetch` (bare, no header) and no call site injects `lumenFetch` — so the editor's
+document-save and brand-kit reads 401 against the strict seam (`EditorApp.tsx:257` etc.). The
+standalone editor's persistence path has been broken since D2.5A went strict; nobody live-drove
+it until this run. Fix is mechanical: default `fetchImpl = lumenFetch` in those modules (or
+inject at call sites). Owner: design subsystem / pre-Part-IV hygiene.
