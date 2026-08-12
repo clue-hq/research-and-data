@@ -186,3 +186,27 @@ mypy (635 files) and `lint-imports` (25 contracts) clean. Frontend gate green, *
 ## Remaining
 
 Nothing on slice 3. Next: slice-3 close-out sign-off, then the phase-2 project-level flow.
+
+## Close-out addendum (post final whole-branch review, 2026-08-13)
+
+The final whole-branch review (verdict "with fixes") produced 3 cross-task Importants, all closed by
+the final fix wave (`aea52fba` backend envelope mechanism + minors, `db9a1afd` frontend stall clause,
+`3ce5d164` record-and-own + charter bullets), verified by a scoped re-review with zero open findings.
+Two new minors were adjudicated PARKED at close-out:
+
+1. **`stage0_policy@1` pin provenance drift** — `build_recipe_pin_registry` publishes
+   `DEFAULT_STAGE0_POLICY` (5¢/100¢) while runs execute the settings-derived policy (25¢ default).
+   Non-functional today (both sides read the same static catalog) but the journaled pin no longer
+   describes the executed envelope. Owner: the pin/provenance owner (C6/M12 adjacency). Fix: thread
+   `stage0_policy_from_settings` into `build_recipe_pin_registry`, or derive the pin version from the
+   payload.
+2. **"eleven fetches / ~11¢" fast-walk arithmetic overstates by two** — the tier-3-only fields are
+   gate-skipped in the fast lane, so it is 9 fetches / 9 extractor completions. Stated in five
+   doc/comment sites (settings.py, toolbelt_wiring.py, stage0_setup.py, onboarding.md, FI-4 §9).
+   Errs loud/safe; 25¢ headroom unaffected. Sweep in the next doc pass.
+
+Also recorded from the re-review: `estimate()` now declares 25¢ (agent-planner ceiling default
+1,000,000 millicents — harmless unless a deployment tunes that below 25,000); the charter's
+`[audit 2026-08-07]` composition to-do item (2) is stale (the scrape binder IS wired since slice 2).
+Final range: `b2fda5e9..3ce5d164`. Gates at close: backend 15 known-pre-existing failures only
+(fresh DB required — `make db-fresh && make migrate`), lint/mypy/contracts clean; frontend 214/214.
