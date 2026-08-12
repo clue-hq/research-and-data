@@ -7,8 +7,10 @@ import { SetupScreen } from "./setup-screen";
 import styles from "./onboarding.module.css";
 
 /**
- * The slice-2 real setting-up screen (clerk mode only): the frozen SetupScreen visuals fed
- * by durable recon-lane truth (useSetupProgress + the pure deriveSetupItems). Terminal
+ * The real setting-up screen (clerk mode only): the frozen SetupScreen visuals fed by durable
+ * recon truth (useSetupProgress + the pure deriveSetupItems, which since slice 3 derives the
+ * four D-6 checklist groups from per-field progress events). This component only threads the
+ * poll status through — the derivation and every word of copy live in the model. Terminal
  * failures render inside the same grid cell as the frozen block (no geometry displacement)
  * with real recovery controls: "Try again" re-runs setup (meaningful — a failed lane
  * releases its dedupe slot and a retry mints a fresh attempt) and "Continue anyway"

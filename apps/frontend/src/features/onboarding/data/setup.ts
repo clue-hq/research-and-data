@@ -8,6 +8,22 @@ import { z } from "zod";
  * captured but no recon row is visible yet (driver warm-up / the lane's enclosing
  * transaction).
  */
+/**
+ * One Client-KB field's latest reported state (FI-4 slice 3). The backend has ALREADY reduced
+ * the recon run's at-least-once progress events to one entry per field (last-writer-wins by
+ * event `seq`) and ordered them by Client-KB baseline order — the client must not re-reduce,
+ * it never sees `seq`.
+ */
+export const SetupFieldStateSchema = z.object({
+  field_key: z.string().min(1),
+  // Open on purpose: the lane vocabulary is the backend's ("fast" / "background"), and a third
+  // lane must not fail the parse. Readers compare against the known names.
+  lane: z.string(),
+  // `.catch`: an additive per-field status must degrade to the in-flight state, never kill the
+  // poll loop (the FE-N2 ruling, applied per field).
+  status: z.enum(["started", "resolved", "empty", "failed"]).catch("started"),
+});
+
 export const SetupStatusSchema = z.object({
   // `.catch`: an additive backend status must never silently kill the poll loop (review
   // FE-N2); an unknown value degrades to the surfaced-terminal `unavailable` state.
@@ -20,8 +36,16 @@ export const SetupStatusSchema = z.object({
   company_website: z.string().nullable().optional().default(null),
   fast_client_kb_version: z.number().nullable().optional().default(null),
   fact_count: z.number().nullable().optional().default(null),
+  // Real per-field motion. Empty until the running lane emits its first field event (and on
+  // any pre-slice-3 payload).
+  fields: z.array(SetupFieldStateSchema).optional().default([]),
+  // null = "we do not know yet" (a lane that has not reached COMPLETED, or a failed lane) —
+  // never a fabricated `false`.
+  fast_budget_exhausted: z.boolean().nullable().optional().default(null),
+  background_budget_exhausted: z.boolean().nullable().optional().default(null),
 });
 
+export type SetupFieldState = z.infer<typeof SetupFieldStateSchema>;
 export type SetupStatus = z.infer<typeof SetupStatusSchema>;
 
 export class SetupApiError extends Error {

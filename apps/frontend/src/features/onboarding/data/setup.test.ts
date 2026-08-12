@@ -22,6 +22,29 @@ test("a minimal status payload parses with null defaults", () => {
   assert.equal(parsed.fact_count, null);
 });
 
+test("a pre-slice-3 payload still parses: no fields, no fabricated budget verdict", () => {
+  const parsed = SetupStatusSchema.parse({ status: "running", fast_status: "running" });
+  assert.deepEqual(parsed.fields, []);
+  // null = "we do not know yet" — never a fabricated false (backend BE contract).
+  assert.equal(parsed.fast_budget_exhausted, null);
+  assert.equal(parsed.background_budget_exhausted, null);
+});
+
+test("an unknown per-field status degrades to started rather than failing the parse", () => {
+  const parsed = SetupStatusSchema.parse({
+    status: "running",
+    fields: [
+      { field_key: "client.product", lane: "fast", status: "resolved" },
+      { field_key: "client.value_prop", lane: "background", status: "some-future-status" },
+    ],
+  });
+  assert.equal(parsed.fields.length, 2);
+  assert.equal(parsed.fields[0]?.status, "resolved");
+  // An additive backend status must never kill the poll loop (review FE-N2, per-field).
+  assert.equal(parsed.fields[1]?.status, "started");
+  assert.equal(parsed.fields[1]?.lane, "background");
+});
+
 test("additive fields are tolerated; an unknown status degrades loudly, not silently", () => {
   const parsed = SetupStatusSchema.parse({
     status: "some-future-status",
@@ -86,6 +109,8 @@ test("a healthy status read parses end to end", async () => {
         background_status: "running",
         fast_client_kb_version: 1,
         fact_count: 0,
+        fields: [{ field_key: "client.product", lane: "fast", status: "resolved" }],
+        fast_budget_exhausted: false,
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     ),
@@ -94,6 +119,9 @@ test("a healthy status read parses end to end", async () => {
     const status = await readSetupStatus();
     assert.equal(status.status, "complete");
     assert.equal(status.fact_count, 0);
+    assert.equal(status.fields[0]?.field_key, "client.product");
+    assert.equal(status.fast_budget_exhausted, false);
+    assert.equal(status.background_budget_exhausted, null);
   } finally {
     restore();
   }

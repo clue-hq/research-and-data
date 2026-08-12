@@ -1,9 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { onboardingFixture } from "../data/onboarding.fixture";
-import { BRAND_KIT_ITEM_ID, deriveSetupItems, laneItemStatus } from "./setup-items";
+import { SETUP_GROUPS, type SetupGroup } from "../data/setup-groups";
+import {
+  BRAND_KIT_ITEM_ID,
+  BUDGET_STOP_ANNOTATION,
+  DEEPENING_ANNOTATION,
+  FAILED_MEMBER_ANNOTATION,
+  deriveSetupItems,
+  groupStatus,
+  laneItemStatus,
+  type SetupFieldSnapshot,
+} from "./setup-items";
 
 const SETUP = onboardingFixture.setup;
+
+function field(
+  field_key: string,
+  status: SetupFieldSnapshot["status"],
+  lane: SetupFieldSnapshot["lane"] = "fast",
+): SetupFieldSnapshot {
+  return { field_key, lane, status };
+}
+
+/** The ratified group-1 members, so the tests read against the table rather than restate it. */
+const GROUP_1 = SETUP_GROUPS[0] as SetupGroup;
+const GROUP_2 = SETUP_GROUPS[1] as SetupGroup;
 
 test("laneItemStatus covers every real recon lane status explicitly", () => {
   assert.equal(laneItemStatus("queued"), "queued");
@@ -15,48 +37,192 @@ test("laneItemStatus covers every real recon lane status explicitly", () => {
   assert.equal(laneItemStatus(null), "queued");
 });
 
-test("pre-first-poll derivation renders queued rows plus the dummy brand kit", () => {
+test("the ratified table partitions all eleven Client-KB baseline fields, once each", () => {
+  const keys = SETUP_GROUPS.flatMap((group) => [...group.fieldKeys]);
+  assert.equal(keys.length, 11);
+  assert.equal(new Set(keys).size, 11);
+  assert.equal(SETUP_GROUPS.length, 4);
+});
+
+test("pre-first-poll derivation renders four queued groups plus the dummy brand kit", () => {
   const items = deriveSetupItems(SETUP, null);
-  assert.equal(items.length, 3);
+  assert.equal(items.length, 5);
   assert.deepEqual(
     items.map((item) => item.status),
-    ["queued", "queued", "queued"],
+    ["queued", "queued", "queued", "queued", "queued"],
+  );
+  assert.deepEqual(
+    items.slice(0, 4).map((item) => item.id),
+    SETUP_GROUPS.map((group) => group.id),
   );
   const brandKit = items.find((item) => item.id === BRAND_KIT_ITEM_ID);
   assert.ok(brandKit);
   assert.equal(brandKit.label, "Creating brand kit");
 });
 
-test("starting shows motion on the fast row; lane truth drives the rest", () => {
-  const starting = deriveSetupItems(SETUP, {
-    status: "starting",
-    fast_status: null,
-    background_status: null,
-  });
-  assert.equal(starting[0]?.status, "running");
-
-  const live = deriveSetupItems(SETUP, {
-    status: "complete",
-    fast_status: "completed",
-    background_status: "running",
-  });
-  assert.equal(live[0]?.status, "complete");
-  assert.equal(live[1]?.status, "running");
+test("starting shows motion on the first group only while no field event exists yet", () => {
+  const items = deriveSetupItems(SETUP, { status: "starting" });
+  assert.deepEqual(
+    items.map((item) => item.status),
+    ["running", "queued", "queued", "queued", "queued"],
+  );
+  // No fabricated detail: the motion rule never annotates.
+  assert.equal(items[0]?.detail, SETUP_GROUPS[0]?.detail);
 });
 
-test("a stopped background lane is annotated honestly, never claimed as pending work", () => {
+test("the first real field event supersedes the starting motion rule", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "starting",
+    fields: [field(GROUP_2.fieldKeys[0]!, "started")],
+  });
+  // Group 1 has no event of its own: event truth wins over the warm-up placeholder.
+  assert.equal(items[0]?.status, "queued");
+  assert.equal(items[1]?.status, "running");
+});
+
+test("a group runs on its first member event and completes only when every member is terminal", () => {
+  const partial = deriveSetupItems(SETUP, {
+    status: "running",
+    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
+  });
+  assert.equal(partial[0]?.status, "running");
+
+  const done = deriveSetupItems(SETUP, {
+    status: "running",
+    fields: [
+      field(GROUP_1.fieldKeys[0]!, "resolved"),
+      // `empty` and `failed` are terminal too: an unanswerable field is a correct outcome,
+      // and a failed one is finished work, not pending work.
+      field(GROUP_1.fieldKeys[1]!, "empty"),
+      field(GROUP_1.fieldKeys[2]!, "failed"),
+    ],
+  });
+  assert.equal(done[0]?.status, "complete");
+});
+
+test("an in-flight member keeps the group running even when its siblings are terminal", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fields: [
+      field(GROUP_1.fieldKeys[0]!, "resolved"),
+      field(GROUP_1.fieldKeys[1]!, "resolved"),
+      field(GROUP_1.fieldKeys[2]!, "started"),
+    ],
+  });
+  assert.equal(items[0]?.status, "running");
+});
+
+test("overall complete forces every group complete (release consistency)", () => {
   const items = deriveSetupItems(SETUP, {
     status: "complete",
-    fast_status: "completed",
-    background_status: "failed",
+    fields: [field(GROUP_1.fieldKeys[0]!, "started")],
   });
-  assert.match(items[1]?.detail ?? "", /Didn't finish/);
+  assert.deepEqual(
+    items.slice(0, 4).map((item) => item.status),
+    ["complete", "complete", "complete", "complete"],
+  );
+});
+
+test("a failed member is annotated on the detail line, never as a new visual state", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fields: [field(GROUP_2.fieldKeys[0]!, "failed")],
+  });
+  assert.equal(items[1]?.detail, `${GROUP_2.detail}${FAILED_MEMBER_ANNOTATION}`);
+  // The frozen three-state vocabulary is untouched.
+  assert.ok(["complete", "running", "queued"].includes(items[1]?.status ?? ""));
+});
+
+test("a budget-stopped lane annotates every group holding an unreached member", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fast_budget_exhausted: true,
+    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
+  });
+  // Group 1 still has unreached members, group 2 was never started at all.
+  assert.equal(items[0]?.detail, `${GROUP_1.detail}${BUDGET_STOP_ANNOTATION}`);
+  assert.equal(items[1]?.detail, `${GROUP_2.detail}${BUDGET_STOP_ANNOTATION}`);
+});
+
+test("an unknown budget verdict never fabricates a budget claim", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fast_budget_exhausted: null,
+    background_budget_exhausted: null,
+    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
+  });
+  assert.equal(items[0]?.detail, GROUP_1.detail);
+  assert.equal(items[1]?.detail, GROUP_2.detail);
+});
+
+test("a background re-run of an already-covered group reads as deepening, not a bare restart", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fields: [
+      field(GROUP_1.fieldKeys[0]!, "started", "background"),
+      field(GROUP_1.fieldKeys[1]!, "resolved"),
+      field(GROUP_1.fieldKeys[2]!, "resolved"),
+    ],
+  });
+  assert.equal(items[0]?.status, "running");
+  assert.equal(items[0]?.detail, `${GROUP_1.detail}${DEEPENING_ANNOTATION}`);
+});
+
+test("deepening also explains a completed group the background lane is revisiting", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "complete",
+    fields: [
+      field(GROUP_1.fieldKeys[0]!, "started", "background"),
+      field(GROUP_1.fieldKeys[1]!, "resolved"),
+      field(GROUP_1.fieldKeys[2]!, "resolved"),
+    ],
+  });
+  assert.equal(items[0]?.status, "complete");
+  assert.equal(items[0]?.detail, `${GROUP_1.detail}${DEEPENING_ANNOTATION}`);
+});
+
+test("a first-pass fast-lane group is never called deepening", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fields: [
+      field(GROUP_1.fieldKeys[0]!, "started"),
+      field(GROUP_1.fieldKeys[1]!, "resolved"),
+      field(GROUP_1.fieldKeys[2]!, "resolved"),
+    ],
+  });
+  assert.equal(items[0]?.detail, GROUP_1.detail);
+});
+
+test("a failed member outranks the budget and deepening annotations (one clause only)", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fast_budget_exhausted: true,
+    fields: [
+      field(GROUP_1.fieldKeys[0]!, "failed"),
+      field(GROUP_1.fieldKeys[1]!, "started", "background"),
+    ],
+  });
+  assert.equal(items[0]?.detail, `${GROUP_1.detail}${FAILED_MEMBER_ANNOTATION}`);
+});
+
+test("row ids are stable across ticks so the live region never re-keys its rows", () => {
+  const ticks = [
+    deriveSetupItems(SETUP, null),
+    deriveSetupItems(SETUP, { status: "starting" }),
+    deriveSetupItems(SETUP, {
+      status: "running",
+      fields: [field(GROUP_1.fieldKeys[0]!, "started")],
+    }),
+    deriveSetupItems(SETUP, { status: "complete", fast_budget_exhausted: true }),
+  ];
+  const ids = ticks.map((items) => items.map((item) => item.id).join(","));
+  assert.equal(new Set(ids).size, 1);
 });
 
 test("the brand-kit dummy is forced queued even when the fixture claims running", () => {
   const fixtureBrandKit = SETUP.items.find((item) => item.id === BRAND_KIT_ITEM_ID);
   assert.equal(fixtureBrandKit?.status, "running");
-  const items = deriveSetupItems(SETUP, null);
+  const items = deriveSetupItems(SETUP, { status: "complete" });
   assert.equal(items.find((item) => item.id === BRAND_KIT_ITEM_ID)?.status, "queued");
 });
 
@@ -66,5 +232,33 @@ test("a fixture without the brand-kit row drops it cleanly", () => {
     items: SETUP.items.filter((item) => item.id !== BRAND_KIT_ITEM_ID),
   };
   const items = deriveSetupItems(withoutBrandKit, null);
+  assert.equal(items.length, 4);
+});
+
+test("the group table is a parameter, not a hard-wired dependency", () => {
+  const table: readonly SetupGroup[] = [
+    { id: "solo", label: "Solo", detail: "One field", fieldKeys: ["client.product"] },
+  ];
+  const items = deriveSetupItems(
+    SETUP,
+    { status: "running", fields: [field("client.product", "resolved")] },
+    table,
+  );
   assert.equal(items.length, 2);
+  assert.equal(items[0]?.id, "solo");
+  assert.equal(items[0]?.status, "complete");
+});
+
+test("groupStatus is a pure reduction over member events and the overall status", () => {
+  assert.equal(groupStatus([], GROUP_1, "running"), "queued");
+  assert.equal(groupStatus([], GROUP_1, "complete"), "complete");
+  assert.equal(
+    groupStatus([field(GROUP_1.fieldKeys[0]!, "started")], GROUP_1, "running"),
+    "running",
+  );
+  // A field outside the group never moves it.
+  assert.equal(
+    groupStatus([field(GROUP_2.fieldKeys[0]!, "resolved")], GROUP_1, "running"),
+    "queued",
+  );
 });
