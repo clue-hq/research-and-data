@@ -149,6 +149,52 @@ test("a halted run still credits a group that genuinely finished", () => {
   assert.equal(items[1]?.status, "complete");
 });
 
+test("a PAUSED fast lane stops the spinner even though overall status still reads running", () => {
+  // The backend maps every non-failed, non-completed fast lane to overall "running"
+  // (stage0_setup.py), so lane truth is the only place a pause is visible.
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fast_status: "paused",
+    background_status: "queued",
+    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
+  });
+  assert.equal(items[0]?.status, "queued");
+  assert.equal(items[1]?.status, "queued");
+});
+
+test("a paused fast lane the background lane picked up is real motion, not a halt", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fast_status: "paused",
+    background_status: "running",
+    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
+  });
+  assert.equal(items[0]?.status, "running");
+});
+
+test("a running fast lane is motion regardless of a stopped background lane", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fast_status: "running",
+    background_status: "paused",
+    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
+  });
+  assert.equal(items[0]?.status, "running");
+});
+
+test("a stopped background lane cannot un-complete a released run", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "complete",
+    fast_status: "completed",
+    background_status: "failed",
+    fields: [field(GROUP_1.fieldKeys[0]!, "started", "background")],
+  });
+  assert.deepEqual(
+    items.slice(0, 4).map((item) => item.status),
+    ["complete", "complete", "complete", "complete"],
+  );
+});
+
 test("a failed member is annotated on the detail line, never as a new visual state", () => {
   const items = deriveSetupItems(SETUP, {
     status: "running",
@@ -168,6 +214,29 @@ test("a budget-stopped lane annotates every group holding an unreached member", 
   // Group 1 still has unreached members, group 2 was never started at all.
   assert.equal(items[0]?.detail, `${GROUP_1.detail}${BUDGET_STOP_ANNOTATION}`);
   assert.equal(items[1]?.detail, `${GROUP_2.detail}${BUDGET_STOP_ANNOTATION}`);
+});
+
+test("a released run still admits the members its budget never reached", () => {
+  // The pairing a user actually sees: the fast lane completed (release), but it stopped at the
+  // cap first, so "complete" must not be allowed to imply full coverage.
+  const items = deriveSetupItems(SETUP, {
+    status: "complete",
+    fast_status: "completed",
+    fast_budget_exhausted: true,
+    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
+  });
+  assert.equal(items[0]?.status, "complete");
+  assert.equal(items[0]?.detail, `${GROUP_1.detail}${BUDGET_STOP_ANNOTATION}`);
+});
+
+test("the background lane's own budget verdict annotates on its own", () => {
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fast_budget_exhausted: false,
+    background_budget_exhausted: true,
+    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
+  });
+  assert.equal(items[0]?.detail, `${GROUP_1.detail}${BUDGET_STOP_ANNOTATION}`);
 });
 
 test("an unknown budget verdict never fabricates a budget claim", () => {
@@ -205,6 +274,21 @@ test("deepening also explains a completed group the background lane is revisitin
   });
   assert.equal(items[0]?.status, "complete");
   assert.equal(items[0]?.detail, `${GROUP_1.detail}${DEEPENING_ANNOTATION}`);
+});
+
+test("a budget-stopped fast lane never lets background work be called deepening", () => {
+  // With the fast lane cut off at the cap, a background `started` may be FIRST contact with
+  // that field, not a second pass — so the deepening claim is withheld.
+  const items = deriveSetupItems(SETUP, {
+    status: "running",
+    fast_budget_exhausted: true,
+    fields: [
+      field(GROUP_1.fieldKeys[0]!, "started", "background"),
+      field(GROUP_1.fieldKeys[1]!, "resolved"),
+      field(GROUP_1.fieldKeys[2]!, "resolved"),
+    ],
+  });
+  assert.equal(items[0]?.detail, GROUP_1.detail);
 });
 
 test("a first-pass fast-lane group is never called deepening", () => {
@@ -275,16 +359,24 @@ test("the group table is a parameter, not a hard-wired dependency", () => {
   assert.equal(items[0]?.status, "complete");
 });
 
-test("groupStatus is a pure reduction over member events and the overall status", () => {
-  assert.equal(groupStatus([], GROUP_1, "running"), "queued");
-  assert.equal(groupStatus([], GROUP_1, "complete"), "complete");
+test("groupStatus is a pure reduction over member events and run truth", () => {
+  assert.equal(groupStatus([], GROUP_1, { status: "running" }), "queued");
+  assert.equal(groupStatus([], GROUP_1, { status: "complete" }), "complete");
   assert.equal(
-    groupStatus([field(GROUP_1.fieldKeys[0]!, "started")], GROUP_1, "running"),
+    groupStatus([field(GROUP_1.fieldKeys[0]!, "started")], GROUP_1, { status: "running" }),
     "running",
   );
   // A field outside the group never moves it.
   assert.equal(
-    groupStatus([field(GROUP_2.fieldKeys[0]!, "resolved")], GROUP_1, "running"),
+    groupStatus([field(GROUP_2.fieldKeys[0]!, "resolved")], GROUP_1, { status: "running" }),
+    "queued",
+  );
+  // Lane truth is part of the reduction, not just the overall status.
+  assert.equal(
+    groupStatus([field(GROUP_1.fieldKeys[0]!, "started")], GROUP_1, {
+      status: "running",
+      fast_status: "paused",
+    }),
     "queued",
   );
 });

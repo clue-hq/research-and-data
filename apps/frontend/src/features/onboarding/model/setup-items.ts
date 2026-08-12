@@ -23,6 +23,10 @@ export interface SetupFieldSnapshot {
 /** What the derivation needs from a poll tick. Structural: the full `SetupStatus` satisfies it. */
 export interface SetupProgressSnapshot {
   status: string;
+  // Lane truth is NOT redundant with `status`: the backend collapses every non-failed,
+  // non-completed fast lane to overall "running", so a PAUSED lane is visible only here.
+  fast_status?: string | null;
+  background_status?: string | null;
   fields?: readonly SetupFieldSnapshot[];
   fast_budget_exhausted?: boolean | null;
   background_budget_exhausted?: boolean | null;
@@ -34,12 +38,9 @@ const TERMINAL = new Set<SetupFieldSnapshot["status"]>(["resolved", "empty", "fa
 
 /**
  * Overall statuses after which nothing is running any more — `useSetupProgress` stops polling
- * on both and surfaces them with recovery controls. A group left mid-flight by one of them
- * renders as unfinished (`queued`) rather than spinning on work no lane is doing: the frozen
- * vocabulary has no "stopped" state, and the surfaced failure paragraph carries the why (the
- * slice-2 precedent for a stopped lane). "No fake progress" applies to the end of a run too.
+ * on both and surfaces them with recovery controls.
  */
-const HALTED = new Set(["failed", "unavailable"]);
+const HALTED_OVERALL = new Set(["failed", "unavailable"]);
 
 /**
  * Detail-line annotations. The frozen `SetupItemSchema.status` vocabulary
@@ -57,8 +58,9 @@ export const DEEPENING_ANNOTATION = " — deepening research";
  * `failed`/`paused` deliberately do NOT map to `queued` (that would assert "this will
  * happen"); callers drop or annotate those rows instead (review FE-M3).
  *
- * Slice 3 derives the rows from per-field events instead of lane status, so this is no longer
- * on the `deriveSetupItems` path; it stays the one place the lane vocabulary is decoded.
+ * Slice 3 derives a row's *shape* from per-field events, but lane status still decides whether
+ * anything is executing at all (see `isHalted`). This stays the one place the lane vocabulary
+ * is decoded.
  */
 export function laneItemStatus(lane: string | null): SetupItem["status"] | "stopped" {
   if (lane === "completed") return "complete";
@@ -73,10 +75,10 @@ export function laneItemStatus(lane: string | null): SetupItem["status"] | "stop
  * - No member has been reached yet → `queued` (nothing has happened, and nothing is claimed).
  * - Every reached member is terminal and none is missing → `complete`.
  * - Anything in between → `running`.
- * - `overall === "complete"` (the fast lane finished — the release-into-the-app signal) forces
+ * - `status === "complete"` (the fast lane finished — the release-into-the-app signal) forces
  *   `complete`, so the screen the user is released from never contradicts the release.
- * - A halted overall status demotes an unfinished group to `queued`: nothing is running any
- *   more, so a spinner would be fabricated motion (see `HALTED`).
+ * - A halted run demotes an unfinished group to `queued`: nothing is running any more, so a
+ *   spinner would be fabricated motion (see `isHalted` for the two axes it reads).
  *
  * The backend has already reduced the event stream to one entry per field; this must NOT
  * re-reduce (it never sees the event `seq`).
@@ -84,22 +86,47 @@ export function laneItemStatus(lane: string | null): SetupItem["status"] | "stop
 export function groupStatus(
   fields: readonly SetupFieldSnapshot[],
   group: SetupGroup,
-  overall: string,
+  progress: SetupProgressSnapshot,
 ): SetupItem["status"] {
-  return reduceMembers(memberStates(fields, group), overall);
+  return reduceMembers(memberStates(fields, group), progress);
+}
+
+/**
+ * Is the run stopped — i.e. would a spinner be fabricated motion?
+ *
+ * Two independent axes, because neither implies the other:
+ *
+ * 1. The overall status is terminal (`failed` / `unavailable`) — the poll loop has stopped.
+ * 2. The FAST lane is stopped (`failed` / `paused` — `laneItemStatus`, review FE-M3). The
+ *    backend collapses every fast lane that is neither failed nor completed to overall
+ *    `running`, so a PAUSED lane is invisible on axis 1 and would otherwise spin forever.
+ *    Slice 2 rendered exactly this case as `queued`; slice 3 keeps that ruling.
+ *
+ * …unless the BACKGROUND lane is executing right now: the lanes are sequential, and the driver
+ * picks the background lane up once the fast lane leaves queued/running, so a stopped fast lane
+ * with a live background lane is genuine motion.
+ *
+ * A stopped background lane needs no case of its own: it can only matter once the fast lane is
+ * done, and a completed fast lane is overall `complete`, which forces every group `complete`
+ * before this is consulted. Demoting a released run's rows would contradict the release.
+ */
+function isHalted(progress: SetupProgressSnapshot): boolean {
+  if (HALTED_OVERALL.has(progress.status)) return true;
+  if (laneItemStatus(progress.fast_status ?? null) !== "stopped") return false;
+  return laneItemStatus(progress.background_status ?? null) !== "running";
 }
 
 function reduceMembers(
   member: readonly (SetupFieldSnapshot | null)[],
-  overall: string,
+  progress: SetupProgressSnapshot,
 ): SetupItem["status"] {
-  if (overall === "complete") return "complete";
+  if (progress.status === "complete") return "complete";
   const reached = member.some((state) => state !== null);
   const finished =
     reached && member.every((state) => state !== null && TERMINAL.has(state.status));
   if (finished) return "complete";
   // Unfinished: `running` only while something is actually running.
-  return reached && !HALTED.has(overall) ? "running" : "queued";
+  return reached && !isHalted(progress) ? "running" : "queued";
 }
 
 function memberStates(
@@ -120,7 +147,9 @@ function memberStates(
  *    verdict is unknown and is never read as `false` — no fabricated budget claim.)
  * 3. Every member reached, and all still-running work belongs to the background lane: the
  *    group already had its pass and is being revisited, so it must not read as a bare restart
- *    (the cross-lane regression `resolved → started` is honest, and this says why).
+ *    (the cross-lane regression `resolved → started` is honest, and this says why). Withheld
+ *    when the fast lane hit its cap — a background `started` may then be FIRST contact with
+ *    that field rather than a second pass, and we do not guess.
  */
 function annotationFor(
   member: readonly (SetupFieldSnapshot | null)[],
@@ -134,6 +163,7 @@ function annotationFor(
     (state): state is SetupFieldSnapshot => state !== null && !TERMINAL.has(state.status),
   );
   if (
+    progress.fast_budget_exhausted !== true &&
     member.every((state) => state !== null) &&
     inFlight.length > 0 &&
     inFlight.every((state) => state.lane === BACKGROUND_LANE)
@@ -167,7 +197,7 @@ export function deriveSetupItems(
 
   const items: SetupItem[] = groups.map((group, index) => {
     const member = memberStates(fields, group);
-    const status = reduceMembers(member, progress?.status ?? "");
+    const status = reduceMembers(member, progress ?? { status: "" });
     // `progress` is only null before the first poll — there is nothing to annotate then, and
     // the annotator needs a tick to read.
     const annotation = progress === null ? "" : annotationFor(member, progress);
