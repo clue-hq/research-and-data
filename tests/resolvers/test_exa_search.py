@@ -26,7 +26,11 @@ from typing import Any
 
 import pytest
 
-from clue_api.claim_extraction import ExtractionPolicy, LlmClaimExtractor
+from clue_api.claim_extraction import (
+    DEFAULT_MAX_TEXT_CHARS,
+    ExtractionPolicy,
+    LlmClaimExtractor,
+)
 from clue_config import Secrets
 from clue_core import (
     AccountEntity,
@@ -47,6 +51,9 @@ from clue_core import (
     RetryableResolverError,
     new_entity_id,
 )
+from clue_obs import capture_events
+from clue_obs.otel import ATTR_N_CLAIMS
+from clue_obs.otel.testing import collect_spans
 from clue_research.adapters import CallableClaimExtractor
 from clue_research.resolvers.exa_search import (
     EXA_SEARCH_SOURCE_KEY,
@@ -54,6 +61,7 @@ from clue_research.resolvers.exa_search import (
     ExaSearchResolver,
     register_exa_search_resolver,
 )
+from clue_research.resolvers.http import CredentialError, ProviderResponseError
 from clue_research.sources import SEED_MANIFESTS, get_resolver, is_resolver_bound
 
 _COMPETITOR = "client.competitor"
@@ -546,3 +554,102 @@ def test_a_span_from_one_record_cited_to_another_is_dropped() -> None:
         )
         == []
     )
+
+
+# --- AC (review fix): a HARD provider refusal is a miss, not a dead recon lane -------------------
+
+
+def test_a_hard_provider_refusal_is_an_empty_field_not_a_lane_failure() -> None:
+    """The other half of "an optional enrichment must never kill recon".
+
+    The composition root's credential gate only covers "no key was ever configured". The likelier
+    production faults — key revoked (401/403), credits exhausted (402), malformed query (400) —
+    arrive here as ``ProviderResponseError`` at call time, long after the gate passed. A resolver
+    exception is re-raised by the waterfall and again by ``reverse_profile``, so letting one escape
+    would kill the whole run. It is a hard miss instead, named on the span.
+    """
+    account = _account()
+    extractor = CallableClaimExtractor(lambda normalized, entity, field: [])
+    for exc in (
+        ProviderResponseError("payment required", status_code=402, body_excerpt="out of credits"),
+        ProviderResponseError("forbidden", status_code=403),
+        CredentialError("the key vanished between binding and this call"),
+    ):
+        http = _Http(exc=exc)
+        with capture_events(mode="info") as cap, collect_spans() as spans:
+            claims = _resolver(extractor=extractor, account=account, http=http).resolve(
+                account.as_entity(), _field()
+            )
+        assert claims == []
+        assert http.calls  # the call WAS attempted — this is a refusal, not a skip
+        assert cap.has("research.exa_search.provider_refused")
+        (span,) = [s for s in spans.get_finished_spans() if s.name == "search.exa_search"]
+        attrs = dict(span.attributes or {})
+        assert attrs["outcome"] == "provider_refused"
+        assert attrs["refusal"] == type(exc).__name__
+
+
+def test_a_transient_fault_still_propagates_after_the_refusal_catch() -> None:
+    """The catch must not swallow the retryable case: a timeout/5xx is M7's to retry, and turning
+    it into an empty field would silently lose a fact the next attempt would have found."""
+    account = _account()
+    http = _Http(exc=RetryableResolverError("simulated transient provider failure"))
+    with pytest.raises(RetryableResolverError):
+        _resolver(
+            extractor=CallableClaimExtractor(lambda normalized, entity, field: []),
+            account=account,
+            http=http,
+        ).resolve(account.as_entity(), _field())
+
+
+def test_every_dropped_draft_is_counted_so_the_span_arithmetic_reconciles() -> None:
+    """``n_drafts == n_claims + every drop counter``. A guard that discards silently is only
+    trustworthy if the discard is countable — including a draft for the wrong field, which is
+    otherwise the one drop with no counter."""
+    url = "https://reviews.example/acme-vs-rival"
+    http = _Http(_payload((url, _RIVAL_QUOTE)))
+    extractor = CallableClaimExtractor(
+        lambda normalized, entity, field: [
+            ClaimDraft(  # wrong field
+                field_key=_BUYER,
+                value={"persona": "Head of Eng"},
+                evidence_span=_RIVAL_QUOTE,
+                confidence=0.9,
+                source_url=url,
+            ),
+            ClaimDraft(  # unattributed
+                field_key=field.field_key,
+                value={"name": "Rival Inc"},
+                evidence_span=_RIVAL_QUOTE,
+                confidence=0.9,
+                source_url=None,
+            ),
+            ClaimDraft(  # kept
+                field_key=field.field_key,
+                value={"name": "Rival Inc"},
+                evidence_span=_RIVAL_QUOTE,
+                confidence=0.9,
+                source_url=url,
+            ),
+        ]
+    )
+    account = _account()
+    with collect_spans() as exporter:
+        claims = _resolver(extractor=extractor, account=account, http=http).resolve(
+            account.as_entity(), _field()
+        )
+    assert len(claims) == 1
+    (span,) = [s for s in exporter.get_finished_spans() if s.name == "search.exa_search"]
+    attrs = dict(span.attributes or {})
+    assert attrs["outcome"] == "hit"
+    assert int(attrs["n_dropped_wrong_field"]) == 1
+    assert int(attrs["n_dropped_unattributed"]) == 1
+    dropped = sum(int(v) for k, v in attrs.items() if str(k).startswith("n_dropped_"))
+    assert int(attrs["n_drafts"]) == int(attrs[ATTR_N_CLAIMS]) + dropped
+
+
+def test_the_document_cap_tracks_the_extractors_own_prompt_slice() -> None:
+    """The 60k cap is hand-mirrored from the extractor. If the extractor's slice moves and this
+    does not, the resolver would build a document whose tail the model never reads while the
+    grounding check still accepts spans from it — pin them together."""
+    assert ExaSearchConfig().max_text_chars == DEFAULT_MAX_TEXT_CHARS

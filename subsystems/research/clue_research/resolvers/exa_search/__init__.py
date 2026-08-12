@@ -38,11 +38,16 @@ does not:
   the account has neither a resolvable domain nor a usable name token, target-lock is unsatisfiable
   and every record is refused rather than guessed onto the entity.
 
-A drop is not an error. A hard miss, a guard rejecting every candidate, or an unknown account all
-return ``[]`` — an empty, flagged field is a correct output; a fabricated or misattributed one is
-the only real failure. A transient transport fault propagates as
-:class:`~clue_core.RetryableResolverError` (M7 retries it) rather than being swallowed into a
-silent miss.
+A drop is not an error. A hard miss, a guard rejecting every candidate, an unknown account, or a
+**hard provider refusal** (a 4xx — revoked key, exhausted credits, malformed query — or a
+credential that disappeared after binding) all return ``[]``: an empty, flagged field is a correct
+output; a fabricated or misattributed one is the only real failure. That refusal case is not
+defensive tidiness — a resolver exception is re-raised by the waterfall and by
+``stage0.client_kb``, so letting a 402 escape would kill the **whole** reverse-profiling run over
+one optional open-web enrichment. A *transient* fault still propagates as
+:class:`~clue_core.RetryableResolverError` (M7 retries it) rather than being swallowed, and every
+empty answer names its reason on the trace span (``outcome`` / ``refusal`` / the drop counters), so
+nothing goes quiet.
 
 The resolver stamps only what the *source* knows — value, span, citation, confidence, cost. The
 waterfall stamps the engine-owned provenance (``source_key`` / ``run_id`` / ``research_mode``) and
@@ -75,6 +80,7 @@ from clue_core import (
     account_claim,
     new_run_id,
 )
+from clue_obs import get_logger
 from clue_obs.otel import (
     ATTR_ENTITY_ID,
     ATTR_FIELD_KEY,
@@ -88,6 +94,8 @@ from clue_research.resolvers.grounded import entity_name_tokens, names_present, 
 from clue_research.resolvers.http import (
     DEFAULT_RETRIES,
     DEFAULT_TIMEOUT_S,
+    CredentialError,
+    ProviderResponseError,
     get_json,
     resolve_credential,
 )
@@ -96,6 +104,8 @@ from clue_research.sources import SEED_MANIFESTS, bind_resolver
 
 if TYPE_CHECKING:
     from clue_config import Secrets
+
+log = get_logger(__name__)
 
 #: The registered ``source_key`` (its manifest lives in ``sources.seeds.SEED_MANIFESTS``).
 EXA_SEARCH_SOURCE_KEY = "exa_search"
@@ -281,6 +291,16 @@ def _on_entity(record: _Record, account: AccountEntity, identifiers: frozenset[s
     return names_present(_quotable(record), identifiers)
 
 
+def _outcome(refusal: str | None, records: Sequence[_Record], claims: Sequence[Claim]) -> str:
+    """Why this call ended the way it did — the one span attribute that distinguishes the three
+    very different kinds of empty answer (mirrors the tier-4 ``grounded._outcome``)."""
+    if refusal is not None:
+        return "provider_refused"
+    if claims:
+        return "hit"
+    return "miss" if records else "empty"
+
+
 class ExaSearchResolver:
     """A tier-3 :class:`~clue_core.Resolver` over an open-web search API.
 
@@ -327,12 +347,32 @@ class ExaSearchResolver:
                 ATTR_ENTITY_ID: entity.entity_id,
             },
         ) as span:
-            records = _records(
-                self._search(_render_query(template, account, field.field_key)), self._config
-            )
+            records: list[_Record] = []
+            refusal: str | None = None
+            try:
+                records = _records(
+                    self._search(_render_query(template, account, field.field_key)), self._config
+                )
+            except (ProviderResponseError, CredentialError) as exc:
+                # A HARD provider refusal — a 4xx (revoked key, exhausted credits, malformed
+                # query) or a credential that vanished between binding and this call. A retry
+                # would not fix it, so it is a hard MISS: this field ends empty+flagged and the
+                # rest of the recon lane continues. Letting it escape would fail the WHOLE
+                # `reverse_profile` run (the waterfall bare-raises; `client_kb` re-raises), which
+                # is the exact outcome the composition root's credential gate exists to prevent —
+                # and the gate only covers "never configured", not "stopped working". A transient
+                # fault (`RetryableResolverError`) deliberately still propagates, so M7 retries.
+                refusal = type(exc).__name__
+                log.warning(
+                    "research.exa_search.provider_refused",
+                    field_key=field.field_key,
+                    source_key=EXA_SEARCH_SOURCE_KEY,
+                    error_type=refusal,
+                    detail=str(exc),
+                )
             claims: list[Claim] = []
             drafts: list[ClaimDraft] = []
-            unattributed = ungrounded = off_entity = 0
+            wrong_field = unattributed = ungrounded = off_entity = 0
             if records:
                 normalized, used = _document(records, self._config)
                 drafts = list(self._extractor.extract(normalized, entity, field))
@@ -340,6 +380,7 @@ class ExaSearchResolver:
                 identifiers = _identifiers(account)
                 for draft in drafts:
                     if draft.field_key != field.field_key:
+                        wrong_field += 1
                         continue
                     record = by_url.get(draft.source_url or "")
                     if record is None:
@@ -356,11 +397,18 @@ class ExaSearchResolver:
                         off_entity += 1
                         continue
                     claims.append(self._claim(account, field, draft, first=not claims))
+            # The draft arithmetic reconciles: n_drafts == n_claims + every drop counter, so a
+            # silently-empty field is diagnosable from the span alone. ``outcome`` names WHY an
+            # empty answer is empty — refused (the provider said no), miss (records came back and
+            # every candidate failed a guard), or empty (nothing was returned to judge).
             apply_attributes(
                 span,
                 {
+                    "outcome": _outcome(refusal, records, claims),
+                    "refusal": refusal or "",
                     "n_records": len(records),
                     "n_drafts": len(drafts),
+                    "n_dropped_wrong_field": wrong_field,
                     "n_dropped_unattributed": unattributed,
                     "n_dropped_ungrounded": ungrounded,
                     "n_dropped_off_entity": off_entity,
@@ -371,8 +419,12 @@ class ExaSearchResolver:
 
     def _search(self, query: str) -> Any:
         """One search request. The credential is resolved at *call* time, so binding this resolver
-        never needs a live key; a transient fault raises ``RetryableResolverError`` from the shared
-        wrapper rather than becoming a silent miss."""
+        never needs a live key.
+
+        Raises what the shared transport raises; ``resolve`` decides which faults are lane-fatal.
+        A transient fault (``RetryableResolverError``) is left to propagate so M7 retries it; a
+        hard refusal (``ProviderResponseError`` / ``CredentialError``) is caught there and becomes
+        a hard miss."""
         token = resolve_credential(
             AUTH_REF, source_key=EXA_SEARCH_SOURCE_KEY, secrets=self._secrets
         )

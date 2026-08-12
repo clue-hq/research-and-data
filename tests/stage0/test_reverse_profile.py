@@ -34,6 +34,7 @@ from clue_research.claimstore import (
 )
 from clue_research.identity import stamp_reuse
 from clue_research.resolvers.exa_search import register_exa_search_resolver
+from clue_research.resolvers.http import ProviderResponseError
 from clue_research.sources import bind_resolver
 from clue_research.stage0 import (
     CLIENT_BASELINE_FIELDS,
@@ -710,5 +711,60 @@ def test_exa_search_is_skipped_by_the_fast_lane_and_paid_only_by_the_background_
             assert claim.source_url == _COMPETITOR_URL
             assert claim.evidence_span == _COMPETITOR_TEXT
             assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE
+
+    run_async(_run())
+
+
+class _RefusingHttp:
+    """A ``get_json`` double that answers every search with a hard 402 (credits exhausted)."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, url: str, **kwargs: object) -> object:
+        self.calls += 1
+        raise ProviderResponseError(
+            "exa_search: HTTP 402", status_code=402, body_excerpt="out of credits"
+        )
+
+
+def test_a_refusing_exa_search_empties_its_own_fields_and_leaves_the_run_intact() -> None:
+    """The rest of the review-fix invariant, at lane level.
+
+    The composition root refuses to bind this source without a credential — but a key can be
+    revoked or run out of credits *after* boot, and that arrives as a hard 4xx mid-run. A resolver
+    exception is re-raised by the waterfall and again here, so an escaping 402 would destroy an
+    entire onboarding run over one optional open-web enrichment. Instead the two tier-3 fields end
+    empty, every other field is untouched, and the run completes with its version marker.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            _bind_firecrawl(_owned_values())
+            http = _RefusingHttp()
+            result = await reverse_profile(
+                conn,
+                _input(),
+                workspace_id=_CLIENT,
+                max_source_tier=3,
+                on_client_resolved=_ExaBinder(http),
+            )
+
+            assert http.calls == 2  # both tier-3 fields tried, both refused
+            assert result.ref.client_kb_version == 1  # the run COMPLETED
+            scope = WorkspaceScope.for_workspace(_CLIENT)
+            # the refused fields are honestly empty …
+            assert (
+                await current_value(
+                    conn, result.ref.client_entity_id, CLIENT_COMPETITOR, scope=scope
+                )
+                is None
+            )
+            # … and every tier-2 field the same run resolved is unaffected
+            cv = await current_value(
+                conn, result.ref.client_entity_id, CLIENT_VALUE_PROP, scope=scope
+            )
+            assert cv is not None
+            assert cv.value_json == "We help teams ship faster"
 
     run_async(_run())
