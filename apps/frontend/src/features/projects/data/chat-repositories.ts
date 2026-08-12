@@ -1,6 +1,11 @@
 import { FIXTURE_TRANSPORT, type ChatTransport } from "./chat-api";
 import { createFixtureChatState } from "./chat-fixture-state";
 import {
+  createHttpComposerContextRepository,
+  unavailableComposerContextRepository,
+  type ComposerContextRepository,
+} from "./composer-context.repository";
+import {
   createFixtureChatGatesRepository,
   createHttpChatGatesRepository,
   type ChatGatesRepository,
@@ -69,6 +74,7 @@ export interface ChatRepositories {
    * did not register the routes — which is every production deployment.
    */
   inspector: ChatInspectorRepository;
+  composerContext: ComposerContextRepository;
 }
 
 export function createChatRepositories(
@@ -86,6 +92,7 @@ export function createChatRepositories(
       gates: createHttpChatGatesRepository(transport),
       stream: createHttpChatStreamRepository(transport),
       inspector: createHttpChatInspectorRepository(transport),
+      composerContext: createHttpComposerContextRepository(transport),
     };
   }
   // One shared fixture state, so the four adapters agree with each other the
@@ -102,5 +109,6 @@ export function createChatRepositories(
     gates: createFixtureChatGatesRepository(state),
     stream: createFixtureChatStreamRepository(state),
     inspector: createFixtureChatInspectorRepository(),
+    composerContext: unavailableComposerContextRepository,
   };
 }

@@ -14,11 +14,13 @@ export const BulkProjectOptionSchema = z.object({
 
 export const AccountBulkCapabilitiesSchema = z.object({
   addToProject: BulkActionCapabilitySchema,
+  addToChat: BulkActionCapabilitySchema,
   projects: z.array(BulkProjectOptionSchema).default([]),
 });
 
 export const ContactBulkCapabilitiesSchema = z.object({
   lookupWorkEmails: BulkActionCapabilitySchema,
+  addToChat: BulkActionCapabilitySchema,
 });
 
 export const BulkActionOutcomeSchema = z.enum([

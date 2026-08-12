@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useChatTransport } from "@/features/projects/data/projects-transport";
 import { lookupContactEmails } from "../../data/bulk-actions.repository";
 import { ClueApiError } from "../../data/clue-api-error";
 import type { AccountContactSummary } from "../../model/account-contact";
@@ -14,6 +15,7 @@ export function useAccountContactsController(
   initialContacts: AccountContactSummary[],
   bulkCapabilities: ContactBulkCapabilities,
 ) {
+  const chatHandoffAvailable = useChatTransport().mode === "http";
   const [contacts, setContacts] = useState(initialContacts);
   const [search, setSearchState] = useState("");
   const [displayOpen, setDisplayOpen] = useState(false);
@@ -174,6 +176,7 @@ export function useAccountContactsController(
     {
       bulkCapabilities,
       bulkNotice,
+      chatHandoffAvailable,
       clearBulkNotice: () => setBulkNotice(null),
       clearSelection,
       columnWidths,
@@ -187,7 +190,9 @@ export function useAccountContactsController(
       resetColumnWidth,
       search,
       selectedContactIds,
-      selectionEnabled: bulkCapabilities.lookupWorkEmails.allowed,
+      selectionEnabled:
+        bulkCapabilities.lookupWorkEmails.allowed ||
+        (chatHandoffAvailable && bulkCapabilities.addToChat.allowed),
       setDensity,
       setColumnWidth,
       setDisplayOpen,

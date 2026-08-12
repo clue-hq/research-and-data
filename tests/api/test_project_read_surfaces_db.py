@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import event
 
+from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.thread_store import create_thread, set_thread_pinned
 from clue_spine import create_project
 from tests._identity import fixture_membership_id
@@ -83,14 +84,14 @@ def test_project_shell_is_scoped_real_and_fixture_free(require_chat_db: None) ->
             assert data["context_entities"] == []
             assert data["agent_profiles"] == [
                 {
-                    "id": "head-of-abm@v23",
+                    "id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
                     "label": "GPT-5.6 Terra",
                     "short_label": "GPT-5.6 Terra",
                     "description": "Clue's governed GPT-5.6 Terra conversation profile",
                     "model_id": "openai/gpt-5.6-terra",
                 }
             ]
-            assert data["default_agent_profile_id"] == "head-of-abm@v23"
+            assert data["default_agent_profile_id"] == PROJECT_CONVERSATION_AGENT_PROFILE_ID
             assert data["composer_capabilities"] == {
                 "context_refs": True,
                 "attachments": False,

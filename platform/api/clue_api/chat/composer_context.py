@@ -32,12 +32,13 @@ __all__ = [
     "ComposerContextEntity",
     "ContextReferenceError",
     "list_composer_context_entities",
+    "prepare_composer_context_entities",
     "validated_context_refs",
 ]
 
 # One real choice, per the product ruling for R8. The id names the promoted immutable profile;
 # the model id is presentation metadata, not an instruction the browser may send independently.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v23"
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v24"
 PROJECT_CONVERSATION_MODEL_ID = "openai/gpt-5.6-terra"
 
 _MAX_CONTEXT_ACCOUNTS = 50
@@ -190,3 +191,66 @@ async def validated_context_refs(
             "each selected contact must belong to a selected account",
         )
     return tuple(refs)
+
+
+async def prepare_composer_context_entities(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    refs: Sequence[DomainObjectRef],
+) -> tuple[ComposerContextEntity, ...]:
+    """Validate and hydrate an exact draft set without relying on the bounded mention catalog.
+
+    The returned labels are the same display-approved Account/Contact values used by the live
+    FI-2 reads. Canonical versions are resolved here and revalidated again when the message is
+    submitted; this preparation is draft hydration, never durable authorization.
+    """
+
+    validated = await validated_context_refs(
+        conn,
+        workspace_id=workspace_id,
+        refs=refs,
+    )
+    prepared: list[ComposerContextEntity] = []
+    for ref in validated:
+        entity_id = EntityId(UUID(ref.object_id))
+        if ref.object_type == "account":
+            account = await get_account(conn, entity_id)
+            if account is None:  # pragma: no cover - validation above owns this invariant
+                raise ContextReferenceError(
+                    "CONTEXT_REF_NOT_FOUND",
+                    "an account context reference is not available in this workspace",
+                )
+            prepared.append(
+                ComposerContextEntity(
+                    object_type="account",
+                    object_id=str(account.id),
+                    label=account.canonical_name,
+                    secondary_label=account.primary_domain or "Account",
+                    version=account.canonical_version,
+                )
+            )
+            continue
+
+        contact = await get_contact(conn, entity_id)
+        if contact is None:  # pragma: no cover - validation above owns this invariant
+            raise ContextReferenceError(
+                "CONTEXT_REF_NOT_FOUND",
+                "a contact context reference is not available in this workspace",
+            )
+        profile = await read_contact_profile(
+            conn,
+            workspace_id=workspace_id,
+            account_id=UUID(str(contact.account_entity_id)),
+            contact_id=UUID(str(contact.id)),
+        )
+        prepared.append(
+            ComposerContextEntity(
+                object_type="contact",
+                object_id=str(contact.id),
+                label=profile.name or "Unnamed contact",
+                secondary_label=profile.title or profile.account_name,
+                version=contact.canonical_version,
+            )
+        )
+    return tuple(prepared)

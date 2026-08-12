@@ -1043,13 +1043,17 @@ creates a fresh controller and therefore an empty selection.
 Capability reads:
 
 - `GET /frontend/v1/accounts/bulk-capabilities` returns
-  `{ addToProject: { allowed, maxItems: 100 }, projects }`. `projects` contains
+  `{ addToProject: { allowed, maxItems: 100 }, addToChat: { allowed,
+  maxItems: 100 }, projects }`. `projects` contains
   the workspace's non-archived projects; authorization is derived from
-  `project.write`, never from a frontend role guess.
+  `project.write`, never from a frontend role guess. `addToChat` additionally
+  requires `thread.write` and the live chat surface.
 - `GET /frontend/v1/accounts/{accountId}/contacts/bulk-capabilities` returns
-  `{ lookupWorkEmails: { allowed, maxItems: 20 } }`. It requires a valid
+  `{ lookupWorkEmails: { allowed, maxItems: 20 }, addToChat: { allowed,
+  maxItems: 100 } }`. It requires a valid
   account-scoped read and is false unless `research.launch` is held and the
-  Slice-10 service is configured.
+  Slice-10 service is configured. Contact `addToChat` is independent of email
+  enrichment and follows the same chat/thread capability as Accounts.
 
 Mutations use the same-origin BFF and require a nonempty `Idempotency-Key`:
 
@@ -1071,6 +1075,40 @@ replays the stored response and does not dispatch providers again; reusing it
 for another request is `409 IDEMPOTENCY_KEY_REUSED`. Partial success is explicit
 through item outcomes and aggregate counts. Internal exception messages and
 provider details never enter the browser response.
+
+### Bulk selection to project chat (FI-2 slice 9B, 2026-08-13)
+
+`Add to chat` is available on both counted selection bars for 1–100 currently
+visible Account or Contact rows. It does not replace the existing Account
+`Add to project` or Contact `Look up work emails` actions. It performs no
+research, provider request, spend, project-membership write or other domain
+mutation. The destination dialog chooses an existing project plus active chat,
+or creates one idempotent new chat in that project. Opening the dialog is the
+selection action; there is no additional confirmation prompt.
+
+Before navigation the browser calls
+`POST /api/v1/projects/{projectId}/composer-context/prepare` through the
+same-origin BFF with the ordered selected `{objectType, objectId, version}`
+references and an optional existing `threadId`. The server requires
+`thread.write`, scopes the project/thread to the authenticated workspace,
+refuses archived threads, resolves canonical current versions and hydrates
+display-safe labels directly from live Account/Contact reads. The endpoint is
+read-only draft preparation. It does not depend on the composer's bounded
+mention catalog and it never creates project membership.
+
+The cross-page browser handoff is stored in `sessionStorage` under an opaque
+UUID with a 30-minute expiry; the URL carries only that UUID plus the selected
+thread id, never the selected entity ids or labels. The originating table
+selection clears only after the prepared handoff has been written and read
+back successfully. Transfer failures leave the selection intact. The project
+composer restores visible `@` chips from the handoff, while the eventual turn
+submission revalidates and durably records the same ordered structured
+references.
+
+Those references belong only to the next accepted message. A failed submission
+preserves the prompt and chips for retry. Once the turn endpoint returns its
+durable acceptance receipt, the draft and handoff are consumed; the historical
+user message retains the references and later messages do not inherit them.
 
 ### Live prose and user-facing vocabulary (FI-2 slice 4, 2026-08-12)
 

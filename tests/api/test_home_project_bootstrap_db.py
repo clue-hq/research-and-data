@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from clue_api import build_tool_invoker, create_projections_app
 from clue_api.chat import RequestPrincipal
+from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.chat.router import _first_thread_title
 from clue_api.thread_wiring import register_thread_tools
 from clue_auth import permissions_for_role
@@ -195,14 +196,14 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
                     ],
                     "agent_profiles": [
                         {
-                            "id": "head-of-abm@v23",
+                            "id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
                             "label": "GPT-5.6 Terra",
                             "short_label": "GPT-5.6 Terra",
                             "description": ("Clue's governed GPT-5.6 Terra conversation profile"),
                             "model_id": "openai/gpt-5.6-terra",
                         }
                     ],
-                    "default_agent_profile_id": "head-of-abm@v23",
+                    "default_agent_profile_id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
                     "composer_capabilities": {
                         "context_refs": True,
                         "attachments": False,
@@ -251,7 +252,7 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                 {"object_type": "account", "object_id": str(second_account)},
                 {"object_type": "account", "object_id": str(first_account)},
             ]
-            request_body["agent_profile_id"] = "head-of-abm@v23"
+            request_body["agent_profile_id"] = PROJECT_CONVERSATION_AGENT_PROFILE_ID
             async with _client(app) as client:
                 created = await client.post(
                     "/api/v1/projects",
@@ -340,7 +341,7 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                     {"workspace_id": "ws-home-create"},
                 )
             ).scalar_one()
-            assert submission == "head-of-abm@v23"
+            assert submission == PROJECT_CONVERSATION_AGENT_PROFILE_ID
             context_rows = (
                 (
                     await conn.execute(

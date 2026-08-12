@@ -34,8 +34,12 @@ test("bulk capability reads are explicit, typed, and account scoped", async () =
   const read = async (path: string) => {
     paths.push(path);
     return path.endsWith("bulk-capabilities") && path.includes("contacts")
-      ? { lookupWorkEmails: { allowed: true, maxItems: 20 } }
+      ? {
+          addToChat: { allowed: true, maxItems: 100 },
+          lookupWorkEmails: { allowed: true, maxItems: 20 },
+        }
       : {
+          addToChat: { allowed: true, maxItems: 100 },
           addToProject: { allowed: true, maxItems: 100 },
           projects: [{ id: "project-1", name: "ABM", status: "active" }],
         };
@@ -45,7 +49,9 @@ test("bulk capability reads are explicit, typed, and account scoped", async () =
   const contacts = await getContactBulkCapabilities("account/1", read);
 
   assert.equal(accounts.addToProject.maxItems, 100);
+  assert.equal(accounts.addToChat.maxItems, 100);
   assert.equal(contacts.lookupWorkEmails.maxItems, 20);
+  assert.equal(contacts.addToChat.maxItems, 100);
   assert.deepEqual(paths, [
     "/accounts/bulk-capabilities",
     "/accounts/account%2F1/contacts/bulk-capabilities",

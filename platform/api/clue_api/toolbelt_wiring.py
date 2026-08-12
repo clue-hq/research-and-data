@@ -2745,7 +2745,11 @@ def build_toolbelt(
         ApproveContactResearchSelectionTool(conn_factory=conn_factory),
         make_default=False,
     )
-    for tool in build_entity_research_launch_tools(entity_research_launches):
+    for tool in build_entity_research_launch_tools(
+        entity_research_launches,
+        budget_controls_enabled=resolved_settings.budget_controls_enabled,
+        conn_factory=conn_factory,
+    ):
         registry.register(tool, make_default=True)
     registry.register(
         quarantine_entity_research_tool(

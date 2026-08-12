@@ -36,10 +36,9 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # v23 (FI Lane D D4): pins ``open_directive_confirmation_gate@1`` and re-pins
-    # account-deep-steering at v3, whose procedure is the Option-B kickoff — gate first, launch only
-    # after the human's own confirming turn.
-    AgentRole.HEAD_OF_ABM: "v23",
+    # v24 adds account-deep-steering v4's exact current-message Account launch path for deployments
+    # with pilot budget controls disabled. The v23 durable-gate route remains the general route.
+    AgentRole.HEAD_OF_ABM: "v24",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -95,6 +94,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "inspect_statement_history": (AgentRole.HEAD_OF_ABM,),
     "launch_account_deep": (),
     "launch_account_research": (AgentRole.HEAD_OF_ABM,),
+    "launch_selected_account_research": (AgentRole.HEAD_OF_ABM,),
     "launch_contact_research": (AgentRole.HEAD_OF_ABM,),
     # FI Lane D D4 / §3-P5(a): asking the human for authority is the Head of ABM's own act, so the
     # gate-opening tool is granted to that role. It writes an immutable gate row and nothing else —
@@ -201,6 +201,7 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         withheld_tools=frozenset(
             {
                 "launch_account_research",
+                "launch_selected_account_research",
                 "launch_contact_research",
                 # D4 added the gate tool to the role. The trial keeps it withheld with the launch
                 # tools it belongs to: a dev harness that could present a real, durable, addressed
@@ -253,10 +254,10 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         withheld_reason_code="project_conversation_no_autonomous_research",
         framing=(
             "This surface is the project conversation: you converse with the client, record what "
-            "they tell you, and can draft research direction, present its confirmation gate, and "
-            "launch the research the client has confirmed. You do not capture on their behalf, "
-            "fetch external sources, or delegate to a specialist — and you never launch anything "
-            "the client's own confirming turn has not just approved."
+            "they tell you, and can draft research direction, present its confirmation gate, or "
+            "launch an exact Account set explicitly commanded and attached by the current human "
+            "turn when the pilot budget gate is disabled. You do not capture on their behalf, "
+            "fetch external sources, delegate to a specialist, or widen the human's selected set."
         ),
     ),
 )

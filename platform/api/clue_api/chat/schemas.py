@@ -50,6 +50,9 @@ __all__ = [
     "GateWire",
     "MessageListResponse",
     "PageMeta",
+    "PrepareComposerContextRequest",
+    "PreparedComposerContextResponse",
+    "PreparedComposerContextWire",
     "ProjectBootstrapResponse",
     "ProjectBootstrapWire",
     "ProjectShellResponse",
@@ -142,6 +145,19 @@ class ContextRefRequest(_Request):
     version: int | None = Field(default=None, gt=0)
 
 
+MAX_CONTEXT_REFS_PER_TURN = 100
+
+
+class PrepareComposerContextRequest(_Request):
+    """Resolve an exact unsent Account/Contact set for one project composer."""
+
+    thread_id: str | None = Field(default=None, min_length=1, max_length=200)
+    context_refs: tuple[ContextRefRequest, ...] = Field(
+        min_length=1,
+        max_length=MAX_CONTEXT_REFS_PER_TURN,
+    )
+
+
 class AttachmentRefRequest(_Request):
     """A durable upload receipt; browser-local URLs and paths have no field in this shape."""
 
@@ -172,7 +188,9 @@ class SubmitTurnRequest(_Request):
 
     message: str | None = Field(default=None, min_length=1, max_length=32_000)
     gate_response: GateResponseRequest | None = None
-    context_refs: tuple[ContextRefRequest, ...] = ()
+    context_refs: tuple[ContextRefRequest, ...] = Field(
+        default=(), max_length=MAX_CONTEXT_REFS_PER_TURN
+    )
     attachment_refs: tuple[AttachmentRefRequest, ...] = ()
     agent_profile_id: str | None = Field(default=None, min_length=1, max_length=200)
 
@@ -202,7 +220,9 @@ class HomeProjectRequest(_Request):
 
     brand_id: str = Field(min_length=1, max_length=200)
     message: str = Field(min_length=1, max_length=32_000)
-    context_refs: tuple[ContextRefRequest, ...] = ()
+    context_refs: tuple[ContextRefRequest, ...] = Field(
+        default=(), max_length=MAX_CONTEXT_REFS_PER_TURN
+    )
     attachment_refs: tuple[AttachmentRefRequest, ...] = ()
     agent_profile_id: str | None = Field(default=None, min_length=1, max_length=200)
 
@@ -382,6 +402,16 @@ class ComposerContextEntityWire(_Wire):
     secondary_label: str
     image_url: str | None = None
     version: int | None = None
+
+
+class PreparedComposerContextWire(_Wire):
+    project_id: str
+    thread_id: str | None
+    context_entities: tuple[ComposerContextEntityWire, ...]
+
+
+class PreparedComposerContextResponse(_Wire):
+    data: PreparedComposerContextWire
 
 
 class AgentProfileOptionWire(_Wire):

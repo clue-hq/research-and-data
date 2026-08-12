@@ -48,6 +48,7 @@ export interface ProjectComposerEditorHandle {
   getEntityIds: () => string[];
   getPrompt: () => string;
   openMentionPicker: () => void;
+  resetDraft: () => void;
 }
 
 function withMentions(editor: ProjectComposerEditorInstance) {
@@ -172,16 +173,9 @@ export const ProjectComposerEditor = forwardRef<
     );
   }, [entities, mentionQuery]);
 
-  const replacePromptText = useCallback(
-    (nextPrompt: string) => {
-      const retainedMentions = Array.from(
-        Editor.nodes(editor, {
-          at: [],
-          match: (node) =>
-            SlateElement.isElement(node) && node.type === "mention",
-        }),
-        ([node]) => node as ProjectComposerMentionElement,
-      );
+  const replaceDraft = useCallback(
+    (nextPrompt: string, nextEntities: readonly ProjectEntity[]) => {
+      const retainedMentions = nextEntities.map(createComposerMention);
       const children: ProjectComposerParagraphElement["children"] = [{ text: "" }];
       retainedMentions.forEach((mention) => {
         children.push(mention, { text: " " });
@@ -190,7 +184,7 @@ export const ProjectComposerEditor = forwardRef<
 
       Editor.withoutNormalizing(editor, () => {
         Transforms.deselect(editor);
-        if (editor.children.length) {
+        while (editor.children.length) {
           Transforms.removeNodes(editor, { at: [0] });
         }
         Transforms.insertNodes(
@@ -200,6 +194,8 @@ export const ProjectComposerEditor = forwardRef<
         );
       });
       lastEmittedPrompt.current = nextPrompt;
+      lastMentionIds.current = nextEntities.map((entity) => entity.id);
+      setMentionIds(lastMentionIds.current);
       onDraftChange(Boolean(nextPrompt.trim() || retainedMentions.length));
     },
     [editor, onDraftChange],
@@ -292,16 +288,31 @@ export const ProjectComposerEditor = forwardRef<
         }
         Transforms.insertText(editor, "@");
       },
+      resetDraft() {
+        replaceDraft("", []);
+        onPromptChange("");
+        onContextChange([]);
+        closeMentionPicker();
+      },
     }),
-    [disabled, editor],
+    [
+      closeMentionPicker,
+      disabled,
+      editor,
+      onContextChange,
+      onPromptChange,
+      replaceDraft,
+    ],
   );
 
   useEffect(() => {
-    if (prompt === lastEmittedPrompt.current || ReactEditor.isFocused(editor)) {
-      return;
-    }
-    replacePromptText(prompt);
-  }, [editor, prompt, replacePromptText]);
+    if (ReactEditor.isFocused(editor)) return;
+    const sameEntities =
+      selectedEntityIds.length === lastMentionIds.current.length &&
+      selectedEntityIds.every((id, index) => id === lastMentionIds.current[index]);
+    if (prompt === lastEmittedPrompt.current && sameEntities) return;
+    replaceDraft(prompt, selectedEntities);
+  }, [editor, prompt, replaceDraft, selectedEntities, selectedEntityIds]);
 
   const renderElement = useCallback((props: RenderElementProps) => {
     if (props.element.type === "mention") {
@@ -328,6 +339,7 @@ export const ProjectComposerEditor = forwardRef<
         onChange={(value) => {
           const nextPrompt = getComposerPromptText(value);
           const nextMentionIds = getComposerMentionIds(value);
+          const previousMentionIds = lastMentionIds.current;
 
           onDraftChange(Boolean(nextPrompt.trim() || nextMentionIds.length));
           lastMentionIds.current = nextMentionIds;
@@ -340,6 +352,13 @@ export const ProjectComposerEditor = forwardRef<
 
           if (nextPrompt !== lastEmittedPrompt.current) {
             lastEmittedPrompt.current = nextPrompt;
+            onPromptChange(nextPrompt);
+          }
+          if (
+            nextMentionIds.length !== previousMentionIds.length ||
+            nextMentionIds.some((id, index) => id !== previousMentionIds[index])
+          ) {
+            onContextChange(nextMentionIds);
           }
           detectMentionTarget();
         }}
@@ -399,10 +418,7 @@ export const ProjectComposerEditor = forwardRef<
 
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              if (
-                lastEmittedPrompt.current.trim() ||
-                lastMentionIds.current.length
-              ) {
+              if (lastEmittedPrompt.current.trim()) {
                 onSubmit(lastEmittedPrompt.current);
               }
             }

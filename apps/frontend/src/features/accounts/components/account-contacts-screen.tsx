@@ -1,6 +1,8 @@
 "use client";
 
 import { AccountDetailsList } from "./account-detail-primitives";
+import { AddToChatDialog } from "@/features/projects/components/add-to-chat-dialog";
+import { useAddToChatController } from "@/features/projects/hooks/use-add-to-chat-controller";
 import { DesignIcon } from "@/components/ui/design-icon";
 import {
   AccountDetailsRail,
@@ -74,10 +76,25 @@ export function AccountContactsScreen({
   contacts: AccountContactSummary[];
 }) {
   const [controller, displayControlsRef] =
-    useAccountContactsController(account.id, contacts, bulkCapabilities);
+    useAccountContactsController(
+      account.id,
+      contacts,
+      bulkCapabilities,
+    );
   const selectedCount = controller.selectedContactIds.size;
-  const overLimit =
+  const overEmailLimit =
     selectedCount > controller.bulkCapabilities.lookupWorkEmails.maxItems;
+  const overAddToChatLimit =
+    selectedCount > controller.bulkCapabilities.addToChat.maxItems;
+  const addToChat = useAddToChatController({
+    contextRefs: [...controller.selectedContactIds].map((contactId) => ({
+      objectId: contactId,
+      objectType: "contact" as const,
+      version: null,
+    })),
+    onTransferred: controller.clearSelection,
+    source: "contacts",
+  });
 
   return (
     <AccountWorkspaceShell account={account} activeTab="contacts">
@@ -128,16 +145,26 @@ export function AccountContactsScreen({
               className={`${readability.uiRegular} flex min-h-11 shrink-0 flex-wrap items-center gap-3 border-b-[0.5px] border-[var(--clue-border-table)] bg-[var(--clue-background-hover)] px-6 py-2`}
             >
               <span className={readability.uiMedium}>{selectedCount} selected</span>
-              <button
+              {controller.bulkCapabilities.lookupWorkEmails.allowed ? <button
                 className={`${readability.actionMedium} h-7 rounded-md bg-[var(--clue-content-neutral)] px-3 text-white disabled:cursor-not-allowed disabled:opacity-50`}
-                disabled={overLimit || controller.isBulkSubmitting}
+                disabled={overEmailLimit || controller.isBulkSubmitting}
                 onClick={controller.executeEmailLookup}
                 type="button"
               >
                 {controller.isBulkSubmitting
                   ? "Starting lookups…"
                   : "Look up work emails"}
-              </button>
+              </button> : null}
+              {controller.chatHandoffAvailable && controller.bulkCapabilities.addToChat.allowed ? (
+                <button
+                  className={`${readability.actionMedium} h-7 rounded-md border-[0.5px] border-[var(--clue-border-input)] bg-white px-3 disabled:cursor-not-allowed disabled:opacity-50`}
+                  disabled={overAddToChatLimit || addToChat.submitting}
+                  onClick={addToChat.show}
+                  type="button"
+                >
+                  Add to chat
+                </button>
+              ) : null}
               <button
                 className={`${readability.actionMedium} h-7 rounded-md px-2 hover:bg-white`}
                 onClick={controller.clearSelection}
@@ -145,7 +172,7 @@ export function AccountContactsScreen({
               >
                 Clear
               </button>
-              {overLimit ? (
+              {overEmailLimit && controller.bulkCapabilities.lookupWorkEmails.allowed ? (
                 <span role="alert" className="text-[var(--clue-content-subtle)]">
                   Select at most {controller.bulkCapabilities.lookupWorkEmails.maxItems} Contacts.
                 </span>
@@ -280,6 +307,11 @@ export function AccountContactsScreen({
             pageSize={controller.pageSize}
             totalItems={controller.filteredCount}
             totalPages={controller.totalPages}
+          />
+          <AddToChatDialog
+            controller={addToChat}
+            selectedCount={selectedCount}
+            subjectLabel="Contacts"
           />
         </section>
         <AccountDetailsRail className="xl:!w-[410px]">

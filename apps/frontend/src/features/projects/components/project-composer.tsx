@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Attachments } from "@/components/ai-elements/attachments";
 import type { ProjectComposerAttachment as ProjectComposerAttachmentData } from "../model/project-composer";
 import type {
@@ -50,7 +50,7 @@ export function ProjectComposer({
   onModelPickerToggle?: () => void;
   onModelSelect?: (modelId: string) => void;
   onPromptChange: (value: string) => void;
-  onSubmit: (value?: string, entityIds?: string[]) => void;
+  onSubmit: (value?: string, entityIds?: string[]) => Promise<boolean>;
   prompt: string;
   sendDisabled?: boolean;
   selectedEntities?: ProjectEntity[];
@@ -59,6 +59,7 @@ export function ProjectComposer({
 }) {
   const editorRef = useRef<ProjectComposerEditorHandle>(null);
   const sendButtonRef = useRef<HTMLButtonElement>(null);
+  const [submitting, setSubmitting] = useState(false);
   const handleDraftChange = useCallback((hasContent: boolean) => {
     if (sendButtonRef.current) {
       sendButtonRef.current.disabled = disabled || sendDisabled || !hasContent;
@@ -86,11 +87,16 @@ export function ProjectComposer({
         .join(" ")}
       onSubmit={(event) => {
         event.preventDefault();
-        if (disabled || sendDisabled) return;
+        if (disabled || sendDisabled || submitting) return;
         const currentPrompt = editorRef.current?.getPrompt() ?? prompt;
         const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
-        if (!currentPrompt.trim() && !currentEntityIds.length) return;
-        onSubmit(currentPrompt, currentEntityIds);
+        if (!currentPrompt.trim()) return;
+        setSubmitting(true);
+        void onSubmit(currentPrompt, currentEntityIds)
+          .then((accepted) => {
+            if (accepted) editorRef.current?.resetDraft();
+          })
+          .finally(() => setSubmitting(false));
       }}
     >
       <div className={styles.composerBody}>
@@ -106,14 +112,20 @@ export function ProjectComposer({
           </Attachments>
         ) : null}
         <ProjectComposerEditor
-          disabled={disabled}
+          disabled={disabled || submitting}
           entities={entities}
           onContextChange={handleContextChange}
           onDraftChange={handleDraftChange}
           onPromptChange={onPromptChange}
           onSubmit={(value) => {
-            if (disabled || sendDisabled) return;
-            onSubmit(value, editorRef.current?.getEntityIds() ?? []);
+            if (disabled || sendDisabled || submitting || !value.trim()) return;
+            const entityIds = editorRef.current?.getEntityIds() ?? [];
+            setSubmitting(true);
+            void onSubmit(value, entityIds)
+              .then((accepted) => {
+                if (accepted) editorRef.current?.resetDraft();
+              })
+              .finally(() => setSubmitting(false));
           }}
           prompt={prompt}
           ref={editorRef}
@@ -177,7 +189,7 @@ export function ProjectComposer({
             aria-label="Send"
             className={styles.sendButton}
             disabled={
-              disabled || sendDisabled || (!prompt.trim() && !selectedEntities.length)
+              disabled || sendDisabled || submitting || !prompt.trim()
             }
             ref={sendButtonRef}
             type="submit"

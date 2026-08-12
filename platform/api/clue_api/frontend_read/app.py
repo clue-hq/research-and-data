@@ -237,6 +237,7 @@ def build_frontend_read_router(
         conn_factory=conn_factory,
         contact_email_lookup=contact_email_lookup,
         allow_local_mutations=allow_local_mutations,
+        chat_available=settings.chat_enabled,
     )
     register_account_activity_routes(router, conn_factory=conn_factory)
     register_account_detail_routes(

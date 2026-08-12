@@ -67,11 +67,13 @@ class BulkProjectOption(WireModel):
 
 class AccountBulkCapabilities(WireModel):
     add_to_project: BulkActionCapability
+    add_to_chat: BulkActionCapability
     projects: tuple[BulkProjectOption, ...] = ()
 
 
 class ContactBulkCapabilities(WireModel):
     lookup_work_emails: BulkActionCapability
+    add_to_chat: BulkActionCapability
 
 
 class AddAccountsToProjectRequest(WireModel):
@@ -436,6 +438,7 @@ def register_bulk_action_routes(
     conn_factory: ConnFactory,
     contact_email_lookup: ContactEmailLookupService | None,
     allow_local_mutations: bool,
+    chat_available: bool,
 ) -> None:
     """Register capability reads plus the two authenticated table actions."""
 
@@ -452,6 +455,11 @@ def register_bulk_action_routes(
         return AccountBulkCapabilities(
             add_to_project=BulkActionCapability(
                 allowed=allowed and bool(projects), max_items=ACCOUNT_BATCH_LIMIT
+            ),
+            add_to_chat=BulkActionCapability(
+                allowed=chat_available
+                and _has_permission(request, "thread.write", allow_local=allow_local_mutations),
+                max_items=ACCOUNT_BATCH_LIMIT,
             ),
             projects=projects,
         )
@@ -475,7 +483,12 @@ def register_bulk_action_routes(
             lookup_work_emails=BulkActionCapability(
                 allowed=allowed and contact_email_lookup is not None,
                 max_items=CONTACT_EMAIL_BATCH_LIMIT,
-            )
+            ),
+            add_to_chat=BulkActionCapability(
+                allowed=chat_available
+                and _has_permission(request, "thread.write", allow_local=allow_local_mutations),
+                max_items=ACCOUNT_BATCH_LIMIT,
+            ),
         )
 
     @router.post("/accounts/bulk-actions/add-to-project")

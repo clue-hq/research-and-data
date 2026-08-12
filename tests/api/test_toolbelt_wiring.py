@@ -128,6 +128,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("entity_research_agent_not_composed",),
     ),
+    "launch_selected_account_research": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
     "launch_contact_research": (
         "precondition",
         ("entity_research_agent_not_composed",),
@@ -252,6 +256,12 @@ def _bodies() -> dict[str, dict[str, object]]:
             "account_entity_ids": [_UUID()],
             "approved_budget_cap_cents": "1",
             "expected_estimated_cost_cents": "1",
+        },
+        "launch_selected_account_research": {
+            "project_run_id": _UUID(),
+            "research_directive_id": _UUID(),
+            "account_entity_ids": [_UUID()],
+            "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "launch_contact_research": {
             "selection_id": _UUID(),
@@ -867,10 +877,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # and D4 adds the one gate-presenting tool (52 → 53); Lane E E1 adds the governed
     # on-completion prose synthesis surface, and E3 the governed value-narrative positioning
     # surface beside it (53 → 55 in the merged tree).
-    assert len(registry.names()) == 55
+    assert len(registry.names()) == 56
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 62
+    assert len(registry) == 63
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

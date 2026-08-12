@@ -85,6 +85,7 @@ def test_account_batch_is_page_bounded_idempotent_and_audited() -> None:
                 assert capabilities.status_code == 200
                 assert capabilities.json() == {
                     "addToProject": {"allowed": True, "maxItems": 100},
+                    "addToChat": {"allowed": False, "maxItems": 100},
                     "projects": [
                         {"id": project.project_id, "name": "Active ABM", "status": "draft"}
                     ],
@@ -212,7 +213,8 @@ def test_batch_limits_and_unconfigured_contact_capability_are_honest() -> None:
             assert account_limit.status_code == 422
             assert contact_capability.status_code == 200
             assert contact_capability.json() == {
-                "lookupWorkEmails": {"allowed": False, "maxItems": 20}
+                "lookupWorkEmails": {"allowed": False, "maxItems": 20},
+                "addToChat": {"allowed": False, "maxItems": 100},
             }
             assert contact_limit.status_code == 422
 
@@ -261,7 +263,10 @@ def test_contact_batch_reuses_the_governed_email_service_and_replays_without_spe
                     json=body,
                 )
 
-            assert capability.json() == {"lookupWorkEmails": {"allowed": True, "maxItems": 20}}
+            assert capability.json() == {
+                "lookupWorkEmails": {"allowed": True, "maxItems": 20},
+                "addToChat": {"allowed": False, "maxItems": 100},
+            }
             assert first.status_code == 200
             assert replay.json() == first.json()
             assert first.json()["counts"] == {

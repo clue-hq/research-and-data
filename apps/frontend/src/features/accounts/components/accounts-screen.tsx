@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { ApplicationShell } from "@/components/shell/application-shell";
+import { AddToChatDialog } from "@/features/projects/components/add-to-chat-dialog";
+import { useAddToChatController } from "@/features/projects/hooks/use-add-to-chat-controller";
 import type { Account, AccountsResponse } from "../model/account";
 import type { AccountDetail } from "../model/account-detail";
 import type { AccountBulkCapabilities } from "../model/bulk-actions";
@@ -30,8 +32,19 @@ export function AccountsScreen({
     bulkCapabilities,
   );
   const selectedCount = controller.selectedAccountIds.size;
-  const overLimit =
+  const overAddToProjectLimit =
     selectedCount > controller.bulkCapabilities.addToProject.maxItems;
+  const overAddToChatLimit =
+    selectedCount > controller.bulkCapabilities.addToChat.maxItems;
+  const addToChat = useAddToChatController({
+    contextRefs: [...controller.selectedAccountIds].map((accountId) => ({
+      objectId: accountId,
+      objectType: "account" as const,
+      version: null,
+    })),
+    onTransferred: controller.clearSelection,
+    source: "accounts",
+  });
 
   return (
     <ApplicationShell activeHref="/accounts">
@@ -60,7 +73,7 @@ export function AccountsScreen({
             className={`${readability.uiRegular} flex min-h-11 shrink-0 flex-wrap items-center gap-3 border-b-[0.5px] border-[var(--clue-border-table)] bg-[var(--clue-background-hover)] px-6 py-2`}
           >
             <span className={readability.uiMedium}>{selectedCount} selected</span>
-            <select
+            {controller.bulkCapabilities.addToProject.allowed ? <select
               aria-label="Project for selected Accounts"
               className="h-7 min-w-48 rounded-md border-[0.5px] border-[var(--clue-border-input)] bg-white px-2"
               onChange={(event) =>
@@ -73,11 +86,11 @@ export function AccountsScreen({
                   {project.name}
                 </option>
               ))}
-            </select>
-            <button
+            </select> : null}
+            {controller.bulkCapabilities.addToProject.allowed ? <button
               className={`${readability.actionMedium} h-7 rounded-md bg-[var(--clue-content-neutral)] px-3 text-white disabled:cursor-not-allowed disabled:opacity-50`}
               disabled={
-                overLimit ||
+                overAddToProjectLimit ||
                 controller.isBulkSubmitting ||
                 !controller.selectedProjectId
               }
@@ -85,7 +98,17 @@ export function AccountsScreen({
               type="button"
             >
               {controller.isBulkSubmitting ? "Adding…" : "Add to project"}
-            </button>
+            </button> : null}
+            {controller.chatHandoffAvailable && controller.bulkCapabilities.addToChat.allowed ? (
+              <button
+                className={`${readability.actionMedium} h-7 rounded-md border-[0.5px] border-[var(--clue-border-input)] bg-white px-3 disabled:cursor-not-allowed disabled:opacity-50`}
+                disabled={overAddToChatLimit || addToChat.submitting}
+                onClick={addToChat.show}
+                type="button"
+              >
+                Add to chat
+              </button>
+            ) : null}
             <button
               className={`${readability.actionMedium} h-7 rounded-md px-2 hover:bg-white`}
               onClick={controller.clearSelection}
@@ -93,7 +116,7 @@ export function AccountsScreen({
             >
               Clear
             </button>
-            {overLimit ? (
+            {overAddToProjectLimit && controller.bulkCapabilities.addToProject.allowed ? (
               <span role="alert" className="text-[var(--clue-content-subtle)]">
                 Select at most {controller.bulkCapabilities.addToProject.maxItems} Accounts.
               </span>
@@ -182,6 +205,11 @@ export function AccountsScreen({
               ? `${controller.visibleAccounts.length} matching rows on this page · ${controller.totalCount} total Accounts`
               : undefined
           }
+        />
+        <AddToChatDialog
+          controller={addToChat}
+          selectedCount={selectedCount}
+          subjectLabel="Accounts"
         />
       </main>
       {previewAccount ? <AccountPreviewDrawer account={previewAccount} /> : null}

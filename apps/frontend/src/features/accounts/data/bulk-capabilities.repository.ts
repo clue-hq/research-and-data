@@ -9,11 +9,13 @@ import { fetchRead } from "./frontend-api";
 
 export const DISABLED_ACCOUNT_BULK_CAPABILITIES: AccountBulkCapabilities = {
   addToProject: { allowed: false, maxItems: 100 },
+  addToChat: { allowed: false, maxItems: 100 },
   projects: [],
 };
 
 export const DISABLED_CONTACT_BULK_CAPABILITIES: ContactBulkCapabilities = {
   lookupWorkEmails: { allowed: false, maxItems: 20 },
+  addToChat: { allowed: false, maxItems: 100 },
 };
 
 export async function getAccountBulkCapabilities(

@@ -5,6 +5,7 @@ import type { AccountBulkCapabilities } from "../model/bulk-actions";
 import { loadAccountsPage } from "../data/accounts.actions";
 import { addAccountsToProject } from "../data/bulk-actions.repository";
 import { ClueApiError } from "../data/clue-api-error";
+import { useChatTransport } from "@/features/projects/data/projects-transport";
 import {
   defaultAccountColumnOrder,
   defaultAccountColumnWidths,
@@ -47,6 +48,7 @@ export function useAccountsScreenController(
   initialMeta: AccountsResponse["meta"],
   bulkCapabilities: AccountBulkCapabilities,
 ) {
+  const chatHandoffAvailable = useChatTransport().mode === "http";
   const [search, setSearchState] = useState("");
   const [accountRows, setAccountRows] = useState(initialAccounts);
   const [durableAccountIds, setDurableAccountIds] = useState(
@@ -288,6 +290,7 @@ export function useAccountsScreenController(
   return {
     bulkCapabilities,
     bulkNotice,
+    chatHandoffAvailable,
     clearBulkNotice: () => setBulkNotice(null),
     clearSelection,
     columnOrder,
@@ -311,7 +314,9 @@ export function useAccountsScreenController(
     selectedAccountIds,
     selectableAccountIds: durableAccountIds,
     selectedProjectId,
-    selectionEnabled: bulkCapabilities.addToProject.allowed,
+    selectionEnabled:
+      bulkCapabilities.addToProject.allowed ||
+      (chatHandoffAvailable && bulkCapabilities.addToChat.allowed),
     setColumnWidth,
     setDensity,
     setFilters,
