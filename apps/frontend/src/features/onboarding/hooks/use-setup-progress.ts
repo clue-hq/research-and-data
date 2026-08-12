@@ -6,6 +6,7 @@ import {
   httpSetupProgressSource,
   type SetupProgressSource,
 } from "../data/setup-progress.repository";
+import { isStalled, stallAdvance } from "../model/setup-stall";
 
 const POLL_INTERVAL_MS = 1500;
 /** Consecutive `none` reads tolerated after a successful start before surfacing (60s —
@@ -32,6 +33,12 @@ export interface SetupProgress {
  * surfaced with real recovery controls (review FE-B2). Polling stops on terminal states and
  * after release; `location.replace` avoids the back-button trap (review FE-N6).
  *
+ * Two independent budgets bound the wait, because neither covers the other: `MAX_PENDING_POLLS`
+ * bounds consecutive `none` reads (nothing was ever requested), and the pure `stallAdvance`
+ * bounds an in-flight run that reports nothing new — once the durable input row exists the read
+ * surface never serves `none` again, so a dead backend driver would otherwise spin in `starting`
+ * forever. Both end in the same recoverable terminal.
+ *
  * Where the frames come from is the `source`'s business, not this hook's (slice 3): the live BFF
  * transport is the default, and a scripted local stream satisfies the same contract.
  */
@@ -45,6 +52,10 @@ export function useSetupProgress(
   // from the first run is re-applied by the second run's poll loop (review FE-N4).
   const startFailure = useRef<string | null>(null);
   const pendingPolls = useRef(0);
+  // The second bound (see `model/setup-stall`): `none` is unreachable once the durable input row
+  // exists, so a dead driver would otherwise spin in `starting` forever.
+  const stallPolls = useRef(0);
+  const lastSeen = useRef<SetupStatus | null>(null);
   const pollErrors = useRef(0);
   const released = useRef(false);
   const startedOnce = useRef(false);
@@ -105,6 +116,8 @@ export function useSetupProgress(
         return;
       }
       pollErrors.current = 0;
+      stallPolls.current = stallAdvance(lastSeen.current, current, stallPolls.current);
+      lastSeen.current = current;
       setStatus((previous) =>
         previous !== null && JSON.stringify(previous) === JSON.stringify(current)
           ? previous
@@ -129,6 +142,18 @@ export function useSetupProgress(
         return;
       }
       pendingPolls.current = 0;
+      if (isStalled(stallPolls.current)) {
+        // An in-flight run that has reported nothing new for the whole budget: the driver is
+        // most likely gone (refusal / process restart / every iteration raising). Same
+        // recoverable terminal as the `none` budget, so the user gets Try again + Continue
+        // anyway instead of an eternal spinner.
+        surface(
+          "Setup is taking longer than expected. You can try again, or continue into your "
+            + "workspace.",
+          "failed",
+        );
+        return;
+      }
       setFailure(null);
       setTerminal(null);
       if (current.status === "complete" && !released.current) {
