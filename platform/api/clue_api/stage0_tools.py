@@ -42,6 +42,7 @@ from clue_core import (
 )
 from clue_db import ConnFactory, transaction
 from clue_research.durable import (
+    RECON_TRANSITION_KIND,
     ProjectRunStatus,
     RunEventTopic,
     emit_run_event,
@@ -115,7 +116,7 @@ async def _emit_recon_transition(
         run_id=ProjectRunId(recon_run_id),
         topic=RunEventTopic.STEP_PROGRESS.value,
         payload={
-            "kind": "stage0.recon.transition",
+            "kind": RECON_TRANSITION_KIND,
             "recon_run_id": str(recon_run_id),
             "lane": lane,
             "status": status.value,

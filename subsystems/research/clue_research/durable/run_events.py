@@ -72,6 +72,16 @@ RUN_EVENT_TOPICS: tuple[str, ...] = tuple(t.value for t in RunEventTopic)
 # tests — a rename here fails them all together instead of silently reading False (review F4).
 NARRATIVE_EMIT_SKIPPED_KEY = "narrative_emit_skipped"
 
+# The ``payload.kind`` discriminators for Stage-0 recon's ``run.step.progress`` events. Both name
+# the *same* ``STEP_PROGRESS`` topic's payload species so a consumer can route without sniffing
+# payload shape. ``RECON_TRANSITION_KIND`` names the previously-unnamed inline literal in
+# ``clue_api.stage0_tools._emit_recon_transition`` (recorded defect FI-4 B-4) — one constant
+# coupling the writer, its readers, and their tests, exactly like NARRATIVE_EMIT_SKIPPED_KEY above.
+# ``RECON_FIELD_PROGRESS_KIND`` names the per-field progress event emitted from inside the
+# reverse-profiling field loop (statuses: :class:`clue_research.stage0.types.FieldProgressStatus`).
+RECON_TRANSITION_KIND = "stage0.recon.transition"
+RECON_FIELD_PROGRESS_KIND = "stage0.recon.field"
+
 
 class RunEventRow(BaseModel):
     """One persisted ``run_event`` row — the durable SSE envelope. ``seq`` is the monotone id the

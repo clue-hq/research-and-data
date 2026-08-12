@@ -10,6 +10,7 @@ client *input* is a name+website, but the *output* reference is the resolved cli
 from __future__ import annotations
 
 from decimal import Decimal
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
@@ -114,3 +115,25 @@ class ReverseProfileResult(BaseModel):
     cost_cents: CostCents = Decimal(0)
     fields_resolved: int = 0  # fields that gained a claim this run (materials + waterfall)
     budget_exhausted: bool = False
+
+
+# --- progress vocabulary ----------------------------------------------------
+
+
+class FieldProgressStatus(StrEnum):
+    """The closed status vocabulary of a per-field recon progress event.
+
+    Carried as ``payload.status`` on a ``run.step.progress`` event whose ``payload.kind`` is
+    :data:`~clue_research.durable.run_events.RECON_FIELD_PROGRESS_KIND` — one event per baseline
+    field the reverse-profiling loop touches, so a client sees work *while it happens* rather than
+    only at the lane's terminal transition.
+
+    ``EMPTY`` is a **correct** outcome, not a failure: a field no source could answer is left blank
+    and flagged (fabrication is the only real failure). ``FAILED`` means the resolution attempt
+    itself errored.
+    """
+
+    STARTED = "started"
+    RESOLVED = "resolved"
+    EMPTY = "empty"
+    FAILED = "failed"

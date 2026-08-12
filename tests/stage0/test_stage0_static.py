@@ -117,6 +117,15 @@ def test_tier4_promotion_predicate() -> None:
     assert can_be_promoted(make_tier4_claim(_an_id(), "account.operational_pain", with_span=True))
 
 
+def test_recon_event_kinds_are_named_constants() -> None:
+    from clue_research.durable.run_events import RECON_FIELD_PROGRESS_KIND, RECON_TRANSITION_KIND
+    from clue_research.stage0.types import FieldProgressStatus
+
+    assert RECON_TRANSITION_KIND == "stage0.recon.transition"
+    assert RECON_FIELD_PROGRESS_KIND == "stage0.recon.field"
+    assert {s.value for s in FieldProgressStatus} == {"started", "resolved", "empty", "failed"}
+
+
 def _an_id() -> object:
     from clue_core import new_entity_id
 

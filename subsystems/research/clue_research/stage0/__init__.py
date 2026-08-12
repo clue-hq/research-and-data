@@ -193,6 +193,7 @@ from clue_research.stage0.types import (
     ClientInput,
     ClientKnowledgeBaseRef,
     CoverageReport,
+    FieldProgressStatus,
     ReverseProfileResult,
     SurfaceCoverage,
     VolunteeredMaterial,
@@ -225,6 +226,7 @@ __all__ = [
     "CoverageReport",
     "SurfaceCoverage",
     "ReverseProfileResult",
+    "FieldProgressStatus",
     # the client-knowledge field set + surface taxonomy
     "load_client_knowledge_pack",
     "CLIENT_KNOWLEDGE_PACK",
