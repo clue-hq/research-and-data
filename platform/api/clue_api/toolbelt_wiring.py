@@ -150,7 +150,7 @@ from clue_api.value_narrative_tools import (
     build_value_narrative_tools,
 )
 from clue_api.verification import build_verification_phase_handler
-from clue_config import DEFAULT_STAGE0_POLICY, Settings, load_settings
+from clue_config import Settings, load_settings, stage0_policy_from_settings
 from clue_core import (
     AccountEntity,
     ContactContentHandoff,
@@ -2848,7 +2848,12 @@ def build_toolbelt(
         )
     for tool in stage0_tools(
         conn_factory=conn_factory,
-        policy=DEFAULT_STAGE0_POLICY,
+        # Founder ruling (FI-4 §9, 2026-08-13): onboarding is budget-unconstrained — an envelope
+        # must never truncate onboarding research. So the composed policy takes its two lane caps
+        # from deployment settings (default 25¢ fast: the whole eleven-field firecrawl walk with
+        # headroom) instead of the library's frozen 5¢, which released the user with the last
+        # checklist groups unreached. `DEFAULT_STAGE0_POLICY` is unchanged for uncomposed callers.
+        policy=stage0_policy_from_settings(resolved_settings),
         pre_spend_gate=gate,
         memory_write=stage0_memory_write,
         memory_write_factory=stage0_memory_write_factory,

@@ -154,7 +154,11 @@ class ExaSearchConfig(BaseModel):
     max_text_chars: int = Field(default=60_000, ge=1_000)
     timeout_s: float = Field(default=DEFAULT_TIMEOUT_S, gt=0)
     retries: int = Field(default=DEFAULT_RETRIES, ge=0)
-    query_templates: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_QUERY_TEMPLATES))
+    #: ``Mapping``, not ``dict``: the model is frozen, and a mutable-typed field would let a
+    #: caller rewrite the query plan of a "frozen" config in place. Read-only by type.
+    query_templates: Mapping[str, str] = Field(
+        default_factory=lambda: MappingProxyType(dict(DEFAULT_QUERY_TEMPLATES))
+    )
 
     @model_validator(mode="after")
     def _search_type_stays_below_tier_four(self) -> ExaSearchConfig:

@@ -269,8 +269,8 @@ _FIELD_GUIDANCE: dict[str, _FieldGuidance] = {
     # here, and this module imports nothing from the registry.
     "client.competitor": _FieldGuidance(
         description=(
-            "A named competitor or alternative the client is compared against or positions "
-            "itself against."
+            "Named competitor / alternative to the client (open-web comparison surfaces) — one "
+            "claim per competitor, grounded in a record naming the client."
         ),
         shape=(
             'ONE competitor per claim: {"value": {"name": "Rival", "domain": "rival.com"}}. '
@@ -282,8 +282,8 @@ _FIELD_GUIDANCE: dict[str, _FieldGuidance] = {
     ),
     "client.buyer_profile": _FieldGuidance(
         description=(
-            "Who the client sells to — the buying persona (role/title) and, when stated, the "
-            "segment they sit in."
+            "Likely-buyer persona / segment evidence (open-web) — persona claims only, never "
+            "invented account entities (discovery doctrine)."
         ),
         shape=(
             'ONE persona per claim: {"value": {"persona": "Head of Finance Ops", '

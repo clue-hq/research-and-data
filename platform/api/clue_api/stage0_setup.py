@@ -78,6 +78,7 @@ from clue_research.durable import (
 )
 from clue_research.stage0 import (
     CLIENT_BASELINE_FIELDS,
+    ReconLaneStatus,
     recon_dedupe_hash,
     submit_onboarding_input,
 )
@@ -393,7 +394,11 @@ def create_stage0_setup_router(
                         str(payload.get("lane", "")),
                         str(payload.get("status", "")),
                     )
-            elif kind == RECON_TRANSITION_KIND and payload.get("status") == "completed":
+            # The emitter writes ``status.value`` of the same enum, so read the enum rather than
+            # a literal that could drift away from it silently.
+            elif kind == RECON_TRANSITION_KIND and (
+                payload.get("status") == ReconLaneStatus.COMPLETED.value
+            ):
                 exhausted = payload.get("budget_exhausted")
                 lane = str(payload.get("lane", ""))
                 held = latest_budget.get(lane)
