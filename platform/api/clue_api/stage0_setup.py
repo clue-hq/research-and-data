@@ -368,7 +368,11 @@ def create_stage0_setup_router(
         ``seq``: a field's terminal status supersedes its ``started``, and the newest COMPLETED
         transition per lane carries that lane's budget verdict. A lane's own field row wins over
         an earlier lane's for the same field — the background lane re-derives what the capped
-        fast lane reached, and the later answer is the truer one."""
+        fast lane reached, and the later answer is the truer one.
+
+        One page suffices by construction: a recon run emits at most two field events per
+        baseline field per lane plus four transitions (~40), an order of magnitude under
+        ``list_run_events``' 1000-row page."""
         async with conn_factory() as conn:
             events = await list_run_events(
                 conn,
@@ -469,24 +473,38 @@ def create_stage0_setup_router(
                     {"id": _attempt_input_id(workspace_id, digest, attempt)},
                 )
             ).scalar_one_or_none()
-            if captured is not None:
-                return SetupStatusResponse(
-                    schema_version=PROJECTIONS_SCHEMA_VERSION,
-                    status="starting",
-                    company_website=scope.company_website,
-                )
             # 3) Any other run for this identity (a prior attempt's failure awaiting a
             #    retry decision, a dedupe-shared run started elsewhere, or a pre-wave row).
             latest_id = (
-                await conn.execute(
-                    text(
-                        "SELECT id FROM recon_run "
-                        "WHERE workspace_id = :workspace_id AND dedupe_hash = :dedupe_hash "
-                        "ORDER BY created_at DESC LIMIT 1"
-                    ),
-                    {"workspace_id": workspace_id, "dedupe_hash": dedupe},
-                )
-            ).scalar_one_or_none()
+                None
+                if captured is not None
+                else (
+                    await conn.execute(
+                        text(
+                            "SELECT id FROM recon_run "
+                            "WHERE workspace_id = :workspace_id AND dedupe_hash = :dedupe_hash "
+                            "ORDER BY created_at DESC LIMIT 1"
+                        ),
+                        {"workspace_id": workspace_id, "dedupe_hash": dedupe},
+                    )
+                ).scalar_one_or_none()
+            )
+        # The reads below take their own connection, so they must run outside the block above:
+        # a single-connection factory would otherwise wait on a connection it already holds.
+        if captured is not None:
+            # "starting" is where the fast lane spends its whole life (its recon_run row is
+            # invisible until that one transaction commits), so the per-field events —
+            # committed autonomously under the same candidate id — are the only motion there
+            # is to show for it.
+            fields, budgets = await _field_truth(workspace_id, UUID(str(candidate_id)))
+            return SetupStatusResponse(
+                schema_version=PROJECTIONS_SCHEMA_VERSION,
+                status="starting",
+                company_website=scope.company_website,
+                fields=fields,
+                fast_budget_exhausted=budgets.get("fast"),
+                background_budget_exhausted=budgets.get("background"),
+            )
         if latest_id is not None:
             served = await _serve_lane_truth(workspace_id, scope, latest_id)
             if served is not None:

@@ -293,6 +293,111 @@ def test_setup_route_captures_drives_lanes_and_serves_lane_truth() -> None:
     run_async(scenario())
 
 
+class _MidLaneInvoker:
+    """A start_recon stand-in frozen mid-fast-lane: it emits per-field progress on its own
+    (autonomous) connection — exactly what the production emitter does — but writes no
+    ``recon_run`` row, because production's fast lane holds that insert in the same
+    uncommitted transaction until the whole lane ends."""
+
+    def __init__(self, conn_factory: Any) -> None:
+        self._conn_factory = conn_factory
+        self.invocations: list[dict[str, Any]] = []
+
+    async def invoke(
+        self,
+        name: str,
+        body: dict[str, Any],
+        context: ToolContext,
+        *,
+        version: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> ToolResult:
+        del version, idempotency_key
+        assert name == "start_recon"
+        self.invocations.append(dict(body))
+        if len(self.invocations) == 1:
+            recon_run_id = UUID(str(context.operation_id))
+            async with self._conn_factory() as conn:
+                for field_key, status in (
+                    ("client.value_prop", "started"),
+                    ("client.value_prop", "resolved"),
+                    ("client.product", "started"),
+                ):
+                    await emit_run_event(
+                        conn,
+                        workspace_id=context.workspace_id,
+                        run_id=ProjectRunId(recon_run_id),
+                        topic=RunEventTopic.STEP_PROGRESS.value,
+                        payload={
+                            "kind": RECON_FIELD_PROGRESS_KIND,
+                            "recon_run_id": str(recon_run_id),
+                            "lane": "fast",
+                            "field_key": field_key,
+                            "status": status,
+                        },
+                    )
+        return ToolResult(
+            tool="start_recon",
+            version="1",
+            references={"fast_status": "running", "background_status": "queued"},
+        )
+
+
+def test_starting_setup_serves_the_fields_the_running_fast_lane_has_reached() -> None:
+    """The point of the field events: motion while the fast lane runs. Its ``recon_run`` row
+    is invisible until the lane's single transaction commits, so ``starting`` must serve the
+    per-field truth or the screen shows nothing at all for the whole lane."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            conn_lock = asyncio.Lock()
+
+            @asynccontextmanager
+            async def conn_factory() -> AsyncIterator[AsyncConnection]:
+                async with conn_lock:
+                    yield conn
+
+            provisioned = await provision_self_serve_workspace(
+                conn,
+                provider_key="clerk",
+                provider_subject="mid-lane-subject",
+                **PROFILE,
+            )
+            workspace_id = provisioned.workspace.workspace_id
+            invoker = _MidLaneInvoker(conn_factory)
+            app = FastAPI()
+            app.include_router(
+                create_stage0_setup_router(
+                    tool_invoker=invoker,  # type: ignore[arg-type]
+                    conn_factory=conn_factory,
+                    storage=_MemoryStorage(),  # type: ignore[arg-type]
+                )
+            )
+            headers = {"X-Workspace-Id": workspace_id}
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                started = await client.post("/stage0/setup", headers=headers)
+                assert started.status_code == 202
+                for _ in range(500):
+                    await asyncio.sleep(0.01)
+                    if invoker.invocations:
+                        break
+
+                payload = await _read_status(client, headers)
+                assert payload["status"] == "starting"
+                assert payload["recon_run_id"] is None
+                assert [(entry["field_key"], entry["status"]) for entry in payload["fields"]] == [
+                    ("client.value_prop", "resolved"),
+                    ("client.product", "started"),
+                ]
+                # Nothing has completed, so no budget verdict may be invented.
+                assert payload["fast_budget_exhausted"] is None
+                assert payload["background_budget_exhausted"] is None
+
+    run_async(scenario())
+
+
 def test_setup_routes_refuse_workspaces_without_provisioning() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
