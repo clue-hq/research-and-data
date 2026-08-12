@@ -1,4 +1,7 @@
 import { ApiErrorEnvelopeSchema } from "../model/vocabulary";
+import { ClueApiError } from "./clue-api-error";
+
+export { ClueApiError } from "./clue-api-error";
 
 /** Every data route on the Accounts read surface uses this backend prefix. */
 const READ_PREFIX = "/frontend/v1";
@@ -14,24 +17,6 @@ const RECORD_NOT_FOUND_CODES = new Set([
   "ACCOUNT_NOT_FOUND",
   "CONTACT_NOT_FOUND",
 ]);
-
-export class ClueApiError extends Error {
-  /** Open backend code set: branch on known codes and retain the fallback. */
-  readonly code: string;
-  readonly status: number;
-  readonly requestId: string | null;
-
-  constructor(
-    message: string,
-    options: { code: string; requestId: string | null; status: number },
-  ) {
-    super(message);
-    this.name = "ClueApiError";
-    this.code = options.code;
-    this.status = options.status;
-    this.requestId = options.requestId;
-  }
-}
 
 function readPath(
   path: string,

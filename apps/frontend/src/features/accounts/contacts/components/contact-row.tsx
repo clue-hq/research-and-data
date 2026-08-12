@@ -117,7 +117,11 @@ export function ContactRow({
         )}
       </div>
       <div className="flex items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4 text-[var(--clue-content-subtle)]">
-        <LookupEmailButton />
+        <LookupEmailButton
+          accountId={accountId}
+          contactId={contact.id}
+          initialLookup={contact.emailLookup}
+        />
       </div>
       <div className="flex items-center gap-2 px-4">
         {/* LinkedIn is the only social this surface serves (G2). */}

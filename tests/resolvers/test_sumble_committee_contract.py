@@ -17,11 +17,15 @@ from clue_research.resolvers.sumble.committee_transport import (
     require_matching_people_request_id,
 )
 from clue_research.resolvers.sumble.people import (
+    PEOPLE_EMAIL_ATTRIBUTES,
+    PEOPLE_EMAIL_REVEAL_MAX_CREDITS,
     PEOPLE_NO_REVEAL_ATTRIBUTES,
     SumbleAdvancedQuery,
     SumblePeopleStatus,
+    extract_matched_work_email,
     normalize_people,
     parse_people_response,
+    people_email_match_request,
     people_poll_request,
     people_search_request,
 )
@@ -135,6 +139,87 @@ def test_people_poll_body_contains_request_id_alone() -> None:
     assert people_poll_request(" request-123 ") == {"request_id": "request-123"}
     with pytest.raises(ValueError, match="non-empty"):
         people_poll_request("   ")
+
+
+def test_people_email_match_is_one_exact_person_and_explicitly_paid() -> None:
+    profile = "https://www.linkedin.com/in/alex-morgan"
+    body, maximum = people_email_match_request(profile + "/")
+
+    assert body == {
+        "people": [{"linkedin_url": profile}],
+        "select": {"attributes": list(PEOPLE_EMAIL_ATTRIBUTES)},
+    }
+    assert maximum == PEOPLE_EMAIL_REVEAL_MAX_CREDITS == 10
+    assert body["select"]["attributes"].count("email") == 1
+    with pytest.raises(ValueError, match="LinkedIn profile"):
+        people_email_match_request("https://example.test/alex")
+
+
+def test_people_email_result_is_exact_target_locked_and_normalized() -> None:
+    profile = "https://www.linkedin.com/in/alex-morgan"
+    payload = {
+        "id": "result-1",
+        "credits_used": 10,
+        "credits_remaining": 90,
+        "request_id": "request-1",
+        "status": "succeeded",
+        "matched_count": 1,
+        "total": 1,
+        "people": [
+            {
+                "person_id": 1001,
+                "sumble_url": "https://sumble.com/people/1001",
+                "input": {"linkedin_url": profile},
+                "attributes": {
+                    "name": "Alex Morgan",
+                    "linkedin_url": profile,
+                    "email": " Alex.Morgan@Example.COM ",
+                },
+            }
+        ],
+    }
+    response = parse_people_response(payload)
+    email, row = extract_matched_work_email(response, expected_linkedin_url=profile + "/")
+    assert email == "alex.morgan@example.com"
+    assert row is not None and row.person_id == 1001
+
+    crossed = copy.deepcopy(payload)
+    crossed["people"][0]["input"]["linkedin_url"] = "https://linkedin.com/in/other"
+    crossed["people"][0]["attributes"]["linkedin_url"] = "https://linkedin.com/in/other"
+    with pytest.raises(SumbleSchemaDrift, match="crossed"):
+        extract_matched_work_email(parse_people_response(crossed), expected_linkedin_url=profile)
+
+
+def test_people_email_transport_does_not_apply_committee_no_reveal_guard() -> None:
+    profile = "https://www.linkedin.com/in/alex-morgan"
+    calls: list[dict[str, Any]] = []
+
+    def http(url: str, **kwargs: Any) -> object:
+        calls.append({"url": url, **kwargs})
+        return {
+            "id": "result-1",
+            "credits_used": 10,
+            "credits_remaining": 90,
+            "request_id": "request-1",
+            "status": "succeeded",
+            "matched_count": 1,
+            "total": 1,
+            "people": [
+                {
+                    "person_id": 1001,
+                    "sumble_url": "https://sumble.com/people/1001",
+                    "input": {"linkedin_url": profile},
+                    "attributes": {"linkedin_url": profile, "email": "alex@example.com"},
+                }
+            ],
+        }
+
+    client = SumbleV9CommitteeClient(api_key=SecretStr("fixture-secret"), http=http)
+    response, _ = client.submit_email(profile, maximum_credits=10)
+    assert response.credits_used == 10
+    assert calls[0]["retries"] == 0
+    with pytest.raises(ValueError, match="pinned 10-credit"):
+        client.submit_email(profile, maximum_credits=9)
 
 
 def test_committee_transport_is_single_attempt_and_request_id_locked() -> None:

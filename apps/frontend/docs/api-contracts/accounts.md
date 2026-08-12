@@ -186,6 +186,10 @@ same value for both fields when that distinction is not needed.
 
 ### `GET /api/v1/accounts/:accountId/contacts`
 
+> Historical proposal. The FI-2 as-built Contacts contract begins below. Slice 10 supersedes the
+> proposed `emailStatus` placeholder with a durable `emailLookup` result and two explicit POST
+> mutations; no browser timer represents provider success.
+
 Returns the contact-table rows. Contact records are kept outside the account
 detail response so the backend can paginate and refresh them independently.
 
@@ -533,7 +537,8 @@ Contacts row and profile:
       "roleOnCommittee": { "value": "economic_buyer", "confidence": 0.87 },
       "linkedinUrl": "https://linkedin.com/in/dana-buyer",
       "projectIds": ["prj_a", "prj_b"],
-      "signals": { "typeCount": 1 }
+      "signals": { "typeCount": 1 },
+      "emailLookup": null
     }
   ],
   "meta": { "total": 1 }
@@ -545,6 +550,19 @@ The profile is that row plus `accountId`, `accountName`, `redirectedFrom`,
 `professionalFacts` (`{ fieldKey, claimId, value, observedAt, provider,
 restricted }`), and the claim-mapped `evidence` records specified by the FI-2
 slice-5 section below.
+
+`emailLookup` is `null` until a user requests enrichment. Once requested, it is
+`{ lookupId, state, resolution, emails, retryable }`, where `state` is `pending | available |
+not_found | withheld | unavailable | failed`. Each email is
+`{ value, sources: [{ key, label }] }`. It is durable and therefore appears on
+both the Contact row and profile after reload; it is separate from canonical
+Contact identity and never implies `verified_email` promotion.
+
+`resolution` retains the backend reconciliation result: `pending | matched |
+single_source | conflict | none | withheld | unavailable | failed`. The frontend
+does not render a verification/corroboration badge. It shows one address when
+providers match, one address when only one returns a result, and two
+source-labelled addresses when `resolution` is `conflict`.
 
 The error envelope is the one documented above. Codes in use:
 `UNAUTHORIZED` (401, missing workspace in the isolated development resolver;
@@ -745,9 +763,9 @@ called out rather than assumed.
    completed | suspended` and does **not** yet serve `not_launchable`, which
    depends on the launch surface owned by Lane D (FI-1 D-9) — it is ratified into
    the vocabulary ahead of Lane D so the schema is not widened twice. `persona`
-   and `roleOnCommittee` adopt the four backend personas. `emailStatus` widens
-   (`available | lookup | pending | unavailable` at least), which is moot on this
-   surface because slice 1 serves no email data at all (G3). **`overallFit` is
+   and `roleOnCommittee` adopt the four backend personas. The proposed
+   `emailStatus` was absent in slice 1 and is superseded by Slice 10's typed
+   `emailLookup` read/mutation contract. **`overallFit` is
    NOT invented** — the backend serves raw `scores[].fit`, and no tier badge,
    band cut, or adapter constant is introduced on this slice. `activity.kind`
    widens to the backend event kinds with a projection-layer label map (landed
@@ -964,6 +982,52 @@ and absent from the accessibility tree. Contacts-grid rows are named
 `Open <name> profile`, so the avatar, row and link no longer concatenate the
 same person name. Selection behavior is unchanged and remains owned by its
 separate bulk-actions slice.
+
+### Contact email enrichment (FI-2 slice 10, 2026-08-12)
+
+The existing Contacts-row “Look up” control invokes these authenticated
+same-origin BFF mutations:
+
+- `POST /frontend/v1/accounts/{accountId}/contacts/{contactId}/email-lookup`
+  creates or reuses the current observation-window lookup and kicks off any
+  provider that has not already run.
+- `POST /frontend/v1/accounts/{accountId}/contacts/{contactId}/email-lookup/{lookupId}/poll`
+  advances only replay-safe pending provider operations. A terminal provider is
+  never dispatched again.
+
+The Next Route Handler derives the provider bearer and `X-Clue-Workspace-Id`
+from the server session. FastAPI re-resolves the governed Account/Contact path
+and requires `research.launch`; a browser-authored workspace or bearer header is
+not trusted. The local-header path permits a development actor only when real
+authentication is disabled; production cannot use that path.
+
+Exa Websets and Sumble v9 People are independent acquisition sources. Sumble
+uses one-person LinkedIn match mode with `select.attributes` explicitly naming
+`email`; the provider's documented upper bound is 10 credits at the first
+successful reveal. Exa imports the exact LinkedIn URL as one person and requests
+one email enrichment. Provider request/response artifacts, operation ids,
+realized credits/cost, an unverified `core.work_email` claim, lawful basis and
+use decision are retained durably. The operation never writes
+`contact_entity.verified_email` and never describes an address as deliverable or
+independently verified. C5's stricter validated delivery workflow remains
+unchanged for a later release.
+
+The read projection reconciles provider observations without erasing conflict:
+
+- matching normalized values render once;
+- different values render separately with `Exa` / `Sumble` labels;
+- a single found value renders even when the other source returns no result;
+- two authoritative no-results render no address;
+- configuration/provider failure, policy withholding and unknown spend remain
+  distinct from no-result.
+
+Budget-control UI and budget-based stopping are intentionally absent while
+`CLUE_BUDGET_CONTROLS_ENABLED=false`; provider units/cost remain recorded. The
+independent Slice-10 deployment switch is
+`CLUE_FRONTEND_CONTACT_EMAIL_LOOKUP_ENABLED` (default off). Missing provider
+credentials become an honest provider-unavailable state, not a fake success.
+The browser may schedule polling while the backend says `pending`; the timer
+never changes state by itself.
 
 ### Live prose and user-facing vocabulary (FI-2 slice 4, 2026-08-12)
 

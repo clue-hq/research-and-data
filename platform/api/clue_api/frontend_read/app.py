@@ -72,6 +72,8 @@ REQUEST_ID_HEADER = "X-Request-Id"
 
 # Slice 1 is a read surface: a browser needs no cross-origin write verb here. Widening this is a
 # deliberate later decision, not an accident of the initial config.
+# Browser mutations also go through the same-origin BFF. Keeping cross-origin CORS read-only avoids
+# accidentally widening unrelated write routes mounted on this shared FastAPI process.
 CORS_ALLOW_METHODS = ["GET", "OPTIONS"]
 
 # Status → FI-1 error code. Deliberately explicit rather than ``HTTPStatus(...).name``: the frontend
@@ -200,6 +202,7 @@ def build_frontend_read_router(
     settings: Settings,
     conn_factory: ConnFactory,
     evidence_storage: StorageBackend | None = None,
+    contact_email_lookup: Any | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped `/frontend/v1` router — **empty** unless the flag is on.
 
@@ -227,7 +230,15 @@ def build_frontend_read_router(
     register_account_detail_routes(
         router, conn_factory=conn_factory, evidence_storage=evidence_storage
     )
-    register_contact_routes(router, conn_factory=conn_factory, evidence_storage=evidence_storage)
+    register_contact_routes(
+        router,
+        conn_factory=conn_factory,
+        evidence_storage=evidence_storage,
+        contact_email_lookup=contact_email_lookup,
+        allow_local_mutations=(
+            settings.projections_auth_mode == "local_header" and not settings.auth_enabled
+        ),
+    )
     return router
 
 
@@ -260,6 +271,7 @@ def install_frontend_read_surface(
     settings: Settings,
     conn_factory: ConnFactory,
     evidence_storage: StorageBackend | None = None,
+    contact_email_lookup: Any | None = None,
 ) -> None:
     """Mount enabled routers and always own errors under the reserved frontend-read prefix.
 
@@ -276,6 +288,7 @@ def install_frontend_read_surface(
                 settings=settings,
                 conn_factory=conn_factory,
                 evidence_storage=evidence_storage,
+                contact_email_lookup=contact_email_lookup,
             )
         )
 

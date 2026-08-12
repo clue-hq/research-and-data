@@ -58,10 +58,11 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.auth_wiring import principal_from_request
 from clue_api.contact_eligibility import GovernedCommitteeContact
 from clue_api.frontend_read.account_detail import AccountNotFound
 from clue_api.frontend_read.accounts_list import WireModel
@@ -69,6 +70,12 @@ from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.committee import (
     current_claims,
     read_governed_committee,
+)
+from clue_api.frontend_read.contact_email_lookup import (
+    ContactEmailLookupService,
+    ContactEmailLookupView,
+    EmailLookupTarget,
+    latest_contact_email_lookups,
 )
 from clue_api.frontend_read.evidence import (
     EvidenceReference,
@@ -100,7 +107,7 @@ from clue_research.claimstore import (
     merge_claims,
 )
 from clue_research.compliance import WorkspacePolicy
-from clue_research.identity import get_account, get_contacts, surviving_id
+from clue_research.identity import get_account, get_contact, get_contacts, surviving_id
 from clue_research.membership import memberships_for_accounts
 from clue_research.profiling.committee import CURRENT_TITLE
 from clue_research.profiling.fields import FACET_PUBLIC_APPEARANCES
@@ -197,6 +204,9 @@ class ContactRow(WireModel):
     linkedin_url: str | None = None
     project_ids: tuple[str, ...] = ()
     signals: ContactSignals
+    # Durable provider-observed email acquisition. ``None`` means the user has never requested a
+    # lookup; addresses remain separate from canonical ``verified_email``.
+    email_lookup: ContactEmailLookupView | None = None
 
 
 class ContactProfile(ContactRow):
@@ -355,6 +365,7 @@ def _build_row(
     project_ids: Sequence[str],
     claims: dict[str, Claim],
     policy: WorkspacePolicy,
+    email_lookup: ContactEmailLookupView | None = None,
 ) -> ContactRow:
     """The list row — and, via ``model_dump``, the shared half of the profile, so the two shapes
     cannot drift into disagreeing about the same member."""
@@ -376,6 +387,7 @@ def _build_row(
         linkedin_url=None if entity is None else entity.linkedin_url,
         project_ids=tuple(project_ids),
         signals=ContactSignals(type_count=_signal_type_count(claims, policy)),
+        email_lookup=email_lookup,
     )
 
 
@@ -404,6 +416,11 @@ async def read_account_contacts(
         memberships=memberships,
     )
     entities = await get_contacts(conn, tuple(union.members))
+    email_lookups = await latest_contact_email_lookups(
+        conn,
+        workspace_id=workspace_id,
+        contact_ids=tuple(uuid.UUID(str(item)) for item in union.members),
+    )
 
     rows = [
         _build_row(
@@ -412,6 +429,7 @@ async def read_account_contacts(
             project_ids=union.project_ids[contact_id],
             claims=current_claims(member),
             policy=policy,
+            email_lookup=email_lookups.get(uuid.UUID(str(contact_id))),
         )
         for contact_id, member in union.members.items()
     ]
@@ -467,6 +485,13 @@ async def read_contact_profile(
         project_ids=union.project_ids[canonical_contact],
         claims=claims,
         policy=policy,
+        email_lookup=(
+            await latest_contact_email_lookups(
+                conn,
+                workspace_id=workspace_id,
+                contact_ids=(uuid.UUID(str(canonical_contact)),),
+            )
+        ).get(uuid.UUID(str(canonical_contact))),
     )
     return ContactProfile(
         **row.model_dump(),
@@ -499,6 +524,8 @@ def register_contact_routes(
     *,
     conn_factory: ConnFactory,
     evidence_storage: StorageBackend | None = None,
+    contact_email_lookup: ContactEmailLookupService | None = None,
+    allow_local_mutations: bool = False,
 ) -> None:
     """Register the two account-scoped contact routes on the `/frontend/v1` router."""
 
@@ -613,3 +640,126 @@ def register_contact_routes(
                     },
                 )
             return evidence_artifact_response(artifact)
+
+    def _requester(request: Request) -> str:
+        principal = principal_from_request(request)
+        if principal is not None:
+            principal.require("research.launch")
+            return principal.user_id
+        if allow_local_mutations:
+            return "local-development-user"
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "UNAUTHORIZED",
+                "message": "an authenticated session is required for email lookup",
+            },
+        )
+
+    async def _lookup_target(
+        *, workspace_id: str, account_id: uuid.UUID, contact_id: uuid.UUID
+    ) -> EmailLookupTarget:
+        async with conn_factory() as conn:
+            try:
+                profile = await read_contact_profile(
+                    conn,
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    contact_id=contact_id,
+                )
+            except AccountNotFound as exc:
+                raise _account_404() from exc
+            except ContactNotFound as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "CONTACT_NOT_FOUND",
+                        "message": "no such contact on this account's committee",
+                    },
+                ) from exc
+            account = await get_account(conn, EntityId(profile.account_id))
+            contact = await get_contact(conn, EntityId(profile.id))
+        if account is None or contact is None or not contact.full_name or not contact.linkedin_url:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "EMAIL_LOOKUP_IDENTITY_INCOMPLETE",
+                    "message": (
+                        "this contact does not have the identity anchors required for lookup"
+                    ),
+                },
+            )
+        return EmailLookupTarget(
+            workspace_id=workspace_id,
+            account_id=uuid.UUID(str(account.id)),
+            contact_id=uuid.UUID(str(contact.id)),
+            full_name=contact.full_name,
+            linkedin_url=contact.linkedin_url,
+            account_name=account.canonical_name,
+            primary_domain=account.primary_domain,
+        )
+
+    @router.post("/accounts/{account_id}/contacts/{contact_id}/email-lookup")
+    async def start_contact_email_lookup(
+        request: Request,
+        workspace_id: WorkspaceDep,
+        account_id: uuid.UUID,
+        contact_id: uuid.UUID,
+    ) -> ContactEmailLookupView:
+        if contact_email_lookup is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "EMAIL_LOOKUP_UNAVAILABLE",
+                    "message": "email enrichment is not configured for this environment",
+                },
+            )
+        target = await _lookup_target(
+            workspace_id=workspace_id, account_id=account_id, contact_id=contact_id
+        )
+        try:
+            return await contact_email_lookup.start(target=target, requested_by=_requester(request))
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "EMAIL_LOOKUP_WITHHELD",
+                    "message": "email lookup is unavailable for this contact",
+                },
+            ) from exc
+
+    @router.post("/accounts/{account_id}/contacts/{contact_id}/email-lookup/{lookup_id}/poll")
+    async def poll_contact_email_lookup(
+        request: Request,
+        workspace_id: WorkspaceDep,
+        account_id: uuid.UUID,
+        contact_id: uuid.UUID,
+        lookup_id: uuid.UUID,
+    ) -> ContactEmailLookupView:
+        if contact_email_lookup is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "EMAIL_LOOKUP_UNAVAILABLE",
+                    "message": "email enrichment is not configured for this environment",
+                },
+            )
+        _requester(request)
+        target = await _lookup_target(
+            workspace_id=workspace_id, account_id=account_id, contact_id=contact_id
+        )
+        try:
+            return await contact_email_lookup.poll(
+                workspace_id=workspace_id,
+                account_id=target.account_id,
+                contact_id=target.contact_id,
+                lookup_id=lookup_id,
+            )
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "EMAIL_LOOKUP_NOT_FOUND",
+                    "message": "no such email lookup for this contact",
+                },
+            ) from exc
