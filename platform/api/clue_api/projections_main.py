@@ -15,13 +15,14 @@ from clue_api.exa_websets_lifecycle import ExaWebhookIngestor, build_exa_webhook
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.observability_wiring import build_observability_surface
-from clue_api.phase_c_wiring import build_stage0_scrape_binder
+from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.projections_app import create_projections_app
 from clue_api.research_view_runtime import (
     ProductionResearchViewRuntime,
     build_production_research_view_runtime,
 )
 from clue_api.run_composition import (
+    bind_stage0_search_resolver,
     build_optional_platform_gateway,
     build_stage0_claim_extractor,
 )
@@ -84,23 +85,26 @@ def build_application(
     # resolver, but the D2 boundary is untouched — the toolbelt is still built with no `gateway=`
     # argument, and no chat/turn-serving module reaches this wiring (both guarded by
     # tests/api/test_lane_d2_http_gateway_isolation.py).
-    stage0_gateway = (
-        build_optional_platform_gateway(resolved)
-        if resolved.self_serve_provisioning_enabled
-        else None
-    )
-    stage0_scrape_binder = (
-        build_stage0_scrape_binder(
-            extractor=build_stage0_claim_extractor(stage0_gateway),
+    stage0_scrape_binder: Stage0ScrapeBinder | None = None
+    if resolved.self_serve_provisioning_enabled:
+        stage0_extractor = build_stage0_claim_extractor(build_optional_platform_gateway(resolved))
+        stage0_scrape_binder = build_stage0_scrape_binder(
+            extractor=stage0_extractor,
             # Pass the resolved settings' backend explicitly — a None scraper would construct
             # a fresh Settings() inside the resolver registration (one settings truth per
             # process).
             scraper=default_scrape_backend(resolved),
             policy=ScrapePolicy(),
         )
-        if resolved.self_serve_provisioning_enabled
-        else None
-    )
+        # Slice 3 task 7: the tier-3 open-web source behind `client.competitor` /
+        # `client.buyer_profile`. It takes the SAME extractor instance and the SAME account
+        # lookup as the scrape lane (the binder holds the client's record once identity
+        # resolution produces it), and binds only when this deployment has an Exa credential.
+        bind_stage0_search_resolver(
+            extractor=stage0_extractor,
+            accounts=stage0_scrape_binder,
+            secrets=resolved_secrets,
+        )
     registry = build_toolbelt(
         storage=storage,
         settings=resolved,

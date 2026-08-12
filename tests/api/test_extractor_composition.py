@@ -35,6 +35,7 @@ from clue_config import Secrets, Settings
 from clue_core import ClaimDraft, Entity, EntityType, FieldDef, NormalizedText, PassKind
 from clue_obs import capture_events
 from clue_research.adapters import CallableClaimExtractor
+from clue_research.sources import clear_resolver_bindings, get_resolver, is_resolver_bound
 
 
 class _NoKeySecrets:
@@ -268,3 +269,68 @@ def test_the_fleet_worker_builds_exactly_one_gateway() -> None:
         if isinstance(node, ast.Call) and _called_name(node) in builders
     ]
     assert len(calls) == 1
+
+
+# --- the tier-3 search resolver (slice 3 task 7) --------------------------------------------------
+
+
+class _Accounts:
+    def key_for(self, entity_id: Any) -> None:
+        return None
+
+
+def _bind(secrets: Any) -> bool:
+    clear_resolver_bindings()
+    try:
+        return run_composition.bind_stage0_search_resolver(
+            extractor=CallableClaimExtractor(lambda normalized, entity, field: []),
+            accounts=_Accounts(),
+            secrets=secrets,
+        )
+    finally:
+        pass
+
+
+def test_the_search_resolver_binds_when_an_exa_credential_is_configured() -> None:
+    bound = _bind(Secrets(_env_file=None, exa_api_key="composition-test"))
+    try:
+        assert bound is True
+        assert is_resolver_bound("exa_search")
+        assert get_resolver("exa_search").tier == 3
+    finally:
+        clear_resolver_bindings()
+
+
+def test_no_exa_credential_leaves_the_search_source_unbound_instead_of_failing_recon(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``resolve_credential`` raises at call time, and a raising resolver fails the WHOLE recon
+    lane — so a keyless deployment must never bind this source. Unbound is the graceful path: the
+    waterfall records ``NO_RESOLVER`` at zero spend and the two fields end honestly empty."""
+    # ``_env_file=None`` silences the .env file but NOT the process environment, and a developer
+    # shell that sourced .env exports the key — so drop it explicitly.
+    monkeypatch.delenv("CLUE_EXA_API_KEY", raising=False)
+    with capture_events(mode="info") as cap:
+        bound = _bind(Secrets(_env_file=None))
+    try:
+        assert bound is False
+        assert not is_resolver_bound("exa_search")
+        assert cap.has("stage0.exa_search_unbound_no_credential")
+    finally:
+        clear_resolver_bindings()
+
+
+def test_the_fleet_root_binds_the_search_resolver_over_its_stage0_binder(tmp_path: Path) -> None:
+    """One extractor, one account lookup: the search source reads exactly what the scrape lane
+    reads, so the two cannot drift into extracting (or target-locking) differently."""
+    clear_resolver_bindings()
+    try:
+        binder = fleet_main._build_stage0_scrape_binder(
+            _settings(tmp_path, self_serve_provisioning_enabled=True),
+            gateway=_FakeGateway(),
+            secrets=Secrets(_env_file=None, exa_api_key="composition-test"),
+        )
+        assert isinstance(binder, Stage0ScrapeBinder)
+        assert is_resolver_bound("exa_search")
+    finally:
+        clear_resolver_bindings()

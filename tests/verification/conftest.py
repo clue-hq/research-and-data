@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_db import db_lifespan
 from clue_research.claimstore import load_core_pack
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async
 
@@ -67,6 +68,7 @@ async def rollback_conn() -> AsyncIterator[AsyncConnection]:
         trans = await conn.begin()
         try:
             await load_core_pack(conn)
+            await load_client_knowledge_pack(conn)
             await seed_source_manifests(conn)
             yield conn
         finally:

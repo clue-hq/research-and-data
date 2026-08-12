@@ -99,6 +99,7 @@ from clue_research.claimstore import insert_claim, record_run_lineage, register_
 from clue_research.durable.discovery import capture_discovery_artifact
 from clue_research.identity import insert_account_entity
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from clue_spine import create_brand, create_product
 from clue_storage import FsStorage
 from tests._workspace import seed_workspace
@@ -189,6 +190,7 @@ async def _seed_p1_research(
     """P1 discovers acme under ICP-A and researches it; P2's job arrives later."""
 
     workspace_id = await seed_workspace(conn, "fi2-s3-t2")
+    await load_client_knowledge_pack(conn)
     await seed_source_manifests(conn)
     brand = await create_brand(conn, workspace_id=workspace_id, name=f"Brand {uuid4().hex[:6]}")
     product = await create_product(

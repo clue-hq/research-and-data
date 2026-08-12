@@ -106,6 +106,13 @@ from clue_research.durable import (
     ProjectRunStore,
 )
 from clue_research.icp.spec import get_icp_version
+from clue_research.resolvers.exa_search import (
+    AUTH_REF as EXA_SEARCH_AUTH_REF,
+)
+from clue_research.resolvers.exa_search import (
+    register_exa_search_resolver,
+)
+from clue_research.resolvers.live import AccountLookup
 from clue_research.stage0 import ClientInput
 from clue_research.verification import FaithfulnessJudgeImpl
 from clue_storage import StorageBackend
@@ -113,6 +120,7 @@ from clue_storage import StorageBackend
 __all__ = [
     "build_platform_gateway",
     "build_optional_platform_gateway",
+    "bind_stage0_search_resolver",
     "build_stage0_claim_extractor",
     "ComposingRunDriver",
     "ComposedRun",
@@ -303,6 +311,41 @@ def build_stage0_claim_extractor(gateway: LLMGateway | None) -> ClaimExtractor:
     if gateway is None:
         return CallableClaimExtractor(lambda normalized, entity, field: [])
     return LlmClaimExtractor(gateway=gateway)
+
+
+def bind_stage0_search_resolver(
+    *,
+    extractor: ClaimExtractor,
+    accounts: AccountLookup,
+    secrets: Secrets | None = None,
+) -> bool:
+    """Bind the tier-3 ``exa_search`` resolver for Stage-0 recon, if this deployment can pay for it.
+
+    Two Client-KB fields (``client.competitor`` / ``client.buyer_profile``) name ``exa_search`` as
+    their only source. It reads the *same* extractor instance as the scrape lane (one extractor per
+    process — the roots must not drift into extracting differently) and the *same* account lookup
+    (the Stage-0 binder, which holds the client's record once identity resolution has produced it).
+
+    **The credential gate is the point.** ``resolve_credential`` raises at call time when
+    ``CLUE_EXA_API_KEY`` is unset, and a resolver raising inside the waterfall fails the whole recon
+    lane — so a deployment with no Exa key would lose onboarding entirely over an optional
+    open-web enrichment. Leaving the source *unbound* instead is the documented graceful path: the
+    waterfall records ``NO_RESOLVER`` at zero spend and the two fields end honestly empty, exactly
+    as they did before this source existed. Returns whether the resolver was bound.
+    """
+    resolved = secrets if secrets is not None else Secrets()
+    if resolved.for_auth_ref(EXA_SEARCH_AUTH_REF) is None:
+        log.warning(
+            "stage0.exa_search_unbound_no_credential",
+            reason=(
+                "no Exa credential is configured; Stage-0 background research will leave "
+                "client.competitor and client.buyer_profile empty rather than fail the lane"
+            ),
+            auth_ref=EXA_SEARCH_AUTH_REF,
+        )
+        return False
+    register_exa_search_resolver(extractor=extractor, accounts=accounts, secrets=resolved)
+    return True
 
 
 class ComposingRunDriver:

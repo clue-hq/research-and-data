@@ -104,6 +104,7 @@ from clue_api.recipe_wiring import (
 from clue_api.research_view_runtime import build_production_research_view_runtime
 from clue_api.run_composition import (
     ComposingRunDriver,
+    bind_stage0_search_resolver,
     build_platform_gateway,
     build_stage0_claim_extractor,
 )
@@ -446,7 +447,7 @@ def _start_exa_targeted_enrichment(
 
 
 def _build_stage0_scrape_binder(
-    settings: Settings, *, gateway: LLMGateway | None
+    settings: Settings, *, gateway: LLMGateway | None, secrets: Secrets | None = None
 ) -> Stage0ScrapeBinder | None:
     """The worker's live Stage-0 scrape composition — the HTTP root's, with the same extractor.
 
@@ -454,14 +455,21 @@ def _build_stage0_scrape_binder(
     there is no binder and ``start_recon`` keeps refusing before any spend. The ``gateway`` is the
     one ``_serve`` already built for every other model consumer in this process — this seam takes it
     rather than building a second client for the same credential.
+
+    Slice 3 task 7: the tier-3 ``exa_search`` source is bound here too, over the same extractor
+    instance and the same account lookup, so the background research lane the worker drives can
+    fill ``client.competitor`` / ``client.buyer_profile``. Bound only with an Exa credential.
     """
     if not settings.self_serve_provisioning_enabled:
         return None
-    return build_stage0_scrape_binder(
-        extractor=build_stage0_claim_extractor(gateway),
+    extractor = build_stage0_claim_extractor(gateway)
+    binder = build_stage0_scrape_binder(
+        extractor=extractor,
         scraper=default_scrape_backend(settings),
         policy=ScrapePolicy(),
     )
+    bind_stage0_search_resolver(extractor=extractor, accounts=binder, secrets=secrets)
+    return binder
 
 
 async def _serve() -> None:
@@ -578,7 +586,9 @@ async def _serve() -> None:
             # same flag, and now with the same REAL extractor — reusing the gateway built above, so
             # recon drafts grounded client.* values instead of capturing snapshots nobody claims
             # from. When the flag is off start_recon keeps refusing.
-            stage0_scrape_binder=_build_stage0_scrape_binder(settings, gateway=gateway),
+            stage0_scrape_binder=_build_stage0_scrape_binder(
+                settings, gateway=gateway, secrets=secrets
+            ),
             pre_spend_gate=pre_spend_gate,
             research_directive_memory_write_factory=memory_write_factory_builder(settings, gateway),
             queue=task_queue,

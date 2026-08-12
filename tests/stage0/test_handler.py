@@ -27,7 +27,7 @@ from clue_core import (
 from clue_db import db_lifespan, transaction
 from clue_research.claimstore import load_core_pack
 from clue_research.sources import bind_resolver, seed_source_manifests
-from clue_research.stage0 import ReverseProfilingHandler
+from clue_research.stage0 import ReverseProfilingHandler, load_client_knowledge_pack
 from clue_research.stage0.fields import CLIENT_VALUE_PROP
 from tests._workspace import seed_workspace
 from tests.stage0._fakes import FakeResolver
@@ -48,6 +48,7 @@ async def _seed_committed(workspace_id: str) -> None:
     so its ``workspace`` row must exist first). Idempotent — load/seed is a no-op if present."""
     async with transaction() as conn:
         await load_core_pack(conn)
+        await load_client_knowledge_pack(conn)
         await seed_source_manifests(conn)
         await seed_workspace(conn, workspace_id)
 

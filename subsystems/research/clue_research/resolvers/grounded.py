@@ -353,7 +353,7 @@ def cost_cents_from_cost_dollars(payload: Mapping[str, Any]) -> CostCents:
 _MIN_NAME_TOKEN_LEN = 2
 
 
-def _entity_name_tokens(account: AccountEntity) -> frozenset[str]:
+def entity_name_tokens(account: AccountEntity) -> frozenset[str]:
     """The identifier strings that mark a record as on-entity: the canonical name and every alias
     (length ≥ the floor). Target-lock keeps an off-domain record iff one of these appears as a
     **whole-word** match in the retrieved text/span (the canonical-name disambiguation, staged-flow
@@ -372,8 +372,13 @@ def _is_grounded(field: SynthesizedField) -> bool:
     return field.evidence_span in field.retrieved_text
 
 
-def _names_present(haystack: str, names: frozenset[str]) -> bool:
+def names_present(haystack: str, names: frozenset[str]) -> bool:
     """True iff any entity name is a **whole-word** match in ``haystack`` (case-insensitive).
+
+    Public (alongside :func:`registrable_host`) because it is the shared target-lock primitive every
+    open-web resolver needs, not a tier-4 detail: the tier-3 ``exa_search`` resolver applies the
+    identical rule to each search record. Writing it a second time is exactly the duplication the
+    host-normalization consolidation existed to end.
 
     A *substring* test fails open two ways the spec's anti-drift rule forbids: a short alias matches
     inside an unrelated word (``"hp"`` in ``"championship"``) and a near-duplicate competitor whose
@@ -400,7 +405,7 @@ def _on_entity(field: SynthesizedField, account: AccountEntity, names: frozenset
         return True
     if not names:
         return False
-    return _names_present(f"{field.retrieved_text}\n{field.evidence_span}", names)
+    return names_present(f"{field.retrieved_text}\n{field.evidence_span}", names)
 
 
 def _outcome(retrieved: Sequence[SynthesizedField], claims: Sequence[Claim]) -> str:
@@ -470,7 +475,7 @@ class GroundedSynthesisResolver:
             },
         ) as span:
             result = self._backend.synthesize(account, field)
-            names = _entity_name_tokens(account)
+            names = entity_name_tokens(account)
             kept = [
                 sf
                 for sf in result.fields

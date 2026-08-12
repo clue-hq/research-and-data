@@ -10,7 +10,9 @@ Parallel Task — proving a tier-4 source can be *named* in a ``tier_plan`` befo
 ``cost_cents`` and ``geo_coverage`` are D7/D8 config placeholders (re-tunable per the Clay note's
 per-field economics). ``auth_ref`` is a credential-store **reference** (an env-var name), never a
 secret. ``yields`` reference field-keys/classes from the M1.3 registry — so seeding must run after
-the relevant pack is loaded (the core pack for the ``core.*``/``account.*`` keys here).
+the relevant packs are loaded: the **core** pack for the ``core.*``/``account.*`` keys, and (since
+slice 3's tier-3 ``exa_search`` entry) the **client-knowledge** pack for the two ``client.*`` keys.
+Seeding before either is a loud ``SourceYieldError``, not a silent partial registry.
 """
 
 from __future__ import annotations
@@ -314,6 +316,29 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         requires_adapter="scrapling_html",
         freshness_profile="livecrawl",
     ),
+    # Tier-3 open-web search (slice 3) — the ONLY source for the two Client-KB fields the client's
+    # own surfaces cannot honestly answer: who the market compares them against, and who buys.
+    # ``yields`` names the two concrete keys rather than the whole ``client`` namespace because the
+    # resolver answers exactly these two (it has a query for nothing else), and the M4.6 planner
+    # reads ``yields`` to propose sources for a field — a namespace claim would offer this source
+    # for every owned-surface client field it cannot fill. Naming client keys makes the client
+    # knowledge pack a boot-order prerequisite of seeding (``yields`` validate against the field
+    # registry), which is why every ``seed_source_manifests`` caller loads that pack first.
+    # Tier 3 is load-bearing: the Stage-0 fast lane caps at ``max_source_tier=2`` and walks past
+    # this at zero spend, so only the background lane ever pays for it.
+    _entry(
+        "exa_search",
+        modality=Modality.TEXT,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=3,
+        yields=("client.competitor", "client.buyer_profile"),
+        provider="exa",
+        cost_cents=Decimal(1),
+        # An open third-party page is never strong personal identity evidence by source prior alone.
+        identity_binding=IdentityBinding.WEAK,
+        auth_ref="CLUE_EXA_API_KEY",
+        freshness_profile="snapshot",
+    ),
     # Tier-4 research-product placeholders — REGISTERED but resolver-ABSENT until M11. Proves a
     # tier-4 source can be named in a tier_plan before its resolver exists (get_resolver raises).
     _entry(
@@ -355,6 +380,7 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
 
 async def seed_source_manifests(conn: AsyncConnection) -> None:
     """Register every seed manifest (idempotent). Run after the referenced fields are registered
-    (e.g. ``load_core_pack``) so the ``yields`` validation resolves."""
+    (``load_core_pack`` **and** ``load_client_knowledge_pack``) so the ``yields`` validation
+    resolves."""
     for entry in SEED_MANIFESTS:
         await register_source(conn, entry)

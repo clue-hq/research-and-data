@@ -117,6 +117,7 @@ from clue_research.durable import (
 )
 from clue_research.identity import canonical_member_ids, get_account, surviving_id
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from clue_storage import StorageBackend, content_address
 
 EXA_TARGETED_FIELD_POLICY_VERSION = "exa-targeted-company-fields-v1"
@@ -1205,6 +1206,10 @@ class ExaTargetedEnrichmentCoordinator:
                     item_page_calls=item_page_calls,
                 )
             await load_core_pack(conn)
+            # Boot order: a source manifest's ``yields`` validate against the field
+            # registry, and the tier-3 ``exa_search`` seed yields ``client.*`` keys — so
+            # the client-knowledge pack must be loaded before the manifests are seeded.
+            await load_client_knowledge_pack(conn)
             await seed_source_manifests(conn)
             # FI-2 P2 (spec §3): every enrichment claim written below is stamped with the project
             # run itself as its ``run_id``, so that is the id the project lens must resolve.

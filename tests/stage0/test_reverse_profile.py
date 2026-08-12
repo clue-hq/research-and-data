@@ -14,13 +14,16 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import Secrets
 from clue_core import (
+    ClaimDraft,
     ExtractionMethod,
     ResearchMode,
     ReuseScope,
     account_claim,
     new_run_id,
 )
+from clue_research.adapters import CallableClaimExtractor, span_for
 from clue_research.claimstore import (
     ALL_WORKSPACES,
     ReuseScopeError,
@@ -30,6 +33,7 @@ from clue_research.claimstore import (
     insert_claim,
 )
 from clue_research.identity import stamp_reuse
+from clue_research.resolvers.exa_search import register_exa_search_resolver
 from clue_research.sources import bind_resolver
 from clue_research.stage0 import (
     CLIENT_BASELINE_FIELDS,
@@ -47,6 +51,7 @@ from clue_research.stage0 import (
 from clue_research.stage0 import client_kb as client_kb_module
 from clue_research.stage0.client_kb import _judge_tier4_claims
 from clue_research.stage0.fields import (
+    CLIENT_COMPETITOR,
     CLIENT_CUSTOMER,
     CLIENT_DIFFERENTIATOR,
     CLIENT_ICP_EVIDENCE,
@@ -586,5 +591,124 @@ def test_reverse_profile_registers_its_run_in_run_lineage() -> None:
             )
             # Resuming the same run re-registers harmlessly.
             await reverse_profile(conn, _input(), workspace_id=_CLIENT, run_id=run_id)
+
+    run_async(_run())
+
+
+# --- slice 3: the tier-3 exa_search source is background-lane-only ---------------------------
+
+
+_COMPETITOR_URL = "https://reviews.example/acme-vs-rival"
+_COMPETITOR_TEXT = "Acme Corp and Rival Inc are the two leading CI platforms."
+
+
+class _ExaBinder:
+    """The Stage-0 account-lookup bridge, as the composition roots wire it.
+
+    ``reverse_profile`` only knows the client's account *after* identity resolution, and the
+    resolver seam is sync, so the root passes this as ``on_client_resolved``: it accumulates the
+    resolved record and (re)binds the tier-3 resolver over a lookup on itself.
+    """
+
+    def __init__(self, http: object) -> None:
+        self._accounts: dict[object, object] = {}
+        self._http = http
+
+    def key_for(self, entity_id: object) -> object | None:
+        return self._accounts.get(entity_id)
+
+    def __call__(self, account: object) -> None:
+        self._accounts[account.id] = account  # type: ignore[attr-defined]
+        register_exa_search_resolver(
+            extractor=CallableClaimExtractor(_competitor_drafts),
+            accounts=self,  # type: ignore[arg-type]
+            secrets=Secrets(_env_file=None, exa_api_key="lane-test"),
+            http=self._http,  # type: ignore[arg-type]
+        )
+
+
+class _SearchHttp:
+    """A ``get_json`` double returning one on-entity search record, counting every call."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, url: str, **kwargs: object) -> object:
+        self.calls += 1
+        return {
+            "results": [{"title": "CI platforms", "url": _COMPETITOR_URL, "text": _COMPETITOR_TEXT}]
+        }
+
+
+def _competitor_drafts(normalized: object, entity: object, field: object) -> list[ClaimDraft]:
+    """A canned extractor: one grounded competitor draft, cited to the record it came from."""
+    key = field.field_key  # type: ignore[attr-defined]
+    text = normalized.text  # type: ignore[attr-defined]
+    if key != CLIENT_COMPETITOR or _COMPETITOR_TEXT not in text:
+        return []
+    return [
+        ClaimDraft(
+            field_key=key,
+            value={"name": "Rival Inc"},
+            evidence_span=span_for(text, _COMPETITOR_TEXT),
+            confidence=0.8,
+            source_url=_COMPETITOR_URL,
+        )
+    ]
+
+
+def test_exa_search_is_skipped_by_the_fast_lane_and_paid_only_by_the_background_lane() -> None:
+    """The tier gate is what keeps interactive onboarding free.
+
+    The fast lane caps at ``max_source_tier=2``: the tier-3 source is refused BEFORE a request is
+    issued, so ``client.competitor`` stays honestly empty at zero spend. The background lane
+    (``max_source_tier=3``) is the only one that pays — and then the field fills with a grounded,
+    cited tier-3 claim.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            http = _SearchHttp()
+            binder = _ExaBinder(http)
+
+            fast = await reverse_profile(
+                conn,
+                _input(),
+                workspace_id=_CLIENT,
+                max_source_tier=2,
+                on_client_resolved=binder,
+            )
+            assert http.calls == 0  # gate-skipped before the provider call
+            assert fast.cost_cents == Decimal(0)
+            scope = WorkspaceScope.for_workspace(_CLIENT)
+            assert (
+                await current_value(conn, fast.ref.client_entity_id, CLIENT_COMPETITOR, scope=scope)
+                is None
+            )
+
+            background = await reverse_profile(
+                conn,
+                _input(),
+                workspace_id=_CLIENT,
+                max_source_tier=3,
+                on_client_resolved=binder,
+            )
+            # both tier-3 client fields were researched; only the competitor one yielded a value
+            assert http.calls == 2
+            assert background.cost_cents > Decimal(0)
+            cv = await current_value(
+                conn, background.ref.client_entity_id, CLIENT_COMPETITOR, scope=scope
+            )
+            assert cv is not None
+            assert cv.value_json == {"name": "Rival Inc"}
+            assert cv.provenance.source_tier == 3
+            (claim,) = await claims_for(
+                conn, background.ref.client_entity_id, CLIENT_COMPETITOR, scope=ALL_WORKSPACES
+            )
+            assert claim.source_key == "exa_search"  # engine-stamped
+            assert claim.extraction_method is ExtractionMethod.API
+            assert claim.source_url == _COMPETITOR_URL
+            assert claim.evidence_span == _COMPETITOR_TEXT
+            assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE
 
     run_async(_run())
