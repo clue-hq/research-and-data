@@ -130,6 +130,47 @@ def test_source_url_from_a_result_header_is_carried() -> None:
     assert [d.source_url for d in drafts] == ["https://acme.example/about"]
 
 
+def test_invented_source_url_is_refused_so_the_fetched_ref_wins() -> None:
+    """``_materialize`` resolves ``draft.source_url or ref`` — an unchecked url would REPLACE the
+    real fetched provenance with a hallucination. A url not in the document is dropped to None."""
+    gateway = FakeGateway(
+        text=_response(
+            {
+                "value": "Acme automates repetitive operational work for finance teams",
+                "quote": "Acme automates repetitive operational work",
+                "source_url": "https://invented.example",
+                "confidence": 0.9,
+            }
+        )
+    )
+
+    drafts = _extractor(gateway).extract(_normalized(), _entity(), _field())
+
+    # the claim survives (its span is grounded); only the invented provenance is refused
+    assert len(drafts) == 1
+    assert drafts[0].source_url is None
+
+
+def test_source_url_is_grounded_against_the_full_text_not_the_truncated_prompt() -> None:
+    header = "### RESULT 2 | url: https://acme.example/late"
+    text = f"Acme automates repetitive work.\n{'padding. ' * 200}\n{header}\nMore about Acme."
+    gateway = FakeGateway(
+        text=_response(
+            {
+                "value": "Acme automates repetitive work",
+                "quote": "Acme automates repetitive work.",
+                "source_url": "https://acme.example/late",
+                "confidence": 0.9,
+            }
+        )
+    )
+    policy = ExtractionPolicy(extraction_model="test/model", max_text_chars=40)
+
+    drafts = _extractor(gateway, policy).extract(_normalized(text), _entity(), _field())
+
+    assert [d.source_url for d in drafts] == ["https://acme.example/late"]
+
+
 def test_extractor_satisfies_the_claim_extractor_seam() -> None:
     assert isinstance(_extractor(FakeGateway(text=_response())), ClaimExtractor)
 
@@ -340,6 +381,41 @@ def test_prompt_fences_untrusted_text_and_names_the_field() -> None:
     # the registry description is the field guidance the model is given
     assert "What the client sells and the problem it solves" in user
     assert system == EXTRACTION_PROMPTS[EXTRACTION_PROMPT_VERSION]
+
+
+def test_a_long_page_is_truncated_in_the_prompt() -> None:
+    page = "Acme automates repetitive operational work. " + ("filler sentence. " * 500)
+    policy = ExtractionPolicy(extraction_model="test/model", max_text_chars=100)
+
+    long_user = build_extraction_messages(_normalized(page), _field())[1].content
+    short_user = build_extraction_messages(_normalized(page), _field(), policy=policy)[1].content
+
+    assert len(short_user) < len(long_user)
+    assert page[:100] in short_user
+    assert page not in short_user
+
+
+def test_a_quote_beyond_the_truncation_point_is_still_grounded() -> None:
+    """Truncation bounds the *prompt*, never the grounding check — it can only cost claims."""
+    tail = "Acme is trusted by Globex and Initech."
+    page = ("filler sentence. " * 100) + tail
+    policy = ExtractionPolicy(extraction_model="test/model", max_text_chars=50)
+    gateway = FakeGateway(text=_response({"value": tail, "quote": tail, "confidence": 0.9}))
+
+    drafts = _extractor(gateway, policy).extract(_normalized(page), _entity(), _field())
+
+    assert [d.evidence_span for d in drafts] == [tail]
+    # the quote is genuinely beyond what the model was shown — the check reads the full text
+    assert tail not in gateway.calls[0][1][1].content
+
+
+def test_deeply_nested_model_output_never_escapes_as_a_recursion_error() -> None:
+    """Arbitrary attacker-influenceable output must not fail the lane: totality over a typed catch
+    (deep nesting raises RecursionError, which is not a ValueError)."""
+    depth = 20_000
+    nested = '{"claims": [{"value": ' + "[" * depth + "]" * depth + "}]}"
+
+    assert parse_extraction_response(nested, PAGE, _field(), policy=_policy()) == []
 
 
 def test_unknown_prompt_version_fails_loud() -> None:

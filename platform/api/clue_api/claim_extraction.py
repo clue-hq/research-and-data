@@ -305,14 +305,16 @@ def _first_json_object(value: str) -> dict[str, JsonValue] | None:
     Deliberately a local copy of the shape ``clue_research.verification.json_response`` uses: that
     one is an internal module of another package's verification layer and rejects a response
     carrying two top-level objects (right for a judge verdict, needlessly strict for a claim list).
-    Both fail closed after extraction; neither raises.
+    Both fail closed after extraction; neither raises. The catch is deliberately wide: the input is
+    arbitrary, attacker-influenceable model output, and ~1000-deep nesting raises ``RecursionError``
+    rather than a ``JSONDecodeError`` — which, escaping, would fail the whole recon lane.
     """
     decoder = json.JSONDecoder()
     index = value.find("{")
     while index != -1:
         try:
             parsed, _ = decoder.raw_decode(value, index)
-        except (json.JSONDecodeError, ValueError):
+        except Exception:  # noqa: BLE001 - totality over arbitrary output beats a typed catch
             parsed = None
         if isinstance(parsed, dict):
             return parsed
@@ -378,6 +380,29 @@ def _confidence(raw: JsonValue) -> float | None:
     return min(1.0, max(0.0, float(raw)))
 
 
+def _grounded_source_url(raw: JsonValue, normalized_text: str, field: FieldDef) -> str | None:
+    """The claim's url — but only if the document actually contains it. Else ``None``.
+
+    ``_materialize`` resolves a draft's provenance as ``draft.source_url or ref``, so a model-
+    supplied string **replaces** the real fetched ref as the durable evidence link an operator
+    clicks. An invented or misattributed url would therefore be the one part of an otherwise
+    rigorously grounded claim that nobody checked. A legitimate url can only come from a
+    ``### RESULT n | url: …`` header, which is *in the text* — so the same substring rule that
+    governs the quote governs the url, and a failure falls back to ``None`` (the true fetched
+    ``ref`` then wins) rather than dropping an otherwise good claim.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    url = raw.strip()
+    if url not in normalized_text:
+        log.info(
+            "stage0.claim_extraction_source_url_ungrounded",
+            field_key=field.field_key,
+        )
+        return None
+    return url
+
+
 def parse_extraction_response(
     text: str,
     normalized_text: str,
@@ -416,12 +441,17 @@ def parse_extraction_response(
             continue
         # A model that says the same thing twice has found one fact, not two: identical
         # (value, span) pairs would otherwise become duplicate claim rows over one piece of
-        # evidence, and the cap would be spent on the repetition.
-        key = json.dumps([draft.value, draft.evidence_span], sort_keys=True)
-        if key in seen:
-            dropped.append("duplicate")
-            continue
-        seen.add(key)
+        # evidence, and the cap would be spent on the repetition. A value too deeply nested to
+        # serialize is simply not deduped — losing a dedup is fine, raising here is not.
+        try:
+            key = json.dumps([draft.value, draft.evidence_span], sort_keys=True)
+        except Exception:  # noqa: BLE001 - dedup is best-effort; totality is the contract
+            key = None
+        if key is not None:
+            if key in seen:
+                dropped.append("duplicate")
+                continue
+            seen.add(key)
         drafts.append(draft)
     if dropped:
         log.info(
@@ -463,8 +493,7 @@ def _draft_from(
         return "missing_confidence"
     if confidence < policy.min_confidence:
         return "below_min_confidence"
-    raw_url = item.get("source_url")
-    source_url = raw_url if isinstance(raw_url, str) and raw_url.strip() else None
+    source_url = _grounded_source_url(item.get("source_url"), normalized_text, field)
     try:
         return ClaimDraft(
             field_key=field.field_key,
