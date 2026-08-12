@@ -24,9 +24,16 @@
  *    vocabulary, and this script does not fabricate it.
  * 3. `complete` — the lane's transaction committed and the fast lane finished; this is the
  *    release-into-the-app signal, and it carries `fact_count` plus a terminal for all eleven
- *    baseline fields.
- * 4. the BACKGROUND lane re-deriving the two tier-3-only fields the fast lane's
- *    `max_source_tier=2` walk reached at zero spend, `started` → `empty`, after the release.
+ *    baseline fields. The script **ends here**, where the screen's life ends: the hook releases
+ *    on this frame and never polls again.
+ *
+ * Deliberately NOT scripted: the background lane's second pass. It is not a touch-up of the two
+ * tier-3-only fields — it calls `reverse_profile` fresh over EVERY baseline field, and the
+ * backend's reduction is last-writer-wins per field *across* lanes ("a lane's own field row wins
+ * over an earlier lane's for the same field", `platform/api/clue_api/stage0_setup.py`), so a real
+ * post-release poll shows all eleven rows migrating to `lane: "background"` in baseline order.
+ * Scripting a partial migration would be a lie about the wire, and scripting the honest full
+ * second walk would double the script for frames no consumer can reach.
  */
 
 import type { SetupStatus } from "./setup";
@@ -51,19 +58,18 @@ export const FIXTURE_SETUP_BASELINE_FIELDS = [
   "client.buyer_profile",
 ] as const;
 
-/** The two tier-3-only fields the fast lane cannot spend on — the tail of the budget order, and
- * the only fields the background lane's second pass changes here. */
-const TIER3_ONLY_FIELDS = ["client.competitor", "client.buyer_profile"] as const;
-/** How many fields the fast lane's tier≤2 pass is the last word on. */
-const FAST_PASS_FIELD_COUNT =
-  FIXTURE_SETUP_BASELINE_FIELDS.length - TIER3_ONLY_FIELDS.length;
-
 const FIXTURE_RECON_RUN_ID = "5c1f0a2e-0000-4000-8000-0000000000f4";
 const FIXTURE_COMPANY_WEBSITE = "https://cluehq.ai";
 
 /** How the fast lane's zero-to-tier-2 pass ends for each field. Review surfaces have no tier≤2
- * resolver bound, so they come back empty — the honest outcome, not a failure. */
-const FAST_LANE_OUTCOME: Record<string, "resolved" | "empty"> = {
+ * resolver bound, so they come back empty — the honest outcome, not a failure.
+ *
+ * Keyed on the baseline union, not `string`: a mistyped or missing key is then a compile error
+ * rather than an `undefined` status the schema would quietly degrade to `"started"`. */
+const FAST_LANE_OUTCOME: Record<
+  (typeof FIXTURE_SETUP_BASELINE_FIELDS)[number],
+  "resolved" | "empty"
+> = {
   "client.value_prop": "resolved",
   "client.product": "resolved",
   "client.differentiator": "resolved",
@@ -150,39 +156,11 @@ const FAST_LANE_COMPLETE: SetupStatus = frame({
   fields: fastTerminals(FIXTURE_SETUP_BASELINE_FIELDS.length),
 });
 
-function backgroundField(field_key: string, status: "started" | "empty"): FieldFrame {
-  return { field_key, lane: "background", status };
-}
-
-/** After the release: the fast lane's nine tier≤2 fields keep their fast-lane truth, and the two
- * tier-3-only fields carry whatever the background lane has reached. The user has normally left
- * the screen by now — these frames exist because the stream stays honest about what the run is
- * still doing, not because the screen waits for them. */
-function afterRelease(tier3: readonly FieldFrame[], over: Partial<SetupStatus> = {}): SetupStatus {
-  return frame({
-    ...FAST_LANE_COMPLETE,
-    fields: [...fastTerminals(FAST_PASS_FIELD_COUNT), ...tier3],
-    ...over,
-  });
-}
-
-const [COMPETITOR, BUYER_PROFILE] = TIER3_ONLY_FIELDS;
-
-const BACKGROUND_LANE_FRAMES: SetupStatus[] = [
-  // One field at a time, exactly as the fast lane walked: the second tier-3 field still shows the
-  // fast lane's zero-spend `empty` until the background lane reaches it.
-  afterRelease([backgroundField(COMPETITOR, "started"), fastField(BUYER_PROFILE, "empty")]),
-  afterRelease([backgroundField(COMPETITOR, "empty"), backgroundField(BUYER_PROFILE, "started")]),
-  afterRelease([backgroundField(COMPETITOR, "empty"), backgroundField(BUYER_PROFILE, "empty")], {
-    background_status: "completed",
-    background_budget_exhausted: false,
-  }),
-];
-
 /**
  * The default scripted stream. Frame-per-read: the fixture source hands out the next frame on
  * every poll and sticks at the last one — a stream that has run out of states does not invent
- * more.
+ * more. Sticking on the release frame is the honest end: the background lane's own truth is a
+ * second full walk this script does not fabricate (see the header).
  */
 export const FIXTURE_SETUP_PROGRESS_SCRIPT: readonly SetupStatus[] = [
   // Durably captured, no recon row visible yet — the warm-up state, and a real durable signal.
@@ -190,5 +168,4 @@ export const FIXTURE_SETUP_PROGRESS_SCRIPT: readonly SetupStatus[] = [
   ...FAST_LANE_FRAMES,
   FAST_LANE_SETTLED,
   FAST_LANE_COMPLETE,
-  ...BACKGROUND_LANE_FRAMES,
 ];

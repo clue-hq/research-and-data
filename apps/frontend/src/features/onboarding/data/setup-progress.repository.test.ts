@@ -172,11 +172,8 @@ test("the fast lane's walk is served as starting with no visible recon run", () 
   // commits: the backend's "captured" branch serves per-field motion under `starting` with every
   // lane column null. Overall `running` is not part of a healthy fast lane, and the script must
   // not invent it (`platform/api/clue_api/stage0_setup.py`).
-  const walking = FIXTURE_SETUP_PROGRESS_SCRIPT.filter(
-    (candidate) => candidate.fields.some((field) => field.status === "started"),
-  );
-  const fastWalk = walking.filter((candidate) =>
-    candidate.fields.every((field) => field.lane === "fast"),
+  const fastWalk = FIXTURE_SETUP_PROGRESS_SCRIPT.filter((candidate) =>
+    candidate.fields.some((field) => field.status === "started"),
   );
   assert.equal(fastWalk.length, 11);
   for (const candidate of fastWalk) {
@@ -205,14 +202,16 @@ test("the default script's final frame is complete with all eleven field termina
   for (const field of last?.fields ?? []) {
     assert.notEqual(field.status, "started");
   }
-  // The two tier-3-only fields are re-derived by the background lane (the fast lane's
-  // max_source_tier=2 walk left them empty at zero spend).
-  const background = (last?.fields ?? []).filter((field) => field.lane === "background");
-  assert.deepEqual(
-    background.map((field) => field.field_key),
-    ["client.competitor", "client.buyer_profile"],
+  // Everything the release reports is the FAST lane's own truth — the script stops at the
+  // release, so no frame claims background-lane state. The background lane's second pass is a
+  // fresh walk over the WHOLE baseline (last-writer-wins per field across lanes), so a partial
+  // migration would be a lie about the wire, and a full one is unreachable through the hook.
+  assert.ok((last?.fields ?? []).every((field) => field.lane === "fast"));
+  assert.ok(
+    FIXTURE_SETUP_PROGRESS_SCRIPT.every((candidate) =>
+      candidate.fields.every((field) => field.lane === "fast"),
+    ),
   );
-  assert.ok(background.every((field) => field.status === "empty"));
 });
 
 test("the default script covers every checklist group's fields exactly once", () => {
@@ -236,10 +235,9 @@ test("the default script announces a field start before its terminal, in baselin
   for (const frame of FIXTURE_SETUP_PROGRESS_SCRIPT) {
     for (const field of frame.fields) {
       if (field.status === "started" && !started.includes(field.field_key)) {
-        assert.ok(
-          !terminated.has(field.field_key) || field.lane === "background",
-          `${field.field_key} restarted in its own lane`,
-        );
+        // Within one lane a field is announced once and terminates once; only a NEW lane's
+        // second pass may legitimately re-announce, and this script has no such frames.
+        assert.ok(!terminated.has(field.field_key), `${field.field_key} restarted in its lane`);
         started.push(field.field_key);
       }
       if (field.status !== "started") terminated.add(field.field_key);
