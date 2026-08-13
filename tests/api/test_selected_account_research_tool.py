@@ -152,9 +152,7 @@ def test_selected_launch_refuses_widening_contacts_and_budget_gated_deployments(
     assert widened[0].reason_code == "selected_launch_scope_mismatch"
 
     _wire_resolution(monkeypatch, ref_type="contact")
-    contacts = asyncio.run(
-        tool.preconditions(_inputs(_ACCOUNT_A, _ACCOUNT_B), _context())
-    )
+    contacts = asyncio.run(tool.preconditions(_inputs(_ACCOUNT_A, _ACCOUNT_B), _context()))
     assert contacts[0].reason_code == "selected_launch_accounts_required"
 
     gated = LaunchSelectedAccountResearchTool(
@@ -162,9 +160,7 @@ def test_selected_launch_refuses_widening_contacts_and_budget_gated_deployments(
         budget_controls_enabled=True,
         conn_factory=_connection,
     )
-    refused = asyncio.run(
-        gated.preconditions(_inputs(_ACCOUNT_A, _ACCOUNT_B), _context())
-    )
+    refused = asyncio.run(gated.preconditions(_inputs(_ACCOUNT_A, _ACCOUNT_B), _context()))
     assert refused[0].reason_code == "direct_launch_requires_budget_controls_disabled"
 
 
