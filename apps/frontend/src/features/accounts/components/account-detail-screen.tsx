@@ -4,6 +4,7 @@ import type {
   AccountProjectSection,
 } from "../model/account-detail";
 import { contactPersonaLabel } from "../model/account-contact";
+import { contactProfileLinkAccessibleName } from "../model/contact-accessibility";
 import {
   formatFieldKeyLabel,
   formatIsoDate,
@@ -190,11 +191,12 @@ function CommitteePanel({ account }: { account: AccountDetail }) {
         {account.committee.length ? (
           account.committee.map((member) => (
             <Link
+              aria-label={contactProfileLinkAccessibleName(member.name)}
               className="flex min-h-6 items-center gap-2 rounded-md hover:bg-[var(--clue-background-hover)]"
               href={`/accounts/${account.id}/contacts/${member.contactId}`}
               key={member.contactId}
             >
-              <ContactAvatar name={member.name} size={24} />
+              <ContactAvatar decorative name={member.name} size={24} />
               <span className={readability.uiRegular}>
                 {member.name ?? "Unnamed contact"}
               </span>
@@ -251,7 +253,9 @@ export function AccountDetailScreen({
             <AccountIdentity account={account} />
             <div className="mt-9">
               <AccountTextSection
-                emptyNote="A written account summary is composed once this account's deep research completes."
+                emptyNote="No written account summary has been composed yet."
+                prose={account.summary}
+                restrictedNote="The account summary is unavailable for display."
                 title="Account summary"
               />
             </div>

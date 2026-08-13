@@ -66,7 +66,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # FI Lane D D4 minted head-of-abm@v23: it pins `open_directive_confirmation_gate@1` and
         # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
         # gate, end the turn, and launch only after the human's own confirming turn.
-        AgentRole.HEAD_OF_ABM: ("7d85eb0083badf9104b004f546368674bc109f46ee6c630a7d14422840ce3ba5"),
+        AgentRole.HEAD_OF_ABM: ("e0f47ad5384076cc3b3fc171824f6e96c5b9eae1f6fad49aa0552e7808dd4f6f"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -139,7 +139,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (machine-invoked only), so it is disclosed as unavailable to every surface; E3's
     # `synthesize_value_narrative@1` is the same shape for the same reason. Merged count: the
     # 55-address base + Lane D's 5 (four thread tools + the confirmation gate) + Lane E's 2.
-    assert len(by_address) == 62
+    assert len(by_address) == 63
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -158,6 +158,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "inspect_readiness_history@1",
         "inspect_statement_history@1",
         "launch_account_research@1",
+        "launch_selected_account_research@1",
         "launch_contact_research@1",
         "open_directive_confirmation_gate@1",
         "propose_field@2",
@@ -219,7 +220,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
 
     assert len(disclosures) == 2
     assert disclosures[0].resource.address == "skill:stage0-interview@v10"
-    assert disclosures[1].resource.address == "skill:account-deep-steering@v3"
+    assert disclosures[1].resource.address == "skill:account-deep-steering@v4"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -348,7 +349,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "evaluate_stage0_readiness@1" not in {pin.address for pin in head.profile.tools}
     assert [item.resource.address for item in head.skill_disclosures()] == [
-        "skill:account-deep-steering@v3"
+        "skill:account-deep-steering@v4"
     ]
 
 
@@ -366,7 +367,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
         assert harness.lease.resources_frozen
         assert (
             harness.lease.backend.stat_entry_sync(
-                ".deepagent/skills/stage0-interview/v9/SKILL.md"
+                ".deepagent/skills/stage0-interview/v10/SKILL.md"
             ).sha256
             == resolved.profile.skills[0].resource.sha256
         )

@@ -24,11 +24,21 @@ from clue_api.frontend_read import (
     build_frontend_read_router,
 )
 from clue_api.projections_app import create_projections_app
+from clue_api.research_view_governance import safe_public_url
 from clue_config import Settings, load_settings
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
 
 ORIGIN = "http://localhost:3000"
+
+
+def test_public_evidence_urls_are_http_only_and_credential_free() -> None:
+    assert safe_public_url("https://evidence.example/report/1?version=2#claim")
+    assert safe_public_url("http://evidence.example/")
+    assert not safe_public_url("javascript:alert(1)")
+    assert not safe_public_url("file:///tmp/evidence")
+    assert not safe_public_url("https://user:secret@evidence.example/report")
+    assert not safe_public_url("https:///missing-host")
 
 
 def _settings(**kwargs: object) -> Settings:
@@ -105,9 +115,21 @@ def test_the_flag_mounts_the_probe_router() -> None:
     assert ("GET", f"{FRONTEND_READ_PREFIX}/accounts") in _scoped_paths(enabled)
 
 
-def test_flag_off_the_app_serves_no_frontend_routes() -> None:
+def test_flag_off_keeps_routes_absent_but_returns_a_correlatable_error() -> None:
     with TestClient(_app(_settings())) as client:
-        assert client.get(f"{FRONTEND_READ_PREFIX}/health").status_code == 404
+        response = client.get(f"{FRONTEND_READ_PREFIX}/health")
+        assert response.status_code == 404
+        request_id = _assert_envelope(response.json(), code="NOT_FOUND")
+        assert response.headers[REQUEST_ID_HEADER] == request_id
+
+
+def test_flag_off_error_ownership_remains_prefix_scoped() -> None:
+    with TestClient(_app(_settings())) as client:
+        response = client.get("/not-a-frontend-read-route")
+        assert response.status_code == 404
+        assert "detail" in response.json()
+        assert "error" not in response.json()
+        assert REQUEST_ID_HEADER not in response.headers
 
 
 def test_flag_on_the_app_serves_the_router_health_probe() -> None:

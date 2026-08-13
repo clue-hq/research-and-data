@@ -6,6 +6,8 @@ import {
   JsonValueSchema,
   PersonaSchema,
 } from "./vocabulary";
+import { ProseReadSchema } from "./prose";
+import { EvidenceReferenceSchema } from "./evidence";
 
 /**
  * A project-neutral fact about the account: whatever the merge currently holds.
@@ -23,6 +25,7 @@ export const NeutralFactSchema = z.object({
   observedAt: IsoTimestampSchema.nullable().default(null),
   /** The raw backend source key (`clearbit`, `sumble`, …) — no display-name surface exists yet. */
   provider: z.string().nullable().default(null),
+  evidence: EvidenceReferenceSchema,
 });
 
 /** A project-relative fact: an insight or a value narrative inside one project section. */
@@ -31,6 +34,7 @@ export const RelativeFactSchema = z.object({
   value: JsonValueSchema,
   observedAt: IsoTimestampSchema.nullable().default(null),
   provider: z.string().nullable().default(null),
+  evidence: EvidenceReferenceSchema,
 });
 
 /** A score inside a project section — the project is the section, so it is not repeated. */
@@ -78,11 +82,18 @@ export const CommitteeMemberSchema = z.object({
  * non-rejected claim from ANY writer — it is "how many fields do we hold a
  * value for", not research progress, and it has no denominator. The honest
  * research-side companion is `unresolvedFieldKeys`: fields research asked for
- * and could not answer.
+ * and could not answer. `unresolvedFields` adds the effective registry's
+ * description without replacing the legacy key list.
  */
+export const UnresolvedFieldSchema = z.object({
+  fieldKey: z.string(),
+  description: z.string().nullable().default(null),
+});
+
 export const AccountCoverageSchema = z.object({
   researchedFieldCount: z.number().int().nonnegative().default(0),
   unresolvedFieldKeys: z.array(z.string()).default([]),
+  unresolvedFields: z.array(UnresolvedFieldSchema).default([]),
 });
 
 /**
@@ -102,12 +113,18 @@ export const AccountDetailSchema = z.object({
   hqGeo: z.record(z.string(), JsonValueSchema).nullable().default(null),
   /** Set when a merged loser's id was requested and this survivor was served. */
   redirectedFrom: z.string().nullable().default(null),
+  summary: ProseReadSchema.default({
+    state: "not_composed",
+    paragraphs: [],
+    researchOutcome: null,
+  }),
   neutralFacts: z.array(NeutralFactSchema).default([]),
   projectSections: z.array(AccountProjectSectionSchema).default([]),
   committee: z.array(CommitteeMemberSchema).default([]),
   coverage: AccountCoverageSchema.default({
     researchedFieldCount: 0,
     unresolvedFieldKeys: [],
+    unresolvedFields: [],
   }),
 });
 

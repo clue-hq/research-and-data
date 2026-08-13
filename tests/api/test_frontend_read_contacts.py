@@ -29,7 +29,7 @@ therefore the *production* case today, and the populated ones are the post-R11 c
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -54,6 +54,7 @@ from clue_core import (
     Persona,
     ProjectRunId,
     ResearchMode,
+    ReuseScope,
     RunId,
     UseClass,
     VerificationStatus,
@@ -75,9 +76,11 @@ from clue_research.identity import (
     stamp_reuse,
 )
 from clue_research.membership import ensure_project_account
+from clue_research.narrative import CONTACT_OVERVIEW, load_prose_pack
 from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE, load_committee_pack
 from clue_research.profiling.fields import load_deep_profiling_pack
 from clue_spine import Project
+from clue_storage import artifact_key, content_address, record_artifact
 from tests._workspace import seed_project, seed_workspace
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn
@@ -93,6 +96,8 @@ _JOB_LEVEL = "contact.job_level"
 _RECENT_POST = "contact.facet.recent_post"
 _PUBLIC_APPEARANCES = "contact.facet.public_appearances"
 _STATED_INTERESTS = "contact.facet.stated_interests"
+_TITLE_ARTIFACT_BODY = b"Dana Buyer is VP Finance at Acme Contacts."
+_TITLE_ARTIFACT_KEY = artifact_key(_WS, content_address(_TITLE_ARTIFACT_BODY))
 
 #: The ``solo`` member's single signal family, deliberately **list-valued with more than one item**:
 #: it is what makes ``signals.typeCount`` falsifiable (a per-item unit would report 3, the ratified
@@ -107,12 +112,43 @@ _SOLO_APPEARANCES: tuple[dict[str, str], ...] = (
 # --- harness --------------------------------------------------------------------------------
 
 
-def _app(conn: AsyncConnection, *, enabled: bool = True):
+class _MemoryStorage:
+    def __init__(self, blobs: dict[str, bytes] | None = None) -> None:
+        self.blobs = dict(blobs or {})
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        del media_type
+        self.blobs[key] = data
+
+    async def get(self, key: str) -> bytes:
+        return self.blobs[key]
+
+    async def delete(self, key: str) -> None:
+        self.blobs.pop(key, None)
+
+    async def exists(self, key: str) -> bool:
+        return key in self.blobs
+
+    async def presign(self, key: str, *, expires_in: int = 3600) -> str:
+        raise AssertionError(f"must not presign {key!r} for {expires_in}s")
+
+    async def list_blobs(self) -> AsyncIterator[tuple[str, datetime]]:
+        if False:
+            yield "", datetime.min.replace(tzinfo=UTC)
+
+
+def _app(
+    conn: AsyncConnection,
+    *,
+    enabled: bool = True,
+    evidence_storage: _MemoryStorage | None = None,
+):
     return create_projections_app(
         surface=None,  # type: ignore[arg-type]
         tool_invoker=None,  # type: ignore[arg-type]
         settings=load_settings(_env_file=None, frontend_read_enabled=enabled),
         conn_factory=conn_session_factory(conn),
+        ingestion_storage=evidence_storage,
         manage_db_lifespan=False,
     )
 
@@ -136,8 +172,9 @@ async def _profile(
     contact_id: uuid.UUID | str,
     *,
     workspace_id: str = _WS,
+    evidence_storage: _MemoryStorage | None = None,
 ) -> httpx.Response:
-    async with _client(_app(conn)) as client:
+    async with _client(_app(conn, evidence_storage=evidence_storage)) as client:
         return await client.get(
             f"{_BASE}/{account_id}/contacts/{contact_id}",
             headers={"X-Workspace-Id": workspace_id},
@@ -177,8 +214,26 @@ async def _contact_claim(
     use_class: UseClass,
     binding: IdentityBinding = IdentityBinding.STRONG,
     source_key: str = "seed_source",
+    source_url: str | None = None,
     observed_at: datetime | None = None,
 ) -> uuid.UUID:
+    retained_key: str | None = None
+    if field_key == _TITLE:
+        retained_key = _TITLE_ARTIFACT_KEY
+        await record_artifact(
+            conn,
+            storage_key=retained_key,
+            workspace_id=_WS,
+            content_sha256=content_address(_TITLE_ARTIFACT_BODY),
+            media_type="text/plain",
+            size_bytes=len(_TITLE_ARTIFACT_BODY),
+            source_key=source_key,
+            source_url=(
+                source_url
+                if source_url is not None
+                else f"https://evidence.example.test/contact/{field_key}"
+            ),
+        )
     claim = stamp_reuse(
         contact_claim(
             entity_id=contact_id,
@@ -191,6 +246,11 @@ async def _contact_claim(
             research_mode=ResearchMode.COMMITTEE_DISCOVERY,
             identity_binding=binding,
             use_class=use_class,
+            source_url=(
+                source_url
+                if source_url is not None
+                else f"https://evidence.example.test/contact/{field_key}"
+            ),
             evidence_span=f"evidence for {field_key}",
             observed_at=observed_at,
         ),
@@ -198,6 +258,7 @@ async def _contact_claim(
     ).model_copy(
         update={
             "source_key": source_key,
+            "artifact_key": retained_key,
             "verification_status": (
                 VerificationStatus.VERIFIED
                 if binding is IdentityBinding.STRONG
@@ -207,6 +268,47 @@ async def _contact_claim(
     )
     await insert_claim(conn, claim)
     return uuid.UUID(str(claim.id))
+
+
+async def _contact_overview_claim(
+    conn: AsyncConnection,
+    *,
+    contact_id: EntityId,
+    run_id: RunId,
+    paragraphs: Sequence[str],
+    status: VerificationStatus = VerificationStatus.VERIFIED,
+    research_outcome: str = "completed",
+) -> None:
+    """One Lane-E-shaped contact overview, independent of committee reference indexing."""
+
+    claim = contact_claim(
+        entity_id=contact_id,
+        field_key=CONTACT_OVERVIEW,
+        value_json={
+            "paragraphs": list(paragraphs),
+            "prompt_version": "contact_overview_v1",
+            "synthesized_from_job_id": str(uuid.uuid4()),
+            "research_outcome": research_outcome,
+            "project_id": None,
+        },
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        confidence=Confidence(0.7),
+        run_id=run_id,
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        identity_binding=IdentityBinding.STRONG,
+        use_class=UseClass.PROFESSIONAL_PUBLIC,
+        source_url="clue://narrative/prose",
+        evidence_span="verified professional contact facts",
+    ).model_copy(
+        update={
+            "source_key": "llm_synthesis",
+            "verification_status": status,
+            "reuse_scope": ReuseScope.TENANT_PRIVATE,
+            "workspace_id": _WS,
+        }
+    )
+    await insert_claim(conn, claim)
 
 
 async def _member(
@@ -306,6 +408,7 @@ async def _build(conn: AsyncConnection) -> _Fixture:
     await load_core_pack(conn)  # `contact.facet.recent_post` lives in the core pack
     await load_committee_pack(conn)
     await load_deep_profiling_pack(conn)
+    await load_prose_pack(conn)
 
     project_a = await seed_project(conn, _WS, name="Contacts project A")
     project_b = await seed_project(conn, _WS, name="Contacts project B")
@@ -545,8 +648,10 @@ def test_a_display_denied_title_is_absent_with_a_restricted_marker() -> None:
             assert facts[_TITLE]["restricted"] is True
             assert facts[_TITLE]["value"] is None
             # ...and nothing about the withheld claim leaks through the slot.
+            assert facts[_TITLE]["claimId"] is None
             assert facts[_TITLE]["provider"] is None
             assert facts[_TITLE]["observedAt"] is None
+            assert all(item["fieldKey"] != _TITLE for item in payload["evidence"])
             assert "Chaplain" not in str(payload)
 
     run_async(scenario())
@@ -670,25 +775,201 @@ def test_the_profile_adds_account_identity_professional_facts_and_evidence() -> 
                 fixture.project_b.project_id,
             ]
 
-            providers = {chip["provider"] for chip in payload["evidence"]}
+            providers = {item["provider"] for item in payload["evidence"]}
             assert providers == {"committee_inference", "linkedin_snapshot", "sumble"}
+            evidence_by_claim = {item["claimId"]: item for item in payload["evidence"]}
+            for fact in payload["professionalFacts"]:
+                if fact["restricted"]:
+                    assert fact["claimId"] is None
+                    continue
+                assert fact["claimId"] in evidence_by_claim
+                item = evidence_by_claim[fact["claimId"]]
+                assert item["fieldKey"] == fact["fieldKey"]
+                assert item["evidenceSpan"] == f"evidence for {fact['fieldKey']}"
 
     run_async(scenario())
 
 
-def test_evidence_chips_carry_no_urls() -> None:
-    """FI-1 G4 v1: provenance chips are non-link. The provider is the raw ``source_key`` — no
-    display-name surface exists — and the evidence slot carries nothing else."""
+def test_contact_overview_is_a_typed_current_claim_not_a_professional_fact() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            await _contact_overview_claim(
+                conn,
+                contact_id=fixture.shared,
+                run_id=new_run_id(),
+                paragraphs=(
+                    "Dana leads financial evaluation for Acme's buying committee.",
+                    "The current record identifies procurement as a relevant professional theme.",
+                ),
+                research_outcome="needs_review",
+            )
+
+            payload = (await _profile(conn, fixture.acme, fixture.shared)).json()
+            assert payload["overview"] == {
+                "state": "available",
+                "paragraphs": [
+                    "Dana leads financial evaluation for Acme's buying committee.",
+                    "The current record identifies procurement as a relevant professional theme.",
+                ],
+                "researchOutcome": "needs_review",
+            }
+            assert CONTACT_OVERVIEW not in _facts(payload)
+
+    run_async(scenario())
+
+
+def test_contact_overview_distinguishes_not_composed_from_restricted() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            assert (await _profile(conn, fixture.acme, fixture.shared)).json()["overview"] == {
+                "state": "not_composed",
+                "paragraphs": [],
+                "researchOutcome": None,
+            }
+
+            await _contact_overview_claim(
+                conn,
+                contact_id=fixture.shared,
+                run_id=new_run_id(),
+                paragraphs=("This rejected overview must never be served.",),
+                status=VerificationStatus.REJECTED,
+            )
+            overview = (await _profile(conn, fixture.acme, fixture.shared)).json()["overview"]
+            assert overview == {
+                "state": "restricted",
+                "paragraphs": [],
+                "researchOutcome": None,
+            }
+            assert "rejected overview" not in str(overview)
+
+    run_async(scenario())
+
+
+def test_evidence_carries_exact_safe_urls_claim_mapping_and_review_metadata() -> None:
+    """FI-2 Slice 5 supersedes G4: public links are exact and every record names its claim."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture = await _build(conn)
             payload = (await _profile(conn, fixture.acme, fixture.shared)).json()
             assert payload["evidence"]
-            for chip in payload["evidence"]:
-                assert set(chip) == {"provider", "observedAt"}
-                assert "http" not in chip["provider"]
-                assert chip["observedAt"].startswith("2026-08-01")
+            for item in payload["evidence"]:
+                assert set(item) == {
+                    "claimId",
+                    "fieldKey",
+                    "sourceTitle",
+                    "provider",
+                    "sourceUrl",
+                    "evidenceSpan",
+                    "confidence",
+                    "freshness",
+                    "observedAt",
+                    "protectedArtifactAvailable",
+                }
+                assert item["sourceTitle"] == item["provider"]
+                assert item["sourceUrl"] == (
+                    f"https://evidence.example.test/contact/{item['fieldKey']}"
+                )
+                assert item["evidenceSpan"] == f"evidence for {item['fieldKey']}"
+                assert item["confidence"] == 1.0
+                assert item["freshness"] in {"fresh", "stale"}
+                assert item["observedAt"].startswith("2026-08-01")
+                assert item["protectedArtifactAvailable"] is (item["fieldKey"] == _TITLE)
+
+    run_async(scenario())
+
+
+def test_retained_contact_evidence_is_streamed_after_current_authorization_only() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            storage = _MemoryStorage({_TITLE_ARTIFACT_KEY: _TITLE_ARTIFACT_BODY})
+            profile = (
+                await _profile(
+                    conn,
+                    fixture.acme,
+                    fixture.shared,
+                    evidence_storage=storage,
+                )
+            ).json()
+            title_evidence = next(
+                item for item in profile["evidence"] if item["fieldKey"] == _TITLE
+            )
+            assert title_evidence["protectedArtifactAvailable"] is True
+            assert _TITLE_ARTIFACT_KEY not in str(profile)
+
+            path = (
+                f"{_BASE}/{fixture.acme}/contacts/{fixture.shared}/evidence/"
+                f"{title_evidence['claimId']}"
+            )
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                response = await client.get(path, headers={"X-Workspace-Id": _WS})
+                crossed = await client.get(path, headers={"X-Workspace-Id": _OTHER_WS})
+                unaddressable = await client.get(
+                    f"{_BASE}/{fixture.acme}/contacts/{uuid.uuid4()}/evidence/"
+                    f"{title_evidence['claimId']}",
+                    headers={"X-Workspace-Id": _WS},
+                )
+
+            assert response.status_code == 200
+            assert response.content == _TITLE_ARTIFACT_BODY
+            assert response.headers["cache-control"] == "private, no-store"
+            assert response.headers["content-security-policy"].startswith("sandbox")
+            assert response.headers["x-content-type-options"] == "nosniff"
+            assert "signed" not in str(response.headers).lower()
+            assert crossed.status_code == 404
+            assert crossed.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
+            assert unaddressable.status_code == 404
+
+            await conn.execute(
+                text("UPDATE artifact SET erased_at=now() WHERE storage_key=:key"),
+                {"key": _TITLE_ARTIFACT_KEY},
+            )
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                erased = await client.get(path, headers={"X-Workspace-Id": _WS})
+            assert erased.status_code == 404
+            assert erased.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
+
+    run_async(scenario())
+
+
+def test_retention_expired_contact_claim_exposes_neither_value_nor_evidence() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            before = (await _profile(conn, fixture.acme, fixture.shared)).json()
+            title_evidence = next(item for item in before["evidence"] if item["fieldKey"] == _TITLE)
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO lawful_basis_record (
+                        claim_id, lawful_basis, third_party_collected, regime, retention_until
+                    ) VALUES (
+                        :claim_id, 'legitimate_interest', true, 'gdpr', :expired_at
+                    )
+                    """
+                ),
+                {
+                    "claim_id": title_evidence["claimId"],
+                    "expired_at": datetime(2026, 7, 1, tzinfo=UTC),
+                },
+            )
+
+            after = (await _profile(conn, fixture.acme, fixture.shared)).json()
+            assert _TITLE not in _facts(after)
+            assert all(item["claimId"] != title_evidence["claimId"] for item in after["evidence"])
+
+            storage = _MemoryStorage({_TITLE_ARTIFACT_KEY: _TITLE_ARTIFACT_BODY})
+            path = (
+                f"{_BASE}/{fixture.acme}/contacts/{fixture.shared}/evidence/"
+                f"{title_evidence['claimId']}"
+            )
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                expired = await client.get(path, headers={"X-Workspace-Id": _WS})
+            assert expired.status_code == 404
+            assert expired.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
 
     run_async(scenario())
 
@@ -909,18 +1190,24 @@ def test_contacts_never_scope_a_claim_read_by_claim_workspace_id() -> None:
 
 
 def test_the_committee_reader_is_the_governed_resolver_not_the_identity_helper() -> None:
-    """FI-1 §4.5 ruling — and the per-project context rule is *imported* from the account-detail
-    module, never re-derived (there is exactly one recorded latest-run-wins rule)."""
+    """FI-1 §4.5 and Slice-3 addressability: every linked surface imports one committee reader."""
 
     from pathlib import Path
 
+    import clue_api.frontend_read.account_detail as account_detail
+    import clue_api.frontend_read.committee as committee
     import clue_api.frontend_read.contacts as module
 
-    body = Path(module.__file__).read_text().split('"""', 2)[2]
-    assert "contact_ids_for_account" not in body
-    assert "ContactEligibilityResolver" in body
-    assert "latest_project_run_context" in body
-    assert "FROM project_run" not in body
+    contact_body = Path(module.__file__).read_text().split('"""', 2)[2]
+    detail_body = Path(account_detail.__file__).read_text().split('"""', 2)[2]
+    committee_body = Path(committee.__file__).read_text().split('"""', 2)[2]
+    assert "contact_ids_for_account" not in contact_body + detail_body + committee_body
+    assert "read_governed_committee" in contact_body
+    assert "read_governed_committee" in detail_body
+    assert "ContactEligibilityResolver" in committee_body
+    assert "latest_project_run_context" in committee_body
+    assert "FROM project_run" in committee_body
+    assert "FROM project_run" not in contact_body + detail_body
 
 
 def test_the_display_gate_is_the_shared_c7_predicate() -> None:

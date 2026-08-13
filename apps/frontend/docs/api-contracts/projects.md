@@ -124,7 +124,7 @@ network failure. Presentation components do not call the API directly.
   reload.
 - The composer keeps one visible model selector, as explicitly ruled for R8.
   Its only option is the server-advertised promoted profile
-  `head-of-abm@v23`, labelled **GPT-5.6 Terra** and backed by
+  `head-of-abm@v24`, labelled **GPT-5.6 Terra** and backed by
   `openai/gpt-5.6-terra`. The chosen profile id is accepted, persisted, and
   checked by the detached worker before the promoted profile is executed.
 - Attachments remain unavailable because this deployment has no durable upload
@@ -153,6 +153,70 @@ network failure. Presentation components do not call the API directly.
 - The desktop sidebar trigger remains above its hover overlay, so pointer click
   can pin the preview. Enter and Space invoke the same pin/collapse transition;
   Escape still dismisses an unpinned preview.
+
+### FI-2 Slice 9B — selected records as next-message context (2026-08-13)
+
+The Accounts and Contacts tables can prepare up to 100 selected records for an
+existing project chat or an idempotently created new chat. This reuses the
+composer's existing structured `@` reference system; names and avatars are
+presentation, while workspace-scoped ids, object types and canonical versions
+are the submitted authority.
+
+`POST /api/v1/projects/{projectId}/composer-context/prepare` accepts:
+
+```json
+{
+  "thread_id": "thread_01J...",
+  "context_refs": [
+    {
+      "object_type": "account",
+      "object_id": "de305d54-75b4-431b-adb2-eb6b9e546014",
+      "version": null
+    }
+  ]
+}
+```
+
+`thread_id` is nullable for a new-chat destination. The route requires
+`thread.write`, validates project/thread/workspace scope and active-thread
+state, then returns the exact ordered context entries with current canonical
+versions and display-safe labels. It writes no domain state. The actual turn
+submission repeats tenancy/version validation and is the only operation that
+persists the references in `agent_turn_submission_context_ref`.
+
+The browser transfers the prepared draft through a 30-minute, tab-scoped
+`sessionStorage` record addressed by an opaque UUID. A URL never carries entity
+ids. Failure to prepare or store leaves the originating selection untouched.
+After transfer, the visible composer chips become the editable source of truth.
+The refs are consumed only when the turn endpoint accepts that message; failed
+submissions keep them, and later messages never inherit them implicitly.
+
+The table action itself is not a research action and requires no confirmation.
+It performs no project-membership mutation, provider call or spend. The user
+must still write the instruction that explains what the agent should do.
+
+For the explicit same-message instruction to launch deep Account research,
+the active `head-of-abm@v24` profile may call
+`launch_selected_account_research@1`. This is a narrow FI pilot path, not a
+relaxation of `launch_account_research@1`:
+
+- the server derives the initiating human and membership from the captured
+  turn, requires `research.launch`, and requires the project run to belong to
+  that turn's project;
+- every durable context ref must be an Account, and the tool-proposed ordered
+  Account ids must equal that exact current-message sequence—no widening,
+  duplicates, Contact substitution or inferred project-wide set;
+- the latest immutable research directive must name the same set, and the
+  server computes the estimate rather than accepting browser/model cost input;
+- when `CLUE_BUDGET_CONTROLS_ENABLED=false`, the same explicit command is the
+  attributable confirmation receipt, so there is no second confirmation turn;
+- when budget controls are enabled, this direct path refuses and the existing
+  durable directive gate plus `launch_account_research@1` remains mandatory.
+
+Attaching Accounts without explicit launch language only supplies discussion
+context. Attaching Contacts never authorizes Account research. Contact deep
+research remains a separately governed selection and launch flow. A successful
+launch receipt means queued or replayed, never completed research.
 
 ### Post-R9 storage-lifecycle repair (2026-08-10)
 
@@ -310,14 +374,14 @@ nothing. It requires `project.read`.
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v23",
+        "id": "head-of-abm@v24",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v23",
+    "default_agent_profile_id": "head-of-abm@v24",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,
@@ -371,7 +435,7 @@ accepts:
     }
   ],
   "attachment_refs": [],
-  "agent_profile_id": "head-of-abm@v23"
+  "agent_profile_id": "head-of-abm@v24"
 }
 ```
 
@@ -508,14 +572,14 @@ project shell:
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v23",
+        "id": "head-of-abm@v24",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v23",
+    "default_agent_profile_id": "head-of-abm@v24",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,

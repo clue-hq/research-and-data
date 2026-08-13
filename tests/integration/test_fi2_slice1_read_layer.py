@@ -17,8 +17,9 @@ composition rules turn on:
   multiplicity FI-2 §7 refuses to collapse to a representative run);
 * narratives per persona and a registry-declared ``project_relative`` insight per project, plus one
   insight from a project-less manual run (the honest ``unattributed`` bucket);
-* a governed committee with a member reached through **both** projects, a member holding a
-  display-denied (special-category) title, and a member whose role/persona binding is WEAK;
+* a governed committee with a member reached through **both** projects, an unnamed partially
+  researched member, a member holding a display-denied (special-category) title, a merged stale
+  identity link, and a member whose role/persona binding is WEAK;
 * mixed research statuses across the two projects and the two researched accounts.
 
 Then it drives every slice-1 endpoint through the real ASGI app (flag on, in-process over the
@@ -102,7 +103,13 @@ from clue_research.identity import (
     stamp_reuse,
 )
 from clue_research.membership import ensure_project_account
-from clue_research.narrative import VALUE_NARRATIVE, load_narrative_pack
+from clue_research.narrative import (
+    ACCOUNT_SUMMARY,
+    CONTACT_OVERVIEW,
+    VALUE_NARRATIVE,
+    load_narrative_pack,
+    load_prose_pack,
+)
 from clue_research.profiling.committee import (
     CURRENT_TITLE,
     PERSONA,
@@ -127,6 +134,7 @@ _ACCOUNTS = f"{FRONTEND_READ_PREFIX}/accounts"
 #: ratified §5.2 table, so a hardcoded list would be wrong). It proves the neutral/relative split is
 #: read from the registry, on the composed surface as well as in the Task-3 suite.
 _INSIGHT_FIELD = "fi2read.campaign_insight"
+_GROWTH_MODEL_FIELD = "fi2read.growth_model"
 
 
 # --- harness ----------------------------------------------------------------------------------
@@ -270,6 +278,42 @@ async def _account_claim(
     await insert_claim(conn, claim)
 
 
+async def _account_summary_claim(
+    conn: AsyncConnection,
+    *,
+    account_id: EntityId,
+    run_id: RunId,
+    paragraphs: Sequence[str],
+    research_outcome: str,
+) -> None:
+    claim = account_claim(
+        entity_id=account_id,
+        field_key=ACCOUNT_SUMMARY,
+        value_json={
+            "paragraphs": list(paragraphs),
+            "prompt_version": "account_summary_v1",
+            "synthesized_from_job_id": str(uuid.uuid4()),
+            "research_outcome": research_outcome,
+            "project_id": None,
+        },
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        confidence=Confidence(0.7),
+        run_id=run_id,
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        source_url="clue://narrative/prose",
+        evidence_span="verified account facts",
+    ).model_copy(
+        update={
+            "source_key": "llm_synthesis",
+            "verification_status": VerificationStatus.VERIFIED,
+            "reuse_scope": ReuseScope.TENANT_PRIVATE,
+            "workspace_id": _WS,
+        }
+    )
+    await insert_claim(conn, claim)
+
+
 async def _score(
     conn: AsyncConnection,
     *,
@@ -345,13 +389,51 @@ async def _contact_claim(
     return uuid.UUID(str(claim.id))
 
 
+async def _contact_overview_claim(
+    conn: AsyncConnection,
+    *,
+    contact_id: EntityId,
+    run_id: RunId,
+    paragraphs: Sequence[str],
+    research_outcome: str,
+) -> None:
+    claim = contact_claim(
+        entity_id=contact_id,
+        field_key=CONTACT_OVERVIEW,
+        value_json={
+            "paragraphs": list(paragraphs),
+            "prompt_version": "contact_overview_v1",
+            "synthesized_from_job_id": str(uuid.uuid4()),
+            "research_outcome": research_outcome,
+            "project_id": None,
+        },
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        confidence=Confidence(0.7),
+        run_id=run_id,
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        identity_binding=IdentityBinding.STRONG,
+        use_class=UseClass.PROFESSIONAL_PUBLIC,
+        source_url="clue://narrative/prose",
+        evidence_span="verified professional contact facts",
+    ).model_copy(
+        update={
+            "source_key": "llm_synthesis",
+            "verification_status": VerificationStatus.VERIFIED,
+            "reuse_scope": ReuseScope.TENANT_PRIVATE,
+            "workspace_id": _WS,
+        }
+    )
+    await insert_claim(conn, claim)
+
+
 async def _member(
     conn: AsyncConnection,
     *,
     account_id: EntityId,
     account_run: RunId,
-    name: str,
-    suffix: str,
+    name: str | None,
+    suffix: str | None,
     persona: Persona,
     binding: IdentityBinding = IdentityBinding.STRONG,
     role_confidence: float = 0.87,
@@ -362,7 +444,7 @@ async def _member(
         conn,
         account_entity_id=account_id,
         full_name=name,
-        linkedin_url=f"https://linkedin.com/in/{suffix}",
+        linkedin_url=None if suffix is None else f"https://linkedin.com/in/{suffix}",
         status=AccountStatus.ACTIVE,
     )
     base = datetime(2026, 8, 1, 9, 0, tzinfo=UTC)
@@ -489,6 +571,8 @@ class _Fixture:
     seedling: EntityId
     shared: EntityId
     masked: EntityId
+    unnamed: EntityId
+    merged_loser: EntityId
     unbound: EntityId
 
 
@@ -496,6 +580,7 @@ async def _build(conn: AsyncConnection) -> _Fixture:
     """One workspace, two projects, three accounts, one governed committee, mixed research."""
     await seed_workspace(conn, _WS)
     await load_narrative_pack(conn)
+    await load_prose_pack(conn)
     await load_committee_pack(conn)
     await register_field(
         conn,
@@ -508,6 +593,18 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         ),
         pack="fi2read",
         description="FI-2 read-layer test field: a genuinely project-relative campaign insight.",
+    )
+    await register_field(
+        conn,
+        FieldDef(
+            field_key=_GROWTH_MODEL_FIELD,
+            value_type="str",
+            pass_kind=PassKind.SCORING,
+            reuse_scope=ReuseScope.PUBLIC_FOOTPRINT,
+            research_scope=ResearchScope.PROJECT_NEUTRAL,
+        ),
+        pack="fi2read",
+        description="The account's primary go-to-market growth model.",
     )
 
     project_a = await seed_project(conn, _WS, name="Read-layer project A")
@@ -550,10 +647,29 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         conn,
         account_id=acme,
         field_key="core.revenue_band",
-        value="100m_500m",
+        value="1b_plus",
         run_id=await _run(conn, kind="enrichment", project_id=None),
         source_key="crunchbase",
         observed_at=base,
+    )
+    await _account_claim(
+        conn,
+        account_id=acme,
+        field_key=_GROWTH_MODEL_FIELD,
+        value="product_led",
+        run_id=await _run(conn, kind="enrichment", project_id=None),
+        source_key="company_profile",
+        observed_at=base,
+    )
+    await _account_summary_claim(
+        conn,
+        account_id=acme,
+        run_id=await _run(conn, kind="entity_research", project_id=None),
+        paragraphs=(
+            "Acme is a multi-site healthcare operator evaluating operational automation.",
+            "Its current research record shows enterprise scale and a product-led growth model.",
+        ),
+        research_outcome="completed",
     )
     # Zephyr belongs only to B, and its headcount was discovered on a run attributed to A.
     await _account_claim(
@@ -608,7 +724,9 @@ async def _build(conn: AsyncConnection) -> _Fixture:
                 field_key=VALUE_NARRATIVE,
                 value={
                     "persona": persona.value,
-                    "argument": f"narrative for {label}/{persona.value}",
+                    "argument": (
+                        f"Narrative for project {label}'s {persona.value.replace('_', ' ')}."
+                    ),
                     "angle_label": "roi",
                     "icp_key": "alpha" if label == "A" else "beta",
                     "icp_spec_version": 1,
@@ -676,12 +794,22 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         persona=Persona.ECONOMIC_BUYER,
         extra=(
             (CURRENT_TITLE, "VP Finance", UseClass.PROFESSIONAL_PUBLIC),
+            ("contact.job_level", "c_level", UseClass.PROFESSIONAL_PUBLIC),
             (
                 FACET_RECENT_POST,
                 "posted about procurement",
                 UseClass.PERSONAL_PUBLIC_NON_SENSITIVE,
             ),
         ),
+    )
+    await _contact_overview_claim(
+        conn,
+        contact_id=shared,
+        run_id=new_run_id(),
+        paragraphs=(
+            "Dana leads Acme's financial evaluation and represents the economic-buyer role.",
+        ),
+        research_outcome="completed",
     )
     # A held-but-display-denied (special-category) title: the value must never appear, and both
     # surfaces must say so the same way.
@@ -695,6 +823,27 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         role_confidence=0.62,
         extra=((CURRENT_TITLE, "Head Chaplain", UseClass.SENSITIVE),),
     )
+    # A valid committee identity can be intentionally unnamed and only partially researched. Its
+    # role/persona are sufficient for governed membership and Contact-detail addressability; name,
+    # title, LinkedIn and signal fields remain honestly absent.
+    unnamed, unnamed_refs = await _member(
+        conn,
+        account_id=acme,
+        account_run=account_run_a,
+        name=None,
+        suffix=None,
+        persona=Persona.TECHNICAL_EVALUATOR,
+        role_confidence=0.71,
+    )
+    # A stale link to a merged contact remains addressable and visibly resolves to the survivor.
+    merged_loser = await insert_contact_entity(
+        conn,
+        account_entity_id=acme,
+        full_name="Dana Buyer (duplicate)",
+        linkedin_url="https://linkedin.com/in/dana-buyer-duplicate",
+        status=AccountStatus.ACTIVE,
+    )
+    await mark_merged(conn, EntityType.CONTACT, loser_id=merged_loser, survivor_id=shared)
     # Membership is identity-bearing: a WEAK role/persona binding is dropped by the governed
     # reader — on *both* surfaces, which is the agreement this fixture exists to prove.
     unbound, unbound_refs = await _member(
@@ -710,7 +859,9 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         conn,
         account_run_a,
         references_index={
-            "committee": [str(item) for item in shared_refs + masked_refs + unbound_refs]
+            "committee": [
+                str(item) for item in shared_refs + masked_refs + unnamed_refs + unbound_refs
+            ]
         },
         cost_cents=Decimal("0"),
         status=AccountRunStatus.DONE,
@@ -745,6 +896,8 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         seedling=seedling,
         shared=shared,
         masked=masked,
+        unnamed=unnamed,
+        merged_loser=merged_loser,
         unbound=unbound,
     )
 
@@ -883,6 +1036,48 @@ def test_research_status_is_per_project_and_uses_the_backend_vocabulary() -> Non
     run_async(scenario())
 
 
+def test_live_prose_and_machine_values_remain_distinct_on_the_composed_journey() -> None:
+    """Lane-E prose is its own typed state; semantic tokens remain raw Band-2 values."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            detail = (await _detail(conn, fixture.acme)).json()
+            assert detail["summary"] == {
+                "state": "available",
+                "paragraphs": [
+                    "Acme is a multi-site healthcare operator evaluating operational automation.",
+                    (
+                        "Its current research record shows enterprise scale and a product-led "
+                        "growth model."
+                    ),
+                ],
+                "researchOutcome": "completed",
+            }
+            neutral = _neutral(detail)
+            assert neutral["core.revenue_band"]["value"] == "1b_plus"
+            assert neutral[_GROWTH_MODEL_FIELD]["value"] == "product_led"
+            assert ACCOUNT_SUMMARY not in neutral
+
+            profile = (await _profile(conn, fixture.acme, fixture.shared)).json()
+            assert profile["persona"] == "economic_buyer"
+            assert _facts(profile)["contact.job_level"]["value"] == "c_level"
+            assert profile["overview"] == {
+                "state": "available",
+                "paragraphs": [
+                    "Dana leads Acme's financial evaluation and represents the economic-buyer role."
+                ],
+                "researchOutcome": "completed",
+            }
+            assert CONTACT_OVERVIEW not in _facts(profile)
+
+            assert (await _detail(conn, fixture.zephyr)).json()["summary"]["state"] == (
+                "not_composed"
+            )
+
+    run_async(scenario())
+
+
 def test_relative_work_stays_in_its_own_section_and_the_residue_is_reported() -> None:
     """The detail's partition, composed: each project's narrative/insight/score sits in its own
     section, and the claim whose run maps to no project surfaces in the ``unattributed`` bucket
@@ -919,7 +1114,11 @@ def test_relative_work_stays_in_its_own_section_and_the_residue_is_reported() ->
             assert unattributed["scores"] == []
 
             # Neutral facts are served once, at the top level, in every lens — never per project.
-            assert set(_neutral(detail)) == {"core.employee_count", "core.revenue_band"}
+            assert set(_neutral(detail)) == {
+                "core.employee_count",
+                "core.revenue_band",
+                _GROWTH_MODEL_FIELD,
+            }
             for section in detail["projectSections"]:
                 assert not {entry["fieldKey"] for entry in section["insights"]} & {
                     "core.employee_count",
@@ -946,9 +1145,17 @@ def test_the_detail_committee_and_the_contacts_list_are_the_same_governed_people
 
             in_detail = {member["contactId"]: member for member in detail["committee"]}
             in_list = {row["id"]: row for row in contacts["data"]}
-            assert set(in_detail) == set(in_list) == {str(fixture.shared), str(fixture.masked)}
+            assert (
+                set(in_detail)
+                == set(in_list)
+                == {
+                    str(fixture.shared),
+                    str(fixture.masked),
+                    str(fixture.unnamed),
+                }
+            )
             assert str(fixture.unbound) not in in_detail
-            assert contacts["meta"]["total"] == len(contacts["data"]) == 2
+            assert contacts["meta"]["total"] == len(contacts["data"]) == 3
 
             for contact_id, member in in_detail.items():
                 row = in_list[contact_id]
@@ -959,12 +1166,31 @@ def test_the_detail_committee_and_the_contacts_list_are_the_same_governed_people
                 assert member["roleOnCommittee"] == row["roleOnCommittee"]["value"]
                 assert member["projectIds"] == row["projectIds"]
 
+                # This is the authored-link invariant: every id emitted by either Account detail
+                # or Contacts list resolves through the account-scoped Contact profile endpoint.
+                profile_response = await _profile(conn, fixture.acme, contact_id)
+                assert profile_response.status_code == 200
+                profile = profile_response.json()
+                assert profile["id"] == contact_id
+                assert profile["accountId"] == str(fixture.acme)
+
             # The member both projects' runs reference appears ONCE, carrying both projects.
             assert in_list[str(fixture.shared)]["projectIds"] == [
                 fixture.project_a.project_id,
                 fixture.project_b.project_id,
             ]
             assert in_list[str(fixture.masked)]["projectIds"] == [fixture.project_a.project_id]
+            unnamed = in_list[str(fixture.unnamed)]
+            assert unnamed["name"] is None
+            assert unnamed["title"] is None
+            assert unnamed["titleRestricted"] is False
+            assert unnamed["linkedinUrl"] is None
+            assert unnamed["signals"] == {"typeCount": 0}
+
+            merged = await _profile(conn, fixture.acme, fixture.merged_loser)
+            assert merged.status_code == 200
+            assert merged.json()["id"] == str(fixture.shared)
+            assert merged.json()["redirectedFrom"] == str(fixture.merged_loser)
 
             # ...and they agree on *nobody*, too: role and persona are what make someone a committee
             # member, so a workspace that will not display those claims empties both surfaces at

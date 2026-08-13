@@ -50,6 +50,7 @@ from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 # on the answer — would be inviting a human to approve spend no surface here can perform.
 _WITHHELD = {
     "launch_account_research",
+    "launch_selected_account_research",
     "launch_contact_research",
     "open_directive_confirmation_gate",
     "start_recon",

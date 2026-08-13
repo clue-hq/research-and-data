@@ -7,6 +7,7 @@ export const ProjectEntitySchema = z.object({
   label: z.string().min(1),
   secondaryLabel: z.string().min(1),
   type: z.enum(["account", "contact"]),
+  version: z.number().int().positive().nullable().optional(),
 });
 
 export const ProjectModelOptionSchema = z.object({
@@ -188,6 +189,7 @@ export const ProjectHomeResponseSchema = ProjectHomeWireSchema.transform(({ data
       label: entity.label,
       secondaryLabel: entity.secondary_label,
       type: entity.object_type,
+      version: entity.version,
     })),
     models: data.agent_profiles.map((profile) => ({
       description: profile.description,
@@ -320,6 +322,7 @@ export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transfo
         label: entity.label,
         secondaryLabel: entity.secondary_label,
         type: entity.object_type,
+        version: entity.version,
       })),
       id: data.id,
       models: data.agent_profiles.map((profile) => ({

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ClueConfigurationError,
   isAuthenticationEnabled,
   requireAuthenticationConfiguration,
 } from "./config";
@@ -32,7 +33,11 @@ test("enabled authentication refuses missing provider/API configuration", () => 
   try {
     assert.throws(
       requireAuthenticationConfiguration,
-      /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, CLUE_API_BASE_URL/,
+      (error: unknown) =>
+        error instanceof ClueConfigurationError &&
+        /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, CLUE_API_BASE_URL/.test(
+          error.message,
+        ),
     );
   } finally {
     for (const name of names) {

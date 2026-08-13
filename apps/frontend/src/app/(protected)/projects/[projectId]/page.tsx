@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 interface ProjectPageProps {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ thread?: string }>;
+  searchParams: Promise<{ handoff?: string; thread?: string }>;
 }
 
 export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
@@ -18,6 +18,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   return (
     <ProjectWorkspaceShell
       initial={{
+        handoffId: query.handoff,
         threadId: query.thread,
       }}
       projectId={projectId}

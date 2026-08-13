@@ -32,16 +32,19 @@ def test_scripted_o3_conversations_cover_the_non_linear_gate() -> None:
     with hermetic_flag_env():
         registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    skill = head.open_skill("skill:account-deep-steering@v3")
+    skill = head.open_skill("skill:account-deep-steering@v4")
 
     for scenario in scenarios:
         assert scenario["user_turns"]
         assert scenario["required_guidance"] in skill
         actions = scenario["scripted_actions"]
-        has_launch = "launch_account_research" in actions
+        has_launch = bool(
+            {"launch_account_research", "launch_selected_account_research"} & set(actions)
+        )
         assert has_launch is scenario["explicit_launch_go_ahead"]
         if not scenario["explicit_launch_go_ahead"]:
             assert "launch_account_research" not in actions
+            assert "launch_selected_account_research" not in actions
 
     discovery_completion_actions = next(
         item["scripted_actions"] for item in scenarios if item["name"] == "show_accounts_only"
@@ -58,8 +61,8 @@ def test_scripted_o3_conversations_cover_the_non_linear_gate() -> None:
     )
     assert "A queue receipt or provider wait is not completed research." in skill
     assert (
-        "Never translate a successful tool call, launch receipt, replay, or model\n"
-        "stop into successful research." in skill
+        "Never translate a successful tool call, launch receipt, replay, or model stop into "
+        "successful research." in " ".join(skill.split())
     )
 
     # The registered launch tool is the exact governed spend-class contract that gate steers, and

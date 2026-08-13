@@ -95,7 +95,7 @@ export interface ProjectChatController {
       }[];
       agentProfileId?: string | null;
     },
-  ): Promise<void>;
+  ): Promise<ChatSubmissionResult>;
   answerGate(card: GateCardModel, decision: GateDecision): Promise<void>;
   stopActiveTurn(): Promise<void>;
   retryTurn(turnId: string): Promise<void>;
@@ -107,6 +107,10 @@ export interface ProjectChatController {
   threadStatus(threadId: string): ThreadStatus;
   threadLabelFor(thread: ChatThread): string;
 }
+
+export type ChatSubmissionResult =
+  | { status: "accepted"; turnId: string }
+  | { status: "failed" | "not_submitted" };
 
 export function useProjectChatController({
   projectId,
@@ -440,7 +444,7 @@ export function useProjectChatController({
       } = {},
     ) => {
       const trimmed = text.trim();
-      if (!trimmed || !activeThreadId) return;
+      if (!trimmed || !activeThreadId) return { status: "not_submitted" } as const;
       const contextRefs = options.contextRefs ?? [];
       const agentProfileId = options.agentProfileId ?? null;
       const attempt = messageSubmissions.current.begin(
@@ -448,9 +452,10 @@ export function useProjectChatController({
         { message: trimmed, contextRefs, agentProfileId },
         () => newIdempotencyKey("turn"),
       );
-      if (!attempt) return;
+      if (!attempt) return { status: "not_submitted" } as const;
+      let accepted: Awaited<ReturnType<typeof repositories.turns.submit>>;
       try {
-        const accepted = await repositories.turns.submit({
+        accepted = await repositories.turns.submit({
           projectId,
           threadId: activeThreadId,
           submission: {
@@ -461,7 +466,13 @@ export function useProjectChatController({
           },
           idempotencyKey: attempt.idempotencyKey,
         });
-        if (!mounted.current) return;
+      } catch (failure) {
+        report(failure);
+        return { status: "failed" } as const;
+      } finally {
+        messageSubmissions.current.finish(attempt);
+      }
+      if (mounted.current) {
         setOptimistic((current) => [
           ...current.filter((item) => item.turnId !== accepted.turnId),
           {
@@ -471,12 +482,13 @@ export function useProjectChatController({
           },
         ]);
         attach(activeThreadId, accepted.turnId);
-        await loadConversation(activeThreadId);
-      } catch (failure) {
-        report(failure);
-      } finally {
-        messageSubmissions.current.finish(attempt);
+        try {
+          await loadConversation(activeThreadId);
+        } catch (failure) {
+          report(failure);
+        }
       }
+      return { status: "accepted", turnId: accepted.turnId } as const;
     },
     [activeThreadId, attach, loadConversation, projectId, repositories, report],
   );

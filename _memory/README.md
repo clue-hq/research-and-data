@@ -27,6 +27,41 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-13-fi2-slice9b-selected-records-chat.md` — FI-2 Slice 9B adds capability-gated
+  Account/Contact selection-to-chat handoff, opaque next-message-only composer state, accepted-only
+  clearing, and a server-enforced exact selected-Account launch path under the budget-controls-off
+  pilot contract; terminal verification is green and authenticated browser closeout is recorded as
+  it completes.
+- `2026-08-13-fi2-slice9a-bulk-actions.md` — FI-2 Slice 9A closes LF-ACCOUNT-005
+  with capability-gated current-page selection, durable idempotent Account-to-project and Contact
+  email actions, explicit numbered pagination, matching 40 px shell/footer alignment, and complete
+  terminal plus authenticated-browser acceptance evidence.
+- `2026-08-12-fi2-slice10-contact-email-enrichment.md` — FI-2 Slice 10 replaces the false
+  timer-only Contact email cue with authenticated durable Exa + Sumble acquisition, preserves
+  provider conflict and governance metadata without verified-email promotion, and records focused,
+  migration, full-suite-baseline and authenticated browser acceptance evidence.
+- `2026-08-12-fi2-slice10-sumble-email-probe.md` — disposable live Sumble contract probe proves
+  v9 match-mode email selection, zero-credit async kickoff, terminal-poll charge boundary, and the
+  separate MCP OAuth requirement; the follow-on Slice 10 implementation is recorded above.
+- `2026-08-12-fi2-slice5-evidence.md` — FI-2 Slice 5 maps exact safe source URLs, evidence spans,
+  confidence/freshness and protected artifact actions to display-approved Account/Contact claims;
+  terminal and authenticated-browser closeout are recorded there as they complete.
+- `2026-08-12-fi2-slice4-live-prose-formatting.md` — FI-2 Slice 4 implements typed current
+  Account/Contact prose states, stable frontend enum labels and registry-described dynamic gaps;
+  terminal/database gates plus authenticated browser-to-API-to-Postgres acceptance are complete,
+  including every linked Contact shape and direct reload.
+- `2026-08-12-fi2-slice3-contact-journey.md` — FI-2 Slice 3 closes LF-CONTACT-001 and
+  LF-CONTACT-003 with one shared governed committee/addressability seam, named/withheld/unnamed and
+  merged-link coverage, concise row/link accessibility names, full terminal gates, and an
+  authenticated browser-to-API-to-Postgres acceptance run.
+- `2026-08-12-fi2-slice2-account-recovery.md` — FI-2 Slice 2 closes LF-ACCOUNT-003
+  with five typed recovery states, explicit workspace selection, request-correlated flag-off errors,
+  safe expired-session reauthentication, pagination parity, focused/full gates, and an authenticated
+  browser matrix that verifies every action and excludes runtime/internal error text.
+- `2026-08-11-fi2-slice1-accounts-auth-cutover.md` — FI-2 Slice 1 removes every
+  Accounts/Contacts runtime fixture and legacy workspace-header path, shares one authenticated
+  server/BFF transport, renders the durable zero-account state, records focused/frontend/build/DB
+  evidence, and closes signed-in desktop/mobile browser acceptance on the exact allowed origin.
 - `2026-08-06-m8d-r9-parallel-execution.md` — R9 accepted: exact-wave dependency checks,
   atomic budget/provider admission, concurrent Exa/Sumble execution, partial-result joining,
   callback-race-safe composite waits, cold-resume/crash replay, DSAR, and isolated-DB evidence.

@@ -118,6 +118,11 @@ export function ConversationPane({
           {chat.error}
         </p>
       ) : null}
+      {controller.contextHandoffError ? (
+        <p className={styles.messageText} role="alert">
+          {controller.contextHandoffError}
+        </p>
+      ) : null}
       <div className={styles.transcriptScroll} ref={transcriptScrollRef}>
         <ChatTranscript
           actions={partActions}
@@ -146,7 +151,7 @@ export function ConversationPane({
         <ProjectComposer
           // Never disabled while work is detached: the user keeps the wheel.
           disabled={chat.access !== null || chat.route !== null}
-          entities={workspace.entities}
+          entities={controller.composerEntities}
           modelPickerOpen={controller.modelPickerOpen}
           models={workspace.models}
           onEntityRemove={
@@ -162,24 +167,28 @@ export function ConversationPane({
           onModelPickerToggle={controller.toggleModelPicker}
           onModelSelect={controller.selectModel}
           onPromptChange={controller.setPrompt}
-          onSubmit={(prompt, entityIds) => {
+          onSubmit={async (prompt, entityIds) => {
             const contextRefs = (entityIds ?? controller.selectedEntityIds)
-              .map((id) => workspace.entities.find((entity) => entity.id === id))
+              .map((id) => controller.composerEntities.find((entity) => entity.id === id))
               .filter((entity) => entity !== undefined)
               .map((entity) => ({
                 objectId: entity.id,
                 objectType: entity.type,
-                version: null,
+                version: entity.version ?? null,
               }));
-            void chat.submitMessage(prompt ?? controller.prompt, {
+            const accepted = await chat.submitMessage(prompt ?? controller.prompt, {
               contextRefs,
               agentProfileId:
                 workspace.composerCapabilities.agentProfileSelection
                   ? (controller.selectedModel?.id ?? null)
                   : null,
             });
+            if (accepted.status !== "accepted") return false;
+            controller.completeSubmissionContext(
+              contextRefs.map((reference) => reference.objectId),
+            );
             controller.setPrompt("");
-            controller.resetSubmissionContext();
+            return true;
           }}
           prompt={controller.prompt}
           selectedEntities={controller.selectedEntities}

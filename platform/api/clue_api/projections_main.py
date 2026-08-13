@@ -13,6 +13,7 @@ from clue_api.composition import load_research_packs
 from clue_api.exa_targeted_enrichment import build_production_exa_targeted_starter
 from clue_api.exa_websets_lifecycle import ExaWebhookIngestor, build_exa_webhook_router
 from clue_api.execution_wiring import build_tool_invoker
+from clue_api.frontend_read.contact_email_lookup import build_contact_email_lookup_service
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.observability_wiring import build_observability_surface
 from clue_api.projections_app import create_projections_app
@@ -94,6 +95,17 @@ def build_application(
             settings=resolved,
             conn_factory=transaction,
         )
+    contact_email_lookup = (
+        build_contact_email_lookup_service(
+            exa_api_key=resolved_secrets.exa_api_key,
+            sumble_api_key=resolved_secrets.sumble_api_key,
+            sumble_cents_per_credit=resolved.sumble_cents_per_credit,
+            storage=storage,
+            poll_after_s=resolved.frontend_contact_email_poll_after_s,
+        )
+        if resolved.frontend_contact_email_lookup_enabled
+        else None
+    )
 
     # --- the chat surface's identity source: exactly one, decided here -------------------------
     # FI Lane B ⇄ Lane D join. Before the join this process built the development principal
@@ -225,6 +237,7 @@ def build_application(
         ),
         auth_service=auth_service,
         auth_closer=auth_closer,
+        contact_email_lookup=contact_email_lookup,
     )
 
 

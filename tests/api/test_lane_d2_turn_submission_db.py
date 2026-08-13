@@ -66,6 +66,7 @@ from clue_api.agent_turn_wiring import (
     DurableAgentArtifactStore,
 )
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
+from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.conversation_turns import ConversationTurnEngine
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.projections_app import create_projections_app
@@ -289,7 +290,7 @@ def test_a_submitted_turn_is_durable_and_queued_before_anything_runs(tmp_path: P
             assert submission.submitted_by_user_id == USER_ID
             assert submission.submitted_via_membership_id.startswith(MEMBERSHIP_ID)
             assert submission.thread_id == thread_id
-            assert submission.agent_profile_id == "head-of-abm@v23"
+            assert submission.agent_profile_id == PROJECT_CONVERSATION_AGENT_PROFILE_ID
 
             # Capture-before-spend: the human's words and their `actor='human'` record exist.
             capture = (
@@ -366,7 +367,7 @@ def test_message_submission_persists_ordered_context_and_the_real_terra_profile(
                     {"object_type": "account", "object_id": str(first_account)},
                 ],
                 "attachment_refs": [],
-                "agent_profile_id": "head-of-abm@v23",
+                "agent_profile_id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
             }
             headers = {
                 "X-Workspace-Id": project.workspace_id,
@@ -408,7 +409,7 @@ def test_message_submission_persists_ordered_context_and_the_real_terra_profile(
                 turn_id=turn_id,
             )
             assert submission is not None
-            assert submission.agent_profile_id == "head-of-abm@v23"
+            assert submission.agent_profile_id == PROJECT_CONVERSATION_AGENT_PROFILE_ID
             rows = (
                 (
                     await conn.execute(

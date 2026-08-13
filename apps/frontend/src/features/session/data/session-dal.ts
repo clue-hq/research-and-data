@@ -2,19 +2,22 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import {
-  ClueAuthenticationError,
-  fetchClueAuthentication,
-} from "@/auth/backend";
+import { fetchClueAuthentication } from "@/auth/backend";
+import { ClueAuthenticationError } from "@/auth/errors";
 import { isAuthenticationEnabled } from "@/auth/config";
 import { requireProviderSessionToken } from "@/auth/server";
 import {
   AuthenticatedSessionSchema,
   RequestPrincipalSchema,
   WORKSPACE_COOKIE,
+  type AuthenticatedSession,
   type ProtectedSession,
   resolveWorkspaceMembership,
 } from "../model/session";
+import {
+  protectedSessionRecoveryFor,
+  type ProtectedSessionResult,
+} from "../model/session-recovery";
 
 function handleAuthenticationError(error: unknown): never {
   if (error instanceof ClueAuthenticationError) {
@@ -26,8 +29,22 @@ function handleAuthenticationError(error: unknown): never {
     ) {
       redirect(`/access-denied?code=${encodeURIComponent(error.code)}`);
     }
+    if (error.code === "WORKSPACE_SELECTION_REQUIRED") {
+      redirect("/select-workspace");
+    }
   }
   throw error;
+}
+
+export async function getWorkspaceSelectionSession(): Promise<AuthenticatedSession> {
+  const token = await requireProviderSessionToken();
+  try {
+    return AuthenticatedSessionSchema.parse(
+      await fetchClueAuthentication("/auth/v1/session", { token }),
+    );
+  } catch (error) {
+    handleAuthenticationError(error);
+  }
 }
 
 export async function getProtectedSession(): Promise<ProtectedSession | null> {
@@ -42,6 +59,23 @@ export async function getProtectedSession(): Promise<ProtectedSession | null> {
   }
 }
 
+/**
+ * Let protected layouts render normal infrastructure failures as page state.
+ * Authentication and membership failures still redirect inside
+ * `getProtectedSession`; unexpected programming errors still throw.
+ */
+export async function getProtectedSessionResult(): Promise<
+  ProtectedSessionResult<ProtectedSession | null>
+> {
+  try {
+    return { status: "ready", session: await getProtectedSession() };
+  } catch (error) {
+    const recovery = protectedSessionRecoveryFor(error);
+    if (recovery) return { status: "recovery", recovery };
+    throw error;
+  }
+}
+
 export async function loadProtectedSession(
   token: string,
   requestedWorkspaceId: string | null | undefined,
@@ -51,6 +85,12 @@ export async function loadProtectedSession(
   );
   const membership = resolveWorkspaceMembership(session, requestedWorkspaceId);
   if (!membership) {
+    if (session.memberships.length > 0) {
+      throw new ClueAuthenticationError(
+        "An explicit workspace selection is required",
+        { code: "WORKSPACE_SELECTION_REQUIRED", status: 403 },
+      );
+    }
     throw new ClueAuthenticationError(
       "User has no active Clue workspace membership",
       { code: "WORKSPACE_FORBIDDEN", status: 403 },

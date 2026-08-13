@@ -43,7 +43,7 @@ export function ProjectWorkspaceShell({
   return (
     <LoadedProjectWorkspace
       initial={initial}
-      key={`${loaded.workspace.id}:${initial.threadId ?? ""}`}
+      key={`${loaded.workspace.id}:${initial.threadId ?? ""}:${initial.handoffId ?? ""}`}
       workspace={loaded.workspace}
     />
   );
@@ -56,7 +56,7 @@ function LoadedProjectWorkspace({
   initial: ProjectWorkspaceInitialState;
   workspace: ProjectWorkspace;
 }) {
-  const controller = useProjectWorkspaceController(workspace);
+  const controller = useProjectWorkspaceController(workspace, initial);
   // Two controllers, two responsibilities: the conversation is durable state
   // over real repositories, the artifact side is local view state over the
   // project shell. They share nothing but the screen.

@@ -1,14 +1,21 @@
 # Accounts API contract
 
-Status: frontend-ready proposal for backend implementation.
+Status: implemented FI-2 read contract with authenticated frontend cutover.
 
 Owner for backend integration: Aaryan.
 
-The frontend currently uses `fixtureAccountsRepository` and
-`fixtureAccountDetailsRepository`, plus dedicated contact and account-workspace
-repositories. Setting `CLUE_ACCOUNTS_API_BASE_URL` activates the corresponding
-HTTP repositories without changing page or component code. (This flow reads its
-own variable — see the as-built section below for why.)
+As of the 2026-08-11 FI-2 cutover, Accounts and Contacts have no runtime fixture
+mode. Their repositories always use the live `/frontend/v1` read surface.
+Server Component reads derive the Clerk provider proof on the Next server,
+resolve the selected workspace through Clue's membership store, and send
+`Authorization` plus `X-Clue-Workspace-Id` to FastAPI. Browser-originated API
+requests use the same resolver through the same-origin `/api/clue/**` BFF.
+`CLUE_ACCOUNTS_API_BASE_URL`, `CLUE_WORKSPACE_ID`, legacy `X-Workspace-Id`, and
+the unauthenticated Next rewrite are no longer part of this flow.
+
+The frontend-authored proposal below is retained as history. The “As-built
+backend read API” and “Authenticated frontend cutover” sections are the current
+contract where the proposal differs.
 
 ## Shared response conventions
 
@@ -179,6 +186,10 @@ same value for both fields when that distinction is not needed.
 
 ### `GET /api/v1/accounts/:accountId/contacts`
 
+> Historical proposal. The FI-2 as-built Contacts contract begins below. Slice 10 supersedes the
+> proposed `emailStatus` placeholder with a durable `emailLookup` result and two explicit POST
+> mutations; no browser timer represents provider success.
+
 Returns the contact-table rows. Contact records are kept outside the account
 detail response so the backend can paginate and refresh them independently.
 
@@ -202,7 +213,13 @@ when either identifier is unknown.
 
 ### `GET /api/v1/accounts/:accountId/workspace`
 
-Returns the modular payload used by the Insights, Artifacts, and Activity tabs:
+> Historical proposal. FI-2 Slice 6 supersedes the Activity portion with the
+> dedicated durable `GET /frontend/v1/accounts/{accountId}/activity` contract
+> below. FI-2 Slice 7 removes Artifacts from the workspace model because no live
+> Account-artifact read contract exists. The model now covers only the
+> still-unserved legacy Insights proposal.
+
+The remaining placeholder payload is:
 
 ```json
 {
@@ -217,31 +234,15 @@ Returns the modular payload used by the Insights, Artifacts, and Activity tabs:
         "url": "https://openai.com/",
         "summary": "Evidence summary"
       }
-    ],
-    "artifacts": [
-      {
-        "id": "finance-review",
-        "title": "10x revenue ad",
-        "type": "presentation",
-        "thumbnailPath": "/artifacts/finance-review.png",
-        "lastEditedLabel": "Last edited today"
-      }
-    ],
-    "activity": [
-      {
-        "id": "contacts-added",
-        "kind": "contacts",
-        "text": "Clue added 14 new contacts",
-        "timeLabel": "1 hour ago"
-      }
     ]
   }
 }
 ```
 
-The schema is in `src/features/accounts/model/account-workspace.ts`. The
-endpoint can later be split by tab if payload size or update frequency warrants
-it without changing the presentation components.
+The remaining schema is in `src/features/accounts/model/account-workspace.ts`.
+Artifacts and Activity are no longer represented by this payload. A future
+artifact integration adds its own typed live repository rather than reviving
+this fixture-era aggregate.
 
 ## Planned write and configuration endpoints
 
@@ -338,11 +339,13 @@ authored filter rules. Project IDs must remain opaque stable identifiers.
 
 1. Implement both frontend read contracts exactly as the validated shapes
    above.
-2. Configure `CLUE_ACCOUNTS_API_BASE_URL` only on the Next.js server.
-3. Confirm CORS/network topology if the Next server and API use different
-   origins.
-4. Add the chosen authentication header or server session inside
-   `createHttpAccountsRepository`.
+2. Configure authentication plus the server-only `CLUE_API_BASE_URL`; there is
+   no Accounts-specific origin or workspace environment variable.
+3. Keep browser calls same-origin through `/api/clue`; Server Components call
+   the same authenticated backend primitive directly and never loop back
+   through their own Route Handler.
+4. Derive provider proof and `X-Clue-Workspace-Id` on the Next server. Never
+   accept a browser-authored workspace or authorization header.
 5. Replace `logoPath` only through the schema and repository boundary.
 6. Add contract tests using representative success, empty, and error payloads.
 7. Keep table and detail records independently fetchable so list responses do
@@ -362,9 +365,11 @@ drives all four endpoints over one seeded workspace, and
 `tests/api/test_frontend_read_*.py` cover each endpoint on its own.
 
 The surface is flag-gated (`frontend_read_enabled`, default off; the routes 404
-when it is off), is served under `/frontend/v1`, and requires the tenant header
-`X-Workspace-Id` on every data request (the one exception is
-`GET /frontend/v1/health`, an unscoped liveness probe that carries no tenant).
+when it is off) and is served under `/frontend/v1`. The router's isolated
+development fallback accepts `X-Workspace-Id`; an authenticated application
+overrides that resolver with Lane B's principal service, which requires provider
+proof plus `X-Clue-Workspace-Id`. The production frontend uses only the latter.
+`GET /frontend/v1/health` remains an unscoped liveness probe.
 It is read-only: no create, update, delete,
 research-launch, query-POST, table-config, `search`, or `sort` endpoint exists
 yet, and the only list query parameters are `projectId`, `cursor`, and `limit`.
@@ -377,6 +382,7 @@ yet, and the only list query parameters are `projectId`, `cursor`, and `limit`.
 | `GET /frontend/v1/accounts/{accountId}` | the account object itself, no `data` wrapper |
 | `GET /frontend/v1/accounts/{accountId}/contacts` | `{ data: [...], meta: { total } }` |
 | `GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` | the contact object itself, no `data` wrapper |
+| `GET /frontend/v1/accounts/{accountId}/activity` | the durable activity object itself, no `data` wrapper |
 
 List row:
 
@@ -445,6 +451,11 @@ Account detail:
   "registryIds": {},
   "hqGeo": null,
   "redirectedFrom": null,
+  "summary": {
+    "state": "available",
+    "paragraphs": ["Acme is a multi-site healthcare operator."],
+    "researchOutcome": "completed"
+  },
   "neutralFacts": [
     {
       "fieldKey": "core.employee_count",
@@ -499,7 +510,16 @@ Account detail:
       "projectIds": ["prj_a", "prj_b"]
     }
   ],
-  "coverage": { "researchedFieldCount": 6, "unresolvedFieldKeys": [] }
+  "coverage": {
+    "researchedFieldCount": 6,
+    "unresolvedFieldKeys": ["healthcare.npi"],
+    "unresolvedFields": [
+      {
+        "fieldKey": "healthcare.npi",
+        "description": "National Provider Identifier (deterministic registry id; tier-1)."
+      }
+    ]
+  }
 }
 ```
 
@@ -517,7 +537,8 @@ Contacts row and profile:
       "roleOnCommittee": { "value": "economic_buyer", "confidence": 0.87 },
       "linkedinUrl": "https://linkedin.com/in/dana-buyer",
       "projectIds": ["prj_a", "prj_b"],
-      "signals": { "typeCount": 1 }
+      "signals": { "typeCount": 1 },
+      "emailLookup": null
     }
   ],
   "meta": { "total": 1 }
@@ -525,11 +546,28 @@ Contacts row and profile:
 ```
 
 The profile is that row plus `accountId`, `accountName`, `redirectedFrom`,
-`professionalFacts` (`{ fieldKey, value, observedAt, provider, restricted }`),
-and `evidence` (`{ provider, observedAt }`, no URLs).
+`overview` (the same typed prose state as Account `summary`),
+`professionalFacts` (`{ fieldKey, claimId, value, observedAt, provider,
+restricted }`), and the claim-mapped `evidence` records specified by the FI-2
+slice-5 section below.
+
+`emailLookup` is `null` until a user requests enrichment. Once requested, it is
+`{ lookupId, state, resolution, emails, retryable }`, where `state` is `pending | available |
+not_found | withheld | unavailable | failed`. Each email is
+`{ value, sources: [{ key, label }] }`. It is durable and therefore appears on
+both the Contact row and profile after reload; it is separate from canonical
+Contact identity and never implies `verified_email` promotion.
+
+`resolution` retains the backend reconciliation result: `pending | matched |
+single_source | conflict | none | withheld | unavailable | failed`. The frontend
+does not render a verification/corroboration badge. It shows one address when
+providers match, one address when only one returns a result, and two
+source-labelled addresses when `resolution` is `conflict`.
 
 The error envelope is the one documented above. Codes in use:
-`UNAUTHORIZED` (401, missing `X-Workspace-Id`), `INVALID_CURSOR` (400),
+`UNAUTHORIZED` (401, missing workspace in the isolated development resolver;
+the authenticated application instead rejects missing provider proof or
+`X-Clue-Workspace-Id` through its principal resolver), `INVALID_CURSOR` (400),
 `ACCOUNT_NOT_FOUND` (404), `CONTACT_NOT_FOUND` (404), `VALIDATION_ERROR` (422,
 malformed identifier or out-of-range `limit`), `INTERNAL_ERROR` (500). Every
 response also carries an `X-Request-Id` header matching `error.requestId`.
@@ -542,13 +580,15 @@ a string, branch on the known values, and fall back to the message for anything
 else; a closed `z.enum([...])` turns a new backend code into a client-side
 parse crash instead of a displayable error.
 
-Pagination is keyset over `(createdAt, id)` descending, newest account first.
-`limit` defaults to 50 and is capped at **200** (this supersedes the maximum of
-100 proposed above); a value outside `1..200` is a `422`. `cursor` is opaque and
-must not be parsed; a cursor the endpoint did not issue is a `400`, never a
-silent restart. `projectId` filters by membership; an unknown project returns an
-empty page, not a `404`, and the rows it does return still carry their full
-`projects` array. `meta.nextCursor` is `null` on the last page.
+The read supports two explicitly exclusive pagination modes over `(createdAt,
+id)` descending. Existing internal consumers may use opaque keyset `cursor`
+pagination; a cursor the endpoint did not issue is a `400`. The browser table
+uses one-based `page` plus `limit`, and receives `{ page, pageSize, totalPages }`
+in `meta`; combining `page` and `cursor` is `400 INVALID_PAGINATION`. `limit`
+defaults to 50 and is capped at **200** at the API, while the browser offers the
+fixed page sizes 10, 20, 30, 50, 75 and 100. `projectId` filters by membership;
+an unknown project returns an empty page, not a `404`, and returned rows still
+carry their full `projects` array.
 
 ### Ratified deviations from the proposal
 
@@ -672,6 +712,8 @@ empty page, not a `404`, and the rows it does return still carry their full
   by registration). Do not render it as research progress or drive a completion
   meter from it; the honest research-side companion is `unresolvedFieldKeys`,
   which names fields research *asked for* and could not answer.
+  `unresolvedFields` carries the same keys with their field-registry descriptions,
+  so a new dynamic/industry-pack field can explain itself without a frontend map.
 - **`updatedAt` is the `account_entity` row's update time, not research or claim
   recency.** It moves when the entity record itself changes (identity
   resolution, a merge, an alias or registry-id write) and does **not** move when
@@ -723,14 +765,14 @@ called out rather than assumed.
    completed | suspended` and does **not** yet serve `not_launchable`, which
    depends on the launch surface owned by Lane D (FI-1 D-9) — it is ratified into
    the vocabulary ahead of Lane D so the schema is not widened twice. `persona`
-   and `roleOnCommittee` adopt the four backend personas. `emailStatus` widens
-   (`available | lookup | pending | unavailable` at least), which is moot on this
-   surface because slice 1 serves no email data at all (G3). **`overallFit` is
+   and `roleOnCommittee` adopt the four backend personas. The proposed
+   `emailStatus` was absent in slice 1 and is superseded by Slice 10's typed
+   `emailLookup` read/mutation contract. **`overallFit` is
    NOT invented** — the backend serves raw `scores[].fit`, and no tier badge,
    band cut, or adapter constant is introduced on this slice. `activity.kind`
-   widens to the backend event kinds with a projection-layer label map (no
-   activity endpoint exists in slice 1). `freshness` and `addedVia` are new enums
-   this slice introduces.
+   widens to the backend event kinds with a projection-layer label map (landed
+   in Slice 6 on the dedicated Activity endpoint). `freshness` and `addedVia`
+   are new enums this slice introduces.
 4. **D-7 RATIFIED — the fixture-only fields are DROPPED for MVP, because they
    were placeholders for industry-pack custom fields.** That is the founder's
    clarification and it changes what "dropped" means: the hardcoded fixture
@@ -788,22 +830,16 @@ implicit.
    sentence-cased through a generic prettifier with no lookup table to drift.
    `researchStatus`, `persona` and `freshness` — closed backend enums — are the
    only `z.enum`s on this surface, plus `not_launchable`, ratified forward.
-3. **The accounts flow owns its own base-URL variable,
-   `CLUE_ACCOUNTS_API_BASE_URL`.** It is deliberately not one app-wide switch.
-   The projects repositories used to key off `CLUE_API_BASE_URL` and call
-   `api/v1/home` and `api/v1/projects/*`, which slice 1 serves nothing for and
-   which throw on any non-2xx — so configuring the accounts flow also broke the
-   home and project routes. Those repositories are now pinned to fixtures and
-   read no variable at all until phase 2 gives them a backend surface, and each
-   flow gets its own switch when it gets its own backend.
-4. **Tenancy is a build-time env for MVP: `CLUE_WORKSPACE_ID`.** Every
-   `/frontend/v1` data request carries `X-Workspace-Id`, and the frontend has no
-   session or tenant surface yet. The transport module reads the workspace from
-   the environment and throws at the seam when `CLUE_ACCOUNTS_API_BASE_URL` is
-   set without it, instead of shipping a `401` to a screen. When a real session
-   layer exists, `data/frontend-api.ts::workspaceId` is the single function that
-   changes. Both variables are server-only — never `NEXT_PUBLIC_*`, because the
-   workspace *is* the tenancy boundary.
+3. **SUPERSEDED 2026-08-11 — no Accounts-specific base URL or fixture
+   switch.** Accounts and Contacts always use `/frontend/v1` through the shared
+   server-only `CLUE_API_BASE_URL`. Removing `CLUE_ACCOUNTS_API_BASE_URL` means
+   an unset variable can no longer silently substitute unrelated demo data.
+4. **SUPERSEDED 2026-08-11 — tenancy comes from the authenticated session.**
+   `CLUE_WORKSPACE_ID` and legacy `X-Workspace-Id` are removed from the
+   frontend. The Next server resolves the provider session and selected Clue
+   membership, then emits `Authorization` and `X-Clue-Workspace-Id`. FastAPI
+   remains the final authorization authority and refuses missing, revoked, or
+   cross-workspace memberships.
 5. **`error.code` is carried, never switched on — and a `404` is not
    automatically an empty workspace.** A failed read raises
    `ClueApiError { code, status, requestId }` with `code` typed as a plain
@@ -817,52 +853,43 @@ implicit.
    there always throws. Errors are parsed leniently: a non-envelope body (a
    proxy error page) degrades to a status-only message that names the three
    things worth checking.
-6. **The list is paginated, visibly.** The table renders one keyset page and a
-   "Showing X loaded of Y accounts" footer with a Load-more control that appends
-   through `meta.nextCursor` (a server action, so the workspace header and base
-   URL never reach the browser). The authored filters and search run over the
-   rows already loaded, and the footer says so when a filter is active —
-   truncation is stated, not silent.
+6. **The list is paginated, visibly.** The browser requests one numbered page
+   through a server action, so the workspace header and base URL never reach
+   the browser. Its footer renders first page, previous, editable current page,
+   next, last page and the fixed 10/20/30/50/75/100 page-size choices. Authored
+   filters/search still run over the current page and the footer says so when
+   active. Changing any table view input clears selection before the next view.
 7. **Every contacts row links to its own contact route.** The row's name cell is
    the link and the route param drives which profile is fetched, so rows 2..n
    are not dead clicks. The gated preview drawer — which could only ever open
    for one hard-coded contact — was removed rather than left as an affordance
    that works on one row.
-8. **No workspace endpoint exists, so the Insights / Artifacts / Activity tabs
-   stay on fixtures.** Slice 1 serves no activity feed or artifact index, and
-   account insights arrive on the detail's `projectSections[].insights` instead.
-   `account-workspace.repository.ts` is therefore fixture-only and resolves an
-   uncovered account to an *empty* workspace rather than `null` — with a live
-   backend the account plainly exists, so 404-ing one of its tabs would be a
-   lie. Each tab renders an explicit "not served yet" empty state instead of a
-   blank page. It grows an HTTP adapter when that endpoint is specified.
+8. **SUPERSEDED 2026-08-12 — unserved workspace tabs carry no runtime fixture
+   data.** Account insights arrive on the Overview detail contract, so
+   `account-workspace.repository.ts` retains only an explicit empty Insights
+   model. Activity left that model in Slice 6 and always reads its dedicated
+   durable endpoint. Artifacts left it in Slice 7: until a live Account-artifact
+   contract exists, the route renders `capability_unavailable` and performs no
+   artifact request. No tab invents a URL or preserves the former OpenAI demo
+   workspace.
 
-**Dev setup (CORS / proxy).** The preferred and default path is the Next.js
-rewrite, which matches the production same-origin posture: with
-`CLUE_ACCOUNTS_API_BASE_URL` set, `next.config.ts` forwards `/frontend/v1/:path*` from
-the frontend origin to the backend, so a browser-side caller makes no
-cross-origin request and needs no CORS grant at all. It is a transport
-passthrough — `X-Workspace-Id` is added by the repositories (which run
-server-side), never by the rewrite. Today every accounts read happens in a
-Server Component and therefore calls `CLUE_ACCOUNTS_API_BASE_URL` directly, so the
-rewrite matters only for browser-side callers and for hitting the API through
-the dev server. If you do call cross-origin instead, list the exact dev origin
-— `http://localhost:3000` (and `http://127.0.0.1:3000` if you use that host;
-they are distinct origins) — in the backend's
-`CLUE_FRONTEND_CORS_ALLOW_ORIGINS`. Never `"*"`: the backend refuses it
-structurally, because Starlette echoes the origin when a wildcard is combined
-with credentials, which under trusted-header tenancy is a cross-tenant
-exposure.
+### Authenticated frontend cutover (2026-08-11)
 
-**Fixture mode is unchanged and still the default.** With
-`CLUE_ACCOUNTS_API_BASE_URL` unset every screen renders from `src/features/accounts/data/*.fixture.ts`,
-which were regenerated to the wire shapes above — including the states a live
-workspace produces and a fixture set is normally too tidy to have: an account
-scored by two projects under different ICPs, a membership whose project has no
-resolvable name, a `researchStatus` entry for a project the account is no
-longer a member of, a committee member whose title is withheld by policy
-(`titleRestricted`) beside one whose name is simply absent, and a
-membership-less account with every enrichment field null.
+Server Component reads call the authenticated backend primitive directly; they
+do not perform a loopback HTTP request to Next. Browser-originated reads and
+mutations use `/api/clue/**`, whose Route Handler uses that same primitive. The
+shared path proves the Clerk session, re-loads Clue membership, strips
+browser-authored authorization/workspace headers, and sends only the server
+bearer plus `X-Clue-Workspace-Id` to FastAPI. `next.config.ts` no longer carries
+the unauthenticated `/frontend/v1` rewrite.
+
+There is no runtime fixture mode. The former Accounts, Account detail, Contact,
+and Account-workspace fixture modules were removed. Test-local payload builders
+may exercise Zod and repository contracts, and browser acceptance may seed
+durable Postgres rows, but neither is reachable as an application fallback.
+With the Insight Health onboarding-only seed, `GET /frontend/v1/accounts`
+returns `{data: [], meta: {total: 0, nextCursor: null}}` and the page renders
+“No accounts exist in this workspace yet.”
 
 **Fields dropped from the frontend schemas (D-7).** `referralFit`,
 `directAccessFit`, `recallFit`, `overallFit`, `locationCount`, `employeeBand`,
@@ -898,7 +925,382 @@ refused an unlisted one. One live finding is recorded for whoever runs
 server on the SAME host string it prints (`localhost`), not `127.0.0.1`, or
 server actions are refused.
 
-**Prose renders an honest empty state (D-10).** The account summary, the
-business description and the contact overview have no wire field; each shows
-"composed once this research completes" rather than a fabricated paragraph. The
-contact page's hard-coded "Last updated yesterday" is gone for the same reason.
+**SUPERSEDED by FI-2 slice 4.** Account summary and Contact overview now have
+typed live prose fields. The contact page's hard-coded "Last updated yesterday"
+remains removed; no unsupported recency is inferred.
+
+### Typed Account recovery (FI-2 slice 2, 2026-08-11)
+
+Expected Account-list bootstrap failures are return values at the Accounts
+data seam, not uncaught Server Component exceptions. The page renders one of
+five recovery states from this closed frontend vocabulary; it never renders a
+backend message, framework trace, exception digest, status code, or stack.
+
+| Recovery kind | Transport evidence | User action |
+| --- | --- | --- |
+| `session_expired` | `401`, `AUTHENTICATION_REQUIRED`, or `SESSION_INVALID` | Sign in again. |
+| `workspace_selection` | `WORKSPACE_SELECTION_REQUIRED`; during the auth-contract transition, the existing `WORKSPACE_FORBIDDEN` plus the exact safe server reason `a workspace selection is required` | Focus the authenticated workspace selector and choose a membership. |
+| `forbidden` | `WORKSPACE_FORBIDDEN`, `PERMISSION_DENIED`, `IDENTITY_NOT_PROVISIONED`, `USER_DISABLED`, `MEMBERSHIP_STATE_CHANGED`, or another `403` | Open the access-denied recovery surface; never retry in place. |
+| `service_unavailable` | Network refusal/timeout, `AUTHENTICATION_UNAVAILABLE`, `408`, `429`, or `5xx` | Retry the Account read. This is the only state with a retry action. |
+| `contract_error` | Generic route `404`, validation/configuration status, malformed success JSON, Zod mismatch, or missing frontend/backend configuration | Contact support with the safe request reference when one exists; no reload loop. |
+
+The open backend `error.code` set remains intact below this mapping. Unknown
+expected HTTP refusals fail closed into `contract_error`; unexpected programming
+exceptions still throw so engineering error boundaries and observability see a
+real defect. The request id is copied into the recovery value, but the backend
+message is discarded before the value reaches a component.
+
+The protected session bootstrap uses the same distinction for failures that
+occur before an Account page can render: provider/session service outages get a
+retryable protected-service state, and frontend/backend configuration or wire
+schema failures get a non-retryable support state. Authentication expiry and
+membership refusal continue through the established sign-in and access-denied
+routes. An absent, stale, or ambiguous workspace cookie routes to the explicit
+workspace chooser; the frontend no longer silently selects the first membership.
+
+### Linked Contact integrity and accessibility (FI-2 slice 3, 2026-08-12)
+
+Account detail, the Contacts list and Contact detail now consume one governed
+committee composition seam. That seam owns project membership, latest-run/product
+scope, canonical Contact survival, strongly-bound role/persona eligibility and
+workspace display policy once. The resulting invariant is structural: every
+`committee[].contactId` and every Contacts-row `id` is addressable through
+`GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` under the same
+workspace and policy. A member that does not clear that rule is omitted from
+every linked surface together; the frontend does not author a broken link or
+invent a non-navigable profile.
+
+Addressability does not require a display name, title, LinkedIn identity,
+signals, or completed deep research. An eligible Contact may therefore serve
+`name: null`, unknown professional fields and zero signal types while retaining
+a valid profile. A policy-withheld title remains `null` with
+`titleRestricted: true`. A stale merged-Contact URL serves the canonical
+survivor and sets `redirectedFrom` to the requested loser id.
+
+The visible fallback for `name: null` is “Unnamed contact”; the opaque id is
+never rendered as a name. Contact avatars beside a visible name are decorative
+and absent from the accessibility tree. Contacts-grid rows are named
+`Contact <name>` and their profile links are separately named
+`Open <name> profile`, so the avatar, row and link no longer concatenate the
+same person name. Selection behavior is defined by the Slice-9A contract below.
+
+### Contact email enrichment (FI-2 slice 10, 2026-08-12)
+
+The existing Contacts-row “Look up” control invokes these authenticated
+same-origin BFF mutations:
+
+- `POST /frontend/v1/accounts/{accountId}/contacts/{contactId}/email-lookup`
+  creates or reuses the current observation-window lookup and kicks off any
+  provider that has not already run.
+- `POST /frontend/v1/accounts/{accountId}/contacts/{contactId}/email-lookup/{lookupId}/poll`
+  advances only replay-safe pending provider operations. A terminal provider is
+  never dispatched again.
+
+The Next Route Handler derives the provider bearer and `X-Clue-Workspace-Id`
+from the server session. FastAPI re-resolves the governed Account/Contact path
+and requires `research.launch`; a browser-authored workspace or bearer header is
+not trusted. The local-header path permits a development actor only when real
+authentication is disabled; production cannot use that path.
+
+Exa Websets and Sumble v9 People are independent acquisition sources. Sumble
+uses one-person LinkedIn match mode with `select.attributes` explicitly naming
+`email`; the provider's documented upper bound is 10 credits at the first
+successful reveal. Exa imports the exact LinkedIn URL as one person and requests
+one email enrichment. Provider request/response artifacts, operation ids,
+realized credits/cost, an unverified `core.work_email` claim, lawful basis and
+use decision are retained durably. The operation never writes
+`contact_entity.verified_email` and never describes an address as deliverable or
+independently verified. C5's stricter validated delivery workflow remains
+unchanged for a later release.
+
+The read projection reconciles provider observations without erasing conflict:
+
+- matching normalized values render once;
+- different values render separately with `Exa` / `Sumble` labels;
+- a single found value renders even when the other source returns no result;
+- two authoritative no-results render no address;
+- configuration/provider failure, policy withholding and unknown spend remain
+  distinct from no-result.
+
+Budget-control UI and budget-based stopping are intentionally absent while
+`CLUE_BUDGET_CONTROLS_ENABLED=false`; provider units/cost remain recorded. The
+independent Slice-10 deployment switch is
+`CLUE_FRONTEND_CONTACT_EMAIL_LOOKUP_ENABLED` (default off). Missing provider
+credentials become an honest provider-unavailable state, not a fake success.
+The browser may schedule polling while the backend says `pending`; the timer
+never changes state by itself.
+
+### Account and Contact bulk actions (FI-2 slice 9A, 2026-08-13)
+
+Selection is available only when the authenticated backend capability says the
+user may perform the corresponding action. It is page-scoped: the header
+checkbox selects only selectable rows currently rendered on that numbered page.
+Changing search, filters, sort, page or page size clears selection before the
+new view is applied, so a hidden selected row cannot exist. The header control
+reports checked, unchecked and mixed states. Workspace/account navigation also
+creates a fresh controller and therefore an empty selection.
+
+Capability reads:
+
+- `GET /frontend/v1/accounts/bulk-capabilities` returns
+  `{ addToProject: { allowed, maxItems: 100 }, addToChat: { allowed,
+  maxItems: 100 }, projects }`. `projects` contains
+  the workspace's non-archived projects; authorization is derived from
+  `project.write`, never from a frontend role guess. `addToChat` additionally
+  requires `thread.write` and the live chat surface.
+- `GET /frontend/v1/accounts/{accountId}/contacts/bulk-capabilities` returns
+  `{ lookupWorkEmails: { allowed, maxItems: 20 }, addToChat: { allowed,
+  maxItems: 100 } }`. It requires a valid
+  account-scoped read and is false unless `research.launch` is held and the
+  Slice-10 service is configured. Contact `addToChat` is independent of email
+  enrichment and follows the same chat/thread capability as Accounts.
+
+Mutations use the same-origin BFF and require a nonempty `Idempotency-Key`:
+
+- `POST /frontend/v1/accounts/bulk-actions/add-to-project` accepts one project
+  and 1–100 explicit Account ids. It inserts only live canonical same-workspace
+  Accounts with `project_account.added_via='manual'`. Existing membership is
+  `unchanged`; missing, merged or foreign ids are item-level `ineligible`.
+  It neither removes another membership nor launches research.
+- `POST /frontend/v1/accounts/{accountId}/contacts/bulk-actions/email-lookup`
+  accepts 1–20 explicit committee Contact ids, presents the one intent
+  confirmation, and delegates each eligible strongly-anchored Contact to the
+  existing governed Exa/Sumble service. Current-window lookups are `unchanged`;
+  no-result is a completed empty outcome. There is no spend-approval screen.
+
+Both return `{ operationId, state, counts, items }`. The parent operation and
+every item outcome are durable in `frontend_bulk_action_operation` and
+`frontend_bulk_action_item`. Reusing a key with the same canonical request
+replays the stored response and does not dispatch providers again; reusing it
+for another request is `409 IDEMPOTENCY_KEY_REUSED`. Partial success is explicit
+through item outcomes and aggregate counts. Internal exception messages and
+provider details never enter the browser response.
+
+### Bulk selection to project chat (FI-2 slice 9B, 2026-08-13)
+
+`Add to chat` is available on both counted selection bars for 1–100 currently
+visible Account or Contact rows. It does not replace the existing Account
+`Add to project` or Contact `Look up work emails` actions. It performs no
+research, provider request, spend, project-membership write or other domain
+mutation. The destination dialog chooses an existing project plus active chat,
+or creates one idempotent new chat in that project. Opening the dialog is the
+selection action; there is no additional confirmation prompt.
+
+Before navigation the browser calls
+`POST /api/v1/projects/{projectId}/composer-context/prepare` through the
+same-origin BFF with the ordered selected `{objectType, objectId, version}`
+references and an optional existing `threadId`. The server requires
+`thread.write`, scopes the project/thread to the authenticated workspace,
+refuses archived threads, resolves canonical current versions and hydrates
+display-safe labels directly from live Account/Contact reads. The endpoint is
+read-only draft preparation. It does not depend on the composer's bounded
+mention catalog and it never creates project membership.
+
+The cross-page browser handoff is stored in `sessionStorage` under an opaque
+UUID with a 30-minute expiry; the URL carries only that UUID plus the selected
+thread id, never the selected entity ids or labels. The originating table
+selection clears only after the prepared handoff has been written and read
+back successfully. Transfer failures leave the selection intact. The project
+composer restores visible `@` chips from the handoff, while the eventual turn
+submission revalidates and durably records the same ordered structured
+references.
+
+Those references belong only to the next accepted message. A failed submission
+preserves the prompt and chips for retry. Once the turn endpoint returns its
+durable acceptance receipt, the draft and handoff are consumed; the historical
+user message retains the references and later messages do not inherit them.
+
+### Live prose and user-facing vocabulary (FI-2 slice 4, 2026-08-12)
+
+Account detail serves `summary`; Contact detail serves `overview`. Both are a
+discriminated union derived from the current Lane-E synthesis claim:
+
+| `state` | `paragraphs` | `researchOutcome` | Meaning |
+| --- | --- | --- | --- |
+| `available` | one or more strings | `completed` or `needs_review` | Current synthesis is displayable. |
+| `not_composed` | `[]` | `null` | No live synthesis claim exists. |
+| `restricted` | `[]` | `null` | A synthesis record exists but cannot be served. |
+
+`account.summary` is excluded from `neutralFacts`, and `contact.overview` is
+excluded from `professionalFacts`; prose is never rendered as a generic fact.
+The UI selects the summary/overview copy from this state alone. In particular,
+it does not infer “research incomplete” from project status while displaying a
+completed synthesis.
+
+The backend keeps semantic values unchanged (`1b_plus`, `product_led`,
+`c_level`, `economic_buyer`, `champion`, `technical_evaluator`, `blocker`). The
+frontend owns stable labels (`$1B+`, `Product-led`, `C-level`, `Economic buyer`,
+`Champion`, `Technical evaluator`, `Blocker`) and applies them at render time,
+so filters and model data retain the machine values. Unknown ordinary prose is
+not sentence-cased. Dynamic research gaps use
+`coverage.unresolvedFields[].description` from the effective field registry;
+the key-to-label prettifier remains only a fallback heading.
+
+Authenticated browser acceptance used the durable Insight Health workspace and
+followed the live Accounts row into Northstar's preview, its Contacts table, and
+all served Contact shapes. The Account summary and Dana Buyer overview rendered
+their completed prose without contradictory incomplete-research copy; Chris
+Blocker and the unnamed Contact rendered the not-composed state honestly. Named,
+withheld, unnamed and stale-merged Contact URLs all survived a direct reload.
+Every browser request resolved through the authenticated session-to-principal
+chain and `/frontend/v1` with `200`, and the same-origin BFF Account-detail
+request returned `200`. Browser rendering used the stable labels above while
+API/model contract coverage retained the raw semantic values.
+
+### Exact source and claim-mapped evidence (FI-2 slice 5, 2026-08-12)
+
+Every rendered Account `neutralFact`, Account project `narrative`/`insight`,
+and display-eligible Contact current claim carries an evidence record mapped to
+the exact claim it supports:
+
+```json
+{
+  "claimId": "0f0f4e8c-4d1a-4f0b-9f2d-2b7a1c0d5e11",
+  "fieldKey": "contact.current_title",
+  "sourceTitle": "sumble",
+  "provider": "sumble",
+  "sourceUrl": "https://evidence.example/reports/committee?version=2#finding",
+  "evidenceSpan": "Dana Buyer is the current VP of Finance.",
+  "confidence": 0.94,
+  "freshness": "fresh",
+  "observedAt": "2026-08-01T12:00:00Z",
+  "protectedArtifactAvailable": true
+}
+```
+
+`claimId` and `fieldKey` are the support mapping. `sourceTitle` is the registered
+source identity, or the hostname when no registered source key exists; the
+claim substrate does not hold fetched-page titles, so the API never invents
+one from a URL path. `sourceUrl` is nullable and crosses the wire only when it
+is an HTTP(S) URL with a hostname and no embedded credentials. The frontend
+uses the complete `sourceUrl` as both the visible label and the `href`; it never
+authors a more-specific label. A domain or profile root therefore remains a
+domain or profile-root label instead of looking like a post or evidence span.
+The legacy Account-workspace schema enforces the same invariant with
+`sourceLabel === url`.
+
+`evidenceSpan` is emitted only after the owning read has passed the same current
+merge, retention and display policy used for the value. Contact evidence is one
+record per displayed claim, not one chip per provider. A withheld or
+retention-expired Contact claim contributes no value, `claimId`, provider, URL,
+span, confidence, timestamp or artifact-existence signal.
+
+`protectedArtifactAvailable` is only an opaque action capability. It never
+contains a storage key or signed URL. The frontend derives one same-origin BFF
+path from the Account/Contact and claim ids:
+
+- `GET /api/clue/frontend/v1/accounts/{accountId}/evidence/{claimId}`
+- `GET /api/clue/frontend/v1/accounts/{accountId}/contacts/{contactId}/evidence/{claimId}`
+
+The corresponding FastAPI route reconstructs the current Account or governed
+Contact read, requires that exact claim to remain displayed with a live
+workspace-scoped artifact, re-resolves the retention-aware claim, validates the
+artifact row and its content address/size, and then streams a bounded safe media
+type. It does not redirect or presign. Responses are `private, no-store`,
+`nosniff`, and CSP-sandboxed; active HTML/SVG is downgraded to plain text.
+Unknown, foreign-workspace, erased, expired, withheld and no-longer-addressable
+requests all return the same `404 EVIDENCE_NOT_FOUND` shape. A deployment with
+no storage backend returns `503 EVIDENCE_SERVICE_UNAVAILABLE` rather than a
+fabricated link.
+
+The BFF forwards only the required response metadata (`Content-Type`,
+`Content-Disposition`, `Cache-Control`, CSP and `X-Content-Type-Options`) while
+retaining the authenticated server-derived provider proof and
+`X-Clue-Workspace-Id` path. Browser-authored authorization/workspace headers
+are still stripped. The provider bearer and artifact storage locator never
+enter browser state.
+
+### Durable Account activity (FI-2 slice 6, 2026-08-12)
+
+`GET /frontend/v1/accounts/{accountId}/activity` is a read projection over the
+append-only `research_subject_activity` ledger. It includes Account events and
+Contact events for members of the Account's governed committee. A row is served
+only when it resolves to the exact `research_view_event`, project, project run
+and parent Account run named by that ledger row. A Contact event is additionally
+required to belong to a project that selected that committee member. Unknown
+event kinds, unresolved owner references, ungoverned Contacts and human rows
+without a durable principal id are omitted rather than assigned invented copy
+or actor identity. The response is newest-first by `(occurredAt, id)` and capped
+at 100 events.
+
+```json
+{
+  "accountId": "0f0f4e8c-4d1a-4f0b-9f2d-2b7a1c0d5e11",
+  "state": {
+    "committeeCount": 6,
+    "summary": {
+      "state": "available",
+      "paragraphs": ["Acme is a multi-site healthcare operator."],
+      "researchOutcome": "completed"
+    }
+  },
+  "events": [
+    {
+      "id": "b5a9a584-e844-48d9-a964-e0b289dc4b8d",
+      "kind": "research_view.updated",
+      "occurredAt": "2026-08-12T09:02:00Z",
+      "actorCategory": "system",
+      "subject": {
+        "type": "account",
+        "id": "0f0f4e8c-4d1a-4f0b-9f2d-2b7a1c0d5e11",
+        "name": "Acme"
+      },
+      "project": {
+        "id": "prj_a",
+        "name": "Insight Health campaign"
+      },
+      "projectRunId": "9dfa7ff6-8dd2-4e95-a0b0-461a2dfcf535",
+      "accountRunId": "f84ac206-ec48-4c57-981f-e2f958f26b10",
+      "reference": {
+        "target": "account_insights",
+        "eventId": "1f8cd58b-c545-4aa1-ac2b-dba68b51d5d3",
+        "snapshotId": "e3b8e570-7705-4f2d-bc52-fb730773564f",
+        "reportId": null,
+        "sectionIds": ["summary"],
+        "itemIds": ["summary-1"]
+      }
+    }
+  ]
+}
+```
+
+`state.committeeCount` is `len(AccountDetail.committee)` and `state.summary` is
+the same `read_prose(account.summary)` result returned by Account detail. It is
+not an activity event and makes no historical claim; it exists so the Activity,
+Contacts and Overview/Insights tabs cannot present contradictory current state.
+An Account with no qualifying ledger rows returns `events: []`, and the browser
+renders “No durable activity exists for this account yet.”
+
+The backend sends machine values and absolute ISO-8601 timestamps. The frontend
+maps the three event kinds (`research_view.updated`,
+`research_view.section_stale`, `research_view.recheck_completed`) and the
+non-human actor categories (`system`, `agent`, `worker`) to stable labels, then
+renders the timestamp in UTC. Account event titles drill into Account Insights;
+Contact event titles and subject names drill into the governed Contact profile.
+The current summary state links to Account Overview, and the resolved project
+name links to `/projects/{projectId}`. Raw owner/fetch
+references, payload bodies and relative `timeLabel` strings never cross the
+contract.
+
+### Account Artifact availability (FI-2 slice 7, 2026-08-12)
+
+There is no live Account-artifact read surface in this slice. The Account
+Artifacts route still authenticates and reads the Account detail so an unknown
+or cross-workspace Account remains a domain `404`, then renders the typed
+`capability_unavailable` state: “Account artifacts are not connected yet.” It
+does not render a search field, sort/view buttons, fixture cards, preview modal
+or images, and it does not issue a guessed artifact request.
+
+The presentation contract reserves three exact states for a future live
+adapter:
+
+- `capability_unavailable`: this deployment has no live Account-artifact
+  capability.
+- `empty`: the live service authoritatively returned zero Account artifacts.
+- `service_unavailable`: the live artifact service failed and the result is not
+  known to be empty.
+
+Those states have distinct titles and descriptions. Adding a live Account
+artifact endpoint, sorting, grid/list presentation, and preview behavior is a
+separate integration slice; it must introduce typed repository data and real
+handlers together rather than restoring dormant controls.

@@ -12,12 +12,14 @@ import { useContactAvatarController } from "../hooks/use-contact-avatar-controll
  */
 export function ContactAvatar({
   className = "",
+  decorative = false,
   name,
   priority = false,
   size,
   src = null,
 }: {
   className?: string;
+  decorative?: boolean;
   name: string | null;
   priority?: boolean;
   size: number;
@@ -28,9 +30,10 @@ export function ContactAvatar({
   if (controller.failed || !src) {
     return (
       <span
-        aria-label={name ?? "Unnamed contact"}
+        aria-hidden={decorative || undefined}
+        aria-label={decorative ? undefined : name ?? "Unnamed contact"}
         className={`inline-flex shrink-0 items-center justify-center rounded-full bg-[#e7eae2] text-[#44483f] ${className}`}
-        role="img"
+        role={decorative ? undefined : "img"}
         style={{ height: size, width: size }}
       >
         <span style={{ fontSize: Math.max(9, Math.round(size * 0.32)) }}>
@@ -45,7 +48,8 @@ export function ContactAvatar({
     // keeps that contract independent of Next.js remotePatterns.
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      alt={name ?? ""}
+      alt={decorative ? "" : name ?? "Unnamed contact"}
+      aria-hidden={decorative || undefined}
       className={`shrink-0 rounded-full object-cover ${className}`}
       decoding="async"
       fetchPriority={priority ? "high" : "auto"}

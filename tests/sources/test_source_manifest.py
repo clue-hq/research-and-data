@@ -186,6 +186,10 @@ def test_sources_for_contact_returns_people_sources() -> None:
                 "apollo",
                 "zoominfo",
                 "crm",
+                # Slice 10 widens Sumble People from account-only committee enumeration to the
+                # exact-person Contact email capability as well. The no-reveal committee request
+                # remains a separate transport contract.
+                "sumble_people",
                 # Governed internal classification of an already-admitted contact. This is
                 # registered for exact pre-spend identity but remains unbound as a waterfall
                 # resolver unless an explicit source profile selects it.

@@ -1,53 +1,135 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { accountFixtures } from "../data/accounts.fixture";
+import type { Account, AccountProject } from "./account";
 import { filterAccounts, sortAccounts } from "./account-query";
 
+const revenueProject: AccountProject = {
+  projectId: "revenue",
+  name: "10x revenue",
+  addedVia: "directive",
+  addedAt: "2026-08-01T00:00:00Z",
+};
+const conferenceProject: AccountProject = {
+  projectId: "conference",
+  name: "Conference",
+  addedVia: "discovered",
+  addedAt: "2026-08-02T00:00:00Z",
+};
+const reportsProject: AccountProject = {
+  projectId: "reports",
+  name: "Custom reports",
+  addedVia: "imported",
+  addedAt: "2026-08-03T00:00:00Z",
+};
+
+function account(
+  id: string,
+  name: string,
+  options: Partial<Account> = {},
+): Account {
+  return {
+    id,
+    name,
+    domain: null,
+    employeeCount: null,
+    revenueBand: null,
+    logoUrl: null,
+    projects: [],
+    primaryProjectId: null,
+    scores: [],
+    researchStatus: [],
+    updatedAt: null,
+    ...options,
+  };
+}
+
+const accounts: Account[] = [
+  account("neuralink", "Neuralink"),
+  account("anthropic", "Anthropic", {
+    employeeCount: 1100,
+    projects: [revenueProject],
+    primaryProjectId: revenueProject.projectId,
+    scores: [
+      {
+        projectId: revenueProject.projectId,
+        fit: 0.78,
+        intent: 0.4,
+        icpKey: "enterprise-ai",
+        icpVersion: 1,
+        scoredAt: "2026-08-01T00:00:00Z",
+      },
+    ],
+  }),
+  account("openai", "OpenAI", {
+    employeeCount: 3200,
+    projects: [revenueProject, conferenceProject],
+    primaryProjectId: revenueProject.projectId,
+    scores: [
+      {
+        projectId: revenueProject.projectId,
+        fit: 0.81,
+        intent: null,
+        icpKey: "enterprise-ai",
+        icpVersion: 2,
+        scoredAt: "2026-08-01T00:00:00Z",
+      },
+    ],
+    researchStatus: [
+      { projectId: revenueProject.projectId, status: "needs_review" },
+    ],
+  }),
+  account("airtable", "Airtable", {
+    projects: [conferenceProject],
+    primaryProjectId: conferenceProject.projectId,
+    researchStatus: [
+      { projectId: conferenceProject.projectId, status: "needs_review" },
+    ],
+  }),
+  account("snowflake", "Snowflake", {
+    projects: [conferenceProject],
+    primaryProjectId: conferenceProject.projectId,
+  }),
+  account("perplexity", "Perplexity AI", {
+    projects: [reportsProject],
+    primaryProjectId: reportsProject.projectId,
+  }),
+];
+
 test("project filters match every project associated with an account", () => {
-  const filtered = filterAccounts(accountFixtures, [
+  const filtered = filterAccounts(accounts, [
     {
       field: "project",
       id: "project-filter",
       join: "and",
       operator: "is",
-      value: "conference-2026",
+      value: "conference",
     },
   ]);
 
   assert.deepEqual(
-    filtered.map((account) => account.id),
-    ["openai", "hugging-face", "airtable", "snowflake", "cursor"],
+    filtered.map((item) => item.id),
+    ["openai", "airtable", "snowflake"],
   );
 });
 
 test("project sort uses the primary project and account name as a stable tie-breaker", () => {
-  const sorted = sortAccounts(accountFixtures, "project-asc");
+  const sorted = sortAccounts(accounts, "project-asc");
 
-  // Neuralink has no membership at all, so it has no project name to sort by
-  // and leads the ascending order rather than being hidden.
-  assert.deepEqual(sorted.slice(0, 6).map((account) => account.name), [
-    "Neuralink",
-    "Anthropic",
-    "Cohere",
-    "Google DeepMind",
-    "OpenAI",
-    "Scale AI",
-  ]);
-  assert.deepEqual(sorted.slice(-3).map((account) => account.name), [
-    "Midjourney",
-    "Mistral AI",
-    "Perplexity AI",
-  ]);
+  assert.equal(sorted[0]?.id, "neuralink");
+  assert.deepEqual(
+    sorted.slice(1, 3).map((item) => item.id),
+    ["anthropic", "openai"],
+  );
 });
 
 test("filters preserve the authored and-or sequence", () => {
-  const filtered = filterAccounts(accountFixtures, [
+  const filtered = filterAccounts(accounts, [
     {
       field: "project",
       id: "project-filter",
       join: "and",
       operator: "is",
-      value: "10m-landing-page-campaign",
+      value: "revenue",
     },
     {
       field: "name",
@@ -58,11 +140,11 @@ test("filters preserve the authored and-or sequence", () => {
     },
   ]);
 
-  assert.deepEqual(filtered.map((account) => account.id), ["openai"]);
+  assert.deepEqual(filtered.map((item) => item.id), ["openai"]);
 });
 
-test("research status filters against the backend vocabulary, across every project", () => {
-  const filtered = filterAccounts(accountFixtures, [
+test("research status filters against every project status", () => {
+  const filtered = filterAccounts(accounts, [
     {
       field: "researchStatus",
       id: "status-filter",
@@ -72,11 +154,11 @@ test("research status filters against the backend vocabulary, across every proje
     },
   ]);
 
-  assert.deepEqual(filtered.map((account) => account.id), ["openai", "airtable"]);
+  assert.deepEqual(filtered.map((item) => item.id), ["openai", "airtable"]);
 });
 
-test("a numeric filter over per-project scores matches on any scored project", () => {
-  const filtered = filterAccounts(accountFixtures, [
+test("a numeric filter over per-project scores matches any scored project", () => {
+  const filtered = filterAccounts(accounts, [
     {
       field: "fitScore",
       id: "score-filter",
@@ -86,14 +168,11 @@ test("a numeric filter over per-project scores matches on any scored project", (
     },
   ]);
 
-  assert.deepEqual(filtered.map((account) => account.id), [
-    "anthropic",
-    "openai",
-  ]);
+  assert.deepEqual(filtered.map((item) => item.id), ["anthropic", "openai"]);
 });
 
 test("an account with no value for the filtered field never matches it", () => {
-  const filtered = filterAccounts(accountFixtures, [
+  const filtered = filterAccounts(accounts, [
     {
       field: "employeeCount",
       id: "size-filter",
@@ -103,8 +182,5 @@ test("an account with no value for the filtered field never matches it", () => {
     },
   ]);
 
-  assert.equal(
-    filtered.some((account) => account.id === "neuralink"),
-    false,
-  );
+  assert.equal(filtered.some((item) => item.id === "neuralink"), false);
 });

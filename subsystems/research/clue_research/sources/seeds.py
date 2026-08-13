@@ -218,15 +218,21 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
     _entry(
         "sumble_people",
         modality=Modality.STRUCTURED,
-        entity_scope=EntityScope.ACCOUNT,
+        # Committee enumeration is account-scoped; the same exact-person match endpoint can emit a
+        # target-locked Contact email observation, so the manifest truthfully covers both.
+        entity_scope=EntityScope.BOTH,
         tier=1,
-        yields=("contact",),
+        # The same People endpoint also supports an explicitly selected, paid work-email reveal in
+        # exact-person match mode. Committee enumeration remains no-reveal by request contract;
+        # declaring the additional yield does not widen that adapter's select list.
+        yields=("contact", "core.work_email"),
         provider="sumble",
         cost_cents=Decimal(0),
         identity_binding=IdentityBinding.WEAK,
         auth_ref="CLUE_SUMBLE_API_KEY",
         rate_limit={"requests_per_second": 10},
         freshness_profile="daily",
+        version=2,
     ),
     # Authoritative registries — deterministic, tier-1, vertical/jurisdiction-flavored. They yield
     # account-level authoritative facts; finer per-vertical field yields (e.g. healthcare.npi) are

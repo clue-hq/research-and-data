@@ -211,7 +211,11 @@ class Stage0StepPinProvider:
                     ),
                 )
             )
-        if step.tool_name in {"open_directive_confirmation_gate", "launch_account_research"}:
+        if step.tool_name in {
+            "open_directive_confirmation_gate",
+            "launch_account_research",
+            "launch_selected_account_research",
+        }:
             project_run_id = body.get("project_run_id")
             if isinstance(project_run_id, str):
                 requested.append(
@@ -222,7 +226,10 @@ class Stage0StepPinProvider:
                 requested.append(
                     await self._current(kind="research_directive", key=directive_id, ctx=ctx)
                 )
-        if step.tool_name == "launch_account_research":
+        if step.tool_name in {
+            "launch_account_research",
+            "launch_selected_account_research",
+        }:
             # Declared absent, not resolved: the selection this launch pins is the selection the
             # launch *creates* (its id is derived from the request digest inside the launch
             # transaction), so requiring it would make the tool permanently unreachable. This is

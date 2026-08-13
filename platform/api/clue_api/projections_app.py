@@ -778,6 +778,7 @@ def create_projections_app(
     chat_stream_live_tail: bool = True,
     auth_service: PrincipalService | None = None,
     auth_closer: Callable[[], Awaitable[None]] | None = None,
+    contact_email_lookup: Any | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -816,7 +817,13 @@ def create_projections_app(
     # FI-2 slice 1: the `/frontend/v1` read surface — its own router, error envelope, request id,
     # and the process's CORS policy. Both halves are default-off (flag / empty origins), so an
     # unconfigured deployment is byte-identical to the pre-FI-2 app.
-    install_frontend_read_surface(app, settings=resolved, conn_factory=conn_factory)
+    install_frontend_read_surface(
+        app,
+        settings=resolved,
+        conn_factory=conn_factory,
+        evidence_storage=ingestion_storage,
+        contact_email_lookup=contact_email_lookup,
+    )
     if auth_service is not None:
         install_auth_wiring(app, service=auth_service)
         if workspace_resolver is None and actor_resolver is None:

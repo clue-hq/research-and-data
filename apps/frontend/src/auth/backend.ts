@@ -2,25 +2,17 @@ import "server-only";
 
 import { z } from "zod";
 import { clueApiBaseUrl } from "./config";
+import { ClueAuthenticationError } from "./errors";
+
+export { ClueAuthenticationError } from "./errors";
 
 const ErrorEnvelopeSchema = z.object({
   error: z.object({
     code: z.string().min(1),
     message: z.string().min(1),
+    requestId: z.string().nullable().optional(),
   }),
 });
-
-export class ClueAuthenticationError extends Error {
-  readonly code: string;
-  readonly status: number;
-
-  constructor(message: string, options: { code: string; status: number }) {
-    super(message);
-    this.name = "ClueAuthenticationError";
-    this.code = options.code;
-    this.status = options.status;
-  }
-}
 
 function backendUrl(path: string): URL {
   if (!path.startsWith("/") || path.startsWith("//")) {
@@ -35,6 +27,10 @@ async function errorFrom(response: Response): Promise<ClueAuthenticationError> {
     if (parsed.success) {
       return new ClueAuthenticationError(parsed.data.error.message, {
         code: parsed.data.error.code,
+        requestId:
+          parsed.data.error.requestId ??
+          response.headers.get("X-Request-Id") ??
+          null,
         status: response.status,
       });
     }
@@ -43,7 +39,11 @@ async function errorFrom(response: Response): Promise<ClueAuthenticationError> {
   }
   return new ClueAuthenticationError(
     `Clue authentication API returned ${response.status}`,
-    { code: "HTTP_ERROR", status: response.status },
+    {
+      code: "HTTP_ERROR",
+      requestId: response.headers.get("X-Request-Id"),
+      status: response.status,
+    },
   );
 }
 

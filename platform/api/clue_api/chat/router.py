@@ -64,6 +64,7 @@ from clue_api.chat.composer_context import (
     ComposerContextEntity,
     ContextReferenceError,
     list_composer_context_entities,
+    prepare_composer_context_entities,
     validated_context_refs,
 )
 from clue_api.chat.inspector import (
@@ -104,6 +105,9 @@ from clue_api.chat.schemas import (
     HomeWire,
     MessageListResponse,
     PageMeta,
+    PrepareComposerContextRequest,
+    PreparedComposerContextResponse,
+    PreparedComposerContextWire,
     ProjectBootstrapProjectWire,
     ProjectBootstrapResponse,
     ProjectBootstrapThreadWire,
@@ -1014,6 +1018,82 @@ def build_chat_router(
                 agent_profiles=_agent_profile_options(),
                 default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
                 composer_capabilities=_composer_capabilities(),
+            )
+        )
+
+    @router.post("/projects/{project_id}/composer-context/prepare")
+    async def prepare_project_composer_context_route(
+        project_id: str,
+        body: PrepareComposerContextRequest,
+        who: PrincipalDep,
+    ) -> PreparedComposerContextResponse:
+        """Validate and hydrate one exact table selection before browser navigation.
+
+        No draft, project membership, research operation, or other domain state is written here.
+        The eventual turn submission revalidates the returned canonical references.
+        """
+
+        _require(who, PERMISSION_THREAD_WRITE)
+        async with conn_factory() as conn:
+            project = await get_project_for_workspace(
+                conn,
+                workspace_id=who.workspace_id,
+                project_id=project_id,
+            )
+            if project is None:
+                raise _refuse(
+                    status_code=404,
+                    code="PROJECT_NOT_FOUND",
+                    message="no such project in this workspace",
+                )
+            if body.thread_id is not None:
+                thread = await get_thread(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    thread_id=body.thread_id,
+                )
+                if (
+                    thread is None
+                    or thread.workspace_id != who.workspace_id
+                    or thread.project_id != project_id
+                ):
+                    raise _refuse(
+                        status_code=404,
+                        code="THREAD_NOT_FOUND",
+                        message="no such thread in this project",
+                    )
+                if thread.status != "active":
+                    raise _refuse(
+                        status_code=409,
+                        code="THREAD_ARCHIVED",
+                        message="an archived thread accepts no new context",
+                    )
+            requested = tuple(
+                DomainObjectRef(
+                    workspace_id=who.workspace_id,
+                    object_type=ref.object_type,
+                    object_id=ref.object_id,
+                    version=ref.version,
+                )
+                for ref in body.context_refs
+            )
+            try:
+                prepared = await prepare_composer_context_entities(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=requested,
+                )
+            except ContextReferenceError as exc:
+                raise _refuse(
+                    status_code=404 if exc.code == "CONTEXT_REF_NOT_FOUND" else 409,
+                    code=exc.code,
+                    message=exc.message,
+                ) from exc
+        return PreparedComposerContextResponse(
+            data=PreparedComposerContextWire(
+                project_id=project_id,
+                thread_id=body.thread_id,
+                context_entities=tuple(_context_entity_wire(entity) for entity in prepared),
             )
         )
 

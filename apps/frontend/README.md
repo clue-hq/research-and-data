@@ -89,18 +89,22 @@ The React components never import fixture records. `/accounts` calls
 `getAccounts()`, account pages call `getAccountDetails()`, the contact flow uses
 `getAccountContacts()` / `getAccountContact()`, and the remaining tabs call
 `getAccountWorkspace()`. Home and project routes use `getProjectHome()` and
-`getProjectWorkspace()`. Each function uses a feature-owned fixture repository
-by default and switches to its HTTP adapter when `CLUE_API_BASE_URL` is
-configured. Responses from either adapter are validated with the same Zod
-schema before they enter the UI.
+`getProjectWorkspace()`. Accounts and Contacts are live-only: their Server
+Component repositories prove the Clerk session on the Next server, resolve the
+selected Clue membership, and call `/frontend/v1`; browser-originated backend
+requests use `/api/clue`. They have no runtime fixture fallback. Project flows
+retain their own explicitly configured fixture/HTTP transport until their
+separate cutover. Every backend response is validated with the feature's Zod
+schema before it enters the UI.
 
 Backend-provided contact photos use the `avatarUrl` contract and have an
 initials fallback. The browser does not scrape LinkedIn or couple rendering to
 a fixed image host.
 
-Copy `.env.example` to `.env.local` when the backend is ready:
+Copy `.env.example` to `.env.local` and configure the authenticated backend:
 
 ```bash
+CLUE_AUTH_ENABLED=true
 CLUE_API_BASE_URL=https://api.cluehq.ai
 ```
 
