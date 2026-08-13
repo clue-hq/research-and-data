@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import asynccontextmanager
 from decimal import Decimal
+from typing import cast
 from uuid import UUID
 
 from pydantic import Field, JsonValue
@@ -42,6 +44,7 @@ from clue_core import (
     RunId,
 )
 from clue_db import ConnFactory, transaction
+from clue_obs import get_logger
 from clue_research.durable import (
     RECON_TRANSITION_KIND,
     ProjectRunStatus,
@@ -89,6 +92,7 @@ from clue_toolbelt import (
 )
 
 MemoryWriteFactory = Callable[[AsyncConnection], MemoryWriteSeam]
+log = get_logger("clue_api.stage0_tools")
 
 
 def _failure(code: str, message: str) -> tuple[PreconditionFailure, ...]:
@@ -572,6 +576,25 @@ class _Stage0Tool(Tool):
         self._field_progress_factory = field_progress_factory
         self._entailment_judge = entailment_judge
 
+    def _gate_for_connection(self, conn: AsyncConnection) -> PreSpendGate:
+        """Bind transaction-aware gates to the lane's caller-owned connection.
+
+        ``reverse_profile`` creates the Stage-0 client identity inside the lane transaction. A
+        production pre-spend gate that opens a second transaction cannot see that uncommitted row
+        and rejects every legitimate source call. Concrete gates expose ``with_conn_factory`` for
+        exactly this atomic-admission case; keep the milestone boundary protocol-only by detecting
+        that optional capability rather than importing the M9 implementation here.
+        """
+        rebind = getattr(self._pre_spend_gate, "with_conn_factory", None)
+        if not callable(rebind):
+            return self._pre_spend_gate
+
+        @asynccontextmanager
+        async def lane_connection() -> AsyncIterator[AsyncConnection]:
+            yield conn
+
+        return cast(PreSpendGate, rebind(lane_connection))
+
     async def _project_audit_snapshot(self, project_id: str, ctx: ToolContext) -> dict[str, object]:
         async with self._conn_factory() as conn:
             project = await get_project(conn, project_id)
@@ -803,13 +826,20 @@ class StartReconTool(_Stage0Tool):
                                 workspace_id=ctx.workspace_id,
                                 run_id=recon.fast_run_id,
                                 budget_cap_cents=self._policy.fast_budget_cents,
-                                pre_spend_gate=self._pre_spend_gate,
+                                pre_spend_gate=self._gate_for_connection(conn),
                                 product_id=inputs.product_id,
                                 max_source_tier=2,
                                 on_client_resolved=self._scrape_binder,
                                 on_field_progress=self._field_progress(recon.id, ctx, "fast"),
                             )
                     except Exception as exc:  # noqa: BLE001 - persist a durable failed lane
+                        log.exception(
+                            "stage0.recon_lane_failed",
+                            workspace_id=ctx.workspace_id,
+                            recon_run_id=str(recon.id),
+                            lane="fast",
+                            error_type=type(exc).__name__,
+                        )
                         recon = await transition_recon_lane(
                             conn,
                             recon_run_id=recon.id,
@@ -870,13 +900,20 @@ class StartReconTool(_Stage0Tool):
                                 workspace_id=ctx.workspace_id,
                                 run_id=recon.background_run_id,
                                 budget_cap_cents=self._policy.background_budget_cents,
-                                pre_spend_gate=self._pre_spend_gate,
+                                pre_spend_gate=self._gate_for_connection(conn),
                                 product_id=inputs.product_id,
                                 max_source_tier=3,
                                 on_client_resolved=self._scrape_binder,
                                 on_field_progress=self._field_progress(recon.id, ctx, "background"),
                             )
                     except Exception as exc:  # noqa: BLE001 - persist a durable failed lane
+                        log.exception(
+                            "stage0.recon_lane_failed",
+                            workspace_id=ctx.workspace_id,
+                            recon_run_id=str(recon.id),
+                            lane="background",
+                            error_type=type(exc).__name__,
+                        )
                         recon = await transition_recon_lane(
                             conn,
                             recon_run_id=recon.id,

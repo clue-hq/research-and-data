@@ -198,8 +198,14 @@ def build_application(
             )
         async with transaction() as conn:
             await conn.execute(text("SELECT 1"))
-            if research_views is not None:
+            # The Stage-0 waterfall reads source manifests from Postgres. A fresh deployment can
+            # enable self-serve onboarding without enabling any C7 research-view capability, so
+            # tying registry seeding only to ``research_views`` makes every planned source look
+            # unregistered: both recon lanes then finish almost instantly with only empty fields.
+            # Load the same idempotent registry whenever either consumer is live.
+            if resolved.self_serve_provisioning_enabled or research_views is not None:
                 await load_research_packs(conn)
+            if research_views is not None:
                 required = (
                     await conn.execute(
                         text(

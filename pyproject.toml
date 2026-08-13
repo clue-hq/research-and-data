@@ -65,11 +65,10 @@ module = ["openai"]
 follow_imports = "skip"
 ignore_missing_imports = true
 
-# M4.3 — the PDF (pypdf) and scrape (firecrawl) libraries are external boundaries used ONLY behind
-# the adapters/ provider seams (PdfTextExtractor / ScrapeBackend), lazy-imported and duck-typed. The
-# firecrawl SDK is not a declared dependency (M4.5 wires the live scrape backend + key); its live
-# default is exercised in M4.5, not CI's double-driven path. Ignore missing stubs so the adapter
-# framework is decoupled from each SDK's exact typed signature.
+# M4.3/M4.5 — the PDF (pypdf) and scrape (firecrawl) libraries are external boundaries used ONLY
+# behind the adapters/provider seams (PdfTextExtractor / ScrapeBackend), lazy-imported and
+# duck-typed. The research subsystem declares the live Firecrawl SDK, while tests inject doubles.
+# Ignore missing stubs so the adapter framework stays decoupled from each SDK's typed signature.
 [[tool.mypy.overrides]]
 module = ["pypdf", "firecrawl"]
 follow_imports = "skip"

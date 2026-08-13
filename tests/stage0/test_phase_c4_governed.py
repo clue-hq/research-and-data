@@ -77,8 +77,15 @@ _WORKSPACE = "phase-c4"
 class _RecordingGate:
     def __init__(self) -> None:
         self.requests: list[PreSpendRequest] = []
+        self.rebound = False
+
+    def with_conn_factory(self, conn_factory: object) -> _RecordingGate:
+        del conn_factory
+        self.rebound = True
+        return self
 
     async def check(self, request: PreSpendRequest) -> PreSpendDecision:
+        assert self.rebound, "StartReconTool must gate against its caller-owned lane transaction"
         self.requests.append(request)
         return PreSpendDecision(verdict=PreSpendVerdict.PASS)
 
@@ -238,6 +245,7 @@ def test_url_only_recon_is_two_speed_gated_snapshotted_and_evented() -> None:
                 fast = await tool.invoke(inputs, ctx)
                 assert fast.references["fast_status"] == "completed"
                 assert fast.references["background_status"] == "queued"
+                assert gate.rebound is True
                 assert gate.requests
                 assert storage.blobs
 

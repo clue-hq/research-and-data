@@ -21,6 +21,9 @@ dependencies = [
     "pypdf>=6",
     "Pillow>=11",
     "pytesseract>=0.3.13",
+    # M4.5 — hosted HTML-to-markdown backend. Keep the SDK behind the adapter seam and pin the
+    # current public API major (Firecrawl + client.scrape) so provider changes fail at resolution.
+    "firecrawl-py>=4.22.1,<5",
     # B2.4 — the credit-free scrape backend (CLUE_SCRAPE_BACKEND=scrapling); both are used only
     # behind the adapters/concrete seam (Rule 4), lazy-imported.
     "scrapling[fetchers]>=0.4",
