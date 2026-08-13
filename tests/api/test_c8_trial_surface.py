@@ -60,12 +60,11 @@ _WITHHELD = {
 
 # The production conversation's own subtraction, which D4 made genuinely different from the trial's:
 # it keeps the drafting, gate, and launch tools (that flow is the whole point of the surface) and
-# withholds only the three the trial withholds for reasons that still hold here — this surface does
-# no external research and never captures on the client's behalf.
+# withholds only the two trial restrictions that still hold here — this surface does no external
+# research and never captures on the client's behalf. Trusted durable ICP synthesis is now present.
 _PROJECT_WITHHELD = {
     "start_recon",
     "submit_onboarding_input",
-    "synthesize_icps",
 }
 
 
@@ -122,10 +121,11 @@ def test_the_capability_map_names_the_surface_and_its_withheld_tools_honestly(
     generated = trial.generated_resource_map
 
     for name in sorted(_WITHHELD):
-        disclosure = by_address[f"{name}@1"]
+        address = f"{name}@2" if name == "synthesize_icps" else f"{name}@1"
+        disclosure = by_address[address]
         assert disclosure.status is AgentCapabilityStatus.PROFILE_UNAVAILABLE
         assert disclosure.reason_code == "trial_manual_conversation_only"
-        assert f"- {name}@1 effect=" not in generated
+        assert f"- {address} effect=" not in generated
 
     assert "manual-conversation-only" in generated
     assert f"surface={STAGE0_CONVERSATION_TRIAL_SURFACE}" in generated
@@ -244,10 +244,10 @@ def test_the_stage0_skill_survives_the_narrowed_surface(
     trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
     disclosures = trial.skill_disclosures()
 
-    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v10"]
+    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v12"]
     required = {address.partition("@")[0] for address in disclosures[0].required_tool_addresses}
     assert required & _WITHHELD == set()
-    body = trial.open_skill("skill:stage0-interview@v10")
+    body = trial.open_skill("skill:stage0-interview@v12")
     assert "Ask one compact question" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body

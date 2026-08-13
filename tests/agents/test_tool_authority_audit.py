@@ -41,9 +41,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # promotes the separately confirmed account/contact entity-research launch and read tools.
     # FI Lane D D0 added the four REQ-21 thread tools, all ungranted: they are invocable by the
     # authenticated chat surface but sit on no model surface, and they are not human-only either.
-    # FI Lane D D4 added `open_directive_confirmation_gate`, granted to the Head of ABM: asking the
-    # human for authority is that role's own act, and the tool cannot address a gate to anybody but
-    # the human whose turn it is answering.
+    # FI Lane D D4 added `open_directive_confirmation_gate`, and Stage-0 hardening added the exact-
+    # subject ICP confirmation counterpart. Both are granted to the Head of ABM: asking the human
+    # for authority is that role's own act, and neither tool can address a gate to anybody but the
+    # human whose turn it is answering.
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()
@@ -54,9 +55,11 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Lane E E3, same reasoning one slice on: an agent that could position on demand could spend N
     # completions on an account the research engine never finished.
     assert C6_AGENT_TOOL_AUTHORITY["synthesize_value_narrative"] == ()
-    # Merged Lane D (+5: four thread tools + the confirmation gate) and Lane E (+2: the two
-    # machine-invoked synthesis tools) off the shared 48-tool base.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 56
+    # Merged Lane D (+5: four thread tools + the directive confirmation gate), Lane E (+2: the two
+    # machine-invoked synthesis tools), FI-2 (+1: selected-Account launch), and Stage-0 hardening
+    # (+1: ICP confirmation) off the shared 48-tool base.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 57
+    assert C6_AGENT_TOOL_AUTHORITY["open_icp_confirmation_gate"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)

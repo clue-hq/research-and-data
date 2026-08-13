@@ -53,7 +53,7 @@ from langchain_core.outputs import ChatGenerationChunk, GenerationChunk, LLMResu
 from pydantic import JsonValue
 from sqlalchemy import text as sql_text
 
-from clue_api.agent_gate import DECISIONS, GATE_OBJECT_TYPE
+from clue_api.agent_gate import GATE_OBJECT_TYPE, KIND_ICP_CONFIRMATION
 from clue_api.chat.finalize_stream import FinalizeTextDeltaExtractor
 from clue_api.chat.turn_events import (
     TurnEventType,
@@ -840,12 +840,16 @@ class TurnStreamEmitter:
                 expected_subject_sha256=view.expected_subject_sha256,
                 amount_cents=(
                     _cent_ceiling(view.max_spend_cents)
-                    if self._policy.gate_amount_visible
+                    if self._policy.gate_amount_visible and view.max_spend_cents is not None
                     else None
                 ),
-                currency=view.currency if self._policy.gate_amount_visible else None,
+                currency=(
+                    view.currency
+                    if self._policy.gate_amount_visible and view.max_spend_cents is not None
+                    else None
+                ),
                 addressee_user_id=view.addressee_user_id,
-                permitted_decisions=DECISIONS,
+                permitted_decisions=view.permitted_decisions,
                 decision=None if answer is None else answer.decision,
                 answered_by_user_id=None if answer is None else answer.answered_by_user_id,
                 answered_at=None if answer is None else answer.answered_at.isoformat(),
@@ -1102,11 +1106,16 @@ def _gate_subject_ref(view: GateView) -> dict[str, JsonValue]:
     string. Parsing is the fallback, not the path.
     """
 
-    identifier = view.subject_snapshot.get("research_directive_id")
+    if view.kind == KIND_ICP_CONFIRMATION:
+        identifier = view.subject_snapshot.get("icp_key")
+        object_type = "icp_spec"
+    else:
+        identifier = view.subject_snapshot.get("research_directive_id")
+        object_type = "research_directive"
     object_id = str(identifier) if isinstance(identifier, str) else view.subject_ref
     ref: dict[str, JsonValue] = {
         "workspace_id": view.workspace_id,
-        "object_type": "research_directive",
+        "object_type": object_type,
         "object_id": object_id,
         "sha256": view.expected_subject_sha256,
     }

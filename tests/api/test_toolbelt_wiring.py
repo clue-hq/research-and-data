@@ -103,7 +103,7 @@ def _matrix_contact_selection() -> ContactResearchSelection:
 # tool -> ("precondition", exact reason tuple) | ("success", a required reference key)
 _MATRIX: dict[str, tuple[str, object]] = {
     "reverse_profile": ("success", "client_entity_id"),
-    "synthesize_icps": ("precondition", ("no_client_kb",)),
+    "synthesize_icps": ("precondition", ("stage0_scope_not_found",)),
     "confirm_icp": ("precondition", ("no_client_kb",)),
     "import_accounts": ("precondition", ("no_active_icp",)),
     "discover_accounts": ("precondition", ("run_not_found",)),
@@ -191,6 +191,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # gate to: a ref naming no turn of this workspace proves no addressee, so it refuses rather than
     # presenting a gate nobody is entitled to answer.
     "open_directive_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
+    # Stage-0 hardening: ICP confirmation resolves the execution-bound project before it accepts a
+    # draft or a presenting turn. This matrix has no governed execution, so trusted scope is the
+    # first fail-closed boundary.
+    "open_icp_confirmation_gate": ("precondition", ("stage0_scope_not_found",)),
     "submit_onboarding_input": ("precondition", ("artifact_not_found",)),
     "start_recon": ("precondition", ("onboarding_input_not_found",)),
     "record_interview_answer": ("precondition", ("onboarding_input_not_found",)),
@@ -222,7 +226,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
 def _bodies() -> dict[str, dict[str, object]]:
     return {
         "reverse_profile": {"name": "Acme Robotics", "website": "https://acme.example"},
-        "synthesize_icps": {"client_entity_id": _UUID()},
+        # The current @2 synthesis contract accepts no model-authored scope; the execution binding
+        # supplies it. Keeping this empty is itself an authority-boundary assertion.
+        "synthesize_icps": {},
         "confirm_icp": {
             "client_entity_id": _UUID(),
             "proposal": ICPProposal(icp_key="matrix").model_dump(mode="json"),
@@ -401,6 +407,11 @@ def _bodies() -> dict[str, dict[str, object]]:
             "account_entity_ids": [_UUID()],
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
+        "open_icp_confirmation_gate": {
+            "icp_key": "matrix",
+            "icp_version": 1,
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
         "submit_onboarding_input": {
             "brand_id": "brand_missing",
             "kind": "website",
@@ -425,11 +436,9 @@ def _bodies() -> dict[str, dict[str, object]]:
             "project_id": "project_missing",
             "product_id": "product_missing",
         },
-        "evaluate_stage0_readiness": {
-            "brand_id": "brand_missing",
-            "gate": "icp_synthesis",
-            "metrics": {},
-        },
+        # The current @2 readiness contract accepts only the gate. Scope and metrics are trusted
+        # backend inputs, so stale v1 fields must not be smuggled into this audit fixture.
+        "evaluate_stage0_readiness": {"gate": "icp_synthesis"},
         "override_stage0_readiness": {
             "readiness_decision_id": _UUID(),
             "gate": "icp_synthesis",
@@ -876,11 +885,14 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # FI Lane D D0 adds REQ-21's four thread-shell tools (48 → 52), each with exactly one version,
     # and D4 adds the one gate-presenting tool (52 → 53); Lane E E1 adds the governed
     # on-completion prose synthesis surface, and E3 the governed value-narrative positioning
-    # surface beside it (53 → 55 in the merged tree).
-    assert len(registry.names()) == 56
+    # surface beside it (53 → 55 in the merged tree); Stage-0 hardening adds the durable ICP
+    # confirmation gate and FI-2 adds the selected-Account launch (55 → 57).
+    assert len(registry.names()) == 57
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 63
+    # The two corrected @2 Stage-0 contracts coexist with their immutable @1 replay contracts, and
+    # ICP confirmation plus selected-Account launch are new: four descriptors beyond prior 62.
+    assert len(registry) == 66
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

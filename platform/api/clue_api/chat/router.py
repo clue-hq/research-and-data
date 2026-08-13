@@ -42,6 +42,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from clue_agents import DomainObjectRef
 from clue_api.agent_gate import (
     KIND_DIRECTIVE_CONFIRMATION,
+    KIND_ICP_CONFIRMATION,
     AgentGateRow,
     GateAlreadyAnswered,
     get_gate,
@@ -132,6 +133,8 @@ from clue_api.chat.schemas import (
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
+from clue_api.stage0_icp_gate import IcpGateSubjectError, exact_icp_gate_subject
+from clue_api.stage0_project_scope import resolve_stage0_project_scope_for_project
 from clue_api.thread_store import create_thread, get_thread, thread_id_for_operation
 from clue_api.turn_action import derive_turn_action_ref
 from clue_auth import Permission, PrincipalError, PrincipalService
@@ -160,6 +163,7 @@ from clue_projections import (
     turn_status_ledger,
     turn_tool_calls,
 )
+from clue_research.icp import activate_icp_version
 from clue_spine import (
     create_project,
     get_brand,
@@ -1532,11 +1536,17 @@ def build_chat_router(
                 code="GATE_NOT_FOUND",
                 message="no such gate in this thread",
             )
-        if view.gate.kind != KIND_DIRECTIVE_CONFIRMATION:
+        if view.gate.kind not in {KIND_DIRECTIVE_CONFIRMATION, KIND_ICP_CONFIRMATION}:
             raise _refuse(
                 status_code=422,
                 code="GATE_KIND_UNSUPPORTED",
                 message=f"this surface cannot answer a {view.gate.kind} gate",
+            )
+        if response.decision not in view.gate.permitted_decisions:
+            raise _refuse(
+                status_code=422,
+                code="GATE_DECISION_UNSUPPORTED",
+                message="this decision was not offered by the durable gate",
             )
         # Addressee, not membership: a colleague with a perfectly valid session and a perfectly
         # valid turn of their own still may not answer somebody else's gate.
@@ -1565,15 +1575,84 @@ def build_chat_router(
         # client has no number to echo and this check could only refuse every approval. It is the
         # *courier* half of staleness; the digest check above is the load-bearing half and stays
         # armed in both modes, so a redrafted directive still cannot be approved by a stale click.
-        if (
-            settings.budget_controls_enabled
-            and response.expected_estimated_cost_cents != view.gate.max_spend_cents
-        ):
+        if view.gate.kind == KIND_DIRECTIVE_CONFIRMATION:
+            if (
+                settings.budget_controls_enabled
+                and response.expected_estimated_cost_cents != view.gate.max_spend_cents
+            ):
+                raise _refuse(
+                    status_code=409,
+                    code="GATE_AMOUNT_STALE",
+                    message="the reviewed maximum spend differs from the current gate",
+                )
+        elif response.expected_estimated_cost_cents is not None:
             raise _refuse(
-                status_code=409,
-                code="GATE_AMOUNT_STALE",
-                message="the reviewed maximum spend differs from the current gate",
+                status_code=422,
+                code="GATE_AMOUNT_UNEXPECTED",
+                message="an ICP confirmation gate carries no spend amount",
             )
+
+        if view.gate.kind == KIND_ICP_CONFIRMATION:
+            if response.decision == "revised":
+                if response.revision_request is None or not response.revision_request.strip():
+                    raise _refuse(
+                        status_code=422,
+                        code="GATE_REVISION_REQUEST_REQUIRED",
+                        message="revising an ICP requires the requested changes",
+                    )
+            elif response.revision_request is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_REVISION_REQUEST_UNEXPECTED",
+                    message="revision_request is only valid for a revised ICP decision",
+                )
+
+            # A retry of the same answering turn is checked against its existing captured bytes
+            # below. Its subject is active after an approval, so only a *new* answer revalidates the
+            # still-draft snapshot before any receipt is written.
+            if view.answer is None:
+                scope = await resolve_stage0_project_scope_for_project(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    project_id=project_id,
+                )
+                try:
+                    if scope is None:
+                        raise IcpGateSubjectError(
+                            "stage0_scope_not_found",
+                            "the gate project no longer has a trusted Stage-0 scope",
+                        )
+                    icp_key = view.gate.subject_snapshot.get("icp_key")
+                    version = view.gate.subject_snapshot.get("version")
+                    if not isinstance(icp_key, str) or not isinstance(version, int):
+                        raise IcpGateSubjectError(
+                            "icp_gate_snapshot_invalid",
+                            "the durable gate does not name a canonical ICP subject",
+                        )
+                    subject = await exact_icp_gate_subject(
+                        conn,
+                        scope=scope,
+                        icp_key=icp_key,
+                        icp_version=version,
+                        require_project_synthesis=False,
+                    )
+                except IcpGateSubjectError as exc:
+                    raise _refuse(
+                        status_code=409,
+                        code="GATE_SUBJECT_STALE",
+                        message=str(exc),
+                    ) from exc
+                if (
+                    subject.subject_ref != view.gate.subject_ref
+                    or subject.spec.version != view.gate.subject_revision
+                    or subject.snapshot != view.gate.subject_snapshot
+                    or subject.sha256 != view.gate.expected_subject_sha256
+                ):
+                    raise _refuse(
+                        status_code=409,
+                        code="GATE_SUBJECT_STALE",
+                        message="the persisted ICP draft differs from the reviewed snapshot",
+                    )
         return view.gate
 
     if artifacts is not None:
@@ -1786,6 +1865,12 @@ def build_chat_router(
                             turn_id=turn_id,
                             action_ref=action_ref,
                             decision=response.decision,
+                            expected_subject_sha256=response.expected_subject_sha256,
+                            decision_payload=(
+                                {"revision_request": response.revision_request}
+                                if response.revision_request is not None
+                                else {}
+                            ),
                             answered_by_user_id=who.user_id,
                         )
                     except GateAlreadyAnswered as exc:
@@ -1796,7 +1881,7 @@ def build_chat_router(
                             code="GATE_ALREADY_ANSWERED",
                             message="this gate has already been answered",
                         ) from exc
-                    if response.decision == "approved":
+                    if gate.kind == KIND_DIRECTIVE_CONFIRMATION and response.decision == "approved":
                         # Human-only, invoked outside the model surface with server-derived
                         # authority. Rejection and revision deliberately confirm nothing: they are
                         # durable records of a decision, and the agent answers them in its turn.
@@ -1815,6 +1900,18 @@ def build_chat_router(
                                 who.workspace_id,
                                 f"gate-answer:{gate.gate_id}:{turn_id}",
                             ),
+                        )
+                    elif gate.kind == KIND_ICP_CONFIRMATION and response.decision == "approved":
+                        icp_key = gate.subject_snapshot["icp_key"]
+                        version = gate.subject_snapshot["version"]
+                        assert isinstance(icp_key, str) and isinstance(version, int)
+                        # Same transaction as the immutable answer: either the exact reviewed
+                        # draft becomes active and the receipt exists, or neither effect commits.
+                        await activate_icp_version(
+                            conn,
+                            who.workspace_id,
+                            icp_key,
+                            version,
                         )
                 # FI Lane D D3: announce acceptance where it actually happens. The platform
                 # accepted this turn *here*, the moment its bytes, its capture record and its

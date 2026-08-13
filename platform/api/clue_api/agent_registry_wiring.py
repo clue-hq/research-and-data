@@ -36,9 +36,9 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # v24 adds account-deep-steering v4's exact current-message Account launch path for deployments
-    # with pilot budget controls disabled. The v23 durable-gate route remains the general route.
-    AgentRole.HEAD_OF_ABM: "v24",
+    # v25 combines Stage-0's durable exact-subject ICP gate with account-deep-steering v4's exact
+    # current-message Account launch path for deployments with pilot budget controls disabled.
+    AgentRole.HEAD_OF_ABM: "v25",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -101,6 +101,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # it confirms nothing, spends nothing, and cannot address a gate to anybody but the human whose
     # turn it is answering (the addressee is derived from the durable submission, not proposed).
     "open_directive_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
+    "open_icp_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
     "pause_run": (),
     "profile_contact": (),
@@ -230,10 +231,11 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
     # D4 widened this surface: `launch_account_research` / `launch_contact_research` are no longer
     # withheld here, because the authority they were waiting for now exists — a durable gate object
     # (`open_directive_confirmation_gate@1`), a structured human answer to it, and the confirming
-    # turn's own `action_ref` threaded into the tool context. The remaining three subtractions are
+    # turn's own `action_ref` threaded into the tool context. The remaining two subtractions are
     # the trial's, for the trial's reasons: this surface still does no external research and still
-    # never captures on the client's behalf. Delegation stays withheld (D4 grants launch authority,
-    # not a specialist fleet).
+    # never captures on the client's behalf. Slice 1 removes ``synthesize_icps`` from this list:
+    # @2 is the governed Stage-0 capability and persists draft specs. Delegation stays withheld
+    # (D4 grants launch authority, not a specialist fleet).
     AgentSurfacePolicy(
         surface=PROJECT_CONVERSATION_SURFACE,
         role=AgentRole.HEAD_OF_ABM,
@@ -241,7 +243,6 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
             {
                 "start_recon",
                 "submit_onboarding_input",
-                "synthesize_icps",
             }
         ),
         withheld_delegation_roles=frozenset(
@@ -295,6 +296,8 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
     if name == "draft_account_research_directive":
         return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@2" else ()
+    if name in {"evaluate_stage0_readiness", "synthesize_icps"}:
+        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":
@@ -316,6 +319,8 @@ def _unavailable_reason(address: str, name: str) -> str | None:
         return "replaced_by_replay_safe_v2"
     if address == "profile_contact@1":
         return "replaced_by_governed_v2"
+    if address in {"evaluate_stage0_readiness@1", "synthesize_icps@1"}:
+        return "replaced_by_trusted_stage0_v2"
     return _RESERVED_REASON.get(name)
 
 

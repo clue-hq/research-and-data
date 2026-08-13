@@ -35,7 +35,12 @@ import styles from "./project-flow.module.css";
 export interface ChatPartActions {
   busy: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
-  onGateDecision(card: GateCardModel, decision: GateDecision): void;
+  onGateDecision(
+    card: GateCardModel,
+    decision: GateDecision,
+    revisionRequest?: string,
+  ): void;
+  onGateRecovery(card: GateCardModel): void;
 }
 
 export function ChatMessagePartView({
@@ -100,6 +105,7 @@ export function ChatMessagePartView({
           busy={actions.busy}
           card={card}
           onDecide={actions.onGateDecision}
+          onRecover={actions.onGateRecovery}
         />
       );
     }
@@ -121,16 +127,19 @@ export function ChatMessagePartView({
             />
           </SourcesTrigger>
           <SourcesContent className={styles.projectSourcesContent}>
-            {part.items.map((item) => (
-              <Source
-                href={item.url ?? undefined}
-                key={item.sourceId}
-                title={item.title ?? item.sourceId}
-              >
-                <span>{item.title ?? item.sourceId}</span>
-                {item.url ? <ProjectIcon name="link" size={10} /> : null}
-              </Source>
-            ))}
+            {part.items.map((item, index) => {
+              const label = item.title?.trim() || `Source ${index + 1}`;
+              return (
+                <Source
+                  href={item.url ?? undefined}
+                  key={item.sourceId}
+                  title={label}
+                >
+                  <span>{label}</span>
+                  {item.url ? <ProjectIcon name="link" size={10} /> : null}
+                </Source>
+              );
+            })}
           </SourcesContent>
         </Sources>
       );

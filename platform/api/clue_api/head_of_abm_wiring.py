@@ -114,6 +114,7 @@ def build_head_of_abm_stage0_execution(
         pin_provider=Stage0StepPinProvider(
             compatibility=compatibility,
             conn_factory=conn_factory,
+            tools=tools,
         ),
         # PC-C8 §6a: the captured turn is derived here, from the request's own artifact and its
         # capture record, so no caller has to hand the engine a turn-shaped argument it could get

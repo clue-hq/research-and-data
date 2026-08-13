@@ -9,10 +9,23 @@ import {
 } from "../data/chat-api";
 import type { ChatStreamHandle } from "../data/chat-stream.repository";
 import type { ChatGateRead } from "../data/chat-gates.repository";
-import { useChatRepositories } from "../data/projects-transport";
+import {
+  useChatRepositories,
+  useChatViewerIdentity,
+} from "../data/projects-transport";
 import type { ChatMessage } from "../model/chat-message";
 import type { ChatGatePart, GateDecision } from "../model/chat-parts";
-import { gateCardModel, type ChatGate, type GateCardModel } from "../model/chat-gate";
+import {
+  agentGateIdFromPart,
+  gateAnswerDisplay,
+  gateAnswerResponse,
+  gateAuthorityFailure,
+  gateCardModel,
+  type ChatGate,
+  type GateAnswerDisplay,
+  type GateAuthorityFailure,
+  type GateCardModel,
+} from "../model/chat-gate";
 import {
   applyChatStreamEvent,
   composeTranscript,
@@ -85,6 +98,7 @@ export interface ProjectChatController {
   queuedTurns: readonly ChatTurn[];
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
+  gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
   submitMessage(
     text: string,
     options?: {
@@ -96,7 +110,12 @@ export interface ProjectChatController {
       agentProfileId?: string | null;
     },
   ): Promise<ChatSubmissionResult>;
-  answerGate(card: GateCardModel, decision: GateDecision): Promise<void>;
+  answerGate(
+    card: GateCardModel,
+    decision: GateDecision,
+    revisionRequest?: string,
+  ): Promise<void>;
+  recoverGate(card: GateCardModel): Promise<void>;
   stopActiveTurn(): Promise<void>;
   retryTurn(turnId: string): Promise<void>;
   selectThread(threadId: string): void;
@@ -123,6 +142,7 @@ export function useProjectChatController({
   const router = useRouter();
   const routeQuery = useSearchParams().toString();
   const repositories = useChatRepositories();
+  const viewer = useChatViewerIdentity();
   const { invalidate: invalidateProjectCatalog } =
     useProjectCatalogInvalidation();
   const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -139,6 +159,10 @@ export function useProjectChatController({
     gates: [],
     reason: null,
   });
+  const [gateReadLoading, setGateReadLoading] = useState(true);
+  const [gateFailures, setGateFailures] = useState<
+    ReadonlyMap<string, GateAuthorityFailure>
+  >(new Map());
   const [stream, setStream] = useState<TranscriptState>(emptyTranscriptState);
   const [optimistic, setOptimistic] = useState<OptimisticTurn[]>([]);
   const [access, setAccess] = useState<ChatAccessState | null>(null);
@@ -212,12 +236,54 @@ export function useProjectChatController({
     return page.threads;
   }, [projectId, repositories]);
 
+  const loadGates = useCallback(
+    async (threadId: string) => {
+      if (mounted.current) setGateReadLoading(true);
+      try {
+        const read = await repositories.gates.list({ projectId, threadId });
+        if (!mounted.current) return read;
+        setGateRead(read);
+        setGateFailures((current) => {
+          const answered = new Set(
+            read.gates
+              .filter((gate) => gate.answer !== null)
+              .map((gate) => gate.gateId),
+          );
+          if (answered.size === 0) return current;
+          const next = new Map(current);
+          for (const gateId of answered) next.delete(gateId);
+          return next;
+        });
+        return read;
+      } catch (failure) {
+        if (
+          isAccessError(failure) ||
+          (failure instanceof ClueChatApiError &&
+            failure.code === "THREAD_NOT_FOUND")
+        ) {
+          throw failure;
+        }
+        globalThis.console.error("Durable gate read failed", failure);
+        const read: ChatGateRead = {
+          available: false,
+          gates: [],
+          reason: "We couldn't load the approval details. Please try again.",
+        };
+        if (mounted.current) setGateRead(read);
+        return read;
+      } finally {
+        if (mounted.current) setGateReadLoading(false);
+      }
+    },
+    [projectId, repositories],
+  );
+
   const loadConversation = useCallback(
     async (threadId: string) => {
-      const [messagePage, turnPage, gates] = await Promise.all([
+      const [messagePage, turnPage] = await Promise.all([
         repositories.messages.list({ projectId, threadId, includeBodies: true }),
         repositories.turns.list({ projectId, threadId }),
-        repositories.gates.list({ projectId, threadId }),
+        loadGates(threadId),
       ]);
       if (!mounted.current) return;
       setMessages(messagePage.messages);
@@ -226,7 +292,6 @@ export function useProjectChatController({
       setTurnStateOverrides((current) =>
         reconcileTurnStateOverrides(current, turnPage.turns),
       );
-      setGateRead(gates);
       // A durable message for a turn means the optimistic stand-in has done its
       // job; keeping it would double the user's own sentence.
       const durableTurns = new Set([
@@ -240,7 +305,7 @@ export function useProjectChatController({
       );
       return turnPage.turns;
     },
-    [projectId, repositories],
+    [loadGates, projectId, repositories],
   );
 
   useEffect(() => {
@@ -485,6 +550,8 @@ export function useProjectChatController({
         try {
           await loadConversation(activeThreadId);
         } catch (failure) {
+          // The durable accept already succeeded. Rehydration failure must not
+          // make the composer retain and resubmit the accepted message.
           report(failure);
         }
       }
@@ -494,18 +561,20 @@ export function useProjectChatController({
   );
 
   const answerGate = useCallback(
-    async (card: GateCardModel, decision: GateDecision) => {
+    async (
+      card: GateCardModel,
+      decision: GateDecision,
+      revisionRequest?: string,
+    ) => {
       if (!activeThreadId) return;
-      if (card.expectedSubjectSha256 === null) {
-        // Structurally unanswerable: the subject digest is what makes "approve"
-        // mean the card that was on the screen, and the server refuses anything
-        // else. Say so rather than sending a guess.
-        setError(
-          card.unavailableReason ??
-            "this gate cannot be answered without its subject digest",
-        );
+      let response;
+      try {
+        response = gateAnswerResponse(card, decision, revisionRequest);
+      } catch (failure) {
+        setError(failure instanceof Error ? failure.message : String(failure));
         return;
       }
+      setError(null);
       setSubmitting(true);
       try {
         const accepted = await repositories.turns.submit({
@@ -513,31 +582,73 @@ export function useProjectChatController({
           threadId: activeThreadId,
           submission: {
             kind: "gate_response",
-            response: {
-              gateId: card.gateId,
-              decision,
-              expectedSubjectSha256: card.expectedSubjectSha256,
-              // The courier half of staleness. When the amount was withheld
-              // (pilot budget controls off) there is no number to echo and the
-              // server does not check this field; `0` is the placeholder that
-              // travels, never a figure shown to anyone.
-              expectedEstimatedCostCents: card.amountCents ?? 0,
-            },
+            response,
           },
           idempotencyKey: newIdempotencyKey(`gate:${card.gateId}:${decision}`),
         });
         if (!mounted.current) return;
+        setGateFailures((current) => {
+          const next = new Map(current);
+          next.delete(card.gateId);
+          return next;
+        });
         // The answer is durable the moment the turn was accepted; the reload
         // below reads it back rather than the client asserting it locally.
         attach(activeThreadId, accepted.turnId);
         await loadConversation(activeThreadId);
       } catch (failure) {
-        report(failure);
+        if (
+          failure instanceof ClueChatApiError &&
+          failure.code.startsWith("GATE_")
+        ) {
+          setGateFailures((current) => {
+            const next = new Map(current);
+            next.set(
+              card.gateId,
+              gateAuthorityFailure(failure.code, failure.message),
+            );
+            return next;
+          });
+        } else {
+          report(failure);
+        }
       } finally {
         if (mounted.current) setSubmitting(false);
       }
     },
     [activeThreadId, attach, loadConversation, projectId, repositories, report],
+  );
+
+  const recoverGate = useCallback(
+    async (card: GateCardModel) => {
+      if (!activeThreadId || card.recovery === null) return;
+      setError(null);
+      if (card.recovery.kind === "retry_gate_read") {
+        setGateFailures((current) => {
+          const next = new Map(current);
+          next.delete(card.gateId);
+          return next;
+        });
+        try {
+          await loadGates(activeThreadId);
+        } catch (failure) {
+          report(failure);
+        }
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        const prompt =
+          card.kind === "icp_confirmation"
+            ? "Please create a fresh ideal customer profile proposal for me to review. The current proposal is no longer available."
+            : "Please create a fresh proposal for me to review. The current one is no longer available.";
+        await submitMessage(prompt);
+      } finally {
+        if (mounted.current) setSubmitting(false);
+      }
+    },
+    [activeThreadId, loadGates, report, submitMessage],
   );
 
   const queue = useMemo(() => selectTurnQueueState(effectiveTurns), [effectiveTurns]);
@@ -649,14 +760,45 @@ export function useProjectChatController({
 
   const gateFor = useCallback(
     (part: ChatGatePart) => {
-      const gateId = part.gateRef.objectId;
+      const gateId = agentGateIdFromPart(part);
       return gateCardModel({
         gate: gateId ? (gatesById.get(gateId) ?? null) : null,
         part,
-        unavailableReason: gateRead.reason,
+        currentUserId: viewer.userId,
+        currentWorkspaceId: viewer.workspaceId,
+        expectedProjectId: projectId,
+        expectedThreadId: activeThreadId ?? "",
+        gateReadAvailable: gateRead.available,
+        gateReadLoading,
+        authorityFailure:
+          gateId === null ? null : (gateFailures.get(gateId) ?? null),
       });
     },
-    [gateRead.reason, gatesById],
+    [
+      activeThreadId,
+      gateFailures,
+      gateRead.available,
+      gateReadLoading,
+      gatesById,
+      projectId,
+      viewer.userId,
+      viewer.workspaceId,
+    ],
+  );
+
+  const gateAnswersByTurn = useMemo(() => {
+    const map = new Map<string, GateAnswerDisplay>();
+    for (const gate of gateRead.gates) {
+      if (gate.answer === null) continue;
+      const display = gateAnswerDisplay(gate);
+      if (display !== null) map.set(gate.answer.turnId, display);
+    }
+    return map;
+  }, [gateRead.gates]);
+
+  const gateAnswerForTurn = useCallback(
+    (turnId: string) => gateAnswersByTurn.get(turnId) ?? null,
+    [gateAnswersByTurn],
   );
 
   const activeThread = useMemo(
@@ -678,8 +820,10 @@ export function useProjectChatController({
     queuedTurns: queue.queuedTurns,
     submitting,
     gateFor,
+    gateAnswerForTurn,
     submitMessage,
     answerGate,
+    recoverGate,
     stopActiveTurn,
     retryTurn,
     selectThread(threadId) {
@@ -703,6 +847,9 @@ export function useProjectChatController({
       setTurns([]);
       setTurnStateOverrides(new Map());
       setOptimistic([]);
+      setGateRead({ available: false, gates: [], reason: null });
+      setGateReadLoading(true);
+      setGateFailures(new Map());
       setError(null);
       setRoute(null);
       setLoading(true);

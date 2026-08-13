@@ -1,6 +1,6 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R9 implemented. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-4 implemented. Slice 5 is explicitly deferred. Slice 6 automated/adversarial acceptance is complete, but authenticated browser acceptance remains pending. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
 
@@ -12,15 +12,243 @@ project deliberately returns and renders an empty Gallery.
 
 Authority order inside this document is:
 
-1. **Executable integration contract (2026-08-10)** below.
-2. **As-built thread-shell contract (2026-08-08)** for endpoints the executable
+1. **Stage-0/project hardening amendment (2026-08-11)** below.
+2. **Executable integration contract (2026-08-10)** where the amendment does not supersede it.
+3. **As-built thread-shell contract (2026-08-08)** for endpoints the executable
    section does not amend.
-3. Earlier read/write/preview proposals, retained only as design history.
+4. Earlier read/write/preview proposals, retained only as design history.
 
 When `CLUE_PROJECTS_API_BASE_URL` is configured, every projects repository must
 use the same-origin authenticated BFF and validate the corresponding wire
 schema. HTTP mode never falls back to fixtures after a refusal, parse error, or
 network failure. Presentation components do not call the API directly.
+
+### Ratified Stage-0/project hardening amendment (2026-08-11)
+
+This amendment replaces the browser-probe defects documented in
+`.context/defect-log.md` with one durable authority chain. Slice 0 freezes the
+contracts and repairs the two stale test signals. Slice 1 registers the trusted
+readiness and synthesis tools, persists their durable records, and promotes the
+active Stage-0 recipe/profile. Slice 2 implements the durable ICP gate and
+answer lifecycle; rendering and remaining UI changes stay owned by Slices 3-6.
+
+- `synthesize_icps` is available to the governed Stage-0 conversation profile.
+  A successful call persists one or more draft, versioned `icp_spec` rows and
+  returns their exact durable proposal references. A readiness-policy revision
+  is never described or serialized as an ICP version; no ICP exists until an
+  `icp_spec` row exists.
+- ICP confirmation is a supported durable `agent_gate` kind. Its immutable row
+  stores the exact ICP subject reference, ICP revision, canonical subject
+  snapshot SHA-256, permitted decisions, and human addressee. Only the stored
+  gate may produce interactive Approve, Reject, or Revise controls.
+- A gate response travels through the existing structured `gate_response`
+  route. The server revalidates workspace/addressee, permitted decision,
+  subject revision, and expected digest before inserting the immutable answer
+  receipt. Approve activates the exact draft ICP; Reject and Revise preserve
+  the receipt without activating it.
+- Thin model references, malformed ids such as `human_only`, unsupported gate
+  kinds, missing durable rows, and stale subjects render as non-interactive
+  **Human action required** recovery notices. A model-emitted digest is not
+  authority.
+- Stage-0 readiness input metrics are engine-derived from the pinned,
+  product-scoped Client-KB claims. Coverage and verified-claim counts use the
+  effective expected-field set: the substantive Client-KB baseline plus any
+  tenant-local required-field extensions. An empty configured extension list
+  cannot erase the baseline or turn an empty knowledge base into a misleading
+  ready state. The wire field is named `readiness_policy_version`.
+- Home project creation accepts an optional explicit `project_name`. When it is
+  absent, the server derives a bounded durable name from the initial brief.
+  The same stored title feeds bootstrap, project header, and sidebar reads;
+  `Untitled project` is no longer the creation default.
+- The authenticated session membership includes `workspace_name`. Shell
+  controls render that display name while retaining `workspace_id` only as the
+  internal selection value.
+- During text-only Stage 0 an empty Gallery is collapsed by default, with an
+  explicit reopen control. Composer submission clears both browser-owned draft
+  state and the focused Slate value; layout permits bounded editor scrolling
+  without horizontal conversation overflow or sticky-header clipping.
+
+#### Slice 4 presentation and workspace invariants
+
+- A successful submission clears the exact accepted prompt and ordered mention
+  set from both controlled draft state and Slate history. A newer draft typed
+  while the request is in flight is not cleared, and blur is not a second
+  draft-authority path.
+- Canonical structured gate-response messages remain immutable in storage, but
+  the default transcript projects the fetched durable answer as **Profile
+  approved**, **Profile declined**, or **Changes requested**. The normal chat
+  never renders the gate id, expected digest, subject id, or transport JSON;
+  those details remain available through the explicit turn inspector.
+- The composer height is content-driven and bounded. The editor scrolls
+  internally before it can overlap the mention/model/send footer.
+- Every split-pane and transcript flex boundary may shrink (`min-width: 0`),
+  message prose and inline code wrap, and only vertical conversation scrolling
+  is permitted. New user turns are positioned below the project and thread
+  headers rather than under them.
+- A project with no artifacts opens conversation-first and exposes an obvious
+  **Open Gallery** control. The explicit `/gallery` route still honors the
+  user's request to open the Gallery, including its empty state.
+
+The amendment supersedes the earlier `Untitled project` and initially-open empty
+Gallery rules retained later in this document as implementation history.
+
+#### Slice 6 acceptance checkpoint (2026-08-12)
+
+Slice 6 tests Slices 0-4 only. The workspace-display-name and durable-project-name
+changes assigned to Slice 5 are deliberately excluded from both acceptance and
+adversarial conclusions.
+
+- A fresh isolated PostgreSQL database completed head → previous revision → head
+  across the two Stage-0 migrations, and Alembic reported one head.
+- The focused backend/adversarial matrix passes 165 tests. It includes the trusted
+  readiness inputs, versioned ICP synthesis, exact-subject gate lifecycle, all
+  three human decisions, replay/tenancy/digest refusals, durable-turn fixture,
+  active skill materialization, the complete tool-authority registry, and the
+  promoted-recipe lifecycle.
+- Frontend acceptance passes 165 tests, ESLint, design-system token generation,
+  and the Next.js webpack production build.
+- The complete repository suite passes 4,381 tests and skips 23. Its remaining
+  failures are classified separately: shared-database/order-sensitive legacy
+  tests, the pre-existing clue-design logging-discipline scan, and an untouched
+  mypy failure in `agent_gate_tools.py`. Slice-owned registry/recipe failures
+  found by this run were repaired and pass in isolation and in the focused
+  matrix.
+- Authenticated browser acceptance remains open. The in-app Clerk session was
+  expired; Chrome could enumerate tabs but could not establish a controllable
+  acceptance tab even after the one supported recovery attempt. No fixture-only
+  browser run is accepted as a substitute for browser → API → PostgreSQL proof.
+
+#### Frozen Stage-0 authority contracts
+
+The existing `evaluate_stage0_readiness@1` and `synthesize_icps@1` schemas remain
+unchanged for historical replay. Their corrected successors are new versioned
+contracts. Slice 1 registers their `@2` successors without silently changing an
+`@1` schema already pinned by profiles and receipts.
+
+`evaluate_stage0_readiness@2` exposes exactly one model-authored input:
+
+```json
+{ "gate": "icp_synthesis" }
+```
+
+Workspace, project, product, client entity, pinned Client-KB version, claim set,
+field policy, metrics and verdict are trusted runtime/backend values. The model
+cannot supply or override them. Its reference-first output is:
+
+```json
+{
+  "readiness_decision_id": "<uuid>",
+  "gate": "icp_synthesis",
+  "verdict": "ready",
+  "coverage_ratio": 0.78,
+  "verified_claims": 0,
+  "available_field_keys": ["client.differentiator", "client.product"],
+  "reason_codes": [],
+  "readiness_policy_version": 1
+}
+```
+
+The Insight Health fixture currently has seven available baseline fields out of
+nine, but those official-site claims are not independently verified; its
+authoritative metrics are therefore `coverage_ratio=7/9`,
+`available_field_keys` containing seven entries, and `verified_claims=0`.
+
+`synthesize_icps@2` has no model-authored input fields. The runtime supplies the
+exact ready Stage-0 scope and links the write to the readiness decision. It
+returns one or more persisted draft references, never transient proposal bodies:
+
+```json
+{
+  "readiness_decision_id": "<uuid>",
+  "icp_specs": [
+    {
+      "workspace_id": "<internal-workspace-id>",
+      "icp_key": "independent-neurosurgery-practices",
+      "icp_version": 1,
+      "status": "draft"
+    }
+  ]
+}
+```
+
+An interactive ICP gate has kind `icp_confirmation` and stores the durable
+`icp_spec` composite reference, the same ICP version as `subject_revision`, the
+canonical subject snapshot, its matching SHA-256 digest, the exact permitted
+decision tuple `approved | rejected | revised`, and `addressee_user_id`.
+`human_only`, a model-produced digest, or an unfetched `open_gate_ref` cannot
+satisfy this contract.
+
+The normal turn route carries an ICP answer as
+`gate_response={gate_id, decision, expected_subject_sha256,
+expected_estimated_cost_cents:null}`. A `revised` decision additionally requires
+one bounded, non-blank `revision_request`; that text is persisted in the answer
+receipt and the gated draft remains byte-identical. Approve and Reject accept no
+revision payload. The shared cost echo remains governed by the existing
+directive/budget-gate rules when that gate stores a spend amount. Actor,
+addressee, action reference, subject and authority remain server-derived and
+are never accepted from the browser or model.
+
+#### Slice 2 implementation status (2026-08-12)
+
+- `open_icp_confirmation_gate@1` is registered in the promoted Stage-0 profile
+  and recipe. The model supplies only a synthesized `icp_key` and version; the
+  runtime derives the project, thread, exact draft snapshot/digest, supported
+  decisions and human addressee.
+- `agent_gate.permitted_decisions` is durable data. Non-spend gates store a
+  paired null amount/currency rather than a fabricated zero. Each immutable
+  answer receipt echoes the reviewed digest and stores a bounded structured
+  decision payload.
+- Route checks and a database trigger independently enforce the exact digest,
+  permitted decision and addressee. The route also re-resolves the current
+  product/client/Client-KB lineage and compares the complete draft snapshot
+  before accepting a new answer.
+- Approve activates exactly the gated draft in the same transaction as the
+  receipt. Reject leaves it draft. Revise stores the requested changes and
+  leaves the original draft unchanged so a later synthesis must create a new
+  version.
+- Slice 2 deliberately stopped at the backend authority boundary. Slice 3 now
+  provides the typed ICP decision surface, including the required Revise input,
+  without treating rich stream fields as authority.
+
+#### Slice 3 implementation status (2026-08-12)
+
+- A gate part is only a signal to resolve an `agent_gate` UUID. Decision controls
+  are derived exclusively from the fetched durable gate after exact workspace,
+  project, thread, subject revision/digest, supported kind, permitted decision,
+  unanswered state and authenticated addressee checks.
+- `human_only`, non-`agent_gate` refs, malformed UUIDs, rich-but-unfetched parts,
+  missing rows, unsupported kinds, wrong addressees and invalid authority
+  records render **Human action required** notices with no decision controls.
+- A gate-read failure no longer fails the transcript/turn read. The notice
+  offers **Retry gate verification**; a missing, unsupported, model-only or
+  stale proposal offers **Ask Stage 0 to regenerate**, which submits an ordinary
+  human-authored recovery turn rather than manufacturing a gate locally.
+- ICP **Revise** opens a bounded required-text form and posts
+  `decision=revised`, the exact fetched digest, null spend and the trimmed
+  `revision_request` through the structured turn route. Approve and Reject send
+  no revision text. Backend `GATE_SUBJECT_STALE` and related refusals replace the
+  card with an explicit per-gate recovery state.
+- An answered gate stays in history only when its immutable answer receipt
+  echoes the gate digest and one of the gate's permitted decisions. The recorded
+  ICP revision request is projected from that receipt.
+
+#### Human-facing receipt presentation (2026-08-12)
+
+- Durable gate and tool receipts remain authoritative transport records, not
+  presentation models. Normal chat projects them through an explicit allowlist
+  of business facts such as coverage, proposal name, account count and status.
+- Internal ids, object references, hashes, digests, operation keys, tool schema
+  versions and backend refusal details never render in the normal transcript,
+  gate card, activity labels, recovery copy, source fallbacks or accessibility
+  labels. The turn inspector retains those diagnostics behind an explicit
+  developer-oriented action.
+- Known operations receive stable human labels. Unknown operations fail closed:
+  the transcript shows only a generic activity label and completion state; it
+  never renders an arbitrary tool name, input or output payload.
+- Decision controls use action language appropriate to the reviewed subject
+  (for example, **Approve profile** or **Start research**). Integrity checks
+  still send and verify the fetched durable identifiers and digest internally;
+  hiding them from the card does not weaken gate authority.
 
 ### R3 implementation status (2026-08-10)
 
@@ -124,7 +352,7 @@ network failure. Presentation components do not call the API directly.
   reload.
 - The composer keeps one visible model selector, as explicitly ruled for R8.
   Its only option is the server-advertised promoted profile
-  `head-of-abm@v24`, labelled **GPT-5.6 Terra** and backed by
+  `head-of-abm@v25`, labelled **GPT-5.6 Terra** and backed by
   `openai/gpt-5.6-terra`. The chosen profile id is accepted, persisted, and
   checked by the detached worker before the promoted profile is executed.
 - Attachments remain unavailable because this deployment has no durable upload
@@ -153,6 +381,26 @@ network failure. Presentation components do not call the API directly.
 - The desktop sidebar trigger remains above its hover overlay, so pointer click
   can pin the preview. Enter and Space invoke the same pin/collapse transition;
   Escape still dismisses an unpinned preview.
+
+### Stage-0 hardening x FI-2 integration ruling (2026-08-13)
+
+The active conversation profile is `head-of-abm@v25`. Profile `v24` remains an
+immutable FI-2 historical replay contract; it is not rewritten to acquire the
+later Stage-0 tools. Profile `v25` deliberately combines both branch contracts:
+
+- Stage-0 owns `stage0-interview@v12`, trusted readiness and synthesis `@2`, and
+  the durable exact-subject `open_icp_confirmation_gate@1` lifecycle;
+- FI-2 owns `account-deep-steering@v4` and
+  `launch_selected_account_research@1` for exact current-message Account refs;
+- the project composer keeps FI-2's typed accepted/failed/not-submitted result
+  and clears transferred context only after durable acceptance, while applying
+  Stage-0's exact-draft clearing rule so a newer in-flight draft survives;
+- project initialization composes the FI-2 handoff/thread destination with the
+  Stage-0 conversation-first focus rule for an empty Gallery.
+
+This is a union of independent authorities, not a choice of one branch's entire
+file. Account selection does not bypass the Stage-0 ICP gate, and the Stage-0
+gate does not consume or broaden FI-2's exact Account context.
 
 ### FI-2 Slice 9B — selected records as next-message context (2026-08-13)
 
@@ -196,7 +444,7 @@ It performs no project-membership mutation, provider call or spend. The user
 must still write the instruction that explains what the agent should do.
 
 For the explicit same-message instruction to launch deep Account research,
-the active `head-of-abm@v24` profile may call
+the active `head-of-abm@v25` profile may call
 `launch_selected_account_research@1`. This is a narrow FI pilot path, not a
 relaxation of `launch_account_research@1`:
 
@@ -249,12 +497,12 @@ launch receipt means queued or replayed, never completed research.
 - The amount does not gate answerability. `expected_subject_sha256` is the one
   field that makes a card answerable in both postures; a card missing only the
   amount stays clickable.
-- The answer still sends `expected_estimated_cost_cents` (the field is required
-  by `GateResponseRequest` and no tool/route schema changed), but with controls
-  off the server does **not** validate it — `GATE_AMOUNT_STALE` is unreachable
-  in that mode. The `expected_subject_sha256` digest check remains armed in both
-  modes and is the load-bearing stale-approval guard. When the amount was
-  withheld the client sends `0` purely as the courier value.
+- `expected_estimated_cost_cents` is nullable at the shared request seam. A
+  non-spend ICP gate must send null/omit it; sending any amount is
+  `GATE_AMOUNT_UNEXPECTED`. For a spend-bearing gate with controls enabled it
+  must echo the exact displayed amount; with controls off the amount check is
+  skipped. The `expected_subject_sha256` digest check remains armed in every
+  posture and is the load-bearing stale-approval guard.
 
 ## Ownership model
 
@@ -339,10 +587,10 @@ The stable errors this integration branches on are:
 |---|---|---|
 | 400 | `IDEMPOTENCY_KEY_REQUIRED` | A required write omitted a usable idempotency header. |
 | 401 | `AUTHENTICATION_REQUIRED` / `SESSION_INVALID` | No valid authenticated session. |
-| 403 | `WORKSPACE_FORBIDDEN` / `PERMISSION_DENIED` / `MEMBERSHIP_STATE_CHANGED` | The internal principal cannot act in the selected workspace. |
-| 404 | `BRAND_NOT_FOUND` / `PROJECT_NOT_FOUND` / `THREAD_NOT_FOUND` / `TURN_NOT_FOUND` / `CONTEXT_REF_NOT_FOUND` / `ATTACHMENT_NOT_FOUND` / `AGENT_PROFILE_NOT_FOUND` | The scoped object cannot be used; foreign-object existence is not disclosed. |
+| 403 | `WORKSPACE_FORBIDDEN` / `PERMISSION_DENIED` / `MEMBERSHIP_STATE_CHANGED` / `GATE_FORBIDDEN` | The internal principal cannot act in the selected workspace or answer a gate addressed to another user. |
+| 404 | `BRAND_NOT_FOUND` / `PROJECT_NOT_FOUND` / `THREAD_NOT_FOUND` / `TURN_NOT_FOUND` / `CONTEXT_REF_NOT_FOUND` / `ATTACHMENT_NOT_FOUND` / `AGENT_PROFILE_NOT_FOUND` / `GATE_NOT_FOUND` | The scoped object cannot be used; foreign-object existence is not disclosed. |
 | 409 | `IDEMPOTENCY_CONFLICT` / `CAPABILITY_UNAVAILABLE` / `THREAD_ARCHIVED` / `TURN_NOT_RUNNING` / `GATE_ALREADY_ANSWERED` / `GATE_SUBJECT_STALE` / `GATE_AMOUNT_STALE` | The request is valid JSON but conflicts with durable state or advertised capability. |
-| 422 | `VALIDATION_ERROR` / `INVALID_CURSOR` | The request shape, value, or pagination cursor is invalid. |
+| 422 | `VALIDATION_ERROR` / `INVALID_CURSOR` / `GATE_ID_MALFORMED` / `GATE_KIND_UNSUPPORTED` / `GATE_DECISION_UNSUPPORTED` / `GATE_REVISION_REQUEST_REQUIRED` / `GATE_REVISION_REQUEST_UNEXPECTED` / `GATE_AMOUNT_UNEXPECTED` | The request shape, value, gate kind/decision, or pagination cursor is invalid. |
 | 500 | `INTERNAL_ERROR` | An unexpected server failure; details stay in correlated logs. |
 | 503 | `BODIES_UNAVAILABLE` | This deployment cannot hydrate transcript bodies. |
 
@@ -374,14 +622,14 @@ nothing. It requires `project.read`.
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v24",
+        "id": "head-of-abm@v25",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v24",
+    "default_agent_profile_id": "head-of-abm@v25",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,
@@ -435,7 +683,7 @@ accepts:
     }
   ],
   "attachment_refs": [],
-  "agent_profile_id": "head-of-abm@v24"
+  "agent_profile_id": "head-of-abm@v25"
 }
 ```
 
@@ -572,14 +820,14 @@ project shell:
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v24",
+        "id": "head-of-abm@v25",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v24",
+    "default_agent_profile_id": "head-of-abm@v25",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,

@@ -45,6 +45,8 @@ class GateAnswerView(BaseModel):
     turn_id: str
     action_ref: str
     decision: str
+    expected_subject_sha256: str
+    decision_payload: dict[str, JsonValue]
     answered_by_user_id: str
     answered_at: datetime
 
@@ -82,8 +84,9 @@ class GateView(BaseModel):
     subject_revision: int | None
     expected_subject_sha256: str
     subject_snapshot: dict[str, JsonValue]
-    max_spend_cents: Decimal
-    currency: str
+    permitted_decisions: tuple[str, ...]
+    max_spend_cents: Decimal | None
+    currency: str | None
     addressee_user_id: str
     created_at: datetime
     answer: GateAnswerView | None
@@ -139,9 +142,10 @@ _THREAD_GATES_SQL = text(
     """
     SELECT g.gate_id, g.workspace_id, g.project_id, g.thread_id, g.turn_id, g.kind,
            g.subject_ref, g.subject_revision, g.expected_subject_sha256, g.subject_snapshot,
-           g.max_spend_cents, g.currency, g.addressee_user_id, g.created_at,
-           a.turn_id AS answer_turn_id, a.action_ref, a.decision, a.answered_by_user_id,
-           a.answered_at
+           g.permitted_decisions, g.max_spend_cents, g.currency, g.addressee_user_id, g.created_at,
+           a.turn_id AS answer_turn_id, a.action_ref, a.decision,
+           a.expected_subject_sha256 AS answer_subject_sha256, a.decision_payload,
+           a.answered_by_user_id, a.answered_at
     FROM agent_gate g
     LEFT JOIN agent_gate_answer a
       ON a.gate_id = g.gate_id AND a.workspace_id = g.workspace_id
@@ -224,6 +228,8 @@ async def thread_gates(
                 turn_id=str(row["answer_turn_id"]),
                 action_ref=str(row["action_ref"]),
                 decision=str(row["decision"]),
+                expected_subject_sha256=str(row["answer_subject_sha256"]),
+                decision_payload=_snapshot(row["decision_payload"]),
                 answered_by_user_id=str(row["answered_by_user_id"]),
                 answered_at=row["answered_at"],
             )
@@ -240,8 +246,9 @@ async def thread_gates(
                 subject_revision=row["subject_revision"],
                 expected_subject_sha256=str(row["expected_subject_sha256"]),
                 subject_snapshot=_snapshot(row["subject_snapshot"]),
+                permitted_decisions=tuple(str(item) for item in row["permitted_decisions"]),
                 max_spend_cents=row["max_spend_cents"],
-                currency=str(row["currency"]),
+                currency=None if row["currency"] is None else str(row["currency"]),
                 addressee_user_id=str(row["addressee_user_id"]),
                 created_at=row["created_at"],
                 answer=answer,

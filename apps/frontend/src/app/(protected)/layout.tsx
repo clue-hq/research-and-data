@@ -24,7 +24,11 @@ export default async function ProtectedLayout({
   // may read an environment variable (`docs/architecture/frontend.md`).
   const transport = resolveChatTransport();
   return (
-    <ProjectsTransportProvider transport={transport}>
+    <ProjectsTransportProvider
+      currentUserId={session?.userId ?? null}
+      currentWorkspaceId={session?.principal.workspace_id ?? null}
+      transport={transport}
+    >
       {session ? (
         <SessionControls
           onWorkspaceChange={selectWorkspace}

@@ -45,7 +45,12 @@ export function ConversationPane({
   // turns. `available` is false in every deployment that did not register the
   // routes, which is every production deployment.
   const turnInspector = useTurnInspector({ projectId, threadId: chat.activeThreadId });
+  const activeUserMessageId = chat.transcript.reduce<string | null>(
+    (latest, message) => (message.role === "user" ? message.id : latest),
+    null,
+  );
   const { transcriptScrollRef } = useTranscriptAutoScroll({
+    activeMessageRevision: activeUserMessageId,
     revision: chat.transcript.reduce(
       (total, message) => total + message.parts.length + (message.body ? 1 : 0),
       chat.transcript.length,
@@ -59,8 +64,12 @@ export function ConversationPane({
       onGateDecision: (
         card: Parameters<ProjectChatController["answerGate"]>[0],
         decision: Parameters<ProjectChatController["answerGate"]>[1],
+        revisionRequest?: Parameters<ProjectChatController["answerGate"]>[2],
       ) => {
-        void chat.answerGate(card, decision);
+        void chat.answerGate(card, decision, revisionRequest);
+      },
+      onGateRecovery: (card: Parameters<ProjectChatController["recoverGate"]>[0]) => {
+        void chat.recoverGate(card);
       },
     }),
     [chat],
@@ -92,14 +101,26 @@ export function ConversationPane({
           >
             <ProjectIcon name="plus" size={14} />
           </button>
-          <button
-            aria-label="Expand conversation"
-            aria-pressed={controller.focusPane === "conversation"}
-            onClick={controller.toggleConversationFocus}
-            type="button"
-          >
-            <ProjectIcon name="expand" size={14} />
-          </button>
+          {controller.focusPane === "conversation" ? (
+            <button
+              aria-label="Open Gallery"
+              className={styles.galleryReopenButton}
+              onClick={controller.showSplitWorkspace}
+              type="button"
+            >
+              <ProjectIcon name="gallery" size={14} />
+              <span>Gallery</span>
+            </button>
+          ) : (
+            <button
+              aria-label="Expand conversation"
+              aria-pressed={false}
+              onClick={controller.toggleConversationFocus}
+              type="button"
+            >
+              <ProjectIcon name="expand" size={14} />
+            </button>
+          )}
         </div>
       </header>
 
@@ -125,8 +146,10 @@ export function ConversationPane({
       ) : null}
       <div className={styles.transcriptScroll} ref={transcriptScrollRef}>
         <ChatTranscript
+          activeUserMessageId={activeUserMessageId}
           actions={partActions}
           contextEntities={workspace.entities}
+          gateAnswerForTurn={chat.gateAnswerForTurn}
           messages={chat.transcript}
           onInspectTurn={turnInspector.available ? turnInspector.open : undefined}
         />
@@ -176,7 +199,7 @@ export function ConversationPane({
                 objectType: entity.type,
                 version: entity.version ?? null,
               }));
-            const accepted = await chat.submitMessage(prompt ?? controller.prompt, {
+            const accepted = await chat.submitMessage(prompt, {
               contextRefs,
               agentProfileId:
                 workspace.composerCapabilities.agentProfileSelection
@@ -187,7 +210,6 @@ export function ConversationPane({
             controller.completeSubmissionContext(
               contextRefs.map((reference) => reference.objectId),
             );
-            controller.setPrompt("");
             return true;
           }}
           prompt={controller.prompt}

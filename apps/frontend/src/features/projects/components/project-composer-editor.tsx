@@ -33,6 +33,7 @@ import type {
   ProjectComposerParagraphElement,
 } from "../model/project-composer";
 import {
+  clearSubmittedComposerDraft,
   createComposerMention,
   createComposerValue,
   getComposerMentionIds,
@@ -44,11 +45,14 @@ import { EntityPicker } from "./entity-picker";
 import styles from "./project-flow.module.css";
 
 export interface ProjectComposerEditorHandle {
+  clearSubmittedDraft: (
+    prompt: string,
+    entityIds: readonly string[],
+  ) => boolean;
   focus: () => void;
   getEntityIds: () => string[];
   getPrompt: () => string;
   openMentionPicker: () => void;
-  resetDraft: () => void;
 }
 
 function withMentions(editor: ProjectComposerEditorInstance) {
@@ -120,7 +124,6 @@ export const ProjectComposerEditor = forwardRef<
     disabled?: boolean;
     entities: ProjectEntity[];
     onContextChange: (entityIds: string[]) => void;
-    onDraftChange: (hasContent: boolean) => void;
     onPromptChange: (value: string) => void;
     onSubmit: (value: string) => void;
     prompt: string;
@@ -132,7 +135,6 @@ export const ProjectComposerEditor = forwardRef<
     disabled = false,
     entities,
     onContextChange,
-    onDraftChange,
     onPromptChange,
     onSubmit,
     prompt,
@@ -196,9 +198,8 @@ export const ProjectComposerEditor = forwardRef<
       lastEmittedPrompt.current = nextPrompt;
       lastMentionIds.current = nextEntities.map((entity) => entity.id);
       setMentionIds(lastMentionIds.current);
-      onDraftChange(Boolean(nextPrompt.trim() || retainedMentions.length));
     },
-    [editor, onDraftChange],
+    [editor],
   );
 
   const detectMentionTarget = useCallback(() => {
@@ -271,6 +272,21 @@ export const ProjectComposerEditor = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
+      clearSubmittedDraft(submittedPrompt, submittedEntityIds) {
+        const cleared = clearSubmittedComposerDraft(editor, {
+          entityIds: submittedEntityIds,
+          prompt: submittedPrompt,
+        });
+        if (!cleared) return false;
+
+        lastEmittedPrompt.current = "";
+        lastMentionIds.current = [];
+        setMentionIds([]);
+        closeMentionPicker();
+        onPromptChange("");
+        onContextChange([]);
+        return true;
+      },
       focus() {
         ReactEditor.focus(editor);
       },
@@ -288,12 +304,6 @@ export const ProjectComposerEditor = forwardRef<
         }
         Transforms.insertText(editor, "@");
       },
-      resetDraft() {
-        replaceDraft("", []);
-        onPromptChange("");
-        onContextChange([]);
-        closeMentionPicker();
-      },
     }),
     [
       closeMentionPicker,
@@ -301,7 +311,6 @@ export const ProjectComposerEditor = forwardRef<
       editor,
       onContextChange,
       onPromptChange,
-      replaceDraft,
     ],
   );
 
@@ -339,9 +348,14 @@ export const ProjectComposerEditor = forwardRef<
         onChange={(value) => {
           const nextPrompt = getComposerPromptText(value);
           const nextMentionIds = getComposerMentionIds(value);
-          const previousMentionIds = lastMentionIds.current;
 
-          onDraftChange(Boolean(nextPrompt.trim() || nextMentionIds.length));
+          const promptChanged = nextPrompt !== lastEmittedPrompt.current;
+          const contextChanged =
+            lastMentionIds.current.length !== nextMentionIds.length ||
+            lastMentionIds.current.some(
+              (entityId, index) => entityId !== nextMentionIds[index],
+            );
+
           lastMentionIds.current = nextMentionIds;
           setMentionIds((current) =>
             current.length === nextMentionIds.length &&
@@ -350,26 +364,17 @@ export const ProjectComposerEditor = forwardRef<
               : nextMentionIds,
           );
 
-          if (nextPrompt !== lastEmittedPrompt.current) {
+          if (promptChanged) {
             lastEmittedPrompt.current = nextPrompt;
             onPromptChange(nextPrompt);
           }
-          if (
-            nextMentionIds.length !== previousMentionIds.length ||
-            nextMentionIds.some((id, index) => id !== previousMentionIds[index])
-          ) {
-            onContextChange(nextMentionIds);
-          }
+          if (contextChanged) onContextChange(nextMentionIds);
           detectMentionTarget();
         }}
       >
         <Editable
           aria-label="Project prompt"
           className={styles.composerEditor}
-          onBlur={() => {
-            onPromptChange(lastEmittedPrompt.current);
-            onContextChange(lastMentionIds.current);
-          }}
           onKeyDown={(event) => {
             if (
               (event.key === "Backspace" || event.key === "Delete") &&
@@ -418,7 +423,10 @@ export const ProjectComposerEditor = forwardRef<
 
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              if (lastEmittedPrompt.current.trim()) {
+              if (
+                lastEmittedPrompt.current.trim() ||
+                lastMentionIds.current.length
+              ) {
                 onSubmit(lastEmittedPrompt.current);
               }
             }

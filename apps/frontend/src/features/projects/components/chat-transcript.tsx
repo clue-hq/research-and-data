@@ -2,6 +2,11 @@
 
 import { MessageResponse } from "@/components/ai-elements/message-response";
 import { unavailableMessageBody } from "../model/chat-message";
+import type { GateAnswerDisplay } from "../model/chat-gate";
+import {
+  gateResponseBodyDisplay,
+  humanizeMessageBody,
+} from "../model/chat-message-presentation";
 import type { TranscriptMessage } from "../model/chat-transcript";
 import type { ProjectEntity } from "../model/project-workspace";
 import { ChatMessagePartView, type ChatPartActions } from "./chat-message-part";
@@ -16,15 +21,19 @@ import styles from "./project-flow.module.css";
  * difference between this component and the phase-enum transcript it replaces.
  */
 export function ChatTranscript({
+  activeUserMessageId = null,
   actions,
   assistantName = "Clue",
   contextEntities = [],
+  gateAnswerForTurn,
   messages,
   onInspectTurn,
 }: {
+  activeUserMessageId?: string | null;
   actions: ChatPartActions;
   assistantName?: string;
   contextEntities?: readonly ProjectEntity[];
+  gateAnswerForTurn?: (turnId: string) => GateAnswerDisplay | null;
   messages: readonly TranscriptMessage[];
   /**
    * The dev-lens affordance, or absent.
@@ -39,9 +48,23 @@ export function ChatTranscript({
 }) {
   return (
     <div className={styles.transcript} role="log">
-      {messages.map((message) => (
-        <article
+      {messages.map((message) => {
+        const gateAnswer =
+          message.role === "user"
+            ? (gateAnswerForTurn?.(message.turnId) ??
+              gateResponseBodyDisplay(message.body))
+            : null;
+        const displayBody =
+          gateAnswer === null && message.body !== null
+            ? humanizeMessageBody(message.body)
+            : null;
+
+        return (
+          <article
           className={styles.projectMessage}
+          data-active-message={
+            message.id === activeUserMessageId ? "true" : undefined
+          }
           data-optimistic={message.optimistic || undefined}
           data-role={message.role}
           data-state={message.state}
@@ -53,7 +76,7 @@ export function ChatTranscript({
               {assistantName}
               {onInspectTurn && !message.optimistic ? (
                 <button
-                  aria-label={`Inspect turn ${message.turnId}`}
+                  aria-label="Inspect response details"
                   className={styles.turnLensTrigger}
                   onClick={() => onInspectTurn(message.turnId)}
                   type="button"
@@ -75,20 +98,35 @@ export function ChatTranscript({
                         candidate.id === ref.objectId &&
                         candidate.type === ref.objectType,
                     );
+                    const fallbackLabel =
+                      ref.objectType === "contact"
+                        ? "Selected contact"
+                        : "Selected account";
                     return (
                       <span key={`${ref.ordinal}:${ref.objectType}:${ref.objectId}`}>
-                        @{entity?.label ?? `${ref.objectType} ${ref.objectId}`}
+                        @{entity?.label ?? fallbackLabel}
                       </span>
                     );
                   })}
               </div>
             ) : null}
-            {message.body !== null ? (
-              <div className={styles.messageText}>
-                <MessageResponse>{message.body}</MessageResponse>
+            {gateAnswer !== null ? (
+              <div className={styles.gateAnswerReceipt} role="status">
+                <ProjectIcon name="status-check" size={14} />
+                <span>{gateAnswer.label}</span>
+                {gateAnswer.detail !== null ? (
+                  <small>{`Requested changes: ${gateAnswer.detail}`}</small>
+                ) : null}
               </div>
             ) : null}
-            {message.body === null && message.bodyUnavailableReason ? (
+            {displayBody !== null ? (
+              <div className={styles.messageText}>
+                <MessageResponse>{displayBody}</MessageResponse>
+              </div>
+            ) : null}
+            {gateAnswer === null &&
+            message.body === null &&
+            message.bodyUnavailableReason ? (
               // An erased, oversized, or non-text body is reported. An empty
               // string here would render as a message nobody wrote.
               <p className={styles.messageText} role="note">
@@ -143,8 +181,9 @@ export function ChatTranscript({
               </p>
             ) : null}
           </div>
-        </article>
-      ))}
+          </article>
+        );
+      })}
     </div>
   );
 }

@@ -115,6 +115,7 @@ export const fixtureGates = [
       account_count: 2,
       accounts: ["OpenAI", "Anthropic"],
     },
+    permitted_decisions: ["approved", "rejected", "revised"],
     max_spend_cents: "24000.0000",
     currency: "USD",
     addressee_user_id: "usr_demo",

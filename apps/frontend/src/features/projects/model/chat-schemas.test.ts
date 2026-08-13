@@ -230,7 +230,7 @@ test("a turn body is exactly one of a message or a gate response", () => {
         { objectId: "contact-2", objectType: "contact", version: 4 },
         { objectId: "account-1", objectType: "account", version: 2 },
       ],
-      agentProfileId: "head-of-abm@v23",
+      agentProfileId: "head-of-abm@v25",
     }),
     {
       message: "research these",
@@ -239,7 +239,7 @@ test("a turn body is exactly one of a message or a gate response", () => {
         { object_id: "account-1", object_type: "account", version: 2 },
       ],
       attachment_refs: [],
-      agent_profile_id: "head-of-abm@v23",
+      agent_profile_id: "head-of-abm@v25",
     },
   );
   assert.deepEqual(
@@ -258,6 +258,27 @@ test("a turn body is exactly one of a message or a gate response", () => {
         decision: "approved",
         expected_subject_sha256: "a".repeat(64),
         expected_estimated_cost_cents: 24000,
+      },
+    },
+  );
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "gate_response",
+      response: {
+        gateId: "icp-gate-1",
+        decision: "revised",
+        expectedSubjectSha256: "b".repeat(64),
+        expectedEstimatedCostCents: null,
+        revisionRequest: "Narrow the ICP to multi-site practices.",
+      },
+    }),
+    {
+      gate_response: {
+        gate_id: "icp-gate-1",
+        decision: "revised",
+        expected_subject_sha256: "b".repeat(64),
+        expected_estimated_cost_cents: null,
+        revision_request: "Narrow the ICP to multi-site practices.",
       },
     },
   );

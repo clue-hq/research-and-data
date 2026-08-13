@@ -15,6 +15,7 @@ from clue_agents.context import (
     ContextCandidate,
     DeterministicAgentContextAssembler,
     LayerBudget,
+    TurnLayerSource,
 )
 from clue_agents.contracts import (
     AgentFinalizeEnvelope,
@@ -225,7 +226,14 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
 
             receipt_store = DbAgentContextReceiptStore(conn_factory=factory)
             assembler = DeterministicAgentContextAssembler(
-                sources=tuple(_Source(layer, manifest) for layer in ContextLayer),
+                sources=(
+                    *(
+                        _Source(layer, manifest)
+                        for layer in ContextLayer
+                        if layer is not ContextLayer.L7_TURN
+                    ),
+                    TurnLayerSource(artifacts),
+                ),
                 policy=ContextAssemblyPolicy(
                     version="opening-v1",
                     token_counter_version="utf8-bytes-v1",

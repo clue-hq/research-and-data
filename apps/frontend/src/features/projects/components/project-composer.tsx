@@ -50,7 +50,7 @@ export function ProjectComposer({
   onModelPickerToggle?: () => void;
   onModelSelect?: (modelId: string) => void;
   onPromptChange: (value: string) => void;
-  onSubmit: (value?: string, entityIds?: string[]) => Promise<boolean>;
+  onSubmit: (value: string, entityIds: string[]) => boolean | Promise<boolean>;
   prompt: string;
   sendDisabled?: boolean;
   selectedEntities?: ProjectEntity[];
@@ -58,13 +58,7 @@ export function ProjectComposer({
   selectedModel?: ProjectModelOption;
 }) {
   const editorRef = useRef<ProjectComposerEditorHandle>(null);
-  const sendButtonRef = useRef<HTMLButtonElement>(null);
   const [submitting, setSubmitting] = useState(false);
-  const handleDraftChange = useCallback((hasContent: boolean) => {
-    if (sendButtonRef.current) {
-      sendButtonRef.current.disabled = disabled || sendDisabled || !hasContent;
-    }
-  }, [disabled, sendDisabled]);
   const handleContextChange = useCallback(
     (entityIds: string[]) => {
       selectedEntityIds
@@ -75,6 +69,25 @@ export function ProjectComposer({
         .forEach((entityId) => onEntitySelect?.(entityId));
     },
     [onEntityRemove, onEntitySelect, selectedEntityIds],
+  );
+  const submitCurrentDraft = useCallback(
+    async (promptOverride?: string) => {
+      if (disabled || sendDisabled || submitting) return;
+      const currentPrompt =
+        promptOverride ?? editorRef.current?.getPrompt() ?? prompt;
+      const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
+      if (!currentPrompt.trim() && !currentEntityIds.length) return;
+
+      setSubmitting(true);
+      try {
+        const accepted = await onSubmit(currentPrompt, currentEntityIds);
+        if (!accepted) return;
+        editorRef.current?.clearSubmittedDraft(currentPrompt, currentEntityIds);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [disabled, onSubmit, prompt, sendDisabled, submitting],
   );
 
   return (
@@ -87,16 +100,7 @@ export function ProjectComposer({
         .join(" ")}
       onSubmit={(event) => {
         event.preventDefault();
-        if (disabled || sendDisabled || submitting) return;
-        const currentPrompt = editorRef.current?.getPrompt() ?? prompt;
-        const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
-        if (!currentPrompt.trim()) return;
-        setSubmitting(true);
-        void onSubmit(currentPrompt, currentEntityIds)
-          .then((accepted) => {
-            if (accepted) editorRef.current?.resetDraft();
-          })
-          .finally(() => setSubmitting(false));
+        void submitCurrentDraft();
       }}
     >
       <div className={styles.composerBody}>
@@ -115,17 +119,9 @@ export function ProjectComposer({
           disabled={disabled || submitting}
           entities={entities}
           onContextChange={handleContextChange}
-          onDraftChange={handleDraftChange}
           onPromptChange={onPromptChange}
           onSubmit={(value) => {
-            if (disabled || sendDisabled || submitting || !value.trim()) return;
-            const entityIds = editorRef.current?.getEntityIds() ?? [];
-            setSubmitting(true);
-            void onSubmit(value, entityIds)
-              .then((accepted) => {
-                if (accepted) editorRef.current?.resetDraft();
-              })
-              .finally(() => setSubmitting(false));
+            void submitCurrentDraft(value);
           }}
           prompt={prompt}
           ref={editorRef}
@@ -189,9 +185,11 @@ export function ProjectComposer({
             aria-label="Send"
             className={styles.sendButton}
             disabled={
-              disabled || sendDisabled || submitting || !prompt.trim()
+              disabled ||
+              sendDisabled ||
+              submitting ||
+              (!prompt.trim() && !selectedEntities.length)
             }
-            ref={sendButtonRef}
             type="submit"
           >
             <ProjectIcon name="arrow-up" size={16} />

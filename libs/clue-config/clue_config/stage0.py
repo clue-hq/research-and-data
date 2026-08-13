@@ -43,7 +43,12 @@ def default_readiness_spec() -> ReadinessSpec:
     return ReadinessSpec(
         floors={
             ReadinessGate.ICP_SYNTHESIS: ReadinessFloor(
-                min_coverage_ratio=0.0,
+                # Seven of the nine substantive Client-KB baseline fields is the minimum useful
+                # synthesis floor.  The denominator is compiled from CLIENT_BASELINE_FIELDS by
+                # the backend, so an empty workspace extension policy can no longer turn 0/0
+                # model-authored metrics into a misleading success.
+                min_coverage_ratio=0.75,
+                require_product_id=True,
                 max_open_policy_blocks=0,
             ),
             ReadinessGate.DISCOVERY_SPEND: ReadinessFloor(

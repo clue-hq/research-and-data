@@ -1225,6 +1225,7 @@ def test_the_agent_path_validates_a_governed_stage0_tool_with_per_turn_pins() ->
                 Stage0StepPinProvider(
                     compatibility=compatibility,
                     conn_factory=_nested_conn_factory(conn),
+                    tools=registry,
                 )
             )
             adapter = C5AgentExecutionAdapter(
@@ -1366,6 +1367,7 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
                     Stage0StepPinProvider(
                         compatibility=compatibility,
                         conn_factory=_nested_conn_factory(conn),
+                        tools=registry,
                     ),
                     key=f"{workspace_id}/{'0' * 64}",
                 ).validate_plan(plan=unknown, constitution=trusted)
@@ -1392,6 +1394,7 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
                     Stage0StepPinProvider(
                         compatibility=compatibility,
                         conn_factory=_nested_conn_factory(conn),
+                        tools=registry,
                     ),
                     bound=False,
                 ).validate_plan(plan=allowed, constitution=trusted)

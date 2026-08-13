@@ -13,7 +13,21 @@ import {
 
 export interface ProjectWorkspaceInitialState {
   handoffId?: string;
+  focusPane?: ProjectWorkspaceFocusPane;
   threadId?: string;
+}
+
+export type ProjectWorkspaceFocusPane =
+  | "artifacts"
+  | "conversation"
+  | "split";
+
+export function initialWorkspaceFocusPane(
+  artifactCount: number,
+  requested?: ProjectWorkspaceFocusPane,
+): ProjectWorkspaceFocusPane {
+  if (requested) return requested;
+  return artifactCount === 0 ? "conversation" : "split";
 }
 
 /**
@@ -38,8 +52,9 @@ export function useProjectWorkspaceController(
   const [selectedModelId, setSelectedModelId] = useState(
     workspace.defaultAgentProfileId ?? workspace.models[0]?.id ?? "",
   );
-  const [focusPane, setFocusPane] =
-    useState<"artifacts" | "conversation" | "split">("split");
+  const [focusPane, setFocusPane] = useState<ProjectWorkspaceFocusPane>(() =>
+    initialWorkspaceFocusPane(workspace.artifacts.length, initial.focusPane),
+  );
   const composerEntities = useMemo(
     () => mergeComposerContextEntities(workspace.entities, selectedEntities),
     [selectedEntities, workspace.entities],
@@ -151,6 +166,9 @@ export function useProjectWorkspaceController(
       setModelPickerOpen(false);
     },
     setPrompt,
+    showSplitWorkspace() {
+      setFocusPane("split");
+    },
     toggleModelPicker() {
       setModelPickerOpen((current) => !current);
     },

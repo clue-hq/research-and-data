@@ -24,7 +24,7 @@ here).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from decimal import Decimal
 from typing import cast
 from uuid import NAMESPACE_URL, uuid5
@@ -830,7 +830,11 @@ async def read_client_kb_claims(
     )
 
 
-def client_kb_readiness_metrics(claims: Mapping[str, Claim]) -> dict[str, JsonValue]:
+def client_kb_readiness_metrics(
+    claims: Mapping[str, Claim],
+    *,
+    required_field_keys: Sequence[str] = (),
+) -> dict[str, JsonValue]:
     """Compile the one Client-KB metric set every Stage-0 readiness evaluation is scored against.
 
     :func:`~clue_research.stage0.evaluate_readiness` gates on these exact keys, and the metrics are
@@ -840,12 +844,13 @@ def client_kb_readiness_metrics(claims: Mapping[str, Claim]) -> dict[str, JsonVa
 
     Definitions, each meaning what its name says:
 
-    * ``available_field_keys`` — the pinned claims **intersected with the client-knowledge pack**.
-      A pinned KB may legitimately carry non-pack claims (the ``client.kb_version`` marker itself,
-      for one), and counting those would report coverage of fields the floor never asked for;
-    * ``coverage_ratio`` — that intersection over the pack size, so it cannot exceed 1.0. An empty
-      pack is full coverage (1.0): nothing was required, so nothing is missing;
-    * ``verified_claims`` — pack claims that actually reached
+    * ``available_field_keys`` — the pinned claims intersected with the effective expected-field
+      set: the substantive platform baseline plus tenant-local required-field extensions. A pinned
+      KB may carry other claims (the ``client.kb_version`` marker itself, for one), and counting
+      those would report coverage of fields the policy never asked for;
+    * ``coverage_ratio`` — that intersection over the effective expected-field set, so it cannot
+      exceed 1.0. An empty effective set reports 0.0 rather than manufacturing 0/0 readiness;
+    * ``verified_claims`` — effective expected-field claims that actually reached
       :attr:`~clue_core.VerificationStatus.VERIFIED`, never the raw claim count. The floors read
       this as an *evidence* floor, so counting unverified claims would let unverified work clear
       it, and counting a non-pack bookkeeping claim would let the version marker clear it.
@@ -857,10 +862,10 @@ def client_kb_readiness_metrics(claims: Mapping[str, Claim]) -> dict[str, JsonVa
     policy blocks supplies its own count, and the evaluator already defaults a missing key.
     """
 
-    knowledge_fields = set(CLIENT_BASELINE_FIELDS)
-    available = sorted(knowledge_fields.intersection(claims))
+    expected_fields = set(CLIENT_BASELINE_FIELDS).union(required_field_keys)
+    available = sorted(expected_fields.intersection(claims))
     return {
-        "coverage_ratio": (len(available) / len(knowledge_fields) if knowledge_fields else 1.0),
+        "coverage_ratio": (len(available) / len(expected_fields) if expected_fields else 0.0),
         "verified_claims": sum(
             claims[field_key].verification_status is VerificationStatus.VERIFIED
             for field_key in available

@@ -269,32 +269,30 @@ export function useProjectHomeController(data: ProjectHome) {
         idempotencyKey: attempt.idempotencyKey,
       });
       const outcome = submissions.current.succeeded(attempt);
-      if (mounted.current) {
-        const latestDraft = parseHomeBootstrapDraft(draft.current);
-        if (latestDraft.success && latestDraft.fingerprint === parsed.fingerprint) {
-          draft.current = { ...draft.current, contextRefs: [], message: "" };
-          submissions.current.draftChanged();
-          setPromptState("");
-          setSelectedEntityIds([]);
-          attachmentUrls.current.forEach((url) => URL.revokeObjectURL(url));
-          attachmentUrls.current.clear();
-          setAttachments([]);
-        }
-        if (outcome.navigate) router.push(created.href);
+      if (!mounted.current) return true;
+      const latestDraft = parseHomeBootstrapDraft(draft.current);
+      if (latestDraft.success && latestDraft.fingerprint === parsed.fingerprint) {
+        draft.current = { ...draft.current, contextRefs: [], message: "" };
+        submissions.current.draftChanged();
+        setPromptState("");
+        setSelectedEntityIds([]);
+        attachmentUrls.current.forEach((url) => URL.revokeObjectURL(url));
+        attachmentUrls.current.clear();
+        setAttachments([]);
       }
+      if (outcome.navigate) router.push(created.href);
       return true;
     } catch (failure) {
       const outcome = submissions.current.failed(attempt);
-      if (mounted.current && outcome.display) {
-        if (failure instanceof ClueChatApiError) {
-          setError(
-            failure.requestId
-              ? `${failure.message} (request ${failure.requestId})`
-              : failure.message,
-          );
-        } else {
-          setError(failure instanceof Error ? failure.message : String(failure));
-        }
+      if (!mounted.current || !outcome.display) return false;
+      if (failure instanceof ClueChatApiError) {
+        setError(
+          failure.requestId
+            ? `${failure.message} (request ${failure.requestId})`
+            : failure.message,
+        );
+      } else {
+        setError(failure instanceof Error ? failure.message : String(failure));
       }
       return false;
     } finally {

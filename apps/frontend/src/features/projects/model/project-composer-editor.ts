@@ -5,6 +5,7 @@ import {
   Transforms,
   type Descendant,
 } from "slate";
+import { HistoryEditor } from "slate-history";
 import type { ProjectEntity } from "./project-workspace";
 import type {
   ProjectComposerEditor,
@@ -69,5 +70,59 @@ export function removeSelectedComposerMention(editor: ProjectComposerEditor) {
   if (!selectedMention) return false;
 
   Transforms.removeNodes(editor, { at: selectedMention[1] });
+  return true;
+}
+
+export interface SubmittedComposerDraft {
+  entityIds: readonly string[];
+  prompt: string;
+}
+
+function sameEntityIds(
+  current: readonly string[],
+  submitted: readonly string[],
+): boolean {
+  return (
+    current.length === submitted.length &&
+    current.every((entityId, index) => entityId === submitted[index])
+  );
+}
+
+/**
+ * Clear only the exact draft the server accepted.
+ *
+ * A user may start typing the next message while the submission request is in
+ * flight. Comparing the current Slate value with the submitted snapshot keeps
+ * that newer text intact. The reset is excluded from undo history so Cmd+Z
+ * cannot resurrect a message that was already sent.
+ */
+export function clearSubmittedComposerDraft(
+  editor: ProjectComposerEditor,
+  submitted: SubmittedComposerDraft,
+): boolean {
+  const currentPrompt = getComposerPromptText(editor.children);
+  const currentEntityIds = getComposerMentionIds(editor.children);
+  if (
+    currentPrompt !== submitted.prompt ||
+    !sameEntityIds(currentEntityIds, submitted.entityIds)
+  ) {
+    return false;
+  }
+
+  HistoryEditor.withoutSaving(editor, () => {
+    Editor.withoutNormalizing(editor, () => {
+      Transforms.deselect(editor);
+      for (let index = editor.children.length - 1; index >= 0; index -= 1) {
+        Transforms.removeNodes(editor, { at: [index] });
+      }
+      Transforms.insertNodes(
+        editor,
+        { children: [{ text: "" }], type: "paragraph" },
+        { at: [0] },
+      );
+      Transforms.select(editor, { offset: 0, path: [0, 0] });
+    });
+  });
+  editor.history = { redos: [], undos: [] };
   return true;
 }

@@ -5,6 +5,7 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
+from clue_api.conversation_turns import CONVERSATION_RECIPE_VERSION
 from clue_api.execution_tools import AdvanceProjectPhaseTool, ExecutionControlServices
 from clue_api.recipe_contracts import (
     ACCOUNT_RESEARCH_TOOL_ADDRESSES,
@@ -40,6 +41,12 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
     assert missing == []
 
 
+def test_conversation_runtime_pins_the_promoted_slice2_recipe() -> None:
+    """A new recipe asset is inert if the detached turn runner still asks for its predecessor."""
+
+    assert CONVERSATION_RECIPE_VERSION == 8
+
+
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
     registry = _standing_recipe_registry()
     audit = build_replay_safety_audit(registry)
@@ -63,9 +70,10 @@ def test_operation_id_requirements_are_explicit() -> None:
         # Its durable identity *is* the operation (``ResearchDirectiveId(operation_id)``), so a
         # retry lands on the same directive. The gate and the launch are domain-idempotent —
         # a gate is identified by the turn plus the exact revision it presents, and a launch by
-        # the confirmed directive plus its account set and budget.
+        # the confirmed directive plus its account set and budget. Slice 1's trusted readiness
+        # decision and synthesis ledger are also operation-bound.
         "draft_account_research_directive@2",
-        "evaluate_stage0_readiness@1",
+        "evaluate_stage0_readiness@2",
         "import_accounts@1",
         "profile_contact@1",
         "record_interview_answer@1",
@@ -77,6 +85,7 @@ def test_operation_id_requirements_are_explicit() -> None:
         "start_project_run@1",
         "start_recon@1",
         "submit_onboarding_input@1",
+        "synthesize_icps@2",
     }
 
     exactly_operation_idempotent = {
