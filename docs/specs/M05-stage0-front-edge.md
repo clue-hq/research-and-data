@@ -7,8 +7,9 @@
 > **Approved extension, not yet live (2026-08-14):** broad, concurrent official-site acquisition
 > for client reverse-profiling is specified separately in the
 > [Stage-0 durable official-site crawl plan](./FI-stage0-durable-official-site-crawl-plan.md).
-> Until its exit gates pass, M5.1 continues to consume the accepted homepage/field-oriented source
-> path; a provider-owned recursive crawl is not an implementation of this extension.
+> C0 has frozen its contracts; until the remaining C1–C10 exit gates pass, M5.1 continues to
+> consume the accepted homepage/field-oriented source path. A provider-owned recursive crawl is
+> not an implementation of this extension.
 
 Stage 0 is the **seed of research** (Doc B preamble): every downstream direction — which accounts we look for, which signals we weigh, which sources we trust, what argument we eventually make — is determined here. This milestone delivers the **front edge** of the subsystem: the machinery that takes a client from **near-zero input** (worst case: company name + website, Doc B §1) to (a) a versioned **Client Knowledge Base**, (b) one or more confirmed, versioned **ICP specs**, and (c) for clients who bring a list, a set of **resolved, ICP-back-scored imported accounts** plus seeds for lookalike discovery.
 

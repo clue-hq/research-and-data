@@ -161,7 +161,8 @@ Concretely, M4 owns six things, one per issue:
 > **Stage-0 extension approved, not yet implemented (2026-08-14):** M4.5's existing field-level
 > Firecrawl scrape remains the accepted behavior until the dedicated
 > [durable official-site crawl plan](./FI-stage0-durable-official-site-crawl-plan.md) passes its
-> C0–C10 gates. That plan introduces a provider-neutral, single-page fetch seam beneath a
+> remaining C1–C10 gates. C0 has frozen the provider-neutral contract and removed the rejected
+> provider-owned recursive spike. The plan introduces a single-page fetch seam beneath a
 > PostgreSQL-owned crawl frontier; it does not authorize provider-owned recursion or silently
 > declare the current resolver to be a durable crawler.
 

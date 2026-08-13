@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-14-stage0-durable-official-site-crawl-c0.md` — C0 complete: frozen provider-neutral
+  types/enums/tables/transitions/seams, PostgreSQL dispatch and reconciliation fencing,
+  `official_site` source-key migration ruling, recursive-spike disposition, retained general
+  Stage-0 prerequisites, provider-free fixtures, and the exact C1 handoff.
 - `2026-08-14-stage0-durable-official-site-crawl-plan.md` — founder-approved implementation plan
   for a new provider-neutral Stage-0 crawler: PostgreSQL-only frontier/ledger, generation-fenced
   leases, conservative URL identity, provenance-preserving content dedupe, one fast/background

@@ -303,6 +303,8 @@ depth/safety/retry rules, content-addressed artifacts with URL-level provenance,
 single-page Firecrawl/Scrapling fetchers. A rejected provider-owned 50-page spike is not the target
 contract. The binding implementation plan and exit gates are
 [`docs/specs/FI-stage0-durable-official-site-crawl-plan.md`](../../../../docs/specs/FI-stage0-durable-official-site-crawl-plan.md).
+Its C0 provider-neutral contract is now frozen and provider-free verified; no crawl migration,
+worker, broad-site release behavior, or frontend API field is live yet. C1 is next.
 
 Still ahead: brand-kit flips real per `brand-kit.md` when the design-integration branch merges.
 

@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — implementation plan
 
-**Status:** founder-approved architecture; implementation not yet accepted
+**Status:** C0 contract freeze implemented; C1–C10 not yet accepted
 
 **Branch:** `platform/onboarding-integration`
 
@@ -260,11 +260,11 @@ provider name; the composition root selects a registered `PageFetcher`.
 
 ### 6.1 `PageFetcher`
 
-Illustrative contract; C0 freezes exact names before implementation:
+The C0 executable package freezes the exact models; this abbreviated view mirrors that authority:
 
 ```python
 class PageFetcher(Protocol):
-    provider_key: str
+    capabilities: PageFetcherCapabilities  # includes single_page_only=True
 
     async def fetch_one(self, request: PageFetchRequest) -> PageFetchResult: ...
 
@@ -276,6 +276,7 @@ class PageFetchRequest(BaseModel):
     timeout_seconds: float
     max_response_bytes: int
     accepted_mime_types: tuple[str, ...]
+    max_redirects: int
     robots_decision_ref: str
 
 
@@ -295,10 +296,10 @@ class PageFetchResult(BaseModel):
     cost_kind: Literal["actual", "estimated", "none"]
     spend_status: Literal["spend_confirmed", "spend_unknown", "no_spend"]
     retry_class: Literal[
-        "success", "retryable_no_spend", "retryable_charged",
-        "permanent", "robots_refused", "policy_refused", "ambiguous"
+        "success", "retryable_no_spend", "permanent",
+        "robots_refused", "policy_refused", "ambiguous"
     ]
-    receipt: JsonValue | None
+    receipt: dict[str, JsonValue] | None
 ```
 
 Rules:
@@ -310,8 +311,8 @@ Rules:
   never bypass them.
 - A provider returning no receipt support declares that capability. Recovery then quarantines an
   ambiguous dispatched attempt rather than retrying it.
-- A `retryable_charged` result may be replayed only through a proven provider idempotency/lookup
-  contract or explicit operator reconciliation; that label never authorizes a blind new paid call.
+- There is no `retryable_charged` result. Once a call may have charged, an unresolved outcome is
+  `ambiguous`/`spend_unknown` and must reconcile or quarantine; it never authorizes a blind retry.
 - Request/response headers, credentials, raw tokens, and full provider payloads are never logged.
 
 ### 6.2 `CrawlRepository`
@@ -322,12 +323,15 @@ The repository exposes transaction-sized operations, not a mutable in-memory col
 create_or_get_run(...)
 record_discoveries(run_id, observations)
 claim_next(run_id, worker_id, eligible_phase, lease_ttl) -> CrawlLease | None
+claim_reconciliation(run_id, worker_id, lease_ttl) -> ReconciliationClaim | None
+claim_persistence(run_id, worker_id, lease_ttl) -> PersistenceClaim | None
 renew_lease(page_id, worker_id, generation, lease_ttl) -> bool
 begin_attempt(lease, provider_key, operation_key) -> FetchAttemptRef
-record_provider_receipt(attempt, generation, result_metadata) -> bool
-persist_snapshot(attempt, generation, artifact_ref, link_observations) -> bool
-complete_page(attempt, generation) -> bool
-fail_or_quarantine_attempt(attempt, generation, outcome) -> bool
+mark_attempt_dispatched(lease, attempt) -> bool  # DB stamps dispatched_at before external I/O
+record_provider_result(lease, attempt, body_free_result_metadata) -> bool
+persist_snapshot(lease, attempt, artifact_ref, result_metadata, link_observations) -> snapshot | None
+complete_page(lease, snapshot_id) -> bool
+disposition_attempt(lease, attempt, outcome) -> bool
 reclaim_expired_leases(run_id)
 freeze_corpus_checkpoint(run_id, phase)
 transition_phase(run_id, expected_status, next_status)
@@ -358,7 +362,7 @@ constraints.
 | `root_fetch_key` | Conservative normalized root key. |
 | `allowed_registrable_domain` | Coordinator policy input. |
 | `status` | `queued|fast_active|fast_closing|fast_complete|background_active|completed|failed|cancelled`. |
-| `max_graph_depth` | V1 default `2`; CHECK `0..2`. |
+| `max_graph_depth` | V1 value `2`; CHECK `= 2`. |
 | `fast_claim_deadline_at` | DB timestamp after which fast claims are refused. |
 | `overall_page_ceiling` | Safety bound, not a claim of completeness. |
 | `fast_page_ceiling` | Maximum pages admitted before the fast deadline. |
@@ -382,11 +386,10 @@ Constraints/indexes:
 | `fetch_key`, `fetch_key_hash` | Conservative per-run acquisition identity. |
 | `representative_requested_url` | Exact URL chosen for acquisition; not silently rewritten later. |
 | `host` | Normalized host for policy/concurrency. |
-| `graph_depth` | Nullable `0..2`; `NULL` for sitemap-only/unknown. |
-| `minimum_link_depth` | Nullable shortest verified homepage-link path. |
+| `graph_depth` | Nullable shortest verified homepage-link path `0..2`; `NULL` for sitemap-only/unknown. |
 | `priority`, `priority_reason_json` | Stable scheduling order plus explainability. |
 | `eligibility` | `fast|background|both|refused`. |
-| `state` | `discovered|queued|leased|provider_started|fetched|failed|quarantined|refused`. |
+| `state` | `discovered|queued|leased|provider_started|reconciliation_pending|persistence_pending|retry_wait|fetched|failed|quarantined|refused`. |
 | `lease_owner`, `lease_generation`, `lease_acquired_at`, `lease_expires_at` | Fenced ownership. |
 | `attempt_count` | Number of durable attempts, never inferred from logs. |
 | `expanded_min_depth` | Shallowest depth at which saved outgoing links were expanded. |
@@ -397,6 +400,8 @@ Constraints/indexes:
 
 - unique `(crawl_run_id, fetch_key_hash, fetch_key)`; hash alone is never identity;
 - leased/provider-started states require owner, generation, and unexpired lease fields;
+  reconciliation-pending and persistence-pending carry either all lease fields while actively
+  claimed by their recovery worker or none while waiting;
 - non-leased terminal states clear holder fields;
 - claim-next index `(crawl_run_id, state, eligibility, priority, discovered_at)`;
 - index `(crawl_run_id, host, state, lease_expires_at)` for per-host capacity and reclaim.
@@ -420,7 +425,7 @@ redirects, and canonical hints.
 
 When a fetched node is later discovered through a shallower link path:
 
-1. update `minimum_link_depth` using `LEAST`;
+1. update `graph_depth` using `LEAST`;
 2. do not refetch the node;
 3. if the new depth is below `max_graph_depth` and is shallower than `expanded_min_depth`, expand
    its already-saved outgoing observations at `new_depth + 1`;
@@ -434,7 +439,7 @@ When a fetched node is later discovered through a shallower link path:
 | `attempt_number`, `lease_generation`, `worker_id` | Fenced execution identity. |
 | `operation_key` | Stable unique provider idempotency/reconciliation key. |
 | `provider_key` | Implementation used, separate from source authority. |
-| `state` | `prepared|dispatched|provider_succeeded|persisted|failed|spend_unknown|reconciled`. |
+| `state` | `prepared|dispatched|provider_succeeded|persisted|retryable_no_spend|failed|spend_unknown|reconciled_no_spend|reconciled_succeeded|quarantined`. |
 | `provider_request_id`, `provider_receipt_json` | Sanitized durable receipt. |
 | `requested_url`, `final_url`, `redirect_chain_json` | Exact acquisition provenance. |
 | `provider_status`, `http_status`, `media_type`, `size_bytes` | Typed outcome. |
@@ -585,7 +590,7 @@ Every discovery batch is processed transactionally:
 1. validate and normalize each observation;
 2. record the exact observation even if refused or already known;
 3. upsert the page node on `(crawl_run_id, fetch_key)`;
-4. lower `minimum_link_depth` when a shorter verified path appears;
+4. lower `graph_depth` when a shorter verified path appears;
 5. recompute priority only according to the pinned policy;
 6. enqueue only if within domain/safety/depth/page policy and not already terminal or active;
 7. record/link edges independently from page dedupe.
@@ -632,10 +637,18 @@ No worker checks a Python set before this transaction.
 - `2 × heartbeat_interval < lease_ttl` is a construction-time invariant.
 - Renewal matches owner and generation and uses DB time.
 - A renewal updating zero rows fences the worker; it stops making new external calls.
-- A provider call already dispatched is allowed to finish, but the fenced worker may persist only
-  a quarantine/receipt candidate through a reconciliation path—it may not complete the page.
+- A provider call already dispatched is allowed to finish, but the fenced worker may not publish a
+  receipt, snapshot, page completion, or claim. Its result can only be adopted after a separate
+  reconciliation claim obtains the new generation; unadopted bytes remain orphan-safe.
 - Expired leases become reclaimable only after attempt state is examined. A `dispatched` attempt
   first becomes `spend_unknown` or is reconciled; it is not blindly redispatched.
+- Reclamation clears the expired lease and moves ambiguous dispatched work to
+  `reconciliation_pending`. `claim_reconciliation` obtains a new generation without changing that
+  semantic page state, pairs the new page lease with the original attempt, and never authorizes a
+  second provider dispatch.
+- A recorded success with expired persistence ownership remains `persistence_pending` with the
+  lease cleared. `claim_persistence` obtains a new generation and resumes from its body-free result
+  metadata/content-addressed blob; it never invokes the provider again.
 
 ### 10.4 Completion fence
 
@@ -645,7 +658,7 @@ Every result transition includes:
 WHERE page_id = :page_id
   AND lease_owner = :worker_id
   AND lease_generation = :lease_generation
-  AND state IN ('leased', 'provider_started')
+  AND state IN ('leased', 'provider_started', 'reconciliation_pending', 'persistence_pending')
 ```
 
 Zero affected rows means stale completion. Artifact bytes may remain content-addressed/orphan-safe,
@@ -989,7 +1002,8 @@ emails, or Clerk subjects. Traces follow the same rule.
 
 All knobs are validated settings and pinned to the crawl run:
 
-- `CLUE_STAGE0_CRAWL_ENABLED` (default off until cutover);
+- `CLUE_STAGE0_OFFICIAL_SITE_CRAWL_MODE=off|shadow|authoritative` (default `off`);
+- `CLUE_STAGE0_OFFICIAL_SITE_CRAWL_WORKSPACE_ALLOWLIST`;
 - `CLUE_STAGE0_PAGE_FETCHER=firecrawl|scrapling`;
 - `CLUE_STAGE0_CRAWL_MAX_DEPTH=2` (V1 refuses greater values);
 - `CLUE_STAGE0_CRAWL_FAST_DEADLINE_SECONDS`;
@@ -1018,6 +1032,13 @@ Each checkpoint is independently reviewable. No later checkpoint starts before t
 green and its contract delta is recorded.
 
 ### C0 — Contract freeze and spike disposition
+
+**Status: complete (2026-08-14).** The frozen DDL, enums, transition graphs, seams, source-key
+migration, spike inventory, ownership map, and rollout contract are recorded in the
+[C0 contract freeze](./FI-stage0-durable-official-site-crawl-C0-contract.md). Executable authority
+lives in `clue_research.official_site` and
+`tests/fixtures/official_site/c0_contract_fixture.json`. C0 made no migration, provider call, or
+production cutover; C1 is the next implementation slice.
 
 **Deliverables**
 
