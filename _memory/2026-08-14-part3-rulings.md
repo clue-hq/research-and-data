@@ -65,3 +65,33 @@ the trail.
 
 P3.1 (schema/vocabulary) ∥ P3.2 (gateway move — start with the Responses-API image probe)
 per spec §4. No implementation had started as of this note.
+
+## P3.1 SHIPPED + P3.2 probe PASSED (2026-08-14, same session)
+
+- **P3.1 committed `4c0ef79b`**: AgentRole.DESIGN + 3 CHECK widenings (migration
+  `549de68ae3b9`, up-down-up green); `design_leg` + append-only exit journal + one-open-
+  per-thread partial unique + `clue_design/legs.py` DAL (state machine, fail-closed
+  tenancy, out_of_scope requires pending ref, reopen keeps journal); design_agent_run
+  leg/execution linkage; focus_refs triple widening incl. validated_context_refs
+  design_document branch (string ids; CAS-pin stale refusal) + L5 card reader branch
+  (v0 documents = unversioned cards — DomainObjectRef floors at 1, caught by test);
+  previous_turn_outcome platform field CHECK-bounded on agent_turn_submission.
+  Frozen-contract digests revised in-commit (C8 precedent). 11 new tests; 139 then 213
+  green in combined regressions; lint-imports 26/26; ruff+mypy clean.
+- **P3.2 probe (`scripts/p32_probe_responses_api_images.py`, run live on
+  openai/gpt-5.6-terra via damascus workspace .env key): ALL THREE PASS.**
+  (A) image block in HumanMessage → vision works through GovernedAgentChatModel;
+  (B) THE risk — the exact lumen_agent view.py shape, text+image content blocks inside
+  ToolMessage in a tool-call round trip → the model SEES the image (named the color)
+  through use_responses_api=True / output_version=responses/v1;
+  (C) forced tool call with a VisualCritique-like pydantic schema through bind_tools'
+  provider_compatible_tool_schema rewriting → parses back correct.
+  Telemetry confirms remaining P3.2 build items: cached_input_tokens=0 (no
+  usage.include/provider-sort extra_body yet → GatewayConfig passthrough still needed
+  for the ~95% prefill economics), cost_cents=0 (no price-table entry), truthful
+  clue_answering_model stamped.
+- **P3.2 remaining build (next work unit):** GatewayConfig extra_body passthrough;
+  supports_image_input capability seam on AgentModelProvider (replaces the raw-key
+  preflight); per-role ModelPolicy; ONE durable per-role usage authority (role into the
+  gateway ledger, retire design-local double-count); design harness onto
+  AgentModelProvider.build ×3 (one instance per role — attribution mechanism).
