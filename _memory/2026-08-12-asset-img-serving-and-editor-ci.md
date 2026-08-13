@@ -74,6 +74,19 @@ Local proof: exclusion run = 1062 passed / 0 failed; yaml parses; build green. T
 conformance.yml's rust/api jobs are deliberately NOT ported here (separate decision — the
 api-persistence job predates the Postgres port; rust gates belong with the crates owner).
 
+## 3. API route-table seam guard (added same day, founder go-ahead)
+
+`apps/api/tests/test_workspace_seam_route_table.py` — closes the server-side twin of the
+client guard: seam enforcement is per-route opt-in (`Depends(repository)` by hand), which is
+how `/font-library` and `/agent/turn-preview` sat accidentally exempt until D2.5A. The guard
+walks ALL APIRoutes issuing headerless requests: everything must 401
+`workspace.header_required` except a justified ALLOWLIST (the six ratified exemptions:
+/build-info, /asset-store/{digest}, the three /w/{ws}/p* public-serving routes, the
+token-gated events GET). Drift guarded both directions (an exempt route that starts
+demanding the header also fails). Detection power pinned by a self-test that plants an
+ungated scratch route and asserts it's flagged. First run: 113 routes, zero violations
+(107 gated + 6 allowlisted — matches the D2.5A inventory exactly).
+
 ## Residuals / notes
 
 - R-D4-7 unchanged: `/asset-store/{digest}` resolves across tenants by ruling; Part-IV auth
