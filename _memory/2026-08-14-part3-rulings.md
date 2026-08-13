@@ -95,3 +95,42 @@ per spec §4. No implementation had started as of this note.
   preflight); per-role ModelPolicy; ONE durable per-role usage authority (role into the
   gateway ledger, retire design-local double-count); design harness onto
   AgentModelProvider.build ×3 (one instance per role — attribution mechanism).
+
+## P3.2 checkpoint 1 SHIPPED (2026-08-14, commit 61cdebad)
+
+Gateway-library half of the move, live-verified ("no compromise" mandate honored):
+- GatewayConfig.openrouter_provider_sort + openrouter_usage_include (policy-as-data,
+  default OFF) → provider threads extra_body onto the Responses request.
+- build(role=...) → attribution_role on GovernedAgentChatModel: rides
+  response_metadata.clue_role + llm.gateway_call span (new ATTR_AGENT_ROLE in clue_obs,
+  allowlisted) + model_call_usage record via record_model_call(role=). ONE per-role
+  authority; one-instance-per-role stays the mechanism.
+- clue_core.gateway.TokenUsage contract-delta: additive cached_prompt_tokens (default 0)
+  populated from usage_metadata.input_token_details.cache_read; logged in
+  model_call_usage (tracing's "deliberately absent" note retired).
+- OpenRouterAgentModelProvider.supports_image_input(model_id) — catalog-backed
+  True/False/None, fetched once per instance, caller decides failure hardness.
+- Offline: 4 new tests in tests/gateway/test_agent_model.py (mock Responses endpoint
+  wire-shape assertions; default config sends neither knob); core/gateway/obs suites
+  green; ruff+mypy clean.
+- LIVE probe #2 (scripts/p32_probe_economics.py, gpt-5.6-terra): extra body ACCEPTED by
+  the Responses endpoint; second same-prefix call cached 4624/4636 prompt tokens
+  (99.7% prefill hit — the design cache economics survive the governed gateway);
+  role=design_author on metadata + usage log; catalog vision=True.
+
+## P3.2 remaining (checkpoints 2–3, next work unit)
+
+2. Durable ledger: agent_model_call ADD COLUMN role (+ migration) and thread role from
+   the runtime writer (find INSERT INTO agent_model_call; cost_millicredits=0 residual
+   at agent_runtime_wiring.py:240 — decide record-or-redefer, never double count).
+3. Design harness switch: lumen_agent/llm.py builds the trio via
+   OpenRouterAgentModelProvider.build ×3 (role labels; per-role reasoning maps into
+   GatewayConfig.agent_reasoning or per-model entries — check _reasoning_request;
+   temperature: pass 1.0 to approximate today's unset; max_output_tokens from
+   LUMEN_AGENT_MAX_TOKENS else a bounded default); multimodal preflight
+   assert_all_role_models_support_image_input → provider.supports_image_input
+   (fail-closed on False, decide None-handling); retire attach_usage_capture
+   double-count (gateway record is authority; keep design trace_callbacks); keep
+   cache-stability (append-only history + provider_sort pinning — proven live).
+   GATE: a real end-to-end design turn on the gateway (fleet or direct harness) with
+   images flowing, per-role attribution once, prefill ratio preserved.
