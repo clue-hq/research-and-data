@@ -585,10 +585,10 @@ class DbAgentTurnJournal:
                     "(id, turn_id, execution_id, workspace_id, sequence, requested_model, "
                     " answering_model, status, input_tokens, cache_read_input_tokens, "
                     " cache_creation_input_tokens, output_tokens, cost_millicredits, latency_ms, "
-                    " error_code, started_at, completed_at) "
+                    " error_code, role, started_at, completed_at) "
                     "VALUES (:id, :turn, :execution, :workspace, :sequence, :requested, "
                     " :answering, :status, :input_tokens, :cache_read, :cache_creation, "
-                    " :output_tokens, :cost, :latency, :error, :started, :completed) "
+                    " :output_tokens, :cost, :latency, :error, :role, :started, :completed) "
                     "ON CONFLICT (id) DO NOTHING RETURNING id"
                 ),
                 {
@@ -607,6 +607,7 @@ class DbAgentTurnJournal:
                     "cost": receipt.cost_millicredits,
                     "latency": receipt.latency_ms,
                     "error": receipt.error_code,
+                    "role": receipt.role.value if receipt.role is not None else None,
                     "started": receipt.started_at,
                     "completed": receipt.completed_at,
                 },
@@ -617,7 +618,7 @@ class DbAgentTurnJournal:
                         "SELECT turn_id, execution_id, workspace_id, sequence, requested_model, "
                         "answering_model, status, input_tokens, cache_read_input_tokens, "
                         "cache_creation_input_tokens, output_tokens, cost_millicredits, "
-                        "latency_ms, error_code, started_at, completed_at "
+                        "latency_ms, error_code, role, started_at, completed_at "
                         "FROM agent_model_call WHERE id=:id"
                     ),
                     {"id": receipt.model_call_id},
@@ -638,6 +639,7 @@ class DbAgentTurnJournal:
                     int(row["cost_millicredits"]),
                     float(row["latency_ms"]),
                     row["error_code"],
+                    row["role"],
                     row["started_at"],
                     row["completed_at"],
                 )
@@ -656,6 +658,7 @@ class DbAgentTurnJournal:
                     receipt.cost_millicredits,
                     receipt.latency_ms,
                     receipt.error_code,
+                    receipt.role.value if receipt.role is not None else None,
                     receipt.started_at,
                     receipt.completed_at,
                 )

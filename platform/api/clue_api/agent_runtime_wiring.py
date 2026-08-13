@@ -96,6 +96,23 @@ def _stable_error_code(error: BaseException) -> str:
     return value or "model_call_failed"
 
 
+def resolve_model_call_role(
+    response_metadata: Mapping[str, Any], *, constitution_role: AgentRole
+) -> AgentRole:
+    """P3.2 per-call attribution: the governed model's ``clue_role`` label when the
+    instance is role-labelled (the design trio runs three roles inside ONE turn, so the
+    turn's role is not enough), else the turn's constitution role. An unknown label
+    falls back to the constitution role — the recording path never fails on
+    attribution."""
+    label = response_metadata.get("clue_role")
+    if isinstance(label, str):
+        try:
+            return AgentRole(label)
+        except ValueError:
+            return constitution_role
+    return constitution_role
+
+
 class DurableAgentModelCallHandler(AsyncCallbackHandler):
     """Persist model bodies as artifacts and append a body-free call receipt."""
 
@@ -175,6 +192,9 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             or response_metadata.get("model")
             or self._requested_model
         )
+        role = resolve_model_call_role(
+            response_metadata, constitution_role=self._request.constitution.role
+        )
         output_ref = await self._artifacts.persist_body(
             workspace_id=self._request.constitution.workspace_id,
             data=response.model_dump_json().encode(),
@@ -190,6 +210,7 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             cache_creation_input_tokens=cache_creation_tokens,
             output_tokens=int(usage.get("output_tokens", 0)),
             output_ref=output_ref,
+            role=role,
         )
 
     async def on_llm_error(
@@ -205,6 +226,9 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             run_id=run_id,
             pending=pending,
             status=AgentModelCallStatus.FAILED,
+            # No response reached us, so no per-call clue_role exists; the turn's
+            # constitution role is the truthful attribution for a failed call.
+            role=self._request.constitution.role,
             answering_model=None,
             error_code=_stable_error_code(error),
         )
@@ -216,6 +240,7 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         pending: tuple[int, datetime, float, ArtifactRef],
         status: AgentModelCallStatus,
         answering_model: str | None,
+        role: AgentRole,
         input_tokens: int = 0,
         cache_read_input_tokens: int = 0,
         cache_creation_input_tokens: int = 0,
@@ -237,9 +262,17 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             cache_read_input_tokens=cache_read_input_tokens,
             cache_creation_input_tokens=cache_creation_input_tokens,
             output_tokens=output_tokens,
+            # DECIDED at P3.2 (PD-part3 delta 6, cost residual): stays 0, re-deferred —
+            # not an oversight. Real cost is measured ONCE, at the gateway
+            # (clue_cost_cents on response metadata + the llm.gateway_call span); a
+            # cents→millicredits conversion is the uncomposed millicredits milestone's
+            # policy to own (2026-08-07 audit backlog), and writing an invented rate here
+            # would create a second cost authority. When that policy lands, thread the
+            # converted figure here — never record cost in both places.
             cost_millicredits=0,
             latency_ms=(time.monotonic() - started_clock) * 1000,
             error_code=error_code,
+            role=role,
             started_at=started_at,
             completed_at=datetime.now(UTC),
         )

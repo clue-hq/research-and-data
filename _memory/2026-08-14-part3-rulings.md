@@ -134,3 +134,28 @@ Gateway-library half of the move, live-verified ("no compromise" mandate honored
    cache-stability (append-only history + provider_sort pinning — proven live).
    GATE: a real end-to-end design turn on the gateway (fleet or direct harness) with
    images flowing, per-role attribution once, prefill ratio preserved.
+
+## P3.2 checkpoint 2 SHIPPED (2026-08-14)
+
+Durable per-role ledger attribution:
+- Migration 65880921cd52: agent_model_call ADD COLUMN role (nullable text, CHECK over the
+  six-role vocabulary; historical rows honestly NULL). up-down-up green.
+- AgentModelCallReceipt.role: AgentRole | None (additive); DbAgentTurnJournal
+  .record_model_call threads it through INSERT + the replay-compare (a different role
+  under the same id = "different immutable receipt").
+- Producer (DurableAgentModelCallHandler): resolve_model_call_role(response_metadata,
+  constitution_role) — per-call clue_role label wins (the design trio's
+  three-roles-in-one-turn case), constitution role else; unknown labels fall back, the
+  recording path never fails on attribution; on_llm_error stamps the constitution role.
+- cost_millicredits=0 residual DECIDED: stays 0, re-deferred with an in-code ruling —
+  real cost is measured ONCE at the gateway (clue_cost_cents + span); cents→millicredits
+  conversion belongs to the uncomposed millicredits milestone owner; never record cost in
+  both places.
+- Tests: tests/api/test_p32_model_call_role_db.py (role round trip both shapes,
+  replay-immutability, CHECK bound, resolve-role unit incl. unknown-label fallback; the
+  seeded turn itself exercises role='design' through the P3.1-widened agent_turn CHECK).
+  Neighbor regression: runtime-wiring + turn-wiring + agents = 198 passed, 1 failed —
+  the DOCUMENTED pre-existing lane-D red (test_durable_turn_history_replay..., red on
+  pristine origin/main; not ours). ruff + mypy clean.
+
+Remaining: checkpoint 3 only (design harness switch + real end-to-end design turn gate).
