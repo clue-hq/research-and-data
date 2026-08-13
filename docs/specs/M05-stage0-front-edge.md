@@ -4,6 +4,12 @@
 
 ## Goal & scope of this milestone
 
+> **Approved extension, not yet live (2026-08-14):** broad, concurrent official-site acquisition
+> for client reverse-profiling is specified separately in the
+> [Stage-0 durable official-site crawl plan](./FI-stage0-durable-official-site-crawl-plan.md).
+> Until its exit gates pass, M5.1 continues to consume the accepted homepage/field-oriented source
+> path; a provider-owned recursive crawl is not an implementation of this extension.
+
 Stage 0 is the **seed of research** (Doc B preamble): every downstream direction — which accounts we look for, which signals we weigh, which sources we trust, what argument we eventually make — is determined here. This milestone delivers the **front edge** of the subsystem: the machinery that takes a client from **near-zero input** (worst case: company name + website, Doc B §1) to (a) a versioned **Client Knowledge Base**, (b) one or more confirmed, versioned **ICP specs**, and (c) for clients who bring a list, a set of **resolved, ICP-back-scored imported accounts** plus seeds for lookalike discovery.
 
 Where it sits in the end-to-end map (overview §2): Stage 0 is the topmost band, feeding two **first-class, symmetric** entry scenarios — Scenario A (discovery, owned by M6) and Scenario B (import, owned here) — both of which converge at the Pass A scoring bridge (staged-flow §4). The project-run state machine's first two phases — `reverse_profiling` and `icp_confirmed` — are entered here (Doc C §4); this milestone produces the artifacts those phases checkpoint on, but the state-machine engine itself is owned by M7 (durable execution), and M5 consumes it via a phase seam.

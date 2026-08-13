@@ -289,15 +289,20 @@ budgets are env-backed settings — **`CLUE_STAGE0_FAST_BUDGET_CENTS` (default `
 `clue_config.stage0_policy_from_settings` and composed into the recon tools at
 `build_toolbelt`. The dedupe TTL (24h) and the readiness floors stay versioned constants
 (correctness/governance, not cost), and the library default `DEFAULT_STAGE0_POLICY` keeps its
-old 5¢/100¢ values for uncomposed callers. The 25¢ production default exists because the
-default `CLUE_SCRAPE_BACKEND=firecrawl` costs ~1¢/fetch: the full eleven-field fast walk is
-~11¢, so the old 5¢ envelope reached only ~5 fields and released the user with the last
-checklist groups reading "stopped at the research budget" — exactly the truncation the ruling
-forbids. `CLUE_SCRAPE_BACKEND=scrapling` (local, zero-cost) remains the choice for a deployment
-that would rather walk every field free. The honesty surfaces (`*_budget_exhausted`) and the tier ≤3
-pre-confirmation ceiling are unaffected — truth and compliance, not cost governance. Extractor
-LLM spend is observable on `llm.gateway_call` spans but is **not** charged to the recon
-envelopes; that residual is founder-accepted, not merely parked.
+old 5¢/100¢ values for uncomposed callers. The accepted implementation remains the
+homepage/field-oriented official-site resolver; `CLUE_SCRAPE_BACKEND=scrapling` is the local
+credit-free single-page alternative. The honesty surfaces (`*_budget_exhausted`) and the tier ≤3
+pre-confirmation ceiling are unaffected — truth and compliance, not cost governance. Extractor LLM
+spend is observable on `llm.gateway_call` spans but is **not** charged to the recon envelopes;
+that residual is founder-accepted, not merely parked.
+
+**Planned, not live (founder approval 2026-08-14):** broad official-site coverage becomes a new
+durable crawl capability owned by Clue, with a PostgreSQL frontier/ledger, conservative URL
+deduplication, generation-fenced concurrent leases, one fast/background crawl run, coordinator-owned
+depth/safety/retry rules, content-addressed artifacts with URL-level provenance, and provider-neutral
+single-page Firecrawl/Scrapling fetchers. A rejected provider-owned 50-page spike is not the target
+contract. The binding implementation plan and exit gates are
+[`docs/specs/FI-stage0-durable-official-site-crawl-plan.md`](../../../../docs/specs/FI-stage0-durable-official-site-crawl-plan.md).
 
 Still ahead: brand-kit flips real per `brand-kit.md` when the design-integration branch merges.
 
