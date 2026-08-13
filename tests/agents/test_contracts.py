@@ -358,14 +358,17 @@ def test_frozen_contract_json_schema_digests() -> None:
     """Any schema change is a reviewed contract revision, not silent pre-migration drift."""
 
     actual = {model.__name__: _schema_digest(model) for model in _FROZEN_CONTRACT_TYPES}
+    # Contract revision P3.1 (PD-part3 §3 delta 1, ratified 2026-08-14): AgentRole gains
+    # 'design' — the composite design deepagent's platform-facing role. Every digest that
+    # moved embeds the role enum; the DB CHECKs widened in the same commit (549de68ae3b9).
     assert actual == {
-        "AgentProfile": "cb23c46fe9a2fa643ddfc816b95be2f09353e92c680bd634e929c5ab4b15580c",
+        "AgentProfile": "bdcad179c2b9b5d5f9dbf41434e0de74801c0ce85e028aec1d515ebf77ff7653",
         "SkillBundle": "ddbffd59d074ffd70880fd0398b7bc0a9aab2163e55aa8527c930f5866b24521",
-        "AgentConstitution": ("dcd6fe06da39a8c7ad9fdc99ea62f45ce2eae646cf9a59e83739e37756c41d2a"),
-        "AgentTurnRequest": ("b474a9dbed4b44bd1d2feb38e9132b5f84f744406d66f24f4b982a7313d234de"),
-        "AgentPlan": "a954471a676c23101629f3babe2e523a6de96d21f7cc96de7983c8f265073c4e",
+        "AgentConstitution": ("ae23425669510708cc1b8686359335f1412a86d025e24ac07cc324d647930b45"),
+        "AgentTurnRequest": ("ffd5faaac31b65dfed6413f201bb46dd8aaf562b997441c68663742393e11517"),
+        "AgentPlan": "4323376df8c263abd7d6ff607e370f1d4786646dfcc0ff39632ce74761ca8f61",
         "ValidatedPlan": ("4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026"),
-        "DelegationRequest": ("421ad5b96a036115f492c687bab8d8fc46dafd57991b80ce0718a8bfa3f65be3"),
+        "DelegationRequest": ("7ef04260a02bd382b7fcd321e4c6b15674cba452e577703568d991c140276b2f"),
         "DelegationResult": ("956ec6033fa560ba7704031a0df4b5aa3aa98ebbb0702bc137018ab3adafb36c"),
         "SpecialistTaskEnvelope": (
             "57396348bc7f3d8f7616c38bb8ea3203cd939879cf4a56af4f6b0a46be45b113"

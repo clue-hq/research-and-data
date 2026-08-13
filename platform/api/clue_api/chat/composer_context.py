@@ -129,6 +129,27 @@ async def validated_context_refs(
     selected_accounts: set[EntityId] = set()
     contact_parents: list[EntityId] = []
     for ref in refs:
+        if ref.object_type == "design_document":
+            # P3.1 (master plan §2.4): design ids are strings, not entity UUIDs, and the
+            # version check is the document's CAS counter (PD-part3 D5).
+            from clue_design.documents import get_document as get_design_document
+            from clue_design.errors import DesignNotFoundError
+
+            try:
+                document = await get_design_document(
+                    conn, workspace_id=workspace_id, document_id=ref.object_id
+                )
+            except DesignNotFoundError as exc:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_NOT_FOUND",
+                    "a design document context reference is not available in this workspace",
+                ) from exc
+            if ref.version is not None and ref.version != document.get("current_version"):
+                raise ContextReferenceError(
+                    "CONTEXT_REF_STALE",
+                    "a design document context reference no longer names the current version",
+                )
+            continue
         try:
             entity_id = EntityId(UUID(ref.object_id))
         except ValueError as exc:

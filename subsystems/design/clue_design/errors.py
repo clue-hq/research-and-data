@@ -45,6 +45,21 @@ class DesignVersionConflictError(DesignStoreError):
         self.current_version = current_version
 
 
+class DesignLegStateError(DesignStoreError):
+    """A leg transition was attempted from the wrong state (PD-part3 §2.1).
+
+    The leg state machine is engine-owned: close only from an open state, reopen only
+    from ``closed``. A transition that finds the row elsewhere raises instead of silently
+    no-oping — a mis-sequenced exit or double-close is a caller bug worth hearing about.
+    """
+
+    def __init__(self, leg_id: str, expected: str, action: str) -> None:
+        super().__init__(f"design leg {leg_id}: cannot {action} (leg is not {expected})")
+        self.leg_id = leg_id
+        self.expected = expected
+        self.action = action
+
+
 class DesignArtifactConflictError(DesignStoreError):
     """A content-addressed id was re-used with different stored content.
 

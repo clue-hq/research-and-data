@@ -1674,6 +1674,10 @@ def build_chat_router(
                         idempotency_key=idempotency_key,
                         context_refs=context_refs,
                         agent_profile_id=agent_profile_id,
+                        # P3.1: the design-leg clarification echo (None on non-design turns;
+                        # the Home bootstrap path never carries one — a first turn has no
+                        # previous design turn).
+                        previous_turn_outcome=body.previous_turn_outcome,
                     )
                 except SubmissionConflict as exc:
                     raise _refuse(

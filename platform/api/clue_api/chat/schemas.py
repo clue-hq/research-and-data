@@ -135,9 +135,14 @@ class GateResponseRequest(_Request):
 
 
 class ContextRefRequest(_Request):
-    """An ordered, workspace-scoped account/contact reference."""
+    """An ordered, workspace-scoped domain-object reference.
 
-    object_type: Literal["account", "contact"]
+    ``design_document`` (P3.1) is how canvas context rides the platform turn API
+    (master plan §2.4): the target document ref arrives as a focus ref, so the design
+    leg's turns know what the user is pointing at with no extra round trip.
+    """
+
+    object_type: Literal["account", "contact", "design_document"]
     object_id: str = Field(min_length=1, max_length=200)
     version: int | None = Field(default=None, gt=0)
 
@@ -175,6 +180,12 @@ class SubmitTurnRequest(_Request):
     context_refs: tuple[ContextRefRequest, ...] = ()
     attachment_refs: tuple[AttachmentRefRequest, ...] = ()
     agent_profile_id: str | None = Field(default=None, min_length=1, max_length=200)
+    # P3.1 (PD-part3 delta 5): the design turn contract's one-clarification-round echo —
+    # the PREVIOUS design turn's outcome on this thread's open leg, echoed back by the
+    # client. 'clarification_requested' is the only value with routing meaning (the
+    # design runtime withholds request_clarification for that turn). Ignored on
+    # non-design turns; senders arrive with Part IV's surface.
+    previous_turn_outcome: Literal["clarification_requested"] | None = None
 
     @model_validator(mode="after")
     def exactly_one_body(self) -> SubmitTurnRequest:

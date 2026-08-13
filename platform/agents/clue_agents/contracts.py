@@ -213,6 +213,11 @@ class AgentRole(StrEnum):
     CONTENT_DRAFTER = "content_drafter"
     REVIEWER = "reviewer"
     ACCOUNT_RESEARCH = "account_research"
+    # PD-part3 D2: the platform-facing role of the COMPOSITE design deepagent — the
+    # orchestrator/author/reviewer trio stays internal to the design runtime (one leg,
+    # one summarized outcome; a doorway, not a container). Deliberately absent from
+    # C6_ACTIVE_PROFILE_VERSIONS until P3.3 registers the catalog profile.
+    DESIGN = "design"
 
 
 class ResourceKind(StrEnum):
