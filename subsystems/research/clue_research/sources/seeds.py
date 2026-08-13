@@ -285,7 +285,23 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         auth_ref="CLUE_CRM_API_KEY",
         freshness_profile="realtime",
     ),
-    # Tier-2 official-source scrape (Firecrawl) — normalized via the M4.3 HTML→markdown adapter.
+    # Provider-neutral owned-site evidence emitted by the durable crawl materializer. Provider
+    # acquisition cost lives on official_site_fetch_attempt; copying it onto each derived claim
+    # would multiply one page cost by the number of fields extracted from it. There is deliberately
+    # no resolver binding here: C7 materializes one immutable corpus checkpoint through the normal
+    # claim-validation path.
+    _entry(
+        "official_site",
+        modality=Modality.TEXT,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=2,
+        yields=("account",),
+        provider="clue",
+        cost_cents=Decimal(0),
+        freshness_profile="livecrawl",
+    ),
+    # Historical tier-2 provider-named sources remain immutable/queryable during additive cutover.
+    # Firecrawl is normalized via the M4.3 HTML→markdown adapter.
     _entry(
         "firecrawl_site",
         modality=Modality.TEXT,

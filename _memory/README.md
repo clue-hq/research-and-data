@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-14-stage0-durable-official-site-crawl-c1.md` — C1 complete: eight-table reversible
+  PostgreSQL frontier/ledger, workspace/run structural isolation, generation-fenced claims and
+  recovery, immutable verified checkpoints, provider-neutral `official_site` source, isolated-DB
+  concurrency/migration evidence, and the exact C2 handoff.
 - `2026-08-14-stage0-durable-official-site-crawl-c0.md` — C0 complete: frozen provider-neutral
   types/enums/tables/transitions/seams, PostgreSQL dispatch and reconciliation fencing,
   `official_site` source-key migration ruling, recursive-spike disposition, retained general

@@ -245,7 +245,7 @@ def test_attempt_dispositions_cannot_encode_an_impossible_state_pair() -> None:
         )
 
 
-def test_contract_package_has_no_provider_network_or_database_imports() -> None:
+def test_contract_modules_have_no_provider_network_or_database_imports() -> None:
     forbidden_roots = {
         "aiohttp",
         "asyncpg",
@@ -256,7 +256,14 @@ def test_contract_package_has_no_provider_network_or_database_imports() -> None:
         "sqlalchemy",
     }
     found: set[str] = set()
-    for source_file in _PACKAGE.glob("*.py"):
+    # C1 adds the PostgreSQL repository beside these frozen C0 modules. Keep the purity guard on
+    # the contracts/seams/state graphs themselves rather than accidentally banning the planned
+    # implementation from its package.
+    for source_file in (
+        _PACKAGE / "contracts.py",
+        _PACKAGE / "seams.py",
+        _PACKAGE / "transitions.py",
+    ):
         tree = ast.parse(source_file.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
