@@ -34,6 +34,23 @@ export type PreparedComposerContext = z.infer<
   typeof PreparedComposerContextSchema
 >;
 
+export function mergeComposerContextEntities(
+  catalog: readonly z.infer<typeof ProjectEntitySchema>[],
+  selected: readonly z.infer<typeof ProjectEntitySchema>[],
+) {
+  const merged = new Map(catalog.map((entity) => [entity.id, entity]));
+  for (const entity of selected) merged.set(entity.id, entity);
+  return [...merged.values()];
+}
+
+export function remainingComposerContextEntities(
+  current: readonly z.infer<typeof ProjectEntitySchema>[],
+  submittedEntityIds: readonly string[],
+) {
+  const submitted = new Set(submittedEntityIds);
+  return current.filter((entity) => !submitted.has(entity.id));
+}
+
 function keyFor(handoffId: string) {
   return `${CHAT_CONTEXT_HANDOFF_PREFIX}${handoffId}`;
 }

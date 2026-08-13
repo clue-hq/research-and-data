@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ProjectEntity, ProjectWorkspace } from "../model/project-workspace";
 import {
   deleteChatContextHandoff,
+  mergeComposerContextEntities,
   readChatContextHandoff,
+  remainingComposerContextEntities,
   updateChatContextHandoffEntities,
 } from "../model/chat-context-handoff";
 
@@ -31,6 +33,7 @@ export function useProjectWorkspaceController(
   const [prompt, setPrompt] = useState("");
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [selectedEntities, setSelectedEntities] = useState<ProjectEntity[]>([]);
+  const submissionCleanupRequested = useRef(false);
   const [contextHandoffError, setContextHandoffError] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState(
     workspace.defaultAgentProfileId ?? workspace.models[0]?.id ?? "",
@@ -38,9 +41,7 @@ export function useProjectWorkspaceController(
   const [focusPane, setFocusPane] =
     useState<"artifacts" | "conversation" | "split">("split");
   const composerEntities = useMemo(
-    () => [...new Map(
-      [...selectedEntities, ...workspace.entities].map((entity) => [entity.id, entity]),
-    ).values()],
+    () => mergeComposerContextEntities(workspace.entities, selectedEntities),
     [selectedEntities, workspace.entities],
   );
   const selectedEntityIds = useMemo(
@@ -75,6 +76,32 @@ export function useProjectWorkspaceController(
     };
   }, [initial.handoffId, initial.threadId, workspace.id]);
 
+  useEffect(() => {
+    if (!submissionCleanupRequested.current) return;
+    submissionCleanupRequested.current = false;
+    if (typeof window === "undefined" || !initial.handoffId) return;
+
+    if (selectedEntities.length) {
+      updateChatContextHandoffEntities(
+        window.sessionStorage,
+        initial.handoffId,
+        selectedEntities,
+      );
+      return;
+    }
+
+    deleteChatContextHandoff(window.sessionStorage, initial.handoffId);
+    const query = new URLSearchParams(searchParams.toString());
+    query.delete("handoff");
+    router.replace(`${pathname}${query.size ? `?${query.toString()}` : ""}`);
+  }, [
+    initial.handoffId,
+    pathname,
+    router,
+    searchParams,
+    selectedEntities,
+  ]);
+
   return {
     composerEntities,
     contextHandoffError,
@@ -95,25 +122,10 @@ export function useProjectWorkspaceController(
       });
     },
     completeSubmissionContext(submittedEntityIds: readonly string[]) {
-      const submitted = new Set(submittedEntityIds);
-      setSelectedEntities((current) => {
-        const next = current.filter((entity) => !submitted.has(entity.id));
-        if (typeof window !== "undefined" && initial.handoffId) {
-          if (next.length) {
-            updateChatContextHandoffEntities(
-              window.sessionStorage,
-              initial.handoffId,
-              next,
-            );
-          } else {
-            deleteChatContextHandoff(window.sessionStorage, initial.handoffId);
-            const query = new URLSearchParams(searchParams.toString());
-            query.delete("handoff");
-            router.replace(`${pathname}${query.size ? `?${query.toString()}` : ""}`);
-          }
-        }
-        return next;
-      });
+      setSelectedEntities((current) =>
+        remainingComposerContextEntities(current, submittedEntityIds),
+      );
+      if (initial.handoffId) submissionCleanupRequested.current = true;
     },
     selectEntity(entityId: string) {
       const entity = composerEntities.find((item) => item.id === entityId);

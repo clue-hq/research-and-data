@@ -69,3 +69,28 @@ Owner: FI-2 / Bangui
 - The deferred React-only New Account control is unchanged.
 - Project-scoped actions may still refuse a discussion-only Account that is not eligible for the
   destination project; `Add to chat` never silently adds membership.
+
+## Browser-found repair pass
+
+- Authenticated browser acceptance found three gaps after the original automated checkpoint:
+  existing-chat preparation called the workspace-scoped thread reader with a positional id and
+  returned `500`; the composer catalog overwrote exact hydrated canonical versions with nullable
+  bounded-catalog duplicates; and accepted-only handoff cleanup navigated from inside a React state
+  updater.
+- Regression coverage now includes the real existing-active-thread HTTP route, prepared-entity
+  precedence over catalog duplicates, and submitted-only entity removal. The implementation scopes
+  the thread lookup explicitly, preserves the prepared entity on duplicate ids, and performs URL /
+  session-storage cleanup from a post-commit effect rather than the state updater.
+- Focused backend database regression and Ruff pass. Focused frontend model tests and TypeScript
+  pass; the frontend test runner required execution outside the filesystem sandbox because its
+  local IPC socket was denied inside the sandbox.
+- Closeout verification: all 188 frontend tests, TypeScript, ESLint, design-system token build and
+  the optimized Next build pass; 16 focused backend/database cases spanning composer validation,
+  project reads, Home/turn submission and bulk actions pass with Ruff.
+- Authenticated browser acceptance now passes Account and Contact transfer into the formerly broken
+  existing thread plus the new-thread regression. The prepared chips survive navigation, ordinary
+  composer typing preserves them, accepted messages retain ordered history after reload, the next
+  message carries zero references, and table selections clear only after transfer. Postgres records
+  `object_version = 1` for every submitted Account/Contact reference and records zero contact-email,
+  entity-research, external-research or targeted-enrichment operations for the acceptance window.
+  No new Next/React runtime errors appear. Port 3000 is left authenticated on `/accounts`.

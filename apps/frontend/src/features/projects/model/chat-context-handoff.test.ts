@@ -4,7 +4,9 @@ import {
   CHAT_CONTEXT_HANDOFF_TTL_MS,
   createChatContextHandoff,
   deleteChatContextHandoff,
+  mergeComposerContextEntities,
   readChatContextHandoff,
+  remainingComposerContextEntities,
   updateChatContextHandoffEntities,
   writeChatContextHandoff,
 } from "./chat-context-handoff";
@@ -91,4 +93,29 @@ test("expired, consumed, and emptied handoffs cannot silently pin context", () =
   writeChatContextHandoff(storage, handoff);
   deleteChatContextHandoff(storage, handoff.handoffId);
   assert.equal(storage.values.size, 0);
+});
+
+test("prepared handoff entities retain their canonical versions over catalog duplicates", () => {
+  assert.deepEqual(
+    mergeComposerContextEntities(
+      [{ ...account, secondaryLabel: "bounded catalog", version: null }],
+      [account],
+    ),
+    [account],
+  );
+});
+
+test("accepted submission cleanup removes only the submitted context", () => {
+  const contact = {
+    ...account,
+    id: "contact-1",
+    label: "Dana Buyer",
+    type: "contact" as const,
+    version: 4,
+  };
+
+  assert.deepEqual(
+    remainingComposerContextEntities([account, contact], [account.id]),
+    [contact],
+  );
 });

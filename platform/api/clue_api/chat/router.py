@@ -1047,7 +1047,11 @@ def build_chat_router(
                     message="no such project in this workspace",
                 )
             if body.thread_id is not None:
-                thread = await get_thread(conn, body.thread_id)
+                thread = await get_thread(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    thread_id=body.thread_id,
+                )
                 if (
                     thread is None
                     or thread.workspace_id != who.workspace_id
