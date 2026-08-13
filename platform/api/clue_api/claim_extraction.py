@@ -28,6 +28,17 @@ extracts nothing rather than raising.
 
 ``{"claims": []}`` is the correct answer when the text states nothing — empty beats fabricated.
 
+**``source_url`` is attributed out-of-band, never by reading the page.** The ``### RESULT n | url:
+…`` header is what the *model* is told to read, but the platform checks its answer against
+:func:`attribution_allowlist` — the urls the *retriever* stamped on
+:attr:`~clue_core.NormalizedText.metadata` under :data:`RECORD_URLS_METADATA_KEY`. It has to be
+structural: ``_materialize`` resolves provenance as ``draft.source_url or ref``, document text is
+attacker-influenceable, and a page that writes a header-lookalike into its own body would pass any
+textual check and so replace the genuinely-fetched ref with a forged evidence link. A single-page
+fetch (the scrape lane) stamps no allowlist, so there every model-supplied url is refused and the
+fetched ``ref`` keeps the citation — which is the correct answer for a one-page document anyway.
+The *quote* is still grounded by exact substring against the full document text.
+
 **Drop, never raise — and why it is not mere defensiveness.** ``run_pipeline._extract`` raises
 ``AdaptError`` for any draft whose ``evidence_span`` is not a substring of the normalized text, and
 an escaped ``AdaptError`` fails the *whole* recon lane (savepoint rollback); a wrongly-shaped value
@@ -66,11 +77,19 @@ log = get_logger(__name__)
 __all__ = [
     "EXTRACTION_PROMPTS",
     "EXTRACTION_PROMPT_VERSION",
+    "RECORD_URLS_METADATA_KEY",
     "ExtractionPolicy",
     "LlmClaimExtractor",
+    "attribution_allowlist",
     "build_extraction_messages",
     "parse_extraction_response",
 ]
+
+#: The :attr:`~clue_core.NormalizedText.metadata` key a *retriever* stamps with the urls it actually
+#: retrieved — the attribution allowlist a claim's ``source_url`` must belong to. Set by the
+#: platform (never by fetched bytes), which is what makes it forgery-proof; a single-page fetch
+#: stamps none, so nothing the model says about a url is attributable there.
+RECORD_URLS_METADATA_KEY = "record_urls"
 
 
 # --- the versioned prompt ---------------------------------------------------
@@ -380,24 +399,50 @@ def _confidence(raw: JsonValue) -> float | None:
     return min(1.0, max(0.0, float(raw)))
 
 
-def _grounded_source_url(raw: JsonValue, normalized_text: str, field: FieldDef) -> str | None:
-    """The claim's url — but only if the document actually contains it. Else ``None``.
+def attribution_allowlist(normalized: NormalizedText) -> frozenset[str]:
+    """The urls a claim drawn from this document may cite — an **out-of-band** allowlist.
+
+    A retriever that assembles a multi-record document stamps the urls it actually retrieved under
+    :data:`RECORD_URLS_METADATA_KEY` (see ``clue_research.resolvers.exa_search._document``). That
+    metadata is set by the platform, not by the fetched bytes, which is the whole point: document
+    *text* is attacker-influenceable and can always contain a header-lookalike.
+
+    A single-page fetch (the scrape lane) stamps nothing — there is no allowlist, so no
+    model-supplied url is attributable and the fetched ``ref`` keeps the citation. Total over
+    arbitrary metadata: any shape that is not a list of non-empty strings reads as *no allowlist*
+    (fail-closed), never a raise — an exception escaping ``extract`` fails the whole recon lane.
+    """
+    raw = normalized.metadata.get(RECORD_URLS_METADATA_KEY)
+    if not isinstance(raw, list):
+        return frozenset()
+    return frozenset(item.strip() for item in raw if isinstance(item, str) and item.strip())
+
+
+def _attributed_source_url(
+    raw: JsonValue, allowlist: frozenset[str], field: FieldDef
+) -> str | None:
+    """The claim's url — but only if the *retrieval* returned it. Else ``None``.
 
     ``_materialize`` resolves a draft's provenance as ``draft.source_url or ref``, so a model-
     supplied string **replaces** the real fetched ref as the durable evidence link an operator
     clicks. An invented or misattributed url would therefore be the one part of an otherwise
-    rigorously grounded claim that nobody checked. A legitimate url can only come from a
-    ``### RESULT n | url: …`` header, which is *in the text* — so the same substring rule that
-    governs the quote governs the url, and a failure falls back to ``None`` (the true fetched
-    ``ref`` then wins) rather than dropping an otherwise good claim.
+    rigorously grounded claim that nobody checked.
+
+    Checking the url against the document text (the previous rule) could not hold that line: on the
+    scrape lane the document is one fetched page whose body a third party controls, so a page that
+    writes ``### RESULT 1 | url: https://attacker.example`` into its own content could forge the
+    citation and pass. Membership of the retriever's allowlist is structural instead — exact match,
+    no substring logic. A failure falls back to ``None`` (the true fetched ``ref`` then wins) rather
+    than dropping an otherwise good claim.
     """
     if not isinstance(raw, str) or not raw.strip():
         return None
     url = raw.strip()
-    if url not in normalized_text:
+    if url not in allowlist:
         log.info(
-            "stage0.claim_extraction_source_url_ungrounded",
+            "stage0.claim_extraction_source_url_unattributable",
             field_key=field.field_key,
+            attributable_urls=len(allowlist),
         )
         return None
     return url
@@ -405,7 +450,7 @@ def _grounded_source_url(raw: JsonValue, normalized_text: str, field: FieldDef) 
 
 def parse_extraction_response(
     text: str,
-    normalized_text: str,
+    normalized: NormalizedText,
     field: FieldDef,
     *,
     policy: ExtractionPolicy,
@@ -415,6 +460,10 @@ def parse_extraction_response(
     Every rejection path returns fewer claims, never an exception: an unparseable body, a missing
     ``claims`` array, an ungrounded quote, a wrongly-shaped value, a hedged confidence. Each drop is
     logged with its reason so a silently-empty extractor is diagnosable from the logs alone.
+
+    Takes the whole :class:`~clue_core.NormalizedText` (not just its text) because the two checks
+    read different things: a quote is grounded against the document *text*, while a ``source_url``
+    is attributed against the retriever's out-of-band metadata allowlist.
     """
     guidance = _FIELD_GUIDANCE.get(field.field_key)
     if guidance is None:
@@ -429,13 +478,21 @@ def parse_extraction_response(
         return []
 
     cap = _cap(guidance, policy.max_claims_per_field)
+    allowlist = attribution_allowlist(normalized)
     drafts: list[ClaimDraft] = []
     dropped: list[str] = []
     seen: set[str] = set()
     for item in raw_claims:
         if len(drafts) >= cap:
             break
-        draft = _draft_from(item, normalized_text, field, guidance=guidance, policy=policy)
+        draft = _draft_from(
+            item,
+            normalized.text,
+            field,
+            guidance=guidance,
+            policy=policy,
+            allowlist=allowlist,
+        )
         if isinstance(draft, str):
             dropped.append(draft)
             continue
@@ -471,6 +528,7 @@ def _draft_from(
     *,
     guidance: _FieldGuidance,
     policy: ExtractionPolicy,
+    allowlist: frozenset[str],
 ) -> ClaimDraft | str:
     """One parsed claim → a draft, or a drop *reason* string (never an exception)."""
     if not isinstance(item, dict):
@@ -493,7 +551,7 @@ def _draft_from(
         return "missing_confidence"
     if confidence < policy.min_confidence:
         return "below_min_confidence"
-    source_url = _grounded_source_url(item.get("source_url"), normalized_text, field)
+    source_url = _attributed_source_url(item.get("source_url"), allowlist, field)
     try:
         return ClaimDraft(
             field_key=field.field_key,
@@ -551,6 +609,4 @@ class LlmClaimExtractor:
                 detail=str(exc),
             )
             return []
-        return parse_extraction_response(
-            completion.text, normalized.text, field, policy=self._policy
-        )
+        return parse_extraction_response(completion.text, normalized, field, policy=self._policy)

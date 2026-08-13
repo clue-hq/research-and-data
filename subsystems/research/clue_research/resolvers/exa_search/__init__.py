@@ -18,15 +18,21 @@ judge), and calling it under a tier-3 manifest would smuggle tier-4 synthesis pa
 **The shape of the work.** One search returns *many* records. The resolver concatenates them into a
 single :class:`~clue_core.NormalizedText` where each record is prefixed
 ``### RESULT n | url: <url>`` — the exact vocabulary the production claim extractor's prompt is
-written against, so the extractor can name which record a quote came from and the platform can
-ground that url by exact substring against the document.
+written against, so the extractor can name which record a quote came from — and stamps the same
+urls on the document's ``metadata["record_urls"]``, which is the *checkable* half: the extractor
+attributes a claim's url by membership of that out-of-band allowlist, never by finding it in the
+(third-party, forgeable) text.
 
 **Three guards, all fail-closed**, because a multi-record document has failure modes a single page
 does not:
 
 * *attributable* — the draft's ``source_url`` must be one of the urls this very call retrieved. An
-  unattributed claim (the extractor nulls a url it cannot ground) has no record to check against,
-  and a multi-record source has no honest fallback citation, so it is dropped;
+  unattributed claim (the extractor nulls a url it cannot attribute) has no record to check
+  against, and a multi-record source has no honest fallback citation, so it is dropped. This is now
+  **defense in depth**: the same allowlist rides ``metadata["record_urls"]`` (see :func:`_document`)
+  and the extractor already refuses any url outside it, so a forged ``### RESULT`` header inside a
+  record's own text cannot mint a citation in the first place. The resolver re-checks it anyway
+  against the records it holds — the guard is what makes the next two checks possible at all;
 * *grounded-only, in the record it cites* — the draft's ``evidence_span`` must be an exact substring
   of that record's own text. The extractor already checks the span against the whole document; that
   is not enough here, because a span lifted from record 1 under record 3's url would pass it and
@@ -260,9 +266,15 @@ def _document(
 ) -> tuple[NormalizedText, list[_Record]]:
     """Build the multi-record document plus the records it actually contains.
 
-    Each block is headed ``### RESULT n | url: <url>``. That header is not cosmetic: the extractor
-    grounds a claim's ``source_url`` by exact substring against this text, so the url must appear
-    here verbatim or every claim degrades to an unattributable one (and is then dropped).
+    Each block is headed ``### RESULT n | url: <url>`` — the vocabulary the extractor's prompt tells
+    the *model* to answer in, so it can name which record a quote came from.
+
+    The urls of the records the document actually contains also ride the **metadata**, under
+    ``record_urls``: that is the extractor's attribution allowlist (``attribution_allowlist``), and
+    it is what makes a citation checkable. It has to be out-of-band — record *text* is third-party
+    bytes and can always contain a ``### RESULT``-lookalike line, so a url validated by reading the
+    document could be forged by the document. Only ``used`` records are listed: a record dropped by
+    the ``max_text_chars`` cap was never shown, so nothing may cite it.
     """
     blocks: list[str] = []
     used: list[_Record] = []
@@ -277,7 +289,11 @@ def _document(
     return (
         NormalizedText(
             text="\n\n".join(blocks),
-            metadata={"source_key": EXA_SEARCH_SOURCE_KEY, "records": len(used)},
+            metadata={
+                "source_key": EXA_SEARCH_SOURCE_KEY,
+                "records": len(used),
+                "record_urls": [record.url for record in used],
+            },
         ),
         used,
     )
