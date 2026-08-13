@@ -208,13 +208,11 @@ def _subagent(create_kwargs, name):
     return next(s for s in create_kwargs["subagents"] if s["name"] == name)
 
 
-def _roles_on(model):
-    """The set of role labels carried by UsageCaptureHandlers appended to a
-    sentinel model's `.callbacks` field."""
-    from lumen_agent.usage_capture import UsageCaptureHandler
-
-    callbacks = getattr(model, "callbacks", None) or []
-    return {cb._role for cb in callbacks if isinstance(cb, UsageCaptureHandler)}
+def _role_labels(capture):
+    """The gateway role label of every init_model call, in build order. P3.2: the
+    design-local UsageCaptureHandler is retired — per-role attribution rides
+    provider.build(role=...) on each instance (the ONE usage authority)."""
+    return [call.get("role") for call in capture["init_calls"]]
 
 
 def test_harness_all_same_model_builds_three_instances(tmp_path, monkeypatch):
@@ -245,10 +243,12 @@ def test_harness_all_same_model_builds_three_instances(tmp_path, monkeypatch):
     assert author is not reviewer
     assert orch is not reviewer
     assert orch._role_model_id == author._role_model_id == reviewer._role_model_id == "openai:default/model"
-    # Each role's instance carries ITS OWN role-tagged handler — cleanly attributed.
-    assert _roles_on(orch) == {"orchestrator"}
-    assert _roles_on(author) == {"author"}
-    assert _roles_on(reviewer) == {"reviewer"}
+    # Each instance is role-labelled AT THE GATEWAY — cleanly attributed, once.
+    assert _role_labels(capture) == [
+        "design_orchestrator",
+        "design_author",
+        "design_reviewer",
+    ]
 
 
 def test_harness_distinct_role_models(tmp_path, monkeypatch):
@@ -275,9 +275,11 @@ def test_harness_distinct_role_models(tmp_path, monkeypatch):
         "openai:auth/y",
         "openai:rev/z",
     }
-    assert _roles_on(ck["model"]) == {"orchestrator"}
-    assert _roles_on(_subagent(ck, "lumen-dsl-author")["model"]) == {"author"}
-    assert _roles_on(_subagent(ck, "lumen-visual-reviewer")["model"]) == {"reviewer"}
+    assert _role_labels(capture) == [
+        "design_orchestrator",
+        "design_author",
+        "design_reviewer",
+    ]
 
 
 def test_harness_partial_override_still_builds_three_instances(tmp_path, monkeypatch):
@@ -304,8 +306,11 @@ def test_harness_partial_override_still_builds_three_instances(tmp_path, monkeyp
     assert author._role_model_id == reviewer._role_model_id == "openai:default/model"
     # THREE init_model calls (one per role), never two.
     assert len(capture["init_calls"]) == 3
-    assert _roles_on(author) == {"author"}
-    assert _roles_on(reviewer) == {"reviewer"}
+    assert _role_labels(capture) == [
+        "design_orchestrator",
+        "design_author",
+        "design_reviewer",
+    ]
 
 
 def test_harness_threads_max_tokens_on_every_call(tmp_path, monkeypatch):
@@ -375,97 +380,7 @@ def test_assert_all_role_models_propagates_text_only_raise(monkeypatch):
 # --- 5. init_model threads max_tokens to the chat model --------------------
 
 
-def test_init_model_passes_max_tokens_kwarg(monkeypatch):
-    from lumen_agent import llm as llm_mod
-
-    captured: dict = {}
-
-    def fake_init_chat_model(model, **kwargs):
-        captured["model"] = model
-        captured["kwargs"] = kwargs
-        return object()
-
-    fake_lc = types.ModuleType("langchain.chat_models")
-    fake_lc.init_chat_model = fake_init_chat_model
-    monkeypatch.setitem(sys.modules, "langchain.chat_models", fake_lc)
-
-    llm_mod.init_model(
-        "openai:x/y",
-        base_url="https://openrouter.ai/api/v1",
-        api_key="sk-test",
-        max_tokens=16000,
-    )
-    assert captured["kwargs"]["max_tokens"] == 16000
-
-
-def test_init_model_omits_max_tokens_when_unset(monkeypatch):
-    from lumen_agent import llm as llm_mod
-
-    captured: dict = {}
-
-    def fake_init_chat_model(model, **kwargs):
-        captured["kwargs"] = kwargs
-        return object()
-
-    fake_lc = types.ModuleType("langchain.chat_models")
-    fake_lc.init_chat_model = fake_init_chat_model
-    monkeypatch.setitem(sys.modules, "langchain.chat_models", fake_lc)
-
-    llm_mod.init_model(
-        "openai:x/y", base_url="https://openrouter.ai/api/v1", api_key="sk-test"
-    )
-    assert "max_tokens" not in captured["kwargs"]
-
-
 # --- 6. init_model requests OpenRouter usage accounting (L0) ----------------
-
-
-def test_init_model_always_includes_usage_accounting(monkeypatch):
-    """L0: extra_body carries `usage: {include: True}` unconditionally so the
-    cached-prefill token breakdown surfaces in the response (measurement-only)."""
-    from lumen_agent import llm as llm_mod
-
-    captured: dict = {}
-
-    def fake_init_chat_model(model, **kwargs):
-        captured["kwargs"] = kwargs
-        return object()
-
-    fake_lc = types.ModuleType("langchain.chat_models")
-    fake_lc.init_chat_model = fake_init_chat_model
-    monkeypatch.setitem(sys.modules, "langchain.chat_models", fake_lc)
-
-    llm_mod.init_model(
-        "openai:x/y", base_url="https://openrouter.ai/api/v1", api_key="sk-test"
-    )
-    assert captured["kwargs"]["extra_body"] == {"usage": {"include": True}}
-
-
-def test_init_model_usage_accounting_rides_alongside_reasoning(monkeypatch):
-    """The usage-include and the reasoning field coexist in extra_body — neither
-    clobbers the other."""
-    from lumen_agent import llm as llm_mod
-
-    captured: dict = {}
-
-    def fake_init_chat_model(model, **kwargs):
-        captured["kwargs"] = kwargs
-        return object()
-
-    fake_lc = types.ModuleType("langchain.chat_models")
-    fake_lc.init_chat_model = fake_init_chat_model
-    monkeypatch.setitem(sys.modules, "langchain.chat_models", fake_lc)
-
-    llm_mod.init_model(
-        "openai:x/y",
-        base_url="https://openrouter.ai/api/v1",
-        api_key="sk-test",
-        reasoning="medium",
-    )
-    assert captured["kwargs"]["extra_body"] == {
-        "usage": {"include": True},
-        "reasoning": {"effort": "medium"},
-    }
 
 
 # --- 6. .env.example documents all four new vars ---------------------------
@@ -597,74 +512,74 @@ def _capture_init_chat_model(monkeypatch) -> dict:
     monkeypatch.setitem(sys.modules, "langchain.chat_models", fake_lc)
     return captured
 
+# --- P3.2: init_model builds through the platform's governed gateway ---------
+# The wire mechanics (extra_body shapes, timeout kwargs) are pinned at the
+# gateway itself (tests/gateway/test_agent_model.py); these pin the ADAPTER
+# contract this module now owns. Construction is offline — no network happens
+# until invoke.
 
-def test_init_model_includes_provider_when_sort_set(monkeypatch):
+
+def _governed(model: str = "openai:x/y", **kwargs):
     from lumen_agent import llm as llm_mod
 
-    captured = _capture_init_chat_model(monkeypatch)
-    llm_mod.init_model(
-        "openai:x/y",
-        base_url="https://openrouter.ai/api/v1",
-        api_key="sk-test",
-        provider_sort="latency",
+    llm_mod._PROVIDER_CACHE.clear()
+    return llm_mod.init_model(
+        model, base_url="https://openrouter.ai/api/v1", api_key="sk-test", **kwargs
     )
-    assert captured["kwargs"]["extra_body"]["provider"] == {"sort": "latency"}
 
 
-def test_init_model_omits_provider_when_sort_none(monkeypatch):
-    """Default (no provider_sort) → no `provider` field; extra_body byte-identical
-    to pre-L1 (usage-only)."""
+def test_init_model_returns_role_labelled_governed_model():
+    from clue_gateway.agent_model import GovernedAgentChatModel
+
+    model = _governed(role="design_author")
+    assert isinstance(model, GovernedAgentChatModel)
+    assert model.requested_model == "x/y"  # "openai:" env prefix stripped
+    assert model.attribution_role == "design_author"
+    # Bare OpenRouter ids are accepted too (the prefix is back-compat only).
+    assert _governed(model="x/y").requested_model == "x/y"
+
+
+def test_init_model_economics_ride_gateway_config():
+    pinned = _governed(provider_sort="latency").models[0]
+    assert pinned.extra_body == {"provider": {"sort": "latency"}, "usage": {"include": True}}
+    unpinned = _governed(provider_sort=None).models[0]
+    assert unpinned.extra_body == {"usage": {"include": True}}
+
+
+def test_init_model_reasoning_maps_to_gateway_policy():
+    assert _governed(reasoning="medium").gateway_config.agent_reasoning.effort == "medium"
+    assert _governed().gateway_config.agent_reasoning is None
+    with pytest.raises(ValueError, match="low|medium|high"):
+        _governed(reasoning="maximal")
+
+
+def test_init_model_output_is_bounded_by_default():
+    """P3.2 ruling: the governed build refuses unbounded generation — unset
+    max_tokens now means the damage-limiting default, not 'no bound'."""
     from lumen_agent import llm as llm_mod
 
-    captured = _capture_init_chat_model(monkeypatch)
-    llm_mod.init_model(
-        "openai:x/y", base_url="https://openrouter.ai/api/v1", api_key="sk-test"
-    )
-    assert captured["kwargs"]["extra_body"] == {"usage": {"include": True}}
+    assert _governed(max_tokens=16000).models[0].max_tokens == 16000
+    assert _governed().models[0].max_tokens == llm_mod._DEFAULT_MAX_OUTPUT_TOKENS
 
 
-def test_init_model_provider_merges_with_usage_and_reasoning(monkeypatch):
-    """The provider field COEXISTS with usage + reasoning in extra_body — it merges,
-    never clobbers (commit 0a8458d's usage:{include} + reasoning must survive)."""
+def test_init_model_timeout_and_retries_are_always_bounded():
     from lumen_agent import llm as llm_mod
 
-    captured = _capture_init_chat_model(monkeypatch)
-    llm_mod.init_model(
-        "openai:x/y",
-        base_url="https://openrouter.ai/api/v1",
-        api_key="sk-test",
-        reasoning="medium",
-        provider_sort="latency",
-    )
-    assert captured["kwargs"]["extra_body"] == {
-        "usage": {"include": True},
-        "reasoning": {"effort": "medium"},
-        "provider": {"sort": "latency"},
-    }
+    bounded = _governed(timeout_s=45.0).models[0]
+    assert bounded.request_timeout == 45.0
+    assert bounded.max_retries == 2
+    assert _governed().models[0].request_timeout == llm_mod._DEFAULT_TIMEOUT_S
 
 
-def test_init_model_sets_timeout_and_retries_when_set(monkeypatch):
+def test_governed_provider_is_cached_per_policy_fingerprint():
+    """Three role builds under one policy share ONE provider (and its capability
+    catalog fetch); a different policy fingerprint gets its own."""
     from lumen_agent import llm as llm_mod
 
-    captured = _capture_init_chat_model(monkeypatch)
-    llm_mod.init_model(
-        "openai:x/y",
-        base_url="https://openrouter.ai/api/v1",
-        api_key="sk-test",
-        timeout_s=60.0,
-    )
-    assert captured["kwargs"]["timeout"] == 60.0
-    assert captured["kwargs"]["max_retries"] == 2
-
-
-def test_init_model_omits_timeout_and_retries_when_none(monkeypatch):
-    """Default (no timeout_s) → neither `timeout` nor `max_retries` kwarg (today's
-    behavior, byte-identical)."""
-    from lumen_agent import llm as llm_mod
-
-    captured = _capture_init_chat_model(monkeypatch)
-    llm_mod.init_model(
-        "openai:x/y", base_url="https://openrouter.ai/api/v1", api_key="sk-test"
-    )
-    assert "timeout" not in captured["kwargs"]
-    assert "max_retries" not in captured["kwargs"]
+    llm_mod._PROVIDER_CACHE.clear()
+    common = {"base_url": "https://openrouter.ai/api/v1", "api_key": "sk-test"}
+    llm_mod.init_model("x/y", role="design_orchestrator", **common)
+    llm_mod.init_model("a/b", role="design_reviewer", **common)
+    assert len(llm_mod._PROVIDER_CACHE) == 1
+    llm_mod.init_model("x/y", reasoning="high", **common)
+    assert len(llm_mod._PROVIDER_CACHE) == 2

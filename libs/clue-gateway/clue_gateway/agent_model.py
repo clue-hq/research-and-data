@@ -79,6 +79,21 @@ _COST_CENTS_KEY = "clue_cost_cents"
 _ROLE_KEY = "clue_role"
 
 
+def _catalog_input_modalities(model_entry: dict[str, Any]) -> list[str] | None:
+    """A catalog entry's input modalities, handling BOTH observed OpenRouter shapes:
+    ``architecture.input_modalities`` (a list) and ``architecture.modality`` (a
+    string like ``text+image->text``). None = the entry names neither (unknown)."""
+    architecture = model_entry.get("architecture") or {}
+    modalities = architecture.get("input_modalities")
+    if isinstance(modalities, list):
+        return [str(m).lower() for m in modalities]
+    modality = architecture.get("modality")
+    if isinstance(modality, str) and modality:
+        input_side = modality.split("->", 1)[0]
+        return [part.strip().lower() for part in input_side.split("+") if part.strip()]
+    return None
+
+
 class GovernedAgentChatModel(BaseChatModel):
     """Provider model(s) wrapped with fallback, usage/cost metadata, tracing, and tool binding."""
 
@@ -530,7 +545,11 @@ class OpenRouterAgentModelProvider:
                 return None
             capabilities: dict[str, bool] = {}
             for entry in payload.get("data", []):
-                modalities = (entry.get("architecture") or {}).get("input_modalities") or []
+                modalities = _catalog_input_modalities(entry)
+                if modalities is None:
+                    # Entry present but carries no modality metadata: honestly
+                    # unknown — absent from the dict, NOT recorded as text-only.
+                    continue
                 capabilities[str(entry.get("id"))] = "image" in modalities
             self._model_capabilities = capabilities
         return self._model_capabilities.get(model_id)

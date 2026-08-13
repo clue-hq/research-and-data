@@ -42,14 +42,15 @@ logger = get_logger("lumen_agent.harness")
 # --- assembly (§5) ----------------------------------------------------------
 
 
-def _fresh_model(runtime_config: AgentRuntimeConfig, model_id: str):
-    """Build ONE role model instance bound to the OpenRouter gateway.
+def _fresh_model(runtime_config: AgentRuntimeConfig, model_id: str, role: str | None = None):
+    """Build ONE role model instance through the platform's governed gateway.
 
     Extracted to module scope (was a closure in create_design_deepagent) so the
     website-mode harness (harness_web) builds its three role minds through the
     exact same constructor. The `from .llm import init_model` stays LAZY so the
     per-role-models test's monkeypatch of `lumen_agent.llm.init_model` is
     honored (it patches the module attribute this local import re-reads).
+    ``role`` (P3.2) labels the governed instance for per-role attribution.
     """
     from .llm import init_model
 
@@ -61,24 +62,27 @@ def _fresh_model(runtime_config: AgentRuntimeConfig, model_id: str):
         max_tokens=runtime_config.agent_max_tokens,
         provider_sort=runtime_config.agent_provider_sort,
         timeout_s=runtime_config.agent_llm_timeout_s,
+        role=role,
     )
 
 
 def _instrument(runtime_config: AgentRuntimeConfig, tools, model_id: str, role: str):
-    """A role model with per-role usage + trace capture attached IN PLACE.
+    """A role model, role-labelled at the gateway, with trace capture attached.
 
-    Capture is best-effort — a wiring or callback failure never blocks assembly
-    or breaks a run. attach_* mutates the model in place and returns the SAME
-    BaseChatModel object, so per-role attribution rides that instance's own
-    instance-level callbacks (three instances = three roles; never deduped).
+    P3.2 (PD-part3 delta 6): per-role USAGE capture moved into the governed
+    gateway — the role rides ``provider.build(role=...)`` onto the instance, and
+    the gateway's ``model_call_usage`` record (role-tagged, with cost and the
+    cached-prefill share) is the ONE usage authority. The design-local
+    ``attach_usage_capture`` is deliberately NOT attached anymore — attaching
+    both would double count. Trace capture (non-usage reasoning/tool telemetry)
+    stays design-local. Three instances = three roles; never deduped — the
+    gateway's attribution is per-instance too.
     `tools` only needs a `record(...)` method, so both LumenDesignTools and
     LumenWebTools work here.
     """
     from .trace_callbacks import attach_trace_callback
-    from .usage_capture import attach_usage_capture
 
-    model = _fresh_model(runtime_config, model_id)
-    attach_usage_capture(model, tools, role=role)
+    model = _fresh_model(runtime_config, model_id, role=f"design_{role}")
     attach_trace_callback(model, role=role)
     return model
 

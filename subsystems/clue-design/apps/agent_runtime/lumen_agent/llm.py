@@ -1,8 +1,21 @@
-"""LLM gateway for the lumen_agent deepagent (self-contained copy).
+"""LLM gateway for the lumen_agent deepagent — on the PLATFORM gateway since P3.2.
 
-OpenRouter is the sole gateway (locked constraint). These functions are COPIES
-from the archived pipeline's providers.py — the living deepagent world imports
-nothing from the archive (share-by-copy directive, 2026-07-09).
+OpenRouter is the sole provider (locked constraint), but as of P3.2 checkpoint 3
+(PD-part3 delta 6) every role model is built through the platform's governed
+``OpenRouterAgentModelProvider`` instead of a raw ``init_chat_model``:
+
+* the economics knobs (``usage.include`` accounting, ``provider.sort`` replica
+  pinning — the ~95% cached-prefill invariant, live-verified 4624/4636 tokens) ride
+  ``GatewayConfig`` policy instead of hand-built extra_body;
+* every call carries truthful requested/answering-model attribution, cost, and the
+  per-role ``clue_role`` label on the ONE authoritative ``model_call_usage`` record;
+* reasoning effort maps onto ``ReasoningRequest`` (the same Responses vocabulary the
+  platform speaks);
+* the pre-spend vision guard reads the provider's capability seam instead of a
+  raw-key probe.
+
+``init_model`` keeps its historical name and signature (plus ``role``) because it is
+the seam both harnesses build through and the per-role tests monkeypatch.
 """
 
 from __future__ import annotations
@@ -14,6 +27,50 @@ from py_lumen_obs import get_logger
 
 logger = get_logger("lumen_agent.llm")
 
+# One governed provider per distinct gateway policy — shared across the three role
+# builds so the capability catalog is fetched once per process.
+_PROVIDER_CACHE: dict[tuple, Any] = {}
+
+# The design trio's max-output default when LUMEN_AGENT_MAX_TOKENS is unset. The
+# governed build REQUIRES a bound (unbounded generation is ungoverned); this is
+# damage limitation, generously above any observed author/reviewer output.
+_DEFAULT_MAX_OUTPUT_TOKENS = 32_768
+
+# The governed build requires a positive timeout; this is the ceiling when
+# LUMEN_AGENT_LLM_TIMEOUT_S is unset (the config default is 60s, so this only
+# applies when a deployment explicitly clears it).
+_DEFAULT_TIMEOUT_S = 120.0
+
+
+def _governed_provider(
+    *,
+    base_url: str,
+    api_key: str,
+    reasoning: str | None,
+    provider_sort: str | None,
+    timeout_s: float,
+):
+    """The cached governed provider for one gateway policy fingerprint."""
+    key = (base_url, api_key, reasoning, provider_sort, timeout_s)
+    if key not in _PROVIDER_CACHE:
+        from pydantic import SecretStr
+
+        from clue_config.gateway import GatewayConfig, ReasoningRequest
+        from clue_gateway.agent_model import OpenRouterAgentModelProvider
+
+        config = GatewayConfig(
+            base_url=base_url,
+            timeout_s=timeout_s,
+            max_retries=2,
+            openrouter_provider_sort=provider_sort,  # type: ignore[arg-type]
+            openrouter_usage_include=True,
+            agent_reasoning=(
+                ReasoningRequest(effort=reasoning) if reasoning is not None else None
+            ),
+        )
+        _PROVIDER_CACHE[key] = OpenRouterAgentModelProvider(config, SecretStr(api_key))
+    return _PROVIDER_CACHE[key]
+
 def init_model(
     model: str,
     *,
@@ -23,6 +80,7 @@ def init_model(
     max_tokens: int | None = None,
     provider_sort: str | None = None,
     timeout_s: float | None = None,
+    role: str | None = None,
 ):
     """Build a deep-agent LLM bound to the OpenRouter gateway.
 
@@ -65,145 +123,76 @@ def init_model(
             "LUMEN_AGENT_BASE_URL and LUMEN_AGENT_API_KEY. There is no native "
             "provider fallback."
         )
-    if not model.startswith("openai:"):
-        raise ValueError(
-            "LUMEN_AGENT_MODEL must be an 'openai:<openrouter-model-id>' value so "
-            f"LangChain selects the OpenAI-compatible client. Got {model!r}. Prefix "
-            "it with 'openai:' — e.g. 'openai:anthropic/claude-opus-4.8'. A bare "
-            "'anthropic:' prefix builds the Anthropic client against the OpenRouter "
-            "base URL and 404s."
-        )
     if reasoning is not None and reasoning not in {"low", "medium", "high"}:
         raise ValueError(
             "LUMEN_AGENT_REASONING must be one of low|medium|high (or unset for "
             f"no reasoning field); got {reasoning!r}"
         )
-    try:
-        from langchain.chat_models import init_chat_model
-    except ImportError as error:
-        raise RuntimeError(
-            "LangChain model dependencies are missing. Install apps/api/requirements.txt "
-            "or add langchain and langchain-openai to the active environment."
-        ) from error
-    kwargs: dict = {"base_url": base_url, "api_key": api_key}
-    # L0 (latency trace enrichment): ask OpenRouter to include full usage
-    # accounting in the response so the cached-prefill breakdown
-    # (`prompt_tokens_details.cached_tokens` → usage_metadata.input_token_details.
-    # cache_read) is reported when the provider caches. This is measurement-only:
-    # it changes ONLY the returned usage object, never generation. OpenAI-
-    # compatible clients pass unknown top-level request fields via extra_body;
-    # OpenRouter reads `usage` from the request body.
-    extra_body: dict = {"usage": {"include": True}}
-    if reasoning is not None:
-        # OpenRouter reads the unified `reasoning` field from the request body.
-        extra_body["reasoning"] = {"effort": reasoning}
-    if provider_sort is not None:
-        # L1 (cache locality): OpenRouter reads `provider` prefs from the request
-        # body. This MERGES into extra_body alongside usage/reasoning — never
-        # clobbers them. `sort` alone pins one replica (we deliberately do NOT set
-        # allow_fallbacks:false: sort already disables load-balancing, and keeping
-        # fallbacks means a dead replica degrades to a cache miss, not a failed turn).
-        extra_body["provider"] = {"sort": provider_sort}
-    kwargs["extra_body"] = extra_body
-    if max_tokens is not None:
-        # ChatOpenAI.max_tokens (langchain-openai 1.3.3) is the max-output-tokens
-        # field; it serializes to the request as `max_completion_tokens`.
-        kwargs["max_tokens"] = max_tokens
-    if timeout_s is not None:
-        # L3 (straggler watchdog): ChatOpenAI.request_timeout (alias `timeout`) and
-        # max_retries pass straight into the OpenAI SDK client. The SDK retries a
-        # timed-out request (exponential backoff) then raises openai.APITimeoutError.
-        # Both are installed together so "timeout unset" stays byte-identical to
-        # today; max_retries is fixed at 2 (explicit = the SDK default).
-        kwargs["timeout"] = timeout_s
-        kwargs["max_retries"] = 2
-    return init_chat_model(model, **kwargs)
-
-
-# Slice 2 D4: cache of the multimodal-capability probe, keyed by (base_url, model id).
-# Both outcomes are cached (passed / raised) so repeat turns in one process never
-# re-hit the network — the model is fixed for the life of a run.
-_IMAGE_INPUT_SUPPORT_CACHE: dict[tuple[str, str], bool] = {}
-
-
-def _openrouter_model_input_modalities(model_entry: dict) -> list[str] | None:
-    """Extract a model's input modalities from an OpenRouter `/models` entry,
-    handling BOTH observed shapes: `architecture.input_modalities` (a list) and
-    `architecture.modality` (a string like `text+image->text` or `text->text`).
-    Returns None when neither is present (the caller treats that as unknown)."""
-    architecture = model_entry.get("architecture") or {}
-    modalities = architecture.get("input_modalities")
-    if isinstance(modalities, list):
-        return [str(m).lower() for m in modalities]
-    modality = architecture.get("modality")
-    if isinstance(modality, str) and modality:
-        # `text+image+file->text` — the INPUT side is everything before `->`.
-        input_side = modality.split("->", 1)[0]
-        return [part.strip().lower() for part in input_side.split("+") if part.strip()]
-    return None
+    # The historical contract required an "openai:" prefix so init_chat_model chose
+    # the OpenAI-compatible client. The governed provider IS that client; the prefix
+    # is accepted for env back-compat and stripped to the bare OpenRouter id.
+    model_id = model[len("openai:") :] if model.startswith("openai:") else model
+    if ":" in model_id.split("/", 1)[0]:
+        raise ValueError(
+            f"LUMEN_AGENT_MODEL={model!r} carries a non-'openai:' client prefix; the "
+            "governed gateway takes a bare OpenRouter id (an optional 'openai:' "
+            "prefix is tolerated for back-compat)."
+        )
+    effective_timeout = timeout_s if timeout_s is not None else _DEFAULT_TIMEOUT_S
+    provider = _governed_provider(
+        base_url=base_url,
+        api_key=api_key,
+        reasoning=reasoning,
+        provider_sort=provider_sort,
+        timeout_s=effective_timeout,
+    )
+    # P3.2 rulings, restated where they bind: max output is BOUNDED by default (the
+    # governed build refuses unbounded generation); temperature=1.0 approximates the
+    # historical "unset" (the OpenAI default); max_retries=2 keeps the L3 watchdog's
+    # retry posture. The provider owns extra_body (usage accounting + provider.sort
+    # replica pinning) and the per-model reasoning block from GatewayConfig.
+    return provider.build(
+        model_id=model_id,
+        timeout_s=effective_timeout,
+        max_retries=2,
+        max_output_tokens=max_tokens if max_tokens is not None else _DEFAULT_MAX_OUTPUT_TOKENS,
+        temperature=1.0,
+        role=role,
+    )
 
 
 def assert_model_supports_image_input(
     model: str, *, base_url: str, api_key: str
 ) -> None:
-    """Slice 2 D4: fail LOUDLY, BEFORE a run starts, if LUMEN_AGENT_MODEL is a
-    text-only model. The loop is structurally mandatory-multimodal (the Director and
-    visual reviewer attach images every turn); a text-only model instead authors,
-    then dies mid-turn at the reviewer with `404 No endpoints found that support
-    image input` — burning the paid authoring call. This probe moves that failure to
-    startup.
+    """Slice 2 D4, on the capability seam since P3.2: fail LOUDLY, BEFORE a run
+    starts, if a configured model is text-only. The loop is structurally
+    mandatory-multimodal (the Director and visual reviewer attach images every
+    turn); a text-only model instead authors, then dies mid-turn at the reviewer —
+    burning the paid authoring call. This guard moves that failure to startup.
 
-    Only a POSITIVE "text-only" finding raises. A model missing from the list, a
-    non-OpenRouter gateway, or any network error must NEVER brick a run — those log a
-    warning and return (unknown ≠ text-only)."""
+    Semantics preserved verbatim from the raw-key probe it replaces: only a
+    POSITIVE "text-only" finding (False) raises; unknown — model unlisted, missing
+    modality metadata, unreachable catalog (None) — logs a warning and returns
+    (unknown ≠ text-only, and the guard must never brick a run). The catalog is
+    fetched once per provider instance, shared with the role-model builds.
+    """
     model_id = model[len("openai:") :] if model.startswith("openai:") else model
-    cache_key = (base_url, model_id)
-    if cache_key in _IMAGE_INPUT_SUPPORT_CACHE:
-        if not _IMAGE_INPUT_SUPPORT_CACHE[cache_key]:
-            _raise_text_only(model)
-        return
-
-    import httpx
-
-    try:
-        response = httpx.get(
-            f"{base_url}/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=10.0,
-        )
-        response.raise_for_status()
-        data = response.json().get("data") or []
-    except Exception as error:  # network down, non-OpenRouter gateway, bad JSON.
-        logger.warning(
-            "image_input_check_skipped_probe_failed",
-            model=model,
-            base_url=base_url,
-            error=str(error),
-        )
-        return
-
-    entry = next((m for m in data if m.get("id") == model_id), None)
-    if entry is None:
-        logger.warning(
-            "image_input_check_skipped_model_not_found",
-            model=model_id,
-        )
-        return
-
-    modalities = _openrouter_model_input_modalities(entry)
-    if modalities is None:
-        # Entry found but carries neither modality shape → UNKNOWN. Do not cache:
-        # caching False here would make the model pass on the first call and then
-        # brick every later call from the poisoned cache (unknown ≠ text-only).
-        logger.warning(
-            "image_input_check_skipped_no_modality_metadata",
-            model=model_id,
-        )
-        return
-    supports_image = "image" in modalities
-    _IMAGE_INPUT_SUPPORT_CACHE[cache_key] = supports_image
-    if not supports_image:
+    provider = _governed_provider(
+        base_url=base_url,
+        api_key=api_key,
+        reasoning=None,
+        provider_sort=None,
+        timeout_s=_DEFAULT_TIMEOUT_S,
+    )
+    supported = provider.supports_image_input(model_id)
+    if supported is False:
         _raise_text_only(model)
+    if supported is None:
+        logger.warning(
+            "image_input_check_skipped_capability_unknown",
+            model=model_id,
+            base_url=base_url,
+        )
 
 
 def assert_all_role_models_support_image_input(config: Any) -> None:
@@ -214,10 +203,8 @@ def assert_all_role_models_support_image_input(config: Any) -> None:
     brick that mind mid-turn (all three attach images via `view`). Calling this
     from `create_design_deepagent` covers every entry path — CLI and API — with
     no per-callsite change, because both build the agent through the harness.
-
-    Each distinct id is checked once (the per-model probe also caches by
-    (base_url, id)); the loud "text-only" raise is unchanged, and unknown /
-    network-error findings still never brick a run.
+    The loud "text-only" raise is unchanged, and unknown findings still never
+    brick a run.
     """
     for role_model in {
         config.orchestrator_model,
