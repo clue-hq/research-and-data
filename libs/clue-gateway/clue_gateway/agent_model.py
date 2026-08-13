@@ -23,7 +23,7 @@ from pydantic import ConfigDict, SecretStr, model_validator
 from clue_config.gateway import GatewayConfig
 from clue_core.gateway import TokenUsage
 from clue_gateway.tracing import record_model_call
-from clue_obs.otel import ATTR_MODEL, SPAN_LLM_GATEWAY_CALL, traced_step
+from clue_obs.otel import ATTR_AGENT_ROLE, ATTR_MODEL, SPAN_LLM_GATEWAY_CALL, traced_step
 
 __all__ = [
     "GovernedAgentChatModel",
@@ -76,6 +76,7 @@ def _without_unsupported_patterns(node: Any) -> Any:
 _REQUESTED_MODEL_KEY = "clue_requested_model"
 _ANSWERING_MODEL_KEY = "clue_answering_model"
 _COST_CENTS_KEY = "clue_cost_cents"
+_ROLE_KEY = "clue_role"
 
 
 class GovernedAgentChatModel(BaseChatModel):
@@ -87,6 +88,10 @@ class GovernedAgentChatModel(BaseChatModel):
     model_ids: tuple[str, ...]
     requested_model: str
     gateway_config: GatewayConfig
+    # P3.2: the agent-role label this instance answers for (one instance per role is the
+    # attribution mechanism — LangChain callbacks and usage records are per-instance).
+    # None = an unlabelled platform model; nothing changes for existing call sites.
+    attribution_role: str | None = None
 
     @model_validator(mode="after")
     def _validate_candidates(self) -> GovernedAgentChatModel:
@@ -136,6 +141,7 @@ class GovernedAgentChatModel(BaseChatModel):
         with traced_step(
             SPAN_LLM_GATEWAY_CALL,
             **{ATTR_MODEL: self.requested_model},
+            **({ATTR_AGENT_ROLE: self.attribution_role} if self.attribution_role else {}),
         ) as span:
             started = time.perf_counter()
             result, served_model = self._generate_with_fallback(
@@ -154,6 +160,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 usage=usage,
                 cost_cents=cost,
                 duration_ms=(time.perf_counter() - started) * 1000.0,
+                role=self.attribution_role,
             )
             return result
 
@@ -167,6 +174,7 @@ class GovernedAgentChatModel(BaseChatModel):
         with traced_step(
             SPAN_LLM_GATEWAY_CALL,
             **{ATTR_MODEL: self.requested_model},
+            **({ATTR_AGENT_ROLE: self.attribution_role} if self.attribution_role else {}),
         ) as span:
             started = time.perf_counter()
             result, served_model = await self._agenerate_with_fallback(
@@ -185,6 +193,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 usage=usage,
                 cost_cents=cost,
                 duration_ms=(time.perf_counter() - started) * 1000.0,
+                role=self.attribution_role,
             )
             return result
 
@@ -198,6 +207,7 @@ class GovernedAgentChatModel(BaseChatModel):
         with traced_step(
             SPAN_LLM_GATEWAY_CALL,
             **{ATTR_MODEL: self.requested_model},
+            **({ATTR_AGENT_ROLE: self.attribution_role} if self.attribution_role else {}),
         ) as span:
             started = time.perf_counter()
             last_message: AIMessageChunk | None = None
@@ -223,6 +233,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 usage=usage,
                 cost_cents=cost,
                 duration_ms=(time.perf_counter() - started) * 1000.0,
+                role=self.attribution_role,
             )
 
     async def _astream(
@@ -235,6 +246,7 @@ class GovernedAgentChatModel(BaseChatModel):
         with traced_step(
             SPAN_LLM_GATEWAY_CALL,
             **{ATTR_MODEL: self.requested_model},
+            **({ATTR_AGENT_ROLE: self.attribution_role} if self.attribution_role else {}),
         ) as span:
             started = time.perf_counter()
             last_message: AIMessageChunk | None = None
@@ -260,6 +272,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 usage=usage,
                 cost_cents=cost,
                 duration_ms=(time.perf_counter() - started) * 1000.0,
+                role=self.attribution_role,
             )
 
     def _generate_with_fallback(
@@ -388,6 +401,7 @@ class GovernedAgentChatModel(BaseChatModel):
             _REQUESTED_MODEL_KEY: self.requested_model,
             _ANSWERING_MODEL_KEY: served,
             _COST_CENTS_KEY: str(cost),
+            **({_ROLE_KEY: self.attribution_role} if self.attribution_role else {}),
         }
         return usage, served, cost
 
@@ -407,14 +421,18 @@ class GovernedAgentChatModel(BaseChatModel):
         )
         input_tokens = 0
         output_tokens = 0
+        cached_tokens = 0
         if isinstance(message, AIMessage | AIMessageChunk):
             raw_usage = message.usage_metadata
             if raw_usage is not None:
                 input_tokens = raw_usage["input_tokens"]
                 output_tokens = raw_usage["output_tokens"]
+                details = raw_usage.get("input_token_details") or {}
+                cached_tokens = int(details.get("cache_read") or 0)
         usage = TokenUsage(
             prompt_tokens=input_tokens,
             completion_tokens=output_tokens,
+            cached_prompt_tokens=cached_tokens,
         )
         return usage, served, self.gateway_config.cost_cents(served, usage)
 
@@ -434,6 +452,7 @@ class OpenRouterAgentModelProvider:
         self._api_key = api_key
         self._http_client = http_client
         self._http_async_client = http_async_client
+        self._model_capabilities: dict[str, bool] | None = None
 
     def build(
         self,
@@ -443,8 +462,13 @@ class OpenRouterAgentModelProvider:
         max_retries: int,
         max_output_tokens: int,
         temperature: float,
+        role: str | None = None,
     ) -> BaseChatModel:
-        """Build a bounded primary/fallback model with truthful answering-model attribution."""
+        """Build a bounded primary/fallback model with truthful answering-model attribution.
+
+        ``role`` (P3.2) labels every usage record/span this instance produces — the design
+        runtime builds one instance per trio role, so per-role attribution is structural.
+        """
 
         if not model_id.strip():
             raise ValueError("model_id must be non-empty")
@@ -477,7 +501,39 @@ class OpenRouterAgentModelProvider:
             model_ids=tuple(candidates),
             requested_model=model_id,
             gateway_config=self._config,
+            attribution_role=role,
         )
+
+    def supports_image_input(self, model_id: str) -> bool | None:
+        """Pre-spend vision capability from the provider's model catalog (P3.2).
+
+        Replaces the design runtime's raw-key ``GET /models`` probe with a provider-owned
+        seam. ``True``/``False`` from the catalog's ``architecture.input_modalities``;
+        ``None`` when the model is not listed or the catalog is unreachable — the CALLER
+        chooses how hard to fail (the design harness fails closed before any spend).
+        The catalog is fetched once per provider instance.
+        """
+        if self._model_capabilities is None:
+            import httpx
+
+            try:
+                client = self._http_client
+                url = f"{self._config.base_url.rstrip('/')}/models"
+                headers = {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
+                if client is not None:
+                    response = client.get(url, headers=headers)
+                else:
+                    response = httpx.get(url, headers=headers, timeout=30.0)
+                response.raise_for_status()
+                payload = response.json()
+            except Exception:  # noqa: BLE001 - unreachable catalog = honest "unknown"
+                return None
+            capabilities: dict[str, bool] = {}
+            for entry in payload.get("data", []):
+                modalities = (entry.get("architecture") or {}).get("input_modalities") or []
+                capabilities[str(entry.get("id"))] = "image" in modalities
+            self._model_capabilities = capabilities
+        return self._model_capabilities.get(model_id)
 
     def _build_openrouter_model(
         self,
@@ -491,6 +547,12 @@ class OpenRouterAgentModelProvider:
         # OpenRouter's Responses API is stateless. Clue/DeepAgents therefore continues to replay
         # the complete durable message history and never uses ``previous_response_id``.
         reasoning = _reasoning_request(self._config, model_id=model_id)
+        # P3.2: the OpenRouter economics knobs ride the request body (config, not code).
+        extra_body: dict[str, Any] = {}
+        if self._config.openrouter_provider_sort is not None:
+            extra_body["provider"] = {"sort": self._config.openrouter_provider_sort}
+        if self._config.openrouter_usage_include:
+            extra_body["usage"] = {"include": True}
         # Runtime aliases are intentionally friendlier than ChatOpenAI's generated static type.
         return ChatOpenAI(  # type: ignore[call-arg]
             model=model_id,
@@ -506,6 +568,7 @@ class OpenRouterAgentModelProvider:
             http_client=self._http_client,
             http_async_client=self._http_async_client,
             reasoning=reasoning,
+            extra_body=extra_body or None,
         )
 
 

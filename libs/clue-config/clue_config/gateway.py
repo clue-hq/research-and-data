@@ -15,6 +15,7 @@ we report a real measured cost or zero, never a fabricated one.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -93,6 +94,13 @@ class GatewayConfig(BaseModel):
     embedding_model: str = "openai/text-embedding-3-small"
     # Optional fallback model id tried when the primary errors (config; ``None`` = no fallback).
     fallback_model: str | None = None
+    # P3.2 (PD-part3 delta 6) — OpenRouter economics knobs, policy as data. ``provider.sort``
+    # pins routing to one replica ordering, which is what makes a stable prompt-cache prefix
+    # actually HIT (the design runtime's ~95% cached-prefill invariant); ``usage.include``
+    # asks OpenRouter for the usage-accounting block (cached/reasoning token detail). Defaults
+    # OFF: existing call sites keep their exact wire shape.
+    openrouter_provider_sort: Literal["price", "throughput", "latency"] | None = None
+    openrouter_usage_include: bool = False
     timeout_s: float = Field(default=30.0, gt=0)
     max_retries: int = Field(default=2, ge=0)
     # Force the deterministic stub (no live call). The factory ALSO stubs when no key is present.
