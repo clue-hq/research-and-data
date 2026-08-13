@@ -32,7 +32,7 @@ from clue_core import (
 from clue_db import ConnFactory, transaction
 from clue_projections.stage0 import ExcludedEvidence
 from clue_research.stage0 import (
-    CLIENT_BASELINE_FIELDS,
+    CLIENT_ICP_SYNTHESIS_FIELDS,
     ClientKnowledgeBaseRef,
     ICPSynthesisStatus,
     ProjectStatement,
@@ -232,17 +232,20 @@ class EvaluateStage0ReadinessV2Tool(_Stage0ProjectTool):
                 workspace_policy.required_field_keys if workspace_policy is not None else ()
             )
             effective_expected_fields = tuple(
-                sorted(set(CLIENT_BASELINE_FIELDS).union(workspace_required))
+                sorted(set(CLIENT_ICP_SYNTHESIS_FIELDS).union(workspace_required))
             )
             metrics = client_kb_readiness_metrics(
                 claims,
+                baseline_field_keys=CLIENT_ICP_SYNTHESIS_FIELDS,
                 required_field_keys=workspace_required,
             )
             metrics.update(
                 {
                     "open_policy_blocks": 0,
                     "metrics_authority": _METRICS_AUTHORITY,
-                    "baseline_field_keys": cast(list[JsonValue], sorted(CLIENT_BASELINE_FIELDS)),
+                    "baseline_field_keys": cast(
+                        list[JsonValue], sorted(CLIENT_ICP_SYNTHESIS_FIELDS)
+                    ),
                     "effective_expected_field_keys": cast(
                         list[JsonValue], list(effective_expected_fields)
                     ),

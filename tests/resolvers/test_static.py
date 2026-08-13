@@ -54,6 +54,8 @@ _ALLOWED_LITERALS = frozenset(
         "GroundedSynthesisResolver",
         "register_parallel_task_resolver",
         "normalize_parallel_response",
+        # slice-3 tier-3 open-web search public symbol name (28 chars → opaque-token shape).
+        "register_exa_search_resolver",
     }
 )
 

@@ -713,7 +713,10 @@ def test_materialization_is_typed_replay_safe_open_to_reads_and_version_safe() -
                 required_field_keys=("client.document_formats",),
             )
             assert effective_metrics["available_field_keys"] == ["client.document_formats"]
-            assert effective_metrics["coverage_ratio"] == pytest.approx(1 / 10)
+            # General/onboarding readiness defaults to the full eleven-field recon baseline;
+            # adding one workspace-local required field makes this one filled field out of 12.
+            # The active ICP-synthesis tool passes its narrower nine-field gate baseline explicitly.
+            assert effective_metrics["coverage_ratio"] == pytest.approx(1 / 12)
 
             with pytest.raises(PermissionError, match="human authority"):
                 await set_workspace_client_kb_readiness_policy(

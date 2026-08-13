@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_db import db_lifespan
 from clue_research.claimstore import load_core_pack
 from clue_research.sources import clear_resolver_bindings
+from clue_research.stage0 import load_client_knowledge_pack
 
 # Reuse the M0.3 helpers (DRY). ``run_async`` is re-exported for the source test modules.
 from tests.db.conftest import _db_available
@@ -74,6 +75,7 @@ async def rollback_conn(*, seed_core: bool = True) -> AsyncIterator[AsyncConnect
         try:
             if seed_core:
                 await load_core_pack(conn)
+                await load_client_knowledge_pack(conn)
             yield conn
         finally:
             await trans.rollback()

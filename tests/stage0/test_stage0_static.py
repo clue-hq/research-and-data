@@ -10,6 +10,7 @@ from clue_core import ExtractionMethod, ReuseScope, can_be_promoted, new_project
 from clue_core.field import classify_field_key, is_valid_field_key
 from clue_research.identity import DEFAULT_REUSE_POLICY, classify_reuse_scope
 from clue_research.stage0 import (
+    CLIENT_BASELINE_FIELDS,
     CLIENT_KB_VERSION,
     CLIENT_KNOWLEDGE_FIELDS,
     CLIENT_KNOWLEDGE_PACK,
@@ -20,6 +21,7 @@ from clue_research.stage0 import (
     VolunteeredMaterial,
     reverse_profiling_run_id,
 )
+from clue_research.stage0.fields import CLIENT_BUYER_PROFILE, CLIENT_COMPETITOR
 from clue_research.stage0.reverse_profiling_handler import _client_input_from_params
 from tests.stage0._fakes import make_tier4_claim
 
@@ -79,6 +81,15 @@ def test_surface_taxonomy_covers_all_four_surfaces_and_all_fields() -> None:
     assert len(counts) == len(set(counts)), "a field is double-mapped across surfaces"
 
 
+def test_competitor_and_buyer_fields_are_baseline_tier3_only() -> None:
+    assert CLIENT_BASELINE_FIELDS[-2:] == (CLIENT_COMPETITOR, CLIENT_BUYER_PROFILE)
+    for key in (CLIENT_COMPETITOR, CLIENT_BUYER_PROFILE):
+        seed = next(s for s in CLIENT_KNOWLEDGE_PACK if s.field_def.field_key == key)
+        assert seed.field_def.tier_plan == ("exa_search",)
+        assert seed.field_def.reuse_scope is ReuseScope.TENANT_PRIVATE
+        assert key in SURFACE_CLASS_FIELDS[SurfaceClass.THIRD_PARTY]
+
+
 def test_reverse_profiling_run_id_is_deterministic() -> None:
     crid = new_project_run_id()
     assert reverse_profiling_run_id(crid) == reverse_profiling_run_id(crid)
@@ -115,6 +126,15 @@ def test_tier4_promotion_predicate() -> None:
         make_tier4_claim(_an_id(), "account.operational_pain", with_span=False)
     )
     assert can_be_promoted(make_tier4_claim(_an_id(), "account.operational_pain", with_span=True))
+
+
+def test_recon_event_kinds_are_named_constants() -> None:
+    from clue_research.durable.run_events import RECON_FIELD_PROGRESS_KIND, RECON_TRANSITION_KIND
+    from clue_research.stage0.types import FieldProgressStatus
+
+    assert RECON_TRANSITION_KIND == "stage0.recon.transition"
+    assert RECON_FIELD_PROGRESS_KIND == "stage0.recon.field"
+    assert {s.value for s in FieldProgressStatus} == {"started", "resolved", "empty", "failed"}
 
 
 def _an_id() -> object:

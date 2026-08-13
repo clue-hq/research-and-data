@@ -16,12 +16,20 @@ RoleKey = Literal["owner", "admin", "operator", "viewer"]
 
 
 class PlatformUser(BaseModel):
-    """A durable Clue human identity; provider identifiers never replace ``user_id``."""
+    """A durable Clue human identity; provider identifiers never replace ``user_id``.
+
+    ``first_name``/``last_name``/``job_role`` are the onboarding profile (FI-4 D-3). They are
+    personal data — ``erase_platform_user`` clears all three alongside ``display_name``.
+    ``job_role`` is a self-described job title and never an authorization role.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     user_id: str
     display_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    job_role: str | None = None
     status: UserStatus
     created_at: UtcDatetime
     suspended_at: UtcDatetime | None = None
@@ -75,6 +83,19 @@ class WorkspaceInvitation(BaseModel):
     revoked_at: UtcDatetime | None = None
 
 
+class SelfServeProvisioningRecord(BaseModel):
+    """The FI-4 D-2 idempotency record; part of the DSAR bundle (website may identify)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    auth_identity_id: str
+    user_id: str
+    workspace_id: str
+    brand_id: str
+    company_website: str | None
+    created_at: UtcDatetime
+
+
 class IdentityBundle(BaseModel):
     """The internal identity part of the B1 DSAR/access surface."""
 
@@ -84,6 +105,7 @@ class IdentityBundle(BaseModel):
     auth_identities: tuple[AuthIdentity, ...]
     memberships: tuple[WorkspaceMembership, ...]
     accepted_invitations: tuple[WorkspaceInvitation, ...]
+    self_serve_provisionings: tuple[SelfServeProvisioningRecord, ...] = ()
 
 
 class IdentityErasureResult(BaseModel):
@@ -95,3 +117,4 @@ class IdentityErasureResult(BaseModel):
     auth_identities_revoked: int
     memberships_revoked: int
     invitation_addresses_erased: int
+    provisioning_websites_erased: int = 0

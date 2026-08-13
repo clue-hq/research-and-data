@@ -450,6 +450,11 @@ class Settings(BaseSettings):
     auth_clerk_jwks_url: str | None = None
     auth_clerk_issuer: str | None = None
     auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
+    # FI-4 slice 1: gates POST /auth/v1/provision (self-serve workspace creation). Default-off
+    # like every neighbouring write surface — an unconfigured deployment serves session reads
+    # only; enabling requires an explicit operator decision because each valid provider session
+    # can mint one workspace+brand. Env: ``CLUE_SELF_SERVE_PROVISIONING_ENABLED``.
+    self_serve_provisioning_enabled: bool = False
 
     # --- Lane E E3 value-narrative synthesis ------------------------------------------------
     # One default-off gate over the on-completion positioning step (the M12.1 Positioner behind
@@ -533,6 +538,27 @@ class Settings(BaseSettings):
     # the live tail drains the remainder, and in replay-then-close mode this bounds one connect's
     # backlog). Env: ``CLUE_SSE_REPLAY_PAGE_LIMIT``.
     sse_replay_page_limit: int = 10_000
+
+    # --- Stage-0 recon envelopes (FI-4 slice 3 close-out; append-only per treaty §3.2) --------
+    # The two per-lane spend caps of the governed Stage-0 recon policy, made per-deployment
+    # tunable so the founder ruling "onboarding is budget-unconstrained — envelopes must never
+    # truncate onboarding research" (FI-onboarding-contract-gap-review §9, 2026-08-13) has an
+    # actual mechanism instead of a code change. Read by
+    # :func:`clue_config.stage0.stage0_policy_from_settings`, which the composition root
+    # (``build_toolbelt``) uses to build the ``Stage0Policy`` the recon tools run under.
+    #
+    # The fast default is 25¢, not the frozen ``DEFAULT_STAGE0_POLICY``'s 5¢: at the default
+    # ``CLUE_SCRAPE_BACKEND=firecrawl`` (~1¢/fetch) the full eleven-field Client-KB walk costs
+    # ~11¢, so 5¢ released the user with the last checklist groups unreached ("stopped at the
+    # research budget"). 25¢ covers the whole walk with headroom. ``DEFAULT_STAGE0_POLICY``
+    # itself is unchanged (5/100) — it is the library default many tests pin; the *production*
+    # default is this settings-derived one. Env: ``CLUE_STAGE0_FAST_BUDGET_CENTS`` /
+    # ``CLUE_STAGE0_BACKGROUND_BUDGET_CENTS``.
+    # ``gt=0``: a zero envelope would refuse the whole walk, and the ruling says an envelope must
+    # never truncate onboarding — so a mistyped ``0`` fails at construction rather than silently
+    # shipping an onboarding that researches nothing.
+    stage0_fast_budget_cents: Decimal = Field(default=Decimal("25"), gt=0)
+    stage0_background_budget_cents: Decimal = Field(default=Decimal("100"), gt=0)
 
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod

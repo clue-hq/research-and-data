@@ -1,8 +1,13 @@
-import { SignIn } from "@clerk/nextjs";
+import { redirect } from "next/navigation";
 import { isAuthenticationEnabled } from "@/auth/config";
 import { SessionSignOut } from "@/features/session/components/session-sign-out";
 import { clearWorkspaceSelection } from "@/features/session/data/session-actions";
 
+/**
+ * The approved onboarding sign-in card owns normal authentication. This compatibility route
+ * keeps the explicit expired-session cleanup added by FI-2 before handing ordinary sign-in to
+ * the headless-Clerk onboarding flow.
+ */
 export default async function SignInPage({
   searchParams,
 }: {
@@ -34,13 +39,5 @@ export default async function SignInPage({
       </main>
     );
   }
-  return (
-    <main className="grid min-h-screen place-items-center p-6">
-      <SignIn
-        fallbackRedirectUrl="/session/establish"
-        path="/sign-in"
-        routing="path"
-      />
-    </main>
-  );
+  redirect("/onboarding/sign-in");
 }

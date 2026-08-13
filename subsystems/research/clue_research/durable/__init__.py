@@ -361,6 +361,8 @@ from clue_research.durable.recursion import (
 )
 from clue_research.durable.run_events import (
     NARRATIVE_EMIT_SKIPPED_KEY,
+    RECON_FIELD_PROGRESS_KIND,
+    RECON_TRANSITION_KIND,
     RUN_EVENT_TOPICS,
     RunEventRow,
     RunEventTopic,
@@ -736,6 +738,8 @@ __all__ = [
     "emit_run_event",
     "list_run_events",
     "NARRATIVE_EMIT_SKIPPED_KEY",
+    "RECON_TRANSITION_KIND",
+    "RECON_FIELD_PROGRESS_KIND",
     "event_created_at",
     # phase-handler registry (M7.3)
     "PhaseHandlerRegistry",

@@ -17,6 +17,9 @@ export const SessionMembershipSchema = z.object({
 export const AuthenticatedSessionSchema = z.object({
   user_id: z.string().min(1),
   memberships: z.array(SessionMembershipSchema),
+  // Distinguishes "never had access" (route to onboarding) from "had access, lost it"
+  // (route to access-denied) without exposing the inactive membership rows.
+  has_inactive_memberships: z.boolean(),
 }).strict();
 
 export const RequestPrincipalSchema = z.object({

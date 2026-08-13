@@ -50,6 +50,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from clue_api.claim_extraction import LlmClaimExtractor
 from clue_api.contact_eligibility import (
     build_contact_eligibility_resolver,
     build_production_handoff_committee_reader,
@@ -92,6 +93,7 @@ from clue_core import (
 from clue_db import ConnFactory, transaction
 from clue_gateway import build_gateway
 from clue_obs import get_logger
+from clue_research.adapters import CallableClaimExtractor, ClaimExtractor
 from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.durable import (
     BudgetEngine,
@@ -104,12 +106,22 @@ from clue_research.durable import (
     ProjectRunStore,
 )
 from clue_research.icp.spec import get_icp_version
+from clue_research.resolvers.exa_search import (
+    AUTH_REF as EXA_SEARCH_AUTH_REF,
+)
+from clue_research.resolvers.exa_search import (
+    register_exa_search_resolver,
+)
+from clue_research.resolvers.live import AccountLookup
 from clue_research.stage0 import ClientInput
 from clue_research.verification import FaithfulnessJudgeImpl
 from clue_storage import StorageBackend
 
 __all__ = [
     "build_platform_gateway",
+    "build_optional_platform_gateway",
+    "bind_stage0_search_resolver",
+    "build_stage0_claim_extractor",
     "ComposingRunDriver",
     "ComposedRun",
     "CompositionUnavailable",
@@ -232,6 +244,108 @@ def build_platform_gateway(settings: Settings) -> LLMGateway:
 
 # Backward-compatible test/internal name; production composition uses the public API-root builder.
 _default_gateway = build_platform_gateway
+
+
+def build_optional_platform_gateway(settings: Settings) -> LLMGateway | None:
+    """The platform gateway when one is *configured*, else ``None`` — never a raise.
+
+    :func:`build_platform_gateway` refuses to build without an ``OPENROUTER_API_KEY`` (or the
+    explicit stub opt-in), which is exactly right for the fleet worker: a worker that cannot call a
+    model cannot do its job, so it must fail at boot rather than drive runs on canned output. It is
+    the wrong contract for a *degradable* consumer. Stage-0 recon is one: without an extractor it
+    still resolves the client, scrapes the official surfaces under target-lock and captures durable
+    snapshot evidence — it simply drafts no ``client.*`` values (the slice-2 posture, and the
+    interview remains the tier-1 fill path). Taking the whole HTTP process down at import because
+    one tool's optional LLM step has no credential would be a strictly worse outcome.
+
+    So this mirrors :func:`build_platform_gateway`'s own key check — same secret, same
+    ``gateway_allow_stub`` opt-in — and turns the refusal into a loud, greppable
+    ``stage0.claim_extraction_disabled_no_gateway`` warning plus ``None``. Deployed without a key
+    the fallback is silent-shaped (no values are drafted), so this warning is the operator's only
+    signal: it names the cause and the fix.
+
+    **"Never a raise" is enforced, not merely intended.** The pre-check is a *copy* of the
+    refusal condition, and a copy can drift: were ``build_platform_gateway`` to start refusing on a
+    condition this one does not test, the delegation would raise and take the HTTP root down at
+    import — precisely the failure this function exists to prevent. So the delegation is wrapped:
+    the pre-check keeps the common path's specific reason, and the wrapper makes the contract true
+    by construction for any refusal the pre-check does not (yet) know about.
+    ``test_the_two_gateway_builders_agree_on_the_no_key_case`` pins the two against each other so
+    drift is *also* caught loudly at test time rather than only degraded silently in production.
+    """
+    if Secrets().openrouter_api_key is None and not settings.gateway_allow_stub:
+        log.warning(
+            "stage0.claim_extraction_disabled_no_gateway",
+            reason=(
+                "no OPENROUTER_API_KEY secret and CLUE_GATEWAY_ALLOW_STUB is not set; Stage-0 "
+                "recon will scrape and snapshot but draft no client.* claims"
+            ),
+        )
+        return None
+    try:
+        return build_platform_gateway(settings)
+    except RuntimeError as exc:
+        # The documented refusal (and any future sibling of it). A degradable consumer degrades.
+        log.warning(
+            "stage0.claim_extraction_disabled_no_gateway",
+            reason=(
+                "the platform gateway refused to build; Stage-0 recon will scrape and snapshot "
+                "but draft no client.* claims"
+            ),
+            detail=str(exc),
+        )
+        return None
+
+
+def build_stage0_claim_extractor(gateway: LLMGateway | None) -> ClaimExtractor:
+    """The Stage-0 recon extractor for a deployment that has (or has not) a model gateway.
+
+    With a gateway this is the production :class:`~clue_api.claim_extraction.LlmClaimExtractor`
+    (grounded, drop-never-raise, honest-empty on an outage). Without one it is the explicitly empty
+    extractor both roots wired in slice 2 — snapshots without values — so a keyless deployment keeps
+    working, just without drafted claims.
+
+    One function, called by both composition roots, so the HTTP and fleet processes cannot drift
+    into extracting differently from the same scraped page.
+    """
+    if gateway is None:
+        return CallableClaimExtractor(lambda normalized, entity, field: [])
+    return LlmClaimExtractor(gateway=gateway)
+
+
+def bind_stage0_search_resolver(
+    *,
+    extractor: ClaimExtractor,
+    accounts: AccountLookup,
+    secrets: Secrets | None = None,
+) -> bool:
+    """Bind the tier-3 ``exa_search`` resolver for Stage-0 recon, if this deployment can pay for it.
+
+    Two Client-KB fields (``client.competitor`` / ``client.buyer_profile``) name ``exa_search`` as
+    their only source. It reads the *same* extractor instance as the scrape lane (one extractor per
+    process — the roots must not drift into extracting differently) and the *same* account lookup
+    (the Stage-0 binder, which holds the client's record once identity resolution has produced it).
+
+    **The credential gate is the point.** ``resolve_credential`` raises at call time when
+    ``CLUE_EXA_API_KEY`` is unset, and a resolver raising inside the waterfall fails the whole recon
+    lane — so a deployment with no Exa key would lose onboarding entirely over an optional
+    open-web enrichment. Leaving the source *unbound* instead is the documented graceful path: the
+    waterfall records ``NO_RESOLVER`` at zero spend and the two fields end honestly empty, exactly
+    as they did before this source existed. Returns whether the resolver was bound.
+    """
+    resolved = secrets if secrets is not None else Secrets()
+    if resolved.for_auth_ref(EXA_SEARCH_AUTH_REF) is None:
+        log.warning(
+            "stage0.exa_search_unbound_no_credential",
+            reason=(
+                "no Exa credential is configured; Stage-0 background research will leave "
+                "client.competitor and client.buyer_profile empty rather than fail the lane"
+            ),
+            auth_ref=EXA_SEARCH_AUTH_REF,
+        )
+        return False
+    register_exa_search_resolver(extractor=extractor, accounts=accounts, secrets=resolved)
+    return True
 
 
 class ComposingRunDriver:

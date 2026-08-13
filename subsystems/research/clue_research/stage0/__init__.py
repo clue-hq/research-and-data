@@ -35,6 +35,7 @@ from __future__ import annotations
 from clue_config.settings import DEFAULT_SYNTHESIS_MODEL
 from clue_research.stage0.client_kb import (
     ClientKbWriteTarget,
+    FieldProgress,
     client_kb_readiness_metrics,
     client_kb_write_target_for_materialization,
     current_kb_version,
@@ -55,6 +56,7 @@ from clue_research.stage0.dynamic_client_kb import (
 )
 from clue_research.stage0.fields import (
     CLIENT_BASELINE_FIELDS,
+    CLIENT_ICP_SYNTHESIS_FIELDS,
     CLIENT_KB_VERSION,
     CLIENT_KNOWLEDGE_FIELDS,
     CLIENT_KNOWLEDGE_PACK,
@@ -193,6 +195,7 @@ from clue_research.stage0.types import (
     ClientInput,
     ClientKnowledgeBaseRef,
     CoverageReport,
+    FieldProgressStatus,
     ReverseProfileResult,
     SurfaceCoverage,
     VolunteeredMaterial,
@@ -206,6 +209,7 @@ __all__ = [
     "client_kb_readiness_metrics",
     "current_kb_version",
     "ClientKbWriteTarget",
+    "FieldProgress",
     "client_kb_write_target_for_materialization",
     "DynamicClientKbRefused",
     "FieldMaterializationPlan",
@@ -225,11 +229,13 @@ __all__ = [
     "CoverageReport",
     "SurfaceCoverage",
     "ReverseProfileResult",
+    "FieldProgressStatus",
     # the client-knowledge field set + surface taxonomy
     "load_client_knowledge_pack",
     "CLIENT_KNOWLEDGE_PACK",
     "CLIENT_KNOWLEDGE_FIELDS",
     "CLIENT_BASELINE_FIELDS",
+    "CLIENT_ICP_SYNTHESIS_FIELDS",
     "WorkspaceClientKbReadinessPolicy",
     "get_workspace_client_kb_readiness_policy",
     "set_workspace_client_kb_readiness_policy",

@@ -217,6 +217,10 @@ def test_url_only_recon_is_two_speed_gated_snapshotted_and_evented() -> None:
                 pre_spend_gate=gate,
                 scrape_binder=binder,
                 storage=storage,
+                # This harness's factory is same-conn and reentrant, so the emitter's
+                # "autonomous" branch still rides the rollback connection — the composed
+                # path is exercised without leaking committed rows out of the test.
+                field_progress_factory=factory,
             )
             inputs = StartReconInput(
                 brand_id=brand.brand_id,
@@ -259,6 +263,46 @@ def test_url_only_recon_is_two_speed_gated_snapshotted_and_evented() -> None:
                     ("background", "running"),
                     ("background", "completed"),
                 ]
+                # Budget honesty rides the COMPLETED transitions: the cheap fast lane really
+                # does stop at its cap here (so it "completed" without reaching every field),
+                # while the wider background lane runs the whole baseline out.
+                completed = [
+                    event for event in transitions if event.payload["status"] == "completed"
+                ]
+                assert [
+                    (event.payload["lane"], event.payload["budget_exhausted"])
+                    for event in completed
+                ] == [("fast", True), ("background", False)]
+
+                # Per-field motion: a poller sees real fields start and terminate mid-lane.
+                field_events = [
+                    event
+                    for event in events
+                    if event.topic == RunEventTopic.STEP_PROGRESS.value
+                    and event.payload.get("kind") == "stage0.recon.field"
+                ]
+                assert field_events
+                for lane in ("fast", "background"):
+                    lane_events = [
+                        (event.payload["field_key"], event.payload["status"])
+                        for event in field_events
+                        if event.payload["lane"] == lane
+                    ]
+                    value_prop = [status for key, status in lane_events if key == CLIENT_VALUE_PROP]
+                    assert value_prop[0] == "started"
+                    assert value_prop[1] in {"resolved", "empty"}
+                # The events are durable *while the lane runs*, not appended after it:
+                # every fast field event precedes the fast lane's completed transition.
+                fast_completed_seq = next(
+                    event.seq
+                    for event in transitions
+                    if (event.payload["lane"], event.payload["status"]) == ("fast", "completed")
+                )
+                fast_field_seqs = [
+                    event.seq for event in field_events if event.payload["lane"] == "fast"
+                ]
+                assert fast_field_seqs
+                assert max(fast_field_seqs) < fast_completed_seq
             finally:
                 unbind_resolver("firecrawl_site")
 

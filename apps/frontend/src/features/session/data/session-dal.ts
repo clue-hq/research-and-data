@@ -22,11 +22,16 @@ import {
 function handleAuthenticationError(error: unknown): never {
   if (error instanceof ClueAuthenticationError) {
     if (error.status === 401) redirect("/sign-in?reason=session_expired");
+    // FI-4 slice 1 routing repair: an authenticated user who simply has no Clue footprint
+    // yet (fresh Clerk identity, or identity without a workspace) belongs in onboarding —
+    // the provisioning profile step — not at a dead-end access-denied page.
     if (
       error.code === "IDENTITY_NOT_PROVISIONED" ||
-      error.code === "USER_DISABLED" ||
-      error.code === "WORKSPACE_FORBIDDEN"
+      error.code === "WORKSPACE_MEMBERSHIP_REQUIRED"
     ) {
+      redirect("/onboarding/profile");
+    }
+    if (error.code === "USER_DISABLED" || error.code === "WORKSPACE_FORBIDDEN") {
       redirect(`/access-denied?code=${encodeURIComponent(error.code)}`);
     }
     if (error.code === "WORKSPACE_SELECTION_REQUIRED") {
@@ -91,9 +96,19 @@ export async function loadProtectedSession(
         { code: "WORKSPACE_SELECTION_REQUIRED", status: 403 },
       );
     }
+    // Zero ACTIVE memberships splits two ways (review ruling FE7): a user who HAD access and
+    // lost it (revoked/suspended) belongs at access-denied exactly as before this flow
+    // existed; only a user with no membership history at all is the provisioning-needed
+    // state routed to /onboarding/profile. The BFF re-emits either as a 403 access error.
+    if (session.has_inactive_memberships) {
+      throw new ClueAuthenticationError(
+        "User no longer has an active Clue workspace membership",
+        { code: "WORKSPACE_FORBIDDEN", status: 403 },
+      );
+    }
     throw new ClueAuthenticationError(
-      "User has no active Clue workspace membership",
-      { code: "WORKSPACE_FORBIDDEN", status: 403 },
+      "User has no Clue workspace membership yet",
+      { code: "WORKSPACE_MEMBERSHIP_REQUIRED", status: 403 },
     );
   }
   const principal = RequestPrincipalSchema.parse(

@@ -58,6 +58,7 @@ from clue_api.research_view_api import (
     research_workspace_resolver,
 )
 from clue_api.research_view_owner_refs import ProductionOwnerReferenceResolver
+from clue_api.stage0_setup import create_stage0_setup_router, setup_workspace_resolver
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_auth import MembershipStateChanged, PrincipalService
 from clue_config import Settings, load_settings
@@ -825,7 +826,13 @@ def create_projections_app(
         contact_email_lookup=contact_email_lookup,
     )
     if auth_service is not None:
-        install_auth_wiring(app, service=auth_service)
+        # The provision route (workspace-creating write) mounts only behind its default-off
+        # flag, matching the rollout discipline of every neighbouring surface.
+        install_auth_wiring(
+            app,
+            service=auth_service,
+            conn_factory=(conn_factory if resolved.self_serve_provisioning_enabled else None),
+        )
         if workspace_resolver is None and actor_resolver is None:
             workspace_resolver, actor_resolver = authenticated_route_resolvers(auth_service)
 
@@ -861,6 +868,7 @@ def create_projections_app(
         app.dependency_overrides[research_workspace_resolver] = workspace_resolver
         app.dependency_overrides[frontend_read_workspace_resolver] = workspace_resolver
         app.dependency_overrides[chat_workspace_resolver] = workspace_resolver
+        app.dependency_overrides[setup_workspace_resolver] = workspace_resolver
     if actor_resolver is not None:
         app.dependency_overrides[header_actor_resolver] = actor_resolver
         app.dependency_overrides[ingestion_header_actor_resolver] = actor_resolver
@@ -882,6 +890,17 @@ def create_projections_app(
                 tool_invoker=tool_invoker,
                 storage=ingestion_storage,
                 conn_factory=conn_factory,
+            )
+        )
+    # FI-4 slice 2: the onboarding workspace-setup composition (capture → onboarding_input →
+    # recon driver + the lane-truth read). Rides the same default-off flag as the provisioning
+    # route it continues; needs the storage backend for capture-before-use.
+    if resolved.self_serve_provisioning_enabled and ingestion_storage is not None:
+        app.include_router(
+            create_stage0_setup_router(
+                tool_invoker=tool_invoker,
+                conn_factory=conn_factory,
+                storage=ingestion_storage,
             )
         )
     if discovery_webhook_router is not None:

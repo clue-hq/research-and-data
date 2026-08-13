@@ -112,6 +112,7 @@ from clue_research.identity import (
     promote_contact_verified_email,
 )
 from clue_research.sources import get_source, seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from clue_storage import StorageBackend, content_address, read_verified_artifact
 
 ConnFactoryLike = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
@@ -2167,6 +2168,10 @@ class ExaContactChannelCoordinator:
             workspace_id=operation.request.workspace_id,
         )
         await load_core_pack(conn)
+        # Boot order: a source manifest's ``yields`` validate against the field
+        # registry, and the tier-3 ``exa_search`` seed yields ``client.*`` keys — so
+        # the client-knowledge pack must be loaded before the manifests are seeded.
+        await load_client_knowledge_pack(conn)
         await seed_source_manifests(conn)
         inserted = await insert_claim(conn, claim)
         retention = timedelta(seconds=operation.request.retention_seconds)

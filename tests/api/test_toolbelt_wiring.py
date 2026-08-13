@@ -17,11 +17,14 @@ existence leak).
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_core import (
@@ -903,6 +906,26 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     }
     assert registry.descriptor("draft_account_research_directive").version == "2"
     assert registry.descriptor("confirm_account_research_directive").version == "2"
+
+
+def test_default_composition_gives_start_recon_an_autonomous_progress_factory() -> None:
+    """FI-4 slice 3: the production composition is the ONLY thing that turns on autonomous
+    per-field progress commits, and without them the onboarding screen shows nothing for the
+    whole fast lane (its own transaction stays uncommitted until the lane ends). An injected
+    factory must still fall back to the lane connection — a second checkout would deadlock a
+    single-connection harness — so both directions are pinned here."""
+    default_tool = build_toolbelt(storage=None, gateway=None).get("start_recon")
+    assert default_tool._field_progress_factory is not None  # type: ignore[attr-defined]
+
+    @asynccontextmanager
+    async def injected() -> AsyncIterator[AsyncConnection]:  # pragma: no cover - never entered
+        raise AssertionError("the composition must not open a connection")
+        yield
+
+    injected_tool = build_toolbelt(storage=None, gateway=None, conn_factory=injected).get(
+        "start_recon"
+    )
+    assert injected_tool._field_progress_factory is None  # type: ignore[attr-defined]
 
 
 def test_duplicate_tool_registration_is_impossible_by_construction() -> None:

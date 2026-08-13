@@ -17,6 +17,7 @@ test("session wire schema contains only Clue-owned identity values", () => {
         permissions: ["thread.read"],
       },
     ],
+    has_inactive_memberships: false,
   });
   assert.equal(parsed.user_id, "usr_123");
   assert.equal(parsed.memberships[0]?.workspace_id, "ws_123");
@@ -45,6 +46,7 @@ test("a missing or stale workspace cookie requires an explicit selection", () =>
         permissions: ["project.read"],
       },
     ],
+    has_inactive_memberships: true,
   });
 
   assert.equal(resolveWorkspaceMembership(session, null), null);
@@ -54,6 +56,7 @@ test("a missing or stale workspace cookie requires an explicit selection", () =>
 test("multiple memberships require an explicit workspace selection", () => {
   const session = AuthenticatedSessionSchema.parse({
     user_id: "usr_123",
+    has_inactive_memberships: false,
     memberships: [
       {
         membership_id: "wsm_one",

@@ -12,14 +12,33 @@ Two independent guards, because they fail differently:
    names anything model-shaped. This is what stops the next slice from "just importing" the turn
    engine into the route and running the model inline.
 2. **Composition.** The HTTP composition root (:mod:`clue_api.projections_main`) builds the
-   toolbelt with **no gateway argument at all**, so the registry it serves cannot spend on a model
-   even if a route asked it to. Asserted against the call site's AST rather than by running it.
+   toolbelt with **no gateway argument at all**, so the *tool registry it serves a turn from*
+   cannot spend on a model even if a route asked it to. Asserted against the call site's AST rather
+   than by running it.
 
 The boundary this test deliberately does *not* claim: ``clue_toolbelt`` itself imports
 ``clue_gateway`` (its LLM-backed tools are typed against it), so ``clue_gateway`` is present in the
 web process's module graph today and a "not in ``sys.modules``" assertion would be false. That is
-pre-existing and not D2's to change; what D2 owns — and what this pins — is that no *gateway
-instance* is composed and no chat-surface module reaches for one.
+pre-existing and not D2's to change.
+
+**Nor — since slice 3 — does it claim that the web process composes no gateway instance at all.**
+The D2 acceptance criterion was written as "the HTTP process never touches the gateway"
+(``docs/specs/FI-lane-D-production-chat-and-launch.md:248``), and that was literally true until the
+Stage-0 recon exception landed: ``projections_main`` now builds one gateway for the Stage-0 scrape
+resolver's claim extractor (:func:`clue_api.run_composition.build_optional_platform_gateway` →
+:class:`clue_api.claim_extraction.LlmClaimExtractor`), because ratified slice-3 scope runs recon's
+fast lane in this process — ``start_recon`` is invocable through the projections ``/tools`` route.
+So the prose here is narrowed to the two things these guards actually enforce, both still true and
+both still what the D2 *rationale* protects (a turn is executed by the fleet worker, not inline in
+the web process):
+
+* the toolbelt seam carries no ``gateway=`` — no *tool* the turn path can invoke holds one;
+* no turn-serving module reaches a gateway, a model provider, or the turn engine — the
+  ``_ENTRYPOINTS`` walk never reaches ``projections_main``, so the Stage-0 exception is
+  unreachable from a turn.
+
+A *second* gateway consumer in this process would need the same explicit treatment: name it here,
+or the guard is documenting a lie again.
 """
 
 from __future__ import annotations
@@ -130,7 +149,12 @@ def test_no_module_serving_a_turn_can_reach_a_model() -> None:
 
 
 def test_the_http_composition_root_builds_a_toolbelt_with_no_gateway() -> None:
-    """The web process composes no gateway instance, so no route can spend through one."""
+    """The web process's *tool registry* holds no gateway, so no route can spend through a tool.
+
+    Not "the web process composes no gateway instance" — since slice 3 it composes exactly one, for
+    the Stage-0 scrape resolver's claim extractor (see the module docstring). What is pinned is the
+    seam a turn would have to travel: ``build_toolbelt`` is called with no ``gateway=``.
+    """
 
     # A gateway is opt-in at the toolbelt seam; the default is genuinely "there isn't one".
     assert inspect.signature(build_toolbelt).parameters["gateway"].default is None
@@ -146,7 +170,10 @@ def test_the_http_composition_root_builds_a_toolbelt_with_no_gateway() -> None:
     assert calls, "projections_main must still compose the toolbelt"
     for call in calls:
         supplied = {keyword.arg for keyword in call.keywords}
-        assert "gateway" not in supplied, "the HTTP process must not compose a model gateway"
+        assert "gateway" not in supplied, (
+            "the HTTP process's toolbelt must not be handed a model gateway (the Stage-0 scrape "
+            "extractor is the one sanctioned gateway consumer here, and it is not a tool seam)"
+        )
         assert not any(keyword.arg is None for keyword in call.keywords), (
             "a **kwargs splat could smuggle a gateway past this guard"
         )
