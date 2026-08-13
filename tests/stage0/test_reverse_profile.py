@@ -19,6 +19,7 @@ from clue_core import (
     ClaimDraft,
     ExtractionMethod,
     ResearchMode,
+    RetryableResolverError,
     ReuseScope,
     account_claim,
     new_run_id,
@@ -761,6 +762,57 @@ def test_a_refusing_exa_search_empties_its_own_fields_and_leaves_the_run_intact(
                 is None
             )
             # … and every tier-2 field the same run resolved is unaffected
+            cv = await current_value(
+                conn, result.ref.client_entity_id, CLIENT_VALUE_PROP, scope=scope
+            )
+            assert cv is not None
+            assert cv.value_json == "We help teams ship faster"
+
+    run_async(_run())
+
+
+class _TransientlyFailingHttp:
+    """A ``get_json`` double whose retries are already spent: every call raises 503."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, url: str, **kwargs: object) -> object:
+        self.calls += 1
+        raise RetryableResolverError("exa_search: HTTP 503 from https://api.exa.ai/search")
+
+
+def test_a_transient_exa_search_fault_leaves_the_run_intact() -> None:
+    """The same invariant for the *transient* fault — the case nothing downstream retries.
+
+    ``get_json`` already looped ``retries + 1`` times before re-raising, and this lane has no
+    second driver: ``reverse_profile`` re-raises, the savepoint rolls back every background claim,
+    the lane is marked failed and never re-driven. So one 503 that outlived its transport retries
+    used to lose the entire background research pass permanently. It is a hard miss instead: the
+    tier-3 fields end empty and every tier-2 field the same run resolved is untouched.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            _bind_firecrawl(_owned_values())
+            http = _TransientlyFailingHttp()
+            result = await reverse_profile(
+                conn,
+                _input(),
+                workspace_id=_CLIENT,
+                max_source_tier=3,
+                on_client_resolved=_ExaBinder(http),
+            )
+
+            assert http.calls == 2  # both tier-3 fields tried, both faulted
+            assert result.ref.client_kb_version == 1  # the run COMPLETED
+            scope = WorkspaceScope.for_workspace(_CLIENT)
+            assert (
+                await current_value(
+                    conn, result.ref.client_entity_id, CLIENT_COMPETITOR, scope=scope
+                )
+                is None
+            )
             cv = await current_value(
                 conn, result.ref.client_entity_id, CLIENT_VALUE_PROP, scope=scope
             )

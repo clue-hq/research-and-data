@@ -38,16 +38,22 @@ does not:
   the account has neither a resolvable domain nor a usable name token, target-lock is unsatisfiable
   and every record is refused rather than guessed onto the entity.
 
-A drop is not an error. A hard miss, a guard rejecting every candidate, an unknown account, or a
+A drop is not an error. A hard miss, a guard rejecting every candidate, an unknown account, a
 **hard provider refusal** (a 4xx — revoked key, exhausted credits, malformed query — or a
-credential that disappeared after binding) all return ``[]``: an empty, flagged field is a correct
-output; a fabricated or misattributed one is the only real failure. That refusal case is not
-defensive tidiness — a resolver exception is re-raised by the waterfall and by
-``stage0.client_kb``, so letting a 402 escape would kill the **whole** reverse-profiling run over
-one optional open-web enrichment. A *transient* fault still propagates as
-:class:`~clue_core.RetryableResolverError` (M7 retries it) rather than being swallowed, and every
-empty answer names its reason on the trace span (``outcome`` / ``refusal`` / the drop counters), so
-nothing goes quiet.
+credential that disappeared after binding), and a **transient fault that outlived its retries** (a
+5xx/transport error re-raised by :func:`~clue_research.resolvers.http.get_json` after its own
+``retries + 1`` attempts) all return ``[]``: an empty, flagged field is a correct output; a
+fabricated or misattributed one is the only real failure. That is not defensive tidiness — a
+resolver exception is re-raised by the waterfall and by ``stage0.client_kb``, so letting one escape
+would kill the **whole** reverse-profiling run over one optional open-web enrichment. **The same
+argument covers a 503 exactly as it covers a 402:** this resolver only ever runs in the Stage-0
+recon *background* lane, and nothing there retries a failed lane — ``reverse_profile`` re-raises,
+the savepoint rolls back every background claim, the lane is marked failed, and the driver only
+ever drives QUEUED/RUNNING lanes. So a :class:`~clue_core.RetryableResolverError` arriving here has
+no retrier left to hand it to and degrades to the same honest-empty miss, logged and spanned under
+its own name (``provider_transient_exhausted``) so observability still separates "the provider
+refused" from "the provider was down". Every empty answer names its reason on the trace span
+(``outcome`` / ``refusal`` / the drop counters), so nothing goes quiet.
 
 The resolver stamps only what the *source* knows — value, span, citation, confidence, cost. The
 waterfall stamps the engine-owned provenance (``source_key`` / ``run_id`` / ``research_mode``) and
@@ -77,6 +83,7 @@ from clue_core import (
     NormalizedText,
     ResearchMode,
     ResolverError,
+    RetryableResolverError,
     account_claim,
     new_run_id,
 )
@@ -364,11 +371,27 @@ class ExaSearchResolver:
                 # rest of the recon lane continues. Letting it escape would fail the WHOLE
                 # `reverse_profile` run (the waterfall bare-raises; `client_kb` re-raises), which
                 # is the exact outcome the composition root's credential gate exists to prevent —
-                # and the gate only covers "never configured", not "stopped working". A transient
-                # fault (`RetryableResolverError`) deliberately still propagates, so M7 retries.
+                # and the gate only covers "never configured", not "stopped working".
                 refusal = type(exc).__name__
                 log.warning(
                     "research.exa_search.provider_refused",
+                    field_key=field.field_key,
+                    source_key=EXA_SEARCH_SOURCE_KEY,
+                    error_type=refusal,
+                    detail=str(exc),
+                )
+            except RetryableResolverError as exc:
+                # A TRANSIENT fault that already spent its retries: `get_json` loops `retries + 1`
+                # times before re-raising. Kept a SEPARATE branch from the hard refusal so the logs
+                # still distinguish "the provider said no" from "the provider was down" — but the
+                # outcome is the same honest-empty miss, because in this resolver's ONLY caller
+                # (the Stage-0 recon background lane) there is no retrier left: `reverse_profile`
+                # re-raises, the savepoint rolls back every background claim, the lane goes
+                # `failed`, and the driver never re-drives it. Propagating would trade one empty
+                # optional field for the entire background research pass, permanently.
+                refusal = type(exc).__name__
+                log.warning(
+                    "research.exa_search.provider_transient_exhausted",
                     field_key=field.field_key,
                     source_key=EXA_SEARCH_SOURCE_KEY,
                     error_type=refusal,
@@ -425,10 +448,11 @@ class ExaSearchResolver:
         """One search request. The credential is resolved at *call* time, so binding this resolver
         never needs a live key.
 
-        Raises what the shared transport raises; ``resolve`` decides which faults are lane-fatal.
-        A transient fault (``RetryableResolverError``) is left to propagate so M7 retries it; a
-        hard refusal (``ProviderResponseError`` / ``CredentialError``) is caught there and becomes
-        a hard miss."""
+        Raises what the shared transport raises; ``resolve`` decides what to do with each fault.
+        Both a hard refusal (``ProviderResponseError`` / ``CredentialError``) and a transient fault
+        that outlived the transport's own retries (``RetryableResolverError``) are caught there and
+        become a hard miss — nothing retries this resolver's only lane, so a propagating 503 would
+        kill the whole recon run exactly as a 402 would. Every other exception still propagates."""
         token = resolve_credential(
             AUTH_REF, source_key=EXA_SEARCH_SOURCE_KEY, secrets=self._secrets
         )

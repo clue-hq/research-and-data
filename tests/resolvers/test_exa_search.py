@@ -474,9 +474,9 @@ def test_search_type_never_deep() -> None:
 # --- AC: a transient fault is retryable, never a fabricated/empty answer --------------------------
 
 
-def test_transport_failure_is_retryable_not_fabricated() -> None:
-    """A timeout/5xx propagates as ``RetryableResolverError`` (M7 retries) instead of being
-    swallowed into a hard miss — and the extractor is never asked to invent an answer for it."""
+def test_transport_failure_never_asks_the_extractor_to_invent_an_answer() -> None:
+    """A timeout/5xx yields nothing at all — the extractor is not consulted, so an empty field is
+    the *absence* of evidence and can never be a model's guess at what the page would have said."""
     http = _Http(exc=RetryableResolverError("simulated transient provider failure"))
     calls: list[str] = []
 
@@ -486,8 +486,7 @@ def test_transport_failure_is_retryable_not_fabricated() -> None:
 
     account = _account()
     resolver = _resolver(extractor=CallableClaimExtractor(_never), account=account, http=http)
-    with pytest.raises(RetryableResolverError):
-        resolver.resolve(account.as_entity(), _field())
+    assert resolver.resolve(account.as_entity(), _field()) == []
     assert calls == []
 
 
@@ -559,14 +558,16 @@ def test_a_span_from_one_record_cited_to_another_is_dropped() -> None:
 # --- AC (review fix): a HARD provider refusal is a miss, not a dead recon lane -------------------
 
 
-def test_a_hard_provider_refusal_is_an_empty_field_not_a_lane_failure() -> None:
+@pytest.mark.parametrize("field_key", [_COMPETITOR, _BUYER])
+def test_a_hard_provider_refusal_is_an_empty_field_not_a_lane_failure(field_key: str) -> None:
     """The other half of "an optional enrichment must never kill recon".
 
     The composition root's credential gate only covers "no key was ever configured". The likelier
     production faults — key revoked (401/403), credits exhausted (402), malformed query (400) —
     arrive here as ``ProviderResponseError`` at call time, long after the gate passed. A resolver
     exception is re-raised by the waterfall and again by ``reverse_profile``, so letting one escape
-    would kill the whole run. It is a hard miss instead, named on the span.
+    would kill the whole run. It is a hard miss instead, named on the span — for BOTH tier-3
+    fields: they are researched in the same lane, so a refusal on either would kill the same run.
     """
     account = _account()
     extractor = CallableClaimExtractor(lambda normalized, entity, field: [])
@@ -578,7 +579,7 @@ def test_a_hard_provider_refusal_is_an_empty_field_not_a_lane_failure() -> None:
         http = _Http(exc=exc)
         with capture_events(mode="info") as cap, collect_spans() as spans:
             claims = _resolver(extractor=extractor, account=account, http=http).resolve(
-                account.as_entity(), _field()
+                account.as_entity(), _field(field_key)
             )
         assert claims == []
         assert http.calls  # the call WAS attempted — this is a refusal, not a skip
@@ -589,17 +590,34 @@ def test_a_hard_provider_refusal_is_an_empty_field_not_a_lane_failure() -> None:
         assert attrs["refusal"] == type(exc).__name__
 
 
-def test_a_transient_fault_still_propagates_after_the_refusal_catch() -> None:
-    """The catch must not swallow the retryable case: a timeout/5xx is M7's to retry, and turning
-    it into an empty field would silently lose a fact the next attempt would have found."""
+def test_a_transient_fault_that_outlived_its_retries_is_a_miss_not_a_lane_failure() -> None:
+    """The *other* half of the same invariant, and the one the first fix got wrong.
+
+    A ``RetryableResolverError`` reaching ``resolve`` has already exhausted the transport's own
+    retries (``get_json`` loops ``retries + 1`` times before re-raising). Nothing retries it after
+    that: this resolver only ever runs inside the Stage-0 recon background lane, where
+    ``reverse_profile`` re-raises, the savepoint rolls back every background claim, and the driver
+    never re-drives a failed lane. So a 503 kills the whole background research pass exactly as a
+    402 would — the module's own "a resolver exception kills the run" argument, applied to the
+    transient case. It degrades to the same honest-empty miss, named distinctly on the span.
+    """
     account = _account()
-    http = _Http(exc=RetryableResolverError("simulated transient provider failure"))
-    with pytest.raises(RetryableResolverError):
-        _resolver(
-            extractor=CallableClaimExtractor(lambda normalized, entity, field: []),
-            account=account,
-            http=http,
-        ).resolve(account.as_entity(), _field())
+    extractor = CallableClaimExtractor(lambda normalized, entity, field: [])
+    exc = RetryableResolverError("exa_search: HTTP 503 from https://api.exa.ai/search")
+    http = _Http(exc=exc)
+
+    with capture_events(mode="info") as cap, collect_spans() as spans:
+        claims = _resolver(extractor=extractor, account=account, http=http).resolve(
+            account.as_entity(), _field()
+        )
+
+    assert claims == []
+    assert http.calls  # the call WAS attempted — this is an exhausted fault, not a skip
+    assert cap.has("research.exa_search.provider_transient_exhausted")
+    (span,) = [s for s in spans.get_finished_spans() if s.name == "search.exa_search"]
+    attrs = dict(span.attributes or {})
+    assert attrs["outcome"] == "provider_refused"
+    assert attrs["refusal"] == "RetryableResolverError"
 
 
 def test_every_dropped_draft_is_counted_so_the_span_arithmetic_reconciles() -> None:
