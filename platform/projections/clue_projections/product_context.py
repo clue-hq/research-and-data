@@ -18,10 +18,18 @@ CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE = "application/vnd.clue.client-knowledge-car
 PRODUCT_PROFILE_CARD_MEDIA_TYPE = "application/vnd.clue.product-profile-card+json"
 PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE = "application/vnd.clue.product-knowledge-card+json"
 
-CLIENT_KNOWLEDGE_CARD_V2_POLICY_VERSION = "client-knowledge-card-policy-v2"
-PRODUCT_PROFILE_CARD_POLICY_VERSION = "product-profile-card-policy-v1"
-PRODUCT_KNOWLEDGE_CARD_POLICY_VERSION = "product-knowledge-card-policy-v1"
-PRODUCT_KNOWLEDGE_CURSOR_POLICY_VERSION = "product-knowledge-cursor-v1"
+CLIENT_KNOWLEDGE_CARD_V2_POLICY_VERSION: Literal["client-knowledge-card-policy-v2"] = (
+    "client-knowledge-card-policy-v2"
+)
+PRODUCT_PROFILE_CARD_POLICY_VERSION: Literal["product-profile-card-policy-v1"] = (
+    "product-profile-card-policy-v1"
+)
+PRODUCT_KNOWLEDGE_CARD_POLICY_VERSION: Literal["product-knowledge-card-policy-v1"] = (
+    "product-knowledge-card-policy-v1"
+)
+PRODUCT_KNOWLEDGE_CURSOR_POLICY_VERSION: Literal["product-knowledge-cursor-v1"] = (
+    "product-knowledge-cursor-v1"
+)
 
 
 def canonical_card_bytes(value: BaseModel) -> bytes:
@@ -128,6 +136,18 @@ class ClientKnowledgeCardV2(BaseModel):
         return f"sha256:{hashlib.sha256(self.canonical_bytes()).hexdigest()}"
 
 
+class ClientKnowledgeCardV2Policy(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: Literal["client-knowledge-card-policy-v2"] = CLIENT_KNOWLEDGE_CARD_V2_POLICY_VERSION
+    max_catalog_entries: int = Field(default=20, ge=1, le=100)
+    max_catalog_description_bytes: int = Field(default=600, ge=1)
+    max_card_bytes: int = Field(default=24_000, ge=1)
+
+
+CLIENT_KNOWLEDGE_CARD_V2_POLICY = ClientKnowledgeCardV2Policy()
+
+
 class ProductProfileCard(BaseModel):
     """Durable selected-product identity compiled only from the object spine."""
 
@@ -229,6 +249,7 @@ PRODUCT_KNOWLEDGE_CARD_POLICY_V1 = ProductKnowledgeCardPolicy()
 __all__ = [
     "CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE",
     "CLIENT_KNOWLEDGE_CARD_V2_POLICY_VERSION",
+    "CLIENT_KNOWLEDGE_CARD_V2_POLICY",
     "PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE",
     "PRODUCT_KNOWLEDGE_CARD_POLICY_V1",
     "PRODUCT_KNOWLEDGE_CARD_POLICY_VERSION",
@@ -236,6 +257,7 @@ __all__ = [
     "PRODUCT_PROFILE_CARD_MEDIA_TYPE",
     "PRODUCT_PROFILE_CARD_POLICY_VERSION",
     "ClientKnowledgeCardV2",
+    "ClientKnowledgeCardV2Policy",
     "ClientProductCatalog",
     "ProductCatalogEntry",
     "ProductCatalogOmission",

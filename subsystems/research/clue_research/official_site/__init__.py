@@ -47,6 +47,7 @@ from clue_research.official_site.materialization import (
     OfficialSiteClientKbCommitter,
     OfficialSiteCorpusReader,
     OfficialSiteExtractionPending,
+    OfficialSiteProductCatalogSynchronizer,
     normalize_snapshot_content,
 )
 from clue_research.official_site.models import (
@@ -180,6 +181,7 @@ __all__ = [
     "OfficialSiteCorpusMaterializer",
     "GroundedOfficialSiteMaterializer",
     "OfficialSiteClientKbCommitter",
+    "OfficialSiteProductCatalogSynchronizer",
     "OfficialSiteCorpusReader",
     "OfficialSiteExtractionPending",
     "OfficialSiteCrawlLifecycle",

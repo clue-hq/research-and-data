@@ -17,6 +17,7 @@ from pydantic import JsonValue
 from sqlalchemy import text
 
 from clue_api.official_site_progress import DbOfficialSiteProgressEmitter
+from clue_api.product_catalog_sync import ProductCatalogSynchronizer
 from clue_config import Secrets, Settings
 from clue_core import EntityId, ReconRunId, RunId
 from clue_core.gateway import LLMGateway
@@ -749,6 +750,7 @@ def build_official_site_crawl_fleet(
                 conn_factory=conn_factory,
                 extraction_concurrency=settings.stage0_extraction_concurrency,
                 client_kb_committer=_AuthoritativeClientKbCommitter(conn_factory),
+                product_catalog_synchronizer=ProductCatalogSynchronizer(conn_factory),
             )
             if settings.stage0_official_site_crawl_mode == "authoritative" and gateway is not None
             else None

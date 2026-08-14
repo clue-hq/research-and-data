@@ -73,6 +73,7 @@ CLIENT_CUSTOMER = "client.customer"
 CLIENT_ICP_EVIDENCE = "client.icp_evidence"
 CLIENT_DELIVERED_VALUE = "client.delivered_value"
 CLIENT_MARKET_REPUTATION = "client.market_reputation"
+CLIENT_PRODUCT_CATALOG = "client.product_catalog"
 
 
 class ExtractionCategory(StrEnum):
@@ -87,6 +88,7 @@ _CATEGORY_FIELDS: dict[ExtractionCategory, tuple[str, ...]] = {
         CLIENT_VALUE_PROP,
         CLIENT_PRODUCT,
         CLIENT_DIFFERENTIATOR,
+        CLIENT_PRODUCT_CATALOG,
     ),
     ExtractionCategory.PRICING_PROOF: (
         CLIENT_PRICING_POSTURE,
@@ -140,6 +142,17 @@ class OfficialSiteClientKbCommitter(Protocol):
         filled_fields: set[str],
         attempted_fields: set[str],
     ) -> int: ...
+
+
+class OfficialSiteProductCatalogSynchronizer(Protocol):
+    """Composition seam: the crawler never imports the product spine."""
+
+    async def synchronize(
+        self,
+        request: OfficialSiteMaterializationRequest,
+        *,
+        company_client_kb_version: int,
+    ) -> object: ...
 
 
 class _ExistingMarkerClientKbCommitter:
@@ -228,6 +241,12 @@ _FIELD_GUIDANCE: dict[str, tuple[str, str]] = {
     CLIENT_MARKET_REPUTATION: (
         "an explicitly stated award, certification, analyst recognition, or reputation signal",
         "a non-empty string",
+    ),
+    CLIENT_PRODUCT_CATALOG: (
+        "the company's explicit portfolio of distinct named products or offerings",
+        "one list of objects shaped exactly "
+        '{"name": string, "short_description": string, "aliases"?: string[]}; exclude detailed '
+        "capabilities, pricing, integrations, competitors, and customer evidence",
     ),
 }
 
@@ -464,6 +483,7 @@ class GroundedOfficialSiteMaterializer:
         conn_factory: ConnFactory = transaction,
         extraction_concurrency: int = DEFAULT_EXTRACTION_CONCURRENCY,
         client_kb_committer: OfficialSiteClientKbCommitter | None = None,
+        product_catalog_synchronizer: OfficialSiteProductCatalogSynchronizer | None = None,
     ) -> None:
         if extraction_concurrency < 1:
             raise ValueError("extraction_concurrency must be positive")
@@ -477,6 +497,7 @@ class GroundedOfficialSiteMaterializer:
             if client_kb_committer is not None
             else _ExistingMarkerClientKbCommitter(conn_factory)
         )
+        self._product_catalog_synchronizer = product_catalog_synchronizer
         # The cap is part of CORPUS_VERSION's frozen semantics. Making it runtime-configurable
         # would let the same checkpoint/model/prompt identity observe a different corpus slice.
         self._max_chars = DEFAULT_MAX_CORPUS_CHARS_PER_OPERATION
@@ -516,6 +537,13 @@ class GroundedOfficialSiteMaterializer:
             filled_fields=filled,
             attempted_fields=all_fields,
         )
+        # S5-B runs strictly after the exact company marker commits. A persistence failure here is
+        # replayed from retained extraction responses and never causes another provider call.
+        if self._product_catalog_synchronizer is not None:
+            await self._product_catalog_synchronizer.synchronize(
+                request,
+                company_client_kb_version=version,
+            )
         log.info(
             "stage0_official_site_extraction.completed",
             workspace_id=request.workspace_id,
@@ -1148,6 +1176,7 @@ __all__ = [
     "ExtractionCategory",
     "GroundedOfficialSiteMaterializer",
     "OfficialSiteClientKbCommitter",
+    "OfficialSiteProductCatalogSynchronizer",
     "OfficialSiteCorpusReader",
     "OfficialSiteExtractionPending",
     "normalize_snapshot_content",

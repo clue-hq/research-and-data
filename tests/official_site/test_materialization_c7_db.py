@@ -18,7 +18,9 @@ import pytest
 from sqlalchemy import text
 from tests.db.conftest import run_async
 
+from clue_api.client_context_binding import bind_workspace_client
 from clue_api.official_site_crawl_wiring import _AuthoritativeClientKbCommitter
+from clue_api.product_catalog_sync import ProductCatalogSynchronizer
 from clue_core import (
     Claim,
     EntityType,
@@ -41,6 +43,7 @@ from clue_research.official_site import (
 )
 from clue_research.sources import seed_source_manifests
 from clue_research.stage0.fields import load_client_knowledge_pack
+from clue_spine import create_product, list_products
 from clue_storage import FsStorage, artifact_key, content_address
 from clue_storage.artifacts import record_artifact
 
@@ -102,6 +105,14 @@ class _Gateway:
                 value: object = [{"name": "Northstar Health", "domain": "northstar.test"}]
             elif field_key == "client.icp_evidence":
                 value = {"industries": ["healthcare"]}
+            elif field_key == "client.product_catalog":
+                value = [
+                    {
+                        "name": "Acme Phone Agents",
+                        "short_description": "AI agents for healthcare scheduling calls",
+                        "aliases": ["Acme Voice"],
+                    }
+                ]
             else:
                 value = f"Grounded {field_key}"
             response = {
@@ -486,9 +497,10 @@ def test_concurrent_grounded_materialization_and_replay_are_exactly_once(tmp_pat
                 "client.icp_evidence",
                 "client.delivered_value",
                 "client.market_reputation",
+                "client.product_catalog",
             }
-            assert len(result.claim_ids) == 11
-            assert len(gateway.calls) == 11
+            assert len(result.claim_ids) == 12
+            assert len(gateway.calls) == 12
             assert gateway.max_active >= 2
             assert connections.max_active >= 2
             assert not connections.shared_while_active
@@ -525,7 +537,7 @@ def test_concurrent_grounded_materialization_and_replay_are_exactly_once(tmp_pat
 
             replay = await materializer.materialize(_request(scope))
             assert replay == result
-            assert len(gateway.calls) == 11
+            assert len(gateway.calls) == 12
             async with transaction() as conn:
                 after = (
                     await conn.execute(
@@ -545,8 +557,8 @@ def test_concurrent_grounded_materialization_and_replay_are_exactly_once(tmp_pat
                         {"workspace_id": scope.workspace_id},
                     )
                 ).scalar_one()
-            assert before == after == 11
-            assert operations == 11
+            assert before == after == 12
+            assert operations == 12
 
             with pytest.raises(ValueError, match="outside workspace/run"):
                 await materializer.materialize(
@@ -554,6 +566,175 @@ def test_concurrent_grounded_materialization_and_replay_are_exactly_once(tmp_pat
                 )
         finally:
             await _cleanup(scope)
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())
+
+
+def test_catalog_materialization_synchronizes_product_once_and_replays_without_spend(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "s5-catalog-artifacts")
+        scope = await _seed_scope(storage)
+        gateway = _Gateway()
+        async with transaction() as conn:
+            await bind_workspace_client(
+                conn,
+                workspace_id=scope.workspace_id,
+                client_entity_id=scope.client_entity_id,
+                source_recon_run_id=scope.recon_run_id,
+            )
+        materializer = GroundedOfficialSiteMaterializer(
+            gateway=gateway,  # type: ignore[arg-type]
+            storage=storage,
+            product_catalog_synchronizer=ProductCatalogSynchronizer(transaction),
+        )
+        result = await materializer.materialize(_request(scope))
+        assert "client.product_catalog" in result.filled_fields
+        calls = len(gateway.calls)
+        async with transaction() as conn:
+            products = await list_products(conn, scope.brand_id)
+            lineage = (
+                await conn.execute(
+                    text(
+                        "SELECT resolution_state, product_id FROM product_catalog_lineage "
+                        "WHERE workspace_id=:workspace_id"
+                    ),
+                    {"workspace_id": scope.workspace_id},
+                )
+            ).one()
+        assert [(item.name, item.aliases) for item in products] == [
+            ("Acme Phone Agents", ("Acme Voice",))
+        ]
+        assert lineage.resolution_state == "created"
+        assert lineage.product_id == products[0].product_id
+
+        replay = await materializer.materialize(_request(scope))
+        assert replay == result
+        assert len(gateway.calls) == calls
+        async with transaction() as conn:
+            assert len(await list_products(conn, scope.brand_id)) == 1
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM product_catalog_lineage "
+                        "WHERE workspace_id=:workspace_id"
+                    ),
+                    {"workspace_id": scope.workspace_id},
+                )
+            ).scalar_one() == 1
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())
+
+
+def test_catalog_sync_uses_alias_authority_refuses_name_only_merge_and_is_dsar_reachable(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        scope = await _seed_scope(FsStorage(tmp_path / "s5-catalog-policy"))
+        async with transaction() as conn:
+            await bind_workspace_client(
+                conn,
+                workspace_id=scope.workspace_id,
+                client_entity_id=scope.client_entity_id,
+                source_recon_run_id=scope.recon_run_id,
+            )
+            aliased = await create_product(
+                conn,
+                workspace_id=scope.workspace_id,
+                brand_id=scope.brand_id,
+                name="Durable Existing Product",
+                aliases=("Known Alias",),
+            )
+            claim = Claim(
+                entity_id=scope.client_entity_id,
+                entity_type=EntityType.ACCOUNT,
+                field_key="client.product_catalog",
+                value_json=[
+                    {
+                        "name": "Alpha",
+                        "short_description": "First explicit product",
+                        "aliases": [],
+                    },
+                    {
+                        "name": "Known Alias",
+                        "short_description": "Alias-authorized existing product",
+                        "aliases": [],
+                    },
+                    {
+                        "name": " alpha ",
+                        "short_description": "A second explicit same-name observation",
+                        "aliases": [],
+                    },
+                ],
+                source_tier=2,
+                source_url="https://example.com/products",
+                extraction_method=ExtractionMethod.SCRAPE,
+                confidence=0.9,
+                run_id=RunId(scope.claim_run_id),
+                research_mode=ResearchMode.ACCOUNT_PROFILING,
+                reuse_scope=ReuseScope.TENANT_PRIVATE,
+                workspace_id=scope.workspace_id,
+            )
+            await insert_claim(conn, claim)
+        synchronizer = ProductCatalogSynchronizer(transaction)
+        first = await synchronizer.synchronize(_request(scope), company_client_kb_version=1)
+        second = await synchronizer.synchronize(_request(scope), company_client_kb_version=1)
+        assert first == second
+        assert [item.resolution_state for item in first.lineages] == [
+            "created",
+            "alias_reused",
+            "unresolved_ambiguous",
+        ]
+        assert first.lineages[1].product_id == aliased.product_id
+        assert first.lineages[2].product_id is None
+        async with transaction() as conn:
+            assert len(await list_products(conn, scope.brand_id)) == 2
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM product_catalog_lineage "
+                        "WHERE catalog_claim_id=:claim_id"
+                    ),
+                    {"claim_id": claim.id},
+                )
+            ).scalar_one() == 3
+            reach = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM product_catalog_lineage AS lineage "
+                        "JOIN claim ON claim.id=lineage.catalog_claim_id "
+                        "WHERE claim.entity_id=:client_entity_id "
+                        "AND lineage.workspace_id=:workspace_id"
+                    ),
+                    {
+                        "client_entity_id": scope.client_entity_id,
+                        "workspace_id": scope.workspace_id,
+                    },
+                )
+            ).scalar_one()
+            assert reach == 3
+            lineage_columns = set(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT column_name FROM information_schema.columns "
+                            "WHERE table_name='product_catalog_lineage'"
+                        )
+                    )
+                ).scalars()
+            )
+            assert lineage_columns.isdisjoint(
+                {"name", "aliases", "short_description", "value_json", "evidence_span"}
+            )
 
     async def wrapped() -> None:
         async with db_lifespan():
@@ -614,7 +795,7 @@ def test_authoritative_committer_publishes_marker_and_fast_lane_after_claims(
                 )
             ).one()
         assert marker["value_json"]["filled_fields"] == 1
-        assert marker["value_json"]["total_fields"] == 11
+        assert marker["value_json"]["total_fields"] == 12
         assert recon.fast_status == "completed"
         assert recon.fast_client_kb_version == 1
 

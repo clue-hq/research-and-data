@@ -72,6 +72,7 @@ from clue_projections.manifest import (
 from clue_projections.pagination import InvalidCursorError
 from clue_projections.product_context import (
     CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
+    CLIENT_KNOWLEDGE_CARD_V2_POLICY,
     CLIENT_KNOWLEDGE_CARD_V2_POLICY_VERSION,
     PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
     PRODUCT_KNOWLEDGE_CARD_POLICY_V1,
@@ -80,6 +81,7 @@ from clue_projections.product_context import (
     PRODUCT_PROFILE_CARD_MEDIA_TYPE,
     PRODUCT_PROFILE_CARD_POLICY_VERSION,
     ClientKnowledgeCardV2,
+    ClientKnowledgeCardV2Policy,
     ClientProductCatalog,
     ProductCatalogEntry,
     ProductCatalogOmission,
@@ -369,6 +371,7 @@ __all__ = [
     # FI S5 product-context contracts
     "CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE",
     "CLIENT_KNOWLEDGE_CARD_V2_POLICY_VERSION",
+    "CLIENT_KNOWLEDGE_CARD_V2_POLICY",
     "PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE",
     "PRODUCT_KNOWLEDGE_CARD_POLICY_V1",
     "PRODUCT_KNOWLEDGE_CARD_POLICY_VERSION",
@@ -376,6 +379,7 @@ __all__ = [
     "PRODUCT_PROFILE_CARD_MEDIA_TYPE",
     "PRODUCT_PROFILE_CARD_POLICY_VERSION",
     "ClientKnowledgeCardV2",
+    "ClientKnowledgeCardV2Policy",
     "ClientProductCatalog",
     "ProductCatalogEntry",
     "ProductCatalogOmission",
