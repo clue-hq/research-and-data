@@ -57,6 +57,7 @@ from clue_api.agent_turn_wiring import (
     DurableAgentArtifactStore,
 )
 from clue_api.chat.turn_stream import TurnStreamCallbackHandler, TurnStreamEmitter
+from clue_api.client_context_authority import trusted_client_kb_version_fields
 from clue_api.turn_binding import trusted_turn_fields
 from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
@@ -420,7 +421,11 @@ def _with_trusted_runtime(
             },
         ),
     )
-    trusted = MODEL_FORBIDDEN_AUTHORITY_KEYS | set(trusted_turn_fields(model))
+    trusted = (
+        MODEL_FORBIDDEN_AUTHORITY_KEYS
+        | set(trusted_turn_fields(model))
+        | set(trusted_client_kb_version_fields(model))
+    )
     hidden = trusted & set(subclass.__pydantic_fields__)
     if hidden:
         for key in hidden:

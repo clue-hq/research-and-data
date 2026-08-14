@@ -542,7 +542,7 @@ def test_message_pages_carry_typed_refs_attributed_by_message_role(
                     " submitted_via_membership_id, onboarding_input_id, message_artifact_key, "
                     " message_sha256, idempotency_key, agent_profile_id) "
                     "VALUES (:turn, :workspace, :project, :thread, :user, :membership, "
-                    " :input, :key, :sha, 'd0-context-refs', 'head-of-abm@v23')"
+                    " :input, :key, :sha, 'd0-context-refs', 'head-of-abm@v24')"
                 ),
                 {
                     "turn": turn_id,

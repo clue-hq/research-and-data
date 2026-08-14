@@ -421,6 +421,7 @@ async def claims_by_ids(
     *,
     scope: WorkspaceScope,
     include_superseded: bool = False,
+    include_expired: bool | None = None,
 ) -> dict[ClaimId, Claim]:
     """Resolve a set of ``claim_id``s to their :class:`Claim` rows in one query — the batch reader
     the M12.2 handoff ``provenance_index`` needs (it collects every claim id appearing anywhere in
@@ -431,11 +432,19 @@ async def claims_by_ids(
     Live and retention-eligible by default — the handoff's "every value points at a real,
     *non-superseded*, non-expired claim" invariant. A recorded retention horizon is enforced at
     read time even if the maintenance sweep has not tombstoned the claim yet. Pass
-    ``include_superseded=True`` for audit/history, which also includes retention-expired rows.
+    ``include_superseded=True`` for audit/history, which also includes retention-expired rows by
+    default. A bounded historical consumer that must preserve superseded provenance without
+    reviving retention-expired personal data may pass ``include_expired=False`` explicitly.
+    ``include_expired=True`` is rejected unless superseded history was also requested: there is no
+    coherent consumer contract for current-only rows that bypasses retention.
     ``scope`` is **required** (M2.5, fail-closed), like :func:`claims_for`. A requested id
     **absent** from the returned map (unknown, superseded, expired, or out of scope) lets the caller
     detect a dangling reference and fail the build rather than silently drop it.
     """
+    if include_expired is None:
+        include_expired = include_superseded
+    if include_expired and not include_superseded:
+        raise ValueError("retention-expired claims require include_superseded=True")
     ids = [str(cid) for cid in claim_ids]
     if not ids:
         return {}
@@ -447,7 +456,7 @@ async def claims_by_ids(
         FROM claim
         WHERE id IN :ids
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
-          AND (CAST(:include_superseded AS boolean) OR {retention_sql})
+          AND (CAST(:include_expired AS boolean) OR {retention_sql})
           AND {scope_sql}
         """
     ).bindparams(bindparam("ids", expanding=True))
@@ -456,6 +465,7 @@ async def claims_by_ids(
         {
             "ids": ids,
             "include_superseded": include_superseded,
+            "include_expired": include_expired,
             "retention_at": datetime.now(UTC),
             **scope_params,
         },

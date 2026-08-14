@@ -111,6 +111,17 @@ _FIELD_TOPICS: dict[str, ClientKnowledgeTopic] = {
 }
 
 
+def client_knowledge_topic(field_key: str) -> ClientKnowledgeTopic:
+    """Classify one registered Client-KB field for card and tool discovery.
+
+    This is intentionally the same small, deterministic vocabulary the production card uses.
+    The S4 listing tool imports this helper rather than creating a second topic taxonomy that
+    could send the model to a different set of claims than the opening index described.
+    """
+
+    return _FIELD_TOPICS.get(field_key, ClientKnowledgeTopic.OTHER)
+
+
 class ClientKnowledgeCardPolicy(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -409,7 +420,9 @@ class Stage0ProjectStateCard(BaseModel):
         return f"sha256:{hashlib.sha256(self.canonical_bytes()).hexdigest()}"
 
 
-def _field_label(field_key: str) -> str:
+def client_knowledge_field_label(field_key: str) -> str:
+    """Stable human-readable label shared by the card and governed Client-KB tools."""
+
     tail = field_key.removeprefix("client.").replace("_", " ").strip()
     return tail.title() if tail else "Client knowledge"
 
@@ -493,9 +506,9 @@ async def compile_client_knowledge_card(
         brief, brief_truncated = _truncate_utf8(_brief(claim.value_json), policy.max_brief_bytes)
         entry = ClientKnowledgeField(
             field_key=field_key,
-            label=_field_label(field_key),
+            label=client_knowledge_field_label(field_key),
             description=description,
-            topic=_FIELD_TOPICS.get(field_key, ClientKnowledgeTopic.OTHER),
+            topic=client_knowledge_topic(field_key),
             brief_value=brief,
             claim_id=str(claim.id),
             brief_truncated=brief_truncated,

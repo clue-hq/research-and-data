@@ -6,7 +6,7 @@
 **Authority:** contract delta to Doc A Part III and PC-C8 for this production composition. Where
 this document conflicts with the provisional note in root `CLAUDE.md`, this document wins.
 
-**Implementation checkpoint (2026-08-14):** S0-S3 are implemented. The strict contracts,
+**Implementation checkpoint (2026-08-14):** S0-S4 are implemented. The strict contracts,
 seven-state offline fixture, split deterministic compilers, v2 conversation envelope, legacy-trial
 compatibility path, split-card DSAR binding shape, and canonical workspace-client binding are
 present. Both authoritative and transitional production fleet paths establish the trusted binding;
@@ -14,7 +14,9 @@ all projects inherit it through one fail-closed reader. The production `AGENT_TU
 pins one account-wide Client-KB version, composes the real L2 brand/confirmed-product rows, and
 persists/attaches the v2 envelope, shared Client-KB index, and exactly the active project's Stage-0
 state. Committed replay returns before current-state/card composition, preserving the original
-receipt and hashes. S4-S6 remain outside this checkpoint.
+receipt and hashes. The Head-of-ABM can now discover and inspect that exact pinned Client-KB
+through two governed, effect-free reads; model-authored scope/version arguments are removed and
+restored only from the trusted constitution. S5-S6 remain outside this checkpoint.
 
 ## 1. Purpose
 
@@ -63,9 +65,6 @@ account being researched for an ABM project.
 
 - The legacy trial compatibility projection still combines account and project state; production
   no longer consumes it.
-- Claim refs are not fully interpretable and there is no admitted platform-general Client-KB
-  discovery/exact-claim tool.
-- The Client-KB omission cursor has no production resolver.
 - Recon's product description is not yet a durable multi-product catalog bound to product rows.
 
 ### 2.3 Brand-context boundary
@@ -174,9 +173,11 @@ Opening context remains bounded. The Head-of-ABM production profile receives two
 1. `list_client_knowledge@1` — browse/search the exact turn-pinned Client-KB by topic/field/cursor;
 2. `inspect_client_claim@1` — resolve one referenced claim into value and bounded provenance.
 
-The exact-claim result includes field metadata, value, source URL/key/tier, evidence span, artifact
-availability, confidence, verification, freshness timestamps, product scope, and lineage refs. It
-never returns raw page bodies or an unbounded claim table.
+The exact-claim result includes field metadata, value, public source origin/key/tier, evidence span,
+bounded artifact/provider lineage, confidence, verification, freshness timestamps, product scope,
+and lineage refs. The exact URL is represented by a SHA-256 digest so credentials, query tokens,
+fragments, and path-embedded secrets cannot enter model context. It never returns raw page bodies
+or an unbounded claim table.
 
 Both tools derive workspace/client/version authority from the trusted `ToolContext`/constitution.
 The model cannot choose a workspace, client entity, or KB version. Unknown, foreign, expired,
@@ -457,6 +458,18 @@ cross-workspace, privacy-log, and replay acceptance in
 - Raw page bodies, tokens, credentials, and unbounded claim sets never appear.
 - Tool replay is zero-write/zero-spend and returns the same reference set.
 - Tool authority/profile/recipe/static audits pass.
+
+**Implemented evidence:** the governed readers and privacy bounds in
+`platform/api/clue_api/client_knowledge_tools.py`; exact constitution-derived version injection in
+`platform/api/clue_api/client_context_authority.py` and the model/runtime argument seams; central
+registration in `toolbelt_wiring.py`; Head-of-ABM `v24`, Stage-0 skill `v11`, and Recipe #1 `v7`
+immutable resources; omission resolution in the S1 cursor contract; retention-safe historical
+membership reads in `subsystems/research/clue_research/claimstore/claims.py`; and the real
+claim-store/binding acceptance in `tests/api/test_client_knowledge_tools_s4_db.py`. The suite proves
+included and omitted refs, exact-version and topic/field/cursor behavior, indistinguishable foreign/
+unknown/wrong-version/superseded/expired refusals, trusted argument injection, bounded values and
+provenance, credential/token exclusion, zero-write/zero-spend replay, and static authority/profile/
+recipe/toolbelt compatibility.
 
 ### S5 — Recon product catalog and human project selection
 

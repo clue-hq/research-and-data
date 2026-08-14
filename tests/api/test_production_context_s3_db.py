@@ -204,9 +204,7 @@ async def _seed_post_recon(conn: AsyncConnection, *, suffix: str) -> _Seeded:
                     kind="onboarding",
                     label="grounded onboarding facts",
                     content="Facts supplied during production onboarding.",
-                    asserted_fields={
-                        key: f"v1 grounded {key}" for key in CLIENT_KNOWLEDGE_FIELDS
-                    },
+                    asserted_fields={key: f"v1 grounded {key}" for key in CLIENT_KNOWLEDGE_FIELDS},
                 ),
             ),
         ),
@@ -493,9 +491,7 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
             l2 = await WorkspaceProductLayerSource(
                 DbCompiledContextCardReader(conn_factory=factory)
             ).load(request=request, profile=_profile(), history=())
-            l2_domain_refs = tuple(
-                item.ref for item in l2 if isinstance(item.ref, DomainObjectRef)
-            )
+            l2_domain_refs = tuple(item.ref for item in l2 if isinstance(item.ref, DomainObjectRef))
             assert {(item.object_type, item.object_id) for item in l2_domain_refs} == {
                 ("brand", seeded.brand.brand_id),
                 ("product", seeded.product.product_id),
@@ -552,11 +548,7 @@ async def _context_request(
         actor_id=submission.submitted_by_user_id,
         brand_id=scope.brand_id,
         product_id=scope.product_id,
-        client_entity_id=(
-            None
-            if scope.client_entity_id is None
-            else str(scope.client_entity_id)
-        ),
+        client_entity_id=(None if scope.client_entity_id is None else str(scope.client_entity_id)),
         project_card_ref=envelope_ref,
         budget_envelope_ref=budget_ref,
         resource_manifest_ref=manifest_ref,
@@ -650,9 +642,7 @@ def test_kb_pin_receipt_and_missing_or_foreign_context_fail_closed(tmp_path: Pat
                     ),
                 ),
             )
-            sources: list[ContextLayerSource] = [
-                _StaticLayer(layer) for layer in ContextLayer
-            ]
+            sources: list[ContextLayerSource] = [_StaticLayer(layer) for layer in ContextLayer]
             sources[2] = ProjectLayerSource(artifacts=artifacts)
             sources[6] = l7
             assembler = DeterministicAgentContextAssembler(
@@ -738,10 +728,12 @@ def test_kb_pin_receipt_and_missing_or_foreign_context_fail_closed(tmp_path: Pat
 
 def test_context_logs_are_body_free_by_construction() -> None:
     source = Path("platform/api/clue_api/agent_turn_fleet_wiring.py").read_text()
-    event = source[source.index('"agent_turn.context_composed"') : source.index(
-        ")\n        result = await self._execute_watched",
-        source.index('"agent_turn.context_composed"'),
-    )]
+    event = source[
+        source.index('"agent_turn.context_composed"') : source.index(
+            ")\n        result = await self._execute_watched",
+            source.index('"agent_turn.context_composed"'),
+        )
+    ]
     assert "brief_value" not in event
     assert "claim" not in event
     assert "email" not in event

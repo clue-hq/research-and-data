@@ -83,14 +83,14 @@ def test_project_shell_is_scoped_real_and_fixture_free(require_chat_db: None) ->
             assert data["context_entities"] == []
             assert data["agent_profiles"] == [
                 {
-                    "id": "head-of-abm@v23",
+                    "id": "head-of-abm@v24",
                     "label": "GPT-5.6 Terra",
                     "short_label": "GPT-5.6 Terra",
                     "description": "Clue's governed GPT-5.6 Terra conversation profile",
                     "model_id": "openai/gpt-5.6-terra",
                 }
             ]
-            assert data["default_agent_profile_id"] == "head-of-abm@v23"
+            assert data["default_agent_profile_id"] == "head-of-abm@v24"
             assert data["composer_capabilities"] == {
                 "context_refs": True,
                 "attachments": False,

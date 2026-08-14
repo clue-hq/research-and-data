@@ -48,6 +48,8 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # A promoted recipe revision is immutable, so widening the interaction slot's ceiling is a new
     # revision rather than an edit, exactly like the profile mint the same slice needed.
     "recipe0-stage0-v6.json",
+    # FI production context S4: v7 adds the two effect-free, exact-pinned Client-KB reads.
+    "recipe0-stage0-v7.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )

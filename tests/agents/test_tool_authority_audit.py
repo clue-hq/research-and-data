@@ -56,7 +56,9 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert C6_AGENT_TOOL_AUTHORITY["synthesize_value_narrative"] == ()
     # Merged Lane D (+5: four thread tools + the confirmation gate) and Lane E (+2: the two
     # machine-invoked synthesis tools) off the shared 48-tool base.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 55
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 57
+    assert C6_AGENT_TOOL_AUTHORITY["list_client_knowledge"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["inspect_client_claim"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)

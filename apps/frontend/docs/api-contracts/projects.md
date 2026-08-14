@@ -124,7 +124,7 @@ network failure. Presentation components do not call the API directly.
   reload.
 - The composer keeps one visible model selector, as explicitly ruled for R8.
   Its only option is the server-advertised promoted profile
-  `head-of-abm@v23`, labelled **GPT-5.6 Terra** and backed by
+  `head-of-abm@v24`, labelled **GPT-5.6 Terra** and backed by
   `openai/gpt-5.6-terra`. The chosen profile id is accepted, persisted, and
   checked by the detached worker before the promoted profile is executed.
 - Attachments remain unavailable because this deployment has no durable upload
@@ -310,14 +310,14 @@ nothing. It requires `project.read`.
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v23",
+        "id": "head-of-abm@v24",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v23",
+    "default_agent_profile_id": "head-of-abm@v24",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,
@@ -371,7 +371,7 @@ accepts:
     }
   ],
   "attachment_refs": [],
-  "agent_profile_id": "head-of-abm@v23"
+  "agent_profile_id": "head-of-abm@v24"
 }
 ```
 
@@ -508,14 +508,14 @@ project shell:
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v23",
+        "id": "head-of-abm@v24",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v23",
+    "default_agent_profile_id": "head-of-abm@v24",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,

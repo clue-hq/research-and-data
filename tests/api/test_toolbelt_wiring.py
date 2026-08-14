@@ -164,6 +164,8 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # and refuses on scope, which is the guard that actually matters for it.
     "inspect_statement_history": ("precondition", ("statement_evidence_not_configured",)),
     "inspect_readiness_history": ("precondition", ("stage0_project_not_found",)),
+    "list_client_knowledge": ("precondition", ("client_knowledge_unavailable",)),
+    "inspect_client_claim": ("precondition", ("client_knowledge_unavailable",)),
     "estimate_project": ("success", "estimated_cost_cents"),
     "start_project_run": ("success", "project_run_id"),
     "pause_run": ("precondition", ("run_not_found",)),
@@ -325,6 +327,17 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "inspect_statement_history": {"project_id": "project_missing"},
         "inspect_readiness_history": {"project_id": "project_missing"},
+        "list_client_knowledge": {
+            "project_id": "project_missing",
+            "client_entity_id": _UUID(),
+            "client_kb_version": 1,
+        },
+        "inspect_client_claim": {
+            "project_id": "project_missing",
+            "client_entity_id": _UUID(),
+            "client_kb_version": 1,
+            "claim_id": _UUID(),
+        },
         "estimate_project": {},
         "start_project_run": {
             "project_id": "prj_replaced_by_test",
@@ -870,10 +883,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # and D4 adds the one gate-presenting tool (52 → 53); Lane E E1 adds the governed
     # on-completion prose synthesis surface, and E3 the governed value-narrative positioning
     # surface beside it (53 → 55 in the merged tree).
-    assert len(registry.names()) == 55
+    assert len(registry.names()) == 57
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 62
+    assert len(registry) == 64
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

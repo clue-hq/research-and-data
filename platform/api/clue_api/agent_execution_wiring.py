@@ -52,6 +52,10 @@ from clue_agents.contracts import (
 from clue_agents.ports import ExecutionProgress, OperationFailure
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_internal_service
+from clue_api.client_context_authority import (
+    client_kb_version_from_constitution,
+    trusted_client_kb_version_fields,
+)
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
 from clue_api.turn_action import derive_turn_action_ref
 from clue_api.turn_binding import (
@@ -265,9 +269,16 @@ def _trusted_tool_arguments(
         # Defence in depth: PlanToolStep already refuses these keys.
         raise ValueError(f"plan arguments carry trusted authority: {sorted(supplied)}")
     turn_fields = trusted_turn_fields(input_model)
+    client_kb_version_fields = trusted_client_kb_version_fields(input_model)
     proposed_turn = set(turn_fields) & set(merged)
     if proposed_turn:
         raise ValueError(f"plan arguments carry trusted turn authority: {sorted(proposed_turn)}")
+    proposed_client_kb_version = set(client_kb_version_fields) & set(merged)
+    if proposed_client_kb_version:
+        raise ValueError(
+            "plan arguments carry trusted Client-KB authority: "
+            f"{sorted(proposed_client_kb_version)}"
+        )
     authority = _trusted_authority(constitution)
     for key in MODEL_FORBIDDEN_AUTHORITY_KEYS & set(input_model.model_fields):
         value = authority.get(key)
@@ -280,6 +291,10 @@ def _trusted_tool_arguments(
                 reason_code="no_binding",
             )
         merged[key] = captured_turn.value_for(key)
+    client_kb_version = client_kb_version_from_constitution(constitution)
+    if client_kb_version is not None:
+        for key in client_kb_version_fields:
+            merged[key] = client_kb_version
     return merged
 
 

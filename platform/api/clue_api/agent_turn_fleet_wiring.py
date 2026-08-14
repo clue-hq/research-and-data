@@ -481,14 +481,10 @@ class ProjectConversationTurnRunner:
             client_kb_version=scope.client_kb_version,
             project_card_sha256=card_ref.sha256,
             client_knowledge_sha256=(
-                None
-                if client_knowledge is None
-                else client_knowledge.artifact_ref.sha256
+                None if client_knowledge is None else client_knowledge.artifact_ref.sha256
             ),
             stage0_project_state_sha256=(
-                None
-                if stage0_project_state is None
-                else stage0_project_state.artifact_ref.sha256
+                None if stage0_project_state is None else stage0_project_state.artifact_ref.sha256
             ),
             client_knowledge_available=context_bundle.available,
             stage0_project_state_available=context_bundle.available,

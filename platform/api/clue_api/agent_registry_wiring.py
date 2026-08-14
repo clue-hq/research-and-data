@@ -39,7 +39,10 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # v23 (FI Lane D D4): pins ``open_directive_confirmation_gate@1`` and re-pins
     # account-deep-steering at v3, whose procedure is the Option-B kickoff — gate first, launch only
     # after the human's own confirming turn.
-    AgentRole.HEAD_OF_ABM: "v23",
+    # v24 (FI context composition S4): grants exact-version, bounded Client-KB discovery and claim
+    # inspection. Production binds the version through S3's split L3 artifact; the compatibility
+    # trial binds the same authority through its constitution focus ref.
+    AgentRole.HEAD_OF_ABM: "v24",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -92,7 +95,9 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # omission kind no installed tool can resolve is the contract
     # `test_c8_omission_resolution_contract.py` now refuses to let ship.
     "inspect_readiness_history": (AgentRole.HEAD_OF_ABM,),
+    "inspect_client_claim": (AgentRole.HEAD_OF_ABM,),
     "inspect_statement_history": (AgentRole.HEAD_OF_ABM,),
+    "list_client_knowledge": (AgentRole.HEAD_OF_ABM,),
     "launch_account_deep": (),
     "launch_account_research": (AgentRole.HEAD_OF_ABM,),
     "launch_contact_research": (AgentRole.HEAD_OF_ABM,),

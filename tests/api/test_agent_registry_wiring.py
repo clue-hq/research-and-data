@@ -66,7 +66,8 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # FI Lane D D4 minted head-of-abm@v23: it pins `open_directive_confirmation_gate@1` and
         # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
         # gate, end the turn, and launch only after the human's own confirming turn.
-        AgentRole.HEAD_OF_ABM: ("7d85eb0083badf9104b004f546368674bc109f46ee6c630a7d14422840ce3ba5"),
+        # FI context composition S4 mints v24/v11 and grants the two exact-pinned Client-KB reads.
+        AgentRole.HEAD_OF_ABM: ("2af61cbb9f7b70a0ae6adec456798e4d68bd8fc9d9a10947d2e836069e95db9b"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -138,8 +139,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Lane E E1's `synthesize_entity_prose@1` likewise adds an inventory entry with no role grant
     # (machine-invoked only), so it is disclosed as unavailable to every surface; E3's
     # `synthesize_value_narrative@1` is the same shape for the same reason. Merged count: the
-    # 55-address base + Lane D's 5 (four thread tools + the confirmation gate) + Lane E's 2.
-    assert len(by_address) == 62
+    # 55-address base + Lane D's 5 + Lane E's 2 + S4's two Client-KB reads.
+    assert len(by_address) == 64
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -151,12 +152,15 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["synthesize_value_narrative@1"].status is not AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["inspect_client_claim@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
         "draft_account_research_directive@2",
         "evaluate_stage0_readiness@1",
         "get_research_view@1",
         "inspect_readiness_history@1",
+        "inspect_client_claim@1",
         "inspect_statement_history@1",
+        "list_client_knowledge@1",
         "launch_account_research@1",
         "launch_contact_research@1",
         "open_directive_confirmation_gate@1",
@@ -218,7 +222,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v10"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v11"
     assert disclosures[1].resource.address == "skill:account-deep-steering@v3"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -303,7 +307,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v10")
+    body = head.open_skill("skill:stage0-interview@v11")
 
     assert required_guidance in body
 
@@ -366,7 +370,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
         assert harness.lease.resources_frozen
         assert (
             harness.lease.backend.stat_entry_sync(
-                ".deepagent/skills/stage0-interview/v9/SKILL.md"
+                ".deepagent/skills/stage0-interview/v11/SKILL.md"
             ).sha256
             == resolved.profile.skills[0].resource.sha256
         )

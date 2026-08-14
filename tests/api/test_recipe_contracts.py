@@ -53,6 +53,10 @@ def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified()
     assert all(item.pin_requirements for item in audit)
     assert all(len(item.input_schema_sha256) == 64 for item in audit)
     assert all(len(item.output_schema_sha256) == 64 for item in audit)
+    by_address = {item.address: item for item in audit}
+    for address in ("list_client_knowledge@1", "inspect_client_claim@1"):
+        assert by_address[address].replay_policy is ReplayPolicy.EFFECT_FREE
+        assert by_address[address].pin_requirements == ("project", "client_kb")
 
 
 def test_operation_id_requirements_are_explicit() -> None:
