@@ -159,3 +159,27 @@ Durable per-role ledger attribution:
   pristine origin/main; not ours). ruff + mypy clean.
 
 Remaining: checkpoint 3 only (design harness switch + real end-to-end design turn gate).
+
+## P3.2 checkpoint 3 SHIPPED (commit 1d916f64) — gate: gateway properties PASS, one open item
+
+Harness switch complete (init_model = governed adapter, role labels design_*, usage
+capture retired, vision guard on the capability seam, provider catalog dual-shape parse,
+tests rewritten to the new contracts; design suite 548 passed / 2 skipped).
+
+**LIVE gate on gpt-5.6-terra (CLI, real spend), two runs:**
+- ALL gateway properties PASS at scale: run 2 = 3,362 model calls, every one role-tagged
+  (orchestrator 12 / author 12 / reviewer 3,338); cached prefill on 3,341/3,362 calls,
+  MEAN RATIO 0.992; ZERO design-local usage events (single authority holds); previews
+  rendered through the engine helper (iterations/003/preview.png) — images flowing.
+- OPEN ITEM: the turn did not finalize — the REVIEWER loops (3,338 tiny calls, repeating
+  an IDENTICAL read_file(rounds/round_1/critique.json, limit=5, offset=0) with only 3
+  view_called events), hitting GraphRecursionError 9999; the harness honestly failed the
+  turn (guaranteed-honest-finalize worked). Both runs show the same runaway.
+  PRIME SUSPECT: the governed baseline _reasoning_request sends effort=NONE for gpt-5.6
+  models, while the old design path sent NO reasoning field (provider default) — a
+  no-reasoning reviewer degrades into myopic identical-call loops. Decisive experiment
+  IN FLIGHT: rerun with LUMEN_AGENT_REASONING=medium (overrides the baseline wholesale;
+  workspace /tmp/p32-gate-workspace3). If it finalizes → fix is policy (design sets an
+  explicit effort; consider changing the design default in py_lumen_config), not code.
+  If it still loops → dig into the Responses-loop/ToolStrategy interaction next
+  (deepagents reviewer stop condition under the governed wrapper).
