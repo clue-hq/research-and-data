@@ -508,8 +508,12 @@ class PersistenceClaim(FrozenContractModel):
         if self.attempt.state not in {
             FetchAttemptState.PROVIDER_SUCCEEDED,
             FetchAttemptState.RECONCILED_SUCCEEDED,
+            # C4 recovery also owns the narrow crash boundary after the URL-level snapshot commits
+            # but before ``complete_page`` clears the page lease. Replaying ``persist_snapshot``
+            # returns the existing immutable row and then completes the page without provider I/O.
+            FetchAttemptState.PERSISTED,
         }:
-            raise ValueError("persistence claims require a recorded provider success")
+            raise ValueError("persistence claims require a recorded or persisted success")
         return self
 
 

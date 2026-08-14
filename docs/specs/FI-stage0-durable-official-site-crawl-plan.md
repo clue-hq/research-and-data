@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — implementation plan
 
-**Status:** C0–C3 implemented and verified; C4–C10 not yet accepted
+**Status:** C0–C4 implemented and verified; C5–C10 not yet accepted
 
 **Branch:** `platform/onboarding-integration`
 
@@ -1038,7 +1038,7 @@ migration, spike inventory, ownership map, and rollout contract are recorded in 
 [C0 contract freeze](./FI-stage0-durable-official-site-crawl-C0-contract.md). Executable authority
 lives in `clue_research.official_site` and
 `tests/fixtures/official_site/c0_contract_fixture.json`. C0 made no migration, provider call, or
-production cutover. C1 and C2 have since landed; C3 is the next implementation slice.
+production cutover. C1 through C4 have since landed; C5 is the next implementation slice.
 
 **Deliverables**
 
@@ -1108,7 +1108,8 @@ maps unresolved paid outcomes to `spend_unknown`; Scrapling uses manual redirect
 DNS pinning at connect time. The shared conformance/static suite and exact capability/spend
 decisions are recorded in the
 [C3 provider contract](./FI-stage0-durable-official-site-crawl-C3-provider-contract.md). C3 does not
-wire the coordinator, persist artifacts, or enable production crawling; those remain C4–C6.
+wire the coordinator or enable production crawling. C4 now persists artifacts and recovery state;
+the coordinator and production activation remain C5–C6.
 
 **Deliverables**
 
@@ -1125,6 +1126,13 @@ wire the coordinator, persist artifacts, or enable production crawling; those re
 - No provider name appears in coordinator branching.
 
 ### C4 — Durable acquisition, artifacts, and spend recovery
+
+**Status: complete (2026-08-14).** The exact attempt ordering, PB-B2 artifact integration,
+persistence-only replay, operation-lookup/quarantine policy, receipt privacy bounds, URL-level
+provenance, DSAR reach, fault matrix, and C5 handoff are recorded in the
+[C4 acquisition contract](./FI-stage0-durable-official-site-crawl-C4-acquisition-contract.md).
+C4 does not schedule a crawl or enable production onboarding; C5/C6 remain responsible for those
+boundaries.
 
 **Deliverables**
 

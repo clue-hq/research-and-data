@@ -271,3 +271,21 @@ python scripts/12_exa_websets_webhook_provision.py \
 On first creation, move the mode-0600 output into the deployment secret manager as
 `CLUE_EXA_WEBSETS_WEBHOOK_SECRET`. The command never prints the secret. Re-running against the
 same active URL/events is a zero-change replay; it refuses drift or multiple managed endpoints.
+
+## Official-site C4 live canary
+
+Script 15 performs one real Firecrawl single-page scrape and runs it through the C4
+prepared/dispatched/receipt/artifact/snapshot protocol. Point it only at a fresh migrated database
+and a dedicated artifact root that can be retained for review:
+
+```bash
+CLUE_DATABASE_URL=postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_c4_acceptance \
+CLUE_C4_ARTIFACT_ROOT=/tmp/clue-c4-live-artifacts \
+uv run python scripts/15_official_site_c4_live.py
+```
+
+The default Firecrawl mode reads `CLUE_FIRECRAWL_API_KEY` from the environment and prints only
+durable IDs, states, call/blob/snapshot counts, receipt key names, and hashes. It never prints
+credentials, raw receipts, or captured page bodies. Keep the named database and artifact root
+until review is complete. Set `CLUE_C4_PAGE_FETCHER=scrapling` to run the same retained canary
+through the credit-free pinned local adapter without a Firecrawl key; the default is `firecrawl`.

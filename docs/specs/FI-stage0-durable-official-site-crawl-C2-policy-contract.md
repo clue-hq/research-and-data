@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — C2 policy contract
 
-**Status:** C2 implemented and verified; C3 provider adapters are implemented and verified
+**Status:** C2 implemented and verified; C3 provider adapters and C4 durability are implemented
 
 **Parent:** [durable official-site crawl implementation plan](./FI-stage0-durable-official-site-crawl-plan.md)
 

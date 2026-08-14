@@ -27,6 +27,11 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-14-stage0-durable-official-site-crawl-c4.md` — C4 complete: fenced
+  prepared/dispatched/result/persistence attempts, PB-B2 content-addressed artifacts, URL-level
+  provenance snapshots, persistence-only replay, paid-call reconciliation/quarantine, bounded
+  privacy-safe receipts, DSAR reach, expanded crash matrix, and retained Firecrawl/Scrapling
+  canary evidence.
 - `2026-08-14-stage0-durable-official-site-crawl-c2.md` — C2 complete: versioned conservative
   URL identity, separate observation/edge/alias provenance, bounded sitemap/robots parsing,
   coordinator-owned SSRF/redirect/MIME/size/link safety, no-refetch shorter-path re-expansion,

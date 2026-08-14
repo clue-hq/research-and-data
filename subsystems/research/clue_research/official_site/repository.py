@@ -869,7 +869,7 @@ class PostgresCrawlRepository:
                               AND candidate.crawl_run_id = page.crawl_run_id
                               AND candidate.page_id = page.id
                               AND candidate.state IN (
-                                  'provider_succeeded', 'reconciled_succeeded'
+                                  'provider_succeeded', 'reconciled_succeeded', 'persisted'
                               )
                             ORDER BY candidate.attempt_number DESC
                             LIMIT 1

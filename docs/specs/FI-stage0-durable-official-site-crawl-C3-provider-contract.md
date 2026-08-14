@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — C3 provider contract
 
-**Status:** C3 implemented and verified; C4 durable acquisition/recovery has not started
+**Status:** C3 implemented and verified; C4 durable acquisition/recovery is implemented
 
 **Parent:** [durable official-site crawl implementation plan](./FI-stage0-durable-official-site-crawl-plan.md)
 
@@ -67,7 +67,7 @@ automatically retryable.
 
 An SDK exception or timeout after dispatch is deliberately
 `ambiguous + spend_unknown`. It carries no invented receipt and cannot authorize a blind retry.
-C4 must reconcile or quarantine the durable dispatched attempt. Caller cancellation propagates
+C4 reconciles or quarantines the durable dispatched attempt. Caller cancellation propagates
 instead of being converted into a result.
 
 ## 3. Scrapling single-page contract and connect-time safety
@@ -146,8 +146,8 @@ counters. It also covers:
 - protocol runtime conformance, immutable capability declarations, lazy SDK imports, dependency
   contracts, Ruff, mypy, and the retained C0/C2 suites.
 
-C4 must persist `prepared` and `dispatched` before invoking these adapters, retain the body-free
-metadata/receipt, store successful bytes, and prevent any automatic redispatch of
+C4 now persists `prepared` and `dispatched` before invoking these adapters, retains the body-free
+metadata/receipt, stores successful bytes, and prevents any automatic redispatch of
 `spend_unknown`. C5 must wrap the adapters in the C2 preflight and post-response validation flow,
 bound links to the configured ceiling before discovery insertion, and select a registered fetcher
 without provider-name branching. C3 does not wire a production coordinator or make a live provider

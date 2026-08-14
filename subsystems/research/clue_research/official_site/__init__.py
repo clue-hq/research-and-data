@@ -1,5 +1,12 @@
 """Durable official-site crawl contracts and PostgreSQL ledger."""
 
+from clue_research.official_site.artifacts import (
+    OfficialSiteArtifactStore,
+    OfficialSiteEvidenceReach,
+    RetainedPageSuccess,
+    sanitize_fetch_result,
+    sanitize_provider_receipt,
+)
 from clue_research.official_site.contracts import *  # noqa: F403
 from clue_research.official_site.contracts import __all__ as _contract_exports
 from clue_research.official_site.discovery import (
@@ -16,6 +23,13 @@ from clue_research.official_site.models import (
     CrawlRepositoryError,
     CrawlRunNotFoundError,
     CrawlStateConflictError,
+)
+from clue_research.official_site.reconciliation import (
+    AcquisitionFenceLostError,
+    AcquisitionPersistencePendingError,
+    DurableAcquisitionResult,
+    DurablePageAcquirer,
+    ProviderOperationLookup,
 )
 from clue_research.official_site.repository import PostgresCrawlRepository
 from clue_research.official_site.robots import (
@@ -72,6 +86,8 @@ from clue_research.official_site.url_policy import (
 
 __all__ = [
     *_contract_exports,
+    "AcquisitionFenceLostError",
+    "AcquisitionPersistencePendingError",
     "ATTEMPT_TRANSITIONS",
     "BoundedLinks",
     "ConservativeUrlPolicy",
@@ -83,20 +99,26 @@ __all__ = [
     "CrawlStateConflictError",
     "CrawlSafetyPolicy",
     "DISCOVERY_POLICY_VERSION",
+    "DurableAcquisitionResult",
+    "DurablePageAcquirer",
     "ExtractedPageLinks",
     "FetchKeyDecision",
     "OfficialSiteCorpusMaterializer",
+    "OfficialSiteArtifactStore",
+    "OfficialSiteEvidenceReach",
     "OfficialSiteDiscoveryPolicy",
     "PAGE_TRANSITIONS",
     "PageCategory",
     "PageFetcher",
     "PostgresCrawlRepository",
+    "ProviderOperationLookup",
     "ROBOTS_POLICY_VERSION",
     "RUN_TRANSITIONS",
     "RobotsDecision",
     "RobotsDocument",
     "RobotsParsePolicy",
     "RobotsPolicyError",
+    "RetainedPageSuccess",
     "SAFETY_POLICY_VERSION",
     "SITEMAP_POLICY_VERSION",
     "SafetyDecision",
@@ -120,6 +142,8 @@ __all__ = [
     "parse_robots",
     "parse_sitemap",
     "preflight_target",
+    "sanitize_fetch_result",
+    "sanitize_provider_receipt",
     "transition_manifest",
     "validate_redirects",
     "validate_response_content",
