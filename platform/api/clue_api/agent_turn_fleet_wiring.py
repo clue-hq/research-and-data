@@ -55,6 +55,7 @@ from clue_agents import (
     LayerBudget,
 )
 from clue_api.agent_execution_wiring import FreshWakeChildRunner
+from clue_api.agent_gate import gate_answer_for_turn
 from clue_api.agent_platform_wiring import AgentPlatformComponents
 from clue_api.agent_registry_wiring import PROJECT_CONVERSATION_SURFACE
 from clue_api.agent_turn_submission import (
@@ -315,6 +316,16 @@ class ProjectConversationTurnRunner:
                 workspace_id=workspace_id,
                 thread_id=submission.thread_id,
             )
+            # The finding-C amendment's worker half (PD-part3 §1-D1 amendment): a gate answer
+            # belongs to head-of-abm regardless of leg state. The route already refuses a fresh
+            # answer while a leg is open, but it cannot see the future — an answer accepted
+            # first and QUEUED BEHIND a turn that then opened a leg would otherwise reach the
+            # design agent as canonical gate-answer JSON. The answer row is the durable proof.
+            if open_leg is not None and (
+                await gate_answer_for_turn(conn, workspace_id=workspace_id, turn_id=turn_id)
+                is not None
+            ):
+                open_leg = None
         # FI Lane D D3: open this attempt's stream *before* anything runs. The outbox itself decides
         # the attempt ordinal, so a re-claimed task after a crash opens a distinct attempt and
         # resets whatever the dead one left open — never splicing two generations (§3.3(6)).

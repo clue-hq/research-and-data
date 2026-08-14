@@ -163,9 +163,12 @@ finding below is verified against ground truth (file:line) and awaits dispositio
   Tests: `test_lane_d4_gate_response_route_db.py::
   test_a_gate_answer_while_a_design_leg_is_open_is_refused_until_the_leg_closes` and
   `…accepted_before_the_leg_opened_replays_while_the_leg_is_open`.
-  **New LOW residual (P3.6):** the refusal is accept-time; a gate answer accepted with no
-  leg open but *queued behind* a message turn that then opens a leg still routes to
-  design by D1 when the worker runs it (two in-flight turns, narrow window). P3.6's
-  concurrency battery should pin the wanted behavior (likely: worker re-checks
-  `gate_answer_for_turn` and delivers to head-of-abm, or fails the turn honestly).
+  **The queued-race residual — FIXED in P3.6 (same day).** The worker's routing now
+  re-checks the durable `agent_gate_answer` row: a gate-answer turn is delivered to
+  head-of-abm regardless of leg state, so the accepted-then-leg-opened race can never
+  hand the design agent a gate answer. Spec amendment extended with the worker half;
+  pinned (RED→GREEN) by `test_p36_leg_resilience_db.py::
+  test_a_gate_answer_queued_behind_a_leg_opening_still_reaches_head_of_abm` (delivery
+  proof + design lane sees nothing + leg untouched + ordinary messages still route
+  design).
 - **D + LOWs — OPEN**, riding P3.6/P3.7 as ledgered.

@@ -365,3 +365,51 @@ lands (same shape as `previous_turn_outcome`'s zero-senders precedent, recorded 
 Part III standing: P3.0 spec, P3.1, P3.2 (gate passed), P3.3, P3.4, **P3.5 — DONE**.
 Next per spec §4: P3.6 (evals & resilience: exit-judgment golden set, kill-worker/resume
 leg test, single-flight + cross-thread concurrency) then P3.7 (stream bridging + close-out).
+
+## P3.6 SHIPPED (2026-08-14, same session) — evals & resilience
+
+Two commits: the exit-judgment golden set, then the resilience battery + the queued-race
+worker fix. (Earlier same day: review findings A+C fixed — the summary DTO key and the
+accept-time 409 `DESIGN_LEG_OPEN` refusal + spec amendment.)
+
+- **Exit-judgment core + golden set** (`clue_design/exit_judgment.py`,
+  `clue_design/evals/`): the leg's single LLM routing judgment ships with its measuring
+  stick. Typed `ExitJudgment` (action continue|finish, reason locked|out_of_scope|
+  abandoned), tolerant `parse_exit_judgment` (dict/str/fenced-json, None on malformed),
+  fail-safe `decide_exit` (absent/malformed/reasonless-finish can NEVER close the leg —
+  the C1 authority stance), versioned injection-fenced prompt
+  (`EXIT_JUDGMENT_PROMPT_VERSION=v1`) for the P3.7 bridge. 15 fixtures across the master
+  plan's taxonomy (clearly_design 4 / clearly_strategy 3 / ambiguous 3 with ratified
+  rulings in `why` / lock_in 2 / abandon 1 / fail_safe 2); kind-namespaced scoreboard
+  (M9.6 lesson: ambiguous can't hide behind clearly_design); `score_judge` +
+  `check_exit_regressions` are the model/prompt swap gate (fail_safe fixtures scored on
+  the ENVELOPE for comparability); `make eval-design-exit` demo (offline, always exits
+  0, like eval-verification). Ratified ambiguous rulings: "will this ad resonate with
+  CFOs?" → continue; "should we even be targeting CFOs?" → finish/out_of_scope;
+  "a LinkedIn version too?" → continue. Tie-break rule in the prompt: torn → continue
+  (wrong stay costs one exchange; wrong exit tears the session).
+- **Queued-race worker fix** (finding C's worker half, RED→GREEN):
+  `ProjectConversationTurnRunner.run` re-checks `gate_answer_for_turn` inside the same
+  routing transaction; a gate-answer turn goes to head-of-abm regardless of leg state.
+  Spec §1-D1 amendment extended.
+- **Resilience battery** (`tests/api/test_p36_leg_resilience_db.py`, 6 tests): mid-leg
+  worker restart (all components rebuilt; envelope-2 history + document scene intact);
+  mid-turn kill in BOTH windows via a BaseException `_WorkerDeath` (no cleanup writes —
+  honest process death): after-work-landed → re-join, never re-drive, leg self-heals
+  running→open_awaiting_user (the pinned P3.4 LOW); before-work → same derived run
+  re-driven, one run row ever; per-thread single-flight at the fleet seam
+  (dispatch_next_thread_turn FIFO + in-flight suppression + work-lease exclusivity);
+  cross-thread concurrency with genuinely overlapping turns (barrier lanes on TWO real
+  connections under one db_lifespan — rollback_conn can't nest; `_seed_leg_conversation`
+  gained a `user_id` param because two uncommitted transactions inserting the same
+  platform_user PK would block).
+- **P3.6 remaining honest gaps** (recorded, not hidden): the golden set gates a judge
+  the P3.7 bridge will wire — no live-model baseline is stored yet (run `score_judge`
+  over the real judge at P3.7 and commit the baseline report); the kill/resume tests
+  simulate the worker at the runner seam (component teardown + BaseException), not an
+  OS-level process kill of a fleet deployment.
+
+Part III standing: P3.0–P3.5 + review repairs + **P3.6 — DONE**. Next: P3.7 (leg
+lifecycle stream events / delta 8, DSAR note for leg rows, design-side bundle/history
+consumption + brand-pin enforcement + the orchestrator finish_design_leg bridge,
+close-out).

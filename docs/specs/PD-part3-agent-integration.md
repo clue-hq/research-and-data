@@ -54,7 +54,11 @@ head-of-abm's, and letting D1 deliver the canonical answer JSON to the design ag
 design instruction would be misrouting. The refusal binds fresh submissions only — a retry
 of an answer accepted before the leg opened stays an idempotent replay. Plain-text messages
 are untouched: while a leg is open the design agent owns the *conversation*, and approvals
-wait for the leg to finish.
+wait for the leg to finish. **Worker half (P3.6):** the route's refusal cannot see the
+future — an answer accepted while no leg was open can sit queued behind a turn that then
+opens one. The worker's routing therefore checks the durable `agent_gate_answer` row and
+delivers a gate-answer turn to head-of-abm regardless of leg state; the design agent never
+receives one.
 
 ### D2 — One platform-facing role; the trio stays internal
 

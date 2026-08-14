@@ -113,15 +113,21 @@ async def _seed_leg_conversation(
     *,
     storage_root: Path,
     label: str,
+    user_id: str = USER_ID,
 ) -> dict[str, Any]:
-    """Workspace + project + thread + delegating execution + an OPEN design leg."""
+    """Workspace + project + thread + delegating execution + an OPEN design leg.
+
+    ``user_id`` is parameterized for the P3.6 cross-thread concurrency test, whose two
+    conversations live on two uncommitted transactions: a shared ``platform_user`` PK
+    would make the second seed block on the first's uncommitted insert.
+    """
 
     workspace_id = f"ws_p34e_{label}_{uuid4().hex[:8]}"
     project = await seed_project(conn, workspace_id, name=f"P3.4 engine {label}")
     await seed_principal(
         conn,
         workspace_id=workspace_id,
-        user_id=USER_ID,
+        user_id=user_id,
         membership_id=f"wsm_p34e_{workspace_id}",
     )
     thread_id = f"thr_p34e_{label}"
@@ -178,6 +184,7 @@ async def _seed_leg_conversation(
         "conn_factory": conn_factory,
         "storage": storage,
         "artifacts": artifacts,
+        "user_id": user_id,
     }
 
 
@@ -207,7 +214,7 @@ async def _submit_message(
         workspace_id=seeds["workspace_id"],
         project_id=seeds["project"].project_id,
         thread_id=seeds["thread_id"],
-        submitted_by_user_id=USER_ID,
+        submitted_by_user_id=seeds.get("user_id", USER_ID),
         submitted_via_membership_id=f"wsm_p34e_{seeds['workspace_id']}",
         onboarding_input_id=captured.onboarding_input_id,
         message_artifact_key=captured.artifact_ref.artifact_key,
