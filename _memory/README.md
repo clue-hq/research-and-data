@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-14-production-context-s3.md` — S3 complete: production AGENT_TURN composition of the
+  real L2 brand/confirmed product, paired account-wide Client-KB and active-project Stage-0 cards,
+  exact per-turn version/receipt pins, pre-composition committed replay, product/account KB scope
+  isolation, privacy-safe logs, and exhaustive isolated-DB/static verification.
 - `2026-08-14-production-context-s2.md` — S2 complete: insert-once canonical workspace-client
   binding, conservative historical adoption, authoritative/transitional fleet composition,
   project inheritance, target-substitution refusal, migration/concurrency/tenancy evidence, and

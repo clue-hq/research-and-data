@@ -104,13 +104,27 @@ class _Source:
         return (
             ContextCandidate(
                 stable_key=self.layer.value,
-                ref=self._ref
-                if self.layer is ContextLayer.L1_IDENTITY
-                else domain_ref(
-                    self.layer.value,
-                    workspace_id=request.constitution.workspace_id,
+                ref=(
+                    self._ref
+                    if self.layer is ContextLayer.L1_IDENTITY
+                    else request.user_message_artifact_ref
+                    if self.layer is ContextLayer.L7_TURN
+                    else domain_ref(
+                        self.layer.value,
+                        workspace_id=request.constitution.workspace_id,
+                    )
                 ),
-                body=f"compiled {self.layer.value}",
+                body=(
+                    "Research this person"
+                    if self.layer is ContextLayer.L7_TURN
+                    else f"compiled {self.layer.value}"
+                ),
+                role="user" if self.layer is ContextLayer.L7_TURN else "system",
+                origin=(
+                    "current_user_instruction"
+                    if self.layer is ContextLayer.L7_TURN
+                    else "trusted_context"
+                ),
                 materialized_path=(
                     f"context/{self.layer.value}.md"
                     if self.layer
@@ -120,6 +134,7 @@ class _Source:
                     }
                     else None
                 ),
+                required=self.layer is ContextLayer.L7_TURN,
             ),
         )
 

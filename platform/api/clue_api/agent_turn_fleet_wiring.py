@@ -51,6 +51,7 @@ from clue_agents import (
     ContextLayer,
     DomainObjectRef,
     LayerBudget,
+    ProjectContextArtifact,
 )
 from clue_api.agent_execution_wiring import FreshWakeChildRunner
 from clue_api.agent_platform_wiring import AgentPlatformComponents
@@ -78,6 +79,7 @@ from clue_api.conversation_turns import (
     ConversationTurnResult,
     build_conversation_turn_engine,
 )
+from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_execution import (
@@ -102,8 +104,12 @@ from clue_fleet import (
 )
 from clue_obs import get_logger
 from clue_projections import (
+    CLIENT_KNOWLEDGE_CARD_MEDIA_TYPE,
     PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
+    STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
+    compile_client_knowledge_card,
     compile_project_conversation_card,
+    compile_stage0_project_state_card,
 )
 from clue_research.stage0 import current_kb_version
 from clue_spine import get_project
@@ -240,6 +246,26 @@ class _ProjectScope:
     client_kb_version: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class _ProjectContextBundle:
+    """The conditional half of one atomically constituted production L3 bundle.
+
+    The v2 conversation envelope is deliberately compiled only *after* this bundle succeeds, so
+    its availability flags can never advertise an artifact that failed to compile or persist. A
+    bound client with no published Client-KB is the one valid empty bundle (pre-recon); every
+    post-recon bundle contains both the account-wide index and exactly the active project's state.
+    """
+
+    artifacts: tuple[ProjectContextArtifact, ...] = ()
+
+    @property
+    def available(self) -> bool:
+        return bool(self.artifacts)
+
+    def artifact(self, name: str) -> ProjectContextArtifact | None:
+        return next((item for item in self.artifacts if item.name == name), None)
+
+
 class ProjectConversationTurnRunner:
     """Prepare one production conversation turn's trusted inputs and run it."""
 
@@ -275,7 +301,6 @@ class ProjectConversationTurnRunner:
                 raise UnknownTurnSubmission(
                     "no durable submission exists for this turn in this workspace"
                 )
-            scope = await self._load_scope(conn, submission)
             user_message_ref = await message_artifact_ref(conn, submission)
             submission_focus_refs = await submission_context_refs(
                 conn,
@@ -290,7 +315,7 @@ class ProjectConversationTurnRunner:
             if not self._streaming
             else await TurnStreamEmitter.open(
                 workspace_id=workspace_id,
-                project_id=scope.project_id,
+                project_id=submission.project_id,
                 thread_id=submission.thread_id,
                 turn_id=turn_id,
                 conn_factory=self._conn_factory,
@@ -299,6 +324,28 @@ class ProjectConversationTurnRunner:
         )
 
         execution_id = ExecutionId(operation_id_from_key(str(turn_id), _EXECUTION_NAMESPACE_KEY))
+        committed = await self._engine.replay_committed(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            project_id=submission.project_id,
+            thread_id=submission.thread_id,
+            actor_id=submission.submitted_by_user_id,
+            user_message_artifact_ref=user_message_ref,
+            stream=stream,
+        )
+        if committed is not None:
+            if committed.outcome.status is AgentExecutionStatus.COMPLETED:
+                await self._complete_recipe(execution_id)
+            log.info(
+                "agent_turn.context_replayed",
+                turn_id=str(turn_id),
+                workspace_id=workspace_id,
+                project_id=submission.project_id,
+            )
+            return committed
+
+        async with self._conn_factory() as conn:
+            scope = await self._load_scope(conn, submission)
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
@@ -354,6 +401,10 @@ class ProjectConversationTurnRunner:
             object_id=scope.project_id,
             version=None,
         )
+        context_bundle = await self._compose_project_context(
+            submission=submission,
+            scope=scope,
+        )
         card_ref = await self._artifact(
             submission,
             scope,
@@ -366,6 +417,8 @@ class ProjectConversationTurnRunner:
                 brand_id=scope.brand_id,
                 product_id=scope.product_id,
                 thread_id=submission.thread_id,
+                client_knowledge_available=context_bundle.available,
+                stage0_project_state_available=context_bundle.available,
             ),
         )
         budget_ref = await self._artifact(
@@ -407,10 +460,38 @@ class ProjectConversationTurnRunner:
                 resource_manifest_ref=manifest_ref,
                 resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
                 focus_refs=(focus_ref,),
+                project_context_artifacts=context_bundle.artifacts,
             ),
             user_message_artifact_ref=user_message_ref,
             focus_refs=submission_focus_refs,
             requested_at=submission.requested_at,
+        )
+        client_knowledge = context_bundle.artifact("client_knowledge")
+        stage0_project_state = context_bundle.artifact("stage0_project_state")
+        log.info(
+            "agent_turn.context_composed",
+            turn_id=str(turn_id),
+            workspace_id=workspace_id,
+            project_id=scope.project_id,
+            brand_id=scope.brand_id,
+            product_id=scope.product_id,
+            client_entity_id=(
+                None if scope.client_entity_id is None else str(scope.client_entity_id)
+            ),
+            client_kb_version=scope.client_kb_version,
+            project_card_sha256=card_ref.sha256,
+            client_knowledge_sha256=(
+                None
+                if client_knowledge is None
+                else client_knowledge.artifact_ref.sha256
+            ),
+            stage0_project_state_sha256=(
+                None
+                if stage0_project_state is None
+                else stage0_project_state.artifact_ref.sha256
+            ),
+            client_knowledge_available=context_bundle.available,
+            stage0_project_state_available=context_bundle.available,
         )
         result = await self._execute_watched(
             request=request,
@@ -421,6 +502,88 @@ class ProjectConversationTurnRunner:
         if result.outcome.status is AgentExecutionStatus.COMPLETED:
             await self._complete_recipe(execution_id)
         return result
+
+    async def _compose_project_context(
+        self,
+        *,
+        submission: AgentTurnSubmissionRow,
+        scope: _ProjectScope,
+    ) -> _ProjectContextBundle:
+        """Compile and persist one exact Client-KB pin plus this project's Stage-0 state.
+
+        ``scope.client_kb_version`` was resolved once in :meth:`_load_scope`. Both compilers use
+        that immutable value even if background recon publishes a newer marker while this method
+        is running. Compilation is fail-closed: a missing/foreign version, project, statement, or
+        evidence artifact raises before an ``AgentTurnRequest`` exists and therefore before the
+        context assembler or model can run.
+        """
+
+        if scope.client_entity_id is None or scope.client_kb_version is None:
+            return _ProjectContextBundle()
+
+        client_card = await compile_client_knowledge_card(
+            workspace_id=submission.workspace_id,
+            client_entity_id=scope.client_entity_id,
+            client_kb_version=scope.client_kb_version,
+            conn_factory=self._conn_factory,
+        )
+        client_ref = await self._artifact(
+            submission,
+            scope,
+            CLIENT_KNOWLEDGE_CARD_MEDIA_TYPE,
+            client_card.model_dump(mode="json", exclude_none=True),
+            bind_project=False,
+        )
+        if client_ref.sha256 != client_card.content_sha256().removeprefix("sha256:"):
+            raise RuntimeError("persisted Client-KB card differs from its compiled content hash")
+
+        stage0_card = await compile_stage0_project_state_card(
+            project_id=scope.project_id,
+            workspace_id=submission.workspace_id,
+            client_entity_id=scope.client_entity_id,
+            client_kb_version=scope.client_kb_version,
+            client_knowledge_sha256=client_card.content_sha256(),
+            evidence=ArtifactStatementEvidenceReader(
+                artifacts=self._engine.artifacts,
+                conn_factory=self._conn_factory,
+            ),
+            conn_factory=self._conn_factory,
+        )
+        stage0_ref = await self._artifact(
+            submission,
+            scope,
+            STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
+            stage0_card.model_dump(mode="json", exclude_none=True),
+        )
+        if stage0_ref.sha256 != stage0_card.content_sha256().removeprefix("sha256:"):
+            raise RuntimeError(
+                "persisted Stage-0 project-state card differs from its compiled content hash"
+            )
+
+        return _ProjectContextBundle(
+            artifacts=(
+                ProjectContextArtifact(
+                    name="client_knowledge",
+                    artifact_ref=client_ref,
+                    domain_ref=DomainObjectRef(
+                        workspace_id=submission.workspace_id,
+                        object_type="client_knowledge",
+                        object_id=str(scope.client_entity_id),
+                        version=scope.client_kb_version,
+                    ),
+                ),
+                ProjectContextArtifact(
+                    name="stage0_project_state",
+                    artifact_ref=stage0_ref,
+                    domain_ref=DomainObjectRef(
+                        workspace_id=submission.workspace_id,
+                        object_type="stage0_project_state",
+                        object_id=scope.project_id,
+                        version=None,
+                    ),
+                ),
+            )
+        )
 
     async def _execute_watched(
         self,
@@ -590,6 +753,7 @@ class ProjectConversationTurnRunner:
         scope: _ProjectScope,
         media_type: str,
         payload: object,
+        bind_project: bool = True,
     ) -> ArtifactRef:
         return await self._engine.artifacts.persist_body(
             workspace_id=submission.workspace_id,
@@ -600,7 +764,9 @@ class ProjectConversationTurnRunner:
                 if scope.client_entity_id is None
                 else ((UUID(str(scope.client_entity_id)), CONVERSATION_CONTEXT_BINDING_KIND),)
             ),
-            project_bindings=((scope.project_id, "project_conversation_context"),),
+            project_bindings=(
+                ((scope.project_id, "project_conversation_context"),) if bind_project else ()
+            ),
         )
 
     async def _load_scope(
@@ -623,7 +789,6 @@ class ProjectConversationTurnRunner:
                 conn,
                 entity_id,
                 workspace_id=submission.workspace_id,
-                product_id=project.product_id,
             )
         )
         return _ProjectScope(

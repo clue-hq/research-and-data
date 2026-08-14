@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from uuid import uuid5
+from uuid import UUID, uuid5
 
 from clue_agents import (
     AgentFinalizeEnvelope,
@@ -31,6 +31,7 @@ from clue_agents import (
     AgentTurnOutcome,
     AgentTurnRequest,
     AgentWorkspaceLease,
+    ArtifactRef,
     ContextAssemblyPolicy,
     DelegationRequest,
     DelegationResult,
@@ -165,6 +166,66 @@ class ConversationTurnEngine:
     def artifacts(self) -> DurableAgentArtifactStore:
         return self.components.artifacts
 
+    async def replay_committed(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+        project_id: str,
+        thread_id: str,
+        actor_id: str,
+        user_message_artifact_ref: ArtifactRef,
+        stream: TurnStreamEmitter | None = None,
+    ) -> ConversationTurnResult | None:
+        """Return an already committed turn before current state is recomposed.
+
+        The production fleet calls this immediately after reading the immutable submission. That
+        ordering is load-bearing for context replay: a retry after background recon advanced the
+        Client-KB must not compile vN+1 cards for a turn whose durable receipt names vN. It also
+        avoids re-driving a recipe execution that the original completed turn already closed.
+
+        History append remains here because a process may have committed finalization authority
+        and crashed before projecting the canonical user/assistant messages. Both appends are
+        derived-id idempotent, exactly like the later in-execution replay path.
+        """
+
+        receipt = await self.components.turns.load(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+        )
+        if receipt is None:
+            return None
+        if (
+            receipt.project_id != project_id
+            or receipt.thread_id != thread_id
+            or receipt.actor_id != actor_id
+        ):
+            raise ValueError("committed turn replay scope differs from its immutable submission")
+        committed = await self.components.turns.load_committed_outcome(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+        )
+        if committed is None:
+            return None
+        await self.components.history.append(
+            message_id=uuid5(turn_id, "user"),
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            thread_id=thread_id,
+            role="user",
+            body_ref=user_message_artifact_ref,
+        )
+        if stream is not None:
+            await stream.turn_started()
+        return await self._result_from_outcome(
+            outcome=committed,
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            thread_id=thread_id,
+            stream=stream,
+            replayed=True,
+        )
+
     async def execute(
         self,
         *,
@@ -251,6 +312,27 @@ class ConversationTurnEngine:
             )
         else:
             outcome = committed
+        return await self._result_from_outcome(
+            outcome=outcome,
+            turn_id=request.turn_id,
+            workspace_id=workspace_id,
+            thread_id=request.thread_id,
+            stream=stream,
+            replayed=committed is not None,
+        )
+
+    async def _result_from_outcome(
+        self,
+        *,
+        outcome: AgentTurnOutcome,
+        turn_id: UUID,
+        workspace_id: str,
+        thread_id: str,
+        stream: TurnStreamEmitter | None,
+        replayed: bool,
+    ) -> ConversationTurnResult:
+        """Resolve one durable outcome into its canonical message and optional projection."""
+
         assistant_message: str | None = None
         envelope: AgentFinalizeEnvelope | None = None
         if outcome.finalization_ref is not None:
@@ -262,10 +344,10 @@ class ConversationTurnEngine:
                     await self.components.artifacts.read(envelope.user_message_artifact_ref)
                 ).decode()
                 await self.components.history.append(
-                    message_id=uuid5(request.turn_id, "assistant"),
-                    turn_id=request.turn_id,
+                    message_id=uuid5(turn_id, "assistant"),
+                    turn_id=turn_id,
                     workspace_id=workspace_id,
-                    thread_id=request.thread_id,
+                    thread_id=thread_id,
                     role="assistant",
                     body_ref=envelope.user_message_artifact_ref,
                 )
@@ -275,12 +357,12 @@ class ConversationTurnEngine:
                 outcome=outcome,
                 envelope=envelope,
                 assistant_message=assistant_message,
-                replayed=committed is not None,
+                replayed=replayed,
             )
         return ConversationTurnResult(
             outcome=outcome,
             assistant_message=assistant_message,
-            replayed=committed is not None,
+            replayed=replayed,
         )
 
     async def _project_turn_close(

@@ -6,14 +6,15 @@
 **Authority:** contract delta to Doc A Part III and PC-C8 for this production composition. Where
 this document conflicts with the provisional note in root `CLAUDE.md`, this document wins.
 
-**Implementation checkpoint (2026-08-14):** S0-S2 are implemented. The strict contracts,
+**Implementation checkpoint (2026-08-14):** S0-S3 are implemented. The strict contracts,
 seven-state offline fixture, split deterministic compilers, v2 conversation envelope, legacy-trial
 compatibility path, split-card DSAR binding shape, and canonical workspace-client binding are
 present. Both authoritative and transitional production fleet paths establish the trusted binding;
-all projects inherit it through one fail-closed reader. S3-S6 remain outside this checkpoint. In
-particular, the production worker honestly reports the conditional Client-KB and Stage-0 artifacts
-as unavailable until S3 composes them; binding and compiler existence are not presented as card
-composition.
+all projects inherit it through one fail-closed reader. The production `AGENT_TURN` worker now
+pins one account-wide Client-KB version, composes the real L2 brand/confirmed-product rows, and
+persists/attaches the v2 envelope, shared Client-KB index, and exactly the active project's Stage-0
+state. Committed replay returns before current-state/card composition, preserving the original
+receipt and hashes. S4-S6 remain outside this checkpoint.
 
 ## 1. Purpose
 
@@ -46,6 +47,10 @@ account being researched for an ABM project.
 - L3 already loads one `project_card_ref`, one budget envelope, and any explicitly constituted
   `project_context_artifacts`.
 - The production `AGENT_TURN` worker creates an always-present `project_conversation_card`.
+- That worker attaches a paired `ClientKnowledgeCard` and active-project-only
+  `Stage0ProjectStateCard` whenever the canonical client has a published account-wide KB version.
+- The resulting constitution carries exact client/version and project domain refs; the context
+  receipt retains exact artifact refs, hashes, and materialized paths.
 - Onboarding recon establishes an insert-once canonical client binding for the workspace; every
   valid project resolves the same client without inspecting project-scoped inputs.
 - The PC-C8 projection compiles a hard-bounded `Stage0ProjectCard` containing project identity,
@@ -56,15 +61,12 @@ account being researched for an ABM project.
 
 ### 2.2 Missing or incorrectly composed
 
-- Production does not attach the rich PC-C8 projection to a real project conversation.
-- Account-wide Client-KB knowledge and project-specific Stage-0 state are mixed in one projection.
-- The generic conversation envelope and the PC-C8 card repeat project/product/client identifiers.
+- The legacy trial compatibility projection still combines account and project state; production
+  no longer consumes it.
 - Claim refs are not fully interpretable and there is no admitted platform-general Client-KB
   discovery/exact-claim tool.
 - The Client-KB omission cursor has no production resolver.
 - Recon's product description is not yet a durable multi-product catalog bound to product rows.
-- The production path has no Project-A/Project-B isolation acceptance proving shared Client-KB but
-  distinct interview/readiness state.
 
 ### 2.3 Brand-context boundary
 
@@ -427,6 +429,15 @@ in `tests/api/test_{client_context_binding,stage0_setup}_db.py`.
 - Missing/cross-workspace artifacts fail closed before model invocation.
 - Context receipt enumerates the exact refs/hashes/materialized paths.
 - Production replay reuses the original receipt and card refs.
+
+**Implemented evidence:** production composition and account-wide version pinning in
+`platform/api/clue_api/agent_turn_fleet_wiring.py`; immutable pre-composition replay in
+`platform/api/clue_api/conversation_turns.py`; exact paired-domain-ref enforcement in
+`platform/agents/clue_agents/contracts.py`; null-safe separation of account-wide and product-scoped
+KB version sequences in `subsystems/research/clue_research/stage0/client_kb.py`; and the pre/post-
+recon, Project-A/B, mixed-account/product-version, background-version, receipt, missing-artifact,
+cross-workspace, privacy-log, and replay acceptance in
+`tests/api/test_production_context_s3_db.py` plus the production fleet replay tests.
 
 ### S4 — Governed Client-KB discovery and exact claim inspection
 

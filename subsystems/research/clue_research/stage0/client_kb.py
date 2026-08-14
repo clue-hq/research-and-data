@@ -583,8 +583,11 @@ async def _write_version_marker(
         include_superseded=True,
         scope=WorkspaceScope.for_workspace(workspace_id),
     )
-    if product_id is not None:
-        markers = [marker for marker in markers if marker.product_id == product_id]
+    # ``None`` is the account-wide KB scope, not a wildcard over product-scoped markers. Keeping
+    # these version sequences independent is required by production context composition: a newer
+    # product-specific version must never replace the shared onboarding KB inherited by every
+    # project in the workspace.
+    markers = [marker for marker in markers if marker.product_id == product_id]
 
     existing_for_run = next((m for m in markers if m.run_id == run_id), None)
     if existing_for_run is not None:
@@ -769,8 +772,7 @@ async def current_kb_version(
         include_superseded=False,
         scope=WorkspaceScope.for_workspace(workspace_id),
     )
-    if product_id is not None:
-        markers = [marker for marker in markers if marker.product_id == product_id]
+    markers = [marker for marker in markers if marker.product_id == product_id]
     versions = [_marker_version(m) for m in markers]
     return max(versions) if versions else None
 
@@ -789,8 +791,7 @@ async def _pinned_marker(
     markers = await claims_for(
         conn, client_entity_id, CLIENT_KB_VERSION, include_superseded=True, scope=scope
     )
-    if product_id is not None:
-        markers = [marker for marker in markers if marker.product_id == product_id]
+    markers = [marker for marker in markers if marker.product_id == product_id]
     if not markers:
         return None
     if version is None:
@@ -834,6 +835,7 @@ async def _pinned_field_claims(
     markers = await claims_for(
         conn, client_entity_id, CLIENT_KB_VERSION, include_superseded=True, scope=scope
     )
+    markers = [item for item in markers if item.product_id == product_id]
     by_version = {_marker_version(item): item for item in markers}
     run_ids: list[RunId] = []
     seen_versions: set[int] = set()
@@ -855,7 +857,7 @@ async def _pinned_field_claims(
                 claim.run_id == run_id
                 and claim.field_key in knowledge_fields
                 and claim.field_key not in pinned
-                and (product_id is None or claim.product_id == product_id)
+                and claim.product_id == product_id
             ):
                 pinned[claim.field_key] = claim
     return pinned

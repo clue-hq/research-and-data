@@ -518,6 +518,17 @@ class DbAgentTurnJournal:
                 raise RuntimeError("inserted agent turn vanished")
             return receipt
 
+    async def load(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+    ) -> AgentTurnReceipt | None:
+        """Read one workspace-scoped immutable turn identity for replay validation."""
+
+        async with self._conn_factory() as conn:
+            return await self._read_turn(conn, workspace_id, turn_id)
+
     async def load_committed_outcome(
         self,
         *,

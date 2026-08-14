@@ -44,13 +44,19 @@ from clue_agents import (
     AgentTurnRequest,
     FinalizeStatus,
 )
-from clue_agents.contracts import AgentConstitution, DomainObjectRef, ExecutionId
+from clue_agents.contracts import (
+    AgentConstitution,
+    DomainObjectRef,
+    ExecutionId,
+    ProjectContextArtifact,
+)
 from clue_api.agent_registry_wiring import (
     PROJECT_CONVERSATION_SURFACE,
     build_agent_profile_registry,
 )
 from clue_api.agent_turn_fleet_wiring import (
     AgentTurnWorkHandler,
+    ProjectConversationTurnRunner,
     RequiredTurnArtifactMissing,
 )
 from clue_api.agent_turn_submission import (
@@ -71,7 +77,7 @@ from clue_api.execution_wiring import build_tool_invoker
 from clue_api.projections_app import create_projections_app
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings, load_settings
-from clue_core import AccountStatus, ProjectRunId
+from clue_core import AccountStatus, ProjectRunId, operation_id_from_key
 from clue_fleet import (
     FleetTaskKind,
     FleetTaskStatus,
@@ -1064,6 +1070,82 @@ class _RuntimeThatMustNotRun:
         raise AssertionError("a committed turn must never be executed a second time")
 
 
+class _ReplayBeforeCompositionEngine:
+    def __init__(self) -> None:
+        self.calls: list[tuple[UUID, str, str]] = []
+
+    async def replay_committed(self, **kwargs: Any) -> Any:
+        self.calls.append(
+            (
+                kwargs["turn_id"],
+                kwargs["workspace_id"],
+                kwargs["thread_id"],
+            )
+        )
+        return SimpleNamespace(
+            outcome=SimpleNamespace(status=AgentExecutionStatus.COMPLETED),
+            assistant_message="Committed answer",
+            replayed=True,
+        )
+
+
+class _ReplayBeforeCompositionRunner(ProjectConversationTurnRunner):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.completed: list[ExecutionId] = []
+
+    async def _load_scope(self, *args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise AssertionError("committed replay must happen before current scope/card composition")
+
+    async def _complete_recipe(self, execution_id: ExecutionId) -> None:
+        self.completed.append(execution_id)
+
+
+def test_worker_replays_before_recipe_or_current_context_composition(tmp_path: Path) -> None:
+    """A current vN+1 can never be composed into a committed vN turn retry."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d2-early-replay", name="D2 early replay")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="early-replay",
+            )
+            storage = FsStorage(tmp_path / "artifacts")
+            app = _app(conn, settings=_settings(), storage=storage)
+            async with _client(app) as client:
+                accepted = await _submit(
+                    client,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    message="Replay the already committed answer.",
+                    key="early-replay",
+                )
+            turn_id = UUID(accepted.json()["data"]["turn_id"])
+            engine = _ReplayBeforeCompositionEngine()
+            runner = _ReplayBeforeCompositionRunner(
+                engine=engine,
+                executor=None,
+                recipes=None,
+                starter=None,
+                parameters=None,
+                conn_factory=conn_session_factory(conn),
+                streaming=False,
+            )
+            result = await runner.run(turn_id=turn_id, workspace_id=project.workspace_id)
+            assert result.replayed is True
+            assert engine.calls == [(turn_id, project.workspace_id, thread_id)]
+            assert runner.completed == [
+                ExecutionId(operation_id_from_key(str(turn_id), "project-conversation@1"))
+            ]
+
+    run_async(scenario())
+
+
 def test_a_committed_turn_is_replayed_never_re_executed(tmp_path: Path) -> None:
     """The convergence guarantee, over real durable rows.
 
@@ -1138,6 +1220,29 @@ def test_a_committed_turn_is_replayed_never_re_executed(tmp_path: Path) -> None:
                         version=None,
                     ),
                 ),
+                project_context_artifacts=(
+                    ProjectContextArtifact(
+                        name="client_knowledge",
+                        artifact_ref=manifest_ref,
+                        domain_ref=DomainObjectRef(
+                            workspace_id=project.workspace_id,
+                            object_type="client_knowledge",
+                            object_id="client-replay",
+                            version=1,
+                        ),
+                    ),
+                    ProjectContextArtifact(
+                        name="stage0_project_state",
+                        artifact_ref=manifest_ref,
+                        domain_ref=DomainObjectRef(
+                            workspace_id=project.workspace_id,
+                            object_type="stage0_project_state",
+                            object_id=project.project_id,
+                            version=None,
+                        ),
+                    ),
+                ),
+                client_entity_id="client-replay",
             )
             request = AgentTurnRequest(
                 turn_id=turn_id,
@@ -1204,6 +1309,17 @@ def test_a_committed_turn_is_replayed_never_re_executed(tmp_path: Path) -> None:
                 plans=None,  # type: ignore[arg-type]
                 conn_factory=cf,
             )
+            early = await engine.replay_committed(
+                turn_id=turn_id,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                thread_id=thread_id,
+                actor_id=USER_ID,
+                user_message_artifact_ref=message_ref,
+            )
+            assert early is not None
+            assert early.replayed is True
+            assert early.assistant_message == "Here is the answer."
             result = await engine.execute(
                 request=request,
                 lease=None,  # type: ignore[arg-type]
