@@ -89,6 +89,13 @@ class OfficialSiteEvidenceReach:
     attempt_ids: tuple[UUID, ...]
     snapshot_ids: tuple[UUID, ...]
     artifact_keys: tuple[str, ...]
+    page_ids: tuple[UUID, ...] = ()
+    observation_ids: tuple[UUID, ...] = ()
+    link_edge_ids: tuple[UUID, ...] = ()
+    alias_observation_ids: tuple[UUID, ...] = ()
+    checkpoint_ids: tuple[UUID, ...] = ()
+    extraction_operation_ids: tuple[UUID, ...] = ()
+    claim_ids: tuple[UUID, ...] = ()
 
 
 def _normalized_receipt_key(key: str) -> str:
@@ -401,7 +408,14 @@ class OfficialSiteArtifactStore:
     async def evidence_reach(
         self, *, workspace_id: str, crawl_run_id: UUID | None = None
     ) -> OfficialSiteEvidenceReach:
-        """Return every C4 ledger/blob reference reachable from one workspace/run."""
+        """Return every official-site ledger/blob/claim reference for one workspace/run.
+
+        The seam began in C4 with attempt/snapshot/artifact reach. C9 closes the complete
+        retention graph after C7 by also enumerating pages, observations, edges, aliases,
+        checkpoints, extraction operations, retained model responses, and materialized claims.
+        It remains read-only: physical erasure is owned by the existing workspace/claim artifact
+        lifecycle after these references are retired in dependency order.
+        """
 
         params: dict[str, Any] = {"workspace_id": workspace_id}
         run_predicate = ""
@@ -446,13 +460,105 @@ class OfficialSiteArtifactStore:
                     )
                 ).all()
             )
+            table_ids: dict[str, tuple[UUID, ...]] = {}
+            for label, table in (
+                ("pages", "official_site_crawl_page"),
+                ("observations", "official_site_url_observation"),
+                ("edges", "official_site_link_edge"),
+                ("aliases", "official_site_alias_observation"),
+                ("checkpoints", "official_site_corpus_checkpoint"),
+            ):
+                table_ids[label] = tuple(
+                    sorted(
+                        (
+                            await conn.execute(
+                                text(
+                                    f"SELECT id FROM {table} "  # noqa: S608 - frozen table list
+                                    "WHERE workspace_id = :workspace_id" + run_predicate
+                                ),
+                                params,
+                            )
+                        ).scalars(),
+                        key=str,
+                    )
+                )
+            extraction_rows = list(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT id, response_artifact_key, claim_ids_json "
+                            "FROM official_site_extraction_operation "
+                            "WHERE workspace_id = :workspace_id" + run_predicate
+                        ),
+                        params,
+                    )
+                ).all()
+            )
+            declared_claim_ids = tuple(
+                sorted(
+                    {
+                        UUID(value)
+                        for row in extraction_rows
+                        for value in row.claim_ids_json
+                        if isinstance(value, str)
+                    },
+                    key=str,
+                )
+            )
+            claim_artifact_keys: tuple[str, ...] = ()
+            claim_ids: tuple[UUID, ...] = ()
+            if extraction_rows:
+                operation_refs = [f"official-site-extraction:{row.id}" for row in extraction_rows]
+                claim_rows = list(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT id, artifact_key FROM claim "
+                                "WHERE workspace_id = :workspace_id "
+                                "AND source_key = :source_key "
+                                "AND source_operation_ref = ANY(CAST(:operation_refs AS text[]))"
+                            ),
+                            {
+                                "workspace_id": workspace_id,
+                                "source_key": OFFICIAL_SITE_SOURCE_KEY,
+                                "operation_refs": operation_refs,
+                            },
+                        )
+                    ).all()
+                )
+                claim_ids = tuple(sorted((row.id for row in claim_rows), key=str))
+                if not set(declared_claim_ids).issubset(claim_ids):
+                    raise CrawlStateConflictError(
+                        "official-site extraction claim reach is incomplete or cross-workspace"
+                    )
+                claim_artifact_keys = tuple(
+                    row.artifact_key for row in claim_rows if isinstance(row.artifact_key, str)
+                )
         return OfficialSiteEvidenceReach(
             crawl_run_ids=run_ids,
             attempt_ids=tuple(sorted((row[0] for row in attempt_rows), key=str)),
             snapshot_ids=tuple(sorted((row[0] for row in snapshot_rows), key=str)),
             artifact_keys=tuple(
-                sorted({key for _, key in (*attempt_rows, *snapshot_rows) if isinstance(key, str)})
+                sorted(
+                    {
+                        key
+                        for key in (
+                            *(row[1] for row in attempt_rows),
+                            *(row[1] for row in snapshot_rows),
+                            *(row.response_artifact_key for row in extraction_rows),
+                            *claim_artifact_keys,
+                        )
+                        if isinstance(key, str)
+                    }
+                )
             ),
+            page_ids=table_ids["pages"],
+            observation_ids=table_ids["observations"],
+            link_edge_ids=table_ids["edges"],
+            alias_observation_ids=table_ids["aliases"],
+            checkpoint_ids=table_ids["checkpoints"],
+            extraction_operation_ids=tuple(sorted((row.id for row in extraction_rows), key=str)),
+            claim_ids=claim_ids,
         )
 
 

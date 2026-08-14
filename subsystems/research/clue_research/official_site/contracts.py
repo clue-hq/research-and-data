@@ -489,6 +489,10 @@ class FetchAttemptRef(FrozenContractModel):
     lease_generation: int = Field(ge=1)
     operation_key: str = Field(min_length=1, max_length=200)
     provider_key: str = Field(min_length=1, max_length=64)
+    # Additive C9 recovery metadata. A lookup-capable provider may require the receipt/request
+    # identity in addition to Clue's stable operation key. Keeping it on the body-free attempt
+    # reference lets a cold reconciler reuse the charged operation without reading raw receipts.
+    provider_request_id: str | None = None
     state: FetchAttemptState
 
 

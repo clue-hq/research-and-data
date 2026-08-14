@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-14-stage0-durable-official-site-crawl-c9.md` — C9 complete: executable 53-case/nine-
+  crash matrix, recovered-result safety/receipt/provenance hardening, full retention reach, clean
+  200-test isolated-DB gate, migration/frontend/static gates, and fully classified unrelated
+  monolithic-suite baseline failures; C10 live cutover remains.
 - `2026-08-14-stage0-durable-official-site-crawl-c8.md` — C8 complete: stable crawl/extraction
   events, rows-first setup/operator projection, full §17.4 metrics, privacy-safe logs, actionable
   fetch/extraction ambiguity reads, fenced recovery CLI/runbook, clean 164-test DB gate, complete

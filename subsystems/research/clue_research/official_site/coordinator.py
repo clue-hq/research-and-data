@@ -212,39 +212,113 @@ class _ValidatedFetcher:
 
     async def fetch_one(self, request: PageFetchRequest) -> PageFetchResult:
         result = await self._delegate.fetch_one(request)
-        if result.retry_class is not RetryClass.SUCCESS:
-            return result
-        assert result.final_url is not None
-        redirect_decision = await validate_redirects(
-            requested_url=request.requested_url,
-            final_url=result.final_url,
-            redirect_chain=result.redirect_chain,
+        return await _validate_provider_result(
+            result,
+            request=request,
+            expected_provider_key=self.capabilities.provider_key,
             url_policy=self._url_policy,
             resolver=self._resolver,
             safety=self._safety,
         )
-        if not redirect_decision.allowed:
-            return self._refuse(result, redirect_decision)
-        content_decision = validate_response_content(
-            media_type=result.media_type,
-            content=result.content,
+
+
+class _ValidatedOperationLookup:
+    """Apply the same coordinator policy to a recovered provider result as a live fetch."""
+
+    def __init__(
+        self,
+        *,
+        delegate: ProviderOperationLookup,
+        url_policy: ConservativeUrlPolicy,
+        resolver: AddressResolver,
+        safety: CrawlSafetyPolicy,
+    ) -> None:
+        self._delegate = delegate
+        self._url_policy = url_policy
+        self._resolver = resolver
+        self._safety = safety
+        self.capabilities = delegate.capabilities
+
+    async def lookup_operation(
+        self,
+        request: PageFetchRequest,
+        *,
+        provider_request_id: str | None,
+    ) -> PageFetchResult:
+        result = await self._delegate.lookup_operation(
+            request,
+            provider_request_id=provider_request_id,
+        )
+        return await _validate_provider_result(
+            result,
+            request=request,
+            expected_provider_key=self.capabilities.provider_key,
+            url_policy=self._url_policy,
+            resolver=self._resolver,
             safety=self._safety,
         )
-        if not content_decision.allowed:
-            return self._refuse(result, content_decision)
-        bounded = bound_outgoing_links(result.outgoing_links, safety=self._safety)
-        return result.model_copy(update={"outgoing_links": bounded.links})
 
-    @staticmethod
-    def _refuse(result: PageFetchResult, decision: SafetyDecision) -> PageFetchResult:
-        return result.model_copy(
-            update={
-                "content": None,
-                "outgoing_links": (),
-                "provider_status": f"coordinator_policy_refused:{decision.reason}",
-                "retry_class": RetryClass.POLICY_REFUSED,
-            }
+
+async def _validate_provider_result(
+    result: PageFetchResult,
+    *,
+    request: PageFetchRequest,
+    expected_provider_key: str,
+    url_policy: ConservativeUrlPolicy,
+    resolver: AddressResolver,
+    safety: CrawlSafetyPolicy,
+) -> PageFetchResult:
+    """Fail closed over every successful result, including operation-lookup recovery."""
+
+    if result.retry_class is not RetryClass.SUCCESS:
+        return result
+    if (
+        result.provider_key != expected_provider_key
+        or result.requested_url != request.requested_url
+    ):
+        # A provider receipt is evidence, never authority over which provider/URL Clue asked for.
+        # Refuse the bytes and restore the coordinator-owned identities before persistence so a
+        # hostile or malformed lookup response cannot forge URL/provider provenance.
+        return _refuse_provider_result(
+            result.model_copy(
+                update={
+                    "provider_key": expected_provider_key,
+                    "requested_url": request.requested_url,
+                }
+            ),
+            SafetyDecision(False, "provider_identity_mismatch"),
         )
+    assert result.final_url is not None
+    redirect_decision = await validate_redirects(
+        requested_url=request.requested_url,
+        final_url=result.final_url,
+        redirect_chain=result.redirect_chain,
+        url_policy=url_policy,
+        resolver=resolver,
+        safety=safety,
+    )
+    if not redirect_decision.allowed:
+        return _refuse_provider_result(result, redirect_decision)
+    content_decision = validate_response_content(
+        media_type=result.media_type,
+        content=result.content,
+        safety=safety,
+    )
+    if not content_decision.allowed:
+        return _refuse_provider_result(result, content_decision)
+    bounded = bound_outgoing_links(result.outgoing_links, safety=safety)
+    return result.model_copy(update={"outgoing_links": bounded.links})
+
+
+def _refuse_provider_result(result: PageFetchResult, decision: SafetyDecision) -> PageFetchResult:
+    return result.model_copy(
+        update={
+            "content": None,
+            "outgoing_links": (),
+            "provider_status": f"coordinator_policy_refused:{decision.reason}",
+            "retry_class": RetryClass.POLICY_REFUSED,
+        }
+    )
 
 
 class ConcurrentCrawlCoordinator:
@@ -272,7 +346,16 @@ class ConcurrentCrawlCoordinator:
         self._resolver = resolver
         self._safety = safety
         self._robots = robots
-        self._operation_lookup = operation_lookup
+        self._operation_lookup = (
+            _ValidatedOperationLookup(
+                delegate=operation_lookup,
+                url_policy=url_policy,
+                resolver=resolver,
+                safety=safety,
+            )
+            if operation_lookup is not None
+            else None
+        )
         self._progress_sink = progress_sink or NullCrawlProgressSink()
 
     async def run_phase(
@@ -459,7 +542,7 @@ class ConcurrentCrawlCoordinator:
                         reconciliation,
                         fetch_request,
                         lookup=self._operation_lookup,
-                        provider_request_id=None,
+                        provider_request_id=reconciliation.attempt.provider_request_id,
                     ),
                 ),
             )

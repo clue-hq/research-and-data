@@ -1257,6 +1257,16 @@ browser/cutover gates.
 
 ### C9 — Offline adversarial acceptance and migration gate
 
+**Status: complete (2026-08-14).** C9 maps all 53 §20 rows and nine provider-crash boundaries to
+executable tests, closes recovered-result validation/receipt/provenance and complete-retention-reach
+gaps found by adversarial review, and passes the hardened 200-test C0–C9 target on a fresh isolated
+database. Alembic up/down/up, the sole-head check, Ruff, mypy, all import contracts, and the full
+frontend test/lint/build stack pass. The repository-wide monolithic DB baseline remains red for
+independently reproduced agent-resource/test-fixture and shared-schema isolation defects; those
+failures are separated and explained in the
+[C9 offline acceptance record](./FI-stage0-durable-official-site-crawl-C9-offline-acceptance.md).
+C10 remains the live provider/browser/cutover gate.
+
 **Deliverables**
 
 - Execute the complete matrix in §20 against a fresh isolated PostgreSQL database.

@@ -130,6 +130,7 @@ def _attempt_from_row(row: Mapping[str, Any]) -> FetchAttemptRef:
         lease_generation=row["lease_generation"],
         operation_key=row["operation_key"],
         provider_key=row["provider_key"],
+        provider_request_id=row["provider_request_id"],
         state=FetchAttemptState(row["state"]),
     )
 
