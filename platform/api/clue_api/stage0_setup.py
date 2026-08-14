@@ -81,6 +81,10 @@ from clue_research.durable import (
     RECON_TRANSITION_KIND,
     list_run_events,
 )
+from clue_research.official_site import (
+    OfficialSiteProgressView,
+    PostgresOfficialSiteOperations,
+)
 from clue_research.stage0 import (
     CLIENT_BASELINE_FIELDS,
     ReconLaneStatus,
@@ -125,6 +129,36 @@ class SetupFieldState(BaseModel):
     status: str
 
 
+class SetupOfficialSiteProgress(BaseModel):
+    """Additive C8 row/event truth; intentionally excludes URLs, bodies, and receipts."""
+
+    schema_version: str
+    crawl_run_id: str
+    run_status: str
+    phase: str | None = None
+    message: str
+    states: list[str]
+    queued: int
+    leased: int
+    provider_active: int
+    reconciliation_pending: int
+    persistence_pending: int
+    fetched: int
+    total_pages: int
+    snapshots: int
+    fetch_spend_unknown: int
+    extraction_active: int
+    extraction_materialized: int
+    extraction_empty: int
+    extraction_failed: int
+    extraction_spend_unknown: int
+    recovery_required: bool
+    partial: bool
+    completed: bool
+    last_event_seq: int | None = None
+    last_event_kind: str | None = None
+
+
 class SetupStatusResponse(BaseModel):
     """Lane-level truth for the setting-up screen; ``complete`` == the fast lane finished
     (the release-into-the-app signal) — the background lane keeps running behind it."""
@@ -146,6 +180,42 @@ class SetupStatusResponse(BaseModel):
     # predates the flag): "we do not know yet", never a fabricated False.
     fast_budget_exhausted: bool | None = None
     background_budget_exhausted: bool | None = None
+    # C8 is nullable/additive: old clients ignore it; no crawl row is honest null.
+    official_site: SetupOfficialSiteProgress | None = None
+
+
+def _setup_official_site(
+    view: OfficialSiteProgressView | None,
+) -> SetupOfficialSiteProgress | None:
+    if view is None:
+        return None
+    return SetupOfficialSiteProgress(
+        schema_version=view.schema_version,
+        crawl_run_id=str(view.crawl_run_id),
+        run_status=view.run_status.value,
+        phase=view.phase.value if view.phase is not None else None,
+        message=view.message,
+        states=[state.value for state in view.states],
+        queued=view.queued + view.retry_wait,
+        leased=view.leased,
+        provider_active=view.provider_active,
+        reconciliation_pending=view.reconciliation_pending,
+        persistence_pending=view.persistence_pending,
+        fetched=view.fetched,
+        total_pages=view.total_pages,
+        snapshots=view.snapshots,
+        fetch_spend_unknown=view.fetch_spend_unknown,
+        extraction_active=view.extraction_active + view.extraction_prepared,
+        extraction_materialized=view.extraction_materialized,
+        extraction_empty=view.extraction_empty,
+        extraction_failed=view.extraction_failed,
+        extraction_spend_unknown=view.extraction_spend_unknown,
+        recovery_required=view.recovery_required,
+        partial=view.partial,
+        completed=view.completed,
+        last_event_seq=view.last_event_seq,
+        last_event_kind=(view.last_event_kind.value if view.last_event_kind is not None else None),
+    )
 
 
 def create_stage0_setup_router(
@@ -157,6 +227,7 @@ def create_stage0_setup_router(
 ) -> APIRouter:
     router = APIRouter(tags=["stage0-setup"])
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
+    official_site_operations = PostgresOfficialSiteOperations(conn_factory=conn_factory)
     driver_tasks: set[asyncio.Task[None]] = set()
     # Best-effort same-process duplicate-driver suppression; the durable model (per-attempt
     # deterministic ids + the tool's advisory locks) is the real safety net across processes.
@@ -444,6 +515,10 @@ def create_stage0_setup_router(
             if brief is not None:
                 fact_count = len(brief.facts)
         fields, budgets = await _field_truth(workspace_id, UUID(view.recon_run_id))
+        official_site = await official_site_operations.read_progress_for_recon(
+            workspace_id=workspace_id,
+            recon_run_id=UUID(view.recon_run_id),
+        )
         return SetupStatusResponse(
             schema_version=PROJECTIONS_SCHEMA_VERSION,
             status=status,
@@ -456,6 +531,7 @@ def create_stage0_setup_router(
             fields=fields,
             fast_budget_exhausted=budgets.get("fast"),
             background_budget_exhausted=budgets.get("background"),
+            official_site=_setup_official_site(official_site),
         )
 
     @router.get("/stage0/setup/current", response_model=SetupStatusResponse)

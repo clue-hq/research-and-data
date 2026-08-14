@@ -33,6 +33,7 @@ from clue_research.official_site.contracts import (
     ReclaimResult,
     ReconciliationClaim,
 )
+from clue_research.official_site.progress import CrawlProgressEvent
 
 
 @runtime_checkable
@@ -126,4 +127,24 @@ class OfficialSiteCorpusMaterializer(Protocol):
     ) -> OfficialSiteMaterializationResult: ...
 
 
-__all__ = ["CrawlRepository", "OfficialSiteCorpusMaterializer", "PageFetcher"]
+@runtime_checkable
+class CrawlProgressSink(Protocol):
+    """Best-effort durable visibility seam; crawl rows remain the source of truth."""
+
+    async def emit(self, event: CrawlProgressEvent) -> None: ...
+
+
+class NullCrawlProgressSink:
+    """Provider/network/DB-free default used by unit tests and pre-C8 composition."""
+
+    async def emit(self, event: CrawlProgressEvent) -> None:
+        del event
+
+
+__all__ = [
+    "CrawlProgressSink",
+    "CrawlRepository",
+    "NullCrawlProgressSink",
+    "OfficialSiteCorpusMaterializer",
+    "PageFetcher",
+]

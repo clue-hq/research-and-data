@@ -22,6 +22,7 @@ don't pass one).
 | 11 | `11_exa_websets_d6_acceptance.py` | Bounded live/replay D6 production composition | `ComposingRunDriver` + durable Exa slices |
 | 14 | `14_seed_insight_health_browser_fixture.py` | Authenticated Insight Health browser onboarding | `trial.browser_fixture.seed_insight_health_browser_fixture` |
 | 16 | `16_official_site_c6_live.py` | Retained C6 Firecrawl lifecycle/replay canary | `OfficialSiteCrawlWorkHandler` |
+| 18 | `18_official_site_c8_operator.py` | Body-free C8 progress inspection and fenced recovery | `PostgresOfficialSiteOperations` |
 
 ## One-time setup
 
@@ -319,3 +320,24 @@ uv run python scripts/16_official_site_c6_live.py
 
 The final replay must retain one crawl run, stable checkpoint IDs, and an attempt delta of zero.
 Keep the isolated database and artifact root until the evidence has been reviewed.
+
+## Official-site C8 inspection and recovery
+
+Script 18 reads the C8 rows/events projection without loading page bodies or full provider
+receipts. It requires an explicit database URL, workspace, and crawl run; no defaults can point an
+operator at an unintended tenant.
+
+```bash
+uv run python scripts/18_official_site_c8_operator.py \
+  --database-url postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_c8_acceptance \
+  --workspace-id <workspace-id> \
+  --crawl-run-id <crawl-run-id> \
+  inspect
+```
+
+Mutation commands require exact repeated IDs. `reclaim-expired` uses DB time and routes an
+already-dispatched call to reconciliation rather than fetching again. `quarantine-spend-unknown`
+also requires the expected lease generation and can only settle an unleased matching ambiguity;
+it never calls a provider. See
+[`docs/runbooks/stage0-official-site-crawl.md`](../docs/runbooks/stage0-official-site-crawl.md) for
+the production decision sequence and safety boundaries.

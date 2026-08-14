@@ -1038,7 +1038,7 @@ migration, spike inventory, ownership map, and rollout contract are recorded in 
 [C0 contract freeze](./FI-stage0-durable-official-site-crawl-C0-contract.md). Executable authority
 lives in `clue_research.official_site` and
 `tests/fixtures/official_site/c0_contract_fixture.json`. C0 made no migration, provider call, or
-production cutover. C1 through C5 have since landed; C6 is the next implementation slice.
+production cutover. C1 through C8 have since landed; C9 is the next implementation slice.
 
 **Deliverables**
 
@@ -1131,8 +1131,8 @@ production run/checkpoint/fleet activation remains C6.
 persistence-only replay, operation-lookup/quarantine policy, receipt privacy bounds, URL-level
 provenance, DSAR reach, fault matrix, and C5 handoff are recorded in the
 [C4 acquisition contract](./FI-stage0-durable-official-site-crawl-C4-acquisition-contract.md).
-C4 itself does not schedule a crawl or enable production onboarding. C5 now schedules injected
-runs; C6 remains responsible for the production lifecycle and activation boundaries.
+C4 itself does not schedule a crawl or enable production onboarding. C5–C8 subsequently added
+scheduling, lifecycle, materialization, and operations without changing C4's acquisition contract.
 
 **Deliverables**
 
@@ -1155,7 +1155,8 @@ runs; C6 remains responsible for the production lifecycle and activation boundar
 capacity, heartbeats, graceful stop, deterministic category quotas, no-refetch depth expansion,
 fast/background fairness, recovery routing, and multiprocess fault evidence are recorded in the
 [C5 coordinator contract](./FI-stage0-durable-official-site-crawl-C5-coordinator-contract.md).
-C5 does not activate onboarding or own phase/checkpoint/fleet lifecycle; C6 is next.
+C5 does not activate onboarding or own phase/checkpoint/fleet lifecycle; C6–C8 subsequently added
+those layers without moving concurrency semantics out of C5.
 
 **Deliverables**
 
@@ -1181,8 +1182,8 @@ completion. The isolated Insight Health Firecrawl canary fetched 11 URL snapshot
 expiry, and cold-replayed with zero new attempts. Exact contracts, settings, tests, and retained
 evidence are in the
 [C6 composition contract](./FI-stage0-durable-official-site-crawl-C6-composition-contract.md).
-Authoritative claim materialization landed in C7; progress, recovery, browser acceptance, and
-cutover remain C8–C10. C6's rollout mode defaults off.
+Authoritative claim materialization landed in C7 and progress/recovery in C8; offline adversarial
+and live browser/cutover acceptance remain C9–C10. C6's rollout mode defaults off.
 
 **Deliverables**
 
@@ -1206,7 +1207,8 @@ category/field extraction through the OpenRouter gateway, retains raw responses 
 validates URL and exact span against one trusted snapshot, and writes ordinary append-only
 `official_site` claims. The C0–C7 suite, migration round trip, legacy Stage-0 regressions, and a
 retained Firecrawl + Luna live run/cold replay pass. The live run also exposed lease-recovery
-latency, so the ≤40-second release gate remains explicitly open for C8/C10. Exact contracts and
+latency; C8 now surfaces that state, while the ≤40-second browser release gate remains explicitly
+open for C10. Exact contracts and
 evidence are in the
 [C7 materialization contract](./FI-stage0-durable-official-site-crawl-C7-materialization-contract.md).
 
@@ -1227,6 +1229,16 @@ evidence are in the
 - Replaying the same checkpoint adds zero provider spend and zero duplicate claims.
 
 ### C8 — Progress, observability, and operator recovery
+
+**Status: complete (2026-08-14).** C8 emits stable at-least-once crawl/extraction events while
+deriving all progress from the existing PostgreSQL ledger, adds a nullable body-free
+`official_site` projection to setup truth, exposes bounded metrics/privacy-safe logs, and provides
+workspace-scoped, generation-fenced inspection/recovery commands. Exact event/reducer semantics,
+operator states, privacy boundaries, recovery policy, verification evidence, and the runbook link
+are recorded in the
+[C8 progress and operations contract](./FI-stage0-durable-official-site-crawl-C8-progress-operations-contract.md).
+C8 does not change the browser release gate; C9 and C10 retain the offline adversarial and live
+browser/cutover gates.
 
 **Deliverables**
 

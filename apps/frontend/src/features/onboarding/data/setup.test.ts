@@ -6,6 +6,7 @@ import {
   readSetupStatus,
   startWorkspaceSetup,
 } from "./setup";
+import { FIXTURE_OFFICIAL_SITE_PROGRESS } from "./setup-progress.fixture";
 
 function stubFetch(response: Response): () => void {
   const original = globalThis.fetch;
@@ -28,6 +29,22 @@ test("a pre-slice-3 payload still parses: no fields, no fabricated budget verdic
   // null = "we do not know yet" — never a fabricated false (backend BE contract).
   assert.equal(parsed.fast_budget_exhausted, null);
   assert.equal(parsed.background_budget_exhausted, null);
+  assert.equal(parsed.official_site, null);
+});
+
+test("the C8 official-site fixture and live wire parse through the same additive schema", () => {
+  const parsed = SetupStatusSchema.parse({
+    status: "complete",
+    future_top_level_field: true,
+    official_site: {
+      ...FIXTURE_OFFICIAL_SITE_PROGRESS,
+      future_crawl_field: "ignored",
+    },
+  });
+  assert.equal(parsed.official_site?.run_status, "background_active");
+  assert.equal(parsed.official_site?.fetch_spend_unknown, 1);
+  assert.equal(parsed.official_site?.partial, true);
+  assert.equal(parsed.official_site?.last_event_seq, 42);
 });
 
 test("an unknown per-field status degrades to started rather than failing the parse", () => {
@@ -111,6 +128,7 @@ test("a healthy status read parses end to end", async () => {
         fact_count: 0,
         fields: [{ field_key: "client.product", lane: "fast", status: "resolved" }],
         fast_budget_exhausted: false,
+        official_site: FIXTURE_OFFICIAL_SITE_PROGRESS,
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     ),
@@ -122,6 +140,7 @@ test("a healthy status read parses end to end", async () => {
     assert.equal(status.fields[0]?.field_key, "client.product");
     assert.equal(status.fast_budget_exhausted, false);
     assert.equal(status.background_budget_exhausted, null);
+    assert.equal(status.official_site?.states.includes("persisted"), true);
   } finally {
     restore();
   }

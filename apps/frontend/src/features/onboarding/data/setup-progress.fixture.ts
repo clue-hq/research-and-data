@@ -100,7 +100,38 @@ const EMPTY_FRAME: SetupStatus = {
   fields: [],
   fast_budget_exhausted: null,
   background_budget_exhausted: null,
+  official_site: null,
 };
+
+/** One C8 wire fixture for repository/schema tests. It is not inserted into the timed walkthrough:
+ * the production setup screen still releases on the existing fast Client-KB gate until C10. */
+export const FIXTURE_OFFICIAL_SITE_PROGRESS = {
+  schema_version: "stage0-official-site-c8-v1",
+  crawl_run_id: "83e29d1d-0000-4000-8000-0000000000c8",
+  run_status: "background_active",
+  phase: "background",
+  message: "Fast research complete; deeper research is continuing.",
+  states: ["persisted", "extracted", "partial"],
+  queued: 0,
+  leased: 0,
+  provider_active: 0,
+  reconciliation_pending: 0,
+  persistence_pending: 0,
+  fetched: 7,
+  total_pages: 8,
+  snapshots: 7,
+  fetch_spend_unknown: 1,
+  extraction_active: 0,
+  extraction_materialized: 8,
+  extraction_empty: 1,
+  extraction_failed: 1,
+  extraction_spend_unknown: 0,
+  recovery_required: true,
+  partial: true,
+  completed: false,
+  last_event_seq: 42,
+  last_event_kind: "stage0.crawl.extraction_completed",
+} as const;
 
 function frame(over: Partial<SetupStatus>): SetupStatus {
   return { ...EMPTY_FRAME, ...over };

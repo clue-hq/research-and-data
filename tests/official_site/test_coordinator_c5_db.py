@@ -353,6 +353,7 @@ def _coordinator(
     fetcher: _ScenarioFetcher,
     resolver_answers: dict[str, tuple[str, ...]] | None = None,
     robots: Any | None = None,
+    progress_sink: Any | None = None,
 ) -> ConcurrentCrawlCoordinator:
     policy = _url_policy(root)
     answers: dict[str, tuple[str, ...] | Exception]
@@ -374,6 +375,7 @@ def _coordinator(
         resolver=StaticAddressResolver(answers),
         safety=CrawlSafetyPolicy(max_response_bytes=1_000_000, max_redirects=5),
         robots=robots or StaticRobotsAuthorizer(policy_version="robots-v1"),
+        progress_sink=progress_sink,
     )
 
 
@@ -384,12 +386,14 @@ def _phase_request(
     *,
     phase: CrawlPhase = CrawlPhase.FAST,
     idle_polls: int = 12,
+    recon_run_id: UUID | None = None,
 ) -> CoordinatorPhaseRequest:
     return CoordinatorPhaseRequest(
         workspace_id=workspace_id,
         crawl_run_id=run_id,
         phase=phase,
         config=config,
+        recon_run_id=recon_run_id,
         worker_id_prefix=f"c5-{uuid4()}",
         idle_poll_seconds=0.03,
         max_idle_polls=idle_polls,

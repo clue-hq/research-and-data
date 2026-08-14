@@ -8,6 +8,8 @@ PostgreSQL claim and every provider invocation passes through C4's one-page acqu
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -36,6 +38,14 @@ from clue_research.official_site.contracts import (
     SpendStatus,
 )
 from clue_research.official_site.discovery import OfficialSiteDiscoveryPolicy
+from clue_research.official_site.progress import (
+    CrawlProgressEvent,
+    CrawlProgressEventKind,
+    privacy_safe_log_label,
+    privacy_safe_provider_status,
+    progress_event_id,
+    record_stale_completion_rejection,
+)
 from clue_research.official_site.reconciliation import (
     AcquisitionFenceLostError,
     AcquisitionPersistencePendingError,
@@ -53,7 +63,12 @@ from clue_research.official_site.safety import (
     validate_redirects,
     validate_response_content,
 )
-from clue_research.official_site.seams import CrawlRepository, PageFetcher
+from clue_research.official_site.seams import (
+    CrawlProgressSink,
+    CrawlRepository,
+    NullCrawlProgressSink,
+    PageFetcher,
+)
 from clue_research.official_site.url_policy import ConservativeUrlPolicy
 
 _ResultT = TypeVar("_ResultT")
@@ -107,6 +122,7 @@ class CoordinatorPhaseRequest:
     crawl_run_id: UUID
     phase: CrawlPhase
     config: OfficialSiteCrawlContractConfig
+    recon_run_id: UUID | None = None
     worker_id_prefix: str = "official-site"
     idle_poll_seconds: float = 0.05
     max_idle_polls: int = 4
@@ -246,6 +262,7 @@ class ConcurrentCrawlCoordinator:
         safety: CrawlSafetyPolicy,
         robots: RobotsAuthorizer,
         operation_lookup: ProviderOperationLookup | None = None,
+        progress_sink: CrawlProgressSink | None = None,
     ) -> None:
         self._repository = repository
         self._artifacts = artifacts
@@ -256,6 +273,7 @@ class ConcurrentCrawlCoordinator:
         self._safety = safety
         self._robots = robots
         self._operation_lookup = operation_lookup
+        self._progress_sink = progress_sink or NullCrawlProgressSink()
 
     async def run_phase(
         self,
@@ -335,6 +353,10 @@ class ConcurrentCrawlCoordinator:
                 raise
             except (AcquisitionFenceLostError, CoordinatorLeaseLostError):
                 counters.fenced_workers += 1
+                record_stale_completion_rejection(
+                    phase=request.phase,
+                    provider_key=self._fetcher.capabilities.provider_key,
+                )
                 return
             except Exception:
                 # The durable page/attempt state owns recovery. Exiting this logical worker avoids
@@ -370,6 +392,7 @@ class ConcurrentCrawlCoordinator:
         if persistence is not None:
             counters.persistence_claims += 1
             acquirer = self._acquirer(counters=counters)
+            operation_started = time.monotonic()
             result = await self._while_active(
                 counters,
                 action=lambda: self._with_heartbeat(
@@ -381,6 +404,29 @@ class ConcurrentCrawlCoordinator:
             )
             if result is not None and result.page_completed:
                 counters.pages_completed += 1
+                assert result.snapshot is not None
+                await self._emit_page_event(
+                    request,
+                    persistence.lease,
+                    kind=CrawlProgressEventKind.PAGE_FETCHED,
+                    subject=str(result.snapshot.snapshot_id),
+                    snapshot_id=result.snapshot.snapshot_id,
+                    outcome="persistence_recovered",
+                    provider_result=result.provider_result,
+                    artifact_key=(
+                        result.artifact.artifact_key if result.artifact is not None else None
+                    ),
+                    duration_ms=int((time.monotonic() - operation_started) * 1000),
+                )
+            elif result is None:
+                await self._emit_page_event(
+                    request,
+                    persistence.lease,
+                    kind=CrawlProgressEventKind.PAGE_REFUSED,
+                    subject=f"{persistence.lease.page_id}:g{persistence.lease.lease_generation}",
+                    outcome="persistence_artifact_unrecoverable",
+                    duration_ms=int((time.monotonic() - operation_started) * 1000),
+                )
             return True
 
         reconciliation = await self._repository.claim_reconciliation(
@@ -394,6 +440,7 @@ class ConcurrentCrawlCoordinator:
         if reconciliation is not None:
             counters.reconciliation_claims += 1
             acquirer = self._acquirer(counters=counters)
+            operation_started = time.monotonic()
             fetch_request = self._fetch_request(
                 reconciliation.lease,
                 config=request.config,
@@ -418,6 +465,31 @@ class ConcurrentCrawlCoordinator:
             )
             if result is not None and result.page_completed:
                 counters.pages_completed += 1
+                assert result.snapshot is not None
+                await self._emit_page_event(
+                    request,
+                    reconciliation.lease,
+                    kind=CrawlProgressEventKind.PAGE_FETCHED,
+                    subject=str(result.snapshot.snapshot_id),
+                    snapshot_id=result.snapshot.snapshot_id,
+                    outcome="reconciled_persisted",
+                    provider_result=result.provider_result,
+                    artifact_key=(
+                        result.artifact.artifact_key if result.artifact is not None else None
+                    ),
+                    duration_ms=int((time.monotonic() - operation_started) * 1000),
+                )
+            elif result is None:
+                await self._emit_page_event(
+                    request,
+                    reconciliation.lease,
+                    kind=CrawlProgressEventKind.PAGE_REFUSED,
+                    subject=(
+                        f"{reconciliation.lease.page_id}:g{reconciliation.lease.lease_generation}"
+                    ),
+                    outcome="reconciliation_quarantined",
+                    duration_ms=int((time.monotonic() - operation_started) * 1000),
+                )
             return True
 
         lease = await self._repository.claim_next(
@@ -432,6 +504,13 @@ class ConcurrentCrawlCoordinator:
         if lease is None:
             return False
         counters.ordinary_claims += 1
+        await self._emit_page_event(
+            request,
+            lease,
+            kind=CrawlProgressEventKind.PAGE_STARTED,
+            subject=f"{lease.page_id}:g{lease.lease_generation}",
+        )
+        operation_started = time.monotonic()
         result = await self._while_active(
             counters,
             action=lambda: self._with_heartbeat(
@@ -443,6 +522,33 @@ class ConcurrentCrawlCoordinator:
         )
         if result.page_completed:
             counters.pages_completed += 1
+            assert result.snapshot is not None
+            await self._emit_page_event(
+                request,
+                lease,
+                kind=CrawlProgressEventKind.PAGE_FETCHED,
+                subject=str(result.snapshot.snapshot_id),
+                snapshot_id=result.snapshot.snapshot_id,
+                outcome="persisted",
+                provider_result=result.provider_result,
+                artifact_key=(
+                    result.artifact.artifact_key if result.artifact is not None else None
+                ),
+                duration_ms=int((time.monotonic() - operation_started) * 1000),
+            )
+        elif result.provider_result.retry_class in {
+            RetryClass.POLICY_REFUSED,
+            RetryClass.ROBOTS_REFUSED,
+        }:
+            await self._emit_page_event(
+                request,
+                lease,
+                kind=CrawlProgressEventKind.PAGE_REFUSED,
+                subject=f"{lease.page_id}:g{lease.lease_generation}",
+                outcome=result.provider_result.retry_class.value,
+                provider_result=result.provider_result,
+                duration_ms=int((time.monotonic() - operation_started) * 1000),
+            )
         return True
 
     async def _acquire_ordinary(
@@ -636,6 +742,74 @@ class ConcurrentCrawlCoordinator:
         """Stable for one generation and distinct for a proven-no-spend retry generation."""
 
         return f"official-site:{lease.crawl_run_id}:{lease.page_id}:g{lease.lease_generation}"
+
+    async def _emit_page_event(
+        self,
+        request: CoordinatorPhaseRequest,
+        lease: CrawlLease,
+        *,
+        kind: CrawlProgressEventKind,
+        subject: str,
+        snapshot_id: UUID | None = None,
+        outcome: str | None = None,
+        provider_result: PageFetchResult | None = None,
+        artifact_key: str | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        if request.recon_run_id is None:
+            return
+        try:
+            await self._progress_sink.emit(
+                CrawlProgressEvent(
+                    event_id=progress_event_id(kind, lease.crawl_run_id, subject=subject),
+                    kind=kind,
+                    workspace_id=lease.workspace_id,
+                    crawl_run_id=lease.crawl_run_id,
+                    recon_run_id=request.recon_run_id,
+                    phase=request.phase,
+                    page_id=lease.page_id,
+                    snapshot_id=snapshot_id,
+                    lease_generation=lease.lease_generation,
+                    url_hash=hashlib.sha256(lease.fetch_key.encode("utf-8")).hexdigest(),
+                    host=lease.host,
+                    provider_key=self._fetcher.capabilities.provider_key,
+                    provider_request_id=privacy_safe_log_label(
+                        (
+                            provider_result.provider_request_id
+                            if provider_result is not None
+                            else None
+                        ),
+                        max_length=200,
+                    ),
+                    provider_status=privacy_safe_provider_status(
+                        provider_result.provider_status if provider_result is not None else None
+                    ),
+                    http_status=(
+                        provider_result.http_status if provider_result is not None else None
+                    ),
+                    graph_depth=lease.graph_depth,
+                    duration_ms=duration_ms,
+                    size_bytes=(
+                        len(provider_result.content)
+                        if provider_result is not None and provider_result.content is not None
+                        else None
+                    ),
+                    cost_cents=(
+                        provider_result.cost_cents if provider_result is not None else None
+                    ),
+                    spend_status=(
+                        provider_result.spend_status.value if provider_result is not None else None
+                    ),
+                    retry_class=(
+                        provider_result.retry_class.value if provider_result is not None else None
+                    ),
+                    artifact_key=artifact_key,
+                    outcome=outcome,
+                )
+            )
+        except Exception:
+            # Visibility cannot fail or retry a provider operation.
+            return
 
 
 __all__ = [

@@ -14,6 +14,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from pydantic import JsonValue
 from sqlalchemy import text
 
+from clue_api.official_site_progress import DbOfficialSiteProgressEmitter
 from clue_config import Secrets, Settings
 from clue_core.gateway import LLMGateway
 from clue_db import ConnFactory, transaction
@@ -34,8 +35,12 @@ from clue_research.official_site import (
     ConcurrentCrawlCoordinator,
     CrawlMode,
     CrawlPhasePendingError,
+    CrawlProgressEvent,
+    CrawlProgressEventKind,
+    CrawlProgressSink,
     CrawlSafetyPolicy,
     GroundedOfficialSiteMaterializer,
+    NullCrawlProgressSink,
     OfficialSiteArtifactStore,
     OfficialSiteCrawlContractConfig,
     OfficialSiteCrawlLifecycle,
@@ -45,6 +50,7 @@ from clue_research.official_site import (
     PageFetcher,
     PageFetchRequest,
     PostgresCrawlRepository,
+    PostgresOfficialSiteOperations,
     RobotsAuthorization,
     RobotsDocument,
     RobotsParsePolicy,
@@ -55,6 +61,7 @@ from clue_research.official_site import (
     UrlObservation,
     parse_robots,
     parse_sitemap,
+    progress_event_id,
 )
 from clue_research.official_site.url_policy import ConservativeUrlPolicy
 from clue_storage import StorageBackend
@@ -309,11 +316,14 @@ class OfficialSiteCrawlWorkHandler:
         lifecycle: OfficialSiteCrawlLifecycle,
         provider_key: str,
         conn_factory: ConnFactory = transaction,
+        progress_sink: CrawlProgressSink | None = None,
     ) -> None:
         self._settings = settings
         self._lifecycle = lifecycle
         self._provider_key = provider_key
         self._conn_factory = conn_factory
+        self._progress_sink = progress_sink or NullCrawlProgressSink()
+        self._operations = PostgresOfficialSiteOperations(conn_factory=conn_factory)
 
     async def handle(self, context: WorkContext) -> WorkResult:
         workspace_id, recon_run_id = self._payload(context.payload)
@@ -384,6 +394,33 @@ class OfficialSiteCrawlWorkHandler:
                 },
                 requeue=True,
             )
+        except Exception as exc:
+            try:
+                progress = await self._operations.read_progress_for_recon(
+                    workspace_id=workspace_id, recon_run_id=recon_run_id
+                )
+                if progress is not None:
+                    kind = CrawlProgressEventKind.FAILED
+                    await self._progress_sink.emit(
+                        CrawlProgressEvent(
+                            event_id=progress_event_id(
+                                kind,
+                                progress.crawl_run_id,
+                                subject=type(exc).__name__,
+                            ),
+                            kind=kind,
+                            workspace_id=workspace_id,
+                            crawl_run_id=progress.crawl_run_id,
+                            recon_run_id=recon_run_id,
+                            phase=progress.phase,
+                            failure_code=type(exc).__name__,
+                            outcome="failed",
+                        )
+                    )
+            except Exception:
+                # A visibility/read failure must never replace the worker's original exception.
+                pass
+            raise
         log.info(
             "stage0_official_site_crawl.completed",
             workspace_id=workspace_id,
@@ -488,6 +525,7 @@ def build_official_site_crawl_fleet(
         fetcher = ScraplingPageFetcher()
 
     repository = PostgresCrawlRepository(conn_factory=conn_factory)
+    progress_emitter = DbOfficialSiteProgressEmitter(conn_factory=conn_factory)
     artifacts = OfficialSiteArtifactStore(storage=storage, conn_factory=conn_factory)
     resolver = SystemAddressResolver()
     config = crawl_contract_config(settings, provider_key=fetcher.capabilities.provider_key)
@@ -519,6 +557,7 @@ def build_official_site_crawl_fleet(
             resolver=resolver,
             safety=safety,
             robots=robots,
+            progress_sink=progress_emitter,
         )
 
     # One robots cache must serve both seeding and page authorization. The lifecycle constructs
@@ -561,6 +600,7 @@ def build_official_site_crawl_fleet(
             if settings.stage0_official_site_crawl_mode == "authoritative" and gateway is not None
             else None
         ),
+        progress_sink=progress_emitter,
     )
     return OfficialSiteCrawlFleetComposition(
         enqueuer=enqueuer,
@@ -569,6 +609,7 @@ def build_official_site_crawl_fleet(
             lifecycle=lifecycle,
             provider_key=fetcher.capabilities.provider_key,
             conn_factory=conn_factory,
+            progress_sink=progress_emitter,
         ),
     )
 

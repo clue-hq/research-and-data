@@ -21,6 +21,7 @@ from clue_research.official_site.contracts import (
     CrawlRunRuntimeRef,
     CrawlRunStatus,
     DiscoveryBatch,
+    DiscoveryBatchResult,
     OfficialSiteCrawlContractConfig,
     OfficialSiteMaterializationRequest,
     OfficialSiteMaterializationResult,
@@ -32,7 +33,16 @@ from clue_research.official_site.coordinator import (
 )
 from clue_research.official_site.discovery import OfficialSiteDiscoveryPolicy
 from clue_research.official_site.models import CrawlStateConflictError
-from clue_research.official_site.seams import OfficialSiteCorpusMaterializer
+from clue_research.official_site.progress import (
+    CrawlProgressEvent,
+    CrawlProgressEventKind,
+    progress_event_id,
+)
+from clue_research.official_site.seams import (
+    CrawlProgressSink,
+    NullCrawlProgressSink,
+    OfficialSiteCorpusMaterializer,
+)
 from clue_research.official_site.url_policy import ConservativeUrlPolicy, UrlPolicyConfig
 
 
@@ -167,11 +177,13 @@ class OfficialSiteCrawlLifecycle:
         coordinator_factory: CrawlCoordinatorFactory,
         seed_discoverer: CrawlSeedDiscoverer | None = None,
         materializer: OfficialSiteCorpusMaterializer | None = None,
+        progress_sink: CrawlProgressSink | None = None,
     ) -> None:
         self._repository = repository
         self._coordinator_factory = coordinator_factory
         self._seed_discoverer = seed_discoverer
         self._materializer = materializer
+        self._progress_sink = progress_sink or NullCrawlProgressSink()
 
     async def run(
         self, request: OfficialSiteCrawlLifecycleRequest
@@ -206,6 +218,13 @@ class OfficialSiteCrawlLifecycle:
             )
         )
         if run.created:
+            await self._emit(
+                request,
+                run.crawl_run_id,
+                kind=CrawlProgressEventKind.STARTED,
+                subject="created",
+                phase=CrawlPhase.FAST,
+            )
             observations = [root]
             if self._seed_discoverer is not None:
                 observations.extend(
@@ -215,12 +234,24 @@ class OfficialSiteCrawlLifecycle:
                         discovery_policy=discovery,
                     )
                 )
-            await self._repository.record_discoveries(
+            discovery_result = await self._repository.record_discoveries(
                 DiscoveryBatch(
                     workspace_id=request.workspace_id,
                     crawl_run_id=run.crawl_run_id,
                     observations=tuple(observations),
                 )
+            )
+            await self._emit(
+                request,
+                run.crawl_run_id,
+                kind=CrawlProgressEventKind.DISCOVERY_COMPLETED,
+                subject="initial",
+                phase=CrawlPhase.FAST,
+                discovered_count=(
+                    discovery_result.observations_recorded
+                    if isinstance(discovery_result, DiscoveryBatchResult)
+                    else len(observations)
+                ),
             )
 
         runtime = await self._repository.read_run_runtime(
@@ -271,6 +302,7 @@ class OfficialSiteCrawlLifecycle:
                         crawl_run_id=run.crawl_run_id,
                         phase=CrawlPhase.FAST,
                         config=runtime.config,
+                        recon_run_id=request.recon_run_id,
                         worker_id_prefix=f"official-site:{run.crawl_run_id}:fast-recovery",
                     )
                 )
@@ -306,6 +338,13 @@ class OfficialSiteCrawlLifecycle:
             )
             if not transitioned:
                 raise CrawlStateConflictError("background activation lost its run-state fence")
+            await self._emit(
+                request,
+                run.crawl_run_id,
+                kind=CrawlProgressEventKind.BACKGROUND_STARTED,
+                subject="activated",
+                phase=CrawlPhase.BACKGROUND,
+            )
             runtime = await self._runtime(request.workspace_id, run.crawl_run_id)
 
         if runtime.status is CrawlRunStatus.BACKGROUND_ACTIVE:
@@ -315,6 +354,7 @@ class OfficialSiteCrawlLifecycle:
                     crawl_run_id=run.crawl_run_id,
                     phase=CrawlPhase.BACKGROUND,
                     config=runtime.config,
+                    recon_run_id=request.recon_run_id,
                     worker_id_prefix=f"official-site:{run.crawl_run_id}:background",
                 )
             )
@@ -344,6 +384,16 @@ class OfficialSiteCrawlLifecycle:
             )
             if not transitioned:
                 raise CrawlStateConflictError("background completion lost its run-state fence")
+            await self._emit(
+                request,
+                run.crawl_run_id,
+                kind=CrawlProgressEventKind.BACKGROUND_COMPLETED,
+                subject=str(background_checkpoint.checkpoint_id),
+                phase=CrawlPhase.BACKGROUND,
+                checkpoint_id=background_checkpoint.checkpoint_id,
+                snapshot_count=len(background_checkpoint.snapshot_ids),
+                outcome="completed",
+            )
             runtime = await self._runtime(request.workspace_id, run.crawl_run_id)
         else:
             background_checkpoint = await self._required_checkpoint(
@@ -383,6 +433,7 @@ class OfficialSiteCrawlLifecycle:
                     crawl_run_id=crawl_run_id,
                     phase=CrawlPhase.FAST,
                     config=runtime.config,
+                    recon_run_id=request.recon_run_id,
                     worker_id_prefix=f"official-site:{crawl_run_id}:fast",
                 ),
                 stop_event=stop,
@@ -419,6 +470,15 @@ class OfficialSiteCrawlLifecycle:
                     crawl_run_id=crawl_run_id,
                 )
                 stop.set()
+            await self._emit(
+                request,
+                crawl_run_id,
+                kind=CrawlProgressEventKind.FAST_CHECKPOINT_FROZEN,
+                subject=str(checkpoint.checkpoint_id),
+                phase=CrawlPhase.FAST,
+                checkpoint_id=checkpoint.checkpoint_id,
+                snapshot_count=len(checkpoint.snapshot_ids),
+            )
             return phase_result, checkpoint
         except asyncio.CancelledError:
             stop.set()
@@ -487,20 +547,78 @@ class OfficialSiteCrawlLifecycle:
             else request.background_claim_run_id
         )
         assert claim_run_id is not None
-        return await self._materializer.materialize(
-            OfficialSiteMaterializationRequest(
-                workspace_id=request.workspace_id,
-                crawl_run_id=crawl_run_id,
-                recon_run_id=request.recon_run_id,
-                claim_run_id=claim_run_id,
-                client_entity_id=request.client_entity_id,
-                checkpoint_id=checkpoint.checkpoint_id,
-                phase=phase,
-                model_id=request.extraction_model_id,
-                prompt_version=request.extraction_prompt_version,
-                schema_version=request.extraction_schema_version,
-            )
+        materialization_request = OfficialSiteMaterializationRequest(
+            workspace_id=request.workspace_id,
+            crawl_run_id=crawl_run_id,
+            recon_run_id=request.recon_run_id,
+            claim_run_id=claim_run_id,
+            client_entity_id=request.client_entity_id,
+            checkpoint_id=checkpoint.checkpoint_id,
+            phase=phase,
+            model_id=request.extraction_model_id,
+            prompt_version=request.extraction_prompt_version,
+            schema_version=request.extraction_schema_version,
         )
+        await self._emit(
+            request,
+            crawl_run_id,
+            kind=CrawlProgressEventKind.EXTRACTION_STARTED,
+            subject=f"{phase.value}:{checkpoint.checkpoint_id}",
+            phase=phase,
+            checkpoint_id=checkpoint.checkpoint_id,
+        )
+        result = await self._materializer.materialize(materialization_request)
+        await self._emit(
+            request,
+            crawl_run_id,
+            kind=CrawlProgressEventKind.EXTRACTION_COMPLETED,
+            subject=f"{phase.value}:{checkpoint.checkpoint_id}",
+            phase=phase,
+            checkpoint_id=checkpoint.checkpoint_id,
+            filled_field_count=len(result.filled_fields),
+            empty_field_count=len(result.empty_fields),
+            failed_field_count=len(result.failed_fields),
+            outcome="partial" if result.failed_fields else "completed",
+        )
+        return result
+
+    async def _emit(
+        self,
+        request: OfficialSiteCrawlLifecycleRequest,
+        crawl_run_id: UUID,
+        *,
+        kind: CrawlProgressEventKind,
+        subject: str,
+        phase: CrawlPhase | None = None,
+        checkpoint_id: UUID | None = None,
+        discovered_count: int | None = None,
+        snapshot_count: int | None = None,
+        filled_field_count: int | None = None,
+        empty_field_count: int | None = None,
+        failed_field_count: int | None = None,
+        outcome: str | None = None,
+    ) -> None:
+        try:
+            await self._progress_sink.emit(
+                CrawlProgressEvent(
+                    event_id=progress_event_id(kind, crawl_run_id, subject=subject),
+                    kind=kind,
+                    workspace_id=request.workspace_id,
+                    crawl_run_id=crawl_run_id,
+                    recon_run_id=request.recon_run_id,
+                    phase=phase,
+                    checkpoint_id=checkpoint_id,
+                    discovered_count=discovered_count,
+                    snapshot_count=snapshot_count,
+                    filled_field_count=filled_field_count,
+                    empty_field_count=empty_field_count,
+                    failed_field_count=failed_field_count,
+                    outcome=outcome,
+                )
+            )
+        except Exception:
+            # Visibility cannot fail acquisition/materialization; rows remain authoritative.
+            return
 
     async def _runtime(self, workspace_id: str, crawl_run_id: UUID) -> CrawlRunRuntimeRef:
         return await self._repository.read_run_runtime(
