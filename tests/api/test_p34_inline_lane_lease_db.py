@@ -1,0 +1,302 @@
+"""Adversarial-review fixes E+B — the inline design lane holds its lease, and the leg
+run's row payload is the frozen envelope.
+
+Finding E: ``InlineDesignLaneDriver`` acquired the design run's work lease once (TTL 30s)
+and held it, renewal-free, across a design turn that runs minutes — so the design reaper
+(enabled by the same switch) declared every real leg run stranded and re-offered it.
+The fix is the B1 supervised-heartbeat pattern: renew at TTL/3, retry transient renew
+errors without killing the beat, declare loss only when fenced or when no beat can land
+before true expiry (flipping ``context.lease_lost`` so the handler abandons
+cooperatively) — and after the handler returns, whatever the outcome, join the run to a
+terminal state (bounded), because a takeover owns only the *design run* while the
+platform turn/leg projection is ours alone: re-joining the takeover's result is the only
+path that completes the turn.
+
+Finding B: the run row's ``payload`` must BE the frozen ``DesignTurnEnvelope`` — the
+reaper re-enqueues ``handed_back["payload"]`` verbatim ("re-read from the design row
+rather than rebuilt"), so a config-only payload made every re-offered leg run a poison
+task and broke strand repair for legs.
+
+The two lease tests run on the REAL pooled connection factory (the heartbeat genuinely
+runs concurrently with the handler; a shared savepoint connection cannot serve both) and
+clean up their committed rows; the payload test stays on the rolled-back session.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import timedelta
+from pathlib import Path
+from uuid import NAMESPACE_URL, uuid4, uuid5
+
+import pytest
+from pydantic import TypeAdapter
+from sqlalchemy import text
+
+from clue_api.agent_turn_submission import message_artifact_ref
+from clue_api.design_fleet import InlineDesignLaneDriver
+from clue_db import db_lifespan, transaction
+from clue_design import runs as design_runs
+from clue_design.envelopes import DesignTurnEnvelope
+from clue_fleet import WorkId, acquire_work_lease, get_work_lease
+from clue_fleet.work_worker import WorkContext, WorkResult
+from tests.db.conftest import run_async
+from tests.profiling.conftest import (
+    migrated_db,  # noqa: F401 -- exposes the fixture to this test module
+    rollback_conn,
+)
+
+_ENVELOPE_ADAPTER: TypeAdapter[DesignTurnEnvelope] = TypeAdapter(DesignTurnEnvelope)
+
+
+def _leg_envelope(*, workspace_id: str, run_id: str) -> DesignTurnEnvelope:
+    return DesignTurnEnvelope(
+        kind="agent_turn",
+        work_id=design_runs.work_id_for_run(run_id),
+        workspace_id=workspace_id,
+        run_id=run_id,
+        checkpoint_thread_id=run_id,
+        document_id=None,
+        config={"request": {"prompt": "lease probe", "scene": {}}},
+    )
+
+
+async def _seed_committed_run(label: str) -> DesignTurnEnvelope:
+    """Workspace + queued design run, COMMITTED (the lease tests use the real pool)."""
+
+    workspace_id = f"ws_p34lease_{label}_{uuid4().hex[:8]}"
+    run_id = f"run_{uuid5(NAMESPACE_URL, f'p34lease:{label}').hex}"
+    envelope = _leg_envelope(workspace_id=workspace_id, run_id=run_id)
+    async with transaction() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO workspace (workspace_id, name) VALUES (:w, :w) "
+                "ON CONFLICT (workspace_id) DO NOTHING"
+            ),
+            {"w": workspace_id},
+        )
+        await design_runs.create_run(
+            conn,
+            workspace_id=workspace_id,
+            run_id=run_id,
+            document_id=None,
+            payload=envelope.model_dump(mode="json"),
+            work_id=envelope.work_id,
+        )
+    return envelope
+
+
+async def _cleanup_committed_run(envelope: DesignTurnEnvelope) -> None:
+    async with transaction() as conn:
+        await conn.execute(
+            text("DELETE FROM work_lease WHERE work_id = :w"), {"w": envelope.work_id}
+        )
+        await conn.execute(
+            text("DELETE FROM design_agent_run WHERE run_id = :r AND workspace_id = :ws"),
+            {"r": envelope.run_id, "ws": envelope.workspace_id},
+        )
+        await conn.execute(
+            text("DELETE FROM workspace WHERE workspace_id = :ws"),
+            {"ws": envelope.workspace_id},
+        )
+
+
+class _SlowCompletingHandler:
+    """Runs 'work' longer than several lease TTLs, then lands the terminal result."""
+
+    def __init__(self, *, run_seconds: float) -> None:
+        self._run_seconds = run_seconds
+        self.contexts: list[WorkContext] = []
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        self.contexts.append(context)
+        await asyncio.sleep(self._run_seconds)
+        envelope = context.payload
+        async with transaction() as conn:
+            await design_runs.set_run_result(
+                conn,
+                workspace_id=str(envelope["workspace_id"]),
+                run_id=str(envelope["run_id"]),
+                status="succeeded",
+                result={"schema_version": 1, "status": "accepted"},
+                expected_generation=int(context.lease_generation),
+            )
+        return WorkResult(outcome="succeeded", references={})
+
+
+class _AbandonOnLeaseLossHandler:
+    """The real handler's cooperative shape: wait for the fence, abandon, report honestly."""
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        await context.lease_lost.wait()
+        return WorkResult(outcome="lease_lost", references={}, requeue=True)
+
+
+def test_the_leg_run_row_payload_is_the_frozen_envelope(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Finding B: what the runner stores is exactly what the reaper may re-offer — the
+    full envelope, parseable by the design handler's own validator."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            from clue_api.agent_registry_wiring import build_agent_profile_registry
+            from clue_api.toolbelt_wiring import build_toolbelt
+            from clue_design import legs as design_legs
+            from tests.api.conftest import hermetic_flag_env
+            from tests.api.test_p34_design_leg_engine_db import (
+                _card_payload,
+                _FakeLane,
+                _runner,
+                _seed_leg_conversation,
+                _submit_message,
+            )
+
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="payload")
+            with hermetic_flag_env():
+                catalog = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            submission = await _submit_message(
+                conn, seeds, label="payload-t1", message="Frozen-envelope probe."
+            )
+            leg = await design_legs.get_open_leg_for_thread(
+                conn, workspace_id=seeds["workspace_id"], thread_id=seeds["thread_id"]
+            )
+            assert leg is not None
+            await _runner(
+                seeds, catalog, _FakeLane(conn_factory=seeds["conn_factory"])
+            ).run_leg_turn(
+                submission=submission,
+                leg=leg,
+                user_message_ref=await message_artifact_ref(conn, submission),
+                focus_refs=(),
+                card_payload=_card_payload(seeds),
+                stream=None,
+            )
+            stored = (
+                await conn.execute(
+                    text(
+                        "SELECT payload FROM design_agent_run "
+                        "WHERE workspace_id = :ws AND leg_id = CAST(:leg AS uuid)"
+                    ),
+                    {"ws": seeds["workspace_id"], "leg": leg["id"]},
+                )
+            ).scalar_one()
+            parsed = _ENVELOPE_ADAPTER.validate_python(stored)
+            assert parsed.kind == "agent_turn"
+            assert parsed.workspace_id == seeds["workspace_id"]
+            assert parsed.config["request"]["prompt"] == "Frozen-envelope probe."
+            assert parsed.config["leg"]["leg_id"] == leg["id"]
+
+    run_async(scenario())
+
+
+def test_the_inline_lane_renews_its_lease_across_a_long_turn(
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Finding E, the common case: a turn several TTLs long never lets the lease lapse,
+    so the reaper's ``_is_stranded`` (dead lease + no task) can never fire on live work."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            await _renew_scenario()
+
+    async def _renew_scenario() -> None:
+        envelope = await _seed_committed_run("renew")
+        try:
+            handler = _SlowCompletingHandler(run_seconds=2.5)
+            driver = InlineDesignLaneDriver(
+                handler=handler,
+                lease_ttl=timedelta(seconds=1.0),
+                heartbeat_interval_s=0.25,
+                join_poll_interval_s=0.1,
+                join_timeout_s=10.0,
+            )
+            drive = asyncio.create_task(driver.drive(envelope=envelope))
+            # Mid-flight, well past the un-renewed TTL: the lease must still be live.
+            await asyncio.sleep(1.6)
+            async with transaction() as conn:
+                lease = await get_work_lease(conn, WorkId(envelope.work_id))
+            assert lease is not None and lease.live, (
+                "the lease lapsed mid-turn — the reaper would strand this live run"
+            )
+            await drive
+            assert driver.renewals >= 2
+            async with transaction() as conn:
+                run = await design_runs.get_run(
+                    conn, workspace_id=envelope.workspace_id, run_id=envelope.run_id
+                )
+            assert run is not None and run["status"] == "succeeded"
+        finally:
+            await _cleanup_committed_run(envelope)
+
+    run_async(scenario())
+
+
+def test_a_fenced_out_lane_abandons_and_rejoins_the_takeovers_terminal_run(
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Finding E, the takeover case: when a higher generation steals the lease, the lane
+    flips ``lease_lost`` (the handler abandons cooperatively) and then converges by
+    joining the takeover's terminal result instead of failing the platform turn."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            await _fence_scenario()
+
+    async def _fence_scenario() -> None:
+        envelope = await _seed_committed_run("fence")
+        try:
+            driver = InlineDesignLaneDriver(
+                handler=_AbandonOnLeaseLossHandler(),
+                lease_ttl=timedelta(seconds=1.0),
+                heartbeat_interval_s=0.25,
+                join_poll_interval_s=0.1,
+                join_timeout_s=10.0,
+            )
+            drive = asyncio.create_task(driver.drive(envelope=envelope))
+            await asyncio.sleep(0.5)
+            # The theft: force-expire the lane's lease and acquire a HIGHER generation —
+            # exactly what a reaper-fed takeover worker does after a genuine stall.
+            async with transaction() as conn:
+                await conn.execute(
+                    text(
+                        "UPDATE work_lease SET expires_at = now() - interval '1 second' "
+                        "WHERE work_id = :w"
+                    ),
+                    {"w": envelope.work_id},
+                )
+                thief = await acquire_work_lease(
+                    conn, work_id=WorkId(envelope.work_id), worker_id="takeover-worker"
+                )
+            assert thief is not None
+            # The takeover finishes the design work under ITS generation.
+            async with transaction() as conn:
+                await design_runs.set_run_result(
+                    conn,
+                    workspace_id=envelope.workspace_id,
+                    run_id=envelope.run_id,
+                    status="succeeded",
+                    result={"schema_version": 1, "status": "accepted"},
+                    expected_generation=int(thief.generation),
+                )
+            # The lane converges on the takeover's result rather than raising.
+            await asyncio.wait_for(drive, timeout=8.0)
+            async with transaction() as conn:
+                run = await design_runs.get_run(
+                    conn, workspace_id=envelope.workspace_id, run_id=envelope.run_id
+                )
+            assert run is not None and run["status"] == "succeeded"
+        finally:
+            await _cleanup_committed_run(envelope)
+
+    run_async(scenario())

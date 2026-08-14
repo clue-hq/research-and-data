@@ -644,7 +644,11 @@ class DesignLegTurnRunner:
                     workspace_id=workspace_id,
                     run_id=run_id,
                     document_id=leg.get("document_id"),
-                    payload=dict(envelope.config),
+                    # The row payload IS the frozen envelope — the design substrate's
+                    # re-offer contract (the reaper re-enqueues the row's own payload
+                    # verbatim), so a stranded leg run replays as a valid design_job and
+                    # strand repair becomes a working second-chance completion path.
+                    payload=envelope.model_dump(mode="json"),
                     work_id=envelope.work_id,
                     leg_id=leg_id,
                     execution_id=UUID(str(execution_id)),

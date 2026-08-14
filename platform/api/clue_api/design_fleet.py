@@ -21,6 +21,8 @@ operator asked for design work and the deployment cannot do it.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -30,8 +32,10 @@ from clue_fleet import (
     WorkId,
     acquire_work_lease,
     release_work_lease,
+    renew_work_lease,
 )
 from clue_fleet.enums import FleetTaskKind
+from clue_fleet.lease import DEFAULT_LEASE_TTL
 from clue_fleet.work_worker import WorkContext, WorkHandler
 from clue_obs import get_logger
 
@@ -69,7 +73,7 @@ def build_design_job_handler(*, enabled: bool) -> WorkHandler | None:
 
 
 class InlineDesignLaneDriver:
-    """Drive one design-leg turn through the design fleet handler, inline, under a real lease.
+    """Drive one design-leg turn through the design fleet handler, inline, under a LIVE lease.
 
     P3.4's execution seam (PD-part3 D3). The design turn still runs on the design lane in every
     sense that matters — the same :class:`~lumen_api.fleet_handler.DesignJobWorkHandler`, the
@@ -79,45 +83,211 @@ class InlineDesignLaneDriver:
     and awaited it would deadlock a single-worker deployment against itself; holding the design
     work lease and calling the handler directly keeps single-flight, stop and fencing semantics
     without that hazard.
+
+    **The lease is supervised, not fire-and-forget** (adversarial-review finding E; the B1
+    supervised-heartbeat precedent). A design turn runs minutes against a 30s lease TTL, and the
+    design reaper — enabled by the same switch as this lane — treats a dead lease with no fleet
+    task as a strand. So :meth:`drive` races the handler against a renewal loop that beats at
+    TTL/3, retries transient renew errors without killing the beat, and declares loss only when
+    fenced (a higher generation took over) or when no beat can land before true expiry — at
+    which point ``context.lease_lost`` flips and the handler abandons cooperatively, exactly as
+    it does under the fleet worker.
+
+    **Whatever happened, the drive ends by joining the run to a terminal state** (bounded).
+    A takeover — a reaper-fed design_job worker after a genuine stall — owns only the *design
+    run*; the platform turn/leg projection is this worker's alone, so re-joining the takeover's
+    terminal result is the only path that completes the platform turn. The normal path pays one
+    extra read; the fenced path converges instead of failing.
+
+    Stop semantics are unchanged and doctrine-consistent: a user-stopped platform turn abandons
+    the drive (asyncio cancellation), the lease is released, and already-launched design work
+    may complete detached — the same stance every launched-work surface takes.
     """
 
-    def __init__(self, *, handler: WorkHandler) -> None:
+    def __init__(
+        self,
+        *,
+        handler: WorkHandler,
+        conn_factory: Any = transaction,
+        lease_ttl: timedelta = DEFAULT_LEASE_TTL,
+        heartbeat_interval_s: float | None = None,
+        join_poll_interval_s: float = 5.0,
+        join_timeout_s: float = 1800.0,
+    ) -> None:
         self._handler = handler
+        self._conn_factory = conn_factory
+        self._lease_ttl = lease_ttl
+        self._heartbeat_interval_s = (
+            heartbeat_interval_s
+            if heartbeat_interval_s is not None
+            else lease_ttl.total_seconds() / 3.0
+        )
+        self._join_poll_interval_s = join_poll_interval_s
+        self._join_timeout_s = join_timeout_s
+        #: Successful renewals across this driver's lifetime — observable, so a test (or an
+        #: operator counter) can prove the beat is real rather than infer it from silence.
+        self.renewals = 0
 
     async def drive(self, *, envelope: Any) -> None:
         work_id = WorkId(envelope.work_id)
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             lease = await acquire_work_lease(
                 conn,
                 work_id=work_id,
                 worker_id=_DESIGN_LEG_LANE_WORKER_ID,
+                ttl=self._lease_ttl,
             )
         if lease is None:
-            raise RuntimeError("this design-leg run is owned by another live worker")
-        try:
-            context = WorkContext(
-                task_id=uuid4(),
-                work_id=work_id,
-                worker_id=_DESIGN_LEG_LANE_WORKER_ID,
-                lease_generation=LeaseGeneration(lease.generation),
-                payload=envelope.model_dump(mode="json"),
-                stop_requested=asyncio.Event(),
-                lease_lost=asyncio.Event(),
+            # A LIVE holder exists (a takeover, or a still-beating prior attempt). Do not
+            # fight it — its work is this run's work; join its terminal result.
+            log.warning(
+                "design_leg.lane_lease_held_elsewhere",
+                work_id=str(work_id),
             )
-            result = await self._handler.handle(context)
+            await self._join_terminal(envelope)
+            return
+        generation = LeaseGeneration(lease.generation)
+        lease_lost = asyncio.Event()
+        context = WorkContext(
+            task_id=uuid4(),
+            work_id=work_id,
+            worker_id=_DESIGN_LEG_LANE_WORKER_ID,
+            lease_generation=generation,
+            payload=envelope.model_dump(mode="json"),
+            stop_requested=asyncio.Event(),
+            lease_lost=lease_lost,
+        )
+        acquired_at = asyncio.get_running_loop().time()
+        work = asyncio.create_task(self._handler.handle(context))
+        beat = asyncio.create_task(
+            self._keep_lease(
+                work_id=work_id,
+                generation=generation,
+                lease_lost=lease_lost,
+                acquired_at=acquired_at,
+            )
+        )
+        try:
+            done, _pending = await asyncio.wait({work, beat}, return_when=asyncio.FIRST_COMPLETED)
+            if work in done:
+                result = work.result()
+            else:
+                # The beat exited ⇒ it declared the lease lost. The handler races
+                # ``lease_lost`` itself and abandons cooperatively — await that abandonment
+                # rather than cancelling mid-write.
+                result = await work
+                log.warning(
+                    "design_leg.lane_fenced_out",
+                    work_id=str(work_id),
+                    outcome=result.outcome,
+                )
             log.info(
                 "design_leg.lane_drive_finished",
                 work_id=str(work_id),
                 outcome=result.outcome,
             )
         finally:
-            async with transaction() as conn:
+            for task in (beat, work):
+                if not task.done():
+                    task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await beat
+            if work.done() and not work.cancelled():
+                with contextlib.suppress(Exception):
+                    work.exception()
+            async with self._conn_factory() as conn:
                 await release_work_lease(
                     conn,
                     work_id=work_id,
                     worker_id=_DESIGN_LEG_LANE_WORKER_ID,
-                    generation=LeaseGeneration(lease.generation),
+                    generation=generation,
                 )
+        await self._join_terminal(envelope)
+
+    async def _keep_lease(
+        self,
+        *,
+        work_id: WorkId,
+        generation: LeaseGeneration,
+        lease_lost: asyncio.Event,
+        acquired_at: float,
+    ) -> None:
+        """Mirror of ``LeasedWorkWorker._heartbeat`` (and the B1 supervised-beat ruling):
+        transient renew errors are retried with a shrinking sleep and never silently kill the
+        beat; loss is declared only when fenced or when no beat can land before true expiry."""
+
+        loop = asyncio.get_running_loop()
+        ttl_s = self._lease_ttl.total_seconds()
+        deadline = acquired_at + ttl_s
+        sleep_for = self._heartbeat_interval_s
+        while True:
+            await asyncio.sleep(sleep_for)
+            t0 = loop.time()
+            try:
+                async with self._conn_factory() as conn:
+                    renewed = await renew_work_lease(
+                        conn,
+                        work_id=work_id,
+                        worker_id=_DESIGN_LEG_LANE_WORKER_ID,
+                        generation=generation,
+                        ttl=self._lease_ttl,
+                    )
+            except Exception:
+                log.warning(
+                    "design_leg.lane_renew_error",
+                    work_id=str(work_id),
+                    exc_info=True,
+                )
+                if loop.time() >= deadline - self._heartbeat_interval_s:
+                    lease_lost.set()
+                    return
+                sleep_for = min(
+                    self._heartbeat_interval_s,
+                    max(0.05, (deadline - loop.time()) / 4),
+                )
+                continue
+            if not renewed:
+                lease_lost.set()
+                return
+            self.renewals += 1
+            deadline = t0 + ttl_s
+            sleep_for = self._heartbeat_interval_s
+
+    async def _join_terminal(self, envelope: Any) -> None:
+        """Wait (bounded) for the run's terminal row — ours or a takeover's.
+
+        Imports the design DAL lazily like everything else in this module: the driver exists
+        only in deployments that composed the design runtime.
+        """
+
+        from clue_design import runs as design_runs
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._join_timeout_s
+        last_logged = loop.time()
+        while True:
+            async with self._conn_factory() as conn:
+                run = await design_runs.get_run(
+                    conn,
+                    workspace_id=envelope.workspace_id,
+                    run_id=envelope.run_id,
+                )
+            if run is not None and run["status"] in ("succeeded", "failed"):
+                return
+            now = loop.time()
+            if now >= deadline:
+                raise RuntimeError(
+                    "the design-leg run did not reach a terminal state within the lane's "
+                    "join window; the reaper (or an operator requeue) owns it now"
+                )
+            if now - last_logged >= 60.0:
+                log.info(
+                    "design_leg.lane_joining_run",
+                    run_id=str(envelope.run_id),
+                    status=None if run is None else run["status"],
+                )
+                last_logged = now
+            await asyncio.sleep(self._join_poll_interval_s)
 
 
 def build_design_leg_lane_driver(*, enabled: bool) -> InlineDesignLaneDriver | None:

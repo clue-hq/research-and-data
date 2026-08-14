@@ -126,7 +126,27 @@ finding below is verified against ground truth (file:line) and awaits dispositio
 
 ## Disposition
 
-Fixes NOT applied in this review session (assessment-only per founder request). E+B
-should land together before any production leg traffic (they are the crash-resilience
-story); A is a two-line fix plus a stronger test; C needs a ruling. D and the LOWs can
-ride P3.6/P3.7.
+- **E + B — FIXED (founder-directed, 2026-08-14, same session).**
+  `InlineDesignLaneDriver` now supervises its lease per the B1 precedent: renewal at
+  TTL/3 mirroring `LeasedWorkWorker._heartbeat` exactly (transient renew errors retried
+  with a shrinking sleep, never silently killing the beat; loss declared only when
+  fenced or when no beat can land before true expiry, flipping `context.lease_lost` so
+  the design handler abandons cooperatively), with an observable `renewals` counter.
+  And `drive` now ends — whatever the outcome, including an acquire refused because a
+  LIVE holder exists — by joining the run to a terminal state (bounded poll, default
+  1800s), because a takeover owns only the design run while the platform turn/leg
+  projection is the lane's alone: re-joining is the only path that completes the turn.
+  The leg runner stores `payload=envelope.model_dump(mode="json")` — the row payload IS
+  the frozen envelope, so the reaper's re-offer (`handed_back["payload"]` verbatim)
+  parses at the design handler and strand repair is a working second-chance completion
+  path for leg runs. Stop semantics unchanged (launched design work may complete
+  detached — the standing launched-work doctrine).
+  Tests: `tests/api/test_p34_inline_lane_lease_db.py` — the frozen-envelope payload
+  validated through the handler's own TypeAdapter; a 2.5s turn against a 1s TTL keeps
+  the lease live (≥2 renewals observed, run terminal); a fenced-out lane abandons
+  cooperatively and converges on the takeover's terminal run. The two lease tests run
+  on the real pooled factory under `db_lifespan` (the heartbeat is genuinely concurrent
+  with the handler) with committed-row cleanup.
+- **A — OPEN** (two-line fix + stronger content assertion; awaiting direction).
+- **C — OPEN, needs the founder's routing ruling** (gate answer while a leg is open).
+- **D + LOWs — OPEN**, riding P3.6/P3.7 as ledgered.
