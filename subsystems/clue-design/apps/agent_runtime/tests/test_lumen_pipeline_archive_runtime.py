@@ -919,7 +919,12 @@ def test_settings_validate_reasoning_effort(monkeypatch):
         == "medium"
     )
     assert Settings(_env_file=None, lumen_agent_reasoning="").lumen_agent_reasoning is None
-    assert Settings(_env_file=None).lumen_agent_reasoning is None
+    # P3.2 gate finding: the DEFAULT is an explicit "medium" — under the governed
+    # gateway an unset effort inherits the platform's effort-none baseline for
+    # gpt-5.x, which degraded the visual reviewer into a myopic identical-call
+    # loop (reproduced twice; healthy at medium). Blank remains the deliberate
+    # "give me the platform baseline" escape hatch.
+    assert Settings(_env_file=None).lumen_agent_reasoning == "medium"
     with pytest.raises(Exception) as excinfo:
         Settings(_env_file=None, lumen_agent_reasoning="turbo")
     assert "low|medium|high" in str(excinfo.value)

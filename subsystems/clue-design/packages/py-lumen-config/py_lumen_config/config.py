@@ -133,10 +133,19 @@ class Settings(BaseSettings):
     lumen_agent_model_author: str | None = None
     lumen_agent_model_reviewer: str | None = None
     # OpenRouter unified reasoning effort for every deep-agent LLM call
-    # ("low" | "medium" | "high"). Unset/blank → no reasoning field on the
-    # request (provider default: no extended thinking). Applied in init_model
-    # for whatever model id is configured — one mechanism for all models.
-    lumen_agent_reasoning: str | None = None
+    # ("low" | "medium" | "high"). Applied in init_model for whatever model id is
+    # configured — one mechanism for all models.
+    #
+    # DEFAULT CHANGED None → "medium" at P3.2 checkpoint 3 (gate finding,
+    # 2026-08-14): under the governed gateway, an UNSET effort inherits the
+    # platform baseline — which requests effort NONE for gpt-5.x — and a
+    # no-reasoning visual reviewer degrades into a myopic identical-call loop
+    # (3,338 repeated read_file calls to the recursion limit, reproduced twice;
+    # 5 healthy calls with effort=medium). The old direct path sent no reasoning
+    # field and got the provider's own default instead; "medium" restores that
+    # behavior as EXPLICIT policy. Blank still means "unset" for a deployment
+    # that genuinely wants the platform baseline.
+    lumen_agent_reasoning: str | None = "medium"
     # L1 (latency: cache locality) — OpenRouter provider `sort` preference applied
     # to every deep-agent LLM call. `sort` DISABLES OpenRouter's load-balancing and
     # pins one provider replica, which is the cache-locality lever: a byte-identical
