@@ -70,15 +70,22 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
-from clue_core import ExecutionId
+from clue_api.turn_action import derive_turn_action_ref
+from clue_core import ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import legs as design_legs
 from clue_design import runs as design_runs
 from clue_design.documents import get_document
 from clue_design.envelopes import DesignTurnEnvelope
 from clue_design.errors import DesignNotFoundError
+from clue_design.exit_judgment import (
+    ExitDecision,
+    ExitJudgment,
+    decide_exit,
+)
 from clue_obs import get_logger
 from clue_spine import get_project
+from clue_storage import StorageBackend
 
 log = get_logger("clue_api.design_leg")
 
@@ -139,6 +146,105 @@ class DesignLegTurnResult:
     outcome: AgentTurnOutcome
     assistant_message: str | None
     replayed: bool
+
+
+class DesignLegExitJudge(Protocol):
+    """The §2.2 exit judgment — the single LLM judgment in the routing path (P3.6's core).
+
+    Returns the model's verdict, or ``None`` for unparseable output; the runner passes it
+    through :func:`clue_design.exit_judgment.decide_exit`, whose fail-safe means a broken or
+    absent judge can only ever CONTINUE the leg. Implementations must not raise for model
+    misbehavior — and the runner guards with the same fail-safe anyway.
+    """
+
+    async def __call__(
+        self,
+        *,
+        brief: str,
+        history: tuple[tuple[str, str], ...],
+        message: str,
+    ) -> ExitJudgment | None: ...
+
+
+class DesignLegFinisher(Protocol):
+    """Invoke the governed ``finish_design_leg`` tool for one exiting design turn.
+
+    The bridge's engine half: the judgment is model-authored, but the exit is executed as
+    the same validated tool call the design orchestrator would make — journal, summary
+    message, out-of-scope re-delivery, ``leg.closed`` frame and all. Returns the tool's
+    references (a replayed close returns the ORIGINAL decision's references).
+    """
+
+    async def __call__(
+        self,
+        *,
+        workspace_id: str,
+        turn_id: UUID,
+        reason: str,
+        summary: str,
+    ) -> dict[str, Any]: ...
+
+
+#: Engine-derived exit summaries — deliberately deterministic. The judge decides WHETHER to
+#: exit; it does not author prose, so the durable summary is the engine's honest sentence,
+#: never a fabricated model quote. (A richer model-authored summary is a Part-IV concern.)
+DESIGN_LEG_EXIT_SUMMARIES: dict[str, str] = {
+    "locked": "Design locked in: the user accepted the current design.",
+    "out_of_scope": (
+        "The design session ended: the request is outside the design scope and has been "
+        "returned to the strategy conversation."
+    ),
+    "abandoned": "The design session was abandoned at the user's request.",
+}
+
+
+def build_design_leg_finisher(
+    *,
+    storage: StorageBackend,
+    conn_factory: ConnFactory = transaction,
+) -> DesignLegFinisher:
+    """The production finisher: one private registry holding the real finish tool.
+
+    The operation id is derived from the turn, so a crash-retried exit replays the same
+    governed invocation instead of colliding with its own first attempt.
+    """
+
+    from clue_api.design_leg_tools import FinishDesignLegTool
+    from clue_toolbelt import ToolContext, ToolRegistry, invoke_tool
+
+    registry = ToolRegistry()
+    registry.register(
+        FinishDesignLegTool(conn_factory=conn_factory, storage=storage), make_default=True
+    )
+
+    async def finish(
+        *, workspace_id: str, turn_id: UUID, reason: str, summary: str
+    ) -> dict[str, Any]:
+        result = await invoke_tool(
+            registry,
+            "finish_design_leg",
+            {
+                "source_turn_ref": derive_turn_action_ref(turn_id),
+                "reason": reason,
+                "summary": summary,
+            },
+            ToolContext(
+                workspace_id=workspace_id,
+                actor="agent",
+                conn_factory=conn_factory,
+                operation_id=operation_id_from_key(str(turn_id), "design-leg-exit@1"),
+            ),
+            idempotency_ttl_s=3600,
+        )
+        return dict(result.references)
+
+    return finish
+
+
+# The LIVE judge builder deliberately does NOT live here: it needs the model plane
+# (``AgentModelProvider``), and this module is reachable from the HTTP turn route, whose
+# lane-D2 isolation guard forbids any model-plane name. See
+# ``agent_turn_fleet_wiring.build_design_leg_exit_judge`` — the worker composition root.
 
 
 async def load_design_leg_history(
@@ -315,6 +421,8 @@ class DesignLegTurnRunner:
         turns: DbAgentTurnJournal,
         history: AgentHistoryStore,
         lane: DesignLegLaneDriver,
+        exit_judge: DesignLegExitJudge | None = None,
+        finisher: DesignLegFinisher | None = None,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self._profiles = profiles
@@ -322,6 +430,12 @@ class DesignLegTurnRunner:
         self._turns = turns
         self._history = history
         self._lane = lane
+        # The P3.7 §2.2 bridge. Both seams optional and fail-safe: a deployment without a
+        # judge (or without a finisher to execute its verdicts) simply never exits a leg
+        # from inside a turn — every message designs, and the leg closes only through a
+        # direct ``finish_design_leg`` invocation.
+        self._exit_judge = exit_judge
+        self._finisher = finisher
         self._conn_factory = conn_factory
 
     async def run_leg_turn(
@@ -493,6 +607,40 @@ class DesignLegTurnRunner:
             )
 
         await self._turns.mark_running(turn_id=turn_id, workspace_id=workspace_id)
+
+        if leg["state"] == "closed":
+            # P3.7 crash-window re-entry: the ONLY way a closed leg reaches this runner is
+            # the routing rule's closed-by-turn fallback — this very turn closed the leg and
+            # died before finalizing. The close (journal, summary message, re-delivery,
+            # ``leg.closed`` frame) committed atomically in the tool's transaction; what
+            # remains is the finalization, which converges below.
+            return await self._exit_leg(
+                submission=submission,
+                leg_id=leg_id,
+                execution_id=execution_id,
+                reason=str(leg["close_reason"]),
+                stream=stream,
+            )
+
+        # --- the §2.2 exit bridge (P3.7): judge BEFORE designing -------------------------------
+        # Every exit category is a judgment about the INCOMING message (lock-in, out-of-scope,
+        # abandon), so the judgment runs pre-dispatch: an exiting turn spends nothing on the
+        # design lane. The fail-safe envelope (P3.6) means a broken judge can only continue.
+        exit_decision = await self._judge_exit(
+            leg=leg,
+            prior_history=prior_history,
+            user_message_ref=user_message_ref,
+        )
+        if exit_decision is not None and exit_decision.action == "finish":
+            assert exit_decision.reason is not None  # decide_exit forbids reasonless finish
+            return await self._exit_leg(
+                submission=submission,
+                leg_id=leg_id,
+                execution_id=execution_id,
+                reason=exit_decision.reason,
+                stream=stream,
+            )
+
         run = await self._dispatch(
             submission=submission,
             leg=leg,
@@ -600,6 +748,139 @@ class DesignLegTurnRunner:
                 finalization_ref=envelope_ref,
             ),
             assistant_message=assistant_message,
+            replayed=False,
+        )
+
+    # -- the §2.2 exit bridge ------------------------------------------------------------------
+
+    async def _judge_exit(
+        self,
+        *,
+        leg: dict[str, Any],
+        prior_history: Sequence[HistoryMessageRef],
+        user_message_ref: ArtifactRef,
+    ) -> ExitDecision | None:
+        """Run the exit judgment for this turn, or ``None`` when the bridge is not composed.
+
+        Fail-safe end to end: a judge that raises, returns garbage, or asks for a reasonless
+        finish yields CONTINUE (P3.6's ``decide_exit``), and a judge without a finisher to
+        execute its verdicts is treated as absent — loudly, once per turn.
+        """
+
+        if self._exit_judge is None:
+            return None
+        if self._finisher is None:
+            log.warning("design_leg.exit_judge_without_finisher")
+            return None
+        workspace_id = str(leg["workspace_id"])
+        bundle = await self._bundle_body(leg=leg, workspace_id=workspace_id)
+        history: list[tuple[str, str]] = []
+        for item in prior_history:
+            history.append((item.role, (await self._artifacts.read(item.body_ref)).decode()))
+        message = (await self._artifacts.read(user_message_ref)).decode()
+        try:
+            judgment: ExitJudgment | None = await self._exit_judge(
+                brief=str(bundle.get("brief") or ""),
+                history=tuple(history),
+                message=message,
+            )
+        except Exception:
+            log.warning("design_leg.exit_judge_raised", exc_info=True)
+            judgment = None
+        decision = decide_exit(judgment)
+        if decision.fail_safe:
+            log.info("design_leg.exit_judgment_fail_safe", leg_id=str(leg["id"]))
+        return decision
+
+    async def _exit_leg(
+        self,
+        *,
+        submission: AgentTurnSubmissionRow,
+        leg_id: str,
+        execution_id: ExecutionId,
+        reason: str,
+        stream: TurnStreamEmitter | None,
+    ) -> DesignLegTurnResult:
+        """Close the leg through the governed tool and finalize this turn ``COMPLETED``.
+
+        The bridge-time finalize shape: the leg is closed, so the envelope claims COMPLETED
+        with NO open gate refs, and the runner appends no assistant message of its own — the
+        finish tool's leg-summary message is the turn's one durable assistant record.
+        """
+
+        workspace_id = submission.workspace_id
+        turn_id = submission.turn_id
+        summary = DESIGN_LEG_EXIT_SUMMARIES.get(reason, DESIGN_LEG_EXIT_SUMMARIES["abandoned"])
+        if self._finisher is not None:
+            # A crash-retried exit replays the same governed invocation (derived operation
+            # id + the tool's own closing-turn journal replay) and returns the ORIGINAL
+            # decision's references.
+            references = await self._finisher(
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                reason=reason,
+                summary=summary,
+            )
+            closed_reason = str(references.get("reason") or reason)
+            summary = DESIGN_LEG_EXIT_SUMMARIES.get(closed_reason, summary)
+        # else: closed-leg re-entry on a worker without the bridge — the close itself
+        # committed atomically with the tool's transaction, so only the finalize remains.
+
+        summary_ref = await self._artifact_text(
+            workspace_id,
+            summary,
+            project_id=submission.project_id,
+        )
+        envelope = AgentFinalizeEnvelope(
+            finalization_id=uuid5(_FINALIZATION_NAMESPACE, str(turn_id)),
+            execution_id=execution_id,
+            status=FinalizeStatus.COMPLETED,
+            user_message_artifact_ref=summary_ref,
+            domain_refs=(
+                DomainObjectRef(
+                    workspace_id=workspace_id,
+                    object_type="design_leg",
+                    object_id=leg_id,
+                    version=None,
+                ),
+            ),
+            open_gate_refs=(),
+            finalized_at=datetime.now(tz=UTC),
+        )
+        await self._turns.record_finalization(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            envelope=envelope,
+        )
+        envelope_ref = await self._artifact(
+            workspace_id,
+            "application/vnd.clue.agent-finalize-envelope+json",
+            json.loads(envelope.model_dump_json()),
+            project_id=submission.project_id,
+        )
+        await self._turns.commit_finalization_authority(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            envelope=envelope,
+            envelope_ref=envelope_ref,
+        )
+        if stream is not None:
+            await stream.rehydrate(reason="design_leg_closed")
+            await stream.turn_finished(status="completed")
+        log.info(
+            "design_leg.exited",
+            leg_id=leg_id,
+            turn_id=str(turn_id),
+            reason=reason,
+        )
+        return DesignLegTurnResult(
+            outcome=AgentTurnOutcome(
+                turn_id=turn_id,
+                execution_id=execution_id,
+                status=AgentExecutionStatus.COMPLETED,
+                finalization_ref=envelope_ref,
+            ),
+            assistant_message=summary,
             replayed=False,
         )
 

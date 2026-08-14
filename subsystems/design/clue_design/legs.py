@@ -103,6 +103,31 @@ async def open_leg(
     return _leg_from_row(row)
 
 
+async def get_leg_closed_by_turn(
+    conn: AsyncConnection, *, workspace_id: str, turn_id: Any
+) -> JsonObject | None:
+    """The leg whose exit journal names this turn as its closer, or ``None``.
+
+    P3.7's crash-window re-entry read: a closing design turn that died between the close and
+    its finalization must still route to the design runner on retry — the open-leg lookup
+    finds nothing (the leg is closed), so the routing rule falls back to this. Served by the
+    ``design_leg_exit_journal_closing_turn`` expression index.
+    """
+
+    row = (
+        await conn.execute(
+            text(
+                f"SELECT {_LEG_COLUMNS} FROM design_leg WHERE workspace_id = :ws AND id = ("
+                "SELECT j.leg_id FROM design_leg_exit_journal j "
+                "WHERE j.workspace_id = :ws "
+                "AND j.summary_refs->>'closing_turn_id' = :turn LIMIT 1)"
+            ),
+            {"ws": workspace_id, "turn": str(turn_id)},
+        )
+    ).first()
+    return _leg_from_row(row) if row is not None else None
+
+
 async def get_leg(conn: AsyncConnection, *, workspace_id: str, leg_id: str) -> JsonObject:
     row = (
         await conn.execute(
@@ -159,9 +184,7 @@ async def _transition(
         raise DesignLegStateError(leg_id, " or ".join(from_states), action)
 
 
-async def mark_leg_running(
-    conn: AsyncConnection, *, workspace_id: str, leg_id: str
-) -> None:
+async def mark_leg_running(conn: AsyncConnection, *, workspace_id: str, leg_id: str) -> None:
     await _transition(
         conn,
         workspace_id=workspace_id,
@@ -172,9 +195,7 @@ async def mark_leg_running(
     )
 
 
-async def mark_leg_awaiting_user(
-    conn: AsyncConnection, *, workspace_id: str, leg_id: str
-) -> None:
+async def mark_leg_awaiting_user(conn: AsyncConnection, *, workspace_id: str, leg_id: str) -> None:
     await _transition(
         conn,
         workspace_id=workspace_id,

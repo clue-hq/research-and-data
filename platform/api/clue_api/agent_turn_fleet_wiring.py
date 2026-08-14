@@ -46,6 +46,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents import (
     AgentConstitution,
     AgentExecutionStatus,
+    AgentModelProvider,
+    AgentProfileRegistry,
     AgentRole,
     AgentTurnRequest,
     ArtifactRef,
@@ -82,12 +84,19 @@ from clue_api.conversation_turns import (
     build_conversation_turn_engine,
 )
 from clue_api.design_leg_wiring import (
+    DesignLegExitJudge,
+    DesignLegFinisher,
     DesignLegLaneDriver,
     DesignLegTurnRunner,
 )
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import legs as design_leg_dal
+from clue_design.exit_judgment import (
+    ExitJudgment,
+    parse_exit_judgment,
+    render_exit_judgment_prompt,
+)
 from clue_execution import (
     CompatibilityLoader,
     DbExecutionStarter,
@@ -326,6 +335,16 @@ class ProjectConversationTurnRunner:
                 is not None
             ):
                 open_leg = None
+            elif open_leg is None:
+                # P3.7 crash-window re-entry: a design turn that CLOSED its leg via the §2.2
+                # exit bridge and died before finalizing finds no open leg on retry — but it
+                # is still a design turn, and re-running it as head-of-abm would collide with
+                # its own durable rows. The exit journal names its closer; deliver it back.
+                open_leg = await design_leg_dal.get_leg_closed_by_turn(
+                    conn,
+                    workspace_id=workspace_id,
+                    turn_id=turn_id,
+                )
         # FI Lane D D3: open this attempt's stream *before* anything runs. The outbox itself decides
         # the attempt ordinal, so a re-claimed task after a crash opens a distinct attempt and
         # resets whatever the dead one left open — never splicing two generations (§3.3(6)).
@@ -892,6 +911,52 @@ async def sweep_turn_stream_retention(
         return await prune_turn_events(conn, retention_s=retention_s)
 
 
+def build_design_leg_exit_judge(
+    *,
+    models: AgentModelProvider,
+    profiles: AgentProfileRegistry,
+) -> DesignLegExitJudge:
+    """The live §2.2 exit judge: the design role's own catalog model over the P3.6 prompt.
+
+    Lives HERE — the worker composition — and not in ``design_leg_wiring``, because that
+    module is reachable from the HTTP turn route and the lane-D2 isolation guard forbids it
+    any model-plane name. Built lazily on first use and fail-safe throughout: a build
+    failure, a call failure, or unparseable output all yield ``None``, which the runner's
+    ``decide_exit`` envelope turns into CONTINUE.
+    """
+
+    model_holder: list[object] = []
+
+    async def judge(
+        *, brief: str, history: tuple[tuple[str, str], ...], message: str
+    ) -> ExitJudgment | None:
+        try:
+            if not model_holder:
+                policy = profiles.resolve(AgentRole.DESIGN).profile.model
+                model_holder.append(
+                    models.build(
+                        model_id=policy.model_id,
+                        timeout_s=policy.timeout_s,
+                        max_retries=policy.max_retries,
+                        # The judgment is one small JSON object; the role's generation
+                        # budget would be waste here.
+                        max_output_tokens=min(policy.max_output_tokens, 200),
+                        temperature=0.0,
+                    )
+                )
+            prompt = render_exit_judgment_prompt(brief=brief, history=history, message=message)
+            completion = await model_holder[0].ainvoke(prompt)  # type: ignore[attr-defined]
+            content = getattr(completion, "content", completion)
+            return parse_exit_judgment(
+                content if isinstance(content, (str, dict)) else str(content)
+            )
+        except Exception:
+            log.warning("design_leg.exit_judge_failed", exc_info=True)
+            return None
+
+    return judge
+
+
 class _DesignLaneUnavailable:
     """The fail-loud lane for a deployment that drains chat turns but no design work.
 
@@ -921,6 +986,8 @@ def build_agent_turn_work_handler(
     queue: WorkQueue,
     child_runner: FreshWakeChildRunner | None = None,
     design_lane: DesignLegLaneDriver | None = None,
+    design_exit_judge: DesignLegExitJudge | None = None,
+    design_leg_finisher: DesignLegFinisher | None = None,
     conn_factory: ConnFactory = transaction,
     streaming: bool = True,
     stream_policy: TurnStreamPolicy | None = None,
@@ -958,6 +1025,8 @@ def build_agent_turn_work_handler(
         turns=components.turns,
         history=components.history,
         lane=design_lane if design_lane is not None else _DesignLaneUnavailable(),
+        exit_judge=design_exit_judge,
+        finisher=design_leg_finisher,
         conn_factory=conn_factory,
     )
     return AgentTurnWorkHandler(
