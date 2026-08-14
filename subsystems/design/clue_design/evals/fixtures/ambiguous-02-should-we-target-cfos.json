@@ -1,0 +1,17 @@
+{
+  "name": "ambiguous-02-should-we-target-cfos",
+  "kind": "ambiguous",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "Hmm - should we even be targeting CFOs with this campaign?",
+  "judgment": {
+    "action": "finish",
+    "reason": "out_of_scope"
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "out_of_scope",
+    "fail_safe": false
+  },
+  "why": "Ratified: ICP/targeting strategy is head-of-abm's regardless of the artifact that prompted it; the pending question is re-delivered so the user never repeats it."
+}

@@ -1,0 +1,16 @@
+{
+  "name": "design-01-headline-bolder",
+  "kind": "clearly_design",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "Make the headline two lines and bolder.",
+  "judgment": {
+    "action": "continue",
+    "reason": null
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "design-03-swap-photo",
+  "kind": "clearly_design",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "Swap the product shot on page 2 for the lifestyle photo.",
+  "judgment": {
+    "action": "continue",
+    "reason": null
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false
+  }
+}

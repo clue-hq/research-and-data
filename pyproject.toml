@@ -54,6 +54,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 # Sanctioned print surfaces: operator-facing CLIs/demos and the offline run-scripts.
 "subsystems/research/clue_research/evals/**" = ["T20"]
 "subsystems/research/clue_research/verification/eval_cli.py" = ["T20"]
+"subsystems/design/clue_design/evals/__main__.py" = ["T20"]
 "scripts/**" = ["T20"]
 "tests/**" = ["T20"]
 

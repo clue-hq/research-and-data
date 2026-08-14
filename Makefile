@@ -5,7 +5,8 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install format lint typecheck contracts test check \
-	db-up db-down db-fresh migrate migrate-down db-smoke eval eval-verification redis-up redis-down
+	db-up db-down db-fresh migrate migrate-down db-smoke eval eval-verification eval-design-exit \
+	redis-up redis-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -95,3 +96,6 @@ eval: ## Run the eval harness against the stub gold set (regression-on-swap demo
 
 eval-verification: ## M9.6 verification-battery DEMO (rubrics + per-mechanism + regression-on-swap; always exits 0)
 	uv run python -m clue_research.verification.eval_cli
+
+eval-design-exit: ## P3.6 design-leg exit-judgment golden-set DEMO (fail-safe envelope + regression-on-weakened-judge; always exits 0)
+	uv run python -m clue_design.evals
