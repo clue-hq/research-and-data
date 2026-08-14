@@ -218,6 +218,7 @@ class FakeTaskQueue:
             result_ref={},
             claimed_by=None,
             claimed_at=None,
+            available_at=now,
             enqueued_at=now,
             enqueue_seq=seq,  # the monotonic total FIFO key — matches the real identity column
             updated_at=now,
@@ -245,6 +246,7 @@ class FakeTaskQueue:
                         "status": FleetTaskStatus.QUEUED,
                         "claimed_by": None,
                         "claimed_at": None,
+                        "available_at": _now(),
                         "result_ref": {},
                         "priority": priority,
                     }
@@ -277,6 +279,7 @@ class FakeTaskQueue:
                 for task in self._tasks.values()
                 if task.row.kind is kind
                 and task.row.status is FleetTaskStatus.QUEUED
+                and task.row.available_at <= _now()
                 and (project_run_id is None or task.row.project_run_id == project_run_id)
             ),
             key=lambda task: (task.row.priority, task.row.enqueue_seq),
@@ -326,7 +329,9 @@ class FakeTaskQueue:
         self.touches += 1
         return True
 
-    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool:
+    async def requeue(
+        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+    ) -> bool:
         task = self._by_id(task_id)
         if (
             task is None
@@ -335,7 +340,12 @@ class FakeTaskQueue:
         ):
             return False
         task.row = task.row.model_copy(
-            update={"status": FleetTaskStatus.QUEUED, "claimed_by": None, "claimed_at": None}
+            update={
+                "status": FleetTaskStatus.QUEUED,
+                "claimed_by": None,
+                "claimed_at": None,
+                "available_at": _now() + (delay or timedelta()),
+            }
         )
         return True
 

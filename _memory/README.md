@@ -27,6 +27,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-14-stage0-crawl-recovery-backoff.md` — closes the C10 Scrapling recovery-wake follow-up:
+  DB-clock delayed fleet requeue, earliest-lease/retry scheduling, bounded exponential fallback,
+  ready-work non-starvation, migration/replay tests, and privacy-safe cadence logs.
 - `2026-08-14-stage0-durable-official-site-crawl-c10.md` — C10 accepted: real Clerk/browser
   provisioning, sub-40-second Firecrawl/Scrapling authoritative release, same-frontier background,
   receipt/artifact/claim/replay reconciliation, live-discovered cutover/redirect/progress/category

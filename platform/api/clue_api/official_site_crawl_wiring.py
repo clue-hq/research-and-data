@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -77,6 +78,31 @@ from clue_research.stage0 import (
 from clue_storage import StorageBackend
 
 log = get_logger("clue_api.official_site_crawl")
+
+_RECOVERY_BACKOFF_BASE_SECONDS = 1.0
+_RECOVERY_BACKOFF_MAX_SECONDS = 30.0
+_RECOVERY_LEASE_GRACE_SECONDS = 0.25
+_RECOVERY_LEASE_DELAY_MAX_SECONDS = 120.0
+
+
+def _recovery_requeue_delay(*, task_attempt: int, retry_after_seconds: float | None) -> timedelta:
+    """Return a bounded exponential delay that never races a known page-lease boundary."""
+
+    exponent = min(max(task_attempt - 1, 0), 20)
+    exponential = min(
+        _RECOVERY_BACKOFF_MAX_SECONDS,
+        _RECOVERY_BACKOFF_BASE_SECONDS * (2**exponent),
+    )
+    if retry_after_seconds is None:
+        delay_seconds = exponential
+    else:
+        lease_aware = min(
+            _RECOVERY_LEASE_DELAY_MAX_SECONDS,
+            max(0.0, retry_after_seconds) + _RECOVERY_LEASE_GRACE_SECONDS,
+        )
+        delay_seconds = max(exponential, lease_aware)
+    return timedelta(seconds=delay_seconds)
+
 
 _PROVIDER_POLICY_VERSION = "official-site-single-page-v1"
 _CONTROL_DOCUMENT_MAX_BYTES = 1_000_000
@@ -467,18 +493,33 @@ class OfficialSiteCrawlWorkHandler:
                 )
             )
         except OfficialSiteExtractionPending as pending:
+            requeue_after = _recovery_requeue_delay(
+                task_attempt=context.task_attempt,
+                retry_after_seconds=None,
+            )
             log.info(
                 "stage0_official_site_crawl.extraction_pending",
                 workspace_id=workspace_id,
                 recon_run_id=str(recon_run_id),
                 detail=str(pending),
+                task_attempt=context.task_attempt,
+                requeue_after_seconds=requeue_after.total_seconds(),
+                scheduling_basis="exponential",
             )
             return WorkResult(
                 outcome="extraction_pending",
-                references={"recon_run_id": str(recon_run_id)},
+                references={
+                    "recon_run_id": str(recon_run_id),
+                    "requeue_after_seconds": requeue_after.total_seconds(),
+                },
                 requeue=True,
+                requeue_after=requeue_after,
             )
         except CrawlPhasePendingError as pending:
+            requeue_after = _recovery_requeue_delay(
+                task_attempt=context.task_attempt,
+                retry_after_seconds=pending.retry_after_seconds,
+            )
             log.info(
                 "stage0_official_site_crawl.recovery_pending",
                 workspace_id=workspace_id,
@@ -486,6 +527,13 @@ class OfficialSiteCrawlWorkHandler:
                 crawl_run_id=str(pending.crawl_run_id),
                 phase=pending.phase.value,
                 blocker_count=pending.blockers,
+                task_attempt=context.task_attempt,
+                requeue_after_seconds=requeue_after.total_seconds(),
+                scheduling_basis=(
+                    "lease_or_retry_deadline"
+                    if pending.retry_after_seconds is not None
+                    else "exponential"
+                ),
             )
             return WorkResult(
                 outcome="recovery_pending",
@@ -493,8 +541,10 @@ class OfficialSiteCrawlWorkHandler:
                     "recon_run_id": str(recon_run_id),
                     "crawl_run_id": str(pending.crawl_run_id),
                     "phase": pending.phase.value,
+                    "requeue_after_seconds": requeue_after.total_seconds(),
                 },
                 requeue=True,
+                requeue_after=requeue_after,
             )
         except Exception as exc:
             try:

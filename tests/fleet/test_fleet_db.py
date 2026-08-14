@@ -408,6 +408,103 @@ def test_finish_and_requeue_are_holder_guarded() -> None:
     run_async(_run())
 
 
+def test_delayed_requeue_uses_db_time_and_does_not_starve_ready_work() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            run_id = new_project_run_id()
+            await enqueue_task(
+                conn,
+                kind=FleetTaskKind.DRIVE_RUN,
+                project_run_id=run_id,
+                dedup_key="delayed-high-priority",
+                priority=-10,
+            )
+            await enqueue_task(
+                conn,
+                kind=FleetTaskKind.DRIVE_RUN,
+                project_run_id=run_id,
+                dedup_key="ready-lower-priority",
+                priority=0,
+            )
+            delayed = await claim_next_task(
+                conn,
+                kind=FleetTaskKind.DRIVE_RUN,
+                worker_id="worker-a",
+                project_run_id=run_id,
+                stale_after=_FRESH,
+            )
+            assert delayed is not None and delayed.dedup_key == "delayed-high-priority"
+            assert await requeue_task(
+                conn,
+                task_id=delayed.task_id,
+                worker_id="worker-a",
+                delay=timedelta(seconds=60),
+            )
+
+            stored = await get_task(conn, delayed.task_id)
+            assert stored is not None
+            assert (
+                await conn.execute(
+                    text("SELECT available_at > now() FROM fleet_task WHERE task_id = :task_id"),
+                    {"task_id": delayed.task_id},
+                )
+            ).scalar_one()
+
+            ready = await claim_next_task(
+                conn,
+                kind=FleetTaskKind.DRIVE_RUN,
+                worker_id="worker-b",
+                project_run_id=run_id,
+                stale_after=_FRESH,
+            )
+            assert ready is not None and ready.dedup_key == "ready-lower-priority"
+            assert await finish_task(
+                conn,
+                task_id=ready.task_id,
+                worker_id="worker-b",
+                status=FleetTaskStatus.DONE,
+            )
+
+            assert (
+                await claim_next_task(
+                    conn,
+                    kind=FleetTaskKind.DRIVE_RUN,
+                    worker_id="worker-c",
+                    project_run_id=run_id,
+                    stale_after=_FRESH,
+                )
+                is None
+            )
+            await conn.execute(
+                text("UPDATE fleet_task SET available_at = now() WHERE task_id = :task_id"),
+                {"task_id": delayed.task_id},
+            )
+            matured = await claim_next_task(
+                conn,
+                kind=FleetTaskKind.DRIVE_RUN,
+                worker_id="worker-c",
+                project_run_id=run_id,
+                stale_after=_FRESH,
+            )
+            assert matured is not None and matured.task_id == delayed.task_id
+
+    run_async(_run())
+
+
+def test_requeue_rejects_negative_delay_before_touching_db() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            with pytest.raises(ValueError, match="cannot be negative"):
+                await requeue_task(
+                    conn,
+                    task_id=new_project_run_id(),
+                    worker_id="worker",
+                    delay=timedelta(seconds=-1),
+                )
+
+    run_async(_run())
+
+
 def test_finish_rejects_non_terminal_status() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:

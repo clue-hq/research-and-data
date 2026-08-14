@@ -31,7 +31,7 @@ state and bounded provider request IDs but no URLs, bodies, or provider receipts
 
 | State | Interpretation | Next action |
 |---|---|---|
-| `queued` | Work is eligible or waiting for a proven-no-spend retry. | Verify workers and phase priority; do not mutate a healthy queue. |
+| `queued` | Work is ready, or durably delayed until `fleet_task.available_at`. | Compare `available_at` with DB time; do not repeatedly wake or mutate a healthy delayed queue. |
 | `leased` | A worker claimed work but has not dispatched. | Wait until lease expiry; reclaim only if the owner is gone. |
 | `provider-active` | A paid/remote call may be running. | Never cancel/reclaim merely because UI progress looks slow. |
 | `spend-unknown` | Dispatch may have charged but no authoritative success/no-spend verdict exists. | Reconcile by original operation/receipt; never issue a new acquisition. |
@@ -115,6 +115,12 @@ Correlate logs by workspace, recon, and crawl run. Page-level logs use `url_hash
 than a query-bearing URL. Never increase log verbosity to include response bodies, extraction raw
 output, headers, cookies, tokens, email addresses, Clerk subjects, or full receipts.
 
+`stage0_official_site_crawl.recovery_pending` includes `task_attempt`,
+`requeue_after_seconds`, and `scheduling_basis`. A lease-derived delay should land just after the
+earliest blocker boundary; an `exponential` basis means only untimed queued work remained. Repeated
+sub-second recovery lines indicate an old worker/schema or a delayed-requeue persistence failure,
+not normal Scrapling behavior.
+
 ## Stalled-run decision sequence
 
 1. Run `inspect` and retain its body-free output.
@@ -130,9 +136,11 @@ output, headers, cookies, tokens, email addresses, Clerk subjects, or full recei
 ## Acceptance and rollback posture
 
 Run C8 against a fresh, named, isolated database. Keep live-provider evidence databases and artifact
-roots until review. C8 has no schema migration to roll back; disabling the crawl rollout flag stops
-new composition while preserving rows. Removing the additive `official_site` response field is not
-required for old clients because they already ignore it and new clients treat absence as `null`.
+roots until review. C8 itself added no migration; post-C10 migration `9aacba7cea99` owns durable
+delayed requeue and reversibly removes only `fleet_task.available_at` plus its covering index.
+Disabling the crawl rollout flag stops new composition while preserving rows. Removing the additive
+`official_site` response field is not required for old clients because they already ignore it and
+new clients treat absence as `null`.
 
 Never delete crawl/attempt/snapshot/extraction rows to "unstick" a run. They are provenance,
 financial reconciliation, and DSAR reach.

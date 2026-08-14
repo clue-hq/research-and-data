@@ -31,6 +31,7 @@ from clue_research.official_site.contracts import (
     CrawlLease,
     CrawlPageState,
     CrawlPhase,
+    CrawlPhaseBlockers,
     CrawlProgress,
     CrawlRunCreate,
     CrawlRunRef,
@@ -1834,14 +1835,16 @@ class PostgresCrawlRepository:
         async with self._conn_factory() as conn:
             return await self._read_progress(conn, workspace_id, crawl_run_id)
 
-    async def count_phase_blockers(
+    async def read_phase_blockers(
         self, *, workspace_id: str, crawl_run_id: UUID, phase: CrawlPhase
-    ) -> int:
-        """Count durable states that prevent a C6 phase boundary from being published.
+    ) -> CrawlPhaseBlockers:
+        """Read durable phase blockers and the first DB-clock recovery boundary.
 
         Queued and delayed no-spend retries are valid at the fast boundary because background
         resumes the same frontier. They are blockers at the final background boundary. Leased,
-        dispatched, reconciliation, and persistence work block both boundaries.
+        dispatched, reconciliation, and persistence work block both boundaries. The retry hint is
+        the earliest page-lease expiry or no-spend retry timestamp. Untimed queued work leaves the
+        hint null so the fleet can apply bounded exponential fallback.
         """
 
         states = [
@@ -1859,24 +1862,57 @@ class PostgresCrawlRepository:
             )
         async with self._conn_factory() as conn:
             await self._run(conn, workspace_id, crawl_run_id)
-            count = (
-                await conn.execute(
-                    text(
-                        """
-                        SELECT count(*)
-                        FROM official_site_crawl_page
-                        WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
-                          AND state = ANY(CAST(:states AS text[]))
-                        """
-                    ),
-                    {
-                        "workspace_id": workspace_id,
-                        "crawl_run_id": crawl_run_id,
-                        "states": states,
-                    },
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT count(*)::int AS blocker_count,
+                                   min(
+                                       CASE
+                                           WHEN lease_expires_at IS NOT NULL THEN greatest(
+                                               extract(epoch FROM (lease_expires_at - now())), 0
+                                           )
+                                           WHEN next_attempt_at IS NOT NULL THEN greatest(
+                                               extract(epoch FROM (next_attempt_at - now())), 0
+                                           )
+                                           ELSE NULL
+                                       END
+                                   )::double precision AS retry_after_seconds
+                            FROM official_site_crawl_page
+                            WHERE workspace_id = :workspace_id
+                              AND crawl_run_id = :crawl_run_id
+                              AND state = ANY(CAST(:states AS text[]))
+                            """
+                        ),
+                        {
+                            "workspace_id": workspace_id,
+                            "crawl_run_id": crawl_run_id,
+                            "states": states,
+                        },
+                    )
                 )
-            ).scalar_one()
-        return int(count)
+                .mappings()
+                .one()
+            )
+        retry_after = row["retry_after_seconds"]
+        return CrawlPhaseBlockers(
+            count=int(row["blocker_count"]),
+            retry_after_seconds=float(retry_after) if retry_after is not None else None,
+        )
+
+    async def count_phase_blockers(
+        self, *, workspace_id: str, crawl_run_id: UUID, phase: CrawlPhase
+    ) -> int:
+        """Compatibility count for callers that do not need scheduling metadata."""
+
+        return (
+            await self.read_phase_blockers(
+                workspace_id=workspace_id,
+                crawl_run_id=crawl_run_id,
+                phase=phase,
+            )
+        ).count
 
     @staticmethod
     async def _queued_candidates(

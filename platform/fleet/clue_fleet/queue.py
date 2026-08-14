@@ -11,13 +11,13 @@ Semantics, all decided at the database (no read-then-write races):
 * **enqueue** is idempotent on ``(kind, project_run_id, dedup_key)`` (``ON CONFLICT DO
   NOTHING``) — re-entering a drive re-offers the same work without duplicating rows.
 * **claim-next** is one atomic ``UPDATE … FROM (SELECT … ORDER BY priority, enqueue_seq LIMIT 1
-  FOR UPDATE SKIP LOCKED)`` — the best runnable row in ``(priority, enqueue_seq)`` order, where
-  ``enqueue_seq`` is a monotonic insertion sequence (a ``GENERATED ALWAYS AS IDENTITY`` column):
-  timestamps alone cannot provide FIFO because ``now()`` is transaction-stable, so same-priority
-  rows enqueued in one transaction share ``enqueued_at`` and tie with no final key. Concurrent
-  claimants never receive the same row. A ``CLAIMED`` row whose ``claimed_at`` has passed the
-  staleness window is re-owned (its holder is presumed killed) — the M7.4 ledger's recovery
-  shape.
+  FOR UPDATE SKIP LOCKED)`` — the best runnable row in ``(priority, enqueue_seq)`` order after its
+  DB-clock ``available_at`` boundary. ``enqueue_seq`` is a monotonic insertion sequence (a
+  ``GENERATED ALWAYS AS IDENTITY`` column): timestamps alone cannot provide FIFO because
+  ``now()`` is transaction-stable, so same-priority rows enqueued in one transaction share
+  ``enqueued_at`` and tie with no final key. Concurrent claimants never receive the same row. A
+  ``CLAIMED`` row whose ``claimed_at`` has passed the staleness window is re-owned (its holder is
+  presumed killed) — the M7.4 ledger's recovery shape.
 * **finish / requeue** are holder-guarded (``WHERE claimed_by = :me AND status = 'claimed'``): a
   fenced-out zombie's write matches zero rows.
 * **requeue_failed** is the explicit retry gate — a fresh drive re-entering the work re-offers
@@ -65,6 +65,7 @@ class FleetTaskRow(BaseModel):
     result_ref: dict[str, JsonValue]
     claimed_by: str | None
     claimed_at: UtcDatetime | None
+    available_at: UtcDatetime
     enqueued_at: UtcDatetime
     enqueue_seq: int
     updated_at: UtcDatetime
@@ -86,6 +87,7 @@ class WorkTaskRow(BaseModel):
     result_ref: dict[str, JsonValue]
     claimed_by: str | None
     claimed_at: UtcDatetime | None
+    available_at: UtcDatetime
     enqueued_at: UtcDatetime
     enqueue_seq: int
     updated_at: UtcDatetime
@@ -102,7 +104,8 @@ def _to_work_task(row: FleetTaskRow) -> WorkTaskRow:
 
 _COLUMNS = (
     "task_id, kind, work_id AS project_run_id, dedup_key, priority, status, attempts, "
-    "payload_json, result_ref_json, claimed_by, claimed_at, enqueued_at, enqueue_seq, updated_at"
+    "payload_json, result_ref_json, claimed_by, claimed_at, available_at, enqueued_at, "
+    "enqueue_seq, updated_at"
 )
 
 # The claim-next RETURNING joins ``fleet_task`` with the ``candidate`` subquery, which also
@@ -138,6 +141,7 @@ _ENQUEUE_REOPEN_SQL = text(
         SET status = 'queued',
             claimed_by = NULL,
             claimed_at = NULL,
+            available_at = now(),
             result_ref_json = '{}'::jsonb,
             priority = :priority,
             updated_at = now()
@@ -167,7 +171,7 @@ _CLAIM_NEXT_SQL = text(
         WHERE kind = CAST(:kind AS fleet_task_kind)
           AND (CAST(:project_run_id AS uuid) IS NULL OR work_id = :project_run_id)
           AND (
-                status = 'queued'
+                (status = 'queued' AND available_at <= now())
                 OR (status = 'claimed' AND claimed_at <= now() - CAST(:stale AS interval))
               )
         ORDER BY priority, enqueue_seq
@@ -205,7 +209,8 @@ _TOUCH_SQL = text(
 _REQUEUE_SQL = text(
     """
     UPDATE fleet_task
-    SET status = 'queued', claimed_by = NULL, claimed_at = NULL, updated_at = now()
+    SET status = 'queued', claimed_by = NULL, claimed_at = NULL,
+        available_at = now() + make_interval(secs => :delay_seconds), updated_at = now()
     WHERE task_id = :task_id AND claimed_by = :worker_id AND status = 'claimed'
     RETURNING task_id
     """
@@ -214,7 +219,8 @@ _REQUEUE_SQL = text(
 _REQUEUE_FAILED_SQL = text(
     """
     UPDATE fleet_task
-    SET status = 'queued', claimed_by = NULL, claimed_at = NULL, updated_at = now()
+    SET status = 'queued', claimed_by = NULL, claimed_at = NULL,
+        available_at = now(), updated_at = now()
     WHERE kind = CAST(:kind AS fleet_task_kind)
       AND work_id = :project_run_id
       AND status = 'failed'
@@ -244,6 +250,7 @@ _REOFFER_GOVERNED_PARTIAL_SQL = text(
     SET status = 'queued',
         claimed_by = NULL,
         claimed_at = NULL,
+        available_at = now(),
         result_ref_json = '{}'::jsonb,
         updated_at = now()
     WHERE kind = 'account_job'
@@ -287,6 +294,7 @@ def _row_to_task(row: dict[str, object]) -> FleetTaskRow:
             "result_ref": _decode_object(row["result_ref_json"]),
             "claimed_by": row["claimed_by"],
             "claimed_at": row["claimed_at"],
+            "available_at": row["available_at"],
             "enqueued_at": row["enqueued_at"],
             "enqueue_seq": row["enqueue_seq"],
             "updated_at": row["updated_at"],
@@ -395,10 +403,33 @@ async def touch_task(conn: AsyncConnection, *, task_id: UUID, worker_id: str) ->
     return row is not None
 
 
-async def requeue_task(conn: AsyncConnection, *, task_id: UUID, worker_id: str) -> bool:
+async def requeue_task(
+    conn: AsyncConnection,
+    *,
+    task_id: UUID,
+    worker_id: str,
+    delay: timedelta | None = None,
+) -> bool:
     """Hand a claimed task back to ``QUEUED`` (the graceful-stop path). Holder-guarded like
-    :func:`finish_task`."""
-    row = (await conn.execute(_REQUEUE_SQL, {"task_id": task_id, "worker_id": worker_id})).first()
+    :func:`finish_task`.
+
+    ``delay`` persists a DB-clock eligibility boundary rather than sleeping in one worker process.
+    This lets the worker drain unrelated work while recovery waits and survives process restarts.
+    """
+
+    delay_seconds = 0.0 if delay is None else delay.total_seconds()
+    if delay_seconds < 0:
+        raise ValueError("requeue delay cannot be negative")
+    row = (
+        await conn.execute(
+            _REQUEUE_SQL,
+            {
+                "task_id": task_id,
+                "worker_id": worker_id,
+                "delay_seconds": delay_seconds,
+            },
+        )
+    ).first()
     return row is not None
 
 
@@ -513,7 +544,9 @@ class TaskQueue(Protocol):
 
     async def touch(self, *, task_id: UUID, worker_id: str) -> bool: ...
 
-    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool: ...
+    async def requeue(
+        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+    ) -> bool: ...
 
     async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: ProjectRunId) -> int: ...
 
@@ -582,9 +615,11 @@ class DbTaskQueue:
         async with transaction() as conn:
             return await touch_task(conn, task_id=task_id, worker_id=worker_id)
 
-    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool:
+    async def requeue(
+        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+    ) -> bool:
         async with transaction() as conn:
-            return await requeue_task(conn, task_id=task_id, worker_id=worker_id)
+            return await requeue_task(conn, task_id=task_id, worker_id=worker_id, delay=delay)
 
     async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: ProjectRunId) -> int:
         async with transaction() as conn:
@@ -632,7 +667,9 @@ class WorkQueue(Protocol):
 
     async def touch(self, *, task_id: UUID, worker_id: str) -> bool: ...
 
-    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool: ...
+    async def requeue(
+        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+    ) -> bool: ...
 
 
 class DbWorkQueue:
@@ -694,8 +731,10 @@ class DbWorkQueue:
     async def touch(self, *, task_id: UUID, worker_id: str) -> bool:
         return await self._queue.touch(task_id=task_id, worker_id=worker_id)
 
-    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool:
-        return await self._queue.requeue(task_id=task_id, worker_id=worker_id)
+    async def requeue(
+        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+    ) -> bool:
+        return await self._queue.requeue(task_id=task_id, worker_id=worker_id, delay=delay)
 
 
 __all__ = [

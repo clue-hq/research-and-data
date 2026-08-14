@@ -645,6 +645,19 @@ class ReclaimResult(FrozenContractModel):
     released_persistence_pending: int = Field(ge=0)
 
 
+class CrawlPhaseBlockers(FrozenContractModel):
+    """Durable phase blockers plus the DB-clock delay until the first timed blocker matures."""
+
+    count: int = Field(ge=0)
+    retry_after_seconds: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _validate_retry_hint(self) -> CrawlPhaseBlockers:
+        if self.count == 0 and self.retry_after_seconds is not None:
+            raise ValueError("an empty blocker set cannot carry a retry hint")
+        return self
+
+
 class CrawlProgress(FrozenContractModel):
     workspace_id: str = Field(min_length=1)
     crawl_run_id: UUID
@@ -746,6 +759,7 @@ __all__ = [
     "CrawlLease",
     "CrawlMode",
     "CrawlPageState",
+    "CrawlPhaseBlockers",
     "CrawlPhase",
     "CrawlProgress",
     "CrawlRunCreate",

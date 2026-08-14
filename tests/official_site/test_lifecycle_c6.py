@@ -17,6 +17,7 @@ from clue_research.official_site import (
     CorpusCheckpointRef,
     CrawlMode,
     CrawlPhase,
+    CrawlPhaseBlockers,
     CrawlPhasePendingError,
     CrawlRunRef,
     CrawlRunRuntimeRef,
@@ -64,6 +65,7 @@ class _Repository:
         self.checkpoints: dict[CrawlPhase, CorpusCheckpointRef] = {}
         self.transitions: list[tuple[CrawlRunStatus, CrawlRunStatus]] = []
         self.phase_blockers = 0
+        self.phase_retry_after_seconds: float | None = None
 
     async def create_or_get_run(self, request: Any) -> CrawlRunRef:
         assert request.recon_run_id == self.recon_id
@@ -133,8 +135,11 @@ class _Repository:
     ) -> CorpusCheckpointRef | None:
         return self.checkpoints.get(phase)
 
-    async def count_phase_blockers(self, **_: object) -> int:
-        return self.phase_blockers
+    async def read_phase_blockers(self, **_: object) -> CrawlPhaseBlockers:
+        return CrawlPhaseBlockers(
+            count=self.phase_blockers,
+            retry_after_seconds=self.phase_retry_after_seconds,
+        )
 
     def _checkpoint(self, phase: CrawlPhase) -> CorpusCheckpointRef:
         existing = self.checkpoints.get(phase)
@@ -432,6 +437,7 @@ def test_durable_worker_error_requeues_without_freezing_or_false_completion() ->
     async def scenario() -> None:
         repository = _Repository(_config(), deadline_seconds=1)
         repository.phase_blockers = 1
+        repository.phase_retry_after_seconds = 47.25
         faulted = _FaultedCoordinator(repository)
         lifecycle = OfficialSiteCrawlLifecycle(
             repository=repository,
@@ -441,10 +447,12 @@ def test_durable_worker_error_requeues_without_freezing_or_false_completion() ->
             await lifecycle.run(_request(repository))
         assert raised.value.crawl_run_id == repository.run_id
         assert raised.value.blockers == 1
+        assert raised.value.retry_after_seconds == 47.25
         assert repository.status is CrawlRunStatus.FAST_ACTIVE
         assert repository.checkpoints == {}
 
         repository.phase_blockers = 0
+        repository.phase_retry_after_seconds = None
         resumed = OfficialSiteCrawlLifecycle(
             repository=repository,
             coordinator_factory=lambda **_: _ImmediateCoordinator(repository),

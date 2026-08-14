@@ -39,6 +39,7 @@ class WorkContext:
     payload: dict[str, JsonValue]
     stop_requested: asyncio.Event
     lease_lost: asyncio.Event
+    task_attempt: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,14 @@ class WorkResult:
     references: dict[str, JsonValue]
     requeue: bool = False
     task_finalized: bool = False
+    requeue_after: timedelta | None = None
+
+    def __post_init__(self) -> None:
+        if self.requeue_after is not None:
+            if not self.requeue:
+                raise ValueError("requeue_after requires requeue=True")
+            if self.requeue_after.total_seconds() < 0:
+                raise ValueError("requeue_after cannot be negative")
 
     def result_ref(self) -> dict[str, JsonValue]:
         return {"outcome": self.outcome, **self.references}
@@ -152,6 +161,7 @@ class LeasedWorkWorker:
             payload=task.payload,
             stop_requested=self._stop,
             lease_lost=lease_lost,
+            task_attempt=task.attempts,
         )
         work = asyncio.create_task(handler.handle(context))
         heartbeat = asyncio.create_task(
@@ -224,7 +234,11 @@ class LeasedWorkWorker:
 
         assert result is not None
         if result.requeue:
-            await self._queue.requeue(task_id=task.task_id, worker_id=self.worker_id)
+            await self._queue.requeue(
+                task_id=task.task_id,
+                worker_id=self.worker_id,
+                delay=result.requeue_after,
+            )
             return
         if result.task_finalized:
             return

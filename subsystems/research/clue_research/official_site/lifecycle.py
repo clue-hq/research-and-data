@@ -16,6 +16,7 @@ from clue_research.official_site.contracts import (
     CorpusCheckpointRef,
     CrawlMode,
     CrawlPhase,
+    CrawlPhaseBlockers,
     CrawlRunCreate,
     CrawlRunRef,
     CrawlRunRuntimeRef,
@@ -110,19 +111,27 @@ class CrawlLifecycleRepository(Protocol):
         self, *, workspace_id: str, crawl_run_id: UUID, phase: CrawlPhase
     ) -> CorpusCheckpointRef | None: ...
 
-    async def count_phase_blockers(
+    async def read_phase_blockers(
         self, *, workspace_id: str, crawl_run_id: UUID, phase: CrawlPhase
-    ) -> int: ...
+    ) -> CrawlPhaseBlockers: ...
 
 
 class CrawlPhasePendingError(RuntimeError):
     """A durable phase has recoverable work and must be requeued, not falsely completed."""
 
-    def __init__(self, *, crawl_run_id: UUID, phase: CrawlPhase, blockers: int) -> None:
+    def __init__(
+        self,
+        *,
+        crawl_run_id: UUID,
+        phase: CrawlPhase,
+        blockers: int,
+        retry_after_seconds: float | None = None,
+    ) -> None:
         super().__init__(f"{phase.value} crawl phase has {blockers} durable blocker(s)")
         self.crawl_run_id = crawl_run_id
         self.phase = phase
         self.blockers = blockers
+        self.retry_after_seconds = retry_after_seconds
 
 
 @dataclass(frozen=True, slots=True)
@@ -536,16 +545,17 @@ class OfficialSiteCrawlLifecycle:
         phase: CrawlPhase,
         result: CoordinatorPhaseResult,
     ) -> None:
-        blockers = await self._repository.count_phase_blockers(
+        blockers = await self._repository.read_phase_blockers(
             workspace_id=workspace_id,
             crawl_run_id=crawl_run_id,
             phase=phase,
         )
-        if blockers:
+        if blockers.count:
             raise CrawlPhasePendingError(
                 crawl_run_id=crawl_run_id,
                 phase=phase,
-                blockers=blockers,
+                blockers=blockers.count,
+                retry_after_seconds=blockers.retry_after_seconds,
             )
         if result.worker_errors or result.fenced_workers:
             raise CrawlStateConflictError(

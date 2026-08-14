@@ -280,9 +280,11 @@ These do not invalidate the C10 data-integrity/browser result, but must remain v
    OpenRouter gateway reported zero cost, so durable model cost reconciles to provider-reported
    zero rather than an independent invoice. This requires billing-metadata monitoring before model
    cost is used as an enforcement-grade budget signal.
-3. **Recovery wake cadence:** the Scrapling fleet repeatedly requeued while active leases drained.
-   Correctness and provider-call uniqueness held, but backoff should replace the sub-second log/wake
-   churn.
+3. **Recovery wake cadence — resolved after C10:** the Scrapling fleet repeatedly requeued while
+   active leases drained. Migration `9aacba7cea99` adds a DB-clock `fleet_task.available_at`
+   boundary; recovery now schedules after the earliest blocker lease/retry timestamp plus a small
+   grace, with bounded exponential fallback when no timed blocker exists. Delayed work remains
+   durable and does not occupy a worker or hide ready lower-priority tasks.
 4. **Partial extraction is honest:** both accepted runs materialized 20 of 22 bounded operations;
    two field operations failed while successful siblings and claims were preserved. The UI and
    operator surface report partial state rather than fabricating completeness.

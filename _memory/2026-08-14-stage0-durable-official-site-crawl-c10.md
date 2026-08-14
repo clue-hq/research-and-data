@@ -65,7 +65,8 @@ default-off and allowlisted; retained evidence must not be removed before review
   tune provider rate/concurrency or add receipt reconciliation before broad enablement.
 - Real Luna operations carried token counts but provider-reported cost zero; do not treat model
   monetary telemetry as enforcement-grade until billing attribution is monitored.
-- Fleet recovery wakes were sub-second while leases drained; add backoff to reduce log/DB churn.
+- Fleet recovery wakes were sub-second while leases drained; post-C10 migration `9aacba7cea99`
+  closes this with DB-clock delayed requeue, lease/retry-aware timing, and exponential fallback.
 - Both model phases honestly preserved two failed field operations alongside 20 successes.
 
 No secret, email, raw Clerk subject/token/code, raw provider receipt, page body, model response, or

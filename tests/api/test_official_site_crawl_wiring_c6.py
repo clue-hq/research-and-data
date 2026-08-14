@@ -12,6 +12,7 @@ from clue_api.official_site_crawl_wiring import (
     DbOfficialSiteCrawlEnqueuer,
     LiveRobotsAuthorizer,
     LiveSitemapSeedDiscoverer,
+    _recovery_requeue_delay,
     build_official_site_crawl_fleet,
     crawl_contract_config,
 )
@@ -139,6 +140,16 @@ def test_contract_settings_are_pinned_and_authoritative_composition_requires_gat
         gateway=object(),  # type: ignore[arg-type]
     )
     assert authoritative.handler is not None
+
+
+def test_recovery_delay_is_exponential_and_defers_past_known_lease_boundary() -> None:
+    assert _recovery_requeue_delay(task_attempt=1, retry_after_seconds=None).total_seconds() == 1
+    assert _recovery_requeue_delay(task_attempt=3, retry_after_seconds=None).total_seconds() == 4
+    assert _recovery_requeue_delay(task_attempt=100, retry_after_seconds=None).total_seconds() == 30
+    assert (
+        _recovery_requeue_delay(task_attempt=2, retry_after_seconds=89.5).total_seconds() == 89.75
+    )
+    assert _recovery_requeue_delay(task_attempt=2, retry_after_seconds=900).total_seconds() == 120
 
 
 class _ControlClient:

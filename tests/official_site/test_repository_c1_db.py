@@ -377,6 +377,93 @@ def test_cross_workspace_repository_access_fails_closed() -> None:
     run_async(_run())
 
 
+def test_phase_blockers_report_db_clock_lease_and_retry_boundaries() -> None:
+    async def _run() -> None:
+        workspace_id = ""
+        async with db_lifespan() as engine:
+            try:
+                async with engine.begin() as conn:
+                    workspace_id, brand_id, recon_run_id = await _seed_scope(conn)
+                repository = PostgresCrawlRepository()
+                crawl_run_id = await _create_run_and_page(
+                    repository,
+                    workspace_id=workspace_id,
+                    brand_id=brand_id,
+                    recon_run_id=recon_run_id,
+                )
+
+                fast_queued = await repository.read_phase_blockers(
+                    workspace_id=workspace_id,
+                    crawl_run_id=crawl_run_id,
+                    phase=CrawlPhase.FAST,
+                )
+                background_queued = await repository.read_phase_blockers(
+                    workspace_id=workspace_id,
+                    crawl_run_id=crawl_run_id,
+                    phase=CrawlPhase.BACKGROUND,
+                )
+                assert fast_queued.count == 0
+                assert fast_queued.retry_after_seconds is None
+                assert background_queued.count == 1
+                assert background_queued.retry_after_seconds is None
+
+                lease = await repository.claim_next(
+                    ClaimNextRequest(
+                        workspace_id=workspace_id,
+                        crawl_run_id=crawl_run_id,
+                        worker_id="lease-worker",
+                        eligible_phase=CrawlPhase.FAST,
+                        lease_ttl_seconds=90,
+                    )
+                )
+                assert lease is not None
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text(
+                            "UPDATE official_site_crawl_page "
+                            "SET lease_expires_at = now() + interval '17 seconds' "
+                            "WHERE id = :page_id"
+                        ),
+                        {"page_id": lease.page_id},
+                    )
+                leased = await repository.read_phase_blockers(
+                    workspace_id=workspace_id,
+                    crawl_run_id=crawl_run_id,
+                    phase=CrawlPhase.FAST,
+                )
+                assert leased.count == 1
+                assert leased.retry_after_seconds is not None
+                assert 15 <= leased.retry_after_seconds <= 17
+
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text(
+                            """
+                            UPDATE official_site_crawl_page
+                            SET state = 'retry_wait', lease_owner = NULL,
+                                lease_acquired_at = NULL, lease_expires_at = NULL,
+                                next_attempt_at = now() + interval '9 seconds'
+                            WHERE id = :page_id
+                            """
+                        ),
+                        {"page_id": lease.page_id},
+                    )
+                retry_wait = await repository.read_phase_blockers(
+                    workspace_id=workspace_id,
+                    crawl_run_id=crawl_run_id,
+                    phase=CrawlPhase.BACKGROUND,
+                )
+                assert retry_wait.count == 1
+                assert retry_wait.retry_after_seconds is not None
+                assert 7 <= retry_wait.retry_after_seconds <= 9
+            finally:
+                if workspace_id:
+                    async with engine.begin() as conn:
+                        await _cleanup_scope(conn, workspace_id)
+
+    run_async(_run())
+
+
 def test_discovery_replay_deduplicates_a_batch_without_collapsing_its_provenance() -> None:
     async def _run() -> None:
         workspace_id = ""

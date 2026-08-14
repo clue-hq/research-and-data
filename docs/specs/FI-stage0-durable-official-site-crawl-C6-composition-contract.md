@@ -44,8 +44,9 @@ after that same durable fact and cannot delay or counterfeit release.
 6. The fast snapshot set freezes once. Late safe completions remain on the same frontier and can
    enter only the background checkpoint.
 7. Background resumes the same run. Completed pages are never fetched again. Recoverable blockers
-   return `recovery_pending` with `requeue=true`; the background checkpoint and completed status
-   cannot publish early.
+   return `recovery_pending` with `requeue=true`; the task is durably delayed until the earliest
+   DB-clock lease/retry boundary, or by bounded exponential fallback when no boundary exists. The
+   background checkpoint and completed status cannot publish early.
 8. Background freezes once after the frontier settles. Any later replay returns the same run and
    checkpoint IDs and performs zero provider acquisition.
 
@@ -110,7 +111,11 @@ reclaimable after expiry.
 ## 6. Fleet and privacy boundary
 
 Migration `93113e83bf2f` appends `stage0_recon` and `official_site_crawl` to the shared fleet task
-kind. The migration is reversible and refuses downgrade while either task kind is retained.
+kind. Follow-up migration `9aacba7cea99` adds `fleet_task.available_at`: `claim_next` ignores a
+queued row until that DB timestamp while continuing to claim other ready work in priority/FIFO
+order. Delayed recovery therefore survives process restart and does not sleep inside a worker.
+Both migrations are reversible; task-kind downgrade still refuses while either task kind is
+retained.
 
 Both task payloads are reference-only. They contain no URL, page body, Clerk token, email,
 provider key, or raw provider receipt. Workers rehydrate trusted workspace-scoped state from
