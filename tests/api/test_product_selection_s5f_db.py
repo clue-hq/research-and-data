@@ -23,11 +23,14 @@ from clue_api.product_context_compiler import (
     compile_product_profile_card,
 )
 from clue_api.projections_app import create_projections_app
+from clue_api.recipe_wiring import build_recipe_pin_registry
+from clue_api.stage0_recipe import RecipeStep, Stage0StepPinProvider
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_api.turn_action import derive_turn_action_ref
 from clue_config import load_settings
 from clue_core import new_operation_id
 from clue_db import db_lifespan
+from clue_execution import CompatibilityLoader
 from clue_spine import create_brand, create_product, create_project, get_project
 from clue_storage import FsStorage
 from clue_toolbelt import DbIdempotencyStore, PreconditionFailed, ToolContext, invoke_tool
@@ -175,6 +178,41 @@ def test_catalog_gate_human_selection_and_next_turn_product_pair_for_projects_a_
                 gateway=None,
                 conn_factory=cf,
             )
+            # The real governed agent wrapper has no model-visible project/client/version
+            # arguments for this tool. Its execution pins must therefore come from the exact
+            # captured turn scope, otherwise graph validation refuses the production call before
+            # the otherwise-correct domain tool can open the gate.
+            gate_pins = await Stage0StepPinProvider(
+                compatibility=CompatibilityLoader(
+                    build_recipe_pin_registry(tool_registry=registry, conn_factory=cf)
+                ),
+                conn_factory=cf,
+            ).pins_for(
+                RecipeStep(
+                    step_id="open_selection_gate_a",
+                    tool_name="open_product_selection_gate",
+                    tool_version="1",
+                    input_refs={
+                        "source_turn_ref": derive_turn_action_ref(opening_a.turn_id),
+                    },
+                ),
+                ctx=ToolContext(
+                    workspace_id=scope.workspace_id,
+                    actor="agent",
+                    principal_kind="internal_service",
+                    actor_id="svc_agent_execution",
+                    conn_factory=cf,
+                    operation_id=new_operation_id(),
+                ),
+            )
+            assert {(pin.kind, pin.key, pin.version) for pin in gate_pins} == {
+                ("project", project_a.project_id, "1"),
+                (
+                    "client_kb",
+                    f"{scope.client_entity_id}|-",
+                    str(original_pin_a.client_kb_version),
+                ),
+            }
             agent_context = ToolContext(
                 workspace_id=scope.workspace_id,
                 actor="agent",

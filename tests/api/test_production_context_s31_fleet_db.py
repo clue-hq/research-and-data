@@ -39,6 +39,11 @@ from clue_api.agent_turn_wiring import (
     DurableAgentArtifactStore,
 )
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
+from clue_api.context_observability import (
+    METRIC_CONTEXT_CARDS,
+    METRIC_CONTEXT_RECEIPTS,
+    METRIC_CONTEXT_TOOL_OUTCOMES,
+)
 from clue_api.execution_wiring import (
     ExecutionRunEventWriter,
     StorageExecutionParameterStore,
@@ -74,6 +79,7 @@ from clue_fleet import (
     claim_next_task,
     finish_task,
 )
+from clue_obs.otel.metrics import InMemorySink, get_metric_sink, set_metric_sink
 from clue_research.stage0 import (
     CLIENT_KNOWLEDGE_FIELDS,
     PRODUCT_KNOWLEDGE_FIELDS,
@@ -183,6 +189,10 @@ def _responses() -> tuple[AIMessage, ...]:
 def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and_replay(
     tmp_path: Path,
 ) -> None:
+    prior_metric_sink = get_metric_sink()
+    context_metrics = InMemorySink()
+    set_metric_sink(context_metrics)
+
     async def scenario() -> None:
         # LangGraph installs a concurrent index. Do that before the rollback-only fixture opens
         # its long transaction; otherwise PostgreSQL correctly waits for that transaction's
@@ -699,4 +709,44 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
             finally:
                 workspaces.close()
 
-    run_async(scenario())
+    try:
+        run_async(scenario())
+        assert (
+            context_metrics.counter(
+                METRIC_CONTEXT_CARDS,
+                card_kind="project_conversation",
+                schema_version="2",
+                availability="available",
+            )
+            == 1
+        )
+        assert (
+            context_metrics.counter(
+                METRIC_CONTEXT_CARDS,
+                card_kind="client_knowledge",
+                schema_version="2",
+                availability="available",
+            )
+            == 1
+        )
+        assert context_metrics.counter(METRIC_CONTEXT_RECEIPTS, schema_version="1") == 1
+        assert (
+            context_metrics.counter(
+                METRIC_CONTEXT_TOOL_OUTCOMES,
+                tool_address="list_client_knowledge@2",
+                outcome="completed",
+                replayed="false",
+            )
+            == 1
+        )
+        assert (
+            context_metrics.counter(
+                METRIC_CONTEXT_TOOL_OUTCOMES,
+                tool_address="list_product_knowledge@1",
+                outcome="completed",
+                replayed="false",
+            )
+            == 1
+        )
+    finally:
+        set_metric_sink(prior_metric_sink)

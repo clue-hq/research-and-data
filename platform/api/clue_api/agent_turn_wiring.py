@@ -51,9 +51,11 @@ from clue_agents.turns import (
     PrivacyEraseResult,
     ReplayArtifactRef,
 )
+from clue_api.context_observability import record_context_receipt
 from clue_api.thread_store import ensure_platform_thread
 from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
+from clue_obs import get_logger
 from clue_storage import StorageBackend, artifact_key, content_address
 from clue_storage.artifacts import mark_erased, purge_erased_artifacts, record_artifact
 from clue_storage.protocol import ArtifactNotFound
@@ -71,6 +73,7 @@ _EVENT_NAMESPACE = UUID("f16bca96-c8c9-5fad-9f42-35ad7873f021")
 _REF_NAMESPACE = UUID("9431adab-a359-59ee-b2f3-af522f93016b")
 _PRIVACY_NAMESPACE = UUID("f4d51cff-a92e-5ed6-a07f-826cb2348241")
 _PROJECT_PRIVACY_NAMESPACE = UUID("cd318be1-c3cf-50c1-9ddd-826cd63fa5b3")
+log = get_logger("clue_api.agent_turn")
 
 
 def _event_id(turn_id: UUID, status: str) -> UUID:
@@ -1261,6 +1264,24 @@ class DbAgentContextReceiptStore(ContextReceiptStore):
                 workspace_id=workspace_id,
                 status=AgentTurnStatus.CONTEXT_READY,
             )
+        included_count = sum(item.disposition == "included" for item in receipt.refs)
+        excluded_count = sum(item.disposition == "excluded" for item in receipt.refs)
+        log.info(
+            "agent_turn.context_receipt",
+            turn_id=str(request.turn_id),
+            workspace_id=workspace_id,
+            context_bundle_id=str(manifest.context_bundle_id),
+            schema_version=manifest.schema_version,
+            policy_version=receipt.policy_version,
+            aggregate_sha256=manifest.aggregate_sha256,
+            included_count=included_count,
+            excluded_count=excluded_count,
+        )
+        record_context_receipt(
+            schema_version=manifest.schema_version,
+            included_count=included_count,
+            excluded_count=excluded_count,
+        )
 
 
 class DbAgentHistoryStore(AgentHistoryStore):

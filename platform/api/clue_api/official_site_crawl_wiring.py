@@ -73,6 +73,7 @@ from clue_research.official_site import (
 from clue_research.official_site.url_policy import ConservativeUrlPolicy
 from clue_research.stage0 import (
     ReconLaneStatus,
+    current_kb_version,
     finalize_client_kb_version,
     transition_recon_lane,
 )
@@ -146,6 +147,21 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
     ) -> int:
         await self._scope(request)
         async with self._conn_factory() as conn:
+            # Fast and background are phases of one recon. The background marker is an overlay on
+            # the exact company version current at its commit boundary (normally the fast marker,
+            # but possibly a governed interview-derived successor published concurrently). This
+            # preserves successful fast facts when one background extractor is empty or
+            # spend-unknown while keeping the earlier turn receipt immutable.
+            base_version = (
+                await current_kb_version(
+                    conn,
+                    EntityId(request.client_entity_id),
+                    workspace_id=request.workspace_id,
+                    product_id=None,
+                )
+                if request.phase is CrawlPhase.BACKGROUND
+                else None
+            )
             version = await finalize_client_kb_version(
                 conn,
                 client_entity_id=EntityId(request.client_entity_id),
@@ -157,6 +173,7 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
                 # recon row already carries a product. Exact product claims are committed only by
                 # ``commit_product`` after catalog-to-spine synchronization.
                 product_id=None,
+                base_version=base_version,
             )
         return version
 
@@ -185,6 +202,12 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
             ).scalar_one()
             if not product_allowed:
                 raise ValueError("official-site product extraction crossed recon brand scope")
+            base_version = await current_kb_version(
+                conn,
+                EntityId(request.client_entity_id),
+                workspace_id=request.workspace_id,
+                product_id=product_id,
+            )
             return await finalize_client_kb_version(
                 conn,
                 client_entity_id=EntityId(request.client_entity_id),
@@ -193,6 +216,7 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
                 filled_fields=filled_fields,
                 attempted_fields=attempted_fields,
                 product_id=product_id,
+                base_version=base_version,
             )
 
     async def complete(

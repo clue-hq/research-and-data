@@ -67,6 +67,7 @@ from clue_api.chat.composer_context import (
     list_composer_context_entities,
     validated_context_refs,
 )
+from clue_api.chat.context_refs import TurnContextRefsResponse, context_refs_response
 from clue_api.chat.inspector import (
     INSPECTOR_TABS,
     InspectorCapabilityResponse,
@@ -1287,6 +1288,36 @@ def build_chat_router(
                 code="TURN_NOT_FOUND",
                 message="no such turn in this thread",
             )
+
+    @router.get("/projects/{project_id}/threads/{thread_id}/turns/{turn_id}/context-refs")
+    async def turn_context_refs_route(
+        project_id: str,
+        thread_id: str,
+        turn_id: UUID,
+        who: PrincipalDep,
+    ) -> TurnContextRefsResponse:
+        """Exact persisted context pointers for operators and acceptance, never artifact bodies.
+
+        Unlike the optional dev inspector, this is safe to register in production: its response
+        type has no body/text/value/evidence/URL field and the route has no hydration switch.
+        Before context assembly commits it returns a typed ``pending`` receipt rather than an
+        invented empty bundle.
+        """
+
+        await _inspected_turn(
+            who=who,
+            project_id=project_id,
+            thread_id=thread_id,
+            turn_id=turn_id,
+        )
+        return context_refs_response(
+            turn_id=str(turn_id),
+            receipt=await turn_context_receipt(
+                workspace_id=who.workspace_id,
+                turn_id=turn_id,
+                conn_factory=conn_factory,
+            ),
+        )
 
     if settings.chat_dev_inspector_enabled:
         budget_bytes = settings.chat_dev_inspector_budget_bytes

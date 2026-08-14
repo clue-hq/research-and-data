@@ -343,12 +343,18 @@ async def finalize_client_kb_version(
     filled_fields: set[str],
     attempted_fields: set[str],
     product_id: str | None,
+    base_version: int | None = None,
 ) -> int:
     """Commit or replay the version marker after grounded materialization is durable.
 
     The marker is written *after* the checkpoint extractors finish. Browser release therefore
     cannot observe a Client-KB version whose official-site claims are still in flight, and the
     marker's coverage describes the committed run instead of a pre-crawl placeholder.
+
+    ``base_version`` is an explicit immutable snapshot parent. It is used by composed multi-phase
+    publication (fast then background) so the later lane overlays its new claims on the exact
+    prior checkpoint instead of making a transient field-level failure erase still-pinned fast
+    knowledge. Ordinary reverse-profile runs omit it and retain their replace-on-refresh meaning.
     """
 
     return await _write_version_marker(
@@ -358,6 +364,7 @@ async def finalize_client_kb_version(
         run_id=run_id,
         coverage=_coverage(filled_fields, attempted_fields),
         product_id=product_id,
+        base_version=base_version,
     )
 
 
@@ -651,12 +658,18 @@ async def client_kb_write_target_for_materialization(
     client_entity_id: EntityId,
     product_id: str | None,
     operation_key: str,
+    require_derived_version: bool = False,
 ) -> ClientKbWriteTarget:
     """Select the active KB run, or append a derived version when the current one is pinned.
 
     One transaction-scoped advisory lock serializes the read/new-version decision. A derived marker
     points at ``base_version``; its reader inherits those earlier run claims without copying or
     rewriting them, while the old pinned version remains byte- and claim-stable.
+
+    ``require_derived_version`` is the composition seam for a caller that already owns an immutable
+    read receipt outside the research subsystem (the production turn pin). It says only that the
+    current marker cannot be extended; this module still owns version allocation, lineage,
+    locking, and idempotency and therefore does not import the agent runtime or its tables.
     """
 
     await conn.execute(
@@ -727,7 +740,7 @@ async def client_kb_write_target_for_materialization(
             },
         )
     ).scalar_one()
-    if not pinned:
+    if not pinned and not require_derived_version:
         return ClientKbWriteTarget(version=version, run_id=marker.run_id)
 
     prior_claims = await _pinned_field_claims(

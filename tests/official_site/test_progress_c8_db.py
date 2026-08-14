@@ -50,6 +50,67 @@ class _EventSink:
         self.events.append(event)
 
 
+def test_background_activation_event_stamps_recon_lane_start_once(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        scope = await _seed_scope(FsStorage(tmp_path / "background-start-artifacts"))
+        emitter = DbOfficialSiteProgressEmitter()
+        event = CrawlProgressEvent(
+            event_id=progress_event_id(
+                CrawlProgressEventKind.BACKGROUND_STARTED,
+                scope.crawl_run_id,
+                subject="activated",
+            ),
+            kind=CrawlProgressEventKind.BACKGROUND_STARTED,
+            workspace_id=scope.workspace_id,
+            crawl_run_id=scope.crawl_run_id,
+            recon_run_id=scope.recon_run_id,
+            phase=CrawlPhase.BACKGROUND,
+            outcome="activated",
+        )
+
+        await emitter.emit(event)
+        async with transaction() as conn:
+            first = (
+                await conn.execute(
+                    text(
+                        "SELECT background_status, background_started_at, "
+                        "background_completed_at FROM recon_run "
+                        "WHERE id=:recon_run_id AND workspace_id=:workspace_id"
+                    ),
+                    {
+                        "recon_run_id": scope.recon_run_id,
+                        "workspace_id": scope.workspace_id,
+                    },
+                )
+            ).one()
+        assert first[0] == "running"
+        assert first[1] is not None
+        assert first[2] is None
+
+        await emitter.emit(event)
+        async with transaction() as conn:
+            second = (
+                await conn.execute(
+                    text(
+                        "SELECT background_status, background_started_at, "
+                        "background_completed_at FROM recon_run "
+                        "WHERE id=:recon_run_id AND workspace_id=:workspace_id"
+                    ),
+                    {
+                        "recon_run_id": scope.recon_run_id,
+                        "workspace_id": scope.workspace_id,
+                    },
+                )
+            ).one()
+        assert second == first
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())
+
+
 async def _seed_partial_scope(tmp_path: Path) -> tuple[object, UUID, UUID, UUID]:
     scope = await _seed_scope(FsStorage(tmp_path / "c8-artifacts"))
     ambiguous_page_id = uuid4()

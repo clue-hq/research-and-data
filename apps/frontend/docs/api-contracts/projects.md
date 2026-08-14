@@ -192,6 +192,22 @@ network failure. Presentation components do not call the API directly.
   modes and is the load-bearing stale-approval guard. When the amount was
   withheld the client sends `0` purely as the courier value.
 
+### Production context-reference read (S6, 2026-08-15)
+
+- `GET /api/v1/projects/{project_id}/threads/{thread_id}/turns/{turn_id}/context-refs`
+  is an authenticated, `thread.read`, workspace-scoped read of the exact durable
+  context receipt used by that production turn.
+- Before assembly commits it returns `data.state: "pending"`. Afterwards it
+  returns the bundle schema/policy/counter versions, aggregate hash, assembly
+  time, per-layer budgets/counts, and every included/excluded artifact or domain
+  reference with its reason code.
+- This is not the dev inspector and has no hydration mode. Its schema contains
+  no body, text, claim value, evidence span, source URL, email, credential, or
+  token field. Exact content remains accessible only through the separately
+  governed artifact/knowledge surfaces.
+- A foreign project, thread, turn, or workspace is the existing scoped `404`,
+  never a response that confirms the object exists.
+
 ## Ownership model
 
 ```text

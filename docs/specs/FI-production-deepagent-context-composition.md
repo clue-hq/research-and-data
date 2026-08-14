@@ -820,6 +820,92 @@ pin and real production composition; S5-F human selection/refresh acceptance.
 
 ### S6 — Refresh, replay, observability, and production acceptance
 
+**Status:** implemented and accepted 2026-08-15. Offline, isolated-database, real-provider, real
+model, and browser evidence is retained and reconciled in
+`FI-production-deepagent-context-composition-S6-acceptance.md`. S6 closes the production loop; it
+does not introduce another card, knowledge store, turn runner, or operator-only source of truth.
+
+S6 is delivered through five ordered checkpoints:
+
+#### S6-A — Governed publication and next-turn refresh
+
+- Treat the account-wide and selected-product `client.kb_version` markers as the only publication
+  boundary. A claim is not visible to a later production turn merely because its row committed.
+- Route interview-authored company fields to the account-wide sequence and the frozen S5 product
+  field set to the selected product's independent sequence. Reject product facts when no human
+  product selection exists; never infer product scope from model-authored data.
+- When `record_interview_answer@1` commits one or more client claims, publish/reuse exactly one
+  derived version per affected scope in the same transaction. Keep the existing model-facing tool
+  schema immutable; the domain result carries the versions for composition tests and the next
+  production turn's durable scope pin is the authoritative consumer.
+- Treat the production caller's already-durable `agent_turn_scope_pin` as proof that the active
+  version is historically consumed and therefore requires an append-only derived version. Keep
+  that assertion at the composition seam instead of importing agent-runtime tables into research.
+- Preserve the existing rule that project-state statements change only the addressed project's
+  Stage-0 card and do not publish a Client-KB version.
+
+**Checkpoint gate:** company and product claims advance only their intended sequence; replay adds
+no marker/claim; a project-state-only answer advances neither sequence; the current turn keeps its
+original pair while the next submitted turn pins the new pair.
+
+#### S6-B — Privacy-safe production observability
+
+- Emit one structured observation for every compiled card with card kind, schema version, content
+  hash, availability, and bounded omission count.
+- Emit context-receipt totals and governed tool outcomes from the real production execution path.
+- Metric labels are bounded, low-cardinality kinds/versions/outcomes only. Workspace, project,
+  client, product, turn, claim, artifact, or hash identifiers may appear in structured logs where
+  operational correlation needs them, but never in metric labels.
+- Claim values, briefs, descriptions, evidence spans, raw bodies, source URLs, email addresses,
+  credentials, and tokens are forbidden in both logs and metric attributes.
+
+**Checkpoint gate:** in-memory sink tests prove exact counters/gauges; log-capture/static tests prove
+required keys and reject sensitive keys/content; replay is recorded as replay rather than a second
+successful tool effect.
+
+#### S6-C — Body-free operator context-reference read
+
+- Add an always-registered, authenticated `thread.read` endpoint for the exact persisted context
+  receipt. It exposes assembly identity/version/hash, per-layer counts, and included/excluded
+  artifact/domain pointers, but has no body-hydration option.
+- Keep the dev inspector separate. Its optional body hydration remains structurally absent in
+  production, while this operator/read surface is safe to register in every environment.
+- Apply the existing workspace/project/thread/turn 404-not-403 scoping rule and return an honest
+  `pending` state before a receipt exists.
+
+**Checkpoint gate:** same-workspace reads return the exact receipt refs; foreign workspace/project/
+thread/turn reads are indistinguishable 404s; route/schema/static tests prove that body, text,
+email, token, credential, claim value, evidence span, and source URL fields cannot appear.
+
+#### S6-D — Production-chain adversarial acceptance
+
+- Drive `AGENT_TURN -> durable pair pin -> four-card L3 composition -> context receipt -> governed
+  company/product tools -> checkpoint/tool-result/finalization -> cold replay` with only the model
+  and external providers substituted.
+- Cover account-wide refresh, product refresh, project-state-only refresh, Project A/B isolation,
+  workspace isolation, DSAR, replay, crash before/after card persistence, timeout, and concurrent
+  first-turn pinning.
+- Assert database rows, artifact hashes, tool receipts, context refs, and metric/log observations,
+  not only returned Python objects.
+
+**Checkpoint gate:** every old turn remains byte/hash/pin stable, every eligible next turn observes
+the published version, and no crash/replay path creates duplicate claims, markers, provider spend,
+or finalization.
+
+#### S6-E — Fresh live production acceptance
+
+- Upgrade a fresh named PostgreSQL database, use a separate retained artifact/log root, and run the
+  real API, fleet, frontend, auth/provisioning, onboarding recon, project turn, governed knowledge
+  inspection, background refresh, and replay path.
+- Use real Firecrawl or Scrapling acquisition according to the configured production provider; a
+  provider/environment refusal is reported as typed evidence and never replaced with fixture data.
+- Correlate browser/API/server logs, turn/scope/context/tool/finalization rows, claim/version rows,
+  artifact hashes, and provider receipts by their durable identifiers.
+
+**Checkpoint gate:** the complete acceptance list below passes, or every unmet item is reported as
+an explicit evidence-backed exception. The database and artifact/log roots remain retained until
+review sign-off.
+
 **Deliverables**
 
 - Compose recon and interview KB-version publication with next-turn card refresh.
@@ -886,7 +972,7 @@ S4-A readers
 → S5-D governed product tools (complete)
 → S5-E durable pair pin + production composition (complete)
 → S5-F human selection + refresh acceptance (complete)
-→ S6 browser/live acceptance
+→ S6 browser/live acceptance (complete)
 ```
 
 ## 10. Definition of done

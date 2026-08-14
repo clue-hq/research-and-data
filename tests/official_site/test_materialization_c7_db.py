@@ -42,7 +42,7 @@ from clue_research.official_site import (
     compute_snapshot_set_sha256,
 )
 from clue_research.sources import seed_source_manifests
-from clue_research.stage0 import finalize_client_kb_version
+from clue_research.stage0 import finalize_client_kb_version, read_client_kb_claims
 from clue_research.stage0.fields import load_client_knowledge_pack
 from clue_spine import create_product, list_products
 from clue_storage import FsStorage, artifact_key, content_address
@@ -1078,6 +1078,109 @@ def test_authoritative_committer_publishes_marker_and_fast_lane_after_claims(
         assert marker["value_json"]["total_fields"] == 12
         assert recon.fast_status == "completed"
         assert recon.fast_client_kb_version == 1
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())
+
+
+def test_authoritative_background_version_overlays_fast_snapshot_on_partial_failure(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        scope = await _seed_scope(FsStorage(tmp_path / "background-overlay"), include_marker=False)
+        fast_request = _request(scope)
+        committer = _AuthoritativeClientKbCommitter(transaction)
+        async with transaction() as conn:
+            await insert_claim(
+                conn,
+                Claim(
+                    entity_id=scope.client_entity_id,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key="client.product_catalog",
+                    value_json=[
+                        {
+                            "name": "Acme Phone Agents",
+                            "short_description": "Healthcare call automation",
+                            "aliases": ["Acme Voice"],
+                        }
+                    ],
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.HUMAN,
+                    confidence=0.9,
+                    run_id=RunId(scope.claim_run_id),
+                    research_mode=ResearchMode.ACCOUNT_PROFILING,
+                    reuse_scope=ReuseScope.TENANT_PRIVATE,
+                    workspace_id=scope.workspace_id,
+                ),
+            )
+        fast_version = await committer.commit(
+            fast_request,
+            filled_fields={"client.product_catalog"},
+            attempted_fields={"client.product_catalog"},
+        )
+        assert fast_version == 1
+        await committer.complete(fast_request, company_client_kb_version=fast_version)
+
+        async with transaction() as conn:
+            background_run_id = (
+                await conn.execute(
+                    text("SELECT background_run_id FROM recon_run WHERE id=:id"),
+                    {"id": scope.recon_run_id},
+                )
+            ).scalar_one()
+            await insert_claim(
+                conn,
+                Claim(
+                    entity_id=scope.client_entity_id,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key="client.differentiator",
+                    value_json="Grounded background differentiator",
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.HUMAN,
+                    confidence=0.9,
+                    run_id=RunId(background_run_id),
+                    research_mode=ResearchMode.ACCOUNT_PROFILING,
+                    reuse_scope=ReuseScope.TENANT_PRIVATE,
+                    workspace_id=scope.workspace_id,
+                ),
+            )
+        background_request = fast_request.model_copy(
+            update={
+                "phase": CrawlPhase.BACKGROUND,
+                "claim_run_id": background_run_id,
+            }
+        )
+        background_version = await committer.commit(
+            background_request,
+            filled_fields={"client.differentiator"},
+            # The catalog extractor was attempted but failed ambiguously. The exact fast claim
+            # remains a member through the marker's base-version edge; no claim body is copied.
+            attempted_fields={"client.differentiator", "client.product_catalog"},
+        )
+        assert background_version == 2
+        async with transaction() as conn:
+            claims = await read_client_kb_claims(
+                conn,
+                scope.client_entity_id,
+                workspace_id=scope.workspace_id,
+                version=background_version,
+            )
+            marker = (
+                await conn.execute(
+                    text(
+                        "SELECT value_json FROM claim WHERE workspace_id=:workspace_id "
+                        "AND run_id=:run_id AND field_key='client.kb_version'"
+                    ),
+                    {"workspace_id": scope.workspace_id, "run_id": background_run_id},
+                )
+            ).scalar_one()
+        assert set(claims) >= {"client.product_catalog", "client.differentiator"}
+        assert claims["client.product_catalog"].run_id == RunId(scope.claim_run_id)
+        assert claims["client.differentiator"].run_id == RunId(background_run_id)
+        assert marker["base_version"] == 1
 
     async def wrapped() -> None:
         async with db_lifespan():

@@ -57,6 +57,7 @@ from clue_api.client_context_authority import (
     trusted_client_kb_version_fields,
 )
 from clue_api.client_knowledge_privacy import client_knowledge_result_subject_bindings
+from clue_api.context_observability import record_context_tool_outcome
 from clue_api.product_context_authority import (
     product_scope_for_input_model,
     trusted_product_scope_fields,
@@ -84,6 +85,7 @@ from clue_execution import (
     ToolNode,
     validate_graph,
 )
+from clue_obs import get_logger
 from clue_toolbelt import (
     PreconditionFailed,
     ToolInvoker,
@@ -105,6 +107,7 @@ __all__ = [
 _PLAN_EVENT_NAMESPACE = UUID("30b976d6-032a-56a4-933a-e02db79f01cb")
 _DELEGATION_EVENT_NAMESPACE = UUID("d273c199-9435-5dc5-b5d2-5b28d41051d7")
 _CHILD_EXECUTION_NAMESPACE = UUID("ce926286-e065-5c98-9d57-c8af598bb87e")
+log = get_logger("clue_api.agent_execution")
 
 
 class AgentExecutionCrashHook(Protocol):
@@ -1710,8 +1713,41 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 if isinstance(result, BaseException):
                     failed.add(operation.node_key)
                     failures.append(_operation_failure(operation, result))
+                    if operation.kind == "tool":
+                        log.warning(
+                            "agent_turn.context_tool_outcome",
+                            turn_id=str(self._turn_id),
+                            workspace_id=self._constitution.workspace_id,
+                            project_id=self._constitution.project_id,
+                            tool_address=operation.address,
+                            outcome="failed",
+                            replayed=False,
+                            error_code=type(result).__name__,
+                        )
+                        record_context_tool_outcome(
+                            tool_address=operation.address,
+                            outcome="failed",
+                            replayed=False,
+                        )
                 else:
                     completed.add(operation.node_key)
+                    if operation.kind == "tool":
+                        replayed = bool(result.replayed)
+                        log.info(
+                            "agent_turn.context_tool_outcome",
+                            turn_id=str(self._turn_id),
+                            workspace_id=self._constitution.workspace_id,
+                            project_id=self._constitution.project_id,
+                            tool_address=operation.address,
+                            outcome="completed",
+                            replayed=replayed,
+                            reference_count=len(result.reference_values),
+                        )
+                        record_context_tool_outcome(
+                            tool_address=operation.address,
+                            outcome="completed",
+                            replayed=replayed,
+                        )
             yield ExecutionProgress(
                 execution_id=plan.execution_id,
                 status="failed" if failed else "running",

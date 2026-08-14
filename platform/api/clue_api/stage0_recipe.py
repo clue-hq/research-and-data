@@ -8,6 +8,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import text
 
+from clue_api.agent_turn_scope_pin import get_agent_turn_scope_pin
+from clue_api.turn_action import TurnActionUnresolvable, parse_turn_action_ref
 from clue_core import EntityId
 from clue_db import ConnFactory
 from clue_execution import (
@@ -174,6 +176,55 @@ class Stage0StepPinProvider:
             value = body.get(field, scope_body.get(field, ingestion_context.get(field)))
             if isinstance(value, str):
                 requested.append(await self._current(kind=kind, key=value, ctx=ctx))
+
+        # S5-F/S6 production composition: the product-selection gate intentionally exposes no
+        # model-authored scope arguments. Its sole trusted input is the captured turn reference,
+        # while the exact project and company Client-KB pair live in that turn's immutable scope
+        # receipt. Resolve the descriptor's two required pins from that receipt here, at the same
+        # execution-authority seam that resolves every other dynamic tool pin. Deriving them from
+        # current project state would let background publication or a later project mutation
+        # change the authority of an already-running turn.
+        if step.tool_name == "open_product_selection_gate":
+            source_turn_ref = body.get("source_turn_ref")
+            if not isinstance(source_turn_ref, str):
+                raise ExecutionConflict(
+                    "open_product_selection_gate requires its trusted source turn reference"
+                )
+            try:
+                source_turn_id = parse_turn_action_ref(source_turn_ref)
+            except TurnActionUnresolvable as exc:
+                raise ExecutionConflict(
+                    "open_product_selection_gate has an invalid source turn reference"
+                ) from exc
+            async with self._conn_factory() as conn:
+                turn_pin = await get_agent_turn_scope_pin(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    turn_id=source_turn_id,
+                )
+            if (
+                turn_pin is None
+                or turn_pin.client_entity_id is None
+                or turn_pin.client_kb_version is None
+            ):
+                raise ExecutionConflict(
+                    "open_product_selection_gate requires a durable project and Client-KB scope"
+                )
+            requested.extend(
+                (
+                    await self._current(
+                        kind="project",
+                        key=turn_pin.project_id,
+                        ctx=ctx,
+                    ),
+                    await self._exact(
+                        kind="client_kb",
+                        key=f"{turn_pin.client_entity_id}|-",
+                        version=str(turn_pin.client_kb_version),
+                        ctx=ctx,
+                    ),
+                )
+            )
 
         if step.tool_name == "start_recon":
             requested.extend(

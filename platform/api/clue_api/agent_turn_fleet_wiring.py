@@ -73,6 +73,7 @@ from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.chat.turn_controls import stop_requested
 from clue_api.chat.turn_events import prune_turn_events
 from clue_api.chat.turn_stream import TurnStreamEmitter, TurnStreamPolicy
+from clue_api.context_observability import record_context_card
 from clue_api.conversation_capture import (
     CONVERSATION_CONTEXT_BINDING_KIND,
     project_client_entity_id,
@@ -274,6 +275,14 @@ class _ProjectScope:
 
 
 @dataclass(frozen=True, slots=True)
+class _ContextCardObservation:
+    card_kind: str
+    schema_version: str
+    content_sha256: str
+    omitted_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class _ProjectContextBundle:
     """The conditional half of one atomically constituted production L3 bundle.
 
@@ -284,6 +293,7 @@ class _ProjectContextBundle:
     """
 
     artifacts: tuple[ProjectContextArtifact, ...] = ()
+    observations: tuple[_ContextCardObservation, ...] = ()
 
     @property
     def available(self) -> bool:
@@ -291,6 +301,10 @@ class _ProjectContextBundle:
 
     def artifact(self, name: str) -> ProjectContextArtifact | None:
         return next((item for item in self.artifacts if item.name == name), None)
+
+
+def _bounded_omission_count(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
 class ProjectConversationTurnRunner:
@@ -563,6 +577,37 @@ class ProjectConversationTurnRunner:
             client_knowledge_available=context_bundle.available,
             stage0_project_state_available=context_bundle.available,
         )
+        observations = {item.card_kind: item for item in context_bundle.observations}
+        self._observe_context_card(
+            submission=submission,
+            scope=scope,
+            observation=_ContextCardObservation(
+                card_kind="project_conversation",
+                schema_version="2",
+                content_sha256=card_ref.sha256,
+                omitted_count=0,
+            ),
+        )
+        for card_kind, schema_version in (
+            ("client_knowledge", "2"),
+            ("stage0_project_state", "1"),
+        ):
+            self._observe_context_card(
+                submission=submission,
+                scope=scope,
+                observation=observations.get(card_kind),
+                card_kind=card_kind,
+                schema_version=schema_version,
+            )
+        if scope.product_id is not None:
+            for card_kind in ("product_profile", "product_knowledge"):
+                self._observe_context_card(
+                    submission=submission,
+                    scope=scope,
+                    observation=observations.get(card_kind),
+                    card_kind=card_kind,
+                    schema_version="1",
+                )
         result = await self._execute_watched(
             request=request,
             lease=lease,
@@ -656,6 +701,26 @@ class ProjectConversationTurnRunner:
                 ),
             ),
         ]
+        observations = [
+            _ContextCardObservation(
+                card_kind=client_card.card_kind,
+                schema_version=client_card.schema_version,
+                content_sha256=client_ref.sha256,
+                omitted_count=(
+                    sum(
+                        _bounded_omission_count(item.get("count"))
+                        for item in client_card.knowledge_omissions
+                    )
+                    + sum(item.count for item in client_card.product_catalog.omissions)
+                ),
+            ),
+            _ContextCardObservation(
+                card_kind=stage0_card.card_kind,
+                schema_version=stage0_card.schema_version,
+                content_sha256=stage0_ref.sha256,
+                omitted_count=sum(item.count for item in stage0_card.omissions),
+            ),
+        ]
         if scope.product_id is not None:
             product_profile = await compile_product_profile_card(
                 workspace_id=submission.workspace_id,
@@ -687,6 +752,14 @@ class ProjectConversationTurnRunner:
                         object_id=scope.product_id,
                         version=None,
                     ),
+                )
+            )
+            observations.append(
+                _ContextCardObservation(
+                    card_kind=product_profile.card_kind,
+                    schema_version=product_profile.schema_version,
+                    content_sha256=profile_ref.sha256,
+                    omitted_count=0,
                 )
             )
             if scope.product_kb_version is not None:
@@ -724,8 +797,54 @@ class ProjectConversationTurnRunner:
                         ),
                     )
                 )
+                observations.append(
+                    _ContextCardObservation(
+                        card_kind=product_card.card_kind,
+                        schema_version=product_card.schema_version,
+                        content_sha256=product_ref.sha256,
+                        omitted_count=sum(item.count for item in product_card.omissions),
+                    )
+                )
 
-        return _ProjectContextBundle(artifacts=tuple(artifacts))
+        return _ProjectContextBundle(
+            artifacts=tuple(artifacts),
+            observations=tuple(observations),
+        )
+
+    @staticmethod
+    def _observe_context_card(
+        *,
+        submission: AgentTurnSubmissionRow,
+        scope: _ProjectScope,
+        observation: _ContextCardObservation | None,
+        card_kind: str | None = None,
+        schema_version: str | None = None,
+    ) -> None:
+        kind = observation.card_kind if observation is not None else card_kind
+        version = observation.schema_version if observation is not None else schema_version
+        assert kind is not None and version is not None
+        available = observation is not None
+        omitted_count = 0 if observation is None else observation.omitted_count
+        content_sha256 = None if observation is None else observation.content_sha256
+        log.info(
+            "agent_turn.context_card",
+            turn_id=str(submission.turn_id),
+            workspace_id=submission.workspace_id,
+            project_id=scope.project_id,
+            card_kind=kind,
+            schema_version=version,
+            content_sha256=content_sha256,
+            available=available,
+            omitted_count=omitted_count,
+            client_kb_version=scope.client_kb_version,
+            product_kb_version=scope.product_kb_version,
+        )
+        record_context_card(
+            card_kind=kind,
+            schema_version=version,
+            available=available,
+            omitted_count=omitted_count,
+        )
 
     async def _execute_watched(
         self,
