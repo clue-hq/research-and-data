@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — C3 provider contract
 
-**Status:** C3 implemented and verified; C4 durable acquisition/recovery is implemented
+**Status:** C3 implemented and verified; C4 durability and C5 coordination are implemented
 
 **Parent:** [durable official-site crawl implementation plan](./FI-stage0-durable-official-site-crawl-plan.md)
 
@@ -53,7 +53,7 @@ Firecrawl declares:
 |---|---|
 | Single page only | `true`; no crawl, map, batch, sitemap, depth, or recursive option exists in the adapter |
 | Operation lookup / idempotency key | unsupported in this adapter version |
-| Redirect chain | not reported; C5 must fail closed on a materially changed unreported final URL |
+| Redirect chain | not reported; C5 fails closed on a materially changed unreported final URL |
 | Outgoing links | reported from captured HTML plus the provider link list |
 | Cost | configured estimate, currently one cent; not asserted as actual provider billing; an explicit zero-credit receipt is `no_spend` |
 | Receipt | sanitized `scrape_id`, `credits_used`, and `cache_state` only when supplied |
@@ -146,9 +146,8 @@ counters. It also covers:
 - protocol runtime conformance, immutable capability declarations, lazy SDK imports, dependency
   contracts, Ruff, mypy, and the retained C0/C2 suites.
 
-C4 now persists `prepared` and `dispatched` before invoking these adapters, retains the body-free
+C4 persists `prepared` and `dispatched` before invoking these adapters, retains the body-free
 metadata/receipt, stores successful bytes, and prevents any automatic redispatch of
-`spend_unknown`. C5 must wrap the adapters in the C2 preflight and post-response validation flow,
-bound links to the configured ceiling before discovery insertion, and select a registered fetcher
-without provider-name branching. C3 does not wire a production coordinator or make a live provider
-call.
+`spend_unknown`. C5 now wraps the adapters in the C2 preflight/post-response flow, bounds links,
+and coordinates registered fetchers without provider-name branching. C3 itself does not wire a
+production coordinator or make a live provider call; C6 owns production composition.

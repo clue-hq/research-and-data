@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — implementation plan
 
-**Status:** C0–C4 implemented and verified; C5–C10 not yet accepted
+**Status:** C0–C5 implemented and verified; C6–C10 not yet accepted
 
 **Branch:** `platform/onboarding-integration`
 
@@ -1038,7 +1038,7 @@ migration, spike inventory, ownership map, and rollout contract are recorded in 
 [C0 contract freeze](./FI-stage0-durable-official-site-crawl-C0-contract.md). Executable authority
 lives in `clue_research.official_site` and
 `tests/fixtures/official_site/c0_contract_fixture.json`. C0 made no migration, provider call, or
-production cutover. C1 through C4 have since landed; C5 is the next implementation slice.
+production cutover. C1 through C5 have since landed; C6 is the next implementation slice.
 
 **Deliverables**
 
@@ -1108,8 +1108,8 @@ maps unresolved paid outcomes to `spend_unknown`; Scrapling uses manual redirect
 DNS pinning at connect time. The shared conformance/static suite and exact capability/spend
 decisions are recorded in the
 [C3 provider contract](./FI-stage0-durable-official-site-crawl-C3-provider-contract.md). C3 does not
-wire the coordinator or enable production crawling. C4 now persists artifacts and recovery state;
-the coordinator and production activation remain C5–C6.
+wire production crawling. C4 persists artifacts/recovery and C5 now supplies the coordinator;
+production run/checkpoint/fleet activation remains C6.
 
 **Deliverables**
 
@@ -1131,8 +1131,8 @@ the coordinator and production activation remain C5–C6.
 persistence-only replay, operation-lookup/quarantine policy, receipt privacy bounds, URL-level
 provenance, DSAR reach, fault matrix, and C5 handoff are recorded in the
 [C4 acquisition contract](./FI-stage0-durable-official-site-crawl-C4-acquisition-contract.md).
-C4 does not schedule a crawl or enable production onboarding; C5/C6 remain responsible for those
-boundaries.
+C4 itself does not schedule a crawl or enable production onboarding. C5 now schedules injected
+runs; C6 remains responsible for the production lifecycle and activation boundaries.
 
 **Deliverables**
 
@@ -1150,6 +1150,12 @@ boundaries.
 - Artifact/attempt/snapshot DSAR reach is proven.
 
 ### C5 — Concurrent crawl coordinator
+
+**Status: complete (2026-08-14).** The bounded PostgreSQL worker pool, cross-run global/host
+capacity, heartbeats, graceful stop, deterministic category quotas, no-refetch depth expansion,
+fast/background fairness, recovery routing, and multiprocess fault evidence are recorded in the
+[C5 coordinator contract](./FI-stage0-durable-official-site-crawl-C5-coordinator-contract.md).
+C5 does not activate onboarding or own phase/checkpoint/fleet lifecycle; C6 is next.
 
 **Deliverables**
 

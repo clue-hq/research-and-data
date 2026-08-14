@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — C0 contract freeze
 
-**Status:** C0–C4 implemented and verified; C5 is next
+**Status:** C0–C5 implemented and verified; C6 composition is next
 
 **Parent:** [durable official-site crawl implementation plan](./FI-stage0-durable-official-site-crawl-plan.md)
 

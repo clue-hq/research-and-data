@@ -87,6 +87,18 @@ class ProviderOperationLookup(Protocol):
     ) -> PageFetchResult: ...
 
 
+@runtime_checkable
+class SnapshotBeforeCompleteHook(Protocol):
+    """Replay-safe work that must commit before a fetched snapshot becomes visible."""
+
+    async def __call__(
+        self,
+        lease: CrawlLease,
+        snapshot: PageSnapshotRef,
+        retained: RetainedPageSuccess,
+    ) -> None: ...
+
+
 class DurablePageAcquirer:
     """Execute one fenced attempt and its persistence/reconciliation recovery paths."""
 
@@ -96,10 +108,12 @@ class DurablePageAcquirer:
         repository: CrawlRepository,
         artifacts: OfficialSiteArtifactStore,
         fetcher: PageFetcher,
+        before_complete: SnapshotBeforeCompleteHook | None = None,
     ) -> None:
         self._repository = repository
         self._artifacts = artifacts
         self._fetcher = fetcher
+        self._before_complete = before_complete
 
     async def acquire(
         self, lease: CrawlLease, request: PageFetchRequest
@@ -237,6 +251,11 @@ class DurablePageAcquirer:
         )
         if snapshot is None:
             raise AcquisitionFenceLostError("snapshot persistence lost its lease")
+        if self._before_complete is not None:
+            # The page deliberately remains ``persistence_pending`` until this hook commits. If
+            # the process dies here, C4 reclaims the persisted attempt, returns the same immutable
+            # snapshot, and replays the hook without provider I/O before completing the page.
+            await self._before_complete(lease, snapshot, retained)
         if not await self._repository.complete_page(lease, snapshot_id=snapshot.snapshot_id):
             raise AcquisitionFenceLostError("page completion lost its lease")
         return DurableAcquisitionResult(
@@ -275,4 +294,5 @@ __all__ = [
     "DurableAcquisitionResult",
     "DurablePageAcquirer",
     "ProviderOperationLookup",
+    "SnapshotBeforeCompleteHook",
 ]

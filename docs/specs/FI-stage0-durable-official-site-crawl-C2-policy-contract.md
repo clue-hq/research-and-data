@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — C2 policy contract
 
-**Status:** C2 implemented and verified; C3 provider adapters and C4 durability are implemented
+**Status:** C2 implemented and verified; C3-C5 acquisition and coordination are implemented
 
 **Parent:** [durable official-site crawl implementation plan](./FI-stage0-durable-official-site-crawl-plan.md)
 
@@ -12,8 +12,8 @@
 
 C2 owns deterministic URL identity, link-graph admission, sitemap/robots parsing, alias
 observations, and coordinator safety decisions. It performs no page acquisition and imports no
-provider SDK. C3 must place Firecrawl and Scrapling behind the one-page `PageFetcher` seam; C5 must
-compose these C2 decisions around each claim/fetch/persist step.
+provider SDK. C3 places Firecrawl and Scrapling behind the one-page `PageFetcher` seam; C5 now
+composes these C2 decisions around each claim/fetch/persist step.
 
 The versioned V1 components are:
 
@@ -160,5 +160,6 @@ C2 acceptance covers:
   collision.
 
 C3 keeps these semantics outside provider code: adapters return one typed page result and add only
-transport-level integrity checks. C5 still applies C2 authoritatively before dispatch and again to
-provider-returned redirects, final URL, content metadata, and links.
+transport-level integrity checks. C5 now applies C2 authoritatively before dispatch and again to
+provider-returned redirects, final URL, content metadata, and links. C6 composes the live bounded
+robots implementation and production lifecycle.

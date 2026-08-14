@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — C4 acquisition and recovery contract
 
-**Status:** C4 implemented and verified; C5 concurrent crawl coordination is next
+**Status:** C4 implemented and verified; C5 coordination is complete and C6 composition is next
 
 **Parent:** [durable official-site crawl implementation plan](./FI-stage0-durable-official-site-crawl-plan.md)
 
@@ -179,18 +179,22 @@ tests, and the final critical sweep are recorded in the C4 `_memory` note. The s
 redundant completion flag and unused recovery reads, and distinguished permanent blob loss from a
 transient storage outage; it found no unresolved P1/P2 issue in C4.
 
-## 7. C5 handoff
+## 7. C5 handoff (fulfilled)
 
-C5 must:
+C5 fulfills the following handoff in the
+[C5 coordinator contract](./FI-stage0-durable-official-site-crawl-C5-coordinator-contract.md):
 
-- generate stable operation keys before calling `DurablePageAcquirer.acquire`;
-- construct requests only after C2 preflight/robots approval;
-- maintain the lease heartbeat and never cancel an already-dispatched paid call merely because
+C5 now:
+
+- generates stable operation keys before calling `DurablePageAcquirer.acquire`;
+- constructs requests only after C2 preflight/robots approval;
+- maintains the lease heartbeat and never cancels an already-dispatched paid call merely because
   the fast claim deadline elapsed;
-- route ordinary, persistence, and reconciliation claims to their distinct C4 methods;
-- apply C2 post-response validation and link ceilings before durable discovery insertion;
-- select fetcher/lookup implementations by registry/capability, never provider-name conditionals;
-- expose stuck quarantine/spend-unknown work to C8 operator surfaces instead of redispatching it.
+- routes ordinary, persistence, and reconciliation claims to their distinct C4 methods;
+- applies C2 post-response validation and link ceilings before durable discovery insertion;
+- accepts injected fetcher/lookup implementations and uses capabilities, never provider-name
+  conditionals; C6 owns registry selection;
+- leaves stuck quarantine/spend-unknown work for C8 operator surfaces instead of redispatching it.
 
 C5 may not weaken C4 by adding an in-memory retry loop, calling `fetch_one` from recovery, storing
 page bodies in PostgreSQL, or collapsing URL snapshots when content hashes match.

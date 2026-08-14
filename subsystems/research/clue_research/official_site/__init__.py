@@ -9,6 +9,15 @@ from clue_research.official_site.artifacts import (
 )
 from clue_research.official_site.contracts import *  # noqa: F403
 from clue_research.official_site.contracts import __all__ as _contract_exports
+from clue_research.official_site.coordinator import (
+    ConcurrentCrawlCoordinator,
+    CoordinatorLeaseLostError,
+    CoordinatorPhaseRequest,
+    CoordinatorPhaseResult,
+    RobotsAuthorization,
+    RobotsAuthorizer,
+    StaticRobotsAuthorizer,
+)
 from clue_research.official_site.discovery import (
     DISCOVERY_POLICY_VERSION,
     ExtractedPageLinks,
@@ -30,6 +39,7 @@ from clue_research.official_site.reconciliation import (
     DurableAcquisitionResult,
     DurablePageAcquirer,
     ProviderOperationLookup,
+    SnapshotBeforeCompleteHook,
 )
 from clue_research.official_site.repository import PostgresCrawlRepository
 from clue_research.official_site.robots import (
@@ -91,6 +101,10 @@ __all__ = [
     "ATTEMPT_TRANSITIONS",
     "BoundedLinks",
     "ConservativeUrlPolicy",
+    "ConcurrentCrawlCoordinator",
+    "CoordinatorLeaseLostError",
+    "CoordinatorPhaseRequest",
+    "CoordinatorPhaseResult",
     "CrawlCapacityExceededError",
     "CrawlReplayConflictError",
     "CrawlRepository",
@@ -113,6 +127,8 @@ __all__ = [
     "PostgresCrawlRepository",
     "ProviderOperationLookup",
     "ROBOTS_POLICY_VERSION",
+    "RobotsAuthorization",
+    "RobotsAuthorizer",
     "RUN_TRANSITIONS",
     "RobotsDecision",
     "RobotsDocument",
@@ -122,6 +138,7 @@ __all__ = [
     "SAFETY_POLICY_VERSION",
     "SITEMAP_POLICY_VERSION",
     "SafetyDecision",
+    "SnapshotBeforeCompleteHook",
     "SitemapDocument",
     "SitemapEntry",
     "SitemapInventory",
@@ -129,6 +146,7 @@ __all__ = [
     "SitemapPayload",
     "SitemapPolicyError",
     "StaticAddressResolver",
+    "StaticRobotsAuthorizer",
     "SystemAddressResolver",
     "URL_POLICY_VERSION",
     "UrlPolicyConfig",

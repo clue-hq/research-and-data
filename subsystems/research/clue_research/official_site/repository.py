@@ -71,6 +71,22 @@ _ACTIVE_LEASE_STATES = (
     CrawlPageState.PERSISTENCE_PENDING.value,
 )
 
+# C5's scheduler policy is fixed by ``stage0-official-site-c0-v1``. The category targets total
+# eleven pages when every category exists; the run-pinned fast ceiling remains the hard upper
+# bound. A category with no queued page never blocks another category.
+_FAST_CATEGORY_QUOTAS: dict[str, int] = {
+    "homepage": 1,
+    "product": 3,
+    "pricing": 1,
+    "customer_proof": 2,
+    "company": 1,
+    "partner": 1,
+    "trust": 1,
+    "blog": 1,
+}
+_CATEGORY_ORDER = tuple(_FAST_CATEGORY_QUOTAS)
+_MAX_NO_SPEND_ATTEMPTS = 3
+
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
@@ -658,7 +674,9 @@ class PostgresCrawlRepository:
 
     async def claim_next(self, request: ClaimNextRequest) -> CrawlLease | None:
         async with self._conn_factory() as conn:
-            await self._lock(conn, request.crawl_run_id, "claim")
+            # One global transaction lock makes the global/host COUNT + lease update atomic across
+            # processes and crawl runs. Host locks are always acquired after this lock.
+            await self._global_claim_lock(conn)
             await self._reclaim(conn, request.workspace_id, request.crawl_run_id)
             run = await self._run(conn, request.workspace_id, request.crawl_run_id)
             if request.eligible_phase is CrawlPhase.FAST:
@@ -680,109 +698,87 @@ class PostgresCrawlRepository:
                     return None
                 eligibility = (CrawlEligibility.BACKGROUND.value, CrawlEligibility.BOTH.value)
 
-            active = int(
-                (
+            active, active_cap = await self._global_capacity(
+                conn, candidate_cap=int(run["config_json"]["worker_concurrency"])
+            )
+            if active >= active_cap:
+                return None
+            if request.eligible_phase is CrawlPhase.BACKGROUND and await self._fast_work_can_claim(
+                conn, global_active=active
+            ):
+                return None
+
+            candidates = await self._queued_candidates(
+                conn,
+                workspace_id=request.workspace_id,
+                crawl_run_id=request.crawl_run_id,
+                eligibility=eligibility,
+                limit=int(run["overall_page_ceiling"]),
+                lock=True,
+            )
+            if request.eligible_phase is CrawlPhase.FAST:
+                candidates = await self._apply_fast_quotas(conn, run=run, candidates=candidates)
+            for page in candidates:
+                await self._host_claim_lock(conn, page["host"])
+                if not await self._host_has_capacity(
+                    conn,
+                    host=page["host"],
+                    candidate_cap=int(run["config_json"]["per_host_concurrency"]),
+                ):
+                    continue
+                leased = _row(
                     await conn.execute(
                         text(
                             """
-                            SELECT count(*) FROM official_site_crawl_page
-                            WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
-                              AND state = ANY(CAST(:states AS text[]))
-                              AND lease_expires_at > now()
+                            UPDATE official_site_crawl_page
+                            SET state = 'leased', lease_owner = :worker_id,
+                                lease_generation = lease_generation + 1,
+                                lease_acquired_at = now(),
+                                lease_expires_at = now() + make_interval(secs => :ttl),
+                                updated_at = now()
+                            WHERE id = :page_id AND workspace_id = :workspace_id
+                              AND crawl_run_id = :crawl_run_id AND state = 'queued'
+                            RETURNING *
                             """
                         ),
                         {
+                            "worker_id": request.worker_id,
+                            "ttl": request.lease_ttl_seconds,
+                            "page_id": page["id"],
                             "workspace_id": request.workspace_id,
                             "crawl_run_id": request.crawl_run_id,
-                            "states": list(_ACTIVE_LEASE_STATES),
                         },
                     )
-                ).scalar_one()
-            )
-            worker_cap = int(run["config_json"]["worker_concurrency"])
-            if active >= worker_cap:
-                return None
-
-            page = _row(
-                await conn.execute(
-                    text(
-                        """
-                        SELECT candidate.*
-                        FROM official_site_crawl_page AS candidate
-                        WHERE candidate.workspace_id = :workspace_id
-                          AND candidate.crawl_run_id = :crawl_run_id
-                          AND candidate.state = 'queued'
-                          AND candidate.eligibility = ANY(CAST(:eligibility AS text[]))
-                          AND (
-                              SELECT count(*)
-                              FROM official_site_crawl_page AS active
-                              WHERE active.crawl_run_id = candidate.crawl_run_id
-                                AND active.host = candidate.host
-                                AND active.state = ANY(CAST(:states AS text[]))
-                                AND active.lease_expires_at > now()
-                          ) < :host_cap
-                        ORDER BY candidate.priority, candidate.graph_depth NULLS LAST,
-                                 candidate.discovered_at, candidate.id
-                        FOR UPDATE SKIP LOCKED
-                        LIMIT 1
-                        """
-                    ),
-                    {
-                        "workspace_id": request.workspace_id,
-                        "crawl_run_id": request.crawl_run_id,
-                        "eligibility": list(eligibility),
-                        "states": list(_ACTIVE_LEASE_STATES),
-                        "host_cap": int(run["config_json"]["per_host_concurrency"]),
-                    },
                 )
-            )
-            if page is None:
-                return None
-            leased = _row(
-                await conn.execute(
-                    text(
-                        """
-                        UPDATE official_site_crawl_page
-                        SET state = 'leased', lease_owner = :worker_id,
-                            lease_generation = lease_generation + 1,
-                            lease_acquired_at = now(),
-                            lease_expires_at = now() + make_interval(secs => :ttl),
-                            updated_at = now()
-                        WHERE id = :page_id AND workspace_id = :workspace_id
-                          AND crawl_run_id = :crawl_run_id AND state = 'queued'
-                        RETURNING *
-                        """
-                    ),
-                    {
-                        "worker_id": request.worker_id,
-                        "ttl": request.lease_ttl_seconds,
-                        "page_id": page["id"],
-                        "workspace_id": request.workspace_id,
-                        "crawl_run_id": request.crawl_run_id,
-                    },
-                )
-            )
-            return (
-                _lease_from_row(leased, phase=request.eligible_phase)
-                if leased is not None
-                else None
-            )
+                if leased is not None:
+                    return _lease_from_row(leased, phase=request.eligible_phase)
+            return None
 
     async def claim_reconciliation(
         self, request: ClaimReconciliationRequest
     ) -> ReconciliationClaim | None:
         async with self._conn_factory() as conn:
-            await self._lock(conn, request.crawl_run_id, "claim")
+            await self._global_claim_lock(conn)
             await self._reclaim(conn, request.workspace_id, request.crawl_run_id)
             run = await self._run(conn, request.workspace_id, request.crawl_run_id)
             phase = self._recovery_phase(run["status"])
             if phase is None:
                 return None
-            pair = _row(
-                await conn.execute(
-                    text(
-                        """
-                        SELECT page.id AS page_pk, attempt.id AS attempt_pk
+            active, active_cap = await self._global_capacity(
+                conn, candidate_cap=int(run["config_json"]["worker_concurrency"])
+            )
+            if active >= active_cap:
+                return None
+            if phase is CrawlPhase.BACKGROUND and await self._fast_work_can_claim(
+                conn, global_active=active
+            ):
+                return None
+            pairs = list(
+                (
+                    await conn.execute(
+                        text(
+                            """
+                        SELECT page.id AS page_pk, page.host, attempt.id AS attempt_pk
                         FROM official_site_crawl_page AS page
                         JOIN LATERAL (
                             SELECT candidate.id
@@ -800,53 +796,60 @@ class PostgresCrawlRepository:
                           AND page.lease_owner IS NULL
                         ORDER BY page.priority, page.discovered_at, page.id
                         FOR UPDATE OF page SKIP LOCKED
-                        LIMIT 1
+                        LIMIT 100
                         """
-                    ),
-                    {
-                        "workspace_id": request.workspace_id,
-                        "crawl_run_id": request.crawl_run_id,
-                    },
+                        ),
+                        {
+                            "workspace_id": request.workspace_id,
+                            "crawl_run_id": request.crawl_run_id,
+                        },
+                    )
+                ).mappings()
+            )
+            for pair in pairs:
+                await self._host_claim_lock(conn, pair["host"])
+                if not await self._host_has_capacity(
+                    conn,
+                    host=pair["host"],
+                    candidate_cap=int(run["config_json"]["per_host_concurrency"]),
+                ):
+                    continue
+                leased = _row(
+                    await conn.execute(
+                        text(
+                            """
+                            UPDATE official_site_crawl_page
+                            SET lease_owner = :worker_id, lease_generation = lease_generation + 1,
+                                lease_acquired_at = now(),
+                                lease_expires_at = now() + make_interval(secs => :ttl),
+                                updated_at = now()
+                            WHERE id = :page_id AND workspace_id = :workspace_id
+                              AND crawl_run_id = :crawl_run_id
+                              AND state = 'reconciliation_pending' AND lease_owner IS NULL
+                            RETURNING *
+                            """
+                        ),
+                        {
+                            "worker_id": request.worker_id,
+                            "ttl": request.lease_ttl_seconds,
+                            "page_id": pair["page_pk"],
+                            "workspace_id": request.workspace_id,
+                            "crawl_run_id": request.crawl_run_id,
+                        },
+                    )
                 )
-            )
-            if pair is None:
-                return None
-            leased = _row(
-                await conn.execute(
-                    text(
-                        """
-                        UPDATE official_site_crawl_page
-                        SET lease_owner = :worker_id, lease_generation = lease_generation + 1,
-                            lease_acquired_at = now(),
-                            lease_expires_at = now() + make_interval(secs => :ttl),
-                            updated_at = now()
-                        WHERE id = :page_id AND workspace_id = :workspace_id
-                          AND crawl_run_id = :crawl_run_id
-                          AND state = 'reconciliation_pending' AND lease_owner IS NULL
-                        RETURNING *
-                        """
-                    ),
-                    {
-                        "worker_id": request.worker_id,
-                        "ttl": request.lease_ttl_seconds,
-                        "page_id": pair["page_pk"],
-                        "workspace_id": request.workspace_id,
-                        "crawl_run_id": request.crawl_run_id,
-                    },
+                attempt = _row(
+                    await conn.execute(
+                        text("SELECT * FROM official_site_fetch_attempt WHERE id = :attempt_id"),
+                        {"attempt_id": pair["attempt_pk"]},
+                    )
                 )
-            )
-            attempt = _row(
-                await conn.execute(
-                    text("SELECT * FROM official_site_fetch_attempt WHERE id = :attempt_id"),
-                    {"attempt_id": pair["attempt_pk"]},
-                )
-            )
-            if leased is None or attempt is None:  # pragma: no cover - same transaction
-                return None
-            return ReconciliationClaim(
-                lease=_lease_from_row(leased, phase=phase),
-                attempt=_attempt_from_row(attempt),
-            )
+                if leased is not None and attempt is not None:
+                    return ReconciliationClaim(
+                        lease=_lease_from_row(leased, phase=phase),
+                        attempt=_attempt_from_row(attempt),
+                    )
+            return None
 
     async def claim_persistence(self, request: ClaimPersistenceRequest) -> PersistenceClaim | None:
         async with self._conn_factory() as conn:
@@ -1665,6 +1668,203 @@ class PostgresCrawlRepository:
             return await self._read_progress(conn, workspace_id, crawl_run_id)
 
     @staticmethod
+    async def _queued_candidates(
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        crawl_run_id: UUID,
+        eligibility: tuple[str, ...],
+        limit: int,
+        lock: bool,
+    ) -> list[Mapping[str, Any]]:
+        lock_clause = " FOR UPDATE SKIP LOCKED" if lock else ""
+        rows = (
+            await conn.execute(
+                text(
+                    """
+                        SELECT candidate.*
+                        FROM official_site_crawl_page AS candidate
+                        WHERE candidate.workspace_id = :workspace_id
+                          AND candidate.crawl_run_id = :crawl_run_id
+                          AND candidate.state = 'queued'
+                          AND candidate.eligibility = ANY(CAST(:eligibility AS text[]))
+                        ORDER BY candidate.priority, candidate.graph_depth NULLS LAST,
+                                 candidate.discovered_at, candidate.id
+                        """
+                    + lock_clause
+                    + " LIMIT :limit"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "crawl_run_id": crawl_run_id,
+                    "eligibility": list(eligibility),
+                    "limit": limit,
+                },
+            )
+        ).mappings()
+        return [cast(Mapping[str, Any], row) for row in rows]
+
+    @staticmethod
+    def _category(row: Mapping[str, Any]) -> str | None:
+        reasons = frozenset(str(reason) for reason in (row["priority_reason_json"] or ()))
+        for category in _CATEGORY_ORDER:
+            if f"category:{category}" in reasons:
+                return category
+        return None
+
+    async def _apply_fast_quotas(
+        self,
+        conn: AsyncConnection,
+        *,
+        run: Mapping[str, Any],
+        candidates: list[Mapping[str, Any]],
+    ) -> list[Mapping[str, Any]]:
+        if not candidates:
+            return []
+        scheduled_rows = (
+            await conn.execute(
+                text(
+                    """
+                        SELECT priority_reason_json
+                        FROM official_site_crawl_page
+                        WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
+                          AND eligibility IN ('fast', 'both')
+                          AND (attempt_count > 0 OR state NOT IN ('discovered', 'queued'))
+                        """
+                ),
+                {"workspace_id": run["workspace_id"], "crawl_run_id": run["id"]},
+            )
+        ).mappings()
+        scheduled = [cast(Mapping[str, Any], row) for row in scheduled_rows]
+        category_counts = dict.fromkeys(_CATEGORY_ORDER, 0)
+        for row in scheduled:
+            category = self._category(row)
+            if category is not None:
+                category_counts[category] += 1
+
+        retries = [candidate for candidate in candidates if candidate["attempt_count"] > 0]
+        if len(scheduled) >= int(run["fast_page_ceiling"]):
+            return retries
+        under_quota = {
+            candidate["id"]
+            for candidate in candidates
+            if candidate["attempt_count"] == 0
+            and (category := self._category(candidate)) is not None
+            and category_counts[category] < _FAST_CATEGORY_QUOTAS[category]
+        }
+        if not under_quota:
+            return candidates
+        return [
+            candidate
+            for candidate in candidates
+            if candidate["attempt_count"] > 0 or candidate["id"] in under_quota
+        ]
+
+    @staticmethod
+    async def _global_capacity(conn: AsyncConnection, *, candidate_cap: int) -> tuple[int, int]:
+        row = (
+            (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT count(*)::int AS active,
+                               min((run.config_json->>'worker_concurrency')::int) AS active_cap
+                        FROM official_site_crawl_page AS page
+                        JOIN official_site_crawl_run AS run ON run.id = page.crawl_run_id
+                        WHERE page.state = ANY(CAST(:states AS text[]))
+                          AND page.lease_expires_at > now()
+                        """
+                    ),
+                    {"states": list(_ACTIVE_LEASE_STATES)},
+                )
+            )
+            .mappings()
+            .one()
+        )
+        active_cap = row["active_cap"]
+        return int(row["active"]), min(candidate_cap, int(active_cap or candidate_cap))
+
+    @staticmethod
+    async def _host_has_capacity(conn: AsyncConnection, *, host: str, candidate_cap: int) -> bool:
+        row = (
+            (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT count(*)::int AS active,
+                               min((run.config_json->>'per_host_concurrency')::int) AS active_cap
+                        FROM official_site_crawl_page AS page
+                        JOIN official_site_crawl_run AS run ON run.id = page.crawl_run_id
+                        WHERE page.host = :host
+                          AND page.state = ANY(CAST(:states AS text[]))
+                          AND page.lease_expires_at > now()
+                        """
+                    ),
+                    {"host": host, "states": list(_ACTIVE_LEASE_STATES)},
+                )
+            )
+            .mappings()
+            .one()
+        )
+        active_cap = min(candidate_cap, int(row["active_cap"] or candidate_cap))
+        return int(row["active"]) < active_cap
+
+    async def _fast_work_can_claim(self, conn: AsyncConnection, *, global_active: int) -> bool:
+        run_rows = (
+            await conn.execute(
+                text(
+                    """
+                        SELECT * FROM official_site_crawl_run
+                        WHERE status = 'fast_active' AND fast_claim_deadline_at > now()
+                        ORDER BY created_at, id
+                        """
+                )
+            )
+        ).mappings()
+        runs = [cast(Mapping[str, Any], row) for row in run_rows]
+        for run in runs:
+            # Expired fast leases are eligible fast work too. Reclaim them while the global claim
+            # lock is held so a background caller cannot slip ahead of a recoverable fast page.
+            await self._reclaim(conn, run["workspace_id"], run["id"])
+            _, effective_cap = await self._global_capacity(
+                conn, candidate_cap=int(run["config_json"]["worker_concurrency"])
+            )
+            if global_active >= effective_cap:
+                continue
+            candidates = await self._queued_candidates(
+                conn,
+                workspace_id=run["workspace_id"],
+                crawl_run_id=run["id"],
+                eligibility=(CrawlEligibility.FAST.value, CrawlEligibility.BOTH.value),
+                limit=int(run["overall_page_ceiling"]),
+                lock=False,
+            )
+            candidates = await self._apply_fast_quotas(conn, run=run, candidates=candidates)
+            for candidate in candidates:
+                await self._host_claim_lock(conn, candidate["host"])
+                if await self._host_has_capacity(
+                    conn,
+                    host=candidate["host"],
+                    candidate_cap=int(run["config_json"]["per_host_concurrency"]),
+                ):
+                    return True
+        return False
+
+    @staticmethod
+    async def _global_claim_lock(conn: AsyncConnection) -> None:
+        await conn.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": "official-site:claim:global"},
+        )
+
+    @staticmethod
+    async def _host_claim_lock(conn: AsyncConnection, host: str) -> None:
+        await conn.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"official-site:claim:host:{host}"},
+        )
+
+    @staticmethod
     async def _lock(conn: AsyncConnection, crawl_run_id: UUID, purpose: str) -> None:
         await conn.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
@@ -2089,12 +2289,26 @@ class PostgresCrawlRepository:
             text(
                 """
                 UPDATE official_site_crawl_page
+                SET state = 'failed', next_attempt_at = NULL,
+                    terminal_reason = 'no_spend_retry_exhausted', updated_at = now()
+                WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
+                  AND state = 'retry_wait' AND next_attempt_at <= now()
+                  AND attempt_count >= :max_attempts
+                """
+            ),
+            {**params, "max_attempts": _MAX_NO_SPEND_ATTEMPTS},
+        )
+        await conn.execute(
+            text(
+                """
+                UPDATE official_site_crawl_page
                 SET state = 'queued', next_attempt_at = NULL, queued_at = now(), updated_at = now()
                 WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
                   AND state = 'retry_wait' AND next_attempt_at <= now()
+                  AND attempt_count < :max_attempts
                 """
             ),
-            params,
+            {**params, "max_attempts": _MAX_NO_SPEND_ATTEMPTS},
         )
         return ReclaimResult(
             requeued_pre_dispatch=pre_dispatch.rowcount,
