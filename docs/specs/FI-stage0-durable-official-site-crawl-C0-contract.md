@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — C0 contract freeze
 
-**Status:** C0 implemented and verified; C1 migration/repository not started
+**Status:** C0 implemented and verified; C1 and C2 are implemented; C3 is next
 
 **Parent:** [durable official-site crawl implementation plan](./FI-stage0-durable-official-site-crawl-plan.md)
 
@@ -590,5 +590,6 @@ C0 acceptance requires:
 - the historical Firecrawl adapter calls single-page `scrape`, never `crawl`;
 - targeted lint, type, import, and provider-free tests pass.
 
-C1 may now implement the exact DDL and repository operations. It may not change table names,
-states, `PageFetcher`, `CrawlRepository`, or materialization shapes without reopening C0.
+C1 implemented the exact DDL and repository operations, and C2 preserved those frozen shapes.
+C3 may not change table names, states, `PageFetcher`, `CrawlRepository`, or materialization shapes
+without reopening C0.

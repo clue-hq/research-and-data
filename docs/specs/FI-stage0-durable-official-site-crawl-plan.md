@@ -1038,7 +1038,7 @@ migration, spike inventory, ownership map, and rollout contract are recorded in 
 [C0 contract freeze](./FI-stage0-durable-official-site-crawl-C0-contract.md). Executable authority
 lives in `clue_research.official_site` and
 `tests/fixtures/official_site/c0_contract_fixture.json`. C0 made no migration, provider call, or
-production cutover; C1 is the next implementation slice.
+production cutover. C1 and C2 have since landed; C3 is the next implementation slice.
 
 **Deliverables**
 
@@ -1059,6 +1059,10 @@ production cutover; C1 is the next implementation slice.
 
 ### C1 — Migration and repository primitives
 
+**Status: complete (2026-08-14).** One reversible migration and the workspace-scoped PostgreSQL
+repository implement the frozen ledger, atomic claiming, generation fencing, paid-call recovery,
+and immutable checkpoints. C2 subsequently built on those tables without another migration.
+
 **Deliverables**
 
 - Add the crawl tables, enums, CHECKs, FKs, uniqueness rules, indexes, and reversible migration.
@@ -1074,6 +1078,11 @@ production cutover; C1 is the next implementation slice.
 - Cross-workspace reads/writes fail closed.
 
 ### C2 — URL policy, graph, sitemap, and safety
+
+**Status: complete (2026-08-14).** The binding implementation details, policy versions, additive
+sitemap-source provenance correction, safety ceilings, verification matrix, and C3/C5 handoff are
+recorded in the
+[C2 policy contract](./FI-stage0-durable-official-site-crawl-C2-policy-contract.md).
 
 **Deliverables**
 

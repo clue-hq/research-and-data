@@ -357,6 +357,10 @@ class CrawlRunRef(FrozenContractModel):
 class UrlObservation(FrozenContractModel):
     discovered_url: str = Field(min_length=1)
     discovered_via: DiscoveredVia
+    # Additive C2 provenance delta: the frozen table already had this column, while the C0
+    # transport model accidentally omitted the source sitemap URL.  Optional preserves C0 replay;
+    # every C2 sitemap planner populates it.
+    sitemap_url: str | None = Field(default=None, min_length=1)
     fetch_key: str | None = None
     fetch_key_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     source_page_id: UUID | None = None
@@ -370,8 +374,27 @@ class UrlObservation(FrozenContractModel):
 
     @model_validator(mode="after")
     def _validate_identity(self) -> UrlObservation:
+        page_origins = {
+            DiscoveredVia.LINK,
+            DiscoveredVia.REDIRECT,
+            DiscoveredVia.CANONICAL,
+        }
+        if self.discovered_via in page_origins and self.source_page_id is None:
+            raise ValueError("page-derived discovery requires source_page_id")
+        if self.discovered_via not in page_origins and self.source_page_id is not None:
+            raise ValueError("root/sitemap discovery cannot carry source_page_id")
+        if self.discovered_via is DiscoveredVia.ROOT and (
+            self.policy_outcome is PolicyOutcome.ADMITTED and self.graph_depth != 0
+        ):
+            raise ValueError("admitted root discovery requires graph depth zero")
+        if self.discovered_via in {DiscoveredVia.REDIRECT, DiscoveredVia.CANONICAL} and (
+            self.graph_depth is not None
+        ):
+            raise ValueError("alias discovery cannot assign graph depth")
         if self.discovered_via is DiscoveredVia.SITEMAP and self.graph_depth is not None:
             raise ValueError("sitemap discovery cannot assign graph depth")
+        if self.discovered_via is not DiscoveredVia.SITEMAP and self.sitemap_url is not None:
+            raise ValueError("only sitemap discovery may carry sitemap_url")
         if self.policy_outcome is PolicyOutcome.ADMITTED and (
             self.fetch_key is None or self.fetch_key_hash is None
         ):

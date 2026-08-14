@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_db import ConnFactory, transaction
 from clue_research.official_site.contracts import (
+    AliasKind,
+    AliasVerificationStatus,
     ArtifactRef,
     AttemptOutcome,
     ClaimNextRequest,
@@ -245,6 +247,8 @@ class PostgresCrawlRepository:
         pages_created = 0
         pages_reprioritized = 0
         saved_links_reexpanded = 0
+        shortened_fetched_pages: dict[UUID, int] = {}
+        expanded_sources: dict[UUID, int] = {}
         async with self._conn_factory() as conn:
             run = await self._run(conn, batch.workspace_id, batch.crawl_run_id, lock=True)
             current_pages = int(
@@ -263,6 +267,46 @@ class PostgresCrawlRepository:
             )
 
             for index, observation in enumerate(batch.observations):
+                source_page: Mapping[str, Any] | None = None
+                if observation.source_page_id is not None:
+                    source_page = _row(
+                        await conn.execute(
+                            text(
+                                """
+                                SELECT * FROM official_site_crawl_page
+                                WHERE id = :page_id AND workspace_id = :workspace_id
+                                  AND crawl_run_id = :crawl_run_id
+                                FOR UPDATE
+                                """
+                            ),
+                            {
+                                "page_id": observation.source_page_id,
+                                "workspace_id": batch.workspace_id,
+                                "crawl_run_id": batch.crawl_run_id,
+                            },
+                        )
+                    )
+                    if source_page is None:
+                        raise CrawlStateConflictError(
+                            "discovery source page is absent or outside the workspace/run"
+                        )
+                    if observation.discovered_via is DiscoveredVia.LINK:
+                        parent_depth = source_page["graph_depth"]
+                        if parent_depth is None and observation.graph_depth is not None:
+                            raise CrawlStateConflictError(
+                                "an unknown-depth source cannot assign link graph depth"
+                            )
+                        if (
+                            parent_depth is not None
+                            and observation.policy_outcome is PolicyOutcome.ADMITTED
+                            and (
+                                parent_depth >= run["max_graph_depth"]
+                                or observation.graph_depth != parent_depth + 1
+                            )
+                        ):
+                            raise CrawlStateConflictError(
+                                "link discovery violates the run-pinned graph-depth policy"
+                            )
                 page: Mapping[str, Any] | None = None
                 if observation.policy_outcome is PolicyOutcome.ADMITTED:
                     assert observation.fetch_key is not None
@@ -272,13 +316,15 @@ class PostgresCrawlRepository:
                             text(
                                 """
                                 SELECT * FROM official_site_crawl_page
-                                WHERE crawl_run_id = :crawl_run_id
+                                WHERE workspace_id = :workspace_id
+                                  AND crawl_run_id = :crawl_run_id
                                   AND fetch_key_hash = :fetch_key_hash
                                   AND fetch_key = :fetch_key
                                 FOR UPDATE
                                 """
                             ),
                             {
+                                "workspace_id": batch.workspace_id,
                                 "crawl_run_id": batch.crawl_run_id,
                                 "fetch_key_hash": observation.fetch_key_hash,
                                 "fetch_key": observation.fetch_key,
@@ -290,6 +336,10 @@ class PostgresCrawlRepository:
                             raise CrawlCapacityExceededError(
                                 "discovery batch exceeds the run-pinned page ceiling"
                             )
+                        parked_unknown_link = (
+                            observation.discovered_via is DiscoveredVia.LINK
+                            and observation.graph_depth is None
+                        )
                         page = _row(
                             await conn.execute(
                                 text(
@@ -302,7 +352,7 @@ class PostgresCrawlRepository:
                                         :id, :workspace_id, :crawl_run_id, :fetch_key,
                                         :fetch_key_hash, :requested_url, :host, :graph_depth,
                                         :priority, CAST(:priority_reasons AS jsonb), :eligibility,
-                                        'queued', now()
+                                        :state, CASE WHEN :state = 'queued' THEN now() ELSE NULL END
                                     )
                                     RETURNING *
                                     """
@@ -313,7 +363,9 @@ class PostgresCrawlRepository:
                                     "crawl_run_id": batch.crawl_run_id,
                                     "fetch_key": observation.fetch_key,
                                     "fetch_key_hash": observation.fetch_key_hash,
-                                    "requested_url": observation.discovered_url,
+                                    # A relative/raw discovered spelling remains on the URL
+                                    # observation; acquisition always receives an absolute safe key.
+                                    "requested_url": observation.fetch_key,
                                     "host": _host(observation.fetch_key),
                                     "graph_depth": observation.graph_depth,
                                     "priority": observation.priority,
@@ -321,6 +373,11 @@ class PostgresCrawlRepository:
                                         sorted(set(observation.priority_reason))
                                     ),
                                     "eligibility": observation.eligibility.value,
+                                    "state": (
+                                        CrawlPageState.DISCOVERED.value
+                                        if parked_unknown_link
+                                        else CrawlPageState.QUEUED.value
+                                    ),
                                 },
                             )
                         )
@@ -338,6 +395,12 @@ class PostgresCrawlRepository:
                         new_eligibility = _merge_eligibility(
                             page["eligibility"], observation.eligibility
                         )
+                        new_state = page["state"]
+                        if (
+                            page["state"] == CrawlPageState.DISCOVERED.value
+                            and new_depth is not None
+                        ):
+                            new_state = CrawlPageState.QUEUED.value
                         new_reasons = sorted(
                             set(page["priority_reason_json"] or ())
                             | set(observation.priority_reason)
@@ -346,6 +409,7 @@ class PostgresCrawlRepository:
                             new_depth != old_depth
                             or new_priority != page["priority"]
                             or new_eligibility != page["eligibility"]
+                            or new_state != page["state"]
                             or new_reasons != list(page["priority_reason_json"] or ())
                         )
                         if changed:
@@ -357,6 +421,11 @@ class PostgresCrawlRepository:
                                         priority = :priority,
                                         priority_reason_json = CAST(:priority_reasons AS jsonb),
                                         eligibility = :eligibility,
+                                        state = :state,
+                                        queued_at = CASE
+                                            WHEN :state = 'queued' THEN COALESCE(queued_at, now())
+                                            ELSE queued_at
+                                        END,
                                         updated_at = now()
                                     WHERE id = :page_id AND workspace_id = :workspace_id
                                       AND crawl_run_id = :crawl_run_id
@@ -367,6 +436,7 @@ class PostgresCrawlRepository:
                                     "priority": new_priority,
                                     "priority_reasons": _json(new_reasons),
                                     "eligibility": new_eligibility,
+                                    "state": new_state,
                                     "page_id": page["id"],
                                     "workspace_id": batch.workspace_id,
                                     "crawl_run_id": batch.crawl_run_id,
@@ -381,7 +451,38 @@ class PostgresCrawlRepository:
                                 or observation.graph_depth < page["expanded_min_depth"]
                             )
                         ):
-                            saved_links_reexpanded += 1
+                            prior = shortened_fetched_pages.get(page["id"])
+                            shortened_fetched_pages[page["id"]] = (
+                                observation.graph_depth
+                                if prior is None
+                                else min(prior, observation.graph_depth)
+                            )
+                elif (
+                    observation.discovered_via in {DiscoveredVia.REDIRECT, DiscoveredVia.CANONICAL}
+                    and observation.fetch_key is not None
+                    and observation.fetch_key_hash is not None
+                ):
+                    # Same-domain aliases never create or queue a page.  If their target already
+                    # has a page node, retain the optional target pointer without merging identity.
+                    page = _row(
+                        await conn.execute(
+                            text(
+                                """
+                                SELECT * FROM official_site_crawl_page
+                                WHERE workspace_id = :workspace_id
+                                  AND crawl_run_id = :crawl_run_id
+                                  AND fetch_key_hash = :fetch_key_hash
+                                  AND fetch_key = :fetch_key
+                                """
+                            ),
+                            {
+                                "workspace_id": batch.workspace_id,
+                                "crawl_run_id": batch.crawl_run_id,
+                                "fetch_key_hash": observation.fetch_key_hash,
+                                "fetch_key": observation.fetch_key,
+                            },
+                        )
+                    )
 
                 inserted = await conn.execute(
                     text(
@@ -409,17 +510,69 @@ class PostgresCrawlRepository:
                         "source_page_id": observation.source_page_id,
                         "graph_depth": observation.graph_depth,
                         "link_text": observation.link_text,
-                        "sitemap_url": (
-                            observation.discovered_url
-                            if observation.discovered_via is DiscoveredVia.SITEMAP
-                            else None
-                        ),
+                        "sitemap_url": observation.sitemap_url,
                         "policy_outcome": observation.policy_outcome.value,
                         "policy_reason": observation.policy_reason,
                     },
                 )
                 if inserted.rowcount:
                     observations_recorded += 1
+
+                if observation.source_page_id is not None and observation.discovered_via in {
+                    DiscoveredVia.REDIRECT,
+                    DiscoveredVia.CANONICAL,
+                }:
+                    kind = (
+                        AliasKind.REDIRECT
+                        if observation.discovered_via is DiscoveredVia.REDIRECT
+                        else AliasKind.CANONICAL_HINT
+                    )
+                    if observation.fetch_key is not None:
+                        verification = (
+                            AliasVerificationStatus.VERIFIED_REDIRECT
+                            if kind is AliasKind.REDIRECT
+                            else AliasVerificationStatus.OBSERVED
+                        )
+                    elif observation.policy_reason and any(
+                        marker in observation.policy_reason
+                        for marker in (
+                            "external_domain",
+                            "subdomain_not_allowed",
+                            "non_public_network_target",
+                        )
+                    ):
+                        verification = AliasVerificationStatus.REJECTED_EXTERNAL
+                    else:
+                        verification = AliasVerificationStatus.CONFLICTING
+                    await conn.execute(
+                        text(
+                            """
+                            INSERT INTO official_site_alias_observation (
+                                id, workspace_id, crawl_run_id, source_page_id, alias_url,
+                                kind, verification_status, target_page_id
+                            ) VALUES (
+                                :id, :workspace_id, :crawl_run_id, :source_page_id, :alias_url,
+                                :kind, :verification_status, :target_page_id
+                            )
+                            ON CONFLICT (crawl_run_id, source_page_id, alias_url, kind) DO NOTHING
+                            """
+                        ),
+                        {
+                            "id": uuid4(),
+                            "workspace_id": batch.workspace_id,
+                            "crawl_run_id": batch.crawl_run_id,
+                            "source_page_id": observation.source_page_id,
+                            "alias_url": observation.discovered_url,
+                            "kind": kind.value,
+                            "verification_status": verification.value,
+                            "target_page_id": (
+                                page["id"]
+                                if page is not None
+                                and verification is not AliasVerificationStatus.REJECTED_EXTERNAL
+                                else None
+                            ),
+                        },
+                    )
 
                 if observation.source_page_id is not None and page is not None:
                     relation = {
@@ -452,6 +605,49 @@ class PostgresCrawlRepository:
                             "link_relation": relation.value,
                         },
                     )
+
+                if (
+                    source_page is not None
+                    and source_page["state"] == CrawlPageState.FETCHED.value
+                    and observation.discovered_via is DiscoveredVia.LINK
+                    and observation.graph_depth is not None
+                ):
+                    source_depth = observation.graph_depth - 1
+                    prior = expanded_sources.get(source_page["id"])
+                    expanded_sources[source_page["id"]] = (
+                        source_depth if prior is None else min(prior, source_depth)
+                    )
+
+            for source_page_id, depth in expanded_sources.items():
+                await conn.execute(
+                    text(
+                        """
+                        UPDATE official_site_crawl_page
+                        SET expanded_min_depth = CASE
+                                WHEN expanded_min_depth IS NULL THEN :depth
+                                ELSE LEAST(expanded_min_depth, :depth)
+                            END,
+                            updated_at = now()
+                        WHERE id = :page_id AND workspace_id = :workspace_id
+                          AND crawl_run_id = :crawl_run_id AND state = 'fetched'
+                        """
+                    ),
+                    {
+                        "depth": depth,
+                        "page_id": source_page_id,
+                        "workspace_id": batch.workspace_id,
+                        "crawl_run_id": batch.crawl_run_id,
+                    },
+                )
+            for page_id, depth in shortened_fetched_pages.items():
+                saved_links_reexpanded += await self._reexpand_saved_links(
+                    conn,
+                    workspace_id=batch.workspace_id,
+                    crawl_run_id=batch.crawl_run_id,
+                    page_id=page_id,
+                    graph_depth=depth,
+                    max_graph_depth=int(run["max_graph_depth"]),
+                )
 
         return DiscoveryBatchResult(
             observations_recorded=observations_recorded,
@@ -1664,6 +1860,141 @@ class PostgresCrawlRepository:
             ),
             fetched_at=snapshot["fetched_at"],
         )
+
+    @staticmethod
+    async def _reexpand_saved_links(
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        crawl_run_id: UUID,
+        page_id: UUID,
+        graph_depth: int,
+        max_graph_depth: int,
+    ) -> int:
+        """Expand already-persisted anchor edges after a fetched page gains a shorter path.
+
+        The page itself remains fetched.  Unknown-depth child nodes become queued only when the
+        now-verified path reaches them at depth <= 2.  A fetched child can cascade the same repair
+        without another provider call.
+        """
+
+        queue: list[tuple[UUID, int]] = [(page_id, graph_depth)]
+        best_seen: dict[UUID, int] = {}
+        expanded = 0
+        while queue:
+            source_id, source_depth = queue.pop(0)
+            previous = best_seen.get(source_id)
+            if previous is not None and previous <= source_depth:
+                continue
+            best_seen[source_id] = source_depth
+            source = _row(
+                await conn.execute(
+                    text(
+                        """
+                        SELECT state, graph_depth, expanded_min_depth
+                        FROM official_site_crawl_page
+                        WHERE id = :page_id AND workspace_id = :workspace_id
+                          AND crawl_run_id = :crawl_run_id
+                        FOR UPDATE
+                        """
+                    ),
+                    {
+                        "page_id": source_id,
+                        "workspace_id": workspace_id,
+                        "crawl_run_id": crawl_run_id,
+                    },
+                )
+            )
+            if (
+                source is None
+                or source["state"] != CrawlPageState.FETCHED.value
+                or source_depth >= max_graph_depth
+                or (
+                    source["expanded_min_depth"] is not None
+                    and source["expanded_min_depth"] <= source_depth
+                )
+            ):
+                continue
+            child_rows = list(
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT child.id, child.state, child.graph_depth
+                            FROM official_site_link_edge AS edge
+                            JOIN official_site_crawl_page AS child
+                              ON child.id = edge.to_page_id
+                             AND child.crawl_run_id = edge.crawl_run_id
+                             AND child.workspace_id = edge.workspace_id
+                            WHERE edge.workspace_id = :workspace_id
+                              AND edge.crawl_run_id = :crawl_run_id
+                              AND edge.from_page_id = :page_id
+                              AND edge.link_relation = 'anchor'
+                            ORDER BY edge.observed_at, edge.id
+                            FOR UPDATE OF child
+                            """
+                        ),
+                        {
+                            "workspace_id": workspace_id,
+                            "crawl_run_id": crawl_run_id,
+                            "page_id": source_id,
+                        },
+                    )
+                ).mappings()
+            )
+            child_depth = source_depth + 1
+            for child in child_rows:
+                old_depth = child["graph_depth"]
+                shortened = old_depth is None or child_depth < old_depth
+                if not shortened:
+                    continue
+                await conn.execute(
+                    text(
+                        """
+                        UPDATE official_site_crawl_page
+                        SET graph_depth = :graph_depth,
+                            state = CASE WHEN state = 'discovered' THEN 'queued' ELSE state END,
+                            queued_at = CASE
+                                WHEN state = 'discovered' THEN COALESCE(queued_at, now())
+                                ELSE queued_at
+                            END,
+                            updated_at = now()
+                        WHERE id = :page_id AND workspace_id = :workspace_id
+                          AND crawl_run_id = :crawl_run_id
+                        """
+                    ),
+                    {
+                        "graph_depth": child_depth,
+                        "page_id": child["id"],
+                        "workspace_id": workspace_id,
+                        "crawl_run_id": crawl_run_id,
+                    },
+                )
+                if child["state"] == CrawlPageState.FETCHED.value:
+                    queue.append((child["id"], child_depth))
+            await conn.execute(
+                text(
+                    """
+                    UPDATE official_site_crawl_page
+                    SET expanded_min_depth = CASE
+                            WHEN expanded_min_depth IS NULL THEN :depth
+                            ELSE LEAST(expanded_min_depth, :depth)
+                        END,
+                        updated_at = now()
+                    WHERE id = :page_id AND workspace_id = :workspace_id
+                      AND crawl_run_id = :crawl_run_id AND state = 'fetched'
+                    """
+                ),
+                {
+                    "depth": source_depth,
+                    "page_id": source_id,
+                    "workspace_id": workspace_id,
+                    "crawl_run_id": crawl_run_id,
+                },
+            )
+            if child_rows:
+                expanded += 1
+        return expanded
 
     @staticmethod
     async def _reclaim(

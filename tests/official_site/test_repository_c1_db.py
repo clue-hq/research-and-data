@@ -351,12 +351,13 @@ def test_cross_workspace_repository_access_fails_closed() -> None:
                             observations=(
                                 UrlObservation(
                                     discovered_url="https://example.com/about",
-                                    discovered_via=DiscoveredVia.LINK,
+                                    discovered_via=DiscoveredVia.SITEMAP,
+                                    sitemap_url="https://example.com/sitemap.xml",
                                     fetch_key="https://example.com/about",
                                     fetch_key_hash=hashlib.sha256(
                                         b"https://example.com/about"
                                     ).hexdigest(),
-                                    graph_depth=1,
+                                    graph_depth=None,
                                     eligibility=CrawlEligibility.BOTH,
                                     policy_outcome=PolicyOutcome.ADMITTED,
                                 ),
@@ -396,10 +397,11 @@ def test_discovery_replay_deduplicates_a_batch_without_collapsing_its_provenance
                 )
                 observation = UrlObservation(
                     discovered_url="https://example.com/pricing",
-                    discovered_via=DiscoveredVia.LINK,
+                    discovered_via=DiscoveredVia.SITEMAP,
+                    sitemap_url="https://example.com/sitemap.xml",
                     fetch_key="https://example.com/pricing",
                     fetch_key_hash=hashlib.sha256(b"https://example.com/pricing").hexdigest(),
-                    graph_depth=1,
+                    graph_depth=None,
                     priority=5,
                     priority_reason=("pricing",),
                     eligibility=CrawlEligibility.BOTH,
