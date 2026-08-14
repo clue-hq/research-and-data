@@ -840,7 +840,11 @@ def build_chat_router(
                         project_id=project_id,
                         turn_id=turn_id,
                         message=body.message,
-                        client_entity_id=None,
+                        client_entity_id=await project_client_entity_id(
+                            conn,
+                            workspace_id=who.workspace_id,
+                            project_id=project_id,
+                        ),
                     )
                     try:
                         submission, _created = await insert_submission(

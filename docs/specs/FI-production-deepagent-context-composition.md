@@ -6,12 +6,14 @@
 **Authority:** contract delta to Doc A Part III and PC-C8 for this production composition. Where
 this document conflicts with the provisional note in root `CLAUDE.md`, this document wins.
 
-**Implementation checkpoint (2026-08-14):** S0 and S1 are implemented. The strict contracts,
+**Implementation checkpoint (2026-08-14):** S0-S2 are implemented. The strict contracts,
 seven-state offline fixture, split deterministic compilers, v2 conversation envelope, legacy-trial
-compatibility path, and split-card DSAR binding shape are present. S2-S6 remain outside this
-checkpoint. In particular, the production worker honestly reports the conditional Client-KB and
-Stage-0 artifacts as unavailable until S3 composes them; compiler existence is not presented as
-production composition.
+compatibility path, split-card DSAR binding shape, and canonical workspace-client binding are
+present. Both authoritative and transitional production fleet paths establish the trusted binding;
+all projects inherit it through one fail-closed reader. S3-S6 remain outside this checkpoint. In
+particular, the production worker honestly reports the conditional Client-KB and Stage-0 artifacts
+as unavailable until S3 composes them; binding and compiler existence are not presented as card
+composition.
 
 ## 1. Purpose
 
@@ -44,6 +46,8 @@ account being researched for an ABM project.
 - L3 already loads one `project_card_ref`, one budget envelope, and any explicitly constituted
   `project_context_artifacts`.
 - The production `AGENT_TURN` worker creates an always-present `project_conversation_card`.
+- Onboarding recon establishes an insert-once canonical client binding for the workspace; every
+  valid project resolves the same client without inspecting project-scoped inputs.
 - The PC-C8 projection compiles a hard-bounded `Stage0ProjectCard` containing project identity,
   Client-KB briefs/refs/gaps, interview state, readiness, ICP state, omissions, and lineage.
 - The claim store, version-scoped `read_client_kb_claims`, field registry descriptions, statement
@@ -53,8 +57,6 @@ account being researched for an ABM project.
 ### 2.2 Missing or incorrectly composed
 
 - Production does not attach the rich PC-C8 projection to a real project conversation.
-- Client-KB identity is inferred from project-scoped onboarding inputs, so a newly created project
-  does not inherit the customer's onboarding Client-KB.
 - Account-wide Client-KB knowledge and project-specific Stage-0 state are mixed in one projection.
 - The generic conversation envelope and the PC-C8 card repeat project/product/client identifiers.
 - Claim refs are not fully interpretable and there is no admitted platform-general Client-KB
@@ -400,6 +402,11 @@ tests in `tests/{projections,api}/test_production_context_*`.
 - Cross-workspace entity binding fails at DB and repository boundaries.
 - A newly created Project B inherits the same client as Project A without fixture assistance.
 - No target-account entity can be substituted through user/model input.
+
+**Implemented evidence:** `alembic/versions/b2f815da0f31_workspace_client_context_binding.py`,
+`platform/api/clue_api/client_context_binding.py`, production fleet composition in
+`stage0_setup_fleet.py`, the canonical conversation reader, and the database/adversarial coverage
+in `tests/api/test_{client_context_binding,stage0_setup}_db.py`.
 
 ### S3 — Production brand/envelope/Client-KB/Stage-0 composition
 

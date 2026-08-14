@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-14-production-context-s2.md` — S2 complete: insert-once canonical workspace-client
+  binding, conservative historical adoption, authoritative/transitional fleet composition,
+  project inheritance, target-substitution refusal, migration/concurrency/tenancy evidence, and
+  the exact S3 production-card composition handoff.
 - `2026-08-14-stage0-crawl-recovery-backoff.md` — closes the C10 Scrapling recovery-wake follow-up:
   DB-clock delayed fleet requeue, earliest-lease/retry scheduling, bounded exponential fallback,
   ready-work non-starvation, migration/replay tests, and privacy-safe cadence logs.

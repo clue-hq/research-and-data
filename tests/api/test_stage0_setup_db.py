@@ -16,13 +16,15 @@ from httpx import ASGITransport
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.client_context_binding import get_workspace_client_binding
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.stage0_setup import create_stage0_setup_router, setup_workspace_resolver
 from clue_api.stage0_setup_fleet import Stage0ReconWorkHandler, iteration_operation_id
+from clue_api.tool_outputs import ReconOutput
 from clue_auth import RequestPrincipal, permissions_for_role, provision_self_serve_workspace
 from clue_auth.errors import PermissionDenied
 from clue_config import Settings
-from clue_core import OnboardingInputId, ProjectRunId, ReconRunId
+from clue_core import AccountStatus, OnboardingInputId, ProjectRunId, ReconRunId
 from clue_fleet import LeaseGeneration, WorkContext, WorkId
 from clue_research.durable import (
     RECON_FIELD_PROGRESS_KIND,
@@ -30,6 +32,7 @@ from clue_research.durable import (
     RunEventTopic,
     emit_run_event,
 )
+from clue_research.identity import insert_account_entity
 from clue_research.stage0 import (
     ReconLaneStatus,
     recon_dedupe_hash,
@@ -274,6 +277,13 @@ def test_authoritative_fleet_bootstrap_never_invokes_legacy_resolver() -> None:
                     stage0_official_site_crawl_workspace_allowlist=(workspace_id,),
                 ),
             )
+            untrusted_target = await insert_account_entity(
+                conn,
+                canonical_name="Untrusted Target Account",
+                primary_domain="target-account.example",
+                workspace_id=workspace_id,
+                status=AccountStatus.ACTIVE,
+            )
             context = WorkContext(
                 task_id=uuid4(),
                 work_id=WorkId(work_id),
@@ -284,6 +294,9 @@ def test_authoritative_fleet_bootstrap_never_invokes_legacy_resolver() -> None:
                     "onboarding_input_id": onboarding_input_id,
                     "website_digest": digest,
                     "attempt": attempt,
+                    # User/model task data cannot select the customer account. The handler must
+                    # derive it from the trusted onboarding scope and recon transaction.
+                    "client_entity_id": str(untrusted_target),
                 },
                 stop_requested=asyncio.Event(),
                 lease_lost=asyncio.Event(),
@@ -314,6 +327,14 @@ def test_authoritative_fleet_bootstrap_never_invokes_legacy_resolver() -> None:
                 .one()
             )
             assert recon["client_entity_id"] is not None
+            canonical_binding = await get_workspace_client_binding(
+                conn,
+                workspace_id=workspace_id,
+            )
+            assert canonical_binding is not None
+            assert canonical_binding.client_entity_id == recon["client_entity_id"]
+            assert canonical_binding.source_recon_run_id == ReconRunId(work_id)
+            assert canonical_binding.client_entity_id != untrusted_target
             assert recon["fast_status"] == "running"
             assert recon["background_status"] == "queued"
             assert recon["fast_client_kb_version"] is None
@@ -341,6 +362,99 @@ def test_authoritative_fleet_bootstrap_never_invokes_legacy_resolver() -> None:
             ).scalar_one()
             assert lineage == 2
             assert markers == 0
+
+    run_async(scenario())
+
+
+def test_legacy_fleet_binds_recon_client_for_every_project() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+
+            @asynccontextmanager
+            async def conn_factory() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            provisioned = await provision_self_serve_workspace(
+                conn,
+                provider_key="clerk",
+                provider_subject=f"legacy-fleet-binding-{uuid4()}",
+                **PROFILE,
+            )
+            workspace_id = provisioned.workspace.workspace_id
+            recon_queue = _CaptureEnqueuer()
+            app = FastAPI()
+            app.include_router(
+                create_stage0_setup_router(
+                    tool_invoker=_ForbiddenWebInvoker(),  # type: ignore[arg-type]
+                    conn_factory=conn_factory,
+                    storage=_MemoryStorage(),  # type: ignore[arg-type]
+                    recon_enqueuer=recon_queue,  # type: ignore[arg-type]
+                )
+            )
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                started = await client.post(
+                    "/stage0/setup", headers={"X-Workspace-Id": workspace_id}
+                )
+            assert started.status_code == 202
+
+            queued = recon_queue.calls[-1]
+            digest = str(queued["website_digest"])
+            attempt = int(queued["attempt"])
+            work_id = UUID(str(iteration_operation_id(workspace_id, digest, attempt, 0)))
+            fake = _FakeStartReconTool(conn_factory)
+            registry = ToolRegistry()
+            registry.register(fake, make_default=True)
+            from clue_config import load_settings
+
+            invoker = build_tool_invoker(
+                registry=registry,
+                idempotency_store=DbIdempotencyStore(conn_factory=conn_factory),
+                storage=_MemoryStorage(),
+                settings=load_settings(_env_file=None),
+                conn_factory=conn_factory,
+            )
+            handler = Stage0ReconWorkHandler(
+                tool_invoker=invoker,
+                conn_factory=conn_factory,
+            )
+            context = WorkContext(
+                task_id=uuid4(),
+                work_id=WorkId(work_id),
+                worker_id="s2-legacy-fleet",
+                lease_generation=LeaseGeneration(1),
+                payload={
+                    "workspace_id": workspace_id,
+                    "onboarding_input_id": str(queued["onboarding_input_id"]),
+                    "website_digest": digest,
+                    "attempt": attempt,
+                },
+                stop_requested=asyncio.Event(),
+                lease_lost=asyncio.Event(),
+            )
+
+            fast = await handler.handle(context)
+            background = await handler.handle(context)
+            assert fast.outcome == "lane_committed"
+            assert fast.requeue is True
+            assert background.outcome == "completed"
+            assert background.requeue is False
+            assert len(fake.executions) == 2
+
+            binding = await get_workspace_client_binding(conn, workspace_id=workspace_id)
+            assert binding is not None
+            assert binding.source_recon_run_id == ReconRunId(work_id)
+            recon_client = (
+                await conn.execute(
+                    text(
+                        "SELECT client_entity_id FROM recon_run "
+                        "WHERE id = :id AND workspace_id = :workspace_id"
+                    ),
+                    {"id": work_id, "workspace_id": workspace_id},
+                )
+            ).scalar_one()
+            assert binding.client_entity_id == recon_client
 
     run_async(scenario())
 
@@ -653,6 +767,7 @@ class _FakeStartReconTool(Tool):
     name: ClassVar[str] = "start_recon"
     version: ClassVar[str] = "1"
     input_model: ClassVar[type[ToolInput]] = _FakeReconInput
+    output_model = ReconOutput
 
     def __init__(self, conn_factory: Any, *, fail_first_fast: bool = False) -> None:
         self._conn_factory = conn_factory
@@ -701,8 +816,11 @@ class _FakeStartReconTool(Tool):
                     version=self.version,
                     references={
                         "recon_run_id": str(recon.id),
+                        "client_entity_id": None,
+                        "fast_client_kb_version": None,
                         "fast_status": "failed",
                         "background_status": "queued",
+                        "background_run_id": str(recon.background_run_id),
                     },
                 )
             if recon.fast_status not in (
@@ -715,6 +833,14 @@ class _FakeStartReconTool(Tool):
             else:
                 lane = None
             if lane is not None:
+                client_entity_id = recon.client_entity_id
+                if client_entity_id is None:
+                    client_entity_id = await insert_account_entity(
+                        conn,
+                        canonical_name=inputs.name,
+                        workspace_id=ctx.workspace_id,
+                        status=AccountStatus.ACTIVE,
+                    )
                 await transition_recon_lane(
                     conn,
                     recon_run_id=recon.id,
@@ -723,6 +849,7 @@ class _FakeStartReconTool(Tool):
                     status=ReconLaneStatus.COMPLETED,
                     cost_cents=3,
                     client_kb_version=1,
+                    client_entity_id=client_entity_id,
                 )
                 await _emit_lane_progress(
                     conn,
@@ -743,13 +870,20 @@ class _FakeStartReconTool(Tool):
                 dedupe_ttl_seconds=86_400,
                 recon_run_id=recon.id,
             )
+            if lane is not None:
+                assert refreshed.client_entity_id == client_entity_id
         return ToolResult(
             tool=self.name,
             version=self.version,
             references={
                 "recon_run_id": str(refreshed.id),
+                "client_entity_id": (
+                    None if refreshed.client_entity_id is None else str(refreshed.client_entity_id)
+                ),
+                "fast_client_kb_version": refreshed.fast_client_kb_version,
                 "fast_status": refreshed.fast_status.value,
                 "background_status": refreshed.background_status.value,
+                "background_run_id": str(refreshed.background_run_id),
             },
         )
 
