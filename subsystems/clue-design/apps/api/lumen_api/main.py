@@ -166,6 +166,7 @@ from clue_db import db_lifespan, get_engine
 from clue_design import storage as design_storage
 from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
 from clue_design.enums import DesignIngestionKind
+from clue_design.leg_context import render_leg_turn_prompt
 from clue_design.runs import work_id_for_run as design_work_id_for_run
 from clue_design.storage import location_digest
 from clue_storage import StorageBackend, storage_from_settings
@@ -7843,6 +7844,54 @@ def execute_agent_turn_job(
     # An explicit None means "resolved: this turn has no references" — distinct from the
     # _REFERENCES_UNRESOLVED sentinel, which would make the runner resolve them a second time.
     reference_assets = envelope.config.get("reference_assets")
+
+    # --- P3.7: consume the platform leg envelope's frozen context ------------------------------
+    # A design-leg turn (PD-part3 §2.3/§2.4) carries the delegation bundle, the leg history,
+    # and the leg's pins on ``config``. Non-leg turns carry none of these and stay
+    # byte-identical.
+    leg_block = envelope.config.get("leg") or {}
+    delegation_bundle = envelope.config.get("delegation_bundle")
+    leg_history = envelope.config.get("history")
+
+    pinned_kit_id = leg_block.get("brand_kit_id") if isinstance(leg_block, dict) else None
+    if pinned_kit_id:
+        # The D5 fail-closed brand pin: a delegation that pinned a kit must design WITH that
+        # kit — the silent default-kit fallback the resolver keeps for unpinned turns is an
+        # ERROR here. Verified against the durable row first, then made authoritative by
+        # writing the pin into the scene's kit ref, which is the one place the existing
+        # by-value resolution (kit + asset manifest + font spec) reads from.
+        pinned_version = leg_block.get("brand_kit_version")
+        try:
+            HybridRepository(
+                workspace_id=envelope.workspace_id, ensure_workspace=False
+            ).require_brand_kit(
+                str(pinned_kit_id),
+                int(pinned_version) if pinned_version is not None else None,
+            )
+        except Exception as error:
+            failed = failed_agent_turn_response(
+                "design_leg.brand_pin_unresolvable",
+                "The design leg pins a brand kit this workspace cannot resolve.",
+                f"brand_kit_id={pinned_kit_id} version={pinned_version}: {error}",
+            )
+            return "failed", failed, "error", {"message": "brand pin unresolvable"}
+        pinned_scene = dict(payload.scene or {})
+        pinned_meta = dict(pinned_scene.get("meta") or {})
+        pinned_meta["brand_kit"] = {"id": str(pinned_kit_id), "version": pinned_version}
+        pinned_scene["meta"] = pinned_meta
+        payload = payload.model_copy(update={"scene": pinned_scene})
+
+    if delegation_bundle or leg_history:
+        payload = payload.model_copy(
+            update={
+                "prompt": render_leg_turn_prompt(
+                    bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
+                    history=leg_history if isinstance(leg_history, list) else None,
+                    prompt=payload.prompt,
+                )
+            }
+        )
+
     override = host.agent_turn_runner
     root = repo_root()
     try:

@@ -413,3 +413,61 @@ Part III standing: P3.0–P3.5 + review repairs + **P3.6 — DONE**. Next: P3.7 
 lifecycle stream events / delta 8, DSAR note for leg rows, design-side bundle/history
 consumption + brand-pin enforcement + the orchestrator finish_design_leg bridge,
 close-out).
+
+## P3.7 SHIPPED (2026-08-14, same session) — stream bridging, exit bridge, design-side consumption, DSAR note
+
+Four commits (a–d). Slice decisions a later agent must not re-derive:
+
+- **Delta 8 (P3.7a)**: `leg.opened` / `leg.awaiting_user` / `leg.closed` (+reason) /
+  `leg.reopened` on the chat turn stream; migration `a051af925d00` widens the
+  `agent_turn_event_stream` CHECK. "closing" (the spec sketch's word) was DROPPED — the
+  close is one atomic journal+flip, a closing frame would announce an unobservable phase;
+  `leg.reopened` took its place (dated spec amendment at §3-8). Every frame is emitted in
+  the SAME transaction as its transition, on the turn that performed it; replayed
+  invocations emit nothing (both tools test-pinned).
+- **The §2.2 exit bridge (P3.7b)**: the judgment runs PRE-DISPATCH in the leg runner
+  (every exit category is a judgment about the incoming message — lock-in, out-of-scope,
+  abandon — so an exiting turn spends nothing on the design lane). The live judge is
+  built from the DESIGN role's own catalog ModelPolicy at
+  `agent_turn_fleet_wiring.build_design_leg_exit_judge` — NOT in design_leg_wiring,
+  because that module is HTTP-reachable and the lane-D2 isolation guard forbids it any
+  model-plane name (the guard caught exactly this in-session; the move is the fix). A
+  finish verdict executes as the governed `finish_design_leg` invocation with operation
+  id derived from the turn (`design-leg-exit@1`); the closing turn finalizes COMPLETED,
+  no leg gate ref, NO runner-authored assistant message (the tool's leg-summary message
+  is the one durable record) — the review's bridge-time finalize LOW, closed. Exit
+  summaries are ENGINE-derived sentences (`DESIGN_LEG_EXIT_SUMMARIES`): the judge decides
+  WHETHER, never authors prose. Fail-safe pinned four ways (continue/garbage/reasonless/
+  raising judge → today's dispatch path). Crash window close→finalize converges via the
+  routing rule's closed-by-turn fallback (`get_leg_closed_by_turn` over the exit journal,
+  expression index `36936027bc96`) + the runner's closed-leg re-entry branch + the
+  finisher's journal replay: one journal row, one leg.closed frame, ever.
+- **Design-side consumption + brand pin (P3.7c)**: `clue_design/leg_context.py`
+  (`render_leg_turn_prompt`) renders the §2.3 bundle + §2.4 history as fenced DATA blocks
+  into the turn prompt — brief first, history second, message last (prefix-stable for
+  prefill caching; the harness keeps no cross-turn state, so the rendered history IS the
+  reassembled session). `execute_agent_turn_job` (lumen_api/main.py) consumes them and
+  enforces the D5 fail-closed brand pin: a pinned `(brand_kit_id, version)` is verified
+  against the durable row (unresolvable → `design_leg.brand_pin_unresolvable`, runner
+  never invoked) then written into `scene.meta.brand_kit` — the one place the existing
+  by-value kit resolution reads — overriding any stale scene ref. Non-leg turns are
+  byte-identical (test-pinned).
+- **DSAR (P3.7d)**: `docs/specs/PD-part3-dsar-leg-note.md` is the ratified D8 §6 step-1
+  design. Key rulings: bundle claim_refs stay pseudonymous ids whose subject linkage dies
+  with the claim row (the refs-only payoff); brief/history are client-authored workspace
+  data → workspace-level erasure; checkpoint threads are now enumerable via
+  `design_agent_run.leg_id`; `design_agent_run.payload` now carries verbatim leg text
+  (config.history) and must be named in the D8 step-2 payload-redaction closure. Erasure
+  CODE stays with the post-Part-III compliance slice (D8 §7 stance unchanged).
+
+**Part III remaining honest gaps (owners named):** live-model exit-judge baseline (run
+`score_judge` over the real judge and commit the report — first use of the P3.6 swap
+gate); Part IV consumes the leg lifecycle frames + `ThreadWire.speaker`; the
+post-Part-III compliance slice (DSAR note §3); design-side deep consumption beyond the
+prompt channel (structured bundle → orchestrator tools) is a Part-IV-era enrichment, the
+prompt channel is the ratified Part-III shape.
+
+Part III standing: **P3.0–P3.7 ALL DONE.** The master-plan §3-III gate paragraph is
+covered by: the P3.4 loop gate + P3.5 out-of-scope/reopen scenarios + P3.6 resilience
+battery (mid-leg restart survival) + P3.7 exit bridge tests (agent-decided lock-in exit
+end to end).

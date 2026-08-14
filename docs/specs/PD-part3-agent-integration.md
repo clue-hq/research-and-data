@@ -223,6 +223,11 @@ continuous session (~95% cached prefill).
 | **P3.6 Evals & resilience** | Exit-judgment golden set in the regression harness; kill-worker/resume leg test; single-flight + cross-thread concurrency tests | master plan §3-III gate paragraph, verbatim |
 | **P3.7 Close-out** | Stream bridging per D3; DSAR note for leg rows/checkpoint threads (PD-D8 assessment said Part III designs this); docs/memory | Part III gate demo, recorded |
 
+P3.7's DSAR deliverable is ratified as **`PD-part3-dsar-leg-note.md`** — the D8 §6 step-1
+design (subject-resolvability rulings for the bundle's claim refs and the brief/history;
+the checkpoint-thread enumeration join; the primitive-class mapping for every Part-III
+surface). Erasure code stays with the dedicated post-Part-III compliance slice, per D8 §7.
+
 Sequencing: P3.1 ∥ P3.2 → P3.3 → P3.4 → P3.5 → P3.6/P3.7. P3.2 first among equals — it
 retires the largest cost/risk unknowns (Responses-API image translation, prefill economics)
 before anything depends on them.
