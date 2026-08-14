@@ -1,0 +1,101 @@
+{
+  "schema_version": "1",
+  "media_types": {
+    "project_conversation": "application/vnd.clue.project-conversation-card+json",
+    "client_knowledge": "application/vnd.clue.client-knowledge-card+json",
+    "stage0_project_state": "application/vnd.clue.stage0-project-state-card+json"
+  },
+  "domain_refs": {
+    "client_knowledge": {"object_type": "client_knowledge", "version": "client_kb_version"},
+    "stage0_project_state": {"object_type": "stage0_project_state", "version": null}
+  },
+  "tools": {
+    "list_client_knowledge@1": {
+      "model_fields": ["topic", "field_key", "cursor", "limit"],
+      "trusted_fields": ["workspace_id", "client_entity_id", "client_kb_version"]
+    },
+    "inspect_client_claim@1": {
+      "model_fields": ["claim_id"],
+      "trusted_fields": ["workspace_id", "client_entity_id", "client_kb_version"]
+    }
+  },
+  "states": [
+    {
+      "name": "pre_recon",
+      "project_id": "project-a",
+      "client_kb_version": null,
+      "confirmed_product_id": null,
+      "client_knowledge": "unavailable",
+      "stage0_project_state": "unavailable",
+      "brand_profile": "minimal",
+      "product_profile": "unavailable",
+      "expected_context_artifacts": []
+    },
+    {
+      "name": "post_fast_recon",
+      "project_id": "project-a",
+      "client_kb_version": 1,
+      "confirmed_product_id": null,
+      "client_knowledge": "available",
+      "stage0_project_state": "available",
+      "brand_profile": "minimal",
+      "product_profile": "unavailable",
+      "expected_context_artifacts": ["client_knowledge", "stage0_project_state"]
+    },
+    {
+      "name": "post_background_recon",
+      "project_id": "project-a",
+      "client_kb_version": 2,
+      "confirmed_product_id": null,
+      "client_knowledge": "available",
+      "stage0_project_state": "available",
+      "brand_profile": "minimal",
+      "product_profile": "unavailable",
+      "expected_context_artifacts": ["client_knowledge", "stage0_project_state"]
+    },
+    {
+      "name": "project_a",
+      "project_id": "project-a",
+      "client_kb_version": 2,
+      "confirmed_product_id": null,
+      "client_knowledge": "available",
+      "stage0_project_state": "available",
+      "brand_profile": "minimal",
+      "product_profile": "unavailable",
+      "expected_context_artifacts": ["client_knowledge", "stage0_project_state"]
+    },
+    {
+      "name": "project_b",
+      "project_id": "project-b",
+      "client_kb_version": 2,
+      "confirmed_product_id": null,
+      "client_knowledge": "available",
+      "stage0_project_state": "available",
+      "brand_profile": "minimal",
+      "product_profile": "unavailable",
+      "expected_context_artifacts": ["client_knowledge", "stage0_project_state"]
+    },
+    {
+      "name": "product_unselected",
+      "project_id": "project-a",
+      "client_kb_version": 2,
+      "confirmed_product_id": null,
+      "client_knowledge": "available",
+      "stage0_project_state": "available",
+      "brand_profile": "minimal",
+      "product_profile": "unavailable",
+      "expected_context_artifacts": ["client_knowledge", "stage0_project_state"]
+    },
+    {
+      "name": "product_confirmed",
+      "project_id": "project-a",
+      "client_kb_version": 2,
+      "confirmed_product_id": "product-one",
+      "client_knowledge": "available",
+      "stage0_project_state": "available",
+      "brand_profile": "minimal",
+      "product_profile": "available",
+      "expected_context_artifacts": ["client_knowledge", "stage0_project_state"]
+    }
+  ]
+}

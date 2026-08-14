@@ -101,6 +101,10 @@ from clue_fleet import (
     release_work_lease,
 )
 from clue_obs import get_logger
+from clue_projections import (
+    PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
+    compile_project_conversation_card,
+)
 from clue_research.stage0 import current_kb_version
 from clue_spine import get_project
 from clue_storage import ArtifactNotFound
@@ -121,11 +125,6 @@ __all__ = [
     "project_conversation_context_policy",
     "sweep_thread_dispatch",
 ]
-
-#: This surface's L3 card — one card per surface (PC-C8 §10). Deliberately not the Stage-0 project
-#: card: that one is compiled around a client entity and an interview, and a production project
-#: conversation must be describable before either exists.
-PROJECT_CONVERSATION_CARD_MEDIA_TYPE = "application/vnd.clue.project-conversation-card+json"
 
 #: The conversation's own budget envelope. A conversation turn is model time, not research spend:
 #: every externally-spending path this surface can reach is either withheld (the launch tools) or
@@ -196,39 +195,28 @@ def project_conversation_card_payload(
     brand_id: str,
     product_id: str | None,
     thread_id: str,
-    client_entity_id: str | None,
-    client_kb_version: int | None,
+    client_knowledge_available: bool = False,
+    stage0_project_state_available: bool = False,
 ) -> dict[str, JsonValue]:
-    """The whole L3 card this surface puts in front of the model.
+    """The always-present v2 conversation envelope this surface puts in L3.
 
-    Pure and separately callable so its shape is testable without standing up a project. It names
-    what the model is scoped to and *admits what is absent*: a project whose Stage-0 recon has not
-    run has no client knowledge base, and saying so is better than a card that quietly omits it and
-    leaves the model to assume one exists.
+    The account-wide Client-KB and active-project Stage-0 state are independently owned artifacts,
+    never nested here. Availability describes what the worker actually composed for this turn;
+    S1 therefore defaults both to unavailable until S3 attaches those production artifacts.
     """
 
-    return {
-        "schema_version": "1",
-        "card_kind": "project_conversation",
-        "surface": PROJECT_CONVERSATION_SURFACE,
-        "project": {
-            "project_id": project_id,
-            "name": project_name,
-            "status": project_status,
-            "workspace_id": workspace_id,
-            "brand_id": brand_id,
-            "product_id": product_id,
-        },
-        "thread": {"thread_id": thread_id},
-        "client_knowledge_base": (
-            None
-            if client_entity_id is None
-            else {
-                "client_entity_id": client_entity_id,
-                "client_kb_version": client_kb_version,
-            }
-        ),
-    }
+    card = compile_project_conversation_card(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        project_name=project_name,
+        project_status=project_status,
+        brand_id=brand_id,
+        confirmed_product_id=product_id,
+        thread_id=thread_id,
+        client_knowledge_available=client_knowledge_available,
+        stage0_project_state_available=stage0_project_state_available,
+    )
+    return card.model_dump(mode="json", exclude_none=False)
 
 
 def _canonical_json(value: object) -> bytes:
@@ -378,10 +366,6 @@ class ProjectConversationTurnRunner:
                 brand_id=scope.brand_id,
                 product_id=scope.product_id,
                 thread_id=submission.thread_id,
-                client_entity_id=(
-                    None if scope.client_entity_id is None else str(scope.client_entity_id)
-                ),
-                client_kb_version=scope.client_kb_version,
             ),
         )
         budget_ref = await self._artifact(

@@ -6,6 +6,13 @@
 **Authority:** contract delta to Doc A Part III and PC-C8 for this production composition. Where
 this document conflicts with the provisional note in root `CLAUDE.md`, this document wins.
 
+**Implementation checkpoint (2026-08-14):** S0 and S1 are implemented. The strict contracts,
+seven-state offline fixture, split deterministic compilers, v2 conversation envelope, legacy-trial
+compatibility path, and split-card DSAR binding shape are present. S2-S6 remain outside this
+checkpoint. In particular, the production worker honestly reports the conditional Client-KB and
+Stage-0 artifacts as unavailable until S3 composes them; compiler existence is not presented as
+production composition.
+
 ## 1. Purpose
 
 This plan composes onboarding recon, customer-account knowledge, brand context, active-project
@@ -101,8 +108,7 @@ The budget envelope remains separate authority, not descriptive context.
 `ClientKnowledgeCard` owns:
 
 - `client_entity_id` and exact `client_kb_version`;
-- bounded topic/field descriptions, briefs, claim refs, gaps, coverage, field proposals, and
-  Client-KB omissions.
+- bounded topic/field descriptions, briefs, claim refs, gaps, coverage, and Client-KB omissions.
 
 `Stage0ProjectStateCard` owns:
 
@@ -110,6 +116,7 @@ The budget envelope remains separate authority, not descriptive context.
 - statement selection/omissions and evidence exclusions;
 - current readiness decisions and history omission;
 - project-specific product-selection status;
+- project-originated field-proposal refs;
 - ICP refs/proposal state;
 - project-state compilation lineage.
 
@@ -223,13 +230,13 @@ compiler_policy_version, durable source rows)`.
 {
   "schema_version": "1",
   "card_kind": "client_knowledge",
+  "content_semantics": "reference_metadata_is_untrusted_data",
   "compiler_policy_version": "client-knowledge-card-policy-v1",
   "client": {"client_entity_id": "uuid", "client_kb_version": 7},
   "knowledge": {
     "known_fields": [/* D5 entries */],
     "open_gaps": ["client.market_reputation"],
-    "coverage": {/* bounded counts */},
-    "pending_field_proposal_refs": []
+    "coverage": {/* bounded counts */}
   },
   "omissions": [{"kind": "client_knowledge_over_cap", "count": 4, "cursor": "…"}],
   "compiled_from": {/* version, field-definition versions, policy */}
@@ -250,6 +257,7 @@ scope disagreement before bytes are persisted.
   "card_kind": "stage0_project_state",
   "compiler_policy_version": "stage0-project-state-policy-v1",
   "product_selection": {"status": "unselected|confirmed"},
+  "field_proposals": {"pending": 0, "refs": []},
   "interview": {/* bounded current-effective statements */},
   "readiness": {/* current decisions */},
   "icp": {/* confirmed refs and proposal status */},
@@ -259,7 +267,8 @@ scope disagreement before bytes are persisted.
     "statement_selection_digest": "sha256:…",
     "readiness_decision_ids": [],
     "confirmed_icps": [],
-    "compiler_policy_version": "…"
+    "compiler_policy_version": "stage0-project-state-policy-v1",
+    "source_policy_version": "stage0-card-policy-v1"
   }
 }
 ```
@@ -347,6 +356,9 @@ those refs. Existing human-only `confirm_project_product` remains the sole proje
 - Static assertions fail if Client-KB facts appear in the conversation or Stage-0 card.
 - Static assertions fail if project interview/readiness data appears in the Client-KB card.
 
+**Implemented evidence:** `tests/fixtures/production_context/s0_contract_fixture.json` and
+`tests/projections/test_production_context_contracts.py`.
+
 ### S1 — Card split and deterministic compilers
 
 **Deliverables**
@@ -367,6 +379,10 @@ those refs. Existing human-only `confirm_project_product` remains the sole proje
 - Every claim ref has non-empty label, description, topic, and brief.
 - Caps, UTF-8 boundaries, omissions, cursor determinism, DSAR missing evidence, and adversarial
   field descriptions pass.
+
+**Implemented evidence:** `platform/projections/clue_projections/production_context.py`, the v2
+envelope seam in `platform/api/clue_api/agent_turn_fleet_wiring.py`, and the provider-free/DB/API
+tests in `tests/{projections,api}/test_production_context_*`.
 
 ### S2 — Canonical account binding and inheritance
 
@@ -507,4 +523,3 @@ assistance:
 5. dereference the selected claim through the governed production toolbelt;
 6. ask for and record a human-confirmed project product from the recon-derived catalog; and
 7. replay with the exact original context and zero duplicate work or spend.
-
