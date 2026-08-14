@@ -212,3 +212,33 @@ Run-by-run on gpt-5.6-terra (all with the switch code; MAX_ITERATIONS=1):
   usage events, ~0.9-0.99 cached-prefill ratios, previews rendering, honest finalize
   on every failure. The gateway properties of the gate are proven regardless of the
   provider-shape endgame.
+
+## P3.2 GATE PASSED — slice CLOSED (2026-08-14, run 7)
+
+**A real end-to-end design turn finalized on the platform gateway**: status=accepted,
+stop_reason="Visual reviewer accepted the rendered artboard with all user requirements
+satisfied", zero gaps, preflight passed, preview.png rendered
+(/tmp/p32-gate-workspace7/run_7f14cd98943c4a09b6e24d86b0f62921).
+
+Winning configuration (RECOMMEND as the design deployment default): orchestrator+author
+on openai/gpt-5.6-terra, reviewer on anthropic/claude-opus-4.8 via the existing per-role
+override (LUMEN_AGENT_MODEL_REVIEWER), reasoning=medium (the ratified default), no
+fallback. Gate telemetry: 45 calls — orchestrator 22 (terra) / author 19 (terra) /
+reviewer 4 (opus), TRUTHFUL served-model attribution per role; mean cached-prefill 0.94;
+zero design-local usage events. Rationale: terra's Responses endpoint 500s on
+reasoning+heavy-multimodal continuations (4/4 runs) — the reviewer is exactly that
+shape, and per-role models are the first-class answer (each subagent owns its own
+conversation, so no cross-model replay issue).
+
+Standing follow-ups out of the gate saga (owners when picked up):
+1. GATEWAY: cross-model fallback vs encrypted reasoning items (run-5 404) — same-family
+   fallback policy, or strip reasoning items on cross-model failover, or refuse
+   fallback for reasoning histories. GovernedAgentChatModel-level decision.
+2. PROVIDER-SHAPE: terra + reasoning + heavy image continuation 500s upstream — track;
+   revisit when the provider fixes it (the per-role split sidesteps it meanwhile).
+3. Design .env guidance: document the recommended trio config in the design
+   .env.example when P3.3 lands the catalog profile (the profile is the durable home
+   for per-role model policy).
+
+**P3.2 status: COMPLETE.** All six checkpoint-1..3 commits + policy fixes on branch;
+next slice per PD-part3 §4: P3.3 (catalog registration).
