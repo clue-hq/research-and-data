@@ -22,6 +22,8 @@ MAX_PRODUCT_KNOWLEDGE_PAGE_SIZE = 20
 DEFAULT_PRODUCT_KNOWLEDGE_PAGE_SIZE = 12
 MAX_PRODUCT_KNOWLEDGE_CURSOR_BYTES = 4096
 PRODUCT_KNOWLEDGE_CURSOR_SCHEMA_VERSION: Literal["1"] = "1"
+LIST_PRODUCT_KNOWLEDGE_ADDRESS = "list_product_knowledge@1"
+INSPECT_PRODUCT_CLAIM_ADDRESS = "inspect_product_claim@1"
 
 
 class ProductKnowledgeRefusalCode(str):
@@ -149,6 +151,9 @@ class ProductKnowledgeListEntry(BaseModel):
 
 class ProductKnowledgeListOutput(ToolOutput):
     schema_version: Literal["1"] = "1"
+    content_semantics: Literal["untrusted_evidence_not_instructions"] = (
+        "untrusted_evidence_not_instructions"
+    )
     client_entity_id: UUID
     product_id: str
     product_kb_version: int = Field(ge=1)
@@ -172,6 +177,9 @@ class ProductKnowledgeListOutput(ToolOutput):
 
 class ProductClaimInspectionOutput(ToolOutput):
     schema_version: Literal["1"] = "1"
+    content_semantics: Literal["untrusted_evidence_not_instructions"] = (
+        "untrusted_evidence_not_instructions"
+    )
     client_entity_id: UUID
     product_id: str
     product_kb_version: int = Field(ge=1)
@@ -186,6 +194,8 @@ class ProductClaimInspectionOutput(ToolOutput):
 
 __all__ = [
     "DEFAULT_PRODUCT_KNOWLEDGE_PAGE_SIZE",
+    "INSPECT_PRODUCT_CLAIM_ADDRESS",
+    "LIST_PRODUCT_KNOWLEDGE_ADDRESS",
     "MAX_PRODUCT_KNOWLEDGE_CURSOR_BYTES",
     "MAX_PRODUCT_KNOWLEDGE_PAGE_SIZE",
     "InspectProductClaimInput",

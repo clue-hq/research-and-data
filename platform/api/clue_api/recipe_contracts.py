@@ -35,6 +35,13 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # project/workspace/client authority is injected from the production constitution.
     "list_client_knowledge@2",
     "inspect_client_claim@2",
+    # S5-D (recipe0-stage0@9): selected-product knowledge stays a separate exact Product-KB
+    # surface. Scope is injected from the paired turn pin; both reads are effect-free.
+    "list_product_knowledge@1",
+    "inspect_product_claim@1",
+    # S5-F: this model-callable action presents the exact pinned catalog to the human but cannot
+    # confirm a product. Its deterministic gate identity makes retries domain-idempotent.
+    "open_product_selection_gate@1",
     # FI Lane D D4 (added in recipe0-stage0@6): the Option-B kickoff chain. Anything runnable in
     # the Stage-0 interaction slot is replay-certified here first, and these three are the whole
     # point of the widened conversation surface — draft the direction, present its confirmation

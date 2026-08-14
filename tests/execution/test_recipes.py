@@ -169,8 +169,8 @@ def test_c67_account_unit_is_preserved_as_replay_only_not_system_seeded() -> Non
     assert account.max_fanout == 1
 
 
-def test_recipe0_v8_is_the_only_promoted_executable_stage0_revision() -> None:
-    """v8 cuts Client-KB reads to @2; every earlier revision remains immutable history."""
+def test_recipe0_v9_is_the_only_promoted_executable_stage0_revision() -> None:
+    """v9 composes S5 product context; every earlier revision remains immutable history."""
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -195,6 +195,7 @@ def test_recipe0_v8_is_the_only_promoted_executable_stage0_revision() -> None:
                 (6, "executable"),
                 (7, "executable"),
                 (8, "executable"),
+                (9, "executable"),
             ]
             effective = [
                 (
@@ -215,7 +216,8 @@ def test_recipe0_v8_is_the_only_promoted_executable_stage0_revision() -> None:
                 (5, RecipeRevisionEventType.SUPERSEDED),
                 (6, RecipeRevisionEventType.SUPERSEDED),
                 (7, RecipeRevisionEventType.SUPERSEDED),
-                (8, RecipeRevisionEventType.PROMOTED),
+                (8, RecipeRevisionEventType.SUPERSEDED),
+                (9, RecipeRevisionEventType.PROMOTED),
             ]
             promoted = recipe0[-1][0]
             slot = next(

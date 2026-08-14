@@ -50,8 +50,11 @@ facts use an independently versioned product scope; selected-product context use
 `ProductKnowledgeCard@1` and separate trusted-scope product tools; `ClientKnowledgeCard@2` owns
 only the bounded company product catalog; and new turns eventually use
 `company-and-selected-product-v2` to pin the company and optional selected-product versions in one
-DB snapshot. S5.0 is contract-complete, not a runtime cutover—V1 remains production until S5-A–F
-pass. Production Stage-0 cards reverse-bind every embedded quote to its statement for DSAR.
+DB snapshot. S5-A–F now implement that cutover for new production turns through Head-of-ABM
+profile `v27`, Stage-0 skill `v14`, and Recipe #0 `v9`; historical V1 receipts and resources remain
+immutable for replay. Product selection is a durable human gate: the agent may present the exact
+pinned catalog but cannot confirm or repoint a project product. Production Stage-0 cards
+reverse-bind every embedded quote to its statement for DSAR.
 Every slice must reach the real production turn worker, assembler, toolbelt, database/artifacts,
 and replay path; trial-only or compiler-only work does not satisfy an exit gate.
 

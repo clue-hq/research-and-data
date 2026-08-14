@@ -27,6 +27,20 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # S5-F adds the reviewed product-selection gate.  The generic D4 substrate deliberately used
+    # a closed vocabulary, so admitting the new server-handled human action must be an explicit
+    # migration rather than a string the agent can invent.
+    op.execute("ALTER TABLE agent_gate DROP CONSTRAINT agent_gate_kind")
+    op.execute(
+        "ALTER TABLE agent_gate ADD CONSTRAINT agent_gate_kind CHECK (kind IN ("
+        "'directive_confirmation', 'product_selection', 'plan_approval', 'budget_approval'))"
+    )
+    op.execute("ALTER TABLE agent_gate_answer ADD COLUMN selected_option_ref text")
+    op.execute(
+        "ALTER TABLE agent_gate_answer ADD CONSTRAINT agent_gate_answer_selection_valid "
+        "CHECK (selected_option_ref IS NULL OR (decision = 'approved' "
+        "AND length(btrim(selected_option_ref)) > 0))"
+    )
     op.execute(
         """
         CREATE TABLE product_catalog_lineage (
@@ -61,13 +75,16 @@ def upgrade() -> None:
                 company_client_kb_version >= 1
                 AND entry_ordinal >= 0
                 AND entry_fingerprint_sha256 ~ '^sha256:[0-9a-f]{64}$'
-                AND resolution_state IN ('created', 'alias_reused', 'unresolved_ambiguous')
+                AND resolution_state IN (
+                    'created', 'alias_reused', 'lineage_reused', 'unresolved_ambiguous'
+                )
                 AND candidate_count >= 0
                 AND (product_kb_version_at_sync IS NULL OR (
                     product_id IS NOT NULL AND product_kb_version_at_sync >= 1
                 ))
                 AND (
-                    (resolution_state IN ('created', 'alias_reused') AND product_id IS NOT NULL)
+                    (resolution_state IN ('created', 'alias_reused', 'lineage_reused')
+                        AND product_id IS NOT NULL)
                     OR (resolution_state = 'unresolved_ambiguous' AND product_id IS NULL)
                 )
             )
@@ -90,11 +107,44 @@ def upgrade() -> None:
         "BEFORE UPDATE ON product_catalog_lineage FOR EACH ROW "
         "EXECUTE FUNCTION execution_reject_append_only_mutation()"
     )
+    op.execute("ALTER TABLE official_site_extraction_operation ADD COLUMN product_id text")
+    op.execute(
+        "ALTER TABLE official_site_extraction_operation ADD CONSTRAINT "
+        "official_site_extraction_operation_workspace_product_fk "
+        "FOREIGN KEY (product_id, workspace_id) "
+        "REFERENCES product (product_id, workspace_id)"
+    )
+    op.execute(
+        "ALTER TABLE official_site_extraction_operation ADD CONSTRAINT "
+        "official_site_extraction_operation_product_field_scope CHECK ("
+        "product_id IS NULL OR field_key IN ("
+        "'client.product_overview', 'client.product_capability', "
+        "'client.product_use_case', 'client.product_differentiator', "
+        "'client.product_pricing', 'client.product_integration', "
+        "'client.product_competitor', 'client.product_customer_evidence', "
+        "'client.product_positioning'))"
+    )
+    op.execute(
+        "CREATE INDEX official_site_extraction_operation_product "
+        "ON official_site_extraction_operation (workspace_id, product_id, field_key) "
+        "WHERE product_id IS NOT NULL"
+    )
     op.execute("ALTER TABLE agent_turn_scope_pin ADD COLUMN product_kb_version integer")
     op.execute(
         "ALTER TABLE agent_turn_scope_pin ADD CONSTRAINT agent_turn_scope_pin_product_version "
         "CHECK (product_kb_version IS NULL OR (product_id IS NOT NULL AND "
         "client_entity_id IS NOT NULL AND product_kb_version >= 1))"
+    )
+    op.execute(
+        "ALTER TABLE agent_turn_scope_pin ADD CONSTRAINT agent_turn_scope_pin_policy_shape "
+        "CHECK ((knowledge_scope_policy_version = 'company-account-wide-v1' "
+        "AND product_kb_version IS NULL) OR "
+        "(knowledge_scope_policy_version = 'company-and-selected-product-v2'))"
+    )
+    op.execute(
+        "COMMENT ON COLUMN agent_turn_scope_pin.product_kb_version IS 'S5: exact independently "
+        "versioned selected-product knowledge pin. NULL means no confirmed product or no "
+        "published Product-KB at this turn snapshot.'"
     )
     op.execute(
         "CREATE INDEX agent_turn_scope_pin_product_version "
@@ -107,12 +157,35 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS agent_turn_scope_pin_product_version")
     op.execute(
         "ALTER TABLE agent_turn_scope_pin "
+        "DROP CONSTRAINT IF EXISTS agent_turn_scope_pin_policy_shape"
+    )
+    op.execute(
+        "ALTER TABLE agent_turn_scope_pin "
         "DROP CONSTRAINT IF EXISTS agent_turn_scope_pin_product_version"
     )
     op.execute("ALTER TABLE agent_turn_scope_pin DROP COLUMN IF EXISTS product_kb_version")
+    op.execute("DROP INDEX IF EXISTS official_site_extraction_operation_product")
+    op.execute(
+        "ALTER TABLE official_site_extraction_operation DROP CONSTRAINT IF EXISTS "
+        "official_site_extraction_operation_product_field_scope"
+    )
+    op.execute(
+        "ALTER TABLE official_site_extraction_operation DROP CONSTRAINT IF EXISTS "
+        "official_site_extraction_operation_workspace_product_fk"
+    )
+    op.execute("ALTER TABLE official_site_extraction_operation DROP COLUMN IF EXISTS product_id")
     op.execute(
         "DROP TRIGGER IF EXISTS product_catalog_lineage_append_only ON product_catalog_lineage"
     )
     op.execute("DROP INDEX IF EXISTS product_catalog_lineage_product")
     op.execute("DROP INDEX IF EXISTS product_catalog_lineage_scope")
     op.execute("DROP TABLE IF EXISTS product_catalog_lineage")
+    op.execute(
+        "ALTER TABLE agent_gate_answer DROP CONSTRAINT IF EXISTS agent_gate_answer_selection_valid"
+    )
+    op.execute("ALTER TABLE agent_gate_answer DROP COLUMN IF EXISTS selected_option_ref")
+    op.execute("ALTER TABLE agent_gate DROP CONSTRAINT agent_gate_kind")
+    op.execute(
+        "ALTER TABLE agent_gate ADD CONSTRAINT agent_gate_kind CHECK (kind IN ("
+        "'directive_confirmation', 'plan_approval', 'budget_approval'))"
+    )

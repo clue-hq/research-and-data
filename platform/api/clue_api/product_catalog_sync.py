@@ -16,7 +16,10 @@ from clue_api.client_knowledge_reader import load_pinned_client_knowledge
 from clue_core import EntityId
 from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
-from clue_research.official_site import OfficialSiteMaterializationRequest
+from clue_research.official_site import (
+    OfficialSiteMaterializationRequest,
+    OfficialSiteProductTarget,
+)
 from clue_research.stage0 import CLIENT_PRODUCT_CATALOG, current_kb_version
 from clue_spine import Product, list_products
 
@@ -51,6 +54,7 @@ class ProductCatalogSyncResult:
     company_client_kb_version: int
     catalog_claim_id: UUID | None
     lineages: tuple[CatalogLineage, ...]
+    product_targets: tuple[OfficialSiteProductTarget, ...] = ()
 
     @property
     def linked_product_ids(self) -> tuple[str, ...]:
@@ -107,12 +111,12 @@ class ProductCatalogSynchronizer:
         *,
         company_client_kb_version: int,
     ) -> ProductCatalogSyncResult:
-        client_id = EntityId(request.client_entity_id)
+        client_entity_id = EntityId(request.client_entity_id)
         async with self._conn_factory() as conn:
             pinned = await load_pinned_client_knowledge(
                 conn,
                 workspace_id=request.workspace_id,
-                client_entity_id=client_id,
+                client_entity_id=client_entity_id,
                 client_kb_version=company_client_kb_version,
             )
             if pinned is None:
@@ -121,10 +125,11 @@ class ProductCatalogSynchronizer:
             if claim is None:
                 return ProductCatalogSyncResult(
                     workspace_id=request.workspace_id,
-                    client_entity_id=client_id,
+                    client_entity_id=client_entity_id,
                     company_client_kb_version=company_client_kb_version,
                     catalog_claim_id=None,
                     lineages=(),
+                    product_targets=(),
                 )
             if claim.product_id is not None:
                 raise ProductCatalogScopeError("catalog claim is not account-wide")
@@ -149,7 +154,7 @@ class ProductCatalogSynchronizer:
                     {
                         "recon_run_id": request.recon_run_id,
                         "workspace_id": request.workspace_id,
-                        "client_entity_id": client_id,
+                        "client_entity_id": client_entity_id,
                     },
                 )
             ).scalar_one_or_none()
@@ -174,9 +179,20 @@ class ProductCatalogSynchronizer:
                     output.append(existing)
                     continue
 
+                prior_product_ids = await self._prior_product_ids(
+                    conn,
+                    workspace_id=request.workspace_id,
+                    brand_id=brand_id,
+                    client_entity_id=client_entity_id,
+                    entry_fingerprint_sha256=fingerprint,
+                )
                 aliases = _alias_candidates(entry, products)
                 names = _name_candidates(entry, products)
-                if len(aliases) == 1:
+                if len(prior_product_ids) == 1:
+                    product_id = prior_product_ids[0]
+                    state = "lineage_reused"
+                    candidate_count = 1
+                elif len(aliases) == 1:
                     product_id = aliases[0].product_id
                     state = "alias_reused"
                     candidate_count = 1
@@ -218,7 +234,7 @@ class ProductCatalogSynchronizer:
                     if product_id is None
                     else await current_kb_version(
                         conn,
-                        client_id,
+                        client_entity_id,
                         workspace_id=request.workspace_id,
                         product_id=product_id,
                     )
@@ -240,7 +256,7 @@ class ProductCatalogSynchronizer:
                         "lineage_id": lineage_id,
                         "workspace_id": request.workspace_id,
                         "brand_id": brand_id,
-                        "client_entity_id": client_id,
+                        "client_entity_id": client_entity_id,
                         "company_version": company_client_kb_version,
                         "catalog_claim_id": claim.id,
                         "entry_ordinal": ordinal,
@@ -260,10 +276,23 @@ class ProductCatalogSynchronizer:
                     raise ProductCatalogScopeError("catalog lineage race disagreed with input")
                 output.append(retained)
 
+            by_id = {product.product_id: product for product in products}
+            targets = tuple(
+                OfficialSiteProductTarget(
+                    product_id=product.product_id,
+                    name=product.name,
+                    aliases=tuple(product.aliases),
+                )
+                for product_id in dict.fromkeys(
+                    lineage.product_id for lineage in output if lineage.product_id is not None
+                )
+                if (product := by_id.get(product_id)) is not None
+            )
+
         log.info(
             "product_catalog.synchronized",
             workspace_id=request.workspace_id,
-            client_entity_id=str(client_id),
+            client_entity_id=str(client_entity_id),
             company_client_kb_version=company_client_kb_version,
             catalog_claim_id=str(claim.id),
             entries=len(entries),
@@ -272,11 +301,42 @@ class ProductCatalogSynchronizer:
         )
         return ProductCatalogSyncResult(
             workspace_id=request.workspace_id,
-            client_entity_id=client_id,
+            client_entity_id=client_entity_id,
             company_client_kb_version=company_client_kb_version,
             catalog_claim_id=UUID(str(claim.id)),
             lineages=tuple(output),
+            product_targets=targets,
         )
+
+    @staticmethod
+    async def _prior_product_ids(
+        conn: object,
+        *,
+        workspace_id: str,
+        brand_id: str,
+        client_entity_id: EntityId,
+        entry_fingerprint_sha256: str,
+    ) -> tuple[str, ...]:
+        """Reuse only an exact prior catalog observation, never name equality alone."""
+
+        rows = (
+            await conn.execute(  # type: ignore[attr-defined]
+                text(
+                    "SELECT DISTINCT product_id FROM product_catalog_lineage "
+                    "WHERE workspace_id=:workspace_id AND brand_id=:brand_id "
+                    "AND client_entity_id=:client_entity_id "
+                    "AND entry_fingerprint_sha256=:fingerprint AND product_id IS NOT NULL "
+                    "ORDER BY product_id"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "brand_id": brand_id,
+                    "client_entity_id": client_entity_id,
+                    "fingerprint": entry_fingerprint_sha256,
+                },
+            )
+        ).scalars()
+        return tuple(str(item) for item in rows)
 
     @staticmethod
     async def _existing(

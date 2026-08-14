@@ -1128,6 +1128,11 @@ class ConfirmProjectProductTool(_Stage0Tool):
                 "project_product_not_found",
                 "project and product do not form a same-workspace brand pair",
             )
+        if project.product_id is not None and project.product_id != product.product_id:
+            return _failure(
+                "project_product_conflict",
+                "this project already has a different immutable product selection",
+            )
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:

@@ -42,6 +42,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from clue_agents import DomainObjectRef
 from clue_api.agent_gate import (
     KIND_DIRECTIVE_CONFIRMATION,
+    KIND_PRODUCT_SELECTION,
     AgentGateRow,
     GateAlreadyAnswered,
     get_gate,
@@ -1456,7 +1457,7 @@ def build_chat_router(
                 code="GATE_NOT_FOUND",
                 message="no such gate in this thread",
             )
-        if view.gate.kind != KIND_DIRECTIVE_CONFIRMATION:
+        if view.gate.kind not in {KIND_DIRECTIVE_CONFIRMATION, KIND_PRODUCT_SELECTION}:
             raise _refuse(
                 status_code=422,
                 code="GATE_KIND_UNSUPPORTED",
@@ -1490,7 +1491,8 @@ def build_chat_router(
         # *courier* half of staleness; the digest check above is the load-bearing half and stays
         # armed in both modes, so a redrafted directive still cannot be approved by a stale click.
         if (
-            settings.budget_controls_enabled
+            view.gate.kind == KIND_DIRECTIVE_CONFIRMATION
+            and settings.budget_controls_enabled
             and response.expected_estimated_cost_cents != view.gate.max_spend_cents
         ):
             raise _refuse(
@@ -1498,6 +1500,45 @@ def build_chat_router(
                 code="GATE_AMOUNT_STALE",
                 message="the reviewed maximum spend differs from the current gate",
             )
+        if view.gate.kind == KIND_DIRECTIVE_CONFIRMATION:
+            if response.selected_product_id is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_UNEXPECTED",
+                    message="a directive confirmation does not accept a product choice",
+                )
+        else:
+            products = view.gate.subject_snapshot.get("products")
+            allowed = (
+                {
+                    str(item.get("product_id"))
+                    for item in products
+                    if isinstance(item, dict) and isinstance(item.get("product_id"), str)
+                }
+                if isinstance(products, list)
+                else set()
+            )
+            if response.decision == "approved" and response.selected_product_id is None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_REQUIRED",
+                    message="select one product from the presented catalog",
+                )
+            if response.decision != "approved" and response.selected_product_id is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_UNEXPECTED",
+                    message="a rejected or revised product question does not accept a choice",
+                )
+            if (
+                response.selected_product_id is not None
+                and response.selected_product_id not in allowed
+            ):
+                raise _refuse(
+                    status_code=409,
+                    code="GATE_PRODUCT_STALE",
+                    message="the selected product was not in the presented catalog",
+                )
         return view.gate
 
     if artifacts is not None:
@@ -1710,6 +1751,7 @@ def build_chat_router(
                             turn_id=turn_id,
                             action_ref=action_ref,
                             decision=response.decision,
+                            selected_option_ref=response.selected_product_id,
                             answered_by_user_id=who.user_id,
                         )
                     except GateAlreadyAnswered as exc:
@@ -1724,12 +1766,25 @@ def build_chat_router(
                         # Human-only, invoked outside the model surface with server-derived
                         # authority. Rejection and revision deliberately confirm nothing: they are
                         # durable records of a decision, and the agent answers them in its turn.
-                        await _invoke(
-                            "confirm_account_research_directive",
+                        tool_name = (
+                            "confirm_account_research_directive"
+                            if gate.kind == KIND_DIRECTIVE_CONFIRMATION
+                            else "confirm_project_product"
+                        )
+                        tool_body = (
                             {
                                 "directive_id": str(gate.subject_snapshot["research_directive_id"]),
                                 "expected_sha256": gate.expected_subject_sha256,
-                            },
+                            }
+                            if gate.kind == KIND_DIRECTIVE_CONFIRMATION
+                            else {
+                                "project_id": project_id,
+                                "product_id": response.selected_product_id,
+                            }
+                        )
+                        await _invoke(
+                            tool_name,
+                            tool_body,
                             who=who,
                             idempotency_key=None,
                             action_ref=action_ref,

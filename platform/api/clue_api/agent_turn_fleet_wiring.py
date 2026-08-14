@@ -84,6 +84,12 @@ from clue_api.conversation_turns import (
     ConversationTurnResult,
     build_conversation_turn_engine,
 )
+from clue_api.product_context_compiler import (
+    compile_client_knowledge_card_v2,
+    compile_product_knowledge_card,
+    compile_product_profile_card,
+)
+from clue_api.product_knowledge_privacy import product_context_subject_bindings
 from clue_api.stage0_card_dsar import stage0_card_subject_bindings
 from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
@@ -110,10 +116,11 @@ from clue_fleet import (
 )
 from clue_obs import get_logger
 from clue_projections import (
-    CLIENT_KNOWLEDGE_CARD_MEDIA_TYPE,
+    CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
+    PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
+    PRODUCT_PROFILE_CARD_MEDIA_TYPE,
     PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
     STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
-    compile_client_knowledge_card,
     compile_project_conversation_card,
     compile_stage0_project_state_card,
 )
@@ -250,6 +257,7 @@ class _ProjectScope:
     product_id: str | None
     client_entity_id: EntityId | None
     client_kb_version: int | None
+    product_kb_version: int | None
 
     @classmethod
     def from_pin(cls, pin: AgentTurnScopePinRow) -> _ProjectScope:
@@ -261,6 +269,7 @@ class _ProjectScope:
             product_id=pin.product_id,
             client_entity_id=pin.client_entity_id,
             client_kb_version=pin.client_kb_version,
+            product_kb_version=pin.product_kb_version,
         )
 
 
@@ -375,6 +384,7 @@ class ProjectConversationTurnRunner:
                     else str(scope_pin.client_entity_id)
                 ),
                 client_kb_version=(None if scope_pin is None else scope_pin.client_kb_version),
+                product_kb_version=(None if scope_pin is None else scope_pin.product_kb_version),
                 knowledge_scope_policy_version=(
                     None if scope_pin is None else scope_pin.knowledge_scope_policy_version
                 ),
@@ -396,6 +406,7 @@ class ProjectConversationTurnRunner:
                     None if scope_pin.client_entity_id is None else str(scope_pin.client_entity_id)
                 ),
                 client_kb_version=scope_pin.client_kb_version,
+                product_kb_version=scope_pin.product_kb_version,
                 knowledge_scope_policy_version=scope_pin.knowledge_scope_policy_version,
                 created=created,
             )
@@ -522,6 +533,8 @@ class ProjectConversationTurnRunner:
         )
         client_knowledge = context_bundle.artifact("client_knowledge")
         stage0_project_state = context_bundle.artifact("stage0_project_state")
+        product_profile = context_bundle.artifact("product_profile")
+        product_knowledge = context_bundle.artifact("product_knowledge")
         log.info(
             "agent_turn.context_composed",
             turn_id=str(turn_id),
@@ -533,12 +546,19 @@ class ProjectConversationTurnRunner:
                 None if scope.client_entity_id is None else str(scope.client_entity_id)
             ),
             client_kb_version=scope.client_kb_version,
+            product_kb_version=scope.product_kb_version,
             project_card_sha256=card_ref.sha256,
             client_knowledge_sha256=(
                 None if client_knowledge is None else client_knowledge.artifact_ref.sha256
             ),
             stage0_project_state_sha256=(
                 None if stage0_project_state is None else stage0_project_state.artifact_ref.sha256
+            ),
+            product_profile_sha256=(
+                None if product_profile is None else product_profile.artifact_ref.sha256
+            ),
+            product_knowledge_sha256=(
+                None if product_knowledge is None else product_knowledge.artifact_ref.sha256
             ),
             client_knowledge_available=context_bundle.available,
             stage0_project_state_available=context_bundle.available,
@@ -571,16 +591,16 @@ class ProjectConversationTurnRunner:
         if scope.client_entity_id is None or scope.client_kb_version is None:
             return _ProjectContextBundle()
 
-        client_card = await compile_client_knowledge_card(
+        client_card = await compile_client_knowledge_card_v2(
             workspace_id=submission.workspace_id,
             client_entity_id=scope.client_entity_id,
-            client_kb_version=scope.client_kb_version,
+            company_client_kb_version=scope.client_kb_version,
             conn_factory=self._conn_factory,
         )
         client_ref = await self._artifact(
             submission,
             scope,
-            CLIENT_KNOWLEDGE_CARD_MEDIA_TYPE,
+            CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
             client_card.model_dump(mode="json", exclude_none=True),
             bind_project=False,
         )
@@ -614,30 +634,98 @@ class ProjectConversationTurnRunner:
                 "persisted Stage-0 project-state card differs from its compiled content hash"
             )
 
-        return _ProjectContextBundle(
-            artifacts=(
-                ProjectContextArtifact(
-                    name="client_knowledge",
-                    artifact_ref=client_ref,
-                    domain_ref=DomainObjectRef(
-                        workspace_id=submission.workspace_id,
-                        object_type="client_knowledge",
-                        object_id=str(scope.client_entity_id),
-                        version=scope.client_kb_version,
-                    ),
+        artifacts = [
+            ProjectContextArtifact(
+                name="client_knowledge",
+                artifact_ref=client_ref,
+                domain_ref=DomainObjectRef(
+                    workspace_id=submission.workspace_id,
+                    object_type="client_knowledge",
+                    object_id=str(scope.client_entity_id),
+                    version=scope.client_kb_version,
                 ),
-                ProjectContextArtifact(
-                    name="stage0_project_state",
-                    artifact_ref=stage0_ref,
-                    domain_ref=DomainObjectRef(
-                        workspace_id=submission.workspace_id,
-                        object_type="stage0_project_state",
-                        object_id=scope.project_id,
-                        version=None,
-                    ),
+            ),
+            ProjectContextArtifact(
+                name="stage0_project_state",
+                artifact_ref=stage0_ref,
+                domain_ref=DomainObjectRef(
+                    workspace_id=submission.workspace_id,
+                    object_type="stage0_project_state",
+                    object_id=scope.project_id,
+                    version=None,
+                ),
+            ),
+        ]
+        if scope.product_id is not None:
+            product_profile = await compile_product_profile_card(
+                workspace_id=submission.workspace_id,
+                brand_id=scope.brand_id,
+                product_id=scope.product_id,
+                conn_factory=self._conn_factory,
+            )
+            profile_ref = await self._artifact(
+                submission,
+                scope,
+                PRODUCT_PROFILE_CARD_MEDIA_TYPE,
+                product_profile.model_dump(mode="json", exclude_none=True),
+                subject_bindings=product_context_subject_bindings(
+                    client_entity_id=UUID(str(scope.client_entity_id)),
+                    product_id=scope.product_id,
                 ),
             )
-        )
+            if profile_ref.sha256 != product_profile.content_sha256().removeprefix("sha256:"):
+                raise RuntimeError(
+                    "persisted product profile differs from its compiled content hash"
+                )
+            artifacts.append(
+                ProjectContextArtifact(
+                    name="product_profile",
+                    artifact_ref=profile_ref,
+                    domain_ref=DomainObjectRef(
+                        workspace_id=submission.workspace_id,
+                        object_type="product",
+                        object_id=scope.product_id,
+                        version=None,
+                    ),
+                )
+            )
+            if scope.product_kb_version is not None:
+                product_card = await compile_product_knowledge_card(
+                    workspace_id=submission.workspace_id,
+                    client_entity_id=scope.client_entity_id,
+                    product_id=scope.product_id,
+                    product_kb_version=scope.product_kb_version,
+                    conn_factory=self._conn_factory,
+                )
+                product_ref = await self._artifact(
+                    submission,
+                    scope,
+                    PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
+                    product_card.model_dump(mode="json", exclude_none=True),
+                    subject_bindings=product_context_subject_bindings(
+                        client_entity_id=UUID(str(scope.client_entity_id)),
+                        product_id=scope.product_id,
+                        card=product_card,
+                    ),
+                )
+                if product_ref.sha256 != product_card.content_sha256().removeprefix("sha256:"):
+                    raise RuntimeError(
+                        "persisted Product-KB card differs from its compiled content hash"
+                    )
+                artifacts.append(
+                    ProjectContextArtifact(
+                        name="product_knowledge",
+                        artifact_ref=product_ref,
+                        domain_ref=DomainObjectRef(
+                            workspace_id=submission.workspace_id,
+                            object_type="product_knowledge",
+                            object_id=scope.product_id,
+                            version=scope.product_kb_version,
+                        ),
+                    )
+                )
+
+        return _ProjectContextBundle(artifacts=tuple(artifacts))
 
     async def _execute_watched(
         self,
@@ -861,6 +949,16 @@ class ProjectConversationTurnRunner:
                 product_id=None,
             )
         )
+        product_kb_version = (
+            None
+            if entity_id is None or project.product_id is None or kb_version is None
+            else await current_kb_version(
+                conn,
+                entity_id,
+                workspace_id=submission.workspace_id,
+                product_id=project.product_id,
+            )
+        )
         return _ProjectScope(
             project_id=project.project_id,
             name=project.name,
@@ -869,6 +967,7 @@ class ProjectConversationTurnRunner:
             product_id=project.product_id,
             client_entity_id=entity_id,
             client_kb_version=kb_version,
+            product_kb_version=product_kb_version,
         )
 
 

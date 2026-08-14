@@ -155,6 +155,27 @@ test("a physically missing historical artifact gives actionable recovery copy", 
     unavailableMessageBody("budget"),
     "This message's text is unavailable (budget).",
   );
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "gate_response",
+      response: {
+        gateId: "g-product",
+        decision: "approved",
+        expectedSubjectSha256: "b".repeat(64),
+        expectedEstimatedCostCents: 0,
+        selectedProductId: "prd_phone",
+      },
+    }),
+    {
+      gate_response: {
+        gate_id: "g-product",
+        decision: "approved",
+        expected_subject_sha256: "b".repeat(64),
+        expected_estimated_cost_cents: 0,
+        selected_product_id: "prd_phone",
+      },
+    },
+  );
 });
 
 test("the submissions-union keeps queued turns and their attach cursor", () => {

@@ -16,7 +16,10 @@ import type { GateDecision } from "../model/chat-parts";
  */
 export interface FixtureChatState {
   /** gateId → the decision this session recorded, and the turn that made it. */
-  gateAnswers: Map<string, { turnId: string; decision: GateDecision }>;
+  gateAnswers: Map<
+    string,
+    { turnId: string; decision: GateDecision; selectedProductId?: string }
+  >;
   /** turnId → which scripted stream that turn plays. */
   scripts: Map<string, "turn" | "launch">;
 }

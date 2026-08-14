@@ -541,6 +541,7 @@ def test_the_gates_route_reports_the_answer_and_the_run_that_answer_launched(
                 "turn_id": str(answering_turn_id),
                 "action_ref": action_ref,
                 "decision": "approved",
+                "selected_option_ref": None,
                 "answered_by_user_id": USER_ID,
                 "answered_at": served["answer"]["answered_at"],
             }

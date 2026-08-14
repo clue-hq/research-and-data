@@ -96,7 +96,11 @@ export interface ProjectChatController {
       agentProfileId?: string | null;
     },
   ): Promise<void>;
-  answerGate(card: GateCardModel, decision: GateDecision): Promise<void>;
+  answerGate(
+    card: GateCardModel,
+    decision: GateDecision,
+    selectedProductId?: string,
+  ): Promise<void>;
   stopActiveTurn(): Promise<void>;
   retryTurn(turnId: string): Promise<void>;
   selectThread(threadId: string): void;
@@ -482,7 +486,11 @@ export function useProjectChatController({
   );
 
   const answerGate = useCallback(
-    async (card: GateCardModel, decision: GateDecision) => {
+    async (
+      card: GateCardModel,
+      decision: GateDecision,
+      selectedProductId?: string,
+    ) => {
       if (!activeThreadId) return;
       if (card.expectedSubjectSha256 === null) {
         // Structurally unanswerable: the subject digest is what makes "approve"
@@ -510,6 +518,7 @@ export function useProjectChatController({
               // server does not check this field; `0` is the placeholder that
               // travels, never a figure shown to anyone.
               expectedEstimatedCostCents: card.amountCents ?? 0,
+              ...(selectedProductId ? { selectedProductId } : {}),
             },
           },
           idempotencyKey: newIdempotencyKey(`gate:${card.gateId}:${decision}`),

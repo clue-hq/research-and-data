@@ -100,6 +100,7 @@ from clue_api.independent_contact_research import IndependentContactResearchRunn
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
 from clue_api.phase_wiring import build_discovery_handler, build_scoring_handler
+from clue_api.product_knowledge_tools import build_product_knowledge_tools
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
@@ -2900,6 +2901,11 @@ def build_toolbelt(
     for tool in build_client_knowledge_tools(conn_factory=conn_factory):
         registry.register(tool, make_default=False)
     for tool in build_client_knowledge_v2_tools(conn_factory=conn_factory):
+        registry.register(tool, make_default=True)
+    # S5-D: selected-product knowledge is a separate exact-scope read surface.  These tools never
+    # widen the company tools with a model-authored product selector; product authority is restored
+    # only from the immutable turn constitution at execution time.
+    for tool in build_product_knowledge_tools(conn_factory=conn_factory):
         registry.register(tool, make_default=True)
     for tool in build_research_view_tools(
         composer=research_view_composer,

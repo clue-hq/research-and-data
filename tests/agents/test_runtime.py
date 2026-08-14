@@ -348,11 +348,15 @@ def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> No
         {"name": name}
         for name in ("edit_file", "glob", "grep", "ls", "read_file", "write_file", "write_todos")
     ]
+    governed_tools = factory.build()
+    effective_names = {tool.name for tool in governed_tools}
+    assert "finalize_turn" in effective_names
+    assert {"list_product_knowledge", "inspect_product_claim"}.isdisjoint(effective_names)
     model_request = ModelRequest(
         model=ScriptedAgentChatModel(responses=(AIMessage(content="unused"),)),
         messages=[HumanMessage(content="Ask the next useful question.")],
         system_message=SystemMessage(content="Base prompt."),
-        tools=[*factory.build(), *framework_tools],
+        tools=[*governed_tools, *framework_tools],
     )
     observed: dict[str, object] = {}
 
@@ -393,10 +397,10 @@ def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> No
         )
 
     run_async(
-        ExactAgentToolSurfaceMiddleware(profile=resolved).awrap_model_call(
-            model_request,
-            handler,
-        )
+        ExactAgentToolSurfaceMiddleware(
+            profile=resolved,
+            effective_governed_tool_names=effective_names,
+        ).awrap_model_call(model_request, handler)
     )
 
     calls = observed["calls"]

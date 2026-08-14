@@ -6,19 +6,21 @@
 **Authority:** contract delta to Doc A Part III and PC-C8 for this production composition. Where
 this document conflicts with the provisional note in root `CLAUDE.md`, this document wins.
 
-**Implementation checkpoint (2026-08-15):** S0-S4, S3.1, and the S5.0 decision gate are
-implemented. S4-A's version-aware reader,
+**Implementation checkpoint (2026-08-15):** S0-S5 are implemented. S4-A's version-aware reader,
 S4-B's immutable contract freeze, S4-C's trusted `@2` implementations, S4-D's production
 composition, and S4-E's privacy/injection/replay hardening all pass their gates. The previously
 shipped `@1` tools and Head-of-ABM `v24` / Stage-0 skill `v11` / Recipe #0 `v7` graph remain frozen
 historical replay resources; S4-D's profile `v25` / skill `v12` also remain immutable. Current
-production selects `@2`, profile `v26`, skill `v13`, and Recipe #0 `v8`. S3.1 adds the immutable
+historical production selected `@2`, profile `v26`, skill `v13`, and Recipe #0 `v8`. S3.1 adds the immutable
 per-turn scope receipt, statement-level production-card DSAR binding, exact vN retry behavior, and
 real-fleet acceptance. S5.0 ratifies the separate company/product knowledge model, paired
 selected-product card/tools, trusted-only product scope, `ClientKnowledgeCard@2` catalog, and the
 new-turn `company-and-selected-product-v2` policy in the
-[S5.0 child contract](./FI-production-deepagent-context-S50-product-knowledge-contract.md). S5
-runtime implementation and S6 remain outside this checkpoint.
+[S5.0 child contract](./FI-production-deepagent-context-S50-product-knowledge-contract.md). S5-A–F
+now ship the grounded catalog/product materializer, catalog-to-spine lineage, V2/product cards,
+trusted product tools, durable version pair, real fleet composition, and human product-selection
+gate through profile `v27`, skill `v14`, and Recipe #0 `v9`. S6 live browser/provider acceptance
+remains outside this checkpoint.
 
 ## 1. Purpose
 
@@ -329,7 +331,8 @@ S5.0 freezes the additive `ClientKnowledgeCard@2`, `ProductProfileCard@1`,
 `ProductKnowledgeCard@1`, separate product `@1` tools, and trusted product-version pin. Exact
 ownership, state transitions, authority fields, compatibility, and privacy requirements live in
 [`FI-production-deepagent-context-S50-product-knowledge-contract.md`](./FI-production-deepagent-context-S50-product-knowledge-contract.md).
-These are ratified target contracts, not current production surfaces until S5 passes its gates.
+These are current new-turn production surfaces after S5-A–F passed. Historical receipts retain
+their original media types, policy versions, and resources.
 
 ## 5. Data and lifecycle
 
@@ -362,7 +365,7 @@ the recon's client identity. Existing project-scoped onboarding rows are not the
 The row is created before cards, context assembly, model execution, or tools. Ordinary retries,
 crash recovery, and committed replay never update or delete it.
 
-S5 will add `product_kb_version` and the `company-and-selected-product-v2` meaning to new rows.
+S5 adds `product_kb_version` and the `company-and-selected-product-v2` meaning to new rows.
 The existing `client_kb_version` remains the physical company-version column; it is not renamed or
 reinterpreted. V2 resolves the optional selected-product version in the same DB snapshot and
 supports honest `(confirmed product, no product KB)` rows.
@@ -780,6 +783,9 @@ and assigns every runtime responsibility to S5-A through S5-F.
 
 ### S5 — Recon product catalog and human project selection
 
+**Status:** implemented and verified 2026-08-15. Checkpoint-level runtime/test evidence is in the
+[S5 child contract §9](./FI-production-deepagent-context-S50-product-knowledge-contract.md#9-s5-implementation-checkpoints-unlocked-by-this-decision).
+
 S5 implements the S5.0 contract in six ordered checkpoints. The child contract §9 owns their full
 boundaries: S5-A product/card/tool contracts; S5-B grounded catalog extraction/synchronization and
 lineage; S5-C exact product readers/card compilers; S5-D governed product tools; S5-E durable pair
@@ -874,12 +880,12 @@ S4-A readers
 → S4-E privacy/security/replay
 → S3.1 production composition reliability
 → S5.0 product-knowledge decision (complete)
-→ S5-A product/card/tool contracts
-→ S5-B catalog extraction/synchronization + lineage
-→ S5-C product readers/cards
-→ S5-D governed product tools
-→ S5-E durable pair pin + production composition
-→ S5-F human selection + refresh acceptance
+→ S5-A product/card/tool contracts (complete)
+→ S5-B catalog extraction/synchronization + lineage (complete)
+→ S5-C product readers/cards (complete)
+→ S5-D governed product tools (complete)
+→ S5-E durable pair pin + production composition (complete)
+→ S5-F human selection + refresh acceptance (complete)
 → S6 browser/live acceptance
 ```
 

@@ -80,6 +80,7 @@ test("an approved gate stays in history as responded, with its decision", () => 
       turnId: "t2",
       actionRef: "turn-action:t2",
       decision: "approved",
+      selectedOptionRef: null,
       answeredByUserId: "usr_demo",
       answeredAt: "2026-08-09T11:10:00Z",
     },
@@ -110,6 +111,7 @@ test("a rejected or revised gate is denied — closed, recorded, never re-answer
           turnId: "t3",
           actionRef: "turn-action:t3",
           decision,
+          selectedOptionRef: null,
           answeredByUserId: "usr_demo",
           answeredAt: "2026-08-09T11:12:00Z",
         },
@@ -133,4 +135,77 @@ test("permitted decisions narrow to the ones the backend allowed", () => {
   });
   assert.ok(card);
   assert.deepEqual(card.permittedDecisions, ["approved", "rejected"]);
+});
+
+test("a product-selection gate exposes only its durable catalog choices", () => {
+  const [gate] = ChatGateListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureGates[0],
+        kind: "product_selection",
+        max_spend_cents: "0",
+        subject_snapshot: {
+          products: [
+            {
+              product_id: "prd_phone",
+              name: "AI Phone Agents",
+              short_description: "Healthcare call and scheduling automation",
+              aliases: ["Insight Voice"],
+              status: "active",
+            },
+            {
+              product_id: "prd_intake",
+              name: "Patient Intake",
+              short_description: "Digital patient intake workflows",
+              aliases: [],
+              status: "active",
+            },
+            { product_id: "invalid-without-description", name: "Invalid" },
+          ],
+        },
+      },
+    ],
+  });
+  const card = gateCardModel({ gate, part: part() });
+  assert.ok(card);
+  assert.equal(card.kind, "product_selection");
+  assert.deepEqual(
+    card.productOptions.map((item) => item.productId),
+    ["prd_phone", "prd_intake"],
+  );
+  assert.equal(card.productOptions[0]?.aliases[0], "Insight Voice");
+});
+
+test("an answered product gate retains the exact selected option", () => {
+  const [gate] = ChatGateListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureGates[0],
+        kind: "product_selection",
+        subject_snapshot: {
+          products: [
+            {
+              product_id: "prd_phone",
+              name: "AI Phone Agents",
+              short_description: "Healthcare call automation",
+              aliases: [],
+              status: "active",
+            },
+          ],
+        },
+        answer: {
+          turn_id: "turn-selection",
+          action_ref: "turn-action:turn-selection",
+          decision: "approved",
+          selected_option_ref: "prd_phone",
+          answered_by_user_id: "usr_demo",
+          answered_at: "2026-08-15T12:00:00Z",
+        },
+      },
+    ],
+  });
+  const card = gateCardModel({ gate, part: part() });
+  assert.ok(card);
+  assert.equal(card.state, "responded");
+  assert.equal(card.selectedProductId, "prd_phone");
 });

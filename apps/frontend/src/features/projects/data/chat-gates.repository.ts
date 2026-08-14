@@ -95,6 +95,7 @@ export function createFixtureChatGatesRepository(
                 turnId: answered.turnId,
                 actionRef: `turn-action:${answered.turnId}`,
                 decision: answered.decision,
+                selectedOptionRef: answered.selectedProductId ?? null,
                 answeredByUserId: gate.addresseeUserId,
                 answeredAt: new Date().toISOString(),
               },

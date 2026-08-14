@@ -144,7 +144,7 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
         filled_fields: set[str],
         attempted_fields: set[str],
     ) -> int:
-        row = await self._scope(request)
+        await self._scope(request)
         async with self._conn_factory() as conn:
             version = await finalize_client_kb_version(
                 conn,
@@ -153,8 +153,56 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
                 run_id=RunId(request.claim_run_id),
                 filled_fields=filled_fields,
                 attempted_fields=attempted_fields,
-                product_id=cast(str | None, row["product_id"]),
+                # S5 freezes company knowledge as account-wide even when an older/project-scoped
+                # recon row already carries a product. Exact product claims are committed only by
+                # ``commit_product`` after catalog-to-spine synchronization.
+                product_id=None,
             )
+        return version
+
+    async def commit_product(
+        self,
+        request: OfficialSiteMaterializationRequest,
+        *,
+        product_id: str,
+        filled_fields: set[str],
+        attempted_fields: set[str],
+    ) -> int:
+        row = await self._scope(request)
+        async with self._conn_factory() as conn:
+            product_allowed = (
+                await conn.execute(
+                    text(
+                        "SELECT EXISTS (SELECT 1 FROM product WHERE product_id=:product_id "
+                        "AND workspace_id=:workspace_id AND brand_id=:brand_id)"
+                    ),
+                    {
+                        "product_id": product_id,
+                        "workspace_id": request.workspace_id,
+                        "brand_id": row["brand_id"],
+                    },
+                )
+            ).scalar_one()
+            if not product_allowed:
+                raise ValueError("official-site product extraction crossed recon brand scope")
+            return await finalize_client_kb_version(
+                conn,
+                client_entity_id=EntityId(request.client_entity_id),
+                workspace_id=request.workspace_id,
+                run_id=RunId(request.claim_run_id),
+                filled_fields=filled_fields,
+                attempted_fields=attempted_fields,
+                product_id=product_id,
+            )
+
+    async def complete(
+        self,
+        request: OfficialSiteMaterializationRequest,
+        *,
+        company_client_kb_version: int,
+    ) -> None:
+        await self._scope(request)
+        async with self._conn_factory() as conn:
             lane = "fast" if request.phase is CrawlPhase.FAST else "background"
             if lane == "background":
                 await transition_recon_lane(
@@ -171,10 +219,9 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
                 workspace_id=request.workspace_id,
                 lane=lane,
                 status=ReconLaneStatus.COMPLETED,
-                client_kb_version=version,
+                client_kb_version=company_client_kb_version,
                 client_entity_id=EntityId(request.client_entity_id),
             )
-        return version
 
     async def _scope(self, request: OfficialSiteMaterializationRequest) -> dict[str, Any]:
         async with self._conn_factory() as conn:
@@ -183,7 +230,8 @@ class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
                     await conn.execute(
                         text(
                             """
-                            SELECT product_id, fast_run_id, background_run_id, client_entity_id
+                            SELECT brand_id, product_id, fast_run_id, background_run_id,
+                                   client_entity_id
                             FROM recon_run
                             WHERE id = :recon_run_id AND workspace_id = :workspace_id
                             """

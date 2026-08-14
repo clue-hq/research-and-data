@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_scope_pin import (
     COMPANY_ACCOUNT_WIDE_KNOWLEDGE_SCOPE_V1,
+    COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2,
     get_agent_turn_scope_pin,
     load_or_create_agent_turn_scope_pin,
 )
@@ -28,6 +29,7 @@ from clue_api.thread_store import create_thread
 from clue_core import EntityId, OnboardingInputKind
 from clue_research.stage0 import (
     CLIENT_KNOWLEDGE_FIELDS,
+    PRODUCT_KNOWLEDGE_FIELDS,
     ClientInput,
     VolunteeredMaterial,
     reverse_profile,
@@ -107,7 +109,7 @@ async def _capture_submission(
     return submission
 
 
-def test_turn_pin_survives_background_recon_and_keeps_product_scope_separate(
+def test_turn_pin_freezes_independent_company_product_pair_and_preserves_v1_replay(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
@@ -163,8 +165,17 @@ def test_turn_pin_survives_background_recon_and_keeps_product_scope_separate(
                                 label=f"product v{revision}",
                                 content="Product-only facts.",
                                 asserted_fields={
-                                    key: f"product v{revision} {key}"
-                                    for key in CLIENT_KNOWLEDGE_FIELDS
+                                    key: (
+                                        f"product v{revision} {key}"
+                                        if key
+                                        in {
+                                            "client.product_overview",
+                                            "client.product_differentiator",
+                                            "client.product_positioning",
+                                        }
+                                        else {"summary": f"product v{revision} {key}"}
+                                    )
+                                    for key in PRODUCT_KNOWLEDGE_FIELDS
                                 },
                             ),
                         ),
@@ -174,7 +185,7 @@ def test_turn_pin_survives_background_recon_and_keeps_product_scope_separate(
                     budget_cap_cents=Decimal(0),
                     max_source_tier=0,
                 )
-            assert product_profile.ref.client_kb_version > first_profile.ref.client_kb_version
+            assert product_profile.ref.client_kb_version == 2
             await bind_workspace_client(
                 conn,
                 workspace_id=workspace_id,
@@ -204,7 +215,11 @@ def test_turn_pin_survives_background_recon_and_keeps_product_scope_separate(
             assert pin_v1.product_id == product.product_id
             assert pin_v1.client_entity_id == first_profile.ref.client_entity_id
             assert pin_v1.client_kb_version == first_profile.ref.client_kb_version
-            assert pin_v1.knowledge_scope_policy_version == COMPANY_ACCOUNT_WIDE_KNOWLEDGE_SCOPE_V1
+            assert pin_v1.product_kb_version == product_profile.ref.client_kb_version
+            assert (
+                pin_v1.knowledge_scope_policy_version
+                == COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2
+            )
 
             # The row is the retry authority, so neither an ordinary update nor a delete may
             # rewrite history. Exercise the database trigger directly rather than relying on the
@@ -247,6 +262,38 @@ def test_turn_pin_survives_background_recon_and_keeps_product_scope_separate(
                 max_source_tier=0,
             )
             assert background.ref.client_kb_version == first_profile.ref.client_kb_version + 1
+            product_background = await reverse_profile(
+                conn,
+                ClientInput(
+                    name="S3.1 Company",
+                    website=f"https://{workspace_id}.example",
+                    materials=(
+                        VolunteeredMaterial(
+                            kind="background_product_recon",
+                            label="product v3",
+                            content="Background recon publishes product v3.",
+                            asserted_fields={
+                                key: (
+                                    f"product v3 {key}"
+                                    if key
+                                    in {
+                                        "client.product_overview",
+                                        "client.product_differentiator",
+                                        "client.product_positioning",
+                                    }
+                                    else {"summary": f"product v3 {key}"}
+                                )
+                                for key in PRODUCT_KNOWLEDGE_FIELDS
+                            },
+                        ),
+                    ),
+                ),
+                workspace_id=workspace_id,
+                product_id=product.product_id,
+                budget_cap_cents=Decimal(0),
+                max_source_tier=0,
+            )
+            assert product_background.ref.client_kb_version == 3
 
             retry_pin, retry_created = await load_or_create_agent_turn_scope_pin(
                 conn,
@@ -271,7 +318,54 @@ def test_turn_pin_survives_background_recon_and_keeps_product_scope_separate(
             )
             assert next_created is True
             assert pin_v2.client_kb_version == background.ref.client_kb_version
+            assert pin_v2.product_kb_version == product_background.ref.client_kb_version
             assert pin_v2.turn_id != pin_v1.turn_id
+
+            # Historical V1 rows stay readable as exactly company-only receipts. They are not
+            # upgraded in place or reinterpreted as containing the current product marker.
+            legacy_turn = await _capture_submission(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                brand_id=brand.brand_id,
+                product_id=product.product_id,
+                client_entity_id=first_profile.ref.client_entity_id,
+                label="legacy-v1",
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_turn_scope_pin "
+                    "(turn_id, workspace_id, project_id, project_name, project_status, brand_id, "
+                    "product_id, client_entity_id, client_kb_version, product_kb_version, "
+                    "knowledge_scope_policy_version) VALUES "
+                    "(:turn, :workspace, :project, :name, :status, :brand, :product, :client, "
+                    ":company_version, NULL, :policy)"
+                ),
+                {
+                    "turn": legacy_turn.turn_id,
+                    "workspace": workspace_id,
+                    "project": project.project_id,
+                    "name": project.name,
+                    "status": project.status,
+                    "brand": brand.brand_id,
+                    "product": product.product_id,
+                    "client": first_profile.ref.client_entity_id,
+                    "company_version": first_profile.ref.client_kb_version,
+                    "policy": COMPANY_ACCOUNT_WIDE_KNOWLEDGE_SCOPE_V1,
+                },
+            )
+            legacy_pin = await get_agent_turn_scope_pin(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=legacy_turn.turn_id,
+            )
+            assert legacy_pin is not None
+            assert legacy_pin.product_id == product.product_id
+            assert legacy_pin.product_kb_version is None
+            assert (
+                legacy_pin.knowledge_scope_policy_version == COMPANY_ACCOUNT_WIDE_KNOWLEDGE_SCOPE_V1
+            )
 
             # Workspace isolation is fail-closed and does not disclose the foreign row.
             assert (

@@ -14,6 +14,7 @@ could launch research but not *ask* first would be exactly backwards.
 from __future__ import annotations
 
 from clue_api.agent_gate_tools import build_agent_gate_tools
+from clue_api.product_selection_gate_tools import build_product_selection_gate_tools
 from clue_db import ConnFactory, transaction
 from clue_toolbelt import ToolRegistry
 
@@ -37,4 +38,6 @@ def register_agent_gate_tools(
         conn_factory=conn_factory,
         budget_controls_enabled=budget_controls_enabled,
     ):
+        registry.register(tool, make_default=True)
+    for tool in build_product_selection_gate_tools(conn_factory=conn_factory):
         registry.register(tool, make_default=True)

@@ -59,6 +59,11 @@ from clue_api.agent_turn_wiring import (
 from clue_api.chat.turn_stream import TurnStreamCallbackHandler, TurnStreamEmitter
 from clue_api.client_context_authority import trusted_client_kb_version_fields
 from clue_api.client_knowledge_privacy import stream_tool_receipt
+from clue_api.product_context_authority import (
+    product_scope_from_constitution,
+    trusted_product_scope_fields,
+)
+from clue_api.product_knowledge_privacy import stream_product_tool_receipt
 from clue_api.turn_binding import trusted_turn_fields
 from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
@@ -426,6 +431,7 @@ def _with_trusted_runtime(
         MODEL_FORBIDDEN_AUTHORITY_KEYS
         | set(trusted_turn_fields(model))
         | set(trusted_client_kb_version_fields(model))
+        | set(trusted_product_scope_fields(model))
     )
     hidden = trusted & set(subclass.__pydantic_fields__)
     if hidden:
@@ -636,11 +642,26 @@ class GovernedAgentToolFactory:
         tools = tuple(
             self._governed_tool(pin.name, pin.version)
             for pin in self._resolved_profile.profile.tools
+            if self._tool_admitted(pin.name, pin.version)
         )
         delegation = (
             (self._delegation_tool(),) if self._resolved_profile.profile.delegation_roles else ()
         )
         return (*tools, *delegation, self._finalize_tool())
+
+    def _tool_admitted(self, name: str, version: str) -> bool:
+        """Apply constitution-dependent availability before a tool reaches the model.
+
+        Product-KB reads are profile capabilities but only a selected product with an exact
+        ``product_knowledge`` artifact grants their per-turn pin.  Hiding them here makes the
+        no-selection/profile-only states honest instead of advertising a tool that can only fail
+        during argument restoration.
+        """
+
+        descriptor = self._registry.descriptor(name, version)
+        if "product_kb" in descriptor.pin_requirements:
+            return product_scope_from_constitution(self._request.constitution) is not None
+        return True
 
     def _governed_tool(self, name: str, version: str) -> BaseTool:
         descriptor = self._registry.descriptor(name, version)
@@ -760,7 +781,7 @@ class GovernedAgentToolFactory:
                     tool_version=pin.version,
                     tool_call_id=tool_call_id,
                     operation_id=getattr(receipt, "operation_id", None),
-                    output=stream_tool_receipt(receipt),
+                    output=(stream_product_tool_receipt(receipt) or stream_tool_receipt(receipt)),
                 )
             return receipt.model_dump_json(exclude_none=True)
 

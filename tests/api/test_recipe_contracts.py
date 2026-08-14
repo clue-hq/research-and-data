@@ -60,6 +60,9 @@ def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified()
     for address in ("list_client_knowledge@2", "inspect_client_claim@2"):
         assert by_address[address].replay_policy is ReplayPolicy.EFFECT_FREE
         assert by_address[address].pin_requirements == ("client_kb",)
+    for address in ("list_product_knowledge@1", "inspect_product_claim@1"):
+        assert by_address[address].replay_policy is ReplayPolicy.EFFECT_FREE
+        assert by_address[address].pin_requirements == ("product_kb",)
 
 
 def test_s4d_mints_recipe_v8_and_preserves_v7_for_exact_replay() -> None:
@@ -94,6 +97,45 @@ def test_s4d_mints_recipe_v8_and_preserves_v7_for_exact_replay() -> None:
     for requirement in v8["compatibility"]["nodes"]["stage0_interactions"]:
         if requirement["kind"] == "tool" and requirement["key"] in client_addresses:
             assert requirement["version"] == "2"
+
+
+def test_s5d_mints_recipe_v9_and_preserves_v8_for_exact_replay() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v8 = json.loads((root / "recipe0-stage0-v8.json").read_text())
+    v9 = json.loads((root / "recipe0-stage0-v9.json").read_text())
+    product_addresses = {
+        "list_product_knowledge@1",
+        "inspect_product_claim@1",
+        "open_product_selection_gate@1",
+    }
+
+    v8_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v8.json")
+    assert SYSTEM_RECIPE_FILENAMES[v8_index : v8_index + 2] == (
+        "recipe0-stage0-v8.json",
+        "recipe0-stage0-v9.json",
+    )
+    assert v8["version"] == 8
+    assert v9["version"] == 9
+    assert product_addresses.isdisjoint(v8["graph"]["tool_allowlist"])
+    assert product_addresses <= set(v9["graph"]["tool_allowlist"])
+    slot = next(node for node in v9["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert product_addresses <= set(slot["dynamic_tool_allowlist"])
+    assert "product_kb" in slot["dynamic_pin_kinds"]
+    assert {
+        (item["key"], item["version"])
+        for item in v9["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+        and item["key"]
+        in {
+            "list_product_knowledge",
+            "inspect_product_claim",
+            "open_product_selection_gate",
+        }
+    } == {
+        ("list_product_knowledge", "1"),
+        ("inspect_product_claim", "1"),
+        ("open_product_selection_gate", "1"),
+    }
 
 
 def test_operation_id_requirements_are_explicit() -> None:

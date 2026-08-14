@@ -266,6 +266,7 @@ export const GateResponseSchema = z.object({
   decision: GateDecisionSchema,
   expectedSubjectSha256: z.string().regex(/^[0-9a-f]{64}$/),
   expectedEstimatedCostCents: z.number(),
+  selectedProductId: z.string().min(1).optional(),
 });
 
 export type GateResponse = z.infer<typeof GateResponseSchema>;
@@ -304,6 +305,9 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
       expected_subject_sha256: submission.response.expectedSubjectSha256,
       expected_estimated_cost_cents:
         submission.response.expectedEstimatedCostCents,
+      ...(submission.response.selectedProductId
+        ? { selected_product_id: submission.response.selectedProductId }
+        : {}),
     },
   };
 }

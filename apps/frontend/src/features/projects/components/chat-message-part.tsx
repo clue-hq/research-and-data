@@ -35,7 +35,11 @@ import styles from "./project-flow.module.css";
 export interface ChatPartActions {
   busy: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
-  onGateDecision(card: GateCardModel, decision: GateDecision): void;
+  onGateDecision(
+    card: GateCardModel,
+    decision: GateDecision,
+    selectedProductId?: string,
+  ): void;
 }
 
 export function ChatMessagePartView({

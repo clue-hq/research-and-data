@@ -301,6 +301,7 @@ class Stage0StepPinProvider:
         client_entity_id = body.get("client_entity_id")
         client_kb_version = body.get("client_kb_version", body.get("kb_version"))
         product_id = body.get("product_id")
+        product_kb_version = body.get("product_kb_version")
         if (
             step.tool_name in {"synthesize_icps", "confirm_icp"}
             and isinstance(client_entity_id, str)
@@ -325,6 +326,20 @@ class Stage0StepPinProvider:
                     kind="client_kb",
                     key=f"{client_entity_id}|{product_id if isinstance(product_id, str) else '-'}",
                     version=str(client_kb_version),
+                    ctx=ctx,
+                )
+            )
+
+        if (
+            isinstance(client_entity_id, str)
+            and isinstance(product_id, str)
+            and isinstance(product_kb_version, int)
+        ):
+            requested.append(
+                await self._exact(
+                    kind="product_kb",
+                    key=f"{client_entity_id}|{product_id}",
+                    version=str(product_kb_version),
                     ctx=ctx,
                 )
             )

@@ -53,6 +53,9 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # FI production context S4-D: v8 cuts those reads over to the strictly artifact-bound @2
     # contracts. v7 remains seeded and is superseded, never rewritten, for exact replay.
     "recipe0-stage0-v8.json",
+    # S5-D: selected-product reads join the interaction ceiling as separate trusted-scope tools.
+    # Human-only product confirmation remains in the recipe but outside model authority.
+    "recipe0-stage0-v9.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )
@@ -535,6 +538,10 @@ def build_recipe_pin_registry(
         return _observation(version=str(version), payload=pinned)
 
     registry.register(CallablePinResolver(kind="client_kb", loader=client_kb))
+    # Product-KB uses the same claim/version substrate but a distinct pin kind. Keeping the kinds
+    # separate prevents a company-scoped tool requirement from satisfying product authority (or
+    # vice versa) while reusing the one exact-version resolver implementation.
+    registry.register(CallablePinResolver(kind="product_kb", loader=client_kb))
 
     async def readiness_decision(
         request: PinRequest,

@@ -166,6 +166,8 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "inspect_readiness_history": ("precondition", ("stage0_project_not_found",)),
     "list_client_knowledge": ("precondition", ("client_knowledge_unavailable",)),
     "inspect_client_claim": ("precondition", ("client_knowledge_unavailable",)),
+    "list_product_knowledge": ("precondition", ("product_knowledge_unavailable",)),
+    "inspect_product_claim": ("precondition", ("product_knowledge_unavailable",)),
     "estimate_project": ("success", "estimated_cost_cents"),
     "start_project_run": ("success", "project_run_id"),
     "pause_run": ("precondition", ("run_not_found",)),
@@ -192,6 +194,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # gate to: a ref naming no turn of this workspace proves no addressee, so it refuses rather than
     # presenting a gate nobody is entitled to answer.
     "open_directive_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
+    "open_product_selection_gate": (
+        "precondition",
+        ("product_selection_scope_unavailable",),
+    ),
     "submit_onboarding_input": ("precondition", ("artifact_not_found",)),
     "start_recon": ("precondition", ("onboarding_input_not_found",)),
     "record_interview_answer": ("precondition", ("onboarding_input_not_found",)),
@@ -336,6 +342,18 @@ def _bodies() -> dict[str, dict[str, object]]:
             "client_kb_version": 1,
             "claim_id": _UUID(),
         },
+        "list_product_knowledge": {
+            "client_entity_id": _UUID(),
+            "product_id": "product_missing",
+            "product_kb_version": 1,
+            "limit": 1,
+        },
+        "inspect_product_claim": {
+            "client_entity_id": _UUID(),
+            "product_id": "product_missing",
+            "product_kb_version": 1,
+            "claim_id": _UUID(),
+        },
         "estimate_project": {},
         "start_project_run": {
             "project_id": "prj_replaced_by_test",
@@ -403,6 +421,9 @@ def _bodies() -> dict[str, dict[str, object]]:
             "project_run_id": _UUID(),
             "research_directive_id": _UUID(),
             "account_entity_ids": [_UUID()],
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "open_product_selection_gate": {
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "submit_onboarding_input": {
@@ -880,13 +901,15 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # FI Lane D D0 adds REQ-21's four thread-shell tools (48 → 52), each with exactly one version,
     # and D4 adds the one gate-presenting tool (52 → 53); Lane E E1 adds the governed
     # on-completion prose synthesis surface, and E3 the governed value-narrative positioning
-    # surface beside it (53 → 55 in the merged tree).
-    assert len(registry.names()) == 57
+    # surface beside it (53 → 55 in the merged tree). S5 adds two product-KB readers and one
+    # human-selection gate (57 → 60).
+    assert len(registry.names()) == 60
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
-    # defaults, taking the address inventory from 64 to 66 without adding names.
-    assert len(registry) == 66
+    # defaults, taking the address inventory from 64 to 66 without adding names. S5's three new
+    # names each have one frozen version, taking the inventory to 69.
+    assert len(registry) == 69
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

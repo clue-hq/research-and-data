@@ -912,6 +912,47 @@
     var(--clue-ds-product-motion-easing-entry) both;
 }
 
+.planApproval[data-gate-kind="product_selection"] {
+  height: auto;
+  gap: 12px;
+}
+
+.productSelectionOptions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.productSelectionOption {
+  display: flex;
+  min-height: 68px;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 8px;
+  background: white;
+  padding: 10px 12px;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.productSelectionOption:hover:not(:disabled) {
+  border-color: var(--clue-ds-color-bg-brand);
+}
+
+.productSelectionOption span {
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.productSelectionOption:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .planApproval > header {
   display: flex;
   align-items: center;

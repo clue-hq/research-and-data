@@ -751,7 +751,7 @@ class ListClientKnowledgeV2Tool(_ClientKnowledgeV2Tool):
         )
 
 
-def _v2_claim_payload(
+def claim_v2_payload(
     claim: Claim,
     *,
     definition: ResolvedFieldDefinition | None,
@@ -879,7 +879,7 @@ class InspectClientClaimV2Tool(_ClientKnowledgeV2Tool):
         output = ClientClaimInspectionV2Output(
             client_entity_id=inputs.client_entity_id,
             client_kb_version=inputs.client_kb_version,
-            claim=_v2_claim_payload(
+            claim=claim_v2_payload(
                 claim,
                 definition=pinned.definitions.get(str(claim.field_key)),
                 now=self._clock(),
@@ -929,6 +929,7 @@ __all__ = [
     "ListClientKnowledgeInput",
     "ListClientKnowledgeTool",
     "ListClientKnowledgeV2Tool",
+    "claim_v2_payload",
     "build_client_knowledge_tools",
     "build_client_knowledge_v2_tools",
 ]

@@ -57,6 +57,11 @@ from clue_api.client_context_authority import (
     trusted_client_kb_version_fields,
 )
 from clue_api.client_knowledge_privacy import client_knowledge_result_subject_bindings
+from clue_api.product_context_authority import (
+    product_scope_for_input_model,
+    trusted_product_scope_fields,
+)
+from clue_api.product_knowledge_privacy import product_knowledge_result_subject_bindings
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
 from clue_api.turn_action import derive_turn_action_ref
 from clue_api.turn_binding import (
@@ -272,6 +277,7 @@ def _trusted_tool_arguments(
         raise ValueError(f"plan arguments carry trusted authority: {sorted(supplied)}")
     turn_fields = trusted_turn_fields(input_model)
     client_kb_version_fields = trusted_client_kb_version_fields(input_model)
+    product_scope_fields = trusted_product_scope_fields(input_model)
     proposed_turn = set(turn_fields) & set(merged)
     if proposed_turn:
         raise ValueError(f"plan arguments carry trusted turn authority: {sorted(proposed_turn)}")
@@ -280,6 +286,11 @@ def _trusted_tool_arguments(
         raise ValueError(
             "plan arguments carry trusted Client-KB authority: "
             f"{sorted(proposed_client_kb_version)}"
+        )
+    proposed_product_scope = set(product_scope_fields) & set(merged)
+    if proposed_product_scope:
+        raise ValueError(
+            f"plan arguments carry trusted Product-KB authority: {sorted(proposed_product_scope)}"
         )
     authority = _trusted_authority(constitution)
     for key in MODEL_FORBIDDEN_AUTHORITY_KEYS & set(input_model.model_fields):
@@ -297,6 +308,14 @@ def _trusted_tool_arguments(
     if client_kb_version is not None:
         for key in client_kb_version_fields:
             merged[key] = client_kb_version
+    product_scope = product_scope_for_input_model(constitution, input_model)
+    if product_scope is not None:
+        product_id, product_kb_version = product_scope
+        for key in product_scope_fields:
+            if key == "product_id":
+                merged[key] = product_id
+            elif key == "product_kb_version":
+                merged[key] = product_kb_version
     return merged
 
 
@@ -1785,9 +1804,17 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             self._tools.get(step.tool.name, step.tool.version),
             result,
         )
-        subject_bindings = client_knowledge_result_subject_bindings(
-            address=operation.address,
-            references=canonical_result.references,
+        subject_bindings = tuple(
+            {
+                *client_knowledge_result_subject_bindings(
+                    address=operation.address,
+                    references=canonical_result.references,
+                ),
+                *product_knowledge_result_subject_bindings(
+                    address=operation.address,
+                    references=canonical_result.references,
+                ),
+            }
         )
         result_ref = await self._artifacts.persist_body(
             workspace_id=self._constitution.workspace_id,

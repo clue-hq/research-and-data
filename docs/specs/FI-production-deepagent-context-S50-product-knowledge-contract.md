@@ -1,6 +1,6 @@
 # S5.0 Product-Knowledge Consumption Contract
 
-**Status:** RATIFIED and contract-frozen 2026-08-15
+**Status:** RATIFIED; S5-A through S5-F implemented and verified 2026-08-15
 
 **Parent:** [Production Deepagent Context Composition](./FI-production-deepagent-context-composition.md)
 
@@ -36,9 +36,11 @@ Selected-product knowledge uses **both** the bounded `ProductKnowledgeCard@1` an
 The model can filter or follow a reference; it can never author a workspace, client, product, or
 knowledge-version coordinate.
 
-S5.0 itself does not claim that these new runtime surfaces exist. Until the S5 production cutover,
-current turns continue to use `ClientKnowledgeCard@1`, company-only S4 tools, and
-`company-account-wide-v1` scope receipts.
+S5.0 was the no-runtime decision gate. S5-A through S5-F now implement the cutover for newly
+submitted production turns: Head-of-ABM profile `v27`, Stage-0 skill `v14`, and Recipe #0 `v9`
+compose `ClientKnowledgeCard@2`, the optional selected-product cards/tools, and
+`company-and-selected-product-v2` receipts. Historical V1 cards, policies, profiles, skills, and
+recipes remain immutable and replayable.
 
 ## 2. Why company and product knowledge are separate
 
@@ -256,7 +258,7 @@ Lineage connects them without making either overwrite the other.
 
 ## 9. S5 implementation checkpoints unlocked by this decision
 
-S5 should be delivered as the following ordered checkpoints:
+S5 was delivered through the following ordered checkpoints:
 
 1. **S5-A — Product field/catalog contracts:** register/freeze `client.product_catalog`, product
    topic taxonomy, `ClientKnowledgeCard@2`, `ProductProfileCard@1`, `ProductKnowledgeCard@1`,
@@ -276,6 +278,94 @@ S5 should be delivered as the following ordered checkpoints:
 
 No checkpoint may silently combine these surfaces or add product scope to the company tools.
 
+### S5-A — complete: product field, card, and tool contracts
+
+- Registered tenant-private `client.product_catalog` plus the product-scoped overview,
+  capability, use-case, differentiation, pricing, integration, competitor, customer-evidence, and
+  positioning fields.
+- Froze V2 company-catalog, product-profile, Product-KB card, cursor, cap, topic, and refusal
+  contracts without changing V1 bytes.
+- Provider/DB-free fixtures prove duplicate IDs, count drift, authority fields, and cross-card
+  ownership fail closed.
+
+**Gate:** `tests/api/test_product_knowledge_contracts_s5a.py` and
+`tests/api/test_product_knowledge_decision_s50.py`.
+
+### S5-B — complete: grounded extraction, synchronization, and lineage
+
+- The official-site materializer commits the account-wide product catalog in the fast corpus and
+  fans detailed per-product extraction over the same immutable background corpus, without a page
+  refetch.
+- Company fields remain `product_id IS NULL` even if an older/project recon already carries a
+  product. Product claims are written only for an exact synchronized spine product.
+- Catalog synchronization is append-only and conservative: exact prior lineage or one alias may
+  reuse a product; name equality alone never merges. Replays reuse provider responses, product
+  rows, lineage, markers, and claims.
+- `client.product_competitor` is registered but deliberately not synthesized from an official
+  site alone: a company's own comparison page is not an exhaustive competitor source. It remains
+  an honest gap until a separately governed source fills it.
+
+**Gate:** `tests/official_site/test_materialization_c7_db.py` proves concurrent grounded writes,
+fast/background separation, exact product targeting, same-name ambiguity, alias reuse, prior
+lineage reuse, DSAR reach, replay with zero added model/provider work, and account-wide scope under
+a pre-existing recon product.
+
+### S5-C — complete: exact readers and deterministic cards
+
+- Added exact-version product membership reads and deterministic compilers for
+  `ClientKnowledgeCard@2`, `ProductProfileCard@1`, and `ProductKnowledgeCard@1`.
+- Catalog and Product-KB omissions carry scope-bound cursors. Cross-product, cross-workspace,
+  wrong-version, and unavailable-product states fail closed; a selected product with no Product-KB
+  remains an honest profile-only state.
+
+**Gate:** `tests/api/test_product_context_s5c_db.py`.
+
+### S5-D — complete: governed product reads
+
+- Registered separate `list_product_knowledge@1` and `inspect_product_claim@1` tools. The model
+  sees only filters/cursor/claim ID; the execution seam injects client, selected product, and exact
+  Product-KB version from the immutable turn constitution.
+- Profile `v27`, Recipe #0 `v9`, and skill `v14` pin the tools. They are installed only when the
+  exact `product_knowledge` artifact exists; company and product tools cannot cross scopes.
+- Exact-value copies bind client, product, and claim subjects; streams expose references only.
+  Reads are effect-free and replay with zero writes or provider spend.
+
+**Gate:** `tests/api/test_product_knowledge_tools_s5d.py`,
+`tests/api/test_product_knowledge_tools_s5d_db.py`, catalog/profile/recipe audits, and the S4-E
+privacy regression.
+
+### S5-E — complete: durable pair pin and real production composition
+
+- Alembic revision `1043a61823f1` additively stores `product_kb_version`, product extraction
+  lineage, and the reviewed selection-gate schema while preserving V1 receipt meaning.
+- New turns resolve company and optional selected-product markers in one PostgreSQL statement and
+  reuse the immutable pair through retry, checkpoint, finalization, and replay.
+- The real `AGENT_TURN` fleet composes V2 company, active-project Stage-0, optional product profile,
+  and optional Product-KB artifacts through the seven-layer assembler. Product/card/tool copies
+  are product-subject-bound for DSAR.
+
+**Gate:** `tests/api/test_production_context_s31_scope_pin_db.py` and
+`tests/api/test_production_context_s31_fleet_db.py` prove exact original pins, profile-only state,
+real tool execution, LangGraph checkpoint/finalization replay, and product/client DSAR reach.
+
+### S5-F — complete: human selection and next-turn refresh
+
+- The model-callable `open_product_selection_gate@1` has no model-visible arguments. It derives the
+  exact pinned catalog, project, addressee, digest, and candidates and writes only an idempotent,
+  zero-spend question.
+- The production chat route validates the human's structured choice against that immutable
+  snapshot and invokes existing human-only `confirm_project_product@1` in the same transaction.
+  Rejection/revision cannot smuggle a choice; the database enforces the same invariant.
+- The frontend parses the additive gate shape, renders the durable catalog options, submits the
+  exact product ID, and retains the selected name in history. The trial surface cannot open a gate
+  it cannot compose, while the shared Stage-0 procedure remains readable.
+
+**Gate:** `tests/api/test_product_selection_s5f.py` and
+`tests/api/test_product_selection_s5f_db.py` prove Projects A/B select different products, next
+turn exact pair/profile-only behavior, stale/foreign choice refusal, human-only authority,
+immutable no-repoint behavior, cross-brand refusal, request replay, and original-turn pin
+stability. The complete frontend test/lint/design-system/build gate also passes.
+
 ## 10. S5.0 exit evidence
 
 S5.0 passes when:
@@ -287,3 +377,7 @@ S5.0 passes when:
 - existing `ClientKnowledgeCard@1` and S4 `@2` inputs remain unchanged;
 - each future runtime/migration responsibility has one explicit S5 checkpoint owner;
 - documentation says clearly that S5.0 is contract-complete but runtime behavior is not live.
+
+That final statement is the historical S5.0 exit condition. It was superseded only after every
+S5-A–F gate above passed; it remains useful to explain why no runtime work was admitted during the
+decision checkpoint itself.

@@ -132,6 +132,10 @@ class GateResponseRequest(_Request):
     decision: Literal["approved", "rejected", "revised"]
     expected_subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_estimated_cost_cents: Decimal = Field(ge=0)
+    # Present only for a product-selection gate.  It is a human choice, never an authority
+    # coordinate: the server proves it is a member of the gate's immutable candidate snapshot and
+    # then invokes the human-only confirmation tool with ambient workspace/project authority.
+    selected_product_id: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class ContextRefRequest(_Request):
@@ -223,14 +227,19 @@ def gate_response_message(response: GateResponseRequest) -> str:
     message under a used key.
     """
 
+    payload: dict[str, str] = {
+        "kind": "gate_response",
+        "gate_id": response.gate_id,
+        "decision": response.decision,
+        "expected_subject_sha256": response.expected_subject_sha256,
+        "expected_estimated_cost_cents": money_text(response.expected_estimated_cost_cents),
+    }
+    # Preserve byte-for-byte compatibility for historical directive answers: an absent optional
+    # product choice adds no new null member to their canonical transcript record.
+    if response.selected_product_id is not None:
+        payload["selected_product_id"] = response.selected_product_id
     return json.dumps(
-        {
-            "kind": "gate_response",
-            "gate_id": response.gate_id,
-            "decision": response.decision,
-            "expected_subject_sha256": response.expected_subject_sha256,
-            "expected_estimated_cost_cents": money_text(response.expected_estimated_cost_cents),
-        },
+        payload,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -503,6 +512,7 @@ class GateAnswerWire(_Wire):
     turn_id: str
     action_ref: str
     decision: str
+    selected_option_ref: str | None
     answered_by_user_id: str
     answered_at: str
 
@@ -584,6 +594,7 @@ def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWi
                 turn_id=view.answer.turn_id,
                 action_ref=view.answer.action_ref,
                 decision=view.answer.decision,
+                selected_option_ref=view.answer.selected_option_ref,
                 answered_by_user_id=view.answer.answered_by_user_id,
                 answered_at=view.answer.answered_at.isoformat(),
             )

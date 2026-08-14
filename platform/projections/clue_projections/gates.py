@@ -45,6 +45,7 @@ class GateAnswerView(BaseModel):
     turn_id: str
     action_ref: str
     decision: str
+    selected_option_ref: str | None
     answered_by_user_id: str
     answered_at: datetime
 
@@ -140,7 +141,8 @@ _THREAD_GATES_SQL = text(
     SELECT g.gate_id, g.workspace_id, g.project_id, g.thread_id, g.turn_id, g.kind,
            g.subject_ref, g.subject_revision, g.expected_subject_sha256, g.subject_snapshot,
            g.max_spend_cents, g.currency, g.addressee_user_id, g.created_at,
-           a.turn_id AS answer_turn_id, a.action_ref, a.decision, a.answered_by_user_id,
+           a.turn_id AS answer_turn_id, a.action_ref, a.decision, a.selected_option_ref,
+           a.answered_by_user_id,
            a.answered_at
     FROM agent_gate g
     LEFT JOIN agent_gate_answer a
@@ -224,6 +226,9 @@ async def thread_gates(
                 turn_id=str(row["answer_turn_id"]),
                 action_ref=str(row["action_ref"]),
                 decision=str(row["decision"]),
+                selected_option_ref=(
+                    None if row["selected_option_ref"] is None else str(row["selected_option_ref"])
+                ),
                 answered_by_user_id=str(row["answered_by_user_id"]),
                 answered_at=row["answered_at"],
             )

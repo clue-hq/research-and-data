@@ -45,6 +45,7 @@ from clue_api.execution_wiring import (
     StorageParameterArtifactStore,
     build_tool_invoker,
 )
+from clue_api.product_knowledge_privacy import product_subject_id
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
     build_recipe_pin_registry,
@@ -75,6 +76,7 @@ from clue_fleet import (
 )
 from clue_research.stage0 import (
     CLIENT_KNOWLEDGE_FIELDS,
+    PRODUCT_KNOWLEDGE_FIELDS,
     ClientInput,
     VolunteeredMaterial,
     reverse_profile,
@@ -139,6 +141,17 @@ class _ConnQueue:
 
 def _responses() -> tuple[AIMessage, ...]:
     return (
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "list_product_knowledge",
+                    "args": {"limit": 3},
+                    "id": "s31-list-product-kb",
+                    "type": "tool_call",
+                }
+            ],
+        ),
         AIMessage(
             content="",
             tool_calls=[
@@ -325,7 +338,45 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                     max_source_tier=0,
                 )
                 assert original_pin.client_kb_version is not None
+                assert original_pin.product_kb_version == seeded.product_kb_version
                 assert background.ref.client_kb_version == original_pin.client_kb_version + 1
+                product_background = await reverse_profile(
+                    conn,
+                    ClientInput(
+                        name="Production Context Customer",
+                        website=(
+                            "https://"
+                            f"{seeded.workspace_id.removeprefix('production-context-s3-')}.example"
+                        ),
+                        materials=(
+                            VolunteeredMaterial(
+                                kind="background_product_recon",
+                                label="fleet product vN+1",
+                                content="Product recon advanced during the pinned turn.",
+                                asserted_fields={
+                                    key: (
+                                        f"fleet product vN+1 {key}"
+                                        if key
+                                        in {
+                                            "client.product_overview",
+                                            "client.product_differentiator",
+                                            "client.product_positioning",
+                                        }
+                                        else {"summary": f"fleet product vN+1 {key}"}
+                                    )
+                                    for key in PRODUCT_KNOWLEDGE_FIELDS
+                                },
+                            ),
+                        ),
+                    ),
+                    workspace_id=seeded.workspace_id,
+                    product_id=seeded.product.product_id,
+                    budget_cap_cents=Decimal(0),
+                    max_source_tier=0,
+                )
+                assert (
+                    product_background.ref.client_kb_version == original_pin.product_kb_version + 1
+                )
 
                 await dispatch_next_thread_turn(
                     conn,
@@ -380,7 +431,8 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                     (
                         await conn.execute(
                             text(
-                                "SELECT client_kb_version, knowledge_scope_policy_version "
+                                "SELECT client_kb_version, product_kb_version, "
+                                "knowledge_scope_policy_version "
                                 "FROM agent_turn_scope_pin WHERE turn_id=:turn"
                             ),
                             {"turn": submission.turn_id},
@@ -390,6 +442,10 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                     .one()
                 )
                 assert int(pin_row["client_kb_version"]) == original_pin.client_kb_version
+                assert int(pin_row["product_kb_version"]) == original_pin.product_kb_version
+                assert (
+                    pin_row["knowledge_scope_policy_version"] == "company-and-selected-product-v2"
+                )
 
                 # L3 receipts point at the exact immutable card artifact fed to the model. The
                 # card's domain ref is metadata for governed tools; the assembly receipt retains
@@ -406,13 +462,41 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                     )
                 ).scalar_one()
                 context_card = json.loads(await storage.get(str(context_card_key)))
-                assert context_card["client"]["client_kb_version"] == original_pin.client_kb_version
+                assert context_card["company_client_kb_version"] == original_pin.client_kb_version
+                assert context_card["company_client_kb_version"] != background.ref.client_kb_version
+
+                product_profile_key = (
+                    await conn.execute(
+                        text(
+                            "SELECT r.artifact_key FROM agent_context_ref r "
+                            "JOIN agent_context_bundle b ON b.id=r.context_bundle_id "
+                            "WHERE b.turn_id=:turn AND r.disposition='included' "
+                            "AND r.materialized_path='context/project/product_profile.json'"
+                        ),
+                        {"turn": submission.turn_id},
+                    )
+                ).scalar_one()
+                product_profile_card = json.loads(await storage.get(str(product_profile_key)))
+                assert product_profile_card["product_id"] == seeded.product.product_id
+
+                product_knowledge_key = (
+                    await conn.execute(
+                        text(
+                            "SELECT r.artifact_key FROM agent_context_ref r "
+                            "JOIN agent_context_bundle b ON b.id=r.context_bundle_id "
+                            "WHERE b.turn_id=:turn AND r.disposition='included' "
+                            "AND r.materialized_path='context/project/product_knowledge.json'"
+                        ),
+                        {"turn": submission.turn_id},
+                    )
+                ).scalar_one()
+                product_knowledge_card = json.loads(await storage.get(str(product_knowledge_key)))
                 assert (
-                    context_card["compiled_from"]["client_kb_version"]
-                    == original_pin.client_kb_version
+                    product_knowledge_card["product_kb_version"] == original_pin.product_kb_version
                 )
                 assert (
-                    context_card["client"]["client_kb_version"] != background.ref.client_kb_version
+                    product_knowledge_card["product_kb_version"]
+                    != product_background.ref.client_kb_version
                 )
 
                 stage0_card_key = (
@@ -464,6 +548,42 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                 assert (
                     tool_body["references"]["client_kb_version"] != background.ref.client_kb_version
                 )
+                product_tool_result_key = (
+                    await conn.execute(
+                        text(
+                            "SELECT r.result_artifact_key FROM agent_tool_result r "
+                            "JOIN agent_plan_operation o ON o.operation_id=r.operation_id "
+                            "WHERE o.address='list_product_knowledge@1'"
+                        )
+                    )
+                ).scalar_one()
+                product_tool_body = json.loads(await storage.get(str(product_tool_result_key)))
+                product_tool_refs = product_tool_body["references"]
+                assert product_tool_refs["client_entity_id"] == str(seeded.client_entity_id)
+                assert product_tool_refs["product_id"] == seeded.product.product_id
+                assert product_tool_refs["product_kb_version"] == original_pin.product_kb_version
+                assert product_tool_refs["knowledge"]
+                product_subject = product_subject_id(seeded.product.product_id)
+                product_bound_artifacts = set(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT artifact_key FROM agent_artifact_subject "
+                                "WHERE workspace_id=:workspace "
+                                "AND subject_entity_id=:product"
+                            ),
+                            {
+                                "workspace": seeded.workspace_id,
+                                "product": product_subject,
+                            },
+                        )
+                    ).scalars()
+                )
+                assert {
+                    str(product_profile_key),
+                    str(product_knowledge_key),
+                    str(product_tool_result_key),
+                } <= product_bound_artifacts
 
                 assert (
                     int(
@@ -533,6 +653,13 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                 assert submission.turn_id in erased.erase.affected_turn_ids
                 with pytest.raises(ArtifactNotFound):
                     await storage.get(str(stage0_card_key))
+                # A project-statement DSAR removes the quote-bearing Stage-0 body and propagated
+                # checkpoint/tool messages, but does not over-erase the reusable product card that
+                # contains no statement. Product/client DSAR reach uses its own subject bindings.
+                assert await storage.get(str(product_knowledge_key))
+                assert await storage.get(str(product_profile_key))
+                with pytest.raises(ArtifactNotFound):
+                    await storage.get(str(product_tool_result_key))
                 remaining_checkpoint_namespaces = tuple(
                     (
                         await conn.execute(
@@ -555,6 +682,20 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                     reason.startswith("artifact_erased:") for reason in blocked_replay.blocker_codes
                 )
                 assert models.build_count == 1
+
+                # The reusable product artifacts have their own product-subject reach. Erasing the
+                # product now removes the profile/knowledge bodies that statement DSAR correctly
+                # left alone; the earlier binding assertion proves the same reach included the
+                # exact product tool body before the turn-level propagation erased it.
+                product_erasure = await components.privacy.erase_subject(
+                    workspace_id=seeded.workspace_id,
+                    subject_entity_id=product_subject,
+                )
+                assert str(product_profile_key) in product_erasure.tombstoned_artifact_keys
+                assert str(product_knowledge_key) in product_erasure.tombstoned_artifact_keys
+                for key in (product_profile_key, product_knowledge_key):
+                    with pytest.raises(ArtifactNotFound):
+                        await storage.get(str(key))
             finally:
                 workspaces.close()
 

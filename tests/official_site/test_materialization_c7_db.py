@@ -42,6 +42,7 @@ from clue_research.official_site import (
     compute_snapshot_set_sha256,
 )
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import finalize_client_kb_version
 from clue_research.stage0.fields import load_client_knowledge_pack
 from clue_spine import create_product, list_products
 from clue_storage import FsStorage, artifact_key, content_address
@@ -59,6 +60,7 @@ class _Scope:
     client_entity_id: UUID
     crawl_run_id: UUID
     checkpoint_id: UUID
+    phase: CrawlPhase = CrawlPhase.FAST
 
 
 class _Gateway:
@@ -113,6 +115,14 @@ class _Gateway:
                         "aliases": ["Acme Voice"],
                     }
                 ]
+            elif field_key in {
+                "client.product_capability",
+                "client.product_use_case",
+                "client.product_pricing",
+                "client.product_integration",
+                "client.product_customer_evidence",
+            }:
+                value = {"summary": f"Grounded {field_key}"}
             else:
                 value = f"Grounded {field_key}"
             response = {
@@ -176,12 +186,18 @@ class _TrackingFactory:
         return _TrackingContext(self)
 
 
-async def _seed_scope(storage: FsStorage, *, include_marker: bool = True) -> _Scope:
+async def _seed_scope(
+    storage: FsStorage,
+    *,
+    include_marker: bool = True,
+    phase: CrawlPhase = CrawlPhase.FAST,
+) -> _Scope:
     workspace_id = f"official-site-c7-{uuid4()}"
     brand_id = f"brand-{uuid4()}"
     recon_run_id = uuid4()
-    claim_run_id = uuid4()
+    fast_run_id = uuid4()
     background_run_id = uuid4()
+    claim_run_id = fast_run_id if phase is CrawlPhase.FAST else background_run_id
     crawl_run_id = uuid4()
     checkpoint_id = uuid4()
 
@@ -227,7 +243,7 @@ async def _seed_scope(storage: FsStorage, *, include_marker: bool = True) -> _Sc
                 "workspace_id": workspace_id,
                 "brand_id": brand_id,
                 "dedupe_hash": hashlib.sha256(str(recon_run_id).encode()).hexdigest(),
-                "fast_run_id": claim_run_id,
+                "fast_run_id": fast_run_id,
                 "background_run_id": background_run_id,
                 "client_entity_id": client_entity_id,
             },
@@ -422,7 +438,7 @@ async def _seed_scope(storage: FsStorage, *, include_marker: bool = True) -> _Sc
                     id, workspace_id, crawl_run_id, phase, version, snapshot_ids_json,
                     snapshot_set_sha256, coverage_json
                 ) VALUES (
-                    :id, :workspace_id, :crawl_run_id, 'fast', 1,
+                    :id, :workspace_id, :crawl_run_id, :phase, 1,
                     CAST(:snapshot_ids AS jsonb), :snapshot_hash,
                     CAST(:coverage AS jsonb)
                 )
@@ -432,6 +448,7 @@ async def _seed_scope(storage: FsStorage, *, include_marker: bool = True) -> _Sc
                 "id": checkpoint_id,
                 "workspace_id": workspace_id,
                 "crawl_run_id": crawl_run_id,
+                "phase": phase.value,
                 "snapshot_ids": json.dumps([str(item) for item in ordered]),
                 "snapshot_hash": compute_snapshot_set_sha256(ordered),
                 "coverage": json.dumps({"snapshot_count": len(ordered)}),
@@ -445,6 +462,7 @@ async def _seed_scope(storage: FsStorage, *, include_marker: bool = True) -> _Sc
         client_entity_id=client_entity_id,
         crawl_run_id=crawl_run_id,
         checkpoint_id=checkpoint_id,
+        phase=phase,
     )
 
 
@@ -456,7 +474,7 @@ def _request(scope: _Scope, *, model: str = "openai/gpt-5.6-luna") -> Any:
         claim_run_id=scope.claim_run_id,
         client_entity_id=scope.client_entity_id,
         checkpoint_id=scope.checkpoint_id,
-        phase=CrawlPhase.FAST,
+        phase=scope.phase,
         model_id=model,
         prompt_version=EXTRACTION_PROMPT_VERSION,
         schema_version=EXTRACTION_SCHEMA_VERSION,
@@ -635,6 +653,191 @@ def test_catalog_materialization_synchronizes_product_once_and_replays_without_s
     run_async(wrapped())
 
 
+def test_company_materialization_stays_account_wide_when_recon_has_a_product(
+    tmp_path: Path,
+) -> None:
+    """A legacy/project recon product is not authority to relabel company facts as product facts."""
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "s5-company-scope-artifacts")
+        scope = await _seed_scope(storage, include_marker=False)
+        gateway = _Gateway()
+        async with transaction() as conn:
+            await bind_workspace_client(
+                conn,
+                workspace_id=scope.workspace_id,
+                client_entity_id=scope.client_entity_id,
+                source_recon_run_id=scope.recon_run_id,
+            )
+            selected = await create_product(
+                conn,
+                workspace_id=scope.workspace_id,
+                brand_id=scope.brand_id,
+                name="Human-selected legacy product",
+            )
+            await conn.execute(
+                text(
+                    "UPDATE recon_run SET product_id=:product_id "
+                    "WHERE id=:recon_run_id AND workspace_id=:workspace_id"
+                ),
+                {
+                    "product_id": selected.product_id,
+                    "recon_run_id": scope.recon_run_id,
+                    "workspace_id": scope.workspace_id,
+                },
+            )
+        materializer = GroundedOfficialSiteMaterializer(
+            gateway=gateway,  # type: ignore[arg-type]
+            storage=storage,
+            client_kb_committer=_AuthoritativeClientKbCommitter(transaction),
+            product_catalog_synchronizer=ProductCatalogSynchronizer(transaction),
+        )
+
+        result = await materializer.materialize(_request(scope))
+        assert result.client_kb_version == 1
+        async with transaction() as conn:
+            rows = list(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT field_key, product_id FROM claim "
+                            "WHERE workspace_id=:workspace_id AND run_id=:run_id "
+                            "ORDER BY field_key"
+                        ),
+                        {
+                            "workspace_id": scope.workspace_id,
+                            "run_id": scope.claim_run_id,
+                        },
+                    )
+                ).all()
+            )
+        assert rows
+        assert {row.product_id for row in rows} == {None}
+        assert "client.product_catalog" in {row.field_key for row in rows}
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())
+
+
+def test_background_catalog_materializes_exact_product_knowledge_without_refetch_or_replay_spend(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "s5-product-artifacts")
+        scope = await _seed_scope(
+            storage,
+            include_marker=False,
+            phase=CrawlPhase.BACKGROUND,
+        )
+        gateway = _Gateway()
+        async with transaction() as conn:
+            await bind_workspace_client(
+                conn,
+                workspace_id=scope.workspace_id,
+                client_entity_id=scope.client_entity_id,
+                source_recon_run_id=scope.recon_run_id,
+            )
+        materializer = GroundedOfficialSiteMaterializer(
+            gateway=gateway,  # type: ignore[arg-type]
+            storage=storage,
+            client_kb_committer=_AuthoritativeClientKbCommitter(transaction),
+            product_catalog_synchronizer=ProductCatalogSynchronizer(transaction),
+            extraction_concurrency=4,
+        )
+
+        result = await materializer.materialize(_request(scope))
+        calls = len(gateway.calls)
+        assert calls == 20  # 12 company/category operations + 8 official product fields.
+        async with transaction() as conn:
+            products = await list_products(conn, scope.brand_id)
+            assert len(products) == 1
+            product = products[0]
+            rows = list(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT field_key, product_id FROM claim "
+                            "WHERE workspace_id=:workspace_id AND run_id=:run_id "
+                            "AND product_id IS NOT NULL ORDER BY field_key"
+                        ),
+                        {
+                            "workspace_id": scope.workspace_id,
+                            "run_id": scope.claim_run_id,
+                        },
+                    )
+                ).all()
+            )
+            product_fields = {row.field_key for row in rows if row.field_key != "client.kb_version"}
+            assert product_fields == {
+                "client.product_overview",
+                "client.product_capability",
+                "client.product_use_case",
+                "client.product_differentiator",
+                "client.product_pricing",
+                "client.product_integration",
+                "client.product_customer_evidence",
+                "client.product_positioning",
+            }
+            assert {row.product_id for row in rows} == {product.product_id}
+            marker = (
+                await conn.execute(
+                    text(
+                        "SELECT value_json FROM claim WHERE workspace_id=:workspace_id "
+                        "AND entity_id=:client_entity_id AND field_key='client.kb_version' "
+                        "AND product_id=:product_id"
+                    ),
+                    {
+                        "workspace_id": scope.workspace_id,
+                        "client_entity_id": scope.client_entity_id,
+                        "product_id": product.product_id,
+                    },
+                )
+            ).scalar_one()
+            assert marker["version"] == 1
+            operation_rows = list(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT DISTINCT product_id FROM official_site_extraction_operation "
+                            "WHERE workspace_id=:workspace_id AND product_id IS NOT NULL"
+                        ),
+                        {"workspace_id": scope.workspace_id},
+                    )
+                ).scalars()
+            )
+            assert operation_rows == [product.product_id]
+            recon = (
+                await conn.execute(
+                    text("SELECT background_status FROM recon_run WHERE id=:id"),
+                    {"id": scope.recon_run_id},
+                )
+            ).scalar_one()
+            assert recon == "completed"
+
+        replay = await materializer.materialize(_request(scope))
+        assert replay == result
+        assert len(gateway.calls) == calls
+        async with transaction() as conn:
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM official_site_extraction_operation "
+                        "WHERE workspace_id=:workspace_id"
+                    ),
+                    {"workspace_id": scope.workspace_id},
+                )
+            ).scalar_one() == 20
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())
+
+
 def test_catalog_sync_uses_alias_authority_refuses_name_only_merge_and_is_dsar_reachable(
     tmp_path: Path,
 ) -> None:
@@ -743,6 +946,79 @@ def test_catalog_sync_uses_alias_authority_refuses_name_only_merge_and_is_dsar_r
     run_async(wrapped())
 
 
+def test_catalog_sync_reuses_exact_prior_lineage_across_company_versions(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        scope = await _seed_scope(FsStorage(tmp_path / "s5-catalog-version-reuse"))
+        catalog_value = [
+            {
+                "name": "Acme Phone Agents",
+                "short_description": "AI agents for healthcare scheduling calls",
+                "aliases": ["Acme Voice"],
+            }
+        ]
+        async with transaction() as conn:
+            await bind_workspace_client(
+                conn,
+                workspace_id=scope.workspace_id,
+                client_entity_id=scope.client_entity_id,
+                source_recon_run_id=scope.recon_run_id,
+            )
+            claim_v1 = Claim(
+                entity_id=scope.client_entity_id,
+                entity_type=EntityType.ACCOUNT,
+                field_key="client.product_catalog",
+                value_json=catalog_value,
+                source_tier=2,
+                source_url="https://example.com/products",
+                extraction_method=ExtractionMethod.SCRAPE,
+                confidence=0.9,
+                run_id=RunId(scope.claim_run_id),
+                research_mode=ResearchMode.ACCOUNT_PROFILING,
+                reuse_scope=ReuseScope.TENANT_PRIVATE,
+                workspace_id=scope.workspace_id,
+            )
+            await insert_claim(conn, claim_v1)
+        synchronizer = ProductCatalogSynchronizer(transaction)
+        first = await synchronizer.synchronize(_request(scope), company_client_kb_version=1)
+        assert first.lineages[0].resolution_state == "created"
+
+        second_run = RunId(uuid4())
+        async with transaction() as conn:
+            await record_run_lineage(
+                conn,
+                run_id=second_run,
+                workspace_id=scope.workspace_id,
+                kind="stage0",
+            )
+            claim_v2 = claim_v1.model_copy(update={"id": uuid4(), "run_id": second_run})
+            await insert_claim(conn, claim_v2)
+            version = await finalize_client_kb_version(
+                conn,
+                client_entity_id=scope.client_entity_id,
+                workspace_id=scope.workspace_id,
+                run_id=second_run,
+                filled_fields={"client.product_catalog"},
+                attempted_fields={"client.product_catalog"},
+                product_id=None,
+            )
+        assert version == 2
+        second = await synchronizer.synchronize(
+            _request(scope).model_copy(update={"claim_run_id": second_run}),
+            company_client_kb_version=2,
+        )
+        assert second.lineages[0].resolution_state == "lineage_reused"
+        assert second.lineages[0].product_id == first.lineages[0].product_id
+        assert second.product_targets == first.product_targets
+        async with transaction() as conn:
+            assert len(await list_products(conn, scope.brand_id)) == 1
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())
+
+
 def test_authoritative_committer_publishes_marker_and_fast_lane_after_claims(
     tmp_path: Path,
 ) -> None:
@@ -772,6 +1048,10 @@ def test_authoritative_committer_publishes_marker_and_fast_lane_after_claims(
             attempted_fields={"client.value_prop", "client.product"},
         )
         assert version == 1
+        await committer.complete(
+            _request(scope),
+            company_client_kb_version=version,
+        )
         async with transaction() as conn:
             marker = (
                 (

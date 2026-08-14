@@ -31,6 +31,7 @@ const GateAnswerWireSchema = z.object({
   turn_id: z.string(),
   action_ref: z.string(),
   decision: z.string(),
+  selected_option_ref: z.string().nullable().default(null),
   answered_by_user_id: z.string(),
   answered_at: z.string(),
 });
@@ -72,6 +73,7 @@ export interface ChatGateAnswer {
   turnId: string;
   actionRef: string;
   decision: string;
+  selectedOptionRef: string | null;
   answeredByUserId: string;
   answeredAt: string;
 }
@@ -125,6 +127,7 @@ function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
             turnId: wire.answer.turn_id,
             actionRef: wire.answer.action_ref,
             decision: wire.answer.decision,
+            selectedOptionRef: wire.answer.selected_option_ref,
             answeredByUserId: wire.answer.answered_by_user_id,
             answeredAt: wire.answer.answered_at,
           },
@@ -186,6 +189,16 @@ export interface GateCardModel {
   unavailableReason: string | null;
   /** The research run an approved gate's authority actually launched. */
   launches: readonly ChatGateLaunch[];
+  productOptions: readonly ProductSelectionOption[];
+  selectedProductId: string | null;
+}
+
+export interface ProductSelectionOption {
+  productId: string;
+  name: string;
+  shortDescription: string;
+  aliases: readonly string[];
+  status: string;
 }
 
 const ALL_DECISIONS: readonly GateDecision[] = [
@@ -201,6 +214,7 @@ function decisionOf(value: string | null): GateDecision | null {
 
 const GATE_TITLES: Record<string, string> = {
   directive_confirmation: "Confirm research launch",
+  product_selection: "Choose this project's product",
   plan_approval: "Approve plan",
   budget_approval: "Approve budget",
 };
@@ -249,6 +263,7 @@ export function gateCardModel({
   // case; it stays clickable and the server answers with `GATE_AMOUNT_STALE`
   // rather than the client guessing which posture the deployment is in.
   const answerable = expectedSubjectSha256 !== null && decision === null;
+  const productOptions = productSelectionOptions(gate?.subjectSnapshot);
 
   let state: GateCardState;
   if (decision === "approved") state = "responded";
@@ -281,7 +296,38 @@ export function gateCardModel({
           "this deployment did not serve the gate's subject digest")
         : null,
     launches: gate?.launches ?? [],
+    productOptions,
+    selectedProductId: gate?.answer?.selectedOptionRef ?? null,
   };
+}
+
+function productSelectionOptions(
+  snapshot: Record<string, unknown> | undefined,
+): readonly ProductSelectionOption[] {
+  if (!snapshot || !Array.isArray(snapshot.products)) return [];
+  return snapshot.products.flatMap((candidate) => {
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      typeof (candidate as Record<string, unknown>).product_id !== "string" ||
+      typeof (candidate as Record<string, unknown>).name !== "string" ||
+      typeof (candidate as Record<string, unknown>).short_description !== "string"
+    ) {
+      return [];
+    }
+    const item = candidate as Record<string, unknown>;
+    return [
+      {
+        productId: item.product_id as string,
+        name: item.name as string,
+        shortDescription: item.short_description as string,
+        aliases: Array.isArray(item.aliases)
+          ? item.aliases.filter((alias): alias is string => typeof alias === "string")
+          : [],
+        status: typeof item.status === "string" ? item.status : "active",
+      },
+    ];
+  });
 }
 
 /** Money is formatted by the client (D-5); the backend never sends a string. */

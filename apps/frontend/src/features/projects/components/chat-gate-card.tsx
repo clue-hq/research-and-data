@@ -56,9 +56,16 @@ export function ChatGateCard({
 }: {
   busy?: boolean;
   card: GateCardModel;
-  onDecide: (card: GateCardModel, decision: GateDecision) => void;
+  onDecide: (
+    card: GateCardModel,
+    decision: GateDecision,
+    selectedProductId?: string,
+  ) => void;
 }) {
-  const amount = formatCents(card.amountCents, card.currency);
+  const amount =
+    card.kind === "product_selection"
+      ? null
+      : formatCents(card.amountCents, card.currency);
   const answerable = card.state === "requested" && !busy;
 
   return (
@@ -68,6 +75,7 @@ export function ChatGateCard({
         ...(card.decision === null ? {} : { approved: card.decision === "approved" }),
       }}
       className={styles.planApproval}
+      data-gate-kind={card.kind}
       data-gate-state={card.state}
       state={PRIMITIVE_STATE[card.state]}
     >
@@ -83,17 +91,37 @@ export function ChatGateCard({
             {card.unavailableReason}
           </p>
         ) : null}
+        {card.kind === "product_selection" && card.productOptions.length > 0 ? (
+          <div className={styles.productSelectionOptions}>
+            {card.productOptions.map((product) => (
+              <button
+                className={styles.productSelectionOption}
+                disabled={!answerable}
+                key={product.productId}
+                onClick={() => onDecide(card, "approved", product.productId)}
+                type="button"
+              >
+                <strong>{product.name}</strong>
+                <span>{product.shortDescription}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <ConfirmationActions className={styles.planApprovalActions}>
-          {card.permittedDecisions.map((decision) => (
-            <ConfirmationAction
-              className={decision === "approved" ? styles.acceptButton : undefined}
-              disabled={!answerable}
-              key={decision}
-              onClick={() => onDecide(card, decision)}
-            >
-              {DECISION_COPY[decision]}
-            </ConfirmationAction>
-          ))}
+          {card.permittedDecisions
+            .filter(
+              (decision) => card.kind !== "product_selection" || decision !== "approved",
+            )
+            .map((decision) => (
+              <ConfirmationAction
+                className={decision === "approved" ? styles.acceptButton : undefined}
+                disabled={!answerable}
+                key={decision}
+                onClick={() => onDecide(card, decision)}
+              >
+                {DECISION_COPY[decision]}
+              </ConfirmationAction>
+            ))}
         </ConfirmationActions>
       </ConfirmationRequest>
       {card.decision ? (
@@ -104,6 +132,13 @@ export function ChatGateCard({
           />
           <span>
             {DECISION_RECORDED[card.decision]}
+            {card.selectedProductId
+              ? ` — ${
+                  card.productOptions.find(
+                    (product) => product.productId === card.selectedProductId,
+                  )?.name ?? card.selectedProductId
+                }`
+              : ""}
             {amount && card.decision === "approved" ? ` — up to ${amount}` : ""}
           </span>
           {card.launches.length > 0 ? (

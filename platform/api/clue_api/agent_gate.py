@@ -41,10 +41,12 @@ __all__ = [
     "GATE_KINDS",
     "GATE_OBJECT_TYPE",
     "KIND_DIRECTIVE_CONFIRMATION",
+    "KIND_PRODUCT_SELECTION",
     "AgentGateAnswerRow",
     "AgentGateRow",
     "GateAlreadyAnswered",
     "directive_confirmation_gate_id",
+    "product_selection_gate_id",
     "gate_answer_for_turn",
     "get_gate",
     "insert_gate",
@@ -63,7 +65,13 @@ GATE_OBJECT_TYPE = "agent_gate"
 #: The one kind D4 builds. The others exist in the DB CHECK because §3-P5(a) names them; a gate
 #: substrate whose second kind needs a migration was never generic.
 KIND_DIRECTIVE_CONFIRMATION = "directive_confirmation"
-GATE_KINDS = (KIND_DIRECTIVE_CONFIRMATION, "plan_approval", "budget_approval")
+KIND_PRODUCT_SELECTION = "product_selection"
+GATE_KINDS = (
+    KIND_DIRECTIVE_CONFIRMATION,
+    KIND_PRODUCT_SELECTION,
+    "plan_approval",
+    "budget_approval",
+)
 
 #: What a human may answer. ``revised`` is not a soft ``rejected``: it records "I want changes",
 #: which closes this gate and invites the agent to draft again, while ``rejected`` closes the
@@ -75,6 +83,9 @@ DECISIONS = ("approved", "rejected", "revised")
 DEFAULT_GATE_CURRENCY = "USD"
 
 _GATE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:lane-d:d4:directive-confirmation-gate")
+_PRODUCT_SELECTION_GATE_NAMESPACE = uuid5(
+    NAMESPACE_URL, "clue:production-context:s5:product-selection-gate"
+)
 
 _GATE_COLUMNS = (
     "gate_id, workspace_id, project_id, thread_id, turn_id, kind, subject_ref, "
@@ -82,7 +93,8 @@ _GATE_COLUMNS = (
     "addressee_user_id, created_at"
 )
 _ANSWER_COLUMNS = (
-    "gate_id, workspace_id, turn_id, action_ref, decision, answered_by_user_id, answered_at"
+    "gate_id, workspace_id, turn_id, action_ref, decision, selected_option_ref, "
+    "answered_by_user_id, answered_at"
 )
 
 
@@ -143,6 +155,7 @@ class AgentGateAnswerRow(BaseModel):
     turn_id: UUID
     action_ref: str
     decision: str
+    selected_option_ref: str | None
     answered_by_user_id: str
     answered_at: datetime
 
@@ -179,6 +192,22 @@ def directive_confirmation_gate_id(
         for part in (workspace_id, str(turn_id), subject_ref, expected_subject_sha256)
     )
     return uuid5(_GATE_NAMESPACE, framed)
+
+
+def product_selection_gate_id(
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+    subject_ref: str,
+    expected_subject_sha256: str,
+) -> UUID:
+    """Derive one immutable selection gate for one pinned catalog presentation."""
+
+    framed = "".join(
+        f"{len(part)}:{part}"
+        for part in (workspace_id, str(turn_id), subject_ref, expected_subject_sha256)
+    )
+    return uuid5(_PRODUCT_SELECTION_GATE_NAMESPACE, framed)
 
 
 async def insert_gate(
@@ -280,6 +309,7 @@ async def insert_gate_answer(
     action_ref: str,
     decision: str,
     answered_by_user_id: str,
+    selected_option_ref: str | None = None,
 ) -> AgentGateAnswerRow:
     """Record the one answer this gate will ever have.
 
@@ -296,8 +326,9 @@ async def insert_gate_answer(
             await conn.execute(
                 text(
                     "INSERT INTO agent_gate_answer "
-                    "(gate_id, workspace_id, turn_id, action_ref, decision, answered_by_user_id) "
-                    "VALUES (:gate_id, :workspace_id, :turn_id, :action_ref, :decision, :user_id) "
+                    "(gate_id, workspace_id, turn_id, action_ref, decision, selected_option_ref, "
+                    " answered_by_user_id) VALUES (:gate_id, :workspace_id, :turn_id, :action_ref, "
+                    " :decision, :selected_option_ref, :user_id) "
                     f"ON CONFLICT (gate_id) DO NOTHING RETURNING {_ANSWER_COLUMNS}"
                 ),
                 {
@@ -306,6 +337,7 @@ async def insert_gate_answer(
                     "turn_id": turn_id,
                     "action_ref": action_ref,
                     "decision": decision,
+                    "selected_option_ref": selected_option_ref,
                     "user_id": answered_by_user_id,
                 },
             )

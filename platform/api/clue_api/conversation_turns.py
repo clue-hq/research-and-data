@@ -83,9 +83,9 @@ __all__ = [
 #: shown the model three tools that plan validation then refused. The trial surface still withholds
 #: all three, so raising the shared ceiling grants the trial nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
-# FI production context S4-D: the production and trial conversation surfaces share the promoted
-# interaction-slot ceiling. Revision 8 is revision 7 with only the immutable Client-KB @2 cutover.
-CONVERSATION_RECIPE_VERSION = 8
+# S5-D: revision 9 adds only the separate, effect-free selected-product list/inspect reads to the
+# shared interaction ceiling. Product confirmation remains a human-only operation.
+CONVERSATION_RECIPE_VERSION = 9
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface

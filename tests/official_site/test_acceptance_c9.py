@@ -117,7 +117,9 @@ def test_missing_category_builds_empty_operations_without_model_work() -> None:
         storage=object(),  # type: ignore[arg-type]
     )
     operations = materializer._operations(request, corpus)
-    assert len(operations) == 11
+    # S5 adds the grounded company-wide product-catalog operation to the prior eleven Stage-0
+    # fields. It shares the same product-page evidence without changing category eligibility.
+    assert len(operations) == 12
     company = tuple(
         operation
         for operation in operations

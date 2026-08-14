@@ -53,9 +53,16 @@ from clue_api.stage0_card_dsar import (
 )
 from clue_core import EntityId, ExecutionId, OnboardingInputId, OnboardingInputKind
 from clue_db import ConnFactory
-from clue_projections import ClientKnowledgeCard, ProjectConversationCard, Stage0ProjectStateCard
+from clue_projections import (
+    ClientKnowledgeCardV2,
+    ProductKnowledgeCard,
+    ProductProfileCard,
+    ProjectConversationCard,
+    Stage0ProjectStateCard,
+)
 from clue_research.stage0 import (
     CLIENT_KNOWLEDGE_FIELDS,
+    PRODUCT_KNOWLEDGE_FIELDS,
     ClientInput,
     StatementRoute,
     VolunteeredMaterial,
@@ -121,6 +128,7 @@ class _Seeded:
     project_b: Project
     client_entity_id: EntityId
     client_kb_version: int
+    product_kb_version: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,8 +241,17 @@ async def _seed_post_recon(conn: AsyncConnection, *, suffix: str) -> _Seeded:
                         label=f"product facts v{product_revision}",
                         content="Product-scoped facts must not replace account context.",
                         asserted_fields={
-                            key: f"product v{product_revision} {key}"
-                            for key in CLIENT_KNOWLEDGE_FIELDS
+                            key: (
+                                f"product v{product_revision} {key}"
+                                if key
+                                in {
+                                    "client.product_overview",
+                                    "client.product_differentiator",
+                                    "client.product_positioning",
+                                }
+                                else {"summary": f"product v{product_revision} {key}"}
+                            )
+                            for key in PRODUCT_KNOWLEDGE_FIELDS
                         },
                     ),
                 ),
@@ -245,7 +262,7 @@ async def _seed_post_recon(conn: AsyncConnection, *, suffix: str) -> _Seeded:
             max_source_tier=0,
         )
     assert product_profile.ref.client_entity_id == profiled.ref.client_entity_id
-    assert product_profile.ref.client_kb_version == profiled.ref.client_kb_version + 1
+    assert product_profile.ref.client_kb_version == 2
     await bind_workspace_client(
         conn,
         workspace_id=workspace_id,
@@ -259,6 +276,7 @@ async def _seed_post_recon(conn: AsyncConnection, *, suffix: str) -> _Seeded:
         project_b=project_b,
         client_entity_id=profiled.ref.client_entity_id,
         client_kb_version=profiled.ref.client_kb_version,
+        product_kb_version=product_profile.ref.client_kb_version,
     )
 
 
@@ -432,7 +450,9 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
             # Project A has a confirmed product, but its KB pin is still the account-wide marker.
             assert scope_a.product_id == seeded.product.product_id
             assert scope_a.client_kb_version == seeded.client_kb_version
+            assert scope_a.product_kb_version == seeded.product_kb_version
             assert scope_b.client_kb_version == seeded.client_kb_version
+            assert scope_b.product_kb_version is None
 
             bundle_a = await runner._compose_project_context(
                 submission=submission_a,
@@ -445,8 +465,10 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
             assert tuple(item.name for item in bundle_a.artifacts) == (
                 "client_knowledge",
                 "stage0_project_state",
+                "product_profile",
+                "product_knowledge",
             )
-            client_a, stage_a = bundle_a.artifacts
+            client_a, stage_a, profile_a, product_a = bundle_a.artifacts
             client_b, stage_b = bundle_b.artifacts
             assert client_a.artifact_ref == client_b.artifact_ref
             assert client_a.domain_ref.object_id == str(seeded.client_entity_id)
@@ -454,9 +476,18 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
             assert stage_a.domain_ref.object_id == seeded.project_a.project_id
             assert stage_b.domain_ref.object_id == seeded.project_b.project_id
             assert stage_a.artifact_ref != stage_b.artifact_ref
+            assert profile_a.domain_ref.object_id == seeded.product.product_id
+            assert product_a.domain_ref.object_id == seeded.product.product_id
+            assert product_a.domain_ref.version == seeded.product_kb_version
 
-            client_card = ClientKnowledgeCard.model_validate_json(
+            client_card = ClientKnowledgeCardV2.model_validate_json(
                 await artifacts.read(client_a.artifact_ref)
+            )
+            profile_card = ProductProfileCard.model_validate_json(
+                await artifacts.read(profile_a.artifact_ref)
+            )
+            product_card = ProductKnowledgeCard.model_validate_json(
+                await artifacts.read(product_a.artifact_ref)
             )
             card_a = Stage0ProjectStateCard.model_validate_json(
                 await artifacts.read(stage_a.artifact_ref)
@@ -464,7 +495,9 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
             card_b = Stage0ProjectStateCard.model_validate_json(
                 await artifacts.read(stage_b.artifact_ref)
             )
-            assert client_card.client.client_kb_version == seeded.client_kb_version
+            assert client_card.company_client_kb_version == seeded.client_kb_version
+            assert profile_card.product_id == seeded.product.product_id
+            assert product_card.product_kb_version == seeded.product_kb_version
             quotes_a = {item.quoted_text for item in card_a.interview.current_effective_statements}
             quotes_b = {item.quoted_text for item in card_b.interview.current_effective_statements}
             assert quotes_a == {"Project A goal only"}
@@ -740,6 +773,8 @@ def test_kb_pin_receipt_and_missing_or_foreign_context_fail_closed(tmp_path: Pat
             assert assembled.manifest.layers[2].materialized_paths == (
                 "context/project/budget.json",
                 "context/project/client_knowledge.json",
+                "context/project/product_knowledge.json",
+                "context/project/product_profile.json",
                 "context/project/project_card.json",
                 "context/project/stage0_project_state.json",
             )

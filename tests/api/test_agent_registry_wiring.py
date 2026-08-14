@@ -68,9 +68,10 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
         # gate, end the turn, and launch only after the human's own confirming turn.
         # FI context composition S4-D minted v25/v12 for strict @2 Client-KB reads. S4-E mints
-        # v26/v13 with the same tools plus the explicit untrusted-evidence instruction boundary;
-        # every prior resource remains in the inventory for historical replay.
-        AgentRole.HEAD_OF_ABM: ("99a2f87b1910cb4aed1626afc07874de7f936e9aca1caa258572da6233c6ec6d"),
+        # v26/v13 with the same tools plus the explicit untrusted-evidence instruction boundary.
+        # S5 mints v27/v14 for split company/product knowledge, plus the production-only human
+        # product-selection gate; every prior resource remains in the inventory for replay.
+        AgentRole.HEAD_OF_ABM: ("ab09ca1d3d594df7f89f407379c200de72beb8d80c8be7704001926411fd5e15"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -143,8 +144,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (machine-invoked only), so it is disclosed as unavailable to every surface; E3's
     # `synthesize_value_narrative@1` is the same shape for the same reason. Merged count: the
     # 55-address base + Lane D's 5 + Lane E's 2 + both immutable versions of S4's two
-    # Client-KB reads. The @1 addresses are historical inventory only; @2 is current authority.
-    assert len(by_address) == 66
+    # Client-KB reads plus S5-D's separate selected-product reads. The company @1 addresses are
+    # historical inventory only; company @2 and product @1 are current authority.
+    assert len(by_address) == 69
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -160,17 +162,22 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["list_client_knowledge@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["inspect_client_claim@2"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["list_client_knowledge@2"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["inspect_product_claim@1"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["list_product_knowledge@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
         "draft_account_research_directive@2",
         "evaluate_stage0_readiness@1",
         "get_research_view@1",
         "inspect_readiness_history@1",
         "inspect_client_claim@2",
+        "inspect_product_claim@1",
         "inspect_statement_history@1",
         "list_client_knowledge@2",
+        "list_product_knowledge@1",
         "launch_account_research@1",
         "launch_contact_research@1",
         "open_directive_confirmation_gate@1",
+        "open_product_selection_gate@1",
         "propose_field@2",
         "propose_source@1",
         "read_account_research_run@1",
@@ -224,11 +231,13 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v26"
+    assert production.profile_ref.address == "profile:head-of-abm@v27"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v13"
+        "skill:stage0-interview@v14"
     )
     assert {"list_client_knowledge@2", "inspect_client_claim@2"} <= addresses
+    assert {"list_product_knowledge@1", "inspect_product_claim@1"} <= addresses
+    assert "open_product_selection_gate@1" in addresses
     assert {"list_client_knowledge@1", "inspect_client_claim@1"}.isdisjoint(addresses)
     assert toolbelt.descriptor("list_client_knowledge").address == "list_client_knowledge@2"
     assert toolbelt.descriptor("inspect_client_claim").address == "inspect_client_claim@2"
@@ -251,7 +260,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v13"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v14"
     assert disclosures[1].resource.address == "skill:account-deep-steering@v3"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -336,7 +345,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v13")
+    body = head.open_skill("skill:stage0-interview@v14")
 
     assert required_guidance in body
 
@@ -399,7 +408,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
         assert harness.lease.resources_frozen
         assert (
             harness.lease.backend.stat_entry_sync(
-                ".deepagent/skills/stage0-interview/v13/SKILL.md"
+                ".deepagent/skills/stage0-interview/v14/SKILL.md"
             ).sha256
             == resolved.profile.skills[0].resource.sha256
         )
