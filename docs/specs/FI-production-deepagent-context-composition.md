@@ -6,17 +6,15 @@
 **Authority:** contract delta to Doc A Part III and PC-C8 for this production composition. Where
 this document conflicts with the provisional note in root `CLAUDE.md`, this document wins.
 
-**Implementation checkpoint (2026-08-14):** S0-S4 are implemented. The strict contracts,
-seven-state offline fixture, split deterministic compilers, v2 conversation envelope, legacy-trial
-compatibility path, split-card DSAR binding shape, and canonical workspace-client binding are
-present. Both authoritative and transitional production fleet paths establish the trusted binding;
-all projects inherit it through one fail-closed reader. The production `AGENT_TURN` worker now
-pins one account-wide Client-KB version, composes the real L2 brand/confirmed-product rows, and
-persists/attaches the v2 envelope, shared Client-KB index, and exactly the active project's Stage-0
-state. Committed replay returns before current-state/card composition, preserving the original
-receipt and hashes. The Head-of-ABM can now discover and inspect that exact pinned Client-KB
-through two governed, effect-free reads; model-authored scope/version arguments are removed and
-restored only from the trusted constitution. S5-S6 remain outside this checkpoint.
+**Implementation checkpoint (2026-08-14):** S0-S3 are implemented. S4 is governed by the amended
+S4-A through S4-E checkpoints below and is complete only after S4-E. S4-A's version-aware reader
+and S4-B's immutable contract freeze are implemented. The previously shipped `@1` tools and their
+Head-of-ABM/profile/skill/recipe wiring remain frozen compatibility surfaces; they are preliminary
+S4-C/D evidence, not acceptance of those checkpoints. The final public contract is therefore a
+new `@2` revision rather than an in-place rewrite of published `@1` schemas. S4-C must implement
+that frozen revision, S4-D must compose it through new immutable production resources, and S4-E
+must close durable privacy, injection, and replay reach before S4 can be called complete. S3.1,
+S5.0, S5, and S6 remain outside this checkpoint.
 
 ## 1. Purpose
 
@@ -170,8 +168,12 @@ The model never invents labels and an opaque id alone does not count as usable c
 
 Opening context remains bounded. The Head-of-ABM production profile receives two governed reads:
 
-1. `list_client_knowledge@1` — browse/search the exact turn-pinned Client-KB by topic/field/cursor;
-2. `inspect_client_claim@1` — resolve one referenced claim into value and bounded provenance.
+1. `list_client_knowledge@2` — browse/search the exact turn-pinned Client-KB by topic, field,
+   cursor, and bounded page size;
+2. `inspect_client_claim@2` — resolve one referenced claim into value and bounded provenance.
+
+The preliminary `@1` tools remain immutable compatibility resources until the S4-D atomic cutover;
+they are not the frozen final contract.
 
 The exact-claim result includes field metadata, value, public source origin/key/tier, evidence span,
 bounded artifact/provider lineage, confidence, verification, freshness timestamps, product scope,
@@ -181,7 +183,8 @@ or an unbounded claim table.
 
 Both tools derive workspace/client/version authority from the trusted `ToolContext`/constitution.
 The model cannot choose a workspace, client entity, or KB version. Unknown, foreign, expired,
-superseded, or non-member claims fail closed.
+wrong-version, or non-member claims fail closed. A vN row superseded only by vN+1 remains a vN
+member and must continue to resolve for an already-pinned vN turn.
 
 ### D7 — Human-confirmed product choice is project-specific
 
@@ -442,34 +445,168 @@ cross-workspace, privacy-log, and replay acceptance in
 
 ### S4 — Governed Client-KB discovery and exact claim inspection
 
+S4 continues as five internal checkpoints. Existing preliminary `@1` work is retained, but S4 is
+not complete until S4-E passes. The word **superseded** has one precise tool-read meaning here: a
+claim is unavailable when it is absent from the exact pinned version. A row selected into vN does
+not become unavailable to a vN turn merely because a later vN+1 row supersedes it globally.
+
+#### S4-A — Version-aware Client-KB readers
+
 **Deliverables**
 
-- Implement `list_client_knowledge@1` with topic/field/cursor filters.
-- Implement `inspect_client_claim@1` with bounded provenance.
-- Register both in the central toolbelt, Head-of-ABM production profile, surface policy, recipe
-  compatibility pins, and progressive Stage-0 skill guidance.
-- Resolve the Client-KB omission cursor emitted by S1.
+- Resolve exact version membership through the Client-KB marker/run graph.
+- Classify and filter by the registered field key and bounded knowledge topic.
+- Resolve both the card's included references and its omitted continuation.
+- Read retention-eligible historical rows with `include_superseded=True` without reviving expired
+  rows.
+- Provide deterministic baseline-then-extension ordering, bounded pages, and shorter continuation
+  windows without refetching or rewriting claims.
+- Fail closed at the workspace plus canonical-client boundary.
 
 **Passing criteria and tests**
 
-- An included card ref and an omitted ref both resolve at the exact pinned version.
-- Foreign, unknown, superseded, expired, and wrong-version claims are indistinguishable refusals.
-- Model-authored workspace/client/version arguments are absent or rejected.
-- Raw page bodies, tokens, credentials, and unbounded claim sets never appear.
-- Tool replay is zero-write/zero-spend and returns the same reference set.
-- Tool authority/profile/recipe/static audits pass.
+- A vN turn resolves its exact vN row after a published vN+1 row sets vN's `superseded_by` edge.
+- A same-version replacement makes the old row a non-member and therefore unavailable.
+- Unknown, foreign, outside-version, same-version non-member, and retention-expired claim refs
+  produce the same non-oracular refusal.
+- Foreign workspace/client bindings and invented continuation positions fail closed.
+- Included and omitted refs resolve; topic/field filters, ordering, and multi-page traversal are
+  deterministic and duplicate-free.
 
-**Implemented evidence:** the governed readers and privacy bounds in
-`platform/api/clue_api/client_knowledge_tools.py`; exact constitution-derived version injection in
-`platform/api/clue_api/client_context_authority.py` and the model/runtime argument seams; central
-registration in `toolbelt_wiring.py`; Head-of-ABM `v24`, Stage-0 skill `v11`, and Recipe #1 `v7`
-immutable resources; omission resolution in the S1 cursor contract; retention-safe historical
-membership reads in `subsystems/research/clue_research/claimstore/claims.py`; and the real
-claim-store/binding acceptance in `tests/api/test_client_knowledge_tools_s4_db.py`. The suite proves
-included and omitted refs, exact-version and topic/field/cursor behavior, indistinguishable foreign/
-unknown/wrong-version/superseded/expired refusals, trusted argument injection, bounded values and
-provenance, credential/token exclusion, zero-write/zero-spend replay, and static authority/profile/
-recipe/toolbelt compatibility.
+**Implemented evidence:** `platform/api/clue_api/client_knowledge_reader.py` is the shared reader
+seam. The preliminary `@1` tools now consume that seam instead of treating a global supersession
+edge as version membership. Real version-marker, claim-lineage, retention, workspace/client,
+included/omitted, classification, ordering, and pagination acceptance lives in
+`tests/api/test_client_knowledge_tools_s4_db.py` and runs against an isolated PostgreSQL database.
+
+#### S4-B — Immutable tool-contract freeze
+
+The preliminary `list_client_knowledge@1` and `inspect_client_claim@1` schemas were already
+committed and pinned by immutable production resources before this checkpoint was amended. They
+must not be rewritten in place. The frozen target is consequently
+`list_client_knowledge@2`/`inspect_client_claim@2`; `@1` remains a compatibility surface until S4-D
+cuts production composition over atomically.
+
+**Deliverables**
+
+- Freeze strict `@2` input and nested output schemas and their canonical schema hashes.
+- Freeze client/claim/run identifiers as UUID-shaped values and claim method/status/lineage plus
+  timestamps as typed enums/datetimes rather than unconstrained strings.
+- Freeze model-visible list inputs as `topic?`, `field_key?`, `cursor?`, and `limit?`; freeze the
+  inspect input as `claim_id` only.
+- Freeze runtime authority as `workspace_id` from `ToolContext` plus injected
+  `client_entity_id`/`client_kb_version`; project and product are not public tool inputs.
+- Freeze default page size 10, maximum page size 20, a 4,096-byte cursor ceiling, a 32,768-byte
+  list-response ceiling, and a 16,384-byte inspection-response ceiling.
+- Freeze deterministic v2 cursors bound to client, version, continuation position, topic, field,
+  and limit. Accept an S1 v1 omission cursor only for the default unfiltered continuation.
+- Freeze explicit UTF-8 byte ceilings and truncation markers for descriptions, briefs, values,
+  evidence spans, and provider/artifact references.
+- Freeze source URL output to a public HTTP(S) origin plus exact-URL SHA-256; credentials, path,
+  query, fragment, localhost/private-IP, and local/internal hostnames never cross the output
+  boundary.
+- Freeze three refusal codes: scope unavailable, cursor invalid, and claim not found. Malformed,
+  foreign, cross-version, stale, and cross-filter cursor failures share the same public semantics.
+- Mark all returned descriptions, values, and evidence as untrusted evidence, never instructions.
+
+**Passing criteria and tests**
+
+- Contract fixtures and schema-hash checks run without DB, network, storage, or provider access.
+- Unknown input/nested-output fields are rejected and authority fields are absent from the
+  model-visible field allowlists.
+- Cursor encoding is deterministic; malformed, cross-client, cross-version, cross-topic,
+  cross-field, and cross-limit cursors refuse identically.
+- Page/count/continuation invariants and every byte/truncation/source-sanitization boundary are
+  machine checked.
+- No remaining S4-C implementation decision can change the public tool schema; any future public
+  change requires another immutable version.
+- `@2` is not production-registered by S4-B; that authority belongs only to S4-D.
+
+**Implemented evidence:** the provider/DB-free contract module is
+`platform/api/clue_api/client_knowledge_contracts.py`; the frozen manifest is
+`tests/fixtures/production_context/s4b_tool_contract_fixture.json`; and exhaustive pure acceptance
+is in `tests/api/test_client_knowledge_contracts_s4b.py`.
+
+#### S4-C — Trusted authority and `@2` tool implementation
+
+**Deliverables**
+
+- Implement both frozen `@2` contracts over the S4-A reader seam.
+- Limit model-authored arguments to the S4-B allowlists.
+- Inject workspace/client/version from the validated turn constitution and paired
+  `client_knowledge` domain reference.
+- Resolve the S1 omission cursor and subsequent v2 cursors without exposing cross-scope state.
+
+**Exit gate**
+
+- Injected client/version match the paired context artifact, and no model-authored authority value
+  can override them.
+- An included ref and an omitted ref resolve at the exact pinned version.
+- Cross-workspace, wrong-version, and non-member reads are indistinguishable.
+- The implementation conforms byte-for-byte to S4-B schemas without changing their hashes.
+
+#### S4-D — Production toolbelt composition
+
+**Deliverables**
+
+- Register `@2` through the central registry, capability authority, Head-of-ABM production
+  profile, project-conversation surface policy, progressive Stage-0 skill, recipe compatibility
+  pins, and user-facing tool guidance.
+- Create new immutable profile, skill, and recipe versions instead of editing the preliminary
+  Head-of-ABM `v24`, Stage-0 skill `v11`, or Recipe #1 `v7` in place.
+- Cut all required production surfaces over atomically; do not mistake trial/fixture wiring for
+  production composition.
+
+**Exit gate**
+
+- Static audits prove `@2` is both centrally registered and actually granted on the production
+  surface.
+- The production conversation recipe resolves the new profile and skill revisions.
+- No coordinator branches on provider identity or special test mode.
+- The prior `@1` resource graph remains replayable but is no longer the current default.
+
+#### S4-E — Privacy, injection, and replay hardening
+
+**Deliverables**
+
+- Trace inspected facts through tool execution events, tool-result artifacts, LangGraph
+  checkpoints/tool messages, stream/outbox events, context receipts, and finalization receipts.
+- Add subject binding or bounded redaction/erasure semantics to every durable exact-value/evidence
+  copy.
+- Treat claim values, descriptions, evidence spans, and page text as untrusted evidence in both
+  the contract and agent instructions.
+- Prove replay is effect-free and cannot resurrect erased fact bodies.
+
+**Exit gate**
+
+- DSAR removes every durable copy and subsequent replay cannot restore it.
+- Prompt-shaped claim content cannot influence tool authority or selection.
+- Replay produces zero writes, zero provider spend, and the same reference set.
+- Tokens, credentials, raw bodies, and unrestricted source URLs never appear.
+
+### S3.1 — Production composition reliability (after S4-E)
+
+**Deliverables**
+
+- Make per-turn workspace/client/Client-KB-version scope pins durable.
+- Add statement-level DSAR bindings for the production Stage-0 path.
+- Define retry behavior when background recon publishes vN+1 during a vN turn.
+- Cover the real fleet path rather than private helper composition.
+- Freeze the company-wide versus product-specific knowledge scoping policy.
+
+**Exit gate**
+
+The real production chain—`AGENT_TURN → durable scope pin → cards → context assembler → governed
+S4 tool → model/checkpoint → finalization → replay`—passes with exact original pins, DSAR reach,
+and no fixture-only substitutions.
+
+### S5.0 — Product-knowledge consumption decision
+
+Before catalog synchronization begins, ratify that company facts belong to the account-wide
+Client-KB and product facts belong to product-scoped knowledge. Decide whether selected-product
+context uses a `ProductKnowledgeCard`, product-filtered S4 tools, or both, and whether the S5
+catalog requires `ClientKnowledgeCard@2`. No S5 schema or synchronization code proceeds while one
+of these decisions can still change how the agent consumes product knowledge.
 
 ### S5 — Recon product catalog and human project selection
 
@@ -521,7 +658,8 @@ Every slice contributes fixtures to this matrix:
 - workspace A attempts to load workspace B's client/card/claim/product;
 - Project B is deliberately given Stage0(A)'s artifact ref;
 - Client-KB version changes between scope resolution and card persistence;
-- a card references a superseded or retention-expired claim;
+- a card references a same-version non-member, a later-version-superseded historical member, or a
+  retention-expired claim;
 - a field-registry description contains prompt-like instructions;
 - an evidence artifact is erased after statement read;
 - background recon commits while two turns start concurrently;
@@ -540,6 +678,20 @@ Every slice contributes fixtures to this matrix:
 - Old frontend clients are unaffected: this is agent-internal context plus additive operator truth.
 - Existing context receipts remain immutable and replayable with their historical media types.
 - DSAR reaches every new artifact and claim-to-product lineage row before rollout.
+
+The implementation order is fixed:
+
+```text
+S4-A readers
+→ S4-B contract freeze
+→ S4-C trusted @2 tools
+→ S4-D production registration
+→ S4-E privacy/security/replay
+→ S3.1 production composition reliability
+→ S5.0 product-knowledge decision
+→ S5 catalog and selection
+→ S6 browser/live acceptance
+```
 
 ## 10. Definition of done
 

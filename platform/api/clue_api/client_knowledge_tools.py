@@ -16,18 +16,30 @@ immutable ``client_knowledge`` domain ref by :mod:`clue_api.client_context_autho
 from __future__ import annotations
 
 import hashlib
-import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import ClassVar
-from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from pydantic import Field, JsonValue
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.client_context_authority import TRUSTED_CLIENT_KB_VERSION_FIELD
-from clue_api.client_context_binding import get_workspace_client_binding
+from clue_api.client_knowledge_contracts import (
+    MAX_CLAIM_VALUE_BYTES,
+    MAX_EVIDENCE_SPAN_BYTES,
+    MAX_FIELD_BRIEF_BYTES,
+    MAX_FIELD_DESCRIPTION_BYTES,
+    MAX_PROVENANCE_REF_BYTES,
+    canonical_json_bytes,
+    sanitize_source_url,
+    truncate_utf8,
+)
+from clue_api.client_knowledge_reader import (
+    ClientKnowledgePositionInvalid,
+    PinnedClientKnowledge,
+    load_pinned_client_knowledge,
+    select_client_knowledge_page,
+)
 from clue_api.tool_outputs import ClientClaimInspectionOutput, ClientKnowledgeListOutput
 from clue_core import Claim, ClaimId, EntityId, reference_time
 from clue_db import ConnFactory, transaction
@@ -41,17 +53,9 @@ from clue_projections import (
     encode_card_cursor,
 )
 from clue_research.claimstore import (
-    FieldFilters,
-    FieldRegistryScope,
     ResolvedFieldDefinition,
-    WorkspaceScope,
-    claims_by_ids,
-    claims_for,
-    list_effective_fields,
 )
-from clue_research.identity import get_account
-from clue_research.stage0 import CLIENT_BASELINE_FIELDS, CLIENT_KB_VERSION, read_client_kb_claims
-from clue_spine import get_project
+from clue_spine import get_project_for_workspace
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
@@ -69,12 +73,6 @@ from clue_toolbelt import (
 log = get_logger("clue_api.client_knowledge_tools")
 
 MAX_CLIENT_KNOWLEDGE_PAGE = 20
-MAX_FIELD_DESCRIPTION_BYTES = 320
-MAX_FIELD_BRIEF_BYTES = 256
-MAX_CLAIM_VALUE_BYTES = 4_096
-MAX_EVIDENCE_SPAN_BYTES = 1_024
-MAX_PROVENANCE_REF_BYTES = 512
-MAX_SOURCE_URL_BYTES = 2_048
 CLIENT_KNOWLEDGE_CURSOR_KIND = "client_knowledge"
 
 
@@ -143,172 +141,19 @@ def _fail(reason_code: str, message: str) -> tuple[PreconditionFailure, ...]:
     return (PreconditionFailure(reason_code=reason_code, message=message),)
 
 
-def _marker_version(value: JsonValue) -> int | None:
-    if not isinstance(value, dict):
-        return None
-    version = value.get("version")
-    return version if isinstance(version, int) and version >= 1 else None
-
-
-def _truncate_utf8(value: str, limit: int) -> tuple[str, bool]:
-    encoded = value.encode()
-    if len(encoded) <= limit:
-        return value, False
-    cut = encoded[:limit]
-    while cut:
-        try:
-            return cut.decode(), True
-        except UnicodeDecodeError:
-            cut = cut[:-1]
-    return "", True
-
-
 def _canonical_json(value: JsonValue) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode()
+    return canonical_json_bytes(value)
 
 
 def _value_preview(value: JsonValue, *, limit: int) -> tuple[str, bool]:
     text_value = value if isinstance(value, str) else _canonical_json(value).decode()
-    return _truncate_utf8(text_value, limit)
-
-
-def _safe_source_url(value: str | None) -> tuple[str | None, str | None, bool]:
-    """Return only a bounded public origin plus a digest of the exact source URL.
-
-    Query strings and fragments commonly carry tokens, but credentials can also appear in paths.
-    The exact URL therefore remains reachable only through its digest and governed provenance
-    storage; model-visible inspection receives the public origin rather than a partially redacted
-    URL that could still disclose a secret.
-    """
-
-    if value is None:
-        return None, None, False
-    digest = f"sha256:{hashlib.sha256(value.encode()).hexdigest()}"
-    try:
-        parsed = urlsplit(value)
-        if parsed.scheme not in {"http", "https"} or parsed.hostname is None:
-            return None, digest, True
-        host = parsed.hostname
-        port = parsed.port
-        authority = f"{host}:{port}" if port is not None else host
-        redacted = urlunsplit((parsed.scheme, authority, "/", "", ""))
-    except (UnicodeError, ValueError):
-        return None, digest, True
-    bounded, truncated = _truncate_utf8(redacted, MAX_SOURCE_URL_BYTES)
-    changed = (
-        truncated or redacted != value or parsed.username is not None or parsed.password is not None
-    )
-    return bounded, digest, changed
+    return truncate_utf8(text_value, limit)
 
 
 def _bounded_ref(value: str | None) -> tuple[str | None, bool]:
     if value is None:
         return None, False
-    return _truncate_utf8(value, MAX_PROVENANCE_REF_BYTES)
-
-
-def _ordered_field_keys(claims: Mapping[str, Claim]) -> tuple[str, ...]:
-    baseline = tuple(field for field in CLIENT_BASELINE_FIELDS if field in claims)
-    extended = tuple(sorted(set(claims) - set(CLIENT_BASELINE_FIELDS)))
-    return (*baseline, *extended)
-
-
-def _resume_after(ordered: Sequence[str], after: str | None) -> int:
-    if after is None:
-        return 0
-    try:
-        return ordered.index(after) + 1
-    except ValueError:
-        # A stale/foreign position must never restart at page one and look like new knowledge.
-        return len(ordered)
-
-
-class _PinnedClientKnowledge:
-    def __init__(
-        self,
-        *,
-        claims: Mapping[str, Claim],
-        eligible: Mapping[ClaimId, Claim],
-        definitions: Mapping[str, ResolvedFieldDefinition],
-    ) -> None:
-        self.claims = claims
-        self.eligible = eligible
-        self.definitions = definitions
-
-
-async def _load_pinned_client_knowledge(
-    conn: AsyncConnection,
-    *,
-    workspace_id: str,
-    project_id: str,
-    client_entity_id: str,
-    client_kb_version: int,
-) -> _PinnedClientKnowledge | None:
-    """Prove the production binding and load one retention-safe account-wide checkpoint."""
-
-    try:
-        entity_id = EntityId(UUID(client_entity_id))
-    except ValueError:
-        return None
-    project = await get_project(conn, project_id)
-    binding = await get_workspace_client_binding(conn, workspace_id=workspace_id)
-    account = await get_account(conn, entity_id)
-    if (
-        project is None
-        or project.workspace_id != workspace_id
-        or binding is None
-        or binding.client_entity_id != entity_id
-        or account is None
-        or account.workspace_id != workspace_id
-    ):
-        return None
-    markers = await claims_for(
-        conn,
-        entity_id,
-        CLIENT_KB_VERSION,
-        include_superseded=True,
-        scope=WorkspaceScope.for_workspace(workspace_id),
-    )
-    if not any(
-        marker.product_id is None and _marker_version(marker.value_json) == client_kb_version
-        for marker in markers
-    ):
-        return None
-    pinned = await read_client_kb_claims(
-        conn,
-        entity_id,
-        workspace_id=workspace_id,
-        version=client_kb_version,
-        product_id=None,
-    )
-    eligible = await claims_by_ids(
-        conn,
-        [claim.id for claim in pinned.values()],
-        scope=WorkspaceScope.for_workspace(workspace_id),
-        include_superseded=True,
-        include_expired=False,
-    )
-    definitions = await list_effective_fields(
-        conn,
-        scope=FieldRegistryScope.for_workspace(workspace_id),
-        filters=FieldFilters(pack="client", active=None),
-        include_retired=True,
-    )
-    return _PinnedClientKnowledge(
-        claims=pinned,
-        # A correction/erasure supersession is not revived through this reader. Historical version
-        # membership alone is insufficient once the claim has been explicitly superseded.
-        eligible={
-            claim_id: claim for claim_id, claim in eligible.items() if claim.superseded_by is None
-        },
-        definitions={item.field_def.field_key: item for item in definitions},
-    )
+    return truncate_utf8(value, MAX_PROVENANCE_REF_BYTES)
 
 
 class _ClientKnowledgeTool(Tool):
@@ -332,19 +177,34 @@ class _ClientKnowledgeTool(Tool):
         self._conn_factory = conn_factory
         self._clock = clock
 
-    async def _scope_failure(
+    async def _load_optional(
         self, inputs: ClientKnowledgeScopeInput, ctx: ToolContext
-    ) -> tuple[PreconditionFailure, ...]:
+    ) -> PinnedClientKnowledge | None:
+        try:
+            client_entity_id = EntityId(UUID(inputs.client_entity_id))
+        except ValueError:
+            return None
         async with self._conn_factory() as conn:
-            pinned = await _load_pinned_client_knowledge(
+            project = await get_project_for_workspace(
                 conn,
                 workspace_id=ctx.workspace_id,
                 project_id=inputs.project_id,
-                client_entity_id=inputs.client_entity_id,
-                client_kb_version=inputs.client_kb_version,
             )
-        if pinned is not None:
-            return ()
+            pinned = (
+                await load_pinned_client_knowledge(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    client_entity_id=client_entity_id,
+                    client_kb_version=inputs.client_kb_version,
+                )
+                if project is not None
+                else None
+            )
+        return pinned
+
+    def _scope_refusal(
+        self, inputs: ClientKnowledgeScopeInput, ctx: ToolContext
+    ) -> tuple[PreconditionFailure, ...]:
         log.warning(
             "client_knowledge.scope_refused",
             tool=self.name,
@@ -359,15 +219,8 @@ class _ClientKnowledgeTool(Tool):
 
     async def _load(
         self, inputs: ClientKnowledgeScopeInput, ctx: ToolContext
-    ) -> _PinnedClientKnowledge:
-        async with self._conn_factory() as conn:
-            pinned = await _load_pinned_client_knowledge(
-                conn,
-                workspace_id=ctx.workspace_id,
-                project_id=inputs.project_id,
-                client_entity_id=inputs.client_entity_id,
-                client_kb_version=inputs.client_kb_version,
-            )
+    ) -> PinnedClientKnowledge:
+        pinned = await self._load_optional(inputs, ctx)
         if pinned is None:  # the runner checked immediately before invoke; fail closed on drift
             raise RuntimeError("Client-KB checkpoint disappeared after precondition evaluation")
         return pinned
@@ -433,31 +286,40 @@ class ListClientKnowledgeTool(_ClientKnowledgeTool):
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ListClientKnowledgeInput)
-        _, cursor_failure = _decode_list_cursor(inputs)
+        cursor, cursor_failure = _decode_list_cursor(inputs)
         if cursor_failure:
             return cursor_failure
-        return await self._scope_failure(inputs, ctx)
+        pinned = await self._load_optional(inputs, ctx)
+        if pinned is None:
+            return self._scope_refusal(inputs, ctx)
+        after = cursor.get("after_field_key")
+        try:
+            select_client_knowledge_page(
+                pinned,
+                topic=inputs.topic,
+                field_key=inputs.field_key,
+                after_field_key=after if isinstance(after, str) else None,
+                limit=MAX_CLIENT_KNOWLEDGE_PAGE,
+            )
+        except ClientKnowledgePositionInvalid:
+            return _fail(
+                "client_knowledge_cursor_invalid",
+                "the cursor does not belong to this Client-KB checkpoint",
+            )
+        return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, ListClientKnowledgeInput)
         cursor, _ = _decode_list_cursor(inputs)
         pinned = await self._load(inputs, ctx)
-        ordered_all = _ordered_field_keys(pinned.claims)
         after = cursor.get("after_field_key")
-        start = _resume_after(ordered_all, after if isinstance(after, str) else None)
-
-        def included(field_key: str) -> bool:
-            claim = pinned.claims[field_key]
-            return (
-                claim.id in pinned.eligible
-                and (inputs.topic is None or client_knowledge_topic(field_key) is inputs.topic)
-                and (inputs.field_key is None or field_key == inputs.field_key)
-            )
-
-        matching_all = [field for field in ordered_all if included(field)]
-        candidates = [field for field in ordered_all[start:] if included(field)]
-        page_keys = candidates[:MAX_CLIENT_KNOWLEDGE_PAGE]
-        has_more = len(candidates) > len(page_keys)
+        page = select_client_knowledge_page(
+            pinned,
+            topic=inputs.topic,
+            field_key=inputs.field_key,
+            after_field_key=after if isinstance(after, str) else None,
+            limit=MAX_CLIENT_KNOWLEDGE_PAGE,
+        )
         next_cursor = (
             encode_card_cursor(
                 {
@@ -466,22 +328,22 @@ class ListClientKnowledgeTool(_ClientKnowledgeTool):
                     "client_entity_id": inputs.client_entity_id,
                     "client_kb_version": inputs.client_kb_version,
                     "compiler_policy_version": CLIENT_KNOWLEDGE_CARD_POLICY_V1.version,
-                    "after_field_key": page_keys[-1],
+                    "after_field_key": page.next_after_field_key,
                     "topic": inputs.topic.value if inputs.topic is not None else None,
                     "field_key": inputs.field_key,
                 }
             )
-            if has_more and page_keys
+            if page.has_more and page.next_after_field_key is not None
             else None
         )
         entries: list[dict[str, object]] = []
-        for field_key in page_keys:
-            claim = pinned.claims[field_key]
+        for field_key in page.field_keys:
+            claim = pinned.claims_by_field[field_key]
             definition = pinned.definitions.get(field_key)
             description_source = getattr(definition, "description", None) or (
                 f"Registered Client-KB knowledge for {field_key}."
             )
-            description, description_truncated = _truncate_utf8(
+            description, description_truncated = truncate_utf8(
                 description_source, MAX_FIELD_DESCRIPTION_BYTES
             )
             brief, brief_truncated = _value_preview(claim.value_json, limit=MAX_FIELD_BRIEF_BYTES)
@@ -510,8 +372,8 @@ class ListClientKnowledgeTool(_ClientKnowledgeTool):
                 knowledge=entries,
                 page_size=MAX_CLIENT_KNOWLEDGE_PAGE,
                 returned=len(entries),
-                total_matching=len(matching_all),
-                has_more=has_more,
+                total_matching=page.total_matching,
+                has_more=page.has_more,
                 next_cursor=next_cursor,
             ).model_dump(mode="json"),
         )
@@ -526,11 +388,11 @@ def _claim_payload(
     raw_value = _canonical_json(claim.value_json)
     value_preview, value_truncated = _value_preview(claim.value_json, limit=MAX_CLAIM_VALUE_BYTES)
     evidence_span, evidence_truncated = (
-        _truncate_utf8(claim.evidence_span, MAX_EVIDENCE_SPAN_BYTES)
+        truncate_utf8(claim.evidence_span, MAX_EVIDENCE_SPAN_BYTES)
         if claim.evidence_span is not None
         else (None, False)
     )
-    safe_url, source_url_sha256, source_url_redacted = _safe_source_url(claim.source_url)
+    safe_url = sanitize_source_url(claim.source_url)
     artifact_key, artifact_key_truncated = _bounded_ref(claim.artifact_key)
     operation_ref, operation_ref_truncated = _bounded_ref(claim.source_operation_ref)
     snapshot_ref, snapshot_ref_truncated = _bounded_ref(claim.source_snapshot_ref)
@@ -551,7 +413,7 @@ def _claim_payload(
             "label": client_knowledge_field_label(str(claim.field_key)),
             "topic": client_knowledge_topic(str(claim.field_key)).value,
             "description": (
-                _truncate_utf8(definition.description, MAX_FIELD_DESCRIPTION_BYTES)[0]
+                truncate_utf8(definition.description, MAX_FIELD_DESCRIPTION_BYTES)[0]
                 if definition is not None and definition.description
                 else f"Registered Client-KB knowledge for {claim.field_key}."
             ),
@@ -567,9 +429,9 @@ def _claim_payload(
             "source_key": claim.source_key,
             "source_tier": int(claim.source_tier),
             "extraction_method": claim.extraction_method.value,
-            "source_url": safe_url,
-            "source_url_sha256": source_url_sha256,
-            "source_url_redacted": source_url_redacted,
+            "source_url": safe_url.public_origin,
+            "source_url_sha256": safe_url.exact_sha256,
+            "source_url_redacted": safe_url.redacted,
             "artifact_key": artifact_key,
             "artifact_key_truncated": artifact_key_truncated,
         },
@@ -616,28 +478,23 @@ class InspectClientClaimTool(_ClientKnowledgeTool):
 
     @staticmethod
     def _selected_claim(
-        inputs: InspectClientClaimInput, pinned: _PinnedClientKnowledge
+        inputs: InspectClientClaimInput, pinned: PinnedClientKnowledge
     ) -> Claim | None:
         try:
             claim_id = ClaimId(UUID(inputs.claim_id))
         except ValueError:
             return None
-        if claim_id not in pinned.eligible:
-            return None
-        claim = pinned.eligible[claim_id]
-        return (
-            claim if any(selected.id == claim_id for selected in pinned.claims.values()) else None
-        )
+        return pinned.claim(claim_id)
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, InspectClientClaimInput)
-        if failure := await self._scope_failure(inputs, ctx):
-            return failure
-        pinned = await self._load(inputs, ctx)
+        pinned = await self._load_optional(inputs, ctx)
+        if pinned is None:
+            return self._scope_refusal(inputs, ctx)
         if self._selected_claim(inputs, pinned) is None:
-            # Foreign, unknown, wrong-version, superseded, and retention-expired are deliberately
+            # Foreign, unknown, non-member, wrong-version, and retention-expired are deliberately
             # the same answer. The caller learns no existence/state fact outside the pinned card.
             return _fail(
                 "client_claim_not_found",

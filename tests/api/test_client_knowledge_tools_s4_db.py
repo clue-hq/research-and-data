@@ -14,14 +14,27 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from clue_api.client_knowledge_tools import (
+from clue_api.client_knowledge_contracts import (
     MAX_CLAIM_VALUE_BYTES,
-    MAX_CLIENT_KNOWLEDGE_PAGE,
     MAX_EVIDENCE_SPAN_BYTES,
+)
+from clue_api.client_knowledge_reader import (
+    load_pinned_client_knowledge,
+    select_client_knowledge_page,
+)
+from clue_api.client_knowledge_tools import (
+    MAX_CLIENT_KNOWLEDGE_PAGE,
     build_client_knowledge_tools,
 )
-from clue_core import ExtractionMethod, new_claim_id, new_operation_id, new_run_id
-from clue_projections import ClientKnowledgeCardPolicy, compile_client_knowledge_card
+from clue_core import ExtractionMethod, new_claim_id, new_operation_id
+from clue_projections import (
+    CLIENT_KNOWLEDGE_CARD_POLICY_V1,
+    ClientKnowledgeCardPolicy,
+    ClientKnowledgeTopic,
+    client_knowledge_topic,
+    compile_client_knowledge_card,
+    encode_card_cursor,
+)
 from clue_research.claimstore import insert_claim, supersede_claim
 from clue_research.stage0 import (
     CLIENT_KNOWLEDGE_FIELDS,
@@ -30,7 +43,7 @@ from clue_research.stage0 import (
     read_client_kb_claims,
     reverse_profile,
 )
-from clue_toolbelt import PreconditionFailed, ToolContext, ToolRegistry, invoke_tool
+from clue_toolbelt import PreconditionFailed, ToolContext, ToolRegistry, ToolResult, invoke_tool
 from tests.api.test_production_context_s3_db import _seed_post_recon
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn
@@ -73,7 +86,7 @@ async def _invoke(
     *,
     key: str | None = None,
     store: InMemoryStore | None = None,
-):
+) -> ToolResult:
     return await invoke_tool(
         registry,
         name,
@@ -139,6 +152,91 @@ def test_card_refs_and_the_omission_cursor_resolve_at_the_exact_pinned_version()
             assert [entry["field_key"] for entry in product_only.references["knowledge"]] == [
                 "client.product"
             ]
+
+    run_async(scenario())
+
+
+def test_reader_order_pagination_and_scope_refusals_are_deterministic() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed_post_recon(conn, suffix=f"s4-page-{uuid4().hex[:8]}")
+            foreign = await _seed_post_recon(conn, suffix=f"s4-foreign-{uuid4().hex[:8]}")
+            pinned = await load_pinned_client_knowledge(
+                conn,
+                workspace_id=seeded.workspace_id,
+                client_entity_id=seeded.client_entity_id,
+                client_kb_version=seeded.client_kb_version,
+            )
+            assert pinned is not None
+            assert pinned.workspace_id == seeded.workspace_id
+            assert pinned.client_entity_id == seeded.client_entity_id
+            assert pinned.client_kb_version == seeded.client_kb_version
+            first = select_client_knowledge_page(
+                pinned,
+                topic=None,
+                field_key=None,
+                after_field_key=None,
+                limit=2,
+            )
+            assert first.field_keys == pinned.ordered_field_keys[:2]
+            assert first.total_matching == len(pinned.ordered_field_keys)
+            assert first.has_more is True
+            second = select_client_knowledge_page(
+                pinned,
+                topic=None,
+                field_key=None,
+                after_field_key=first.next_after_field_key,
+                limit=2,
+            )
+            assert second.field_keys == pinned.ordered_field_keys[2:4]
+            assert set(first.field_keys).isdisjoint(second.field_keys)
+            products = select_client_knowledge_page(
+                pinned,
+                topic=ClientKnowledgeTopic.PRODUCT,
+                field_key=None,
+                after_field_key=None,
+                limit=MAX_CLIENT_KNOWLEDGE_PAGE,
+            )
+            assert products.field_keys
+            assert all(
+                client_knowledge_topic(field) is ClientKnowledgeTopic.PRODUCT
+                for field in products.field_keys
+            )
+
+            factory = conn_session_factory(conn)
+            registry = _registry(factory)
+            own_ctx = _ctx(seeded.workspace_id, factory)
+            scope_refusals = (
+                {
+                    **_body(seeded),
+                    "client_entity_id": str(foreign.client_entity_id),
+                },
+                _body(seeded),
+            )
+            contexts = (own_ctx, _ctx(foreign.workspace_id, factory))
+            for body, context in zip(scope_refusals, contexts, strict=True):
+                with pytest.raises(PreconditionFailed) as refusal:
+                    await _invoke(registry, "list_client_knowledge", body, context)
+                assert refusal.value.reason_codes == ("client_knowledge_unavailable",)
+
+            invented_cursor = encode_card_cursor(
+                {
+                    "kind": "client_knowledge",
+                    "schema_version": "1",
+                    "client_entity_id": str(seeded.client_entity_id),
+                    "client_kb_version": seeded.client_kb_version,
+                    "compiler_policy_version": CLIENT_KNOWLEDGE_CARD_POLICY_V1.version,
+                    "after_field_key": "client.not_in_this_checkpoint",
+                }
+            )
+            with pytest.raises(PreconditionFailed) as cursor_refusal:
+                await _invoke(
+                    registry,
+                    "list_client_knowledge",
+                    {**_body(seeded), "cursor": invented_cursor},
+                    own_ctx,
+                )
+            assert cursor_refusal.value.reason_codes == ("client_knowledge_cursor_invalid",)
 
     run_async(scenario())
 
@@ -261,8 +359,11 @@ def test_foreign_unknown_wrong_version_superseded_and_expired_refs_refuse_identi
                 superseded.model_copy(
                     update={
                         "id": new_claim_id(),
-                        "run_id": new_run_id(),
+                        # Same marker/run means this correction replaces the original *inside*
+                        # the pinned version; the original is therefore a non-member of vN.
+                        "run_id": superseded.run_id,
                         "value_json": "explicit correction outside the pinned checkpoint",
+                        "collected_at": superseded.collected_at + timedelta(seconds=1),
                         "superseded_by": None,
                     }
                 ),
@@ -299,6 +400,96 @@ def test_foreign_unknown_wrong_version_superseded_and_expired_refs_refuse_identi
                     )
                 observed[label] = refusal.value.reason_codes
             assert set(observed.values()) == {("client_claim_not_found",)}
+
+    run_async(scenario())
+
+
+def test_claim_superseded_only_by_v2_remains_resolvable_for_a_v1_turn() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            suffix = f"s4-historical-{uuid4().hex[:8]}"
+            seeded = await _seed_post_recon(conn, suffix=suffix)
+            v1 = await read_client_kb_claims(
+                conn,
+                seeded.client_entity_id,
+                workspace_id=seeded.workspace_id,
+                version=seeded.client_kb_version,
+                product_id=None,
+            )
+            original = v1["client.product"]
+
+            profiled_v2 = await reverse_profile(
+                conn,
+                ClientInput(
+                    name="Production Context Customer",
+                    website=f"https://{suffix}.example",
+                    materials=(
+                        VolunteeredMaterial(
+                            kind="onboarding",
+                            label="version two",
+                            content="Second exact account-wide checkpoint.",
+                            asserted_fields={
+                                key: f"v2 grounded {key}" for key in CLIENT_KNOWLEDGE_FIELDS
+                            },
+                        ),
+                    ),
+                ),
+                workspace_id=seeded.workspace_id,
+                product_id=None,
+                budget_cap_cents=Decimal(0),
+                max_source_tier=0,
+            )
+            v2 = await read_client_kb_claims(
+                conn,
+                seeded.client_entity_id,
+                workspace_id=seeded.workspace_id,
+                version=profiled_v2.ref.client_kb_version,
+                product_id=None,
+            )
+            v2_product = v2["client.product"]
+            replacement = v2_product.model_copy(
+                update={
+                    "id": new_claim_id(),
+                    "value_json": "v2 correction which supersedes the v1 row",
+                    "collected_at": v2_product.collected_at + timedelta(seconds=1),
+                    "superseded_by": None,
+                }
+            )
+            await supersede_claim(conn, original.id, replacement)
+
+            # The global lineage edge now marks the v1 row superseded, but version membership is
+            # marker/run based. The v1 turn must still resolve v1 and the v2 turn resolves v2.
+            assert (
+                await conn.execute(
+                    text("SELECT superseded_by FROM claim WHERE id = :id"),
+                    {"id": original.id},
+                )
+            ).scalar_one() == replacement.id
+
+            factory = conn_session_factory(conn)
+            registry = _registry(factory)
+            ctx = _ctx(seeded.workspace_id, factory)
+            inspected_v1 = await _invoke(
+                registry,
+                "inspect_client_claim",
+                {**_body(seeded), "claim_id": str(original.id)},
+                ctx,
+            )
+            assert inspected_v1.references["claim"]["claim_id"] == str(original.id)
+            assert inspected_v1.references["client_kb_version"] == seeded.client_kb_version
+
+            inspected_v2 = await _invoke(
+                registry,
+                "inspect_client_claim",
+                {
+                    "project_id": seeded.project_a.project_id,
+                    "client_entity_id": str(seeded.client_entity_id),
+                    "client_kb_version": profiled_v2.ref.client_kb_version,
+                    "claim_id": str(replacement.id),
+                },
+                ctx,
+            )
+            assert inspected_v2.references["claim"]["claim_id"] == str(replacement.id)
 
     run_async(scenario())
 

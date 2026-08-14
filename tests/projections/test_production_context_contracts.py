@@ -216,8 +216,14 @@ def test_s0_fixture_freezes_media_refs_tools_and_all_seven_states() -> None:
         },
         "stage0_project_state": {"object_type": "stage0_project_state", "version": None},
     }
-    assert fixture["tools"]["inspect_client_claim@1"]["model_fields"] == ["claim_id"]
-    assert fixture["tools"]["inspect_client_claim@1"]["trusted_fields"] == [
+    assert fixture["tools"]["list_client_knowledge@2"]["model_fields"] == [
+        "topic",
+        "field_key",
+        "cursor",
+        "limit",
+    ]
+    assert fixture["tools"]["inspect_client_claim@2"]["model_fields"] == ["claim_id"]
+    assert fixture["tools"]["inspect_client_claim@2"]["trusted_fields"] == [
         "workspace_id",
         "client_entity_id",
         "client_kb_version",

@@ -2,7 +2,12 @@
 
 **Date:** 2026-08-14
 **Branch:** `platform/onboarding-integration`
-**Status:** implemented; local verification complete
+**Status:** HISTORICAL PRELIMINARY `@1`; reclassified by the amended S4-A–E roadmap
+
+> Amendment: this note records the already-published `@1` implementation and composition. It does
+> not mean amended S4 is complete. `@1` remains immutable compatibility evidence; S4-A/B are
+> recorded in `2026-08-14-production-context-s4a-s4b.md`, and S4-C/D/E remain required for the
+> frozen final `@2` contract, production cutover, and privacy/security/replay closure.
 
 ## Delivered
 

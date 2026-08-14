@@ -27,10 +27,12 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
-- `2026-08-14-production-context-s4.md` — S4 complete: exact turn-pinned Client-KB discovery and
-  claim inspection, constitution-only version authority, bounded privacy-safe provenance,
-  production Head-of-ABM/toolbelt/recipe/skill composition, S1 omission-cursor resolution, and
-  exhaustive isolated-DB/static verification.
+- `2026-08-14-production-context-s4a-s4b.md` — amended S4-A/B complete: marker/run-based exact
+  version readers, retention-safe historical access, deterministic classification/pagination,
+  and immutable provider/DB-free `@2` contract fixtures. S4-C through S4-E remain required.
+- `2026-08-14-production-context-s4.md` — historical preliminary `@1` S4 implementation and
+  production composition record. Reclassified by the amended S4-A–E roadmap; it is compatibility
+  evidence and no longer means S4 as a whole is complete.
 - `2026-08-14-production-context-s3.md` — S3 complete: production AGENT_TURN composition of the
   real L2 brand/confirmed product, paired account-wide Client-KB and active-project Stage-0 cards,
   exact per-turn version/receipt pins, pre-composition committed replay, product/account KB scope

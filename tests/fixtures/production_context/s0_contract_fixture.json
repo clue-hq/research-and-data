@@ -10,11 +10,11 @@
     "stage0_project_state": {"object_type": "stage0_project_state", "version": null}
   },
   "tools": {
-    "list_client_knowledge@1": {
+    "list_client_knowledge@2": {
       "model_fields": ["topic", "field_key", "cursor", "limit"],
       "trusted_fields": ["workspace_id", "client_entity_id", "client_kb_version"]
     },
-    "inspect_client_claim@1": {
+    "inspect_client_claim@2": {
       "model_fields": ["claim_id"],
       "trusted_fields": ["workspace_id", "client_entity_id", "client_kb_version"]
     }
