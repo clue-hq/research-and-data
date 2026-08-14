@@ -49,9 +49,10 @@ def _governed_provider(
     reasoning: str | None,
     provider_sort: str | None,
     timeout_s: float,
+    fallback_model: str | None = None,
 ):
     """The cached governed provider for one gateway policy fingerprint."""
-    key = (base_url, api_key, reasoning, provider_sort, timeout_s)
+    key = (base_url, api_key, reasoning, provider_sort, timeout_s, fallback_model)
     if key not in _PROVIDER_CACHE:
         from pydantic import SecretStr
 
@@ -62,6 +63,7 @@ def _governed_provider(
             base_url=base_url,
             timeout_s=timeout_s,
             max_retries=2,
+            fallback_model=fallback_model,
             openrouter_provider_sort=provider_sort,  # type: ignore[arg-type]
             openrouter_usage_include=True,
             agent_reasoning=(
@@ -81,15 +83,14 @@ def init_model(
     provider_sort: str | None = None,
     timeout_s: float | None = None,
     role: str | None = None,
+    fallback_model: str | None = None,
 ):
     """Build a deep-agent LLM bound to the OpenRouter gateway.
 
-    OpenRouter is the SOLE gateway for every LLM call — there is no native-provider
-    fallback. Callers must supply the OpenRouter `base_url` + `api_key`, and `model`
-    must be an "openai:<openrouter-model-id>" string so LangChain selects the
-    OpenAI-compatible client. Any other shape is a misconfiguration and raises here,
-    before a request goes out, rather than failing later as an opaque transport
-    error (e.g. an Anthropic client aimed at the OpenRouter base URL that 404s).
+    OpenRouter is the SOLE provider for every LLM call. Callers supply the
+    OpenRouter `base_url` + `api_key` and a bare OpenRouter `model` id (the
+    historical "openai:" prefix is tolerated and stripped). Since P3.2 the build
+    goes through the platform's governed provider — see the module docstring.
 
     `reasoning` ("low" | "medium" | "high") rides OpenRouter's unified
     `reasoning: {effort}` request field — the gateway translates it for whatever
@@ -97,11 +98,9 @@ def init_model(
     per-vendor special case. None → no reasoning field on the request (provider
     default: no extended thinking).
 
-    `max_tokens` (D10a) is the OPTIONAL output-token bound. When set it is passed
-    straight to `init_chat_model`, which lands it on `ChatOpenAI.max_tokens`
-    (serialized as `max_completion_tokens` in the request) — one bound for every
-    model routed through this gateway, damage-limiting runaway generation. None →
-    no `max_tokens` kwarg on the model (today's behavior, byte-identical).
+    `max_tokens` (D10a) is the output-token bound. None → the governed default
+    (_DEFAULT_MAX_OUTPUT_TOKENS): since P3.2 output is ALWAYS bounded — the
+    governed build refuses unbounded generation.
 
     `provider_sort` (L1, cache locality) is the OpenRouter provider `sort`
     preference. When set it rides `extra_body["provider"] = {"sort": <value>}` and
@@ -110,12 +109,14 @@ def init_model(
     append-only ReAct prefix cache-warm (probe-proven 2/8 → 8/8 cache hits). None →
     no `provider` field on the request (byte-identical to pre-L1).
 
-    `timeout_s` (L3, straggler watchdog) is the OPTIONAL per-request timeout in
-    seconds. When set it installs BOTH `timeout` (ChatOpenAI.request_timeout, passed
-    to the OpenAI SDK client) and `max_retries=2` (explicit = SDK default) — the SDK
-    retries a timed-out request with exponential backoff, then propagates
-    openai.APITimeoutError. It kills the 60–97s stragglers without touching genuine
-    calls. None → neither kwarg (today's behavior, byte-identical).
+    `timeout_s` (L3, straggler watchdog) is the per-request timeout in seconds
+    with max_retries=2; None → _DEFAULT_TIMEOUT_S (always bounded since P3.2).
+
+    `fallback_model` (P3.2) is an OPTIONAL second OpenRouter id tried when the
+    primary errors (e.g. an upstream 5xx mid-turn) — rides
+    GatewayConfig.fallback_model with truthful answering-model attribution.
+    Must be vision-capable; None → no fallback, a hard upstream failure fails
+    the turn honestly.
     """
     if not (base_url and api_key):
         raise ValueError(
@@ -145,6 +146,7 @@ def init_model(
         reasoning=reasoning,
         provider_sort=provider_sort,
         timeout_s=effective_timeout,
+        fallback_model=fallback_model,
     )
     # P3.2 rulings, restated where they bind: max output is BOUNDED by default (the
     # governed build refuses unbounded generation); temperature=1.0 approximates the

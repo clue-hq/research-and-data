@@ -155,6 +155,11 @@ class Settings(BaseSettings):
     # OpenRouter values are latency|throughput|price, but this is not enum-validated
     # here — an unknown value is forwarded and OpenRouter rejects it loudly.
     lumen_agent_provider_sort: str | None = "latency"
+    # P3.2: OPTIONAL fallback model id (bare OpenRouter id) tried when the primary
+    # errors — rides GatewayConfig.fallback_model with truthful answering-model
+    # attribution. Must be vision-capable (the loop is mandatory-multimodal).
+    # None → no fallback (a hard upstream failure fails the turn honestly).
+    lumen_agent_fallback_model: str | None = None
     # L3 (latency: straggler watchdog) — per-request timeout in SECONDS applied to
     # every deep-agent LLM call. Installs `timeout` + `max_retries=2` on the
     # ChatOpenAI client, which the OpenAI SDK uses to retry a timed-out request
@@ -183,6 +188,7 @@ class Settings(BaseSettings):
         "lumen_agent_api_key",
         "lumen_agent_reasoning",
         "lumen_agent_provider_sort",
+        "lumen_agent_fallback_model",
         "lumen_agent_llm_timeout_s",
         "lumen_agent_model_orchestrator",
         "lumen_agent_model_author",
