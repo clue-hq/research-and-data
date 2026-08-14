@@ -90,6 +90,7 @@ log = get_logger("clue_api.design_leg")
 
 __all__ = [
     "DESIGN_LEG_BUDGET_LIMIT_MILLICENTS",
+    "DESIGN_LEG_TURN_CRASHED",
     "DESIGN_LEG_TURN_FAILED",
     "DesignLegLaneDriver",
     "DesignLegTurnResult",
@@ -108,6 +109,11 @@ DESIGN_LEG_BUDGET_LIMIT_MILLICENTS = 1_000_000
 
 #: The one stable failure code a failed design run surfaces on the platform turn.
 DESIGN_LEG_TURN_FAILED = "design_leg_turn_failed"
+
+#: The containment code for a turn body that RAISED (vs a design run that honestly
+#: failed): lane unavailable, join timeout, bundle fault, finisher fault. Marked
+#: abandoned so the turn is terminal, streamed, and prunable instead of a zombie.
+DESIGN_LEG_TURN_CRASHED = "design_leg_turn_crashed"
 
 _EXECUTION_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-execution")
 _RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-run")
@@ -604,154 +610,197 @@ class DesignLegTurnRunner:
             )
 
         await self._turns.mark_running(turn_id=turn_id, workspace_id=workspace_id)
+        # Failure containment (adversarial-review fix): once the turn is RUNNING, any
+        # raise below — the unavailable lane, a join timeout, a bundle read, a finisher
+        # fault — used to leave the agent_turn 'running' forever with no terminal frame:
+        # an endless spinner and an unprunable stream. The head-of-abm runner's armor,
+        # ported (DurableDeepAgentTurnRunner): mark abandoned with an honest reason,
+        # land the terminal frame, re-raise so the fleet task still fails loudly. True
+        # process death still skips this — that is what the derived-id retry
+        # convergence is for.
+        try:
+            if leg["state"] == "closed":
+                # P3.7 crash-window re-entry: the ONLY way a closed leg reaches this runner is
+                # the routing rule's closed-by-turn fallback — this very turn closed the leg and
+                # died before finalizing. The close (journal, summary message, re-delivery,
+                # ``leg.closed`` frame) committed atomically in the tool's transaction; what
+                # remains is the finalization, which converges below.
+                return await self._exit_leg(
+                    submission=submission,
+                    leg_id=leg_id,
+                    execution_id=execution_id,
+                    reason=str(leg["close_reason"]),
+                    stream=stream,
+                )
 
-        if leg["state"] == "closed":
-            # P3.7 crash-window re-entry: the ONLY way a closed leg reaches this runner is
-            # the routing rule's closed-by-turn fallback — this very turn closed the leg and
-            # died before finalizing. The close (journal, summary message, re-delivery,
-            # ``leg.closed`` frame) committed atomically in the tool's transaction; what
-            # remains is the finalization, which converges below.
-            return await self._exit_leg(
+            # --- the §2.2 exit bridge (P3.7): judge BEFORE designing ---------------------------
+            # Every exit category is a judgment about the INCOMING message (lock-in, out-of-scope,
+            # abandon), so the judgment runs pre-dispatch: an exiting turn spends nothing on the
+            # design lane. The fail-safe envelope (P3.6) means a broken judge can only continue.
+            exit_decision = await self._judge_exit(
+                leg=leg,
+                prior_history=prior_history,
+                user_message_ref=user_message_ref,
+            )
+            if exit_decision is not None and exit_decision.action == "finish":
+                assert exit_decision.reason is not None  # decide_exit forbids reasonless finish
+                return await self._exit_leg(
+                    submission=submission,
+                    leg_id=leg_id,
+                    execution_id=execution_id,
+                    reason=exit_decision.reason,
+                    stream=stream,
+                )
+
+            run = await self._dispatch(
                 submission=submission,
+                leg=leg,
                 leg_id=leg_id,
                 execution_id=execution_id,
-                reason=str(leg["close_reason"]),
-                stream=stream,
+                user_message_ref=user_message_ref,
+                prior_history=prior_history,
+                document_scene=document_scene,
+                focus_refs=focus_refs,
+                workspace_id=workspace_id,
             )
-
-        # --- the §2.2 exit bridge (P3.7): judge BEFORE designing -------------------------------
-        # Every exit category is a judgment about the INCOMING message (lock-in, out-of-scope,
-        # abandon), so the judgment runs pre-dispatch: an exiting turn spends nothing on the
-        # design lane. The fail-safe envelope (P3.6) means a broken judge can only continue.
-        exit_decision = await self._judge_exit(
-            leg=leg,
-            prior_history=prior_history,
-            user_message_ref=user_message_ref,
-        )
-        if exit_decision is not None and exit_decision.action == "finish":
-            assert exit_decision.reason is not None  # decide_exit forbids reasonless finish
-            return await self._exit_leg(
-                submission=submission,
+            await self._leg_back_to_awaiting(
+                workspace_id=workspace_id,
                 leg_id=leg_id,
-                execution_id=execution_id,
-                reason=exit_decision.reason,
-                stream=stream,
+                submission=submission,
             )
 
-        run = await self._dispatch(
-            submission=submission,
-            leg=leg,
-            leg_id=leg_id,
-            execution_id=execution_id,
-            user_message_ref=user_message_ref,
-            prior_history=prior_history,
-            document_scene=document_scene,
-            focus_refs=focus_refs,
-            workspace_id=workspace_id,
-        )
-        await self._leg_back_to_awaiting(
-            workspace_id=workspace_id,
-            leg_id=leg_id,
-            submission=submission,
-        )
+            if run["status"] != "succeeded":
+                await self._turns.mark_unfinalized(
+                    turn_id=turn_id,
+                    workspace_id=workspace_id,
+                    reason_code=DESIGN_LEG_TURN_FAILED,
+                    abandoned=False,
+                )
+                if stream is not None:
+                    await stream.turn_finished(
+                        status="failed",
+                        failure_code=DESIGN_LEG_TURN_FAILED,
+                    )
+                log.warning(
+                    "design_leg.turn_failed",
+                    leg_id=leg_id,
+                    turn_id=str(turn_id),
+                    run_id=str(run.get("run_id")),
+                )
+                return DesignLegTurnResult(
+                    outcome=AgentTurnOutcome(
+                        turn_id=turn_id,
+                        execution_id=execution_id,
+                        status=AgentExecutionStatus.FAILED,
+                        failure_code=DESIGN_LEG_TURN_FAILED,
+                    ),
+                    assistant_message=None,
+                    replayed=False,
+                )
 
-        if run["status"] != "succeeded":
-            await self._turns.mark_unfinalized(
+            assistant_message = _assistant_summary(run)
+            assistant_ref = await self._artifact_text(
+                workspace_id,
+                assistant_message,
+                project_id=submission.project_id,
+            )
+            envelope = AgentFinalizeEnvelope(
+                finalization_id=uuid5(_FINALIZATION_NAMESPACE, str(turn_id)),
+                execution_id=execution_id,
+                status=FinalizeStatus.AWAITING_INPUT,
+                user_message_artifact_ref=assistant_ref,
+                domain_refs=(
+                    DomainObjectRef(
+                        workspace_id=workspace_id,
+                        object_type="design_agent_run",
+                        object_id=str(run["run_id"]),
+                        version=None,
+                    ),
+                ),
+                # The leg IS the open interaction: the turn is done, the leg awaits the user.
+                open_gate_refs=(leg_ref,),
+                # Replay-stable on purpose (adversarial-review fix): the finalization id is
+                # derived, so every immutable envelope field must be too — a wall-clock
+                # stamp made a crash-retry's envelope differ and record_finalization refuse
+                # forever. The submission's accept time is the durable moment this turn
+                # already owns (the head-of-abm runner's requested_at precedent).
+                finalized_at=submission.requested_at,
+            )
+            await self._turns.record_finalization(
                 turn_id=turn_id,
                 workspace_id=workspace_id,
-                reason_code=DESIGN_LEG_TURN_FAILED,
-                abandoned=False,
+                envelope=envelope,
+            )
+            envelope_ref = await self._artifact(
+                workspace_id,
+                "application/vnd.clue.agent-finalize-envelope+json",
+                json.loads(envelope.model_dump_json()),
+                project_id=submission.project_id,
+            )
+            await self._turns.commit_finalization_authority(
+                turn_id=turn_id,
+                workspace_id=workspace_id,
+                envelope=envelope,
+                envelope_ref=envelope_ref,
+            )
+            await self._history.append(
+                message_id=uuid5(turn_id, "assistant"),
+                turn_id=turn_id,
+                workspace_id=workspace_id,
+                thread_id=submission.thread_id,
+                role="assistant",
+                body_ref=assistant_ref,
             )
             if stream is not None:
-                await stream.turn_finished(
-                    status="failed",
-                    failure_code=DESIGN_LEG_TURN_FAILED,
-                )
-            log.warning(
-                "design_leg.turn_failed",
-                leg_id=leg_id,
-                turn_id=str(turn_id),
-                run_id=str(run.get("run_id")),
-            )
+                # No platform text was streamed (design progress rides the design_run subject,
+                # D3); the honest instruction is to fetch the canonical message.
+                await stream.rehydrate(reason="design_turn_summary")
+                await stream.turn_finished(status="awaiting_input")
             return DesignLegTurnResult(
                 outcome=AgentTurnOutcome(
                     turn_id=turn_id,
                     execution_id=execution_id,
-                    status=AgentExecutionStatus.FAILED,
-                    failure_code=DESIGN_LEG_TURN_FAILED,
+                    status=AgentExecutionStatus.AWAITING_INPUT,
+                    finalization_ref=envelope_ref,
                 ),
-                assistant_message=None,
+                assistant_message=assistant_message,
                 replayed=False,
             )
+        except BaseException:
+            await self._contain_crash(turn_id=turn_id, workspace_id=workspace_id, stream=stream)
+            raise
 
-        assistant_message = _assistant_summary(run)
-        assistant_ref = await self._artifact_text(
-            workspace_id,
-            assistant_message,
-            project_id=submission.project_id,
-        )
-        envelope = AgentFinalizeEnvelope(
-            finalization_id=uuid5(_FINALIZATION_NAMESPACE, str(turn_id)),
-            execution_id=execution_id,
-            status=FinalizeStatus.AWAITING_INPUT,
-            user_message_artifact_ref=assistant_ref,
-            domain_refs=(
-                DomainObjectRef(
-                    workspace_id=workspace_id,
-                    object_type="design_agent_run",
-                    object_id=str(run["run_id"]),
-                    version=None,
-                ),
-            ),
-            # The leg IS the open interaction: the turn is done, the leg awaits the user.
-            open_gate_refs=(leg_ref,),
-            # Replay-stable on purpose (adversarial-review fix): the finalization id is
-            # derived, so every immutable envelope field must be too — a wall-clock
-            # stamp made a crash-retry's envelope differ and record_finalization refuse
-            # forever. The submission's accept time is the durable moment this turn
-            # already owns (the head-of-abm runner's requested_at precedent).
-            finalized_at=submission.requested_at,
-        )
-        await self._turns.record_finalization(
-            turn_id=turn_id,
-            workspace_id=workspace_id,
-            envelope=envelope,
-        )
-        envelope_ref = await self._artifact(
-            workspace_id,
-            "application/vnd.clue.agent-finalize-envelope+json",
-            json.loads(envelope.model_dump_json()),
-            project_id=submission.project_id,
-        )
-        await self._turns.commit_finalization_authority(
-            turn_id=turn_id,
-            workspace_id=workspace_id,
-            envelope=envelope,
-            envelope_ref=envelope_ref,
-        )
-        await self._history.append(
-            message_id=uuid5(turn_id, "assistant"),
-            turn_id=turn_id,
-            workspace_id=workspace_id,
-            thread_id=submission.thread_id,
-            role="assistant",
-            body_ref=assistant_ref,
-        )
-        if stream is not None:
-            # No platform text was streamed (design progress rides the design_run subject,
-            # D3); the honest instruction is to fetch the canonical message.
-            await stream.rehydrate(reason="design_turn_summary")
-            await stream.turn_finished(status="awaiting_input")
-        return DesignLegTurnResult(
-            outcome=AgentTurnOutcome(
+    async def _contain_crash(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+        stream: TurnStreamEmitter | None,
+    ) -> None:
+        """Best-effort terminalization of a crashed turn body (never masks the raise).
+
+        Both writes are suppressed on their own failure: containment must never turn one
+        crash into two, and ``mark_unfinalized`` already refuses to touch a turn whose
+        finalization committed — so a crash after the commit leaves the committed truth.
+        """
+
+        try:
+            await self._turns.mark_unfinalized(
                 turn_id=turn_id,
-                execution_id=execution_id,
-                status=AgentExecutionStatus.AWAITING_INPUT,
-                finalization_ref=envelope_ref,
-            ),
-            assistant_message=assistant_message,
-            replayed=False,
-        )
+                workspace_id=workspace_id,
+                reason_code=DESIGN_LEG_TURN_CRASHED,
+                abandoned=True,
+            )
+        except Exception:
+            log.warning("design_leg.containment_mark_failed", turn_id=str(turn_id))
+        if stream is not None:
+            try:
+                await stream.turn_finished(
+                    status="failed",
+                    failure_code=DESIGN_LEG_TURN_CRASHED,
+                )
+            except Exception:
+                log.warning("design_leg.containment_stream_failed", turn_id=str(turn_id))
 
     # -- the §2.2 exit bridge ------------------------------------------------------------------
 

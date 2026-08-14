@@ -36,3 +36,4 @@ apps/agent_runtime/.lumen-runs/
 .context/**/*.png
 .playwright-mcp/
 apps/editor/public/vendor/
+.artifacts/

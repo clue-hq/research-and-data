@@ -7350,6 +7350,11 @@ def repo_root() -> Path:
 #: resolving (and rasterizing SVGs) twice.
 _REFERENCES_UNRESOLVED = object()
 
+#: P3.7 TOCTOU fix: a leg-pinned turn's brand kit is resolved ONCE, fail-loud, at the
+#: dispatch gate and handed to the runtime BY VALUE. This sentinel means 'not a pinned
+#: turn — resolve tolerantly from the scene ref as always'.
+_BRAND_KIT_UNRESOLVED = object()
+
 
 def run_agent_turn_preview(
     payload: AgentTurnPreviewRequest,
@@ -7362,6 +7367,7 @@ def run_agent_turn_preview(
     engine_cache_root: Optional[Path] = None,
     checkpointer: Any = None,
     thread_id: Optional[str] = None,
+    resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED,
 ) -> JsonObject:
     # D4: the turn's tenant. It decides which engine materialization cache the runtime reads and
     # writes — and the accept seam that gives those bytes durable custody looks in that same
@@ -7418,9 +7424,16 @@ def run_agent_turn_preview(
             # the accept seam (the scene-persist backstop). Pointing the runtime anywhere else
             # fails seeded imagery with LUME0210. LUMEN_AGENT_ASSET_STORE still overrides.
             config = replace(config, asset_store_root=turn_cache_root)
-        brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
-            resolve_agent_turn_brand_kit(payload, turn_blobs)
-        )
+        if resolved_brand_kit is _BRAND_KIT_UNRESOLVED:
+            brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
+                resolve_agent_turn_brand_kit(payload, turn_blobs)
+            )
+        else:
+            # P3.7 TOCTOU fix: a leg-pinned turn's kit was resolved once, fail-loud, at the
+            # dispatch gate. Re-resolving here would reopen the exact window the pin exists
+            # to close — the tolerant resolver's except returns None and the runtime falls
+            # back to the platform default kit, silently, in the wrong brand.
+            brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = resolved_brand_kit
         if brand_kit is not None:
             # K0 (kit application): the document's attached kit rides the run
             # config BY VALUE so the runtime preflights against it instead of
@@ -7854,19 +7867,28 @@ def execute_agent_turn_job(
     leg_history = envelope.config.get("history")
 
     pinned_kit_id = leg_block.get("brand_kit_id") if isinstance(leg_block, dict) else None
+    resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED
     if pinned_kit_id:
-        # The D5 fail-closed brand pin: a delegation that pinned a kit must design WITH that
-        # kit — the silent default-kit fallback the resolver keeps for unpinned turns is an
-        # ERROR here. Verified against the durable row first, then made authoritative by
-        # writing the pin into the scene's kit ref, which is the one place the existing
-        # by-value resolution (kit + asset manifest + font spec) reads from.
+        # The D5 fail-closed brand pin, TOCTOU-free (adversarial-review fix): ONE read owns
+        # both the check and the value. The kit is resolved fully here — kit, asset
+        # manifest, font spec — fail-loud, and handed to the runtime BY VALUE, so the
+        # tolerant resolver (whose except falls back to the platform default kit) never
+        # runs for a pinned turn. A pin is (id, version): a version-less pin is refused
+        # here rather than injecting a scene ref the engine cannot deserialize mid-turn.
         pinned_version = leg_block.get("brand_kit_version")
         try:
-            HybridRepository(
-                workspace_id=envelope.workspace_id, ensure_workspace=False
-            ).require_brand_kit(
-                str(pinned_kit_id),
-                int(pinned_version) if pinned_version is not None else None,
+            if pinned_version is None:
+                raise ValueError(
+                    "the leg's brand pin carries no version; a pin is (id, version)"
+                )
+            pinned_version = int(pinned_version)
+            resolved_brand_kit = load_brand_kit_by_value(
+                workspace_id=envelope.workspace_id,
+                brand_kit_id=str(pinned_kit_id),
+                version=pinned_version,
+                blobs=_turn_blob_store(host, envelope.workspace_id),
+                source="leg_pin",
+                ensure_workspace=False,
             )
         except Exception as error:
             failed = failed_agent_turn_response(
@@ -7910,6 +7932,7 @@ def execute_agent_turn_job(
                 engine_cache_root=_host_engine_cache_root(host, envelope.workspace_id),
                 checkpointer=checkpointer,
                 thread_id=envelope.checkpoint_thread_id,
+                resolved_brand_kit=resolved_brand_kit,
             )
         status = "failed" if response.get("status") in ("failed", "error") else "succeeded"
         return status, response, "result", {"status": response.get("status")}
@@ -8209,16 +8232,39 @@ def resolve_agent_turn_brand_kit(
         # D5 Round C: `blobs` is REQUIRED and names the caller's tenant. It used to default to
         # `api_blob_store()` — the configured dev workspace — which meant an off-request caller
         # that forgot to thread a workspace resolved another tenant's kit.
-        repo = HybridRepository(blobs.workspace_id)
-        record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
-        brand_kit = record["brand_kit"]
-        manifest = brand_kit_asset_manifest(repo, brand_kit)
-        font_spec = brand_kit_font_spec(
-            repo, brand_kit, blobs, str(api_engine_cache_root(blobs.workspace_id))
+        return load_brand_kit_by_value(
+            workspace_id=blobs.workspace_id,
+            brand_kit_id=str(ref["id"]),
+            version=ref.get("version"),
+            blobs=blobs,
+            source="document",
         )
-        return brand_kit, "document", manifest, font_spec
     except Exception:
         return None, None, None, None
+
+
+def load_brand_kit_by_value(
+    *,
+    workspace_id: str,
+    brand_kit_id: str,
+    version: Optional[int],
+    blobs: DesignBlobStore,
+    source: str,
+    ensure_workspace: bool = True,
+) -> Tuple[JsonObject, str, JsonObject, Optional[JsonObject]]:
+    """One read that owns both the check and the value: kit + asset manifest + font spec,
+    fail-LOUD (P3.7 TOCTOU fix). The tolerant `resolve_agent_turn_brand_kit` wraps this for
+    unpinned turns; the leg-pin gate calls it directly and fails the turn on ANY error —
+    an unreachable database refuses rather than silently designing in the default kit."""
+
+    repo = HybridRepository(workspace_id, ensure_workspace=ensure_workspace)
+    record = repo.require_brand_kit(brand_kit_id, version)
+    brand_kit = record["brand_kit"]
+    manifest = brand_kit_asset_manifest(repo, brand_kit)
+    font_spec = brand_kit_font_spec(
+        repo, brand_kit, blobs, str(api_engine_cache_root(workspace_id))
+    )
+    return brand_kit, source, manifest, font_spec
 
 
 def _is_replace_web_doc(operations: Any) -> bool:

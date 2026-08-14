@@ -518,3 +518,61 @@ def test_open_design_leg_enforces_the_bundle_byte_cap(
             )
 
     run_async(scenario())
+
+
+def test_the_leg_tools_refuse_where_no_design_runtime_is_composed() -> None:
+    """The deployment thread-wedge guard (adversarial-review fix): with chat on and the
+    design runtime off, ``open_design_leg`` used to be live — and a leg opened there wedged
+    its thread permanently (unconditional routing, fail-loud lane, no reaper: every escape
+    hatch rides the same switch). The tools stay registered (the C6 audit is exact set
+    equality) but refuse BEFORE any durable write, with no database touched at all."""
+
+    import asyncio
+
+    from clue_api.design_leg_tools import _LegRefused, build_design_leg_tools
+    from clue_core import new_operation_id
+    from clue_toolbelt import ToolContext
+
+    def _boom() -> None:
+        raise AssertionError("the runtime gate must refuse before any DB connection opens")
+
+    ctx = ToolContext(
+        workspace_id="ws_wedge_guard",
+        actor="agent",
+        conn_factory=_boom,  # type: ignore[arg-type]
+        operation_id=new_operation_id(),
+    )
+    open_tool, finish_tool = build_design_leg_tools(
+        conn_factory=_boom,  # type: ignore[arg-type]
+        storage=None,
+        enabled=False,
+    )
+
+    async def scenario() -> None:
+        for tool, args in (
+            (
+                open_tool,
+                {
+                    "source_turn_ref": "turn-action:00000000-0000-4000-8000-000000000000",
+                    "brief": "wedge probe",
+                },
+            ),
+            (
+                finish_tool,
+                {
+                    "source_turn_ref": "turn-action:00000000-0000-4000-8000-000000000000",
+                    "reason": "abandoned",
+                    "summary": "wedge probe",
+                },
+            ),
+        ):
+            failures = await tool.preconditions(tool.input_model.model_validate(args), ctx)
+            assert [f.reason_code for f in failures] == ["design_leg_runtime_not_configured"]
+            try:
+                await tool.invoke(tool.input_model.model_validate(args), ctx)
+            except _LegRefused as refusal:
+                assert refusal.reason_code == "design_leg_runtime_not_configured"
+            else:  # pragma: no cover - the refusal is the contract
+                raise AssertionError("invoke must refuse on a design-disabled deployment")
+
+    asyncio.run(scenario())

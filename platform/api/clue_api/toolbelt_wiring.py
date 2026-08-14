@@ -2849,8 +2849,15 @@ def build_toolbelt(
     ):
         registry.register(tool, make_default=True)
     # P3.4 (PD-part3 §1-D1/§2.3): the head-of-abm's delegation entry onto the design leg.
-    # Registered unconditionally for the same audit reason; without a storage backend it refuses
-    # `design_leg_storage_not_configured` before any write.
-    for tool in build_design_leg_tools(conn_factory=conn_factory, storage=storage):
+    # Registered unconditionally for the same audit reason, and gated on the SAME runtime
+    # switch as the design_* set (the thread-wedge guard, adversarial-review fix): a leg
+    # opened where no design runtime is composed is a thread nothing can serve, so on such a
+    # deployment both tools refuse `design_leg_runtime_not_configured` before any write;
+    # without a storage backend they refuse `design_leg_storage_not_configured`.
+    for tool in build_design_leg_tools(
+        conn_factory=conn_factory,
+        storage=storage,
+        enabled=resolved_settings.design_runtime_enabled,
+    ):
         registry.register(tool, make_default=True)
     return registry

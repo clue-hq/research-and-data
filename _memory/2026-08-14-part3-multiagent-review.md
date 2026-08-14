@@ -101,6 +101,25 @@ concat, str/dict passthrough, unknown→""→fail-safe) — pinned by
 `finalized_at=submission.requested_at` (replay-stable; head-of-abm precedent) — pinned
 by the resilience battery's new record-vs-commit crash-window test (RED reproduced the
 exact 'different immutable envelope' poison).
-Remaining priority: 4-6 (deployment thread-wedge, brand-pin TOCTOU, design-lane
-failure containment), then the MED ledger. Design API server from the smoke left running on :8371
+**Items 4-6 FIXED (same day, founder-directed, TDD RED→GREEN each):**
+(4) thread-wedge: `build_design_leg_tools(enabled=)` rides `design_runtime_enabled`
+(the build_design_tools precedent); both leg tools refuse
+`design_leg_runtime_not_configured` from all four entry points BEFORE any DB
+connection opens (`_require_runtime` hoisted above the conn context — test-pinned with
+an exploding conn_factory); toolbelt matrix rows updated; C6 audit intact (tools stay
+registered). (5) brand-pin TOCTOU: ONE read owns check+value —
+`load_brand_kit_by_value` (fail-loud: kit + asset manifest + font spec) runs at the
+dispatch gate and rides `run_agent_turn_preview(resolved_brand_kit=...)` (the
+`_REFERENCES_UNRESOLVED` sentinel precedent), so the tolerant resolver (whose except
+falls back to the platform default kit) never runs for pinned turns; version-less pins
+refused, string versions coerced; source label `leg_pin`; the tolerant path is a
+byte-equivalent wrapper over the same loader (design-app brand suite green).
+(6) containment: `run_leg_turn`'s post-mark_running body wrapped in `BaseException`
+armor (`_contain_crash`: best-effort mark_unfinalized(`design_leg_turn_crashed`,
+abandoned) + terminal `turn.failed` frame + re-raise; `_mark_status`'s committed-turn
+no-op keeps it safe post-commit) — the DurableDeepAgentTurnRunner precedent ported;
+pinned by a raising-lane test asserting the agent_turn_event terminal status + the
+stream frame; the P3.6 kill/convergence battery still green (convergence now proven
+WITH containment's writes present).
+Remaining: the MED ledger (items 7-14). Design API server from the smoke left running on :8371
 (background task; dies with session).

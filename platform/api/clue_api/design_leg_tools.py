@@ -267,15 +267,40 @@ class OpenDesignLegTool(Tool):
         *,
         conn_factory: ConnFactory = transaction,
         storage: StorageBackend | None = None,
+        enabled: bool = True,
     ) -> None:
         self._conn_factory = conn_factory
         self._storage = storage
+        # The deployment thread-wedge guard (adversarial-review fix): on a worker without the
+        # design runtime, an opened leg is a thread NOTHING can serve — the routing rule is
+        # unconditional, the lane is the fail-loud stub, finish_design_leg has no design turns
+        # to run on, and the reaper rides the same switch. So the tools stay REGISTERED (the
+        # C6 audit is exact set equality) but refuse before any durable write, exactly like
+        # the sibling design_* set's `design_runtime_not_configured`.
+        self._enabled = enabled
+
+    def _require_runtime(self) -> None:
+        """The thread-wedge guard: refuse BEFORE any database touch on a design-disabled
+        deployment — a leg opened where no runtime is composed is a thread nothing can
+        serve (unconditional routing, fail-loud lane, no reaper on the same switch)."""
+
+        if not self._enabled:
+            raise _LegRefused(
+                "the design runtime is not composed on this deployment "
+                "(CLUE_DESIGN_RUNTIME_ENABLED is off), so a design leg opened here could "
+                "never run a design turn; delegation is refused rather than wedging the "
+                "thread",
+                reason_code="design_leg_runtime_not_configured",
+            )
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, OpenDesignLegInput)
         try:
+            # Before the connection opens: a design-disabled deployment refuses without
+            # touching the database at all (the thread-wedge guard).
+            self._require_runtime()
             async with self._conn_factory() as conn:
                 await self._resolve(conn, inputs, ctx)
         except _LegRefused as exc:
@@ -290,6 +315,7 @@ class OpenDesignLegTool(Tool):
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, OpenDesignLegInput)
+        self._require_runtime()
         reopened = False
         async with self._conn_factory() as conn:
             resolved = await self._resolve(conn, inputs, ctx)
@@ -394,6 +420,7 @@ class OpenDesignLegTool(Tool):
     ) -> _ResolvedDelegation:
         """Every check the delegation depends on, run identically by preconditions and invoke."""
 
+        self._require_runtime()
         if self._storage is None:
             raise _LegRefused(
                 "this deployment has no artifact storage, so no delegation bundle can be "
@@ -735,15 +762,34 @@ class FinishDesignLegTool(Tool):
         *,
         conn_factory: ConnFactory = transaction,
         storage: StorageBackend | None = None,
+        enabled: bool = True,
     ) -> None:
         self._conn_factory = conn_factory
         self._storage = storage
+        # The deployment thread-wedge guard (adversarial-review fix): on a worker without the
+        # design runtime, an opened leg is a thread NOTHING can serve — the routing rule is
+        # unconditional, the lane is the fail-loud stub, finish_design_leg has no design turns
+        # to run on, and the reaper rides the same switch. So the tools stay REGISTERED (the
+        # C6 audit is exact set equality) but refuse before any durable write, exactly like
+        # the sibling design_* set's `design_runtime_not_configured`.
+        self._enabled = enabled
+
+    def _require_runtime(self) -> None:
+        if not self._enabled:
+            raise _LegRefused(
+                "the design runtime is not composed on this deployment "
+                "(CLUE_DESIGN_RUNTIME_ENABLED is off), so no design leg can close here",
+                reason_code="design_leg_runtime_not_configured",
+            )
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, FinishDesignLegInput)
         try:
+            # Before the connection opens: a design-disabled deployment refuses without
+            # touching the database at all (the thread-wedge guard).
+            self._require_runtime()
             async with self._conn_factory() as conn:
                 await self._resolve(conn, inputs, ctx)
         except _LegRefused as exc:
@@ -759,6 +805,7 @@ class FinishDesignLegTool(Tool):
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, FinishDesignLegInput)
+        self._require_runtime()
         from clue_api.agent_turn_submission import (
             dispatch_next_thread_turn,
             insert_submission,
@@ -927,6 +974,7 @@ class FinishDesignLegTool(Tool):
 
         from clue_api.agent_turn_submission import get_submission
 
+        self._require_runtime()
         if self._storage is None:
             raise _LegRefused(
                 "this deployment has no artifact storage, so no leg summary can be "
@@ -1025,14 +1073,18 @@ def build_design_leg_tools(
     *,
     conn_factory: ConnFactory = transaction,
     storage: StorageBackend | None = None,
+    enabled: bool = True,
 ) -> tuple[Tool, ...]:
     """The design-leg tool set, registered unconditionally (the C6 audit is exact set equality).
 
-    Without a storage backend both tools refuse ``design_leg_storage_not_configured`` before
-    any write — present-but-refusing, the same posture as the design write tools.
+    ``enabled`` is the deployment's design-runtime switch (the thread-wedge guard): where
+    the runtime is not composed both tools refuse ``design_leg_runtime_not_configured``
+    before any durable write, and without a storage backend they refuse
+    ``design_leg_storage_not_configured``. Present-but-refusing, the same posture as the
+    sibling design write tools.
     """
 
     return (
-        OpenDesignLegTool(conn_factory=conn_factory, storage=storage),
-        FinishDesignLegTool(conn_factory=conn_factory, storage=storage),
+        OpenDesignLegTool(conn_factory=conn_factory, storage=storage, enabled=enabled),
+        FinishDesignLegTool(conn_factory=conn_factory, storage=storage, enabled=enabled),
     )

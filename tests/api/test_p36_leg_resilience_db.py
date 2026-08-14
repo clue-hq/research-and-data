@@ -83,9 +83,12 @@ NOW_UTC = datetime(2026, 8, 14, 16, 0, tzinfo=UTC)
 
 
 class _WorkerDeath(BaseException):
-    """Raised where the simulated worker process dies. A ``BaseException`` on purpose: no
-    handler in the runner may catch it, so nothing runs after the 'kill' — exactly like a
-    real process death, which writes no cleanup either."""
+    """Raised where the simulated worker dies. A ``BaseException`` on purpose so ordinary
+    ``except Exception`` handlers cannot swallow it. Since the containment fix the runner's
+    ``BaseException`` armor DOES run (mark-abandoned + terminal frame, then re-raise) — so
+    these tests now prove the stronger property: convergence holds from the crash state
+    WITH containment's writes present, and a true process death (no handler at all) leaves
+    strictly less state, which the same derived-id retry machinery covers."""
 
 
 class _DiesAfterCompletingRun:
@@ -750,5 +753,82 @@ def test_a_gate_answer_queued_behind_a_leg_opening_still_reaches_head_of_abm(
             result = await runner.run(turn_id=ordinary.turn_id, workspace_id=workspace_id)
             assert result.outcome.status is AgentExecutionStatus.AWAITING_INPUT
             assert len(lane.envelopes) == 1
+
+    run_async(scenario())
+
+
+class _LaneThatRaisesMidDrive:
+    """An exception-shaped lane failure (join timeout, unavailable lane, missing app) —
+    NOT a process death: handlers run, so containment must produce a terminal turn."""
+
+    async def drive(self, *, envelope: Any) -> None:
+        raise RuntimeError("the design lane is on fire")
+
+
+class _RecordingStream:
+    def __init__(self) -> None:
+        self.finished: list[dict[str, Any]] = []
+
+    async def turn_started(self) -> None: ...
+
+    async def rehydrate(self, *, reason: str) -> None: ...
+
+    async def turn_finished(self, **kwargs: Any) -> None:
+        self.finished.append(kwargs)
+
+
+def test_an_exception_after_the_turn_starts_is_contained_as_a_terminal_turn(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Adversarial-review fix (design-lane failure containment): any raise after the turn
+    starts used to leave the agent_turn 'running' forever with no terminal stream frame —
+    an endless spinner, an unprunable stream, and a thread whose next turn dispatches on
+    top of a zombie. The head-of-abm runner's armor, ported: the failure is marked
+    abandoned with an honest reason, the stream gets its terminal frame, and the raise
+    still propagates so the fleet task fails loudly."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            from clue_api.agent_turn_submission import message_artifact_ref
+
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="contain")
+            submission = await _submit_message(conn, seeds, label="contain-1", message="Bolder.")
+            leg = await design_legs.get_open_leg_for_thread(
+                conn, workspace_id=seeds["workspace_id"], thread_id=seeds["thread_id"]
+            )
+            assert leg is not None
+            stream = _RecordingStream()
+            with pytest.raises(RuntimeError, match="on fire"):
+                await _fresh_runner(seeds, tmp_path, _LaneThatRaisesMidDrive()).run_leg_turn(
+                    submission=submission,
+                    leg=leg,
+                    user_message_ref=await message_artifact_ref(conn, submission),
+                    focus_refs=(),
+                    card_payload=_card_payload(seeds),
+                    stream=stream,  # type: ignore[arg-type]
+                )
+
+            status = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT status, reason_code FROM agent_turn_event "
+                            "WHERE turn_id = :turn ORDER BY seq DESC LIMIT 1"
+                        ),
+                        {"turn": submission.turn_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert status["status"] == "abandoned"
+            assert status["reason_code"] == "design_leg_turn_crashed"
+            assert stream.finished == [
+                {"status": "failed", "failure_code": "design_leg_turn_crashed"}
+            ]
 
     run_async(scenario())

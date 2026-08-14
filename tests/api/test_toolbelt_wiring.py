@@ -186,8 +186,11 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # FI Lane D D4 / §3-P5(a). The gate tool's first prerequisite is the *turn* it would address the
     # gate to: a ref naming no turn of this workspace proves no addressee, so it refuses rather than
     # presenting a gate nobody is entitled to answer.
-    "finish_design_leg": ("precondition", ("design_leg_storage_not_configured",)),
-    "open_design_leg": ("precondition", ("design_leg_storage_not_configured",)),
+    # The thread-wedge guard (adversarial-review fix): under the hermetic env the design
+    # runtime is off, and a leg opened on such a deployment is a thread nothing can serve —
+    # so the runtime refusal outranks the storage one.
+    "finish_design_leg": ("precondition", ("design_leg_runtime_not_configured",)),
+    "open_design_leg": ("precondition", ("design_leg_runtime_not_configured",)),
     "open_directive_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
     "submit_onboarding_input": ("precondition", ("artifact_not_found",)),
     "start_recon": ("precondition", ("onboarding_input_not_found",)),

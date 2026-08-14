@@ -231,3 +231,122 @@ def test_a_resolvable_brand_pin_becomes_the_scenes_authoritative_kit_ref(
         assert runner.payloads[0].scene["meta"]["brand_kit"] == {"id": kit_id, "version": 1}
     finally:
         run_async(cleanup())
+
+
+def _seed_kit(workspace_id: str, kit_id: str) -> None:
+    async def seed() -> None:
+        async with db_lifespan(), transaction() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO workspace (workspace_id, name) VALUES (:w, :w) "
+                    "ON CONFLICT (workspace_id) DO NOTHING"
+                ),
+                {"w": workspace_id},
+            )
+            await design_brand.create_brand_kit(
+                conn,
+                workspace_id=workspace_id,
+                brand_kit={
+                    "id": kit_id,
+                    "version": 1,
+                    "name": "Pinned kit",
+                    "approval_status": "draft",
+                    "tokens": {"color": {"primary": "#010203"}},
+                },
+                brand_summary={"product_ready": False},
+                diagnostics=[],
+                source="manual",
+            )
+
+    run_async(seed())
+
+
+def _cleanup_kit(workspace_id: str) -> None:
+    async def cleanup() -> None:
+        async with db_lifespan(), transaction() as conn:
+            for sql in (
+                "DELETE FROM design_brand_kit WHERE workspace_id = :w",
+                "DELETE FROM brand WHERE workspace_id = :w",
+                "DELETE FROM workspace WHERE workspace_id = :w",
+            ):
+                await conn.execute(text(sql), {"w": workspace_id})
+
+    run_async(cleanup())
+
+
+def test_a_version_less_brand_pin_is_refused_before_the_runner(require_design_db: None) -> None:
+    """TOCTOU-fix companion: a pin is ``(id, version)`` — a version-less pin used to pass
+    the gate as 'latest' and then inject ``version: None`` into a scene the engine's
+    non-nullable ``BrandKitRef.version`` cannot deserialize, mid-turn, after spend."""
+
+    from lumen_api.main import execute_agent_turn_job
+
+    workspace_id = f"ws_p37nover_{uuid4().hex[:8]}"
+    kit_id = f"bk_{uuid4().hex[:8]}"
+    _seed_kit(workspace_id, kit_id)
+    try:
+        runner = _CapturingRunner()
+        envelope = _envelope(
+            workspace_id,
+            {
+                "request": {"prompt": "Brand it.", "scene": {}},
+                "leg": {"leg_id": "leg-1", "brand_kit_id": kit_id},
+            },
+        )
+        status, response, _, _ = execute_agent_turn_job(
+            envelope, store=None, host=_host(runner), event_sink=None
+        )
+        assert status == "failed"
+        assert response["diagnostics"][0]["code"] == "design_leg.brand_pin_unresolvable"
+        assert runner.payloads == []
+    finally:
+        _cleanup_kit(workspace_id)
+
+
+def test_a_pinned_turn_hands_the_resolved_kit_by_value_to_the_runtime(
+    require_design_db: None,
+    monkeypatch: Any,
+) -> None:
+    """THE TOCTOU fix: one read owns both the check and the value. The gate resolves the
+    pinned kit fully (kit + asset manifest + font spec) fail-loud and passes it BY VALUE
+    into ``run_agent_turn_preview`` — the fallback-happy resolver never runs for a pinned
+    turn, so a transient fault can no longer silently design in the platform default kit."""
+
+    import lumen_api.main as lumen_main
+
+    workspace_id = f"ws_p37byval_{uuid4().hex[:8]}"
+    kit_id = f"bk_{uuid4().hex[:8]}"
+    _seed_kit(workspace_id, kit_id)
+    try:
+        captured: dict[str, Any] = {}
+
+        def fake_preview(payload: Any, root: Any, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            captured["payload"] = payload
+            captured["kwargs"] = kwargs
+            return {"status": "accepted"}
+
+        monkeypatch.setattr(lumen_main, "run_agent_turn_preview", fake_preview)
+        envelope = _envelope(
+            workspace_id,
+            {
+                # A string-typed version must coerce, not leak into the scene.
+                "request": {"prompt": "Brand it.", "scene": {}},
+                "leg": {"leg_id": "leg-1", "brand_kit_id": kit_id, "brand_kit_version": "1"},
+            },
+        )
+        from lumen_api.fleet_handler import DesignTurnHost
+
+        status, response, _, _ = lumen_main.execute_agent_turn_job(
+            envelope,
+            store=None,
+            host=DesignTurnHost(),  # no override runner: the (monkeypatched) runtime runs
+            event_sink=None,
+        )
+        assert status == "succeeded", response
+        resolved = captured["kwargs"]["resolved_brand_kit"]
+        kit, source, _manifest, _fonts = resolved
+        assert kit["id"] == kit_id and kit["version"] == 1
+        assert source == "leg_pin"
+        assert captured["payload"].scene["meta"]["brand_kit"] == {"id": kit_id, "version": 1}
+    finally:
+        _cleanup_kit(workspace_id)
