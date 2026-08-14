@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — implementation plan
 
-**Status:** C0 contract freeze implemented; C1–C10 not yet accepted
+**Status:** C0–C3 implemented and verified; C4–C10 not yet accepted
 
 **Branch:** `platform/onboarding-integration`
 
@@ -1101,6 +1101,14 @@ recorded in the
 - External redirects/canonical hints/private-IP targets are refused.
 
 ### C3 — Single-page provider contract and adapters
+
+**Status: complete (2026-08-14).** Firecrawl and Scrapling now implement the same frozen one-page
+`PageFetcher` seam under provider-isolated adapter packages. Firecrawl uses only async `scrape` and
+maps unresolved paid outcomes to `spend_unknown`; Scrapling uses manual redirects and C2-approved
+DNS pinning at connect time. The shared conformance/static suite and exact capability/spend
+decisions are recorded in the
+[C3 provider contract](./FI-stage0-durable-official-site-crawl-C3-provider-contract.md). C3 does not
+wire the coordinator, persist artifacts, or enable production crawling; those remain C4–C6.
 
 **Deliverables**
 

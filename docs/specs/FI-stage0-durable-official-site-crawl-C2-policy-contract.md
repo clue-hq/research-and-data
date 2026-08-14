@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — C2 policy contract
 
-**Status:** C2 implemented and verified; C3 provider adapters have not started
+**Status:** C2 implemented and verified; C3 provider adapters are implemented and verified
 
 **Parent:** [durable official-site crawl implementation plan](./FI-stage0-durable-official-site-crawl-plan.md)
 
@@ -159,5 +159,6 @@ C2 acceptance covers:
   refetch, alias separation/rejection, exact replay, and full-key protection under a forced hash
   collision.
 
-C3 must not duplicate these semantics. Adapters return one raw typed page result; C5 applies C2
-before dispatch and again to provider-returned redirects, final URL, content metadata, and links.
+C3 keeps these semantics outside provider code: adapters return one typed page result and add only
+transport-level integrity checks. C5 still applies C2 authoritatively before dispatch and again to
+provider-returned redirects, final URL, content metadata, and links.

@@ -27,6 +27,9 @@ dependencies = [
     # B2.4 — the credit-free scrape backend (CLUE_SCRAPE_BACKEND=scrapling); both are used only
     # behind the adapters/concrete seam (Rule 4), lazy-imported.
     "scrapling[fetchers]>=0.4",
+    # C3 pins every local connection to the C2-approved DNS answers through libcurl RESOLVE.
+    # Declare Scrapling's transport explicitly because the adapter imports this public API.
+    "curl-cffi>=0.13,<1",
     "markdownify>=1.2",
     "langgraph>=0.2",
     "langgraph-checkpoint-postgres>=2",
