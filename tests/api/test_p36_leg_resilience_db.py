@@ -376,6 +376,21 @@ def test_a_worker_killed_before_the_design_work_landed_redrives_the_same_run(
             retry = await _run_on(conn, seeds, _fresh_runner(seeds, tmp_path, lane), submission)
             assert retry.outcome.status is AgentExecutionStatus.AWAITING_INPUT
             assert [envelope.run_id for envelope in lane.envelopes] == [run_id]
+            # MED-4 (adversarial-review fix): the retry's rebuilt envelope must equal the
+            # FROZEN payload attempt 1 stored — the run row's re-offer contract. It used to
+            # drift: the retry's prior-history load swept in this turn's OWN user message
+            # (appended durably by attempt 1), so the design agent saw the message twice and
+            # the judge's input changed across attempts.
+            stored_payload = (
+                await conn.execute(
+                    text(
+                        "SELECT payload FROM design_agent_run "
+                        "WHERE workspace_id = :ws AND run_id = :run"
+                    ),
+                    {"ws": seeds["workspace_id"], "run": run_id},
+                )
+            ).scalar_one()
+            assert lane.envelopes[0].model_dump(mode="json") == stored_payload
             assert await _history_roles(conn, seeds) == ["user", "assistant"]
             runs_for_leg = (
                 await conn.execute(

@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
@@ -291,6 +292,138 @@ def test_a_fenced_out_lane_abandons_and_rejoins_the_takeovers_terminal_run(
                 )
             # The lane converges on the takeover's result rather than raising.
             await asyncio.wait_for(drive, timeout=8.0)
+            async with transaction() as conn:
+                run = await design_runs.get_run(
+                    conn, workspace_id=envelope.workspace_id, run_id=envelope.run_id
+                )
+            assert run is not None and run["status"] == "succeeded"
+        finally:
+            await _cleanup_committed_run(envelope)
+
+    run_async(scenario())
+
+
+class _StatefulHandler:
+    """Attempt 1 abandons on the fence; attempt 2 (the re-acquire) completes the run."""
+
+    def __init__(self, *, conn_factory: Any) -> None:
+        self._conn_factory = conn_factory
+        self.attempts = 0
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        self.attempts += 1
+        if self.attempts == 1:
+            await context.lease_lost.wait()
+            return WorkResult(outcome="lease_lost", references={}, requeue=True)
+        envelope = context.payload
+        async with transaction() as conn:
+            await design_runs.set_run_result(
+                conn,
+                workspace_id=str(envelope["workspace_id"]),
+                run_id=str(envelope["run_id"]),
+                status="succeeded",
+                result={"schema_version": 1, "status": "accepted"},
+                expected_generation=int(context.lease_generation),
+            )
+        return WorkResult(outcome="succeeded", references={})
+
+
+def test_a_refused_lane_reacquires_when_the_holders_lease_dies(
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """MED-6 (adversarial-review fix): a lane whose acquire was refused used to park in a
+    blind terminal-join for up to 30 minutes — while the reaper's recovery design_job landed
+    in the very queue this parked worker drains (the single-worker deadlock the inline lane
+    exists to avoid). Now it waits only while the foreign holder's lease is LIVE and
+    re-acquires the moment nobody is driving, completing the run itself."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            await _refused_scenario()
+
+    async def _refused_scenario() -> None:
+        envelope = await _seed_committed_run("refused")
+        try:
+            # A foreign holder with a short lease it will never renew — a worker that died
+            # a moment after claiming.
+            async with transaction() as conn:
+                foreign = await acquire_work_lease(
+                    conn,
+                    work_id=WorkId(envelope.work_id),
+                    worker_id="dead-foreign-worker",
+                    ttl=timedelta(seconds=1.0),
+                )
+            assert foreign is not None
+            handler = _SlowCompletingHandler(run_seconds=0.1)
+            driver = InlineDesignLaneDriver(
+                handler=handler,
+                lease_ttl=timedelta(seconds=1.0),
+                heartbeat_interval_s=0.25,
+                join_poll_interval_s=0.2,
+                join_timeout_s=8.0,
+            )
+            await asyncio.wait_for(driver.drive(envelope=envelope), timeout=10.0)
+            assert len(handler.contexts) == 1  # the lane drove the run ITSELF
+            async with transaction() as conn:
+                run = await design_runs.get_run(
+                    conn, workspace_id=envelope.workspace_id, run_id=envelope.run_id
+                )
+            assert run is not None and run["status"] == "succeeded"
+        finally:
+            await _cleanup_committed_run(envelope)
+
+    run_async(scenario())
+
+
+def test_a_fenced_lane_reacquires_when_the_takeover_dies_without_finishing(
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """MED-6, the fenced flavor: the thief steals the lease and dies. The fenced lane used
+    to wait on a terminal row nobody would ever write; now it re-acquires once the thief's
+    lease lapses and finishes the work under its new generation."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            await _fenced_dead_thief_scenario()
+
+    async def _fenced_dead_thief_scenario() -> None:
+        envelope = await _seed_committed_run("deadthief")
+        try:
+            handler = _StatefulHandler(conn_factory=transaction)
+            driver = InlineDesignLaneDriver(
+                handler=handler,
+                lease_ttl=timedelta(seconds=1.0),
+                heartbeat_interval_s=0.25,
+                join_poll_interval_s=0.2,
+                join_timeout_s=10.0,
+            )
+            drive = asyncio.create_task(driver.drive(envelope=envelope))
+            await asyncio.sleep(0.5)
+            # The theft: force-expire the lane's lease; the thief claims with a SHORT lease
+            # and then dies (never renews, never completes the run).
+            async with transaction() as conn:
+                await conn.execute(
+                    text(
+                        "UPDATE work_lease SET expires_at = now() - interval '1 second' "
+                        "WHERE work_id = :w"
+                    ),
+                    {"w": envelope.work_id},
+                )
+                thief = await acquire_work_lease(
+                    conn,
+                    work_id=WorkId(envelope.work_id),
+                    worker_id="thief-that-dies",
+                    ttl=timedelta(seconds=1.0),
+                )
+            assert thief is not None
+            await asyncio.wait_for(drive, timeout=12.0)
+            assert handler.attempts == 2  # abandoned once, then re-acquired and finished
             async with transaction() as conn:
                 run = await design_runs.get_run(
                     conn, workspace_id=envelope.workspace_id, run_id=envelope.run_id

@@ -121,5 +121,25 @@ no-op keeps it safe post-commit) — the DurableDeepAgentTurnRunner precedent po
 pinned by a raising-lane test asserting the agent_turn_event terminal status + the
 stream frame; the P3.6 kill/convergence battery still green (convergence now proven
 WITH containment's writes present).
-Remaining: the MED ledger (items 7-14). Design API server from the smoke left running on :8371
+**Short pass (same day, founder-directed): spec amendments + the two sharp MEDs.**
+Spec: §2.2 gained the dated as-built amendment (platform-side pre-dispatch judgment;
+"design orchestrator only" superseded; DESIGN grant retained-not-enforced;
+pending_user_message derived not passed; canned summaries + the summary_refs gap
+recorded) — closing authority HIGH-2/MED-3/MED-4. §1-D1's amendment gained the second
+worker-side input (closed-by-turn re-entry, the full four-way routing rule spelled out)
+— closing authority MED-2. Engine MED-4 FIXED: load_design_leg_history gained
+exclude_turn_id (CAST-null SQL guard); the runner excludes its own turn, so a retry's
+rebuilt envelope is byte-equal to the frozen run payload (test-pinned equality in the
+redrive test, RED-proven on the drift). Engine MED-6 FIXED: InlineDesignLaneDriver.drive
+is now an active convergence loop — drive whenever nobody else is, wait ONLY while a
+LIVE foreign lease proves someone else is, return on terminal; a refused lane re-acquires
+the moment the holder's lease lapses and a fenced lane re-acquires when the takeover dies
+(both RED-proven: the old code parked to its join deadline). The blind 30-minute park —
+and the single-worker deadlock with the reaper's re-offer — is gone; join_timeout_s
+remains only as the hard outer cap, and a cap raise now terminalizes honestly through
+the containment armor.
+Remaining: MED items 7 (double-summary on exit replay), 8→gone (was MED-6), the
+close-atomicity MED-8, the sidebar speaker gap, the design-side MEDs (unbounded history,
+web-doc kind check, failure-summary text, regression-gate name-sets), and the LOWs — all
+still ledgered above with owners. Design API server from the smoke left running on :8371
 (background task; dies with session).

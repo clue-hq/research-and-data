@@ -31,6 +31,7 @@ from clue_fleet import (
     LeaseGeneration,
     WorkId,
     acquire_work_lease,
+    get_work_lease,
     release_work_lease,
     renew_work_lease,
 )
@@ -129,23 +130,51 @@ class InlineDesignLaneDriver:
         self.renewals = 0
 
     async def drive(self, *, envelope: Any) -> None:
+        """Drive the run terminal — actively (MED-6, adversarial-review fix).
+
+        The old shape parked in a blind bounded join whenever it did not hold the lease —
+        but on a single-worker deployment the reaper's recovery ``design_job`` lands in the
+        very queue the parked worker drains, so a dead holder meant a 30-minute stall. The
+        loop's rule instead: **drive whenever nobody else is; wait only while a LIVE foreign
+        lease proves someone else is; return the moment the run is terminal.** A fenced-out
+        attempt re-acquires once the takeover's lease lapses without a terminal row; the
+        claim CAS and the generation fence make the redrive exactly a D5 takeover.
+        """
+
         work_id = WorkId(envelope.work_id)
-        async with self._conn_factory() as conn:
-            lease = await acquire_work_lease(
-                conn,
-                work_id=work_id,
-                worker_id=_DESIGN_LEG_LANE_WORKER_ID,
-                ttl=self._lease_ttl,
-            )
-        if lease is None:
-            # A LIVE holder exists (a takeover, or a still-beating prior attempt). Do not
-            # fight it — its work is this run's work; join its terminal result.
-            log.warning(
-                "design_leg.lane_lease_held_elsewhere",
-                work_id=str(work_id),
-            )
-            await self._join_terminal(envelope)
-            return
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._join_timeout_s
+        while True:
+            async with self._conn_factory() as conn:
+                lease = await acquire_work_lease(
+                    conn,
+                    work_id=work_id,
+                    worker_id=_DESIGN_LEG_LANE_WORKER_ID,
+                    ttl=self._lease_ttl,
+                )
+            if lease is not None:
+                await self._drive_claimed(envelope=envelope, work_id=work_id, lease=lease)
+            else:
+                log.info(
+                    "design_leg.lane_lease_held_elsewhere",
+                    work_id=str(work_id),
+                )
+            if await self._run_is_terminal(envelope):
+                return
+            # Not terminal: either we were fenced mid-drive or a live foreign holder refused
+            # the acquire. Wait while that holder's lease is LIVE; the moment it lapses with
+            # no terminal row, loop back and drive the run ourselves.
+            outcome = await self._await_terminal_or_free(envelope, work_id, deadline)
+            if outcome == "terminal":
+                return
+            if outcome == "deadline":
+                raise RuntimeError(
+                    "the design-leg run did not reach a terminal state within the lane's "
+                    "join window; the reaper (or an operator requeue) owns it now"
+                )
+            # outcome == "free": nobody is driving — re-acquire.
+
+    async def _drive_claimed(self, *, envelope: Any, work_id: WorkId, lease: Any) -> None:
         generation = LeaseGeneration(lease.generation)
         lease_lost = asyncio.Event()
         context = WorkContext(
@@ -202,7 +231,6 @@ class InlineDesignLaneDriver:
                     worker_id=_DESIGN_LEG_LANE_WORKER_ID,
                     generation=generation,
                 )
-        await self._join_terminal(envelope)
 
     async def _keep_lease(
         self,
@@ -253,38 +281,43 @@ class InlineDesignLaneDriver:
             deadline = t0 + ttl_s
             sleep_for = self._heartbeat_interval_s
 
-    async def _join_terminal(self, envelope: Any) -> None:
-        """Wait (bounded) for the run's terminal row — ours or a takeover's.
-
-        Imports the design DAL lazily like everything else in this module: the driver exists
-        only in deployments that composed the design runtime.
-        """
+    async def _run_is_terminal(self, envelope: Any) -> bool:
+        """One read of the run's terminal state. Lazy DAL import, like the whole module."""
 
         from clue_design import runs as design_runs
 
+        async with self._conn_factory() as conn:
+            run = await design_runs.get_run(
+                conn,
+                workspace_id=envelope.workspace_id,
+                run_id=envelope.run_id,
+            )
+        return run is not None and run["status"] in ("succeeded", "failed")
+
+    async def _await_terminal_or_free(self, envelope: Any, work_id: WorkId, deadline: float) -> str:
+        """Poll until the run is terminal (``"terminal"``), the foreign lease lapses with no
+        terminal row (``"free"`` — the caller re-acquires and drives), or the join window
+        closes (``"deadline"``). Waiting is justified ONLY by a live foreign lease: a dead
+        holder's work will never finish on its own, and the reaper's re-offer lands in the
+        queue this very worker drains — so the lane recovers it inline instead (MED-6)."""
+
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + self._join_timeout_s
         last_logged = loop.time()
         while True:
+            if await self._run_is_terminal(envelope):
+                return "terminal"
             async with self._conn_factory() as conn:
-                run = await design_runs.get_run(
-                    conn,
-                    workspace_id=envelope.workspace_id,
-                    run_id=envelope.run_id,
-                )
-            if run is not None and run["status"] in ("succeeded", "failed"):
-                return
+                lease = await get_work_lease(conn, work_id)
+            if lease is None or not lease.live:
+                return "free"
             now = loop.time()
             if now >= deadline:
-                raise RuntimeError(
-                    "the design-leg run did not reach a terminal state within the lane's "
-                    "join window; the reaper (or an operator requeue) owns it now"
-                )
+                return "deadline"
             if now - last_logged >= 60.0:
                 log.info(
-                    "design_leg.lane_joining_run",
+                    "design_leg.lane_awaiting_foreign_holder",
                     run_id=str(envelope.run_id),
-                    status=None if run is None else run["status"],
+                    work_id=str(work_id),
                 )
                 last_logged = now
             await asyncio.sleep(self._join_poll_interval_s)

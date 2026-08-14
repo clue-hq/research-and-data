@@ -58,7 +58,15 @@ wait for the leg to finish. **Worker half (P3.6):** the route's refusal cannot s
 future — an answer accepted while no leg was open can sit queued behind a turn that then
 opens one. The worker's routing therefore checks the durable `agent_gate_answer` row and
 delivers a gate-answer turn to head-of-abm regardless of leg state; the design agent never
-receives one.
+receives one. **Second worker-side input (ratified 2026-08-14, P3.7 crash-window
+re-entry):** when no open leg exists, the worker also consults the exit journal's
+`closing_turn_id` (`get_leg_closed_by_turn`, expression-indexed) — a design turn that
+closed its leg and died before finalizing finds no open leg on retry, yet re-running it as
+head-of-abm would collide with its own durable rows, so it is re-delivered to the design
+runner, whose finisher replay and committed finalize converge. The full routing rule is
+therefore: gate answer → head-of-abm; open leg → design; closed-by-this-turn → design
+(re-entry); otherwise head-of-abm. Still zero LLMs in the loop, still derived entirely
+from durable rows.
 
 ### D2 — One platform-facing role; the trio stays internal
 
@@ -144,6 +152,24 @@ existing authorities: `final.json` / `finalize_run` / `request_clarification` re
 **turn-level** outcome contract, untouched; `finish_design_leg` is the **leg-level** exit
 and is the only path to `closed`. A turn can finalize (proposal ready) while the leg stays
 open — that is the normal iteration loop.
+
+**Amendment (ratified 2026-08-14, P3.7 as-built — recording what shipped):** the exit
+judgment executes **platform-side, pre-dispatch**, not inside the design orchestrator's
+graph. Every exit category (lock-in, out-of-scope, abandon) is a judgment about the
+*incoming* message, so the leg runner judges it with the design role's own catalog model
+over the P3.6 versioned prompt before any design-lane spend; a `finish` verdict is
+executed by the engine as the governed `finish_design_leg` invocation through the
+production journaled invoker. Consequences this paragraph makes explicit rather than
+leaving to drift: (a) "exposed to the design orchestrator only" is superseded — the
+tool's only production invoker is the engine bridge, and the `AgentRole.DESIGN` grant is
+retained for a future design-side bridge, not enforced by any runtime today; (b) the
+ratified signature's `pending_user_message?` argument was **removed** — the out-of-scope
+pending message is *derived* from the closing turn's durable submission (the user's own
+captured bytes), never model-authored, which is strictly stronger than the spec'd shape;
+(c) the exit `summary` on the bridge path is an engine-canned sentence (the judge decides
+*whether*, never authors prose), and `summary_refs` carries `document_version` but not
+yet the master plan's `accepted_ops`/`open_gaps` — a recorded gap for the design-side
+enrichment, not an accident.
 
 ### 2.3 The delegation bundle (C8-native)
 

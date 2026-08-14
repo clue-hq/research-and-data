@@ -256,6 +256,7 @@ async def load_design_leg_history(
     workspace_id: str,
     thread_id: str,
     leg_parent_execution_id: UUID | str,
+    exclude_turn_id: UUID | None = None,
 ) -> tuple[HistoryMessageRef, ...]:
     """§2.4's design-side assembly: THIS leg's user↔design exchanges, in thread order.
 
@@ -263,6 +264,12 @@ async def load_design_leg_history(
     leg's delegating execution — rather than through ``design_agent_run.leg_id``, so a turn
     whose run was never created (a crash before dispatch) still belongs to its leg's history.
     A reopened leg keeps its parent execution, so its history resumes where it was (§2.2).
+
+    ``exclude_turn_id`` is the runner's replay stability (adversarial-review MED-4): "prior"
+    means prior to THIS turn, and on a retry this turn's own user message is already durable
+    — without the exclusion the rebuilt envelope drifts from the frozen run payload, the
+    agent sees the message in both HISTORY and MESSAGE, and the exit judge's input changes
+    across attempts.
     """
 
     async with conn_factory() as conn:
@@ -275,12 +282,15 @@ async def load_design_leg_history(
                 "JOIN artifact a ON a.storage_key = m.body_artifact_key "
                 "WHERE m.workspace_id = :workspace AND m.thread_id = :thread "
                 "AND t.role = 'design' AND t.parent_execution_id = :parent "
+                "AND (CAST(:exclude_turn AS uuid) IS NULL "
+                "     OR m.turn_id <> CAST(:exclude_turn AS uuid)) "
                 "ORDER BY m.sequence"
             ),
             {
                 "workspace": workspace_id,
                 "thread": thread_id,
                 "parent": str(leg_parent_execution_id),
+                "exclude_turn": None if exclude_turn_id is None else str(exclude_turn_id),
             },
         )
         return tuple(
@@ -468,6 +478,9 @@ class DesignLegTurnRunner:
                 workspace_id=workspace_id,
                 thread_id=submission.thread_id,
                 leg_parent_execution_id=parent_execution_id,
+                # "Prior" means prior to THIS turn: on a retry the first attempt's own user
+                # message is already durable and must not re-enter as history (MED-4).
+                exclude_turn_id=turn_id,
             )
             bundle_ref = await self._bundle_ref(conn, leg=leg, workspace_id=workspace_id)
             document_scene: dict[str, Any] = {}
