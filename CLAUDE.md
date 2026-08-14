@@ -40,6 +40,12 @@ The production context mechanism composes independently owned, bounded artifacts
 confirmed-product context; an always-present L3 project-conversation envelope; one account-wide
 Client-KB index shared by every project; and only the active project's Stage-0 state. Full claims
 stay out of opening context and are discovered/inspected through governed, version-pinned tools.
+Each production turn persists an immutable workspace/client/account-wide Client-KB scope receipt
+before composition; retries and replay keep that exact version even when background recon advances.
+The frozen V1 Client-KB scope is company/account-wide (`product_id IS NULL`). A confirmed project
+product is separate project context and cannot silently filter the shared card or S4 tools; any
+future product-specific knowledge consumption requires the explicit S5.0 contract and a new policy
+version. Production Stage-0 cards reverse-bind every embedded quote to its statement for DSAR.
 Every slice must reach the real production turn worker, assembler, toolbelt, database/artifacts,
 and replay path; trial-only or compiler-only work does not satisfy an exit gate.
 

@@ -45,8 +45,12 @@ from clue_api.agent_turn_fleet_wiring import (
     project_conversation_card_payload,
 )
 from clue_api.agent_turn_submission import AgentTurnSubmissionRow
-from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.agent_turn_wiring import AgentPrivacyService, DurableAgentArtifactStore
 from clue_api.client_context_binding import bind_workspace_client
+from clue_api.stage0_card_dsar import (
+    STAGE0_CARD_QUOTE_BINDING_KIND,
+    Stage0StatementEraser,
+)
 from clue_core import EntityId, ExecutionId, OnboardingInputId, OnboardingInputKind
 from clue_db import ConnFactory
 from clue_projections import ClientKnowledgeCard, ProjectConversationCard, Stage0ProjectStateCard
@@ -345,7 +349,7 @@ def test_pre_recon_composes_real_l2_and_honest_empty_l3(tmp_path: Path) -> None:
                 project_id=project.project_id,
                 suffix="pre",
             )
-            scope = await runner._load_scope(conn, submission)
+            scope = await runner._resolve_current_scope(conn, submission)
             bundle = await runner._compose_project_context(submission=submission, scope=scope)
             assert scope.client_entity_id is None
             assert scope.client_kb_version is None
@@ -391,8 +395,9 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
         async with rollback_conn() as conn:
             seeded = await _seed_post_recon(conn, suffix=uuid4().hex[:8])
             factory = conn_session_factory(conn)
+            storage = FsStorage(tmp_path / "post-recon")
             artifacts = DurableAgentArtifactStore(
-                storage=FsStorage(tmp_path / "post-recon"),
+                storage=storage,
                 conn_factory=factory,
             )
             await _record_project_statement(
@@ -422,8 +427,8 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
                 project_id=seeded.project_b.project_id,
                 suffix="b",
             )
-            scope_a = await runner._load_scope(conn, submission_a)
-            scope_b = await runner._load_scope(conn, submission_b)
+            scope_a = await runner._resolve_current_scope(conn, submission_a)
+            scope_b = await runner._resolve_current_scope(conn, submission_b)
             # Project A has a confirmed product, but its KB pin is still the account-wide marker.
             assert scope_a.product_id == seeded.product.product_id
             assert scope_a.client_kb_version == seeded.client_kb_version
@@ -466,6 +471,45 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
             assert quotes_b == {"Project B goal only"}
             assert quotes_a.isdisjoint(quotes_b)
 
+            # S3.1: the production persistence path reverse-binds each embedded quote to its exact
+            # statement. Client-level binding alone cannot answer a statement DSAR.
+            statement_a_id = (
+                await conn.execute(
+                    text(
+                        "SELECT id FROM volunteered_statement "
+                        "WHERE workspace_id=:workspace AND project_id=:project"
+                    ),
+                    {
+                        "workspace": seeded.workspace_id,
+                        "project": seeded.project_a.project_id,
+                    },
+                )
+            ).scalar_one()
+            stage_a_bindings = {
+                (UUID(str(row["subject_entity_id"])), str(row["binding_kind"]))
+                for row in (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT subject_entity_id, binding_kind "
+                                "FROM agent_artifact_subject "
+                                "WHERE workspace_id=:workspace AND artifact_key=:key"
+                            ),
+                            {
+                                "workspace": seeded.workspace_id,
+                                "key": stage_a.artifact_ref.artifact_key,
+                            },
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+            }
+            assert stage_a_bindings == {
+                (UUID(str(seeded.client_entity_id)), "context"),
+                (UUID(str(statement_a_id)), STAGE0_CARD_QUOTE_BINDING_KIND),
+            }
+
             project_binding_count = int(
                 (
                     await conn.execute(
@@ -496,6 +540,37 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
                 ("brand", seeded.brand.brand_id),
                 ("product", seeded.product.product_id),
             }
+
+            # Execute the existing governed statement-erasure path against the artifact emitted by
+            # this production composer. It must discover A through the new reverse binding, purge
+            # A and its captured quote, and leave project B's independently scoped card readable.
+            erasure = await Stage0StatementEraser(
+                privacy=AgentPrivacyService(
+                    storage=storage,
+                    # This fixture has no journaled AgentTurn, so the workspace closure is empty.
+                    # Keep the production service while providing the unused port explicitly.
+                    workspaces=cast(
+                        Any,
+                        SimpleNamespace(erase_for_privacy=lambda **_kwargs: False),
+                    ),
+                    conn_factory=factory,
+                ),
+                conn_factory=factory,
+            ).erase_statement(
+                workspace_id=seeded.workspace_id,
+                statement_id=UUID(str(statement_a_id)),
+            )
+            assert stage_a.artifact_ref.artifact_key in erasure.card_artifact_keys
+            assert stage_b.artifact_ref.artifact_key not in erasure.card_artifact_keys
+            assert stage_a.artifact_ref.artifact_key in erasure.erase.tombstoned_artifact_keys
+            with pytest.raises(ArtifactNotFound):
+                await artifacts.read(stage_a.artifact_ref)
+            assert (
+                Stage0ProjectStateCard.model_validate_json(
+                    await artifacts.read(stage_b.artifact_ref)
+                )
+                == card_b
+            )
 
     run_async(scenario())
 
@@ -577,7 +652,7 @@ def test_kb_pin_receipt_and_missing_or_foreign_context_fail_closed(tmp_path: Pat
                 project_id=seeded.project_a.project_id,
                 suffix="pin",
             )
-            pinned_v1 = await runner._load_scope(conn, submission)
+            pinned_v1 = await runner._resolve_current_scope(conn, submission)
             bundle_v1 = await runner._compose_project_context(
                 submission=submission,
                 scope=pinned_v1,
@@ -613,7 +688,7 @@ def test_kb_pin_receipt_and_missing_or_foreign_context_fail_closed(tmp_path: Pat
                 scope=pinned_v1,
             )
             assert pinned_again.artifacts == bundle_v1.artifacts
-            next_scope = await runner._load_scope(conn, submission)
+            next_scope = await runner._resolve_current_scope(conn, submission)
             assert next_scope.client_kb_version == profiled_v2.ref.client_kb_version
             bundle_v2 = await runner._compose_project_context(
                 submission=submission,

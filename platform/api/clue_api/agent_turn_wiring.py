@@ -1511,7 +1511,7 @@ class DbAgentReplayReader:
             return None
         rows_result = await conn.execute(  # type: ignore[attr-defined]
             text(
-                "SELECT l.ordinal AS layer_ordinal, l.layer, l.token_budget, r.*,"
+                "SELECT l.ordinal AS receipt_layer_ordinal, l.layer, l.token_budget, r.*,"
                 " a.media_type, a.size_bytes "
                 "FROM agent_context_layer l "
                 "LEFT JOIN agent_context_ref r "
@@ -1526,7 +1526,9 @@ class DbAgentReplayReader:
         layer_names: dict[int, str] = {}
         layer_budgets: dict[int, int] = {}
         for row in rows_result.mappings():
-            ordinal = int(row["layer_ordinal"])
+            # ``r.*`` contains its own nullable ``layer_ordinal``. Use the distinct layer-table
+            # alias so an intentionally empty layer in the LEFT JOIN remains replay-readable.
+            ordinal = int(row["receipt_layer_ordinal"])
             layer_names[ordinal] = row["layer"]
             layer_budgets[ordinal] = int(row["token_budget"])
             if row["id"] is not None:
@@ -1740,6 +1742,12 @@ class AgentPrivacyService:
                             OR EXISTS (
                                 SELECT 1 FROM agent_context_bundle b
                                 JOIN agent_context_ref r ON r.context_bundle_id=b.id
+                                WHERE b.turn_id=t.id AND b.workspace_id=t.workspace_id
+                                  AND r.artifact_key=ANY(CAST(:keys AS text[]))
+                            )
+                            OR EXISTS (
+                                SELECT 1 FROM agent_context_bundle b
+                                JOIN agent_context_ref r ON r.context_bundle_id=b.id
                                 JOIN memory m ON r.object_type='scoped_memory'
                                   AND m.memory_id=r.object_id
                                 WHERE b.turn_id=t.id AND m.subject_entity_id=:subject
@@ -1882,7 +1890,6 @@ class AgentPrivacyService:
                     ),
                     {"workspace": workspace_id, "turn": turn["id"]},
                 )
-                checkpoint_ns = f"agent-turn:{turn['id']}"
                 for table_name in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
                     exists = (
                         await conn.execute(
@@ -1894,11 +1901,15 @@ class AgentPrivacyService:
                         await conn.execute(
                             text(
                                 f"DELETE FROM {table_name} "  # noqa: S608 -- frozen table set
-                                "WHERE thread_id=:thread_id AND checkpoint_ns=:checkpoint_ns"
+                                "WHERE thread_id=:thread_id"
                             ),
                             {
+                                # A production AgentTurn has its own immutable execution id. Real
+                                # LangGraph versions may persist the root namespace as either the
+                                # configured value or the empty string and may add subgraph
+                                # namespaces. The execution id is therefore the durable, complete,
+                                # turn-local DSAR boundary.
                                 "thread_id": str(turn["execution_id"]),
-                                "checkpoint_ns": checkpoint_ns,
                             },
                         )
 

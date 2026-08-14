@@ -56,6 +56,11 @@ from clue_agents import (
 from clue_api.agent_execution_wiring import FreshWakeChildRunner
 from clue_api.agent_platform_wiring import AgentPlatformComponents
 from clue_api.agent_registry_wiring import PROJECT_CONVERSATION_SURFACE
+from clue_api.agent_turn_scope_pin import (
+    AgentTurnScopePinRow,
+    get_agent_turn_scope_pin,
+    load_or_create_agent_turn_scope_pin,
+)
 from clue_api.agent_turn_submission import (
     AGENT_TURN_DEDUP_PREFIX,
     AgentTurnSubmissionRow,
@@ -79,6 +84,7 @@ from clue_api.conversation_turns import (
     ConversationTurnResult,
     build_conversation_turn_engine,
 )
+from clue_api.stage0_card_dsar import stage0_card_subject_bindings
 from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
@@ -245,6 +251,18 @@ class _ProjectScope:
     client_entity_id: EntityId | None
     client_kb_version: int | None
 
+    @classmethod
+    def from_pin(cls, pin: AgentTurnScopePinRow) -> _ProjectScope:
+        return cls(
+            project_id=pin.project_id,
+            name=pin.project_name,
+            status=pin.project_status,
+            brand_id=pin.brand_id,
+            product_id=pin.product_id,
+            client_entity_id=pin.client_entity_id,
+            client_kb_version=pin.client_kb_version,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class _ProjectContextBundle:
@@ -307,6 +325,15 @@ class ProjectConversationTurnRunner:
                 workspace_id=workspace_id,
                 turn_id=turn_id,
             )
+            # Existing pins are read before replay so a committed retry can prove which scope the
+            # original attempt used without consulting mutable project/recon state. A legacy
+            # committed turn can predate S3.1 and legitimately have no receipt; never invent one
+            # from today's state and mislabel it as the original.
+            scope_pin = await get_agent_turn_scope_pin(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+            )
         # FI Lane D D3: open this attempt's stream *before* anything runs. The outbox itself decides
         # the attempt ordinal, so a re-claimed task after a crash opens a distinct attempt and
         # resets whatever the dead one left open — never splicing two generations (§3.3(6)).
@@ -341,11 +368,38 @@ class ProjectConversationTurnRunner:
                 turn_id=str(turn_id),
                 workspace_id=workspace_id,
                 project_id=submission.project_id,
+                scope_pin_available=scope_pin is not None,
+                client_entity_id=(
+                    None
+                    if scope_pin is None or scope_pin.client_entity_id is None
+                    else str(scope_pin.client_entity_id)
+                ),
+                client_kb_version=(None if scope_pin is None else scope_pin.client_kb_version),
+                knowledge_scope_policy_version=(
+                    None if scope_pin is None else scope_pin.knowledge_scope_policy_version
+                ),
             )
             return committed
 
-        async with self._conn_factory() as conn:
-            scope = await self._load_scope(conn, submission)
+        if scope_pin is None:
+            async with self._conn_factory() as conn:
+                scope_pin, created = await load_or_create_agent_turn_scope_pin(
+                    conn,
+                    submission=submission,
+                )
+            log.info(
+                "agent_turn.scope_pinned",
+                turn_id=str(turn_id),
+                workspace_id=workspace_id,
+                project_id=scope_pin.project_id,
+                client_entity_id=(
+                    None if scope_pin.client_entity_id is None else str(scope_pin.client_entity_id)
+                ),
+                client_kb_version=scope_pin.client_kb_version,
+                knowledge_scope_policy_version=scope_pin.knowledge_scope_policy_version,
+                created=created,
+            )
+        scope = _ProjectScope.from_pin(scope_pin)
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
@@ -507,11 +561,11 @@ class ProjectConversationTurnRunner:
     ) -> _ProjectContextBundle:
         """Compile and persist one exact Client-KB pin plus this project's Stage-0 state.
 
-        ``scope.client_kb_version`` was resolved once in :meth:`_load_scope`. Both compilers use
-        that immutable value even if background recon publishes a newer marker while this method
-        is running. Compilation is fail-closed: a missing/foreign version, project, statement, or
-        evidence artifact raises before an ``AgentTurnRequest`` exists and therefore before the
-        context assembler or model can run.
+        ``scope.client_kb_version`` comes from the durable turn scope pin. Both compilers use that
+        immutable value even if background recon publishes a newer marker while this method is
+        running or before a reclaimed worker retries it. Compilation is fail-closed: a
+        missing/foreign version, project, statement, or evidence artifact raises before an
+        ``AgentTurnRequest`` exists and therefore before the context assembler or model can run.
         """
 
         if scope.client_entity_id is None or scope.client_kb_version is None:
@@ -550,6 +604,10 @@ class ProjectConversationTurnRunner:
             scope,
             STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
             stage0_card.model_dump(mode="json", exclude_none=True),
+            subject_bindings=stage0_card_subject_bindings(
+                card=stage0_card,
+                base=self._client_subject_bindings(scope),
+            ),
         )
         if stage0_ref.sha256 != stage0_card.content_sha256().removeprefix("sha256:"):
             raise RuntimeError(
@@ -750,26 +808,41 @@ class ProjectConversationTurnRunner:
         media_type: str,
         payload: object,
         bind_project: bool = True,
+        subject_bindings: tuple[tuple[UUID, str], ...] | None = None,
     ) -> ArtifactRef:
         return await self._engine.artifacts.persist_body(
             workspace_id=submission.workspace_id,
             data=_canonical_json(payload),
             media_type=media_type,
             subject_bindings=(
-                ()
-                if scope.client_entity_id is None
-                else ((UUID(str(scope.client_entity_id)), CONVERSATION_CONTEXT_BINDING_KIND),)
+                self._client_subject_bindings(scope)
+                if subject_bindings is None
+                else subject_bindings
             ),
             project_bindings=(
                 ((scope.project_id, "project_conversation_context"),) if bind_project else ()
             ),
         )
 
-    async def _load_scope(
+    @staticmethod
+    def _client_subject_bindings(scope: _ProjectScope) -> tuple[tuple[UUID, str], ...]:
+        return (
+            ()
+            if scope.client_entity_id is None
+            else ((UUID(str(scope.client_entity_id)), CONVERSATION_CONTEXT_BINDING_KIND),)
+        )
+
+    async def _resolve_current_scope(
         self,
         conn: AsyncConnection,
         submission: AgentTurnSubmissionRow,
     ) -> _ProjectScope:
+        """Resolve mutable current scope for diagnostic/compiler fixtures only.
+
+        Production :meth:`run` never calls this helper. It uses
+        :func:`load_or_create_agent_turn_scope_pin`, whose immutable row is the retry authority.
+        """
+
         project = await get_project(conn, submission.project_id)
         if project is None or project.workspace_id != submission.workspace_id:
             raise ProjectConversationScopeError("the submission names no project in its workspace")
@@ -785,6 +858,7 @@ class ProjectConversationTurnRunner:
                 conn,
                 entity_id,
                 workspace_id=submission.workspace_id,
+                product_id=None,
             )
         )
         return _ProjectScope(

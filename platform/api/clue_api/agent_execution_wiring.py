@@ -85,6 +85,7 @@ from clue_toolbelt import (
     ToolRegistry,
     ToolResult,
 )
+from clue_toolbelt.runner import validate_tool_result
 
 __all__ = [
     "AgentExecutionCrashHook",
@@ -1775,10 +1776,14 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             actor_id=self._constitution.actor_id,
             action_ref=self._action_ref,
         )
-        descriptor = self._tools.descriptor(step.tool.name, step.tool.version)
-        validated_output = descriptor.output_model.model_validate(result.references)
-        canonical_result = result.model_copy(
-            update={"references": validated_output.model_dump(mode="json")}
+        # The ToolInvoker result crosses a durable JSON boundary before it reaches this adapter.
+        # Reuse the toolbelt's canonical validator: strict UUID/datetime/Decimal and tuple output
+        # contracts must be decoded in JSON mode, not incorrectly reinterpreted as Python-native
+        # inputs. This also keeps the production C5 path and direct/idempotent tool replay on one
+        # validation rule.
+        canonical_result = validate_tool_result(
+            self._tools.get(step.tool.name, step.tool.version),
+            result,
         )
         subject_bindings = client_knowledge_result_subject_bindings(
             address=operation.address,

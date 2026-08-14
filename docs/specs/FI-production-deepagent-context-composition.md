@@ -6,13 +6,14 @@
 **Authority:** contract delta to Doc A Part III and PC-C8 for this production composition. Where
 this document conflicts with the provisional note in root `CLAUDE.md`, this document wins.
 
-**Implementation checkpoint (2026-08-14):** S0-S4 are implemented. S4-A's version-aware reader,
+**Implementation checkpoint (2026-08-15):** S0-S4 and S3.1 are implemented. S4-A's version-aware reader,
 S4-B's immutable contract freeze, S4-C's trusted `@2` implementations, S4-D's production
 composition, and S4-E's privacy/injection/replay hardening all pass their gates. The previously
 shipped `@1` tools and Head-of-ABM `v24` / Stage-0 skill `v11` / Recipe #0 `v7` graph remain frozen
 historical replay resources; S4-D's profile `v25` / skill `v12` also remain immutable. Current
-production selects `@2`, profile `v26`, skill `v13`, and Recipe #0 `v8`. S3.1, S5.0, S5, and S6
-remain outside this checkpoint.
+production selects `@2`, profile `v26`, skill `v13`, and Recipe #0 `v8`. S3.1 adds the immutable
+per-turn scope receipt, statement-level production-card DSAR binding, exact vN retry behavior, and
+real-fleet acceptance. S5.0, S5, and S6 remain outside this checkpoint.
 
 ## 1. Purpose
 
@@ -137,11 +138,23 @@ artifact. Cross-workspace reads fail as an indistinguishable miss/refusal.
 
 ### D4 — A turn is pinned to one coherent knowledge version
 
-The worker resolves `client_entity_id` and current `client_kb_version` once. The envelope,
-constitution, Client-KB card, Stage-0 card, and admitted tools for that turn all use that exact pin.
+Before card compilation or model/tool execution, the worker inserts one immutable
+`agent_turn_scope_pin` row containing the trusted workspace, project snapshot, brand, confirmed
+project product, canonical `client_entity_id`, account-wide `client_kb_version`, policy version,
+and DB timestamp. Every worker retry reads that row. The envelope, constitution, Client-KB card,
+Stage-0 card, governed S4 arguments, checkpoints, finalization, and replay all use that exact pin.
 
 If background recon publishes vN+1 while a vN turn is running, the running turn stays on vN. The
-next turn receives vN+1. Partial version mixing is forbidden.
+same rule applies after a crash: a reclaimed vN turn completes on vN, while only a newly submitted
+turn receives vN+1. A committed legacy turn that predates the receipt may replay its retained
+artifacts, but production must not fabricate a historical pin from current state. Partial version
+mixing is forbidden.
+
+The frozen `company-account-wide-v1` policy has one precise meaning: the Client-KB card and S4
+reads select only the account-wide marker/claims (`product_id IS NULL`). `project.product_id` is a
+separate project pin used by L2 and Stage-0 project state; it never silently filters the shared
+Client-KB. Product-specific claims require the explicit S5.0 product-knowledge contract and a new
+policy version rather than reinterpretation of V1.
 
 ### D5 — References must explain what they lead to
 
@@ -304,25 +317,44 @@ Add `workspace_client_binding`:
 The authoritative onboarding fleet writes this binding in the same transaction that establishes
 the recon's client identity. Existing project-scoped onboarding rows are not the account binding.
 
-### 5.2 Card persistence
+### 5.2 Durable turn-scope receipt
+
+`agent_turn_scope_pin` is the retry authority for production `AGENT_TURN` composition:
+
+- exactly one append-only row per `agent_turn_submission.turn_id`;
+- workspace-composite FKs for the submission, project, brand, optional product, and optional
+  canonical client entity;
+- a coherent optional `(client_entity_id, client_kb_version)` pin;
+- DB-authored `pinned_at` and explicit `knowledge_scope_policy_version`;
+- atomic `INSERT ... ON CONFLICT DO NOTHING`, after which a losing concurrent attempt reads the
+  winning row rather than using its discarded current-state observation;
+- workspace-scoped reads and fail-closed rejection of unsupported policy versions.
+
+The row is created before cards, context assembly, model execution, or tools. Ordinary retries,
+crash recovery, and committed replay never update or delete it.
+
+### 5.3 Card persistence
 
 Cards are content-addressed immutable artifacts with privacy/DSAR subject bindings:
 
 - Client-KB card: client subject binding, no project binding required for identity;
-- Stage-0 card: client subject binding plus exactly one project binding;
+- Stage-0 card: client subject binding, one `derived` subject binding for every exact statement
+  quote embedded in the body, plus exactly one project binding;
 - conversation envelope: active project binding and client binding when available.
 
 Identical Client-KB versions across projects persist/reuse one blob while each turn retains its
 own context receipt.
 
-### 5.3 Refresh
+### 5.4 Refresh and retry
 
-- Fast recon commit creates/updates the current Client-KB version; the next turn compiles that pin.
-- Background recon does the same without mutating an already assembled turn.
+- Fast recon commit creates/updates the current account-wide Client-KB version; the next unpinned
+  turn persists that current version.
+- Background recon does the same without mutating an already pinned or assembled turn.
 - Interview-derived Client-KB claims publish a new version before a later turn can reference them.
 - A Stage-0 project-state change recompiles only that project's artifact.
-- Replay of a committed turn reuses its original context receipt and performs zero recon/model/tool
-  work.
+- A crash/retry before finalization reuses the immutable scope pin even if a newer version exists.
+- Replay of a committed turn reuses its original scope/context receipts and performs zero
+  recon/model/tool work.
 
 ## 6. Product catalog
 
@@ -618,8 +650,8 @@ or source URLs.
 `AgentPrivacyService` now follows a bounded propagation closure from those indexed roots through
 the originating and subsequent same-thread turns plus delegated descendants. It tombstones the
 potentially data-bearing turn/model/plan/tool/delegation/finalization artifacts, deletes the bounded
-stream partition and exact `agent-turn:<turn_id>` LangGraph checkpoint namespace, and purges the
-isolated workspace. Shared immutable resource manifests and budget envelopes are deliberately not
+stream partition and every LangGraph checkpoint namespace under the turn's unique execution id,
+and purges the isolated workspace. Shared immutable resource manifests and budget envelopes are deliberately not
 tombstoned. Body-free operation, model-cost, context, finalization, event, hash, and identity rows
 remain auditable; their referenced bodies are absent and cold replay fails closed. Existing
 content-addressed tombstones reject any attempt to persist the erased bytes again.
@@ -650,6 +682,35 @@ writes and zero provider spend.
 The real production chain—`AGENT_TURN → durable scope pin → cards → context assembler → governed
 S4 tool → model/checkpoint → finalization → replay`—passes with exact original pins, DSAR reach,
 and no fixture-only substitutions.
+
+**Implemented evidence:** migration
+`d3672ccf43cc_durable_agent_turn_context_scope_pins.py` adds the append-only, workspace-scoped
+`agent_turn_scope_pin` retry authority, and `clue_api.agent_turn_scope_pin` atomically creates or
+loads it using DB time. The production worker creates the receipt before composition, builds its
+scope only from that receipt, supplies the same account-wide version to both L3 cards and trusted
+S4 arguments, and reports the pin on privacy-safe replay logs. A legacy committed turn is replayed
+without inventing a receipt.
+
+The Stage-0 production persistence seam now binds every embedded quote to its exact statement via
+the existing `derived` reverse index. The governed eraser discovers and purges that production
+card and its evidence while leaving another project's card readable. The knowledge policy is
+frozen as `company-account-wide-v1`: company claims are shared across projects; the confirmed
+project product remains separately pinned; product-scoped claims are not admitted until S5.0
+defines a new explicit consumption contract.
+
+`tests/api/test_production_context_s31_scope_pin_db.py` proves immutable vN retry, next-turn vN+1,
+workspace isolation, and separation from a newer product-specific KB sequence.
+`tests/api/test_production_context_s31_fleet_db.py` drives the actual task row and `AGENT_TURN`
+handler through real recipes, cards, the seven-layer assembler, `list_client_knowledge@2`, the
+Postgres LangGraph saver, finalization, and cold replay; only the external model is deterministic.
+It inspects the exact L3 artifact bytes, S4 result artifact, checkpoint rows, finalization commit,
+and replay model-call count, then erases a real quoted statement and proves the L3 card/evidence,
+propagated turn artifacts, every checkpoint namespace under the turn execution id, and cold replay
+are all closed. The production privacy root now recognizes exact `agent_context_ref` artifacts;
+the replay reader also handles intentionally empty context layers after erasure without an alias
+collision. This path additionally found and fixed a production-only strict-output bug:
+the C5 adapter now reuses the toolbelt's canonical JSON-mode result validator, covered by a focused
+UUID/tuple wire-shape regression.
 
 ### S5.0 — Product-knowledge consumption decision
 
