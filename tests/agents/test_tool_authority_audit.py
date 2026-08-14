@@ -59,6 +59,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert len(C6_AGENT_TOOL_AUTHORITY) == 57
     assert C6_AGENT_TOOL_AUTHORITY["list_client_knowledge"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_client_claim"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("list_client_knowledge@1") == ()
+    assert c6_roles_for_tool("inspect_client_claim@1") == ()
+    assert c6_roles_for_tool("list_client_knowledge@2") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("inspect_client_claim@2") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)

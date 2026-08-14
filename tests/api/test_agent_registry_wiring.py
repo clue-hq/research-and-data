@@ -22,6 +22,7 @@ from clue_agents import (
 from clue_api.agent_registry_wiring import (
     C6_ACTIVE_PROFILE_VERSIONS,
     C6_AGENT_TOOL_AUTHORITY,
+    PROJECT_CONVERSATION_SURFACE,
     ToolRegistryAgentCatalog,
     build_agent_profile_registry,
 )
@@ -66,8 +67,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # FI Lane D D4 minted head-of-abm@v23: it pins `open_directive_confirmation_gate@1` and
         # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
         # gate, end the turn, and launch only after the human's own confirming turn.
-        # FI context composition S4 mints v24/v11 and grants the two exact-pinned Client-KB reads.
-        AgentRole.HEAD_OF_ABM: ("2af61cbb9f7b70a0ae6adec456798e4d68bd8fc9d9a10947d2e836069e95db9b"),
+        # FI context composition S4-D mints v25/v12 and cuts production over to the strict @2
+        # Client-KB reads while preserving @1 in the inventory for historical replay.
+        AgentRole.HEAD_OF_ABM: ("89b6a326320a0a5dcb299d610e03066dbad1c1402f9599791bfbc429a3749e29"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -139,8 +141,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Lane E E1's `synthesize_entity_prose@1` likewise adds an inventory entry with no role grant
     # (machine-invoked only), so it is disclosed as unavailable to every surface; E3's
     # `synthesize_value_narrative@1` is the same shape for the same reason. Merged count: the
-    # 55-address base + Lane D's 5 + Lane E's 2 + S4's two Client-KB reads.
-    assert len(by_address) == 64
+    # 55-address base + Lane D's 5 + Lane E's 2 + both immutable versions of S4's two
+    # Client-KB reads. The @1 addresses are historical inventory only; @2 is current authority.
+    assert len(by_address) == 66
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -152,15 +155,18 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["synthesize_value_narrative@1"].status is not AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["inspect_client_claim@1"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["inspect_client_claim@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["list_client_knowledge@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["inspect_client_claim@2"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["list_client_knowledge@2"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
         "draft_account_research_directive@2",
         "evaluate_stage0_readiness@1",
         "get_research_view@1",
         "inspect_readiness_history@1",
-        "inspect_client_claim@1",
+        "inspect_client_claim@2",
         "inspect_statement_history@1",
-        "list_client_knowledge@1",
+        "list_client_knowledge@2",
         "launch_account_research@1",
         "launch_contact_research@1",
         "open_directive_confirmation_gate@1",
@@ -205,6 +211,28 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert head.system_prompt.endswith("## End resolved resource and capability map")
 
 
+def test_s4d_production_project_surface_resolves_only_strict_client_kb_v2() -> None:
+    """The cutover must be on the real fleet surface, not only a base profile or test builder."""
+
+    with hermetic_flag_env():
+        toolbelt = build_toolbelt(storage=None, gateway=None)
+        registry = build_agent_profile_registry(toolbelt)
+    production = registry.resolve(
+        AgentRole.HEAD_OF_ABM,
+        surface=PROJECT_CONVERSATION_SURFACE,
+    )
+
+    addresses = {pin.address for pin in production.profile.tools}
+    assert production.profile_ref.address == "profile:head-of-abm@v25"
+    assert [item.resource.address for item in production.skill_disclosures()][0] == (
+        "skill:stage0-interview@v12"
+    )
+    assert {"list_client_knowledge@2", "inspect_client_claim@2"} <= addresses
+    assert {"list_client_knowledge@1", "inspect_client_claim@1"}.isdisjoint(addresses)
+    assert toolbelt.descriptor("list_client_knowledge").address == "list_client_knowledge@2"
+    assert toolbelt.descriptor("inspect_client_claim").address == "inspect_client_claim@2"
+
+
 def test_account_research_role_and_surface_are_not_active(
     registry: AgentProfileRegistry,
 ) -> None:
@@ -222,7 +250,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v11"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v12"
     assert disclosures[1].resource.address == "skill:account-deep-steering@v3"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -307,7 +335,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v11")
+    body = head.open_skill("skill:stage0-interview@v12")
 
     assert required_guidance in body
 
@@ -370,7 +398,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
         assert harness.lease.resources_frozen
         assert (
             harness.lease.backend.stat_entry_sync(
-                ".deepagent/skills/stage0-interview/v11/SKILL.md"
+                ".deepagent/skills/stage0-interview/v12/SKILL.md"
             ).sha256
             == resolved.profile.skills[0].resource.sha256
         )

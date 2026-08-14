@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -13,6 +15,7 @@ from clue_api.recipe_contracts import (
     build_replay_safety_audit,
     standing_recipe_addresses,
 )
+from clue_api.recipe_wiring import SYSTEM_RECIPE_FILENAMES
 from clue_api.stage0_recipe import RecipeStep
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_toolbelt import ReplayPolicy, ToolRegistry
@@ -54,9 +57,43 @@ def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified()
     assert all(len(item.input_schema_sha256) == 64 for item in audit)
     assert all(len(item.output_schema_sha256) == 64 for item in audit)
     by_address = {item.address: item for item in audit}
-    for address in ("list_client_knowledge@1", "inspect_client_claim@1"):
+    for address in ("list_client_knowledge@2", "inspect_client_claim@2"):
         assert by_address[address].replay_policy is ReplayPolicy.EFFECT_FREE
-        assert by_address[address].pin_requirements == ("project", "client_kb")
+        assert by_address[address].pin_requirements == ("client_kb",)
+
+
+def test_s4d_mints_recipe_v8_and_preserves_v7_for_exact_replay() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v7 = json.loads((root / "recipe0-stage0-v7.json").read_text())
+    v8 = json.loads((root / "recipe0-stage0-v8.json").read_text())
+    client_addresses = {"list_client_knowledge", "inspect_client_claim"}
+
+    v7_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v7.json")
+    assert SYSTEM_RECIPE_FILENAMES[v7_index : v7_index + 2] == (
+        "recipe0-stage0-v7.json",
+        "recipe0-stage0-v8.json",
+    )
+    assert v7["version"] == 7
+    assert v8["version"] == 8
+    assert {
+        address
+        for address in v7["graph"]["tool_allowlist"]
+        if address.split("@")[0] in client_addresses
+    } == {
+        "list_client_knowledge@1",
+        "inspect_client_claim@1",
+    }
+    assert {
+        address
+        for address in v8["graph"]["tool_allowlist"]
+        if address.split("@")[0] in client_addresses
+    } == {
+        "list_client_knowledge@2",
+        "inspect_client_claim@2",
+    }
+    for requirement in v8["compatibility"]["nodes"]["stage0_interactions"]:
+        if requirement["kind"] == "tool" and requirement["key"] in client_addresses:
+            assert requirement["version"] == "2"
 
 
 def test_operation_id_requirements_are_explicit() -> None:

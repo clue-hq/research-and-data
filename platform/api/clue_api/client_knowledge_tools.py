@@ -3,14 +3,16 @@
 The opening ``ClientKnowledgeCard`` is intentionally a bounded index. These two read-only tools
 make that index useful without placing the whole knowledge base in every turn:
 
-* ``list_client_knowledge@1`` walks the exact account-wide KB version pinned in L3, with topic,
-  field, and opaque cursor filters;
-* ``inspect_client_claim@1`` resolves one reference only when it belongs to that same pinned
-  corpus and remains retention-eligible, then returns bounded provenance rather than a raw body.
+* ``list_client_knowledge@2`` walks the exact account-wide KB version pinned in the paired
+  production L3 artifact, with topic, field, limit, and opaque cursor filters;
+* ``inspect_client_claim@2`` resolves one reference only when it belongs to that same pinned
+  corpus and remains retention-eligible, then returns bounded provenance rather than a raw body;
+* immutable ``@1`` remains registered for historical recipe replay and its frozen trial
+  compatibility behavior, but is not the production default or current model authority.
 
-Project, client, and version are typed inputs for recipe/direct invocation compatibility but never
-model-authored. Project/client come from the constitution and the version is injected from S3's
-immutable ``client_knowledge`` domain ref by :mod:`clue_api.client_context_authority`.
+Workspace comes from ``ToolContext``; client and version are trusted inputs injected from S3's
+immutable paired ``client_knowledge`` domain ref by :mod:`clue_api.client_context_authority`.
+None is model-authored.
 """
 
 from __future__ import annotations
@@ -895,10 +897,10 @@ def build_client_knowledge_v2_tools(
     conn_factory: ConnFactory = transaction,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> tuple[Tool, ...]:
-    """Build S4-C ``@2`` implementations without registering or granting them.
+    """Build the S4-C ``@2`` implementations selected by S4-D production composition.
 
-    S4-D owns the production registry/profile/skill/recipe cutover. Keeping this builder separate
-    prevents a completed tool body from accidentally becoming production authority early.
+    The separate builder keeps immutable ``@1`` historical replay registration explicit while the
+    central composition root elects ``@2`` as the current default and profile authority.
     """
 
     return (

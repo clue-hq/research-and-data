@@ -8,14 +8,12 @@ this document conflicts with the provisional note in root `CLAUDE.md`, this docu
 
 **Implementation checkpoint (2026-08-14):** S0-S3 are implemented. S4 is governed by the amended
 S4-A through S4-E checkpoints below and is complete only after S4-E. S4-A's version-aware reader,
-S4-B's immutable contract freeze, and S4-C's trusted `@2` implementations are implemented. The
-previously shipped `@1` tools and their
-Head-of-ABM/profile/skill/recipe wiring remain frozen compatibility surfaces; they are preliminary
-S4-C/D evidence, not acceptance of those checkpoints. The final public contract is therefore a
-new `@2` revision rather than an in-place rewrite of published `@1` schemas. S4-D must compose the
-implemented revision through new immutable production resources, and S4-E must close durable
-privacy, injection, and replay reach before S4 can be called complete. S3.1, S5.0, S5, and S6
-remain outside this checkpoint.
+S4-B's immutable contract freeze, S4-C's trusted `@2` implementations, and S4-D's production
+composition are implemented. The previously shipped `@1` tools and Head-of-ABM `v24` / Stage-0
+skill `v11` / Recipe #0 `v7` graph remain frozen historical replay resources; current production
+selects `@2`, profile `v25`, skill `v12`, and Recipe #0 `v8`. S4-E must still close durable privacy,
+injection, and replay reach before S4 can be called complete. S3.1, S5.0, S5, and S6 remain outside
+this checkpoint.
 
 ## 1. Purpose
 
@@ -173,8 +171,8 @@ Opening context remains bounded. The Head-of-ABM production profile receives two
    cursor, and bounded page size;
 2. `inspect_client_claim@2` — resolve one referenced claim into value and bounded provenance.
 
-The preliminary `@1` tools remain immutable compatibility resources until the S4-D atomic cutover;
-they are not the frozen final contract.
+The preliminary `@1` tools remain immutable historical replay/compatibility resources after the
+S4-D atomic cutover; they are not current production authority or the default contract.
 
 The exact-claim result includes field metadata, value, public source origin/key/tier, evidence span,
 bounded artifact/provider lineage, confidence, verification, freshness timestamps, product scope,
@@ -485,8 +483,8 @@ included/omitted, classification, ordering, and pagination acceptance lives in
 The preliminary `list_client_knowledge@1` and `inspect_client_claim@1` schemas were already
 committed and pinned by immutable production resources before this checkpoint was amended. They
 must not be rewritten in place. The frozen target is consequently
-`list_client_knowledge@2`/`inspect_client_claim@2`; `@1` remains a compatibility surface until S4-D
-cuts production composition over atomically.
+`list_client_knowledge@2`/`inspect_client_claim@2`; after S4-D, `@1` remains only a historical
+replay/compatibility surface while current production selects `@2` atomically.
 
 **Deliverables**
 
@@ -548,8 +546,9 @@ is in `tests/api/test_client_knowledge_contracts_s4b.py`.
   refs share `client_claim_not_found`; neither class discloses which internal scope/ref check failed.
 - The implementation conforms byte-for-byte to S4-B schemas without changing their hashes.
 
-**Implemented evidence:** `platform/api/clue_api/client_knowledge_tools.py` provides the separate,
-not-yet-registered `@2` builder and effect-free implementations over the S4-A reader;
+**Implemented evidence:** `platform/api/clue_api/client_knowledge_tools.py` provides the separate
+`@2` builder and effect-free implementations over the S4-A reader; S4-D registers that builder at
+the central composition root while retaining the separate `@1` builder for immutable replay;
 `platform/api/clue_api/client_context_authority.py` makes `@2` require the validated paired
 `client_knowledge` artifact while preserving only `@1`'s frozen trial compatibility fallback; and
 the governed execution seam injects that exact version alongside the constitution client and
@@ -558,8 +557,7 @@ boundary, real-PostgreSQL included/omitted/pagination/version/refusal/truncation
 zero-write/cost replay acceptance lives in
 `tests/api/test_client_knowledge_tools_s4c{,_db}.py`. The shared tool runner now validates durable
 results in JSON mode, so strict UUID/enum/datetime/Decimal/tuple outputs survive fresh execution and
-cold replay without weakening the frozen models. S4-D remains the sole production-registration
-authority.
+cold replay without weakening the frozen models.
 
 #### S4-D — Production toolbelt composition
 
@@ -569,7 +567,7 @@ authority.
   profile, project-conversation surface policy, progressive Stage-0 skill, recipe compatibility
   pins, and user-facing tool guidance.
 - Create new immutable profile, skill, and recipe versions instead of editing the preliminary
-  Head-of-ABM `v24`, Stage-0 skill `v11`, or Recipe #1 `v7` in place.
+  Head-of-ABM `v24`, Stage-0 skill `v11`, or Recipe #0 `v7` in place.
 - Cut all required production surfaces over atomically; do not mistake trial/fixture wiring for
   production composition.
 
@@ -580,6 +578,16 @@ authority.
 - The production conversation recipe resolves the new profile and skill revisions.
 - No coordinator branches on provider identity or special test mode.
 - The prior `@1` resource graph remains replayable but is no longer the current default.
+
+**Implemented evidence:** the central toolbelt now registers both immutable versions and elects
+`list_client_knowledge@2` / `inspect_client_claim@2` as name defaults. Exact-address authority
+admits only `@2` for the Head of ABM, while `@1` remains inventory-visible and role-unavailable.
+The production project-conversation surface resolves Head-of-ABM profile `v25`, progressive
+Stage-0 skill `v12`, and both `@2` tools. Recipe #0 `v8` replaces only the two tool pins, the shared
+production conversation pin selects `v8`, and normal recipe promotion supersedes `v7` without
+rewriting it. Static registry/profile/surface/schema/recipe audits and DB-backed recipe-promotion,
+interaction-slot, fleet-conversation, and exact replay tests cover the cutover; the registration is
+unconditional and contains no provider or test-mode branch.
 
 #### S4-E — Privacy, injection, and replay hardening
 

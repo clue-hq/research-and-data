@@ -30,10 +30,11 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # anything in that slot is certified here first.
     "inspect_statement_history@1",
     "inspect_readiness_history@1",
-    # FI production context S4 (recipe0-stage0@7): exact-version reads behind the bounded
-    # Client-KB index. Both are effect-free and pin project + client_kb.
-    "list_client_knowledge@1",
-    "inspect_client_claim@1",
+    # FI production context S4-D (recipe0-stage0@8): strict artifact-bound reads behind the
+    # bounded Client-KB index. Both are effect-free and pin only the exact Client-KB checkpoint;
+    # project/workspace/client authority is injected from the production constitution.
+    "list_client_knowledge@2",
+    "inspect_client_claim@2",
     # FI Lane D D4 (added in recipe0-stage0@6): the Option-B kickoff chain. Anything runnable in
     # the Stage-0 interaction slot is replay-certified here first, and these three are the whole
     # point of the widened conversation surface — draft the direction, present its confirmation

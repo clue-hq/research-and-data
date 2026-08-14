@@ -50,6 +50,9 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v6.json",
     # FI production context S4: v7 adds the two effect-free, exact-pinned Client-KB reads.
     "recipe0-stage0-v7.json",
+    # FI production context S4-D: v8 cuts those reads over to the strictly artifact-bound @2
+    # contracts. v7 remains seeded and is superseded, never rewritten, for exact replay.
+    "recipe0-stage0-v8.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )

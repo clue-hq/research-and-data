@@ -328,12 +328,10 @@ def _bodies() -> dict[str, dict[str, object]]:
         "inspect_statement_history": {"project_id": "project_missing"},
         "inspect_readiness_history": {"project_id": "project_missing"},
         "list_client_knowledge": {
-            "project_id": "project_missing",
             "client_entity_id": _UUID(),
             "client_kb_version": 1,
         },
         "inspect_client_claim": {
-            "project_id": "project_missing",
             "client_entity_id": _UUID(),
             "client_kb_version": 1,
             "claim_id": _UUID(),
@@ -886,7 +884,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     assert len(registry.names()) == 57
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 64
+    # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
+    # defaults, taking the address inventory from 64 to 66 without adding names.
+    assert len(registry) == 66
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

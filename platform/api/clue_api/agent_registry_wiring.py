@@ -39,10 +39,10 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # v23 (FI Lane D D4): pins ``open_directive_confirmation_gate@1`` and re-pins
     # account-deep-steering at v3, whose procedure is the Option-B kickoff — gate first, launch only
     # after the human's own confirming turn.
-    # v24 (FI context composition S4): grants exact-version, bounded Client-KB discovery and claim
-    # inspection. Production binds the version through S3's split L3 artifact; the compatibility
-    # trial binds the same authority through its constitution focus ref.
-    AgentRole.HEAD_OF_ABM: "v24",
+    # v25 (FI context composition S4-D): cuts production over to the strict @2 Client-KB reads.
+    # They bind only through S3's paired production L3 artifact; @1 remains historical replay.
+    # The shared trial profile retains the read names, but @2 has no compatibility-focus fallback.
+    AgentRole.HEAD_OF_ABM: "v25",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -295,6 +295,10 @@ _RESERVED_REASON: dict[str, str] = {
 def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     """Resolve authority by exact address where versions have different safety proofs."""
 
+    if name == "list_client_knowledge":
+        return (AgentRole.HEAD_OF_ABM,) if address == "list_client_knowledge@2" else ()
+    if name == "inspect_client_claim":
+        return (AgentRole.HEAD_OF_ABM,) if address == "inspect_client_claim@2" else ()
     if name == "propose_field":
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
     if name == "draft_account_research_directive":

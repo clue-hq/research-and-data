@@ -1,9 +1,4 @@
-"""S4-C pure acceptance for trusted ``@2`` Client-KB tool authority.
-
-These checks deliberately stop before S4-D: the implementations exist and can be composed by an
-explicit caller, but the central production registry still exposes only the immutable ``@1``
-compatibility versions.
-"""
+"""S4-C/S4-D pure acceptance for trusted ``@2`` Client-KB tool authority and cutover."""
 
 from __future__ import annotations
 
@@ -81,7 +76,7 @@ def _model_parameters(model: type[ListClientKnowledgeV2Input | InspectClientClai
     return args_schema, schema["function"]["parameters"]
 
 
-def test_v2_builds_exact_frozen_descriptors_but_is_not_production_registered() -> None:
+def test_v2_builds_exact_frozen_descriptors_and_is_the_production_default() -> None:
     implementations = build_client_knowledge_v2_tools()
     assert tuple(item.descriptor.address for item in implementations) == (
         LIST_CLIENT_KNOWLEDGE_ADDRESS,
@@ -94,7 +89,8 @@ def test_v2_builds_exact_frozen_descriptors_but_is_not_production_registered() -
     production = build_toolbelt(storage=None)
     for name in ("list_client_knowledge", "inspect_client_claim"):
         assert production.has(name, "1") is True
-        assert production.has(name, "2") is False
+        assert production.has(name, "2") is True
+        assert production.descriptor(name).version == "2"
 
 
 @pytest.mark.parametrize(

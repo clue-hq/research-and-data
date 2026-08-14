@@ -169,8 +169,8 @@ def test_c67_account_unit_is_preserved_as_replay_only_not_system_seeded() -> Non
     assert account.max_fanout == 1
 
 
-def test_recipe0_v6_is_the_only_promoted_executable_stage0_revision() -> None:
-    """v6 admits the FI Lane D D4 kickoff chain; older revisions remain immutable history."""
+def test_recipe0_v8_is_the_only_promoted_executable_stage0_revision() -> None:
+    """v8 cuts Client-KB reads to @2; every earlier revision remains immutable history."""
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -193,6 +193,8 @@ def test_recipe0_v6_is_the_only_promoted_executable_stage0_revision() -> None:
                 (4, "executable"),
                 (5, "executable"),
                 (6, "executable"),
+                (7, "executable"),
+                (8, "executable"),
             ]
             effective = [
                 (
@@ -211,9 +213,11 @@ def test_recipe0_v6_is_the_only_promoted_executable_stage0_revision() -> None:
                 (3, RecipeRevisionEventType.SUPERSEDED),
                 (4, RecipeRevisionEventType.SUPERSEDED),
                 (5, RecipeRevisionEventType.SUPERSEDED),
-                (6, RecipeRevisionEventType.PROMOTED),
+                (6, RecipeRevisionEventType.SUPERSEDED),
+                (7, RecipeRevisionEventType.SUPERSEDED),
+                (8, RecipeRevisionEventType.PROMOTED),
             ]
-            promoted = recipe0[5][0]
+            promoted = recipe0[-1][0]
             slot = next(
                 node for node in promoted.graph.nodes if node.node_key == "stage0_interactions"
             )
