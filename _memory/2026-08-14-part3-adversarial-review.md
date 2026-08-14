@@ -147,6 +147,25 @@ finding below is verified against ground truth (file:line) and awaits dispositio
   cooperatively and converges on the takeover's terminal run. The two lease tests run
   on the real pooled factory under `db_lifespan` (the heartbeat is genuinely concurrent
   with the handler) with committed-row cleanup.
-- **A — OPEN** (two-line fix + stronger content assertion; awaiting direction).
-- **C — OPEN, needs the founder's routing ruling** (gate answer while a leg is open).
+- **A — FIXED (founder-directed, 2026-08-14, same session).** `_assistant_summary` reads
+  the DAL's real DTO key `"result"`; the engine test now PINS the summary content
+  ("Design turn accepted: Visual reviewer accepted the artboard.") instead of
+  `is not None` — the exact test weakness that let the bug ship. RED reproduced the
+  degraded "Design turn succeeded." before the fix.
+- **C — FIXED (founder ratified option (a), 2026-08-14, same session).** The submit route
+  refuses a `gate_response` while the thread has an open design leg — 409
+  `DESIGN_LEG_OPEN`, side-effect free (no answer, no capture, no submission, no task),
+  before any byte is written. Placed deliberately AFTER the replay read so a retry of an
+  answer accepted before the leg opened stays an idempotent replay (test-pinned). Once
+  the leg closes, the same answer lands and routes head_of_abm. Spec amended in place
+  (`PD-part3-agent-integration.md` §D1 routing rule, dated amendment). RED proof: without
+  the fix the answer was accepted and the confirm tool RAN while the leg was open.
+  Tests: `test_lane_d4_gate_response_route_db.py::
+  test_a_gate_answer_while_a_design_leg_is_open_is_refused_until_the_leg_closes` and
+  `…accepted_before_the_leg_opened_replays_while_the_leg_is_open`.
+  **New LOW residual (P3.6):** the refusal is accept-time; a gate answer accepted with no
+  leg open but *queued behind* a message turn that then opens a leg still routes to
+  design by D1 when the worker runs it (two in-flight turns, narrow window). P3.6's
+  concurrency battery should pin the wanted behavior (likely: worker re-checks
+  `gate_answer_for_turn` and delivers to head-of-abm, or fails the turn honestly).
 - **D + LOWs — OPEN**, riding P3.6/P3.7 as ledgered.

@@ -60,6 +60,7 @@ from clue_core import (
     MemoryDisabled,
     MemorySubmission,
 )
+from clue_design import legs as design_legs
 from clue_projections import open_gate_kinds_for_threads
 from clue_storage import FsStorage
 from clue_toolbelt import DbIdempotencyStore, ToolRegistry
@@ -768,6 +769,92 @@ def test_a_retried_answer_is_the_same_act_not_a_second_one(tmp_path: Path) -> No
                 )
             assert conflicting.status_code == 409, conflicting.text
             assert conflicting.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+    run_async(scenario())
+
+
+def test_a_gate_answer_while_a_design_leg_is_open_is_refused_until_the_leg_closes(
+    tmp_path: Path,
+) -> None:
+    """Part-III review finding C (ratified): a gate answer must never become a design prompt.
+
+    While a design leg is open, the D1 routing rule sends every accepted turn to the design
+    agent — which would hand it the canonical gate-answer JSON as a design instruction. The
+    route refuses instead (409, side-effect free); once the leg closes, the same answer lands.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-d4r-leg", label="leg")
+            gate = await _present(conn, seeded)
+            leg = await design_legs.open_leg(
+                conn,
+                workspace_id=seeded.workspace_id,
+                thread_id=seeded.thread_id,
+                parent_execution_id=uuid5(NAMESPACE_URL, "lane-d4-route:leg:execution"),
+            )
+            before = await _durable_counts(conn, seeded)
+            app = _app(conn, storage=seeded.storage)
+            async with _client(app) as client:
+                refused = await _answer(client, seeded, gate=gate, key="k-leg-1")
+                assert refused.status_code == 409, refused.text
+                assert refused.json()["error"]["code"] == "DESIGN_LEG_OPEN"
+                assert await _durable_counts(conn, seeded) == before
+                view = await get_gate(conn, workspace_id=seeded.workspace_id, gate_id=gate.gate_id)
+                assert view is not None and view.is_open is True
+
+                await design_legs.close_leg(
+                    conn,
+                    workspace_id=seeded.workspace_id,
+                    leg_id=leg["id"],
+                    reason="locked",
+                    summary_refs={},
+                )
+                accepted = await _answer(
+                    client, seeded, gate=gate, key="k-leg-2", decision="rejected"
+                )
+            assert accepted.status_code == 202, accepted.text
+            assert accepted.json()["data"]["routed_to"] == "head_of_abm"
+            counts = await _durable_counts(conn, seeded)
+            assert counts["answers"] == 1
+            assert counts["submissions"] == 1
+
+    run_async(scenario())
+
+
+def test_a_gate_answer_accepted_before_the_leg_opened_replays_while_the_leg_is_open(
+    tmp_path: Path,
+) -> None:
+    """The refusal binds fresh submissions only: a retry of an already-accepted answer is the
+    same act, and must stay an idempotent replay even if a leg has opened since — which is why
+    the check sits after the replay read, not before it."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-d4r-legreplay", label="legreplay")
+            gate = await _present(conn, seeded)
+            app = _app(conn, storage=seeded.storage)
+            async with _client(app) as client:
+                first = await _answer(
+                    client, seeded, gate=gate, key="k-legreplay", decision="rejected"
+                )
+                assert first.status_code == 202, first.text
+
+                await design_legs.open_leg(
+                    conn,
+                    workspace_id=seeded.workspace_id,
+                    thread_id=seeded.thread_id,
+                    parent_execution_id=uuid5(NAMESPACE_URL, "lane-d4-route:legreplay:execution"),
+                )
+                second = await _answer(
+                    client, seeded, gate=gate, key="k-legreplay", decision="rejected"
+                )
+            assert second.status_code == 202, second.text
+            assert second.json()["data"]["replayed"] is True
+            assert second.json()["data"]["turn_id"] == first.json()["data"]["turn_id"]
+            counts = await _durable_counts(conn, seeded)
+            assert counts["answers"] == 1
+            assert counts["submissions"] == 1
 
     run_async(scenario())
 

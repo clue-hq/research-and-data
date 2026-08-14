@@ -295,7 +295,7 @@ def _assistant_summary(run: dict[str, Any]) -> str:
     (the canvas preview, the proposal card); the durable message is the honest minimum.
     """
 
-    result = run.get("result_json") or {}
+    result = run.get("result") or {}
     status = str(result.get("status") or run.get("status") or "unknown")
     reason = result.get("stop_reason")
     if isinstance(reason, str) and reason.strip():

@@ -299,7 +299,12 @@ def test_a_design_leg_turn_lands_attribution_history_and_the_stamped_run(
             # committed finalization naming the leg as the open interaction.
             assert result.outcome.status is AgentExecutionStatus.AWAITING_INPUT
             assert result.replayed is False
-            assert result.assistant_message is not None
+            # Review finding A: the summary must carry the run's OWN terminal result — its
+            # status and stop reason — not a generic fallback (the `result_json`-vs-`result`
+            # DTO-key bug silently degraded every summary to "Design turn succeeded.").
+            assert result.assistant_message == (
+                "Design turn accepted: Visual reviewer accepted the artboard."
+            )
 
             turn_row = (
                 (

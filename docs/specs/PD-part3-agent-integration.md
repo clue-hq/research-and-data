@@ -46,6 +46,16 @@ redone work, never lost conversation). A waiting leg holds zero worker resources
 This is a single indexed row lookup in the ingestion path — deterministic, no LLM in the
 loop, no per-message misrouting risk. While a leg is open the design agent owns the thread.
 
+**Amendment (ratified 2026-08-14, Part-III adversarial-review finding C):** a structured
+**gate answer** is the one exception to "no other routing input exists" — not by routing it
+elsewhere, but by refusing it at the door. While a leg is open, the submit route refuses a
+`gate_response` (409 `DESIGN_LEG_OPEN`, side-effect free): the gate flow is semantically
+head-of-abm's, and letting D1 deliver the canonical answer JSON to the design agent as a
+design instruction would be misrouting. The refusal binds fresh submissions only — a retry
+of an answer accepted before the leg opened stays an idempotent replay. Plain-text messages
+are untouched: while a leg is open the design agent owns the *conversation*, and approvals
+wait for the leg to finish.
+
 ### D2 — One platform-facing role; the trio stays internal
 
 We register the **entire composite design deepagent** as one platform role:

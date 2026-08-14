@@ -1666,6 +1666,18 @@ def build_chat_router(
                             routed_to=routed_to,
                         )
                     )
+                # A gate answer must never become a design prompt (Part-III review finding C,
+                # ratified 2026-08-14): while a leg is open, the D1 routing rule would deliver
+                # these canonical bytes to the design agent as an instruction, and the gate flow
+                # is semantically head-of-abm's — so the route refuses instead of misrouting.
+                # Deliberately after the replay read: an answer accepted before the leg opened
+                # stays an idempotent replay rather than a retry-visible 409.
+                if body.gate_response is not None and open_leg is not None:
+                    raise _refuse(
+                        status_code=409,
+                        code="DESIGN_LEG_OPEN",
+                        message="finish the design session before answering this gate",
+                    )
                 captured = await persist_user_turn(
                     conn,
                     artifacts=artifacts,
