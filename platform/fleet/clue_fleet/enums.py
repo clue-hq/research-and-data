@@ -31,6 +31,10 @@ class FleetTaskKind(StrEnum):
       single-flight fence; the turn itself is named by the payload and by the
       ``agent-turn:<turn_id>`` dedup key. The queue never carries a session token — only internal
       ids and durable turn refs (`FI-lane-B-authenticated-principal-contract.md` §7).
+    * ``STAGE0_RECON`` — one detached drive of the existing two-lane onboarding recon. The web
+      process only captures input and enqueues this reference-only task.
+    * ``OFFICIAL_SITE_CRAWL`` — one C6 durable official-site lifecycle, keyed to a recon but using
+      its own work lease so shadow acquisition may continue beside the legacy background lane.
 
     New members are appended, never inserted: the DB enum is grown with ``ALTER TYPE … ADD VALUE``
     (which appends), and the parity test compares the two **in order**.
@@ -41,6 +45,8 @@ class FleetTaskKind(StrEnum):
     EXECUTE_GRAPH = "execute_graph"
     ENTITY_RESEARCH_JOB = "entity_research_job"
     AGENT_TURN = "agent_turn"
+    STAGE0_RECON = "stage0_recon"
+    OFFICIAL_SITE_CRAWL = "official_site_crawl"
 
 
 class FleetTaskStatus(StrEnum):

@@ -89,6 +89,7 @@ from clue_api.external_research_wake import (
 from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, register_boot_handlers
 from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
 from clue_api.narrative_wiring import build_client_knowledge_retriever, register_narrative_wiring
+from clue_api.official_site_crawl_wiring import build_official_site_crawl_fleet
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
@@ -109,6 +110,7 @@ from clue_api.run_composition import (
     build_stage0_claim_extractor,
 )
 from clue_api.run_events_wiring import build_run_event_emitter
+from clue_api.stage0_setup_fleet import Stage0ReconWorkHandler
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
@@ -745,6 +747,20 @@ async def _serve() -> None:
                 queue=work_queue,
             )
         )
+        official_site_crawl = build_official_site_crawl_fleet(
+            settings=settings,
+            secrets=secrets,
+            storage=storage,
+            queue=work_queue,
+        )
+        stage0_recon_handler = (
+            Stage0ReconWorkHandler(
+                tool_invoker=tool_invoker,
+                crawl_enqueuer=official_site_crawl.enqueuer,
+            )
+            if settings.self_serve_provisioning_enabled
+            else None
+        )
         worker = build_multi_work_worker(
             settings,
             driver=driver,
@@ -753,6 +769,8 @@ async def _serve() -> None:
                 entity_research.handler if entity_research is not None else None
             ),
             agent_turn_handler=agent_turn_handler,
+            stage0_recon_handler=stage0_recon_handler,
+            official_site_crawl_handler=official_site_crawl.handler,
             queue=work_queue,
         )
         sweep = _start_orphan_sweep(settings, storage)

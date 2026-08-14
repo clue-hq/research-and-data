@@ -354,6 +354,26 @@ class CrawlRunRef(FrozenContractModel):
     created: bool
 
 
+class CrawlRunRuntimeRef(FrozenContractModel):
+    """Pinned run state needed by the C6 detached lifecycle worker.
+
+    Queue payloads are wake-up references, not configuration authority.  A cold worker therefore
+    rehydrates the exact policy and database deadline from the run row before it claims anything.
+    """
+
+    crawl_run_id: UUID
+    workspace_id: str = Field(min_length=1)
+    brand_id: str = Field(min_length=1)
+    client_entity_id: UUID | None = None
+    recon_run_id: UUID
+    root_discovered_url: str = Field(min_length=1)
+    root_fetch_key: str = Field(min_length=1)
+    allowed_registrable_domain: str = Field(min_length=1)
+    status: CrawlRunStatus
+    fast_claim_deadline_at: UtcDatetime
+    config: OfficialSiteCrawlContractConfig
+
+
 class UrlObservation(FrozenContractModel):
     discovered_url: str = Field(min_length=1)
     discovered_via: DiscoveredVia
@@ -724,6 +744,7 @@ __all__ = [
     "CrawlProgress",
     "CrawlRunCreate",
     "CrawlRunRef",
+    "CrawlRunRuntimeRef",
     "CrawlRunStatus",
     "DiscoveryBatch",
     "DiscoveryBatchResult",

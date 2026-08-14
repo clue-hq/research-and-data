@@ -1173,6 +1173,16 @@ C5 does not activate onboarding or own phase/checkpoint/fleet lifecycle; C6 is n
 
 ### C6 — Fast/background checkpoints and Stage-0 composition
 
+**Status: complete in default-off, allowlisted shadow mode (2026-08-14).** One recon now owns one
+durable crawl run/frontier, DB-time fast boundary, immutable fast/background checkpoints, and
+fleet-owned recon/crawl work. Recoverable phase blockers requeue instead of publishing false
+completion. The isolated Insight Health Firecrawl canary fetched 11 URL snapshots across a
+16-page frontier, froze 8 fast and 11 background snapshots, recovered the same run after lease
+expiry, and cold-replayed with zero new attempts. Exact contracts, settings, tests, and retained
+evidence are in the
+[C6 composition contract](./FI-stage0-durable-official-site-crawl-C6-composition-contract.md).
+Authoritative claim materialization and browser cutover remain C7; C6's rollout mode defaults off.
+
 **Deliverables**
 
 - Create one crawl run per recon.

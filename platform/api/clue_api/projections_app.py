@@ -59,6 +59,7 @@ from clue_api.research_view_api import (
 )
 from clue_api.research_view_owner_refs import ProductionOwnerReferenceResolver
 from clue_api.stage0_setup import create_stage0_setup_router, setup_workspace_resolver
+from clue_api.stage0_setup_fleet import DbStage0ReconEnqueuer, Stage0ReconEnqueuer
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_auth import MembershipStateChanged, PrincipalService
 from clue_config import Settings, load_settings
@@ -779,6 +780,7 @@ def create_projections_app(
     chat_stream_live_tail: bool = True,
     auth_service: PrincipalService | None = None,
     auth_closer: Callable[[], Awaitable[None]] | None = None,
+    stage0_recon_enqueuer: Stage0ReconEnqueuer | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -894,6 +896,11 @@ def create_projections_app(
                 tool_invoker=tool_invoker,
                 conn_factory=conn_factory,
                 storage=ingestion_storage,
+                recon_enqueuer=(
+                    stage0_recon_enqueuer
+                    if stage0_recon_enqueuer is not None
+                    else DbStage0ReconEnqueuer()
+                ),
             )
         )
     if discovery_webhook_router is not None:

@@ -296,15 +296,18 @@ pre-confirmation ceiling are unaffected — truth and compliance, not cost gover
 spend is observable on `llm.gateway_call` spans but is **not** charged to the recon envelopes;
 that residual is founder-accepted, not merely parked.
 
-**Planned, not live (founder approval 2026-08-14):** broad official-site coverage becomes a new
-durable crawl capability owned by Clue, with a PostgreSQL frontier/ledger, conservative URL
-deduplication, generation-fenced concurrent leases, one fast/background crawl run, coordinator-owned
-depth/safety/retry rules, content-addressed artifacts with URL-level provenance, and provider-neutral
-single-page Firecrawl/Scrapling fetchers. A rejected provider-owned 50-page spike is not the target
+**Implemented through C6 in default-off, allowlisted shadow mode (2026-08-14):** broad
+official-site coverage now has a PostgreSQL frontier/ledger, conservative URL deduplication,
+generation-fenced concurrent leases, one fast/background crawl run, coordinator-owned
+depth/safety/retry rules, content-addressed artifacts with URL-level provenance, provider-neutral
+single-page Firecrawl/Scrapling fetchers, immutable corpus checkpoints, and fleet-owned execution.
+A retained Insight Health Firecrawl canary completed 11 URL snapshots on one 16-page frontier and
+cold-replayed with zero new provider attempts. A rejected provider-owned 50-page spike is not the
 contract. The binding implementation plan and exit gates are
 [`docs/specs/FI-stage0-durable-official-site-crawl-plan.md`](../../../../docs/specs/FI-stage0-durable-official-site-crawl-plan.md).
-Its C0 provider-neutral contract is now frozen and provider-free verified; no crawl migration,
-worker, broad-site release behavior, or frontend API field is live yet. C1 is next.
+The C6 crawler remains shadow-only and adds no frontend field: the current setup screen and browser
+release continue to derive from the committed legacy fast Client-KB version. C7 must materialize
+checkpoint claims and prove the authoritative cutover before that changes.
 
 Still ahead: brand-kit flips real per `brand-kit.md` when the design-integration branch merges.
 

@@ -21,7 +21,7 @@ class CrawlReplayConflictError(CrawlRepositoryError):
 
 
 class CrawlCapacityExceededError(CrawlRepositoryError):
-    """A discovery batch would exceed the run-pinned durable page ceiling."""
+    """A strict caller requested capacity beyond a run-pinned durable page ceiling."""
 
 
 class CrawlStateConflictError(CrawlRepositoryError):

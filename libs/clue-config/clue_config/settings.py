@@ -45,6 +45,11 @@ _AUTH_PARTIES_FORMAT_ERROR: Final = (
     "comma-separated list (https://app.example,http://localhost:3000)"
 )
 
+_OFFICIAL_SITE_ALLOWLIST_FORMAT_ERROR: Final = (
+    "CLUE_STAGE0_OFFICIAL_SITE_CRAWL_WORKSPACE_ALLOWLIST must be a JSON array "
+    '(["ws-a","ws-b"]) or a comma-separated list (ws-a,ws-b)'
+)
+
 
 def _parse_string_list(value: Any, format_error: str) -> Any:
     """Accept a JSON array *or* a plain comma-separated list for a ``tuple[str, ...]`` setting.
@@ -550,12 +555,41 @@ class Settings(BaseSettings):
     stage0_fast_budget_cents: Decimal = Field(default=Decimal("25"), gt=0)
     stage0_background_budget_cents: Decimal = Field(default=Decimal("100"), gt=0)
 
+    # --- durable Stage-0 official-site crawl (FI C6; default-off canary) -----------------
+    # Shadow creates durable acquisition/checkpoint evidence for explicitly named workspaces but
+    # leaves the historical field resolver and Client-KB release authoritative. C7 supplies the
+    # checkpoint materializer required before authoritative mode can be composed.
+    stage0_official_site_crawl_mode: Literal["off", "shadow", "authoritative"] = "off"
+    stage0_official_site_crawl_workspace_allowlist: Annotated[tuple[str, ...], NoDecode] = ()
+    stage0_page_fetcher: Literal["firecrawl", "scrapling"] = "firecrawl"
+    stage0_crawl_max_depth: Literal[2] = 2
+    stage0_crawl_fast_deadline_seconds: int = Field(default=40, ge=1, le=40)
+    stage0_crawl_fast_page_ceiling: int = Field(default=12, ge=1)
+    stage0_crawl_total_page_ceiling: int = Field(default=100, ge=1)
+    stage0_crawl_worker_concurrency: int = Field(default=8, ge=1)
+    stage0_crawl_per_host_concurrency: int = Field(default=3, ge=1)
+    stage0_crawl_lease_ttl_seconds: int = Field(default=90, ge=3)
+    stage0_crawl_heartbeat_seconds: int = Field(default=20, ge=1)
+    stage0_crawl_request_timeout_seconds: int = Field(default=30, ge=1)
+    stage0_crawl_max_response_bytes: int = Field(default=5_000_000, ge=1)
+    stage0_crawl_allow_subdomains: bool = False
+    stage0_crawl_robots_policy: Literal["respect"] = "respect"
+    stage0_crawl_url_policy_version: Literal["official-site-url-v1"] = "official-site-url-v1"
+    # Reserved for C7 materialization. It is recorded here with the rollout settings so changing
+    # Luna/Terra later remains configuration-only; C6 never invokes this model.
+    stage0_extraction_model: str = "openai/gpt-5.6-luna"
+
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod
     def _parse_agent_workspace_allowlist(cls, value: Any) -> Any:
         """Accept a JSON array *or* a plain comma-separated list of workspace ids."""
 
         return _parse_string_list(value, _ALLOWLIST_FORMAT_ERROR)
+
+    @field_validator("stage0_official_site_crawl_workspace_allowlist", mode="before")
+    @classmethod
+    def _parse_official_site_workspace_allowlist(cls, value: Any) -> Any:
+        return _parse_string_list(value, _OFFICIAL_SITE_ALLOWLIST_FORMAT_ERROR)
 
     @field_validator("frontend_cors_allow_origins", mode="before")
     @classmethod
@@ -599,6 +633,29 @@ class Settings(BaseSettings):
         if self.auth_environment == "production" and self.projections_auth_mode == "local_header":
             raise ValueError(
                 "production authentication forbids the local-header projections resolver"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_official_site_crawl_bounds(self) -> Settings:
+        if self.stage0_crawl_fast_page_ceiling > self.stage0_crawl_total_page_ceiling:
+            raise ValueError(
+                "CLUE_STAGE0_CRAWL_FAST_PAGE_CEILING cannot exceed the total page ceiling"
+            )
+        if self.stage0_crawl_per_host_concurrency > self.stage0_crawl_worker_concurrency:
+            raise ValueError(
+                "CLUE_STAGE0_CRAWL_PER_HOST_CONCURRENCY cannot exceed worker concurrency"
+            )
+        if 2 * self.stage0_crawl_heartbeat_seconds >= self.stage0_crawl_lease_ttl_seconds:
+            raise ValueError(
+                "two Stage-0 crawl heartbeat intervals must fit strictly inside the lease TTL"
+            )
+        if (
+            self.stage0_official_site_crawl_mode != "off"
+            and not self.stage0_official_site_crawl_workspace_allowlist
+        ):
+            raise ValueError(
+                "enabled Stage-0 official-site crawling requires an explicit workspace allowlist"
             )
         return self
 

@@ -195,6 +195,24 @@ class _LaneDrivingInvoker:
         )
 
 
+class _BlockingReconEnqueuer:
+    def __init__(self) -> None:
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls: list[dict[str, object]] = []
+
+    async def enqueue(self, **kwargs: object) -> bool:
+        self.calls.append(kwargs)
+        self.entered.set()
+        await self.release.wait()
+        return True
+
+
+class _ForbiddenWebInvoker:
+    async def invoke(self, *_args: object, **_kwargs: object) -> ToolResult:
+        raise AssertionError("production C6 setup must never invoke recon on the API event loop")
+
+
 def test_setup_route_captures_drives_lanes_and_serves_lane_truth() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -289,6 +307,58 @@ def test_setup_route_captures_drives_lanes_and_serves_lane_truth() -> None:
             assert row["source_ref"] is None
             # The kicker drove both lanes: fast first, then background (two invocations).
             assert len(invoker.invocations) == 2
+
+    run_async(scenario())
+
+
+def test_c6_setup_enqueues_detached_recon_and_polling_remains_responsive() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            conn_lock = asyncio.Lock()
+
+            @asynccontextmanager
+            async def conn_factory() -> AsyncIterator[AsyncConnection]:
+                async with conn_lock:
+                    yield conn
+
+            provisioned = await provision_self_serve_workspace(
+                conn,
+                provider_key="clerk",
+                provider_subject="setup-c6-detached-subject",
+                **PROFILE,
+            )
+            workspace_id = provisioned.workspace.workspace_id
+            enqueuer = _BlockingReconEnqueuer()
+            app = FastAPI()
+            app.include_router(
+                create_stage0_setup_router(
+                    tool_invoker=_ForbiddenWebInvoker(),  # type: ignore[arg-type]
+                    conn_factory=conn_factory,
+                    storage=_MemoryStorage(),  # type: ignore[arg-type]
+                    recon_enqueuer=enqueuer,
+                )
+            )
+            headers = {"X-Workspace-Id": workspace_id}
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                posting = asyncio.create_task(client.post("/stage0/setup", headers=headers))
+                await asyncio.wait_for(enqueuer.entered.wait(), timeout=1)
+                # The enqueue is deliberately suspended. A setup poll still completes because
+                # no scrape/model call owns this web process's event loop or DB connection.
+                current = await asyncio.wait_for(
+                    client.get("/stage0/setup/current", headers=headers), timeout=0.5
+                )
+                assert current.status_code == 200
+                assert current.json()["status"] == "starting"
+                enqueuer.release.set()
+                started = await posting
+                assert started.status_code == 202
+            assert len(enqueuer.calls) == 1
+            call = enqueuer.calls[0]
+            assert call["workspace_id"] == workspace_id
+            assert call["website_digest"]
+            assert call["attempt"] == 0
 
     run_async(scenario())
 

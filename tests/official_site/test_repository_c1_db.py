@@ -436,6 +436,123 @@ def test_discovery_replay_deduplicates_a_batch_without_collapsing_its_provenance
     run_async(_run())
 
 
+def test_discovery_page_ceiling_preserves_overflow_provenance_without_rolling_back() -> None:
+    async def _run() -> None:
+        workspace_id = ""
+        async with db_lifespan() as engine:
+            try:
+                async with engine.begin() as conn:
+                    workspace_id, brand_id, recon_run_id = await _seed_scope(conn)
+                repository = PostgresCrawlRepository()
+                config = _config().model_copy(
+                    update={"fast_page_ceiling": 2, "total_page_ceiling": 2}
+                )
+                run = await repository.create_or_get_run(
+                    CrawlRunCreate(
+                        workspace_id=workspace_id,
+                        brand_id=brand_id,
+                        recon_run_id=recon_run_id,
+                        root_discovered_url="https://example.com/",
+                        root_fetch_key="https://example.com/",
+                        allowed_registrable_domain="example.com",
+                        config=config,
+                    )
+                )
+                root = UrlObservation(
+                    discovered_url="https://example.com/",
+                    discovered_via=DiscoveredVia.ROOT,
+                    fetch_key="https://example.com/",
+                    fetch_key_hash=hashlib.sha256(b"https://example.com/").hexdigest(),
+                    graph_depth=0,
+                    priority=0,
+                    priority_reason=("ceiling-test",),
+                    eligibility=CrawlEligibility.BOTH,
+                    policy_outcome=PolicyOutcome.ADMITTED,
+                )
+                await repository.record_discoveries(
+                    DiscoveryBatch(
+                        workspace_id=workspace_id,
+                        crawl_run_id=run.crawl_run_id,
+                        observations=(root,),
+                    )
+                )
+                async with engine.connect() as conn:
+                    root_page_id = (
+                        await conn.execute(
+                            text(
+                                "SELECT id FROM official_site_crawl_page "
+                                "WHERE crawl_run_id = :run_id AND graph_depth = 0"
+                            ),
+                            {"run_id": run.crawl_run_id},
+                        )
+                    ).scalar_one()
+                observations = tuple(
+                    UrlObservation(
+                        discovered_url=url,
+                        discovered_via=DiscoveredVia.LINK,
+                        fetch_key=url,
+                        fetch_key_hash=hashlib.sha256(url.encode()).hexdigest(),
+                        source_page_id=root_page_id,
+                        graph_depth=1,
+                        priority=index,
+                        priority_reason=("ceiling-test",),
+                        eligibility=CrawlEligibility.BOTH,
+                        policy_outcome=PolicyOutcome.ADMITTED,
+                    )
+                    for index, url in enumerate(
+                        (
+                            "https://example.com/product",
+                            "https://example.com/pricing",
+                        )
+                    )
+                )
+                result = await repository.record_discoveries(
+                    DiscoveryBatch(
+                        workspace_id=workspace_id,
+                        crawl_run_id=run.crawl_run_id,
+                        observations=observations,
+                    )
+                )
+                assert result.page_nodes_created == 1
+                assert result.observations_recorded == 2
+                async with engine.connect() as conn:
+                    page_count = (
+                        await conn.execute(
+                            text(
+                                "SELECT count(*) FROM official_site_crawl_page "
+                                "WHERE crawl_run_id = :run_id"
+                            ),
+                            {"run_id": run.crawl_run_id},
+                        )
+                    ).scalar_one()
+                    overflow = (
+                        (
+                            await conn.execute(
+                                text(
+                                    """
+                                    SELECT discovered_url, policy_outcome, policy_reason
+                                    FROM official_site_url_observation
+                                    WHERE crawl_run_id = :run_id AND page_id IS NULL
+                                    """
+                                ),
+                                {"run_id": run.crawl_run_id},
+                            )
+                        )
+                        .mappings()
+                        .one()
+                    )
+                assert page_count == 2
+                assert overflow["discovered_url"] == "https://example.com/pricing"
+                assert overflow["policy_outcome"] == PolicyOutcome.REFUSED.value
+                assert overflow["policy_reason"] == "overall_page_ceiling_reached"
+            finally:
+                if workspace_id:
+                    async with engine.begin() as conn:
+                        await _cleanup_scope(conn, workspace_id)
+
+    run_async(_run())
+
+
 def test_expiry_recovery_separates_paid_ambiguity_from_recorded_success() -> None:
     async def _run() -> None:
         workspace_id = ""
@@ -704,6 +821,68 @@ def test_success_persists_url_snapshot_and_freezes_immutable_checkpoint() -> Non
                             ),
                             {"id": checkpoint_id},
                         )
+            finally:
+                if workspace_id:
+                    async with engine.begin() as conn:
+                        await _cleanup_scope(conn, workspace_id)
+
+    run_async(_run())
+
+
+def test_c6_db_deadline_rehydration_and_fast_checkpoint_are_cold_replay_safe() -> None:
+    async def _run() -> None:
+        workspace_id = ""
+        async with db_lifespan() as engine:
+            try:
+                async with engine.begin() as conn:
+                    workspace_id, brand_id, recon_run_id = await _seed_scope(conn)
+                repository = PostgresCrawlRepository()
+                crawl_run_id = await _create_run_and_page(
+                    repository,
+                    workspace_id=workspace_id,
+                    brand_id=brand_id,
+                    recon_run_id=recon_run_id,
+                )
+                runtime = await repository.read_run_runtime(
+                    workspace_id=workspace_id,
+                    crawl_run_id=crawl_run_id,
+                )
+                assert runtime.status is CrawlRunStatus.FAST_ACTIVE
+                assert runtime.config == _config()
+                remaining = await repository.fast_deadline_remaining_seconds(
+                    workspace_id=workspace_id,
+                    crawl_run_id=crawl_run_id,
+                )
+                assert 0 < remaining <= _config().fast_deadline_seconds
+
+                first = await repository.close_fast_and_freeze_checkpoint(
+                    workspace_id=workspace_id,
+                    crawl_run_id=crawl_run_id,
+                )
+                replay = await repository.close_fast_and_freeze_checkpoint(
+                    workspace_id=workspace_id,
+                    crawl_run_id=crawl_run_id,
+                )
+                assert replay.checkpoint_id == first.checkpoint_id
+                assert replay.version == 1
+                assert (
+                    await repository.read_run_runtime(
+                        workspace_id=workspace_id,
+                        crawl_run_id=crawl_run_id,
+                    )
+                ).status is CrawlRunStatus.FAST_CLOSING
+                assert (
+                    await repository.read_latest_checkpoint(
+                        workspace_id=workspace_id,
+                        crawl_run_id=crawl_run_id,
+                        phase=CrawlPhase.FAST,
+                    )
+                ) == first
+                with pytest.raises(CrawlRunNotFoundError):
+                    await repository.read_run_runtime(
+                        workspace_id=f"other-{workspace_id}",
+                        crawl_run_id=crawl_run_id,
+                    )
             finally:
                 if workspace_id:
                     async with engine.begin() as conn:

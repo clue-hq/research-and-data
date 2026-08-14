@@ -34,6 +34,7 @@ from clue_research.official_site.contracts import (
     CrawlProgress,
     CrawlRunCreate,
     CrawlRunRef,
+    CrawlRunRuntimeRef,
     CrawlRunStatus,
     DiscoveredVia,
     DiscoveryBatch,
@@ -42,6 +43,7 @@ from clue_research.official_site.contracts import (
     FetchAttemptState,
     LinkObservation,
     LinkRelation,
+    OfficialSiteCrawlContractConfig,
     PageSnapshotRef,
     PersistenceClaim,
     PolicyOutcome,
@@ -52,7 +54,6 @@ from clue_research.official_site.contracts import (
     compute_snapshot_set_sha256,
 )
 from clue_research.official_site.models import (
-    CrawlCapacityExceededError,
     CrawlReplayConflictError,
     CrawlRunNotFoundError,
     CrawlStateConflictError,
@@ -258,6 +259,50 @@ class PostgresCrawlRepository:
                 created=False,
             )
 
+    async def read_run_runtime(
+        self, *, workspace_id: str, crawl_run_id: UUID
+    ) -> CrawlRunRuntimeRef:
+        """Rehydrate policy/deadline authority from PostgreSQL for a detached C6 worker."""
+
+        async with self._conn_factory() as conn:
+            row = await self._run(conn, workspace_id, crawl_run_id)
+        return CrawlRunRuntimeRef(
+            crawl_run_id=row["id"],
+            workspace_id=row["workspace_id"],
+            brand_id=row["brand_id"],
+            client_entity_id=row["client_entity_id"],
+            recon_run_id=row["recon_run_id"],
+            root_discovered_url=row["root_discovered_url"],
+            root_fetch_key=row["root_fetch_key"],
+            allowed_registrable_domain=row["allowed_registrable_domain"],
+            status=CrawlRunStatus(row["status"]),
+            fast_claim_deadline_at=row["fast_claim_deadline_at"],
+            config=OfficialSiteCrawlContractConfig.model_validate(row["config_json"]),
+        )
+
+    async def fast_deadline_remaining_seconds(
+        self, *, workspace_id: str, crawl_run_id: UUID
+    ) -> float:
+        """Return the persisted deadline delta using database time, clamped at zero."""
+
+        async with self._conn_factory() as conn:
+            await self._run(conn, workspace_id, crawl_run_id)
+            remaining = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT GREATEST(
+                            EXTRACT(EPOCH FROM (fast_claim_deadline_at - now())), 0
+                        )::double precision
+                        FROM official_site_crawl_run
+                        WHERE id = :crawl_run_id AND workspace_id = :workspace_id
+                        """
+                    ),
+                    {"crawl_run_id": crawl_run_id, "workspace_id": workspace_id},
+                )
+            ).scalar_one()
+        return float(remaining)
+
     async def record_discoveries(self, batch: DiscoveryBatch) -> DiscoveryBatchResult:
         observations_recorded = 0
         pages_created = 0
@@ -348,18 +393,15 @@ class PostgresCrawlRepository:
                         )
                     )
                     if page is None:
-                        if current_pages >= run["overall_page_ceiling"]:
-                            raise CrawlCapacityExceededError(
-                                "discovery batch exceeds the run-pinned page ceiling"
+                        if current_pages < run["overall_page_ceiling"]:
+                            parked_unknown_link = (
+                                observation.discovered_via is DiscoveredVia.LINK
+                                and observation.graph_depth is None
                             )
-                        parked_unknown_link = (
-                            observation.discovered_via is DiscoveredVia.LINK
-                            and observation.graph_depth is None
-                        )
-                        page = _row(
-                            await conn.execute(
-                                text(
-                                    """
+                            page = _row(
+                                await conn.execute(
+                                    text(
+                                        """
                                     INSERT INTO official_site_crawl_page (
                                         id, workspace_id, crawl_run_id, fetch_key, fetch_key_hash,
                                         representative_requested_url, host, graph_depth, priority,
@@ -372,34 +414,34 @@ class PostgresCrawlRepository:
                                     )
                                     RETURNING *
                                     """
-                                ),
-                                {
-                                    "id": uuid4(),
-                                    "workspace_id": batch.workspace_id,
-                                    "crawl_run_id": batch.crawl_run_id,
-                                    "fetch_key": observation.fetch_key,
-                                    "fetch_key_hash": observation.fetch_key_hash,
-                                    # A relative/raw discovered spelling remains on the URL
-                                    # observation; acquisition always receives an absolute safe key.
-                                    "requested_url": observation.fetch_key,
-                                    "host": _host(observation.fetch_key),
-                                    "graph_depth": observation.graph_depth,
-                                    "priority": observation.priority,
-                                    "priority_reasons": _json(
-                                        sorted(set(observation.priority_reason))
                                     ),
-                                    "eligibility": observation.eligibility.value,
-                                    "state": (
-                                        CrawlPageState.DISCOVERED.value
-                                        if parked_unknown_link
-                                        else CrawlPageState.QUEUED.value
-                                    ),
-                                },
+                                    {
+                                        "id": uuid4(),
+                                        "workspace_id": batch.workspace_id,
+                                        "crawl_run_id": batch.crawl_run_id,
+                                        "fetch_key": observation.fetch_key,
+                                        "fetch_key_hash": observation.fetch_key_hash,
+                                        # A relative/raw discovered spelling remains on the URL
+                                        # observation; acquisition receives an absolute safe key.
+                                        "requested_url": observation.fetch_key,
+                                        "host": _host(observation.fetch_key),
+                                        "graph_depth": observation.graph_depth,
+                                        "priority": observation.priority,
+                                        "priority_reasons": _json(
+                                            sorted(set(observation.priority_reason))
+                                        ),
+                                        "eligibility": observation.eligibility.value,
+                                        "state": (
+                                            CrawlPageState.DISCOVERED.value
+                                            if parked_unknown_link
+                                            else CrawlPageState.QUEUED.value
+                                        ),
+                                    },
+                                )
                             )
-                        )
-                        assert page is not None
-                        current_pages += 1
-                        pages_created += 1
+                            assert page is not None
+                            current_pages += 1
+                            pages_created += 1
                     else:
                         old_depth = page["graph_depth"]
                         new_depth = old_depth
@@ -500,6 +542,9 @@ class PostgresCrawlRepository:
                         )
                     )
 
+                capacity_refused = (
+                    observation.policy_outcome is PolicyOutcome.ADMITTED and page is None
+                )
                 inserted = await conn.execute(
                     text(
                         """
@@ -527,8 +572,19 @@ class PostgresCrawlRepository:
                         "graph_depth": observation.graph_depth,
                         "link_text": observation.link_text,
                         "sitemap_url": observation.sitemap_url,
-                        "policy_outcome": observation.policy_outcome.value,
-                        "policy_reason": observation.policy_reason,
+                        # A crawl-wide capacity ceiling is a coordinator safety decision, not a
+                        # URL-equivalence decision. Preserve the discovered spelling/provenance,
+                        # but do not let a high-fanout page roll back its own successful snapshot.
+                        "policy_outcome": (
+                            PolicyOutcome.REFUSED.value
+                            if capacity_refused
+                            else observation.policy_outcome.value
+                        ),
+                        "policy_reason": (
+                            "overall_page_ceiling_reached"
+                            if capacity_refused
+                            else observation.policy_reason
+                        ),
                     },
                 )
                 if inserted.rowcount:
@@ -1527,103 +1583,226 @@ class PostgresCrawlRepository:
         async with self._conn_factory() as conn:
             await self._lock(conn, crawl_run_id, f"checkpoint:{phase.value}")
             await self._run(conn, workspace_id, crawl_run_id)
-            eligibility = (
-                [CrawlEligibility.FAST.value, CrawlEligibility.BOTH.value]
-                if phase is CrawlPhase.FAST
-                else [
-                    CrawlEligibility.FAST.value,
-                    CrawlEligibility.BACKGROUND.value,
-                    CrawlEligibility.BOTH.value,
-                ]
-            )
-            snapshot_ids = tuple(
-                sorted(
-                    (
-                        row[0]
-                        for row in (
-                            await conn.execute(
-                                text(
-                                    """
-                                    SELECT latest_snapshot_id
-                                    FROM official_site_crawl_page
-                                    WHERE workspace_id = :workspace_id
-                                      AND crawl_run_id = :crawl_run_id
-                                      AND state = 'fetched'
-                                      AND eligibility = ANY(CAST(:eligibility AS text[]))
-                                    """
-                                ),
-                                {
-                                    "workspace_id": workspace_id,
-                                    "crawl_run_id": crawl_run_id,
-                                    "eligibility": eligibility,
-                                },
-                            )
-                        ).all()
-                    ),
-                    key=str,
-                )
-            )
-            version = int(
-                (
-                    await conn.execute(
-                        text(
-                            """
-                            SELECT COALESCE(max(version), 0) + 1
-                            FROM official_site_corpus_checkpoint
-                            WHERE crawl_run_id = :crawl_run_id AND phase = :phase
-                            """
-                        ),
-                        {"crawl_run_id": crawl_run_id, "phase": phase.value},
-                    )
-                ).scalar_one()
-            )
-            progress = await self._read_progress(conn, workspace_id, crawl_run_id)
-            coverage = {
-                "fetched": progress.fetched,
-                "failed": progress.failed,
-                "quarantined": progress.quarantined,
-                "refused": progress.refused,
-                "snapshot_count": len(snapshot_ids),
-            }
+            return await self._freeze_checkpoint(conn, workspace_id, crawl_run_id, phase)
+
+    async def read_latest_checkpoint(
+        self, *, workspace_id: str, crawl_run_id: UUID, phase: CrawlPhase
+    ) -> CorpusCheckpointRef | None:
+        async with self._conn_factory() as conn:
+            await self._run(conn, workspace_id, crawl_run_id)
             checkpoint = _row(
                 await conn.execute(
                     text(
                         """
-                        INSERT INTO official_site_corpus_checkpoint (
-                            id, workspace_id, crawl_run_id, phase, version,
-                            snapshot_ids_json, snapshot_set_sha256, coverage_json
-                        ) VALUES (
-                            :id, :workspace_id, :crawl_run_id, :phase, :version,
-                            CAST(:snapshot_ids AS jsonb), :snapshot_hash,
-                            CAST(:coverage AS jsonb)
-                        )
-                        RETURNING *
+                        SELECT * FROM official_site_corpus_checkpoint
+                        WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
+                          AND phase = :phase
+                        ORDER BY version DESC LIMIT 1
                         """
                     ),
                     {
-                        "id": uuid4(),
                         "workspace_id": workspace_id,
                         "crawl_run_id": crawl_run_id,
                         "phase": phase.value,
-                        "version": version,
-                        "snapshot_ids": _json([str(snapshot_id) for snapshot_id in snapshot_ids]),
-                        "snapshot_hash": compute_snapshot_set_sha256(snapshot_ids),
-                        "coverage": _json(coverage),
                     },
                 )
             )
-            assert checkpoint is not None
-            return CorpusCheckpointRef(
-                checkpoint_id=checkpoint["id"],
-                workspace_id=checkpoint["workspace_id"],
-                crawl_run_id=checkpoint["crawl_run_id"],
-                phase=CrawlPhase(checkpoint["phase"]),
-                version=checkpoint["version"],
-                snapshot_ids=tuple(UUID(value) for value in checkpoint["snapshot_ids_json"]),
-                snapshot_set_sha256=checkpoint["snapshot_set_sha256"],
-                coverage=checkpoint["coverage_json"],
-                created_at=checkpoint["created_at"],
+        return None if checkpoint is None else self._checkpoint_ref(checkpoint)
+
+    async def freeze_corpus_checkpoint_once(
+        self, *, workspace_id: str, crawl_run_id: UUID, phase: CrawlPhase
+    ) -> CorpusCheckpointRef:
+        """Return C6's one immutable phase checkpoint, creating it exactly once."""
+
+        async with self._conn_factory() as conn:
+            await self._lock(conn, crawl_run_id, f"checkpoint:{phase.value}")
+            await self._run(conn, workspace_id, crawl_run_id, lock=True)
+            existing = await self._latest_checkpoint(conn, workspace_id, crawl_run_id, phase)
+            if existing is not None:
+                return self._checkpoint_ref(existing)
+            return await self._freeze_checkpoint(conn, workspace_id, crawl_run_id, phase)
+
+    async def close_fast_and_freeze_checkpoint(
+        self, *, workspace_id: str, crawl_run_id: UUID
+    ) -> CorpusCheckpointRef:
+        """Atomically stop new fast claims and freeze the one fast corpus.
+
+        A provider operation already holding a page lease may finish after this transaction.  Its
+        snapshot is intentionally excluded from the immutable fast set and remains eligible for
+        the later background checkpoint.  Re-entry from ``fast_closing`` or any later phase returns
+        the previously frozen checkpoint instead of minting another version.
+        """
+
+        async with self._conn_factory() as conn:
+            await self._lock(conn, crawl_run_id, "checkpoint:fast")
+            run = await self._run(conn, workspace_id, crawl_run_id, lock=True)
+            status = CrawlRunStatus(run["status"])
+            if status is CrawlRunStatus.FAST_ACTIVE:
+                updated = await conn.execute(
+                    text(
+                        """
+                        UPDATE official_site_crawl_run
+                        SET status = 'fast_closing', updated_at = now()
+                        WHERE id = :crawl_run_id AND workspace_id = :workspace_id
+                          AND status = 'fast_active'
+                        """
+                    ),
+                    {"crawl_run_id": crawl_run_id, "workspace_id": workspace_id},
+                )
+                if updated.rowcount != 1:  # pragma: no cover - row lock makes this unreachable
+                    raise CrawlStateConflictError("fast close lost its run-state fence")
+            elif status not in {
+                CrawlRunStatus.FAST_CLOSING,
+                CrawlRunStatus.FAST_COMPLETE,
+                CrawlRunStatus.BACKGROUND_ACTIVE,
+                CrawlRunStatus.COMPLETED,
+            }:
+                raise CrawlStateConflictError(f"cannot close fast phase from {status.value}")
+
+            existing = await self._latest_checkpoint(
+                conn, workspace_id, crawl_run_id, CrawlPhase.FAST
             )
+            if existing is not None:
+                return self._checkpoint_ref(existing)
+            if status not in {CrawlRunStatus.FAST_ACTIVE, CrawlRunStatus.FAST_CLOSING}:
+                raise CrawlStateConflictError(
+                    "advanced run is missing its immutable fast checkpoint"
+                )
+            return await self._freeze_checkpoint(conn, workspace_id, crawl_run_id, CrawlPhase.FAST)
+
+    @staticmethod
+    async def _latest_checkpoint(
+        conn: AsyncConnection,
+        workspace_id: str,
+        crawl_run_id: UUID,
+        phase: CrawlPhase,
+    ) -> Mapping[str, Any] | None:
+        return _row(
+            await conn.execute(
+                text(
+                    """
+                    SELECT * FROM official_site_corpus_checkpoint
+                    WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
+                      AND phase = :phase
+                    ORDER BY version DESC LIMIT 1
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "crawl_run_id": crawl_run_id,
+                    "phase": phase.value,
+                },
+            )
+        )
+
+    async def _freeze_checkpoint(
+        self,
+        conn: AsyncConnection,
+        workspace_id: str,
+        crawl_run_id: UUID,
+        phase: CrawlPhase,
+    ) -> CorpusCheckpointRef:
+        eligibility = (
+            [CrawlEligibility.FAST.value, CrawlEligibility.BOTH.value]
+            if phase is CrawlPhase.FAST
+            else [
+                CrawlEligibility.FAST.value,
+                CrawlEligibility.BACKGROUND.value,
+                CrawlEligibility.BOTH.value,
+            ]
+        )
+        snapshot_ids = tuple(
+            sorted(
+                (
+                    row[0]
+                    for row in (
+                        await conn.execute(
+                            text(
+                                """
+                                SELECT latest_snapshot_id
+                                FROM official_site_crawl_page
+                                WHERE workspace_id = :workspace_id
+                                  AND crawl_run_id = :crawl_run_id
+                                  AND state = 'fetched'
+                                  AND eligibility = ANY(CAST(:eligibility AS text[]))
+                                """
+                            ),
+                            {
+                                "workspace_id": workspace_id,
+                                "crawl_run_id": crawl_run_id,
+                                "eligibility": eligibility,
+                            },
+                        )
+                    ).all()
+                ),
+                key=str,
+            )
+        )
+        version = int(
+            (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT COALESCE(max(version), 0) + 1
+                        FROM official_site_corpus_checkpoint
+                        WHERE crawl_run_id = :crawl_run_id AND phase = :phase
+                        """
+                    ),
+                    {"crawl_run_id": crawl_run_id, "phase": phase.value},
+                )
+            ).scalar_one()
+        )
+        progress = await self._read_progress(conn, workspace_id, crawl_run_id)
+        coverage = {
+            "fetched": progress.fetched,
+            "failed": progress.failed,
+            "quarantined": progress.quarantined,
+            "refused": progress.refused,
+            "snapshot_count": len(snapshot_ids),
+        }
+        checkpoint = _row(
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO official_site_corpus_checkpoint (
+                        id, workspace_id, crawl_run_id, phase, version,
+                        snapshot_ids_json, snapshot_set_sha256, coverage_json
+                    ) VALUES (
+                        :id, :workspace_id, :crawl_run_id, :phase, :version,
+                        CAST(:snapshot_ids AS jsonb), :snapshot_hash,
+                        CAST(:coverage AS jsonb)
+                    )
+                    RETURNING *
+                    """
+                ),
+                {
+                    "id": uuid4(),
+                    "workspace_id": workspace_id,
+                    "crawl_run_id": crawl_run_id,
+                    "phase": phase.value,
+                    "version": version,
+                    "snapshot_ids": _json([str(snapshot_id) for snapshot_id in snapshot_ids]),
+                    "snapshot_hash": compute_snapshot_set_sha256(snapshot_ids),
+                    "coverage": _json(coverage),
+                },
+            )
+        )
+        assert checkpoint is not None
+        return self._checkpoint_ref(checkpoint)
+
+    @staticmethod
+    def _checkpoint_ref(checkpoint: Mapping[str, Any]) -> CorpusCheckpointRef:
+        return CorpusCheckpointRef(
+            checkpoint_id=checkpoint["id"],
+            workspace_id=checkpoint["workspace_id"],
+            crawl_run_id=checkpoint["crawl_run_id"],
+            phase=CrawlPhase(checkpoint["phase"]),
+            version=checkpoint["version"],
+            snapshot_ids=tuple(UUID(value) for value in checkpoint["snapshot_ids_json"]),
+            snapshot_set_sha256=checkpoint["snapshot_set_sha256"],
+            coverage=checkpoint["coverage_json"],
+            created_at=checkpoint["created_at"],
+        )
 
     async def transition_run(
         self,
@@ -1666,6 +1845,50 @@ class PostgresCrawlRepository:
     async def read_progress(self, *, workspace_id: str, crawl_run_id: UUID) -> CrawlProgress:
         async with self._conn_factory() as conn:
             return await self._read_progress(conn, workspace_id, crawl_run_id)
+
+    async def count_phase_blockers(
+        self, *, workspace_id: str, crawl_run_id: UUID, phase: CrawlPhase
+    ) -> int:
+        """Count durable states that prevent a C6 phase boundary from being published.
+
+        Queued and delayed no-spend retries are valid at the fast boundary because background
+        resumes the same frontier. They are blockers at the final background boundary. Leased,
+        dispatched, reconciliation, and persistence work block both boundaries.
+        """
+
+        states = [
+            CrawlPageState.LEASED.value,
+            CrawlPageState.PROVIDER_STARTED.value,
+            CrawlPageState.RECONCILIATION_PENDING.value,
+            CrawlPageState.PERSISTENCE_PENDING.value,
+        ]
+        if phase is CrawlPhase.BACKGROUND:
+            states.extend(
+                [
+                    CrawlPageState.QUEUED.value,
+                    CrawlPageState.RETRY_WAIT.value,
+                ]
+            )
+        async with self._conn_factory() as conn:
+            await self._run(conn, workspace_id, crawl_run_id)
+            count = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT count(*)
+                        FROM official_site_crawl_page
+                        WHERE workspace_id = :workspace_id AND crawl_run_id = :crawl_run_id
+                          AND state = ANY(CAST(:states AS text[]))
+                        """
+                    ),
+                    {
+                        "workspace_id": workspace_id,
+                        "crawl_run_id": crawl_run_id,
+                        "states": states,
+                    },
+                )
+            ).scalar_one()
+        return int(count)
 
     @staticmethod
     async def _queued_candidates(

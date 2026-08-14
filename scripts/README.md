@@ -21,6 +21,7 @@ don't pass one).
 | 10 | `10_exa_websets_d4_materialization.py` | Zero-provider-call D4 materialization/replay | `ExaWebsetsD4Materializer` |
 | 11 | `11_exa_websets_d6_acceptance.py` | Bounded live/replay D6 production composition | `ComposingRunDriver` + durable Exa slices |
 | 14 | `14_seed_insight_health_browser_fixture.py` | Authenticated Insight Health browser onboarding | `trial.browser_fixture.seed_insight_health_browser_fixture` |
+| 16 | `16_official_site_c6_live.py` | Retained C6 Firecrawl lifecycle/replay canary | `OfficialSiteCrawlWorkHandler` |
 
 ## One-time setup
 
@@ -289,3 +290,32 @@ durable IDs, states, call/blob/snapshot counts, receipt key names, and hashes. I
 credentials, raw receipts, or captured page bodies. Keep the named database and artifact root
 until review is complete. Set `CLUE_C4_PAGE_FETCHER=scrapling` to run the same retained canary
 through the credit-free pinned local adapter without a Firecrawl key; the default is `firecrawl`.
+
+## Official-site C6 live lifecycle canary
+
+Script 16 creates a new self-serve fixture in a dedicated migrated database, executes the
+production shadow handler against `https://insighthealth.ai/`, and immediately cold-replays it. It
+refuses any database whose name does not contain `c6`, requires an explicit confirmation variable,
+and prints only IDs, hashes, phase states, and aggregate counters.
+
+```bash
+CLUE_DATABASE_URL=postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_c6_acceptance \
+CLUE_C6_ARTIFACT_ROOT=/tmp/clue-c6-live-artifacts \
+CLUE_C6_LIVE_CONFIRM=1 \
+uv run python scripts/16_official_site_c6_live.py
+```
+
+If the first execution reports `recovery_pending`, retain the database/artifact root and wait for
+the printed run's lease window to expire. Resume the **same** recon rather than seeding another:
+
+```bash
+CLUE_C6_REPLAY_WORKSPACE_ID=<workspace-id> \
+CLUE_C6_REPLAY_RECON_RUN_ID=<recon-run-id> \
+CLUE_DATABASE_URL=postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_c6_acceptance \
+CLUE_C6_ARTIFACT_ROOT=/tmp/clue-c6-live-artifacts \
+CLUE_C6_LIVE_CONFIRM=1 \
+uv run python scripts/16_official_site_c6_live.py
+```
+
+The final replay must retain one crawl run, stable checkpoint IDs, and an attempt delta of zero.
+Keep the isolated database and artifact root until the evidence has been reviewed.

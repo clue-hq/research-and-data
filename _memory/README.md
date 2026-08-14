@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-14-stage0-durable-official-site-crawl-c6.md` — C6 complete in default-off allowlisted
+  shadow mode: one-run fast/background lifecycle, immutable checkpoints, fleet-owned onboarding
+  recon/crawl work, phase-blocker recovery, reversible task-kind migration, 208-test focused gate,
+  and retained Insight Health Firecrawl evidence with zero-call cold replay.
 - `2026-08-14-stage0-durable-official-site-crawl-c5.md` — C5 complete: PostgreSQL-only bounded
   worker pool, cross-run global/host capacity, heartbeat/fencing, graceful stop, fast/background
   fairness, category quotas, replay-safe no-refetch depth expansion, bounded no-spend retries,

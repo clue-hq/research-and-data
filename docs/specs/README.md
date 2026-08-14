@@ -76,7 +76,7 @@ issue spec states the exact interface it exposes/consumes.
 | Capability | Status | Authority |
 |---|---|---|
 | Onboarding auth/profile/setup integration | Implemented slices with retained follow-ups | [FI onboarding contract-gap review](./FI-onboarding-contract-gap-review.md) |
-| Durable Stage-0 official-site crawling | **C0 contract freeze implemented; C1–C10 not yet accepted** | [Plan](./FI-stage0-durable-official-site-crawl-plan.md) · [C0 contract](./FI-stage0-durable-official-site-crawl-C0-contract.md) |
+| Durable Stage-0 official-site crawling | **C0–C6 implemented; default-off allowlisted shadow proven live; C7–C10 remain** | [Plan](./FI-stage0-durable-official-site-crawl-plan.md) · [C0 contract](./FI-stage0-durable-official-site-crawl-C0-contract.md) · [C6 composition](./FI-stage0-durable-official-site-crawl-C6-composition-contract.md) |
 
 ## Full issue list
 
