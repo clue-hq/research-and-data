@@ -15,6 +15,7 @@ from clue_research.stage0 import (
     CLIENT_KNOWLEDGE_FIELDS,
     CLIENT_KNOWLEDGE_PACK,
     CLIENT_KNOWLEDGE_REUSE_POLICY,
+    PRODUCT_KNOWLEDGE_FIELDS,
     SURFACE_CLASS_FIELDS,
     ClientInput,
     SurfaceClass,
@@ -37,7 +38,10 @@ def test_client_field_keys_are_wellformed_and_packed() -> None:
     # the marker is registered but excluded from the substantive knowledge field set
     assert CLIENT_KB_VERSION in pack_keys
     assert CLIENT_KB_VERSION not in CLIENT_KNOWLEDGE_FIELDS
-    assert set(CLIENT_KNOWLEDGE_FIELDS) | {CLIENT_KB_VERSION} == pack_keys
+    assert (
+        set(CLIENT_KNOWLEDGE_FIELDS) | set(PRODUCT_KNOWLEDGE_FIELDS) | {CLIENT_KB_VERSION}
+        == pack_keys
+    )
 
 
 def test_client_field_class_is_pack() -> None:
