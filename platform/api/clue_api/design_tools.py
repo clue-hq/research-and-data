@@ -10,7 +10,8 @@ This module knows their *names* and their host, never their internals.
 ``set(tool_registry.names()) == set(C6_AGENT_TOOL_AUTHORITY)`` exactly: a registry whose shape
 depends on ``design_runtime_enabled`` would make the C6 authority audit environment-dependent and
 would turn flipping that switch into an ``AgentCatalogError`` at composition. So the envelopes are
-always present and always audited (with `()` authority — see ``agent_registry_wiring``), and the
+always present and always audited (granted to ``AgentRole.DESIGN`` since P3.3 — see
+``agent_registry_wiring``), and the
 switch controls whether they are **live** instead of whether they **exist**:
 
 * ``enabled=False`` (the default) or no storage backend ⇒ the tools are constructed with **no

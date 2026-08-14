@@ -135,61 +135,69 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # unions FI Lane D's five (four REQ-21 thread tools + the D4 directive-confirmation gate),
     # so the merged inventory is 104 + 5 = 109.
     assert len(by_address) == 109
-    assert {
-        address
-        for address, item in by_address.items()
-        if item.reason_code == "design_agent_not_wired_until_part_iii"
-    } == {
+    # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
+    # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
+    # NO reason code — the same honest shape as any tool granted to another role —
+    # and the retired reason must never resurface.
+    assert not any(
+        item.reason_code == "design_agent_not_wired_until_part_iii"
+        for item in by_address.values()
+    )
+    design_addresses = {
+        "design_advance_instance_batch@1",
+        "design_advance_web_batch@1",
         "design_apply_edits@1",
         "design_apply_operations@1",
         "design_apply_web_operations@1",
         "design_attach_brand_kit@1",
         "design_compile_component@1",
+        "design_create_brand_compatibility_report@1",
+        "design_create_brand_kit@1",
         "design_create_document@1",
+        "design_create_instance_batch@1",
         "design_create_snapshot@1",
         "design_create_web_account@1",
+        "design_create_web_batch@1",
         "design_create_web_template@1",
+        "design_delete_asset@1",
+        "design_delete_binding_set@1",
         "design_delete_web_account@1",
+        "design_derive_instance@1",
         "design_derive_web_document@1",
         "design_finalize_document@1",
+        "design_ingest_assets@1",
+        "design_ingest_pdf@1",
+        "design_ingest_website@1",
         "design_persist_preflight@1",
+        "design_publish_brand_kit_version@1",
         "design_publish_web@1",
         "design_record_diagnostics@1",
         "design_redo_document@1",
         "design_redo_web_document@1",
-        "design_replace_scene@1",
-        "design_rollback_web_publish@1",
-        "design_set_agent_instructions@1",
-        "design_set_layout_managed_editing@1",
-        "design_start_agent_turn@1",
-        "design_start_web_turn@1",
-        "design_advance_instance_batch@1",
-        "design_advance_web_batch@1",
-        "design_create_brand_compatibility_report@1",
-        "design_create_brand_kit@1",
-        "design_create_instance_batch@1",
-        "design_create_web_batch@1",
-        "design_delete_asset@1",
-        "design_delete_binding_set@1",
-        "design_derive_instance@1",
-        "design_ingest_assets@1",
-        "design_ingest_pdf@1",
-        "design_ingest_website@1",
-        "design_publish_brand_kit_version@1",
         "design_register_asset_record@1",
         "design_register_captured_assets@1",
         "design_register_generated_asset@1",
         "design_register_qr_asset@1",
+        "design_replace_scene@1",
+        "design_rollback_web_publish@1",
+        "design_set_agent_instructions@1",
         "design_set_asset_description@1",
         "design_set_asset_status@1",
         "design_set_brand_kit_approval@1",
-        "design_upsert_binding_set@1",
+        "design_set_layout_managed_editing@1",
+        "design_start_agent_turn@1",
+        "design_start_web_turn@1",
         "design_undo_document@1",
         "design_undo_web_document@1",
         "design_unpublish_web@1",
         "design_update_web_account@1",
+        "design_upsert_binding_set@1",
         "design_write_component_source@1",
     }
+    for address in design_addresses:
+        item = by_address[address]
+        assert item.status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+        assert item.reason_code == "not_admitted_for_role"
     #
     # FI Lane D D0 added four more inventory-only entries — the REQ-21 thread tools. They are
     # disclosed and refused for exactly the reason every other ungranted tool is: the inventory is
@@ -467,3 +475,31 @@ def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path
             engine_tool_ceiling=admitted,
             selected_profile_versions=C6_ACTIVE_PROFILE_VERSIONS,
         )
+
+
+def test_design_profile_resolves_with_the_full_granted_write_surface(
+    registry: AgentProfileRegistry,
+) -> None:
+    """P3.3 (PD-part3): the composite design deepagent's platform-facing profile.
+
+    One role, a doorway, not a container (ruling D2): design@v1 resolves with ALL 49
+    governed design tools pinned and AVAILABLE from its own view — exactly the
+    authority the C6 audit grants and nothing else — no delegation, and the
+    P3.2-gate-ratified model policy on its face.
+    """
+    resolved = registry.resolve(AgentRole.DESIGN)
+    assert resolved.profile.version == "v1"
+    assert len(resolved.profile.tools) == 49
+    assert all(pin.name.startswith("design_") for pin in resolved.profile.tools)
+
+    by_address = {item.address: item for item in resolved.capabilities}
+    available = {
+        address
+        for address, item in by_address.items()
+        if item.status is AgentCapabilityStatus.AVAILABLE
+    }
+    assert available == {pin.address for pin in resolved.profile.tools}
+
+    assert resolved.profile.delegation_roles == ()
+    assert resolved.profile.model.model_id == "openai/gpt-5.6-terra"
+    assert resolved.profile.max_delegation_depth == 0

@@ -51,12 +51,18 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # FI Lane D D4 added `open_directive_confirmation_gate`, granted to the Head of ABM: asking the
     # human for authority is that role's own act, and the tool cannot address a gate to anybody but
     # the human whose turn it is answering. (97 + 5 = 102 at the integration merge.)
+    # P3.3 (PD-part3, 2026-08-14): the moment Part II staged — all 49 design tools flip from
+    # `()` to `(AgentRole.DESIGN,)`. One role, the composite design deepagent (ruling D2),
+    # gains the design write surface it always described; every other role still sees the
+    # design plane as role-unavailable. The count is unchanged: this is a grant, not a tool.
     assert len(C6_AGENT_TOOL_AUTHORITY) == 102
-    assert all(
-        C6_AGENT_TOOL_AUTHORITY[name] == ()
-        for name in C6_AGENT_TOOL_AUTHORITY
+    design_grants = {
+        name: roles
+        for name, roles in C6_AGENT_TOOL_AUTHORITY.items()
         if name.startswith("design_")
-    )
+    }
+    assert len(design_grants) == 49
+    assert all(roles == (AgentRole.DESIGN,) for roles in design_grants.values())
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()

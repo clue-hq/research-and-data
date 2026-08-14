@@ -41,6 +41,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "prompt:account-research@v3",
         "prompt:content-drafter@v1",
         "prompt:content-drafter@v2",
+        "prompt:design@v1",
         "prompt:head-of-abm@v1",
         "prompt:head-of-abm@v2",
         "prompt:head-of-abm@v3",
@@ -85,6 +86,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:content-drafter@v3",
         "profile:content-drafter@v4",
         "profile:content-drafter@v5",
+        "profile:design@v1",
         "profile:head-of-abm@v1",
         # Lexical, not numeric: the folder catalog sorts by address, so v10 sits beside v1.
         "profile:head-of-abm@v10",

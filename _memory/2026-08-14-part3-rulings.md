@@ -242,3 +242,32 @@ Standing follow-ups out of the gate saga (owners when picked up):
 
 **P3.2 status: COMPLETE.** All six checkpoint-1..3 commits + policy fixes on branch;
 next slice per PD-part3 §4: P3.3 (catalog registration).
+
+## P3.3 SHIPPED (2026-08-14) — catalog registration complete
+
+- Catalog entries: `prompts/design/v1/SYSTEM.md` (the composite's platform-facing
+  identity: the D2 doorway framing, the leg contract, exit discipline, fail-closed brand
+  pin) + `profiles/design/v1/profile.yaml` — role=design, prompt content-pinned, skills
+  [] (the trio's 13 skills stay design-runtime-internal), ALL 49 governed design tools
+  pinned with real schema digests (generated from the live tool registry — the registry
+  validates pins == grants exactly), model policy = the P3.2-gate-ratified face
+  (terra, bounded output 32768, temperature 1.0, turn_timeout 1800s), zero delegation
+  (the trio is internal, not platform delegation).
+- `C6_ACTIVE_PROFILE_VERSIONS[DESIGN] = "v1"`; the registry's per-role pins==grants
+  validation loop now derives from that table (covers design automatically).
+- THE FLIP: all 49 `design_*` authority entries `()` → `(AgentRole.DESIGN,)`; the 49
+  `design_agent_not_wired_until_part_iii` reserved reasons retired; staging comments
+  updated in agent_registry_wiring.py + design_tools.py.
+- Audit trail updated as reviewed decisions, never weakened: the authority-audit test's
+  decision table records the P3.3 grant (count stays 102 — a grant, not a tool); the
+  head-of-abm resource-map test now asserts the design plane is role-unavailable with
+  reason "not_admitted_for_role" (same honest shape as any other-role grant) and the
+  retired reason can never resurface; catalog strict-inventory gains the two design
+  addresses; NEW positive pin test_design_profile_resolves_with_the_full_granted_write_
+  surface (v1, 49 pins, all AVAILABLE from design's own view, no delegation).
+- Verified: 221 passed across tests/agents + registry wiring + runtime wiring + the
+  P3.2 role ledger; ruff + lint-imports (26/26) clean.
+
+Part III standing: P3.0 spec, P3.1, P3.2 (gate passed), P3.3 — DONE. Next: P3.4 (the
+leg engine: delegation entry, C8 bundle, the routing rule, leg-scoped history,
+agent_turn rows for design turns, speaker projection).
