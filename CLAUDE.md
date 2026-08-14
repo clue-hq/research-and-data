@@ -33,6 +33,51 @@ This file is high-level orientation only. The full architecture is the doc set i
 10. `clue-hq-content-and-artifact-scaling.md` (Doc S) — **the content plane.** Content schema ↔ design slot contract, template finalization, per-account/per-contact scaled derivation; resolves overview D2. (The design engine — *havana* — is now merged into this monorepo under `subsystems/clue-design/`, with its own authoritative doc set there; see the design-integration paragraph above and `docs/specs/design-integration-master-plan.md`. The engine itself — Rust crates, wasm pipeline, `lumen-api-helper` seam — is untouched by the integration.)
 11. `docs/architecture/README.md` — **the one-page doc map**: full index, authority order when docs conflict, terminology, reading order. When in doubt about which doc governs, start there.
 
+## Provisional L3 conversation-context composition — 2026-08-14
+
+**Founder direction; deliberately provisional pending production measurements.** Do not collapse
+the two artifacts below into one payload, retire either artifact, or treat this note as a frozen
+long-term schema decision without a new contract review. The current precautionary composition is:
+
+- **`project_conversation_card` is the always-present L3 conversation envelope.** It tells the
+  platform deepagent *where it is*: workspace, brand, project, thread, product binding when one is
+  confirmed, and whether a usable Client-KB binding exists. It remains valid for pre-RECON and
+  other conversations where no Client-KB version can honestly be supplied.
+- **`Stage0ProjectCard` is an additional bounded L3 project-context artifact when a valid,
+  workspace-scoped `(client_entity_id, client_kb_version)` is available.** It tells the deepagent
+  *what is already known and what remains unresolved*: bounded Client-KB briefs and claim refs,
+  gaps, product-selection state, interview state, readiness, ICP state, omissions, and compilation
+  lineage. Compose it through `constitution.project_context_artifacts`; do not replace the generic
+  conversation envelope with it.
+- Shared binding identifiers may be repeated only as integrity pins and must match exactly.
+  The conversation envelope owns conversational location/scope; the Stage-0 projection owns the
+  bounded knowledge/readiness view. Neither artifact should independently grow into the other's
+  responsibility.
+
+**References must be interpretable and resolvable, not opaque ids.** The opening context must not
+carry a Client-KB claim dump. Each surfaced claim reference needs enough bounded, model-readable
+metadata to choose it intelligently — for example, a stable field/category label and a short
+description or brief value explaining that the reference contains product, competitor, market
+positioning, buyer, or other relevant knowledge. The main deepagent must also have governed,
+workspace-scoped, bounded tools to:
+
+1. discover Client-KB claim references omitted by the card's size cap; and
+2. dereference an allowed claim id into its exact value, source, evidence span, confidence,
+   freshness, verification, and lineage on demand.
+
+A reference with no admitted dereference path is incomplete and must not be counted as usable
+agent context. The existing `inspect_statement_history` and `inspect_readiness_history` tools do
+not satisfy the Client-KB claim-read requirement; the platform-general exact-claim/provenance read
+deferred by `docs/specs/PC-C8-stage0-context-card.md §7` remains required composition work.
+
+**Context-budget checkpoint.** Start conservatively: keep both artifacts hard-bounded, include
+short descriptors rather than full facts, retain honest omission counts/cursors, and let the agent
+pull detail only when needed. Before freezing the long-term shape, measure at least opening-context
+tokens, duplicate bytes, claim-tool call rate, wrong-reference selections, unanswered questions
+caused by missing summaries, and latency. Then explicitly decide whether to retain this two-artifact
+composition, reduce duplicated identity pins, or consolidate schemas. Until that review, do not
+present either "one merged card" or "two permanent cards" as a ratified final architecture.
+
 ## Session memory protocol
 At the beginning of every agent session, read the files in `_memory/` before making architecture, implementation, or planning decisions. Start with `_memory/README.md` when present, then read the most recent session notes and any topic notes that match the task.
 
