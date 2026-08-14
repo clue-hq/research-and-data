@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI
 from httpx import ASGITransport
 from sqlalchemy import text
@@ -27,6 +31,7 @@ from clue_auth import (
     provision_workspace_owner,
 )
 from clue_auth.errors import IdentityConflictError
+from clue_auth.providers import ClerkAuthenticator, ClerkJwtConfig
 from clue_auth.store import suspend_platform_user, suspend_workspace_membership
 
 from .conftest import rollback_conn, run_async
@@ -346,7 +351,10 @@ def test_provision_route_end_to_end_with_replay_and_errors() -> None:
                 "company_name": "Insight Health",
                 "company_website": "https://insight.health",
             }
-            headers = {"X-Clue-Local-Auth-Subject": "route-subject-1"}
+            headers = {
+                "X-Clue-Local-Auth-Subject": "route-subject-1",
+                "X-Request-Id": "provision-route-request-1",
+            }
             async with httpx.AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -356,6 +364,7 @@ def test_provision_route_end_to_end_with_replay_and_errors() -> None:
 
                 created = await client.post("/auth/v1/provision", json=body, headers=headers)
                 assert created.status_code == 200
+                assert created.headers["X-Request-Id"] == "provision-route-request-1"
                 first = created.json()
                 assert first["created"] is True
                 assert first["workspace_id"].startswith("ws_")
@@ -416,5 +425,140 @@ def test_provision_route_end_to_end_with_replay_and_errors() -> None:
                     headers=headers,
                 )
                 assert bad_website.status_code == 422
+
+    run_async(scenario())
+
+
+def test_real_clerk_session_token_provisions_the_internal_identity_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live composition seam: signed Clerk-shaped JWT -> Clue-owned relational ids."""
+
+    logged: list[tuple[str, dict[str, object]]] = []
+
+    class RecordingLogger:
+        def info(self, event: str, **fields: object) -> None:
+            logged.append((event, fields))
+
+        def exception(self, event: str, **fields: object) -> None:
+            logged.append((event, fields))
+
+    monkeypatch.setattr("clue_api.auth_wiring.log", RecordingLogger())
+
+    async def scenario() -> None:
+        issuer = "https://clerk.provisioning.test"
+        authorized_party = "http://localhost:3000"
+        key_id = "provisioning-test-key"
+        provider_subject = "user_clerk_provisioning_composition"
+        private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        jwk: dict[str, Any] = jwt.algorithms.RSAAlgorithm.to_jwk(private.public_key(), as_dict=True)
+        jwk.update({"kid": key_id, "alg": "RS256", "use": "sig"})
+
+        def jwks(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"keys": [jwk]})
+
+        authenticator = ClerkAuthenticator(
+            ClerkJwtConfig(
+                jwks_url=f"{issuer}/.well-known/jwks.json",
+                issuer=issuer,
+                authorized_parties=(authorized_party,),
+            ),
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(jwks)),
+        )
+        now = datetime.now(UTC)
+        token = jwt.encode(
+            {
+                "iss": issuer,
+                "sub": provider_subject,
+                "sid": "session_clerk_provisioning_composition",
+                "iat": int((now - timedelta(seconds=1)).timestamp()),
+                "nbf": int((now - timedelta(seconds=1)).timestamp()),
+                "exp": int((now + timedelta(minutes=5)).timestamp()),
+                "azp": authorized_party,
+                "sts": "active",
+            },
+            private,
+            algorithm="RS256",
+            headers={"kid": key_id, "typ": "JWT"},
+        )
+
+        async with rollback_conn() as conn:
+
+            @asynccontextmanager
+            async def conn_factory() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            service = PrincipalService(
+                authenticator=authenticator,
+                identity_resolver=DatabaseIdentityResolver(conn_factory=conn_factory),
+                authorizer=DatabaseAuthorizer(conn_factory=conn_factory),
+                memberships_for_user=DatabaseMembershipLoader(conn_factory=conn_factory),
+            )
+            app = FastAPI()
+            install_auth_wiring(app, service=service, conn_factory=conn_factory)
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                created = await client.post(
+                    "/auth/v1/provision",
+                    json={
+                        "first_name": "Onboarding",
+                        "last_name": "Test",
+                        "job_role": "Founder",
+                        "company_name": "Insight Health",
+                        "company_website": "https://insighthealth.ai",
+                    },
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "X-Request-Id": "clerk-composition-request-1",
+                    },
+                )
+                assert created.status_code == 200
+                assert created.headers["X-Request-Id"] == "clerk-composition-request-1"
+                payload = created.json()
+                assert payload["created"] is True
+
+                principal = await client.get(
+                    "/auth/v1/principal",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "X-Clue-Workspace-Id": payload["workspace_id"],
+                    },
+                )
+                assert principal.status_code == 200
+                assert principal.json()["user_id"] == payload["user_id"]
+                assert principal.json()["workspace_id"] == payload["workspace_id"]
+
+            bundle = await identity_bundle(conn, payload["user_id"])
+            assert bundle is not None
+            assert len(bundle.auth_identities) == 1
+            assert bundle.auth_identities[0].provider_key == "clerk"
+            assert bundle.auth_identities[0].provider_subject == provider_subject
+            assert len(bundle.memberships) == 1
+            assert bundle.memberships[0].workspace_id == payload["workspace_id"]
+            assert bundle.memberships[0].role_key == "owner"
+            assert len(bundle.self_serve_provisionings) == 1
+            assert bundle.self_serve_provisionings[0].workspace_id == payload["workspace_id"]
+
+            assert logged == [
+                (
+                    "auth.provision.started",
+                    {"request_id": "clerk-composition-request-1"},
+                ),
+                (
+                    "auth.provision.completed",
+                    {
+                        "request_id": "clerk-composition-request-1",
+                        "outcome": "created",
+                        "created": True,
+                        "user_id": payload["user_id"],
+                        "workspace_id": payload["workspace_id"],
+                    },
+                ),
+            ]
+            serialized_log = repr(logged)
+            assert provider_subject not in serialized_log
+            assert token not in serialized_log
+            assert "onboarding+" not in serialized_log
 
     run_async(scenario())

@@ -6,6 +6,14 @@ import type {
   OnboardingAuthAdapter,
   OnboardingAuthResult,
 } from "../model/onboarding";
+import {
+  pendingVerificationEmail,
+  resendPendingEmailCode,
+  runClerkStep,
+  startPasswordSignIn,
+  startPasswordSignUp,
+  verifyPendingEmailCode,
+} from "./onboarding-auth-driver";
 
 const OnboardingAuthContext = createContext<OnboardingAuthAdapter | null>(null);
 
@@ -40,48 +48,17 @@ export function OnboardingAuthProvider({
 
 const SSO_CALLBACK_PATH = "/onboarding/sso-callback";
 const SESSION_ESTABLISH_PATH = "/session/establish";
-const CLERK_CALL_TIMEOUT_MS = 15_000;
-
-const TIMEOUT_RESULT: OnboardingAuthResult = {
-  status: "error",
-  message: "The authentication service didn't respond. Check your connection and try again.",
-};
-
-function errorResult(error: {
-  message: string;
-  longMessage?: string | undefined;
-}): OnboardingAuthResult {
-  return { status: "error", message: error.longMessage ?? error.message };
-}
-
-/**
- * clerk-js gates every custom-flow call on its own script load and waits forever if the CDN
- * script is blocked (review finding FE4). Racing against a timeout turns the silent hang into
- * the additive error line; a late resolution is ignored (no navigation happens in here).
- */
-function withTimeout(
-  action: () => Promise<OnboardingAuthResult>,
-): Promise<OnboardingAuthResult> {
-  return Promise.race([
-    action(),
-    new Promise<OnboardingAuthResult>((resolve) => {
-      setTimeout(() => resolve(TIMEOUT_RESULT), CLERK_CALL_TIMEOUT_MS);
-    }),
-  ]);
-}
-
 function ClerkOnboardingAuth({ children }: { children: React.ReactNode }) {
-  // Clerk v7 custom-flow ("future") resources: every driver returns { error }, state lives on
-  // the mutable resource, and finalize() activates the created session. Success is decided by
-  // finalize()'s own outcome, never by reading resource status pre-flight — before clerk-js
-  // loads, the sign-in proxy serves a HARDCODED status and a status branch misreports a
-  // successful sign-in (review finding FE3).
+  // Clerk v7 custom-flow ("future") resources expose a real state machine after every driver
+  // call. `finalize()` is legal only at `complete`; Device Trust and email MFA first route through
+  // the same in-house verification screen as sign-up. The pure driver module owns that branching
+  // so the live SDK contract is covered without rendering Clerk UI.
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
   const { signOut } = useClerk();
   const { user } = useUser();
   const email = user?.primaryEmailAddress?.emailAddress ?? null;
-  const pendingEmail = signUp.emailAddress ?? null;
+  const pendingEmail = pendingVerificationEmail(signIn, signUp);
 
   const adapter = useMemo<OnboardingAuthAdapter>(
     () => ({
@@ -89,69 +66,25 @@ function ClerkOnboardingAuth({ children }: { children: React.ReactNode }) {
       email,
       pendingEmail,
       signInWithPassword: (identifier, password) =>
-        withTimeout(async () => {
-          const { error } = await signIn.password({ identifier, password });
-          if (error) return errorResult(error);
-          const finalized = await signIn.finalize();
-          if (finalized.error) return errorResult(finalized.error);
-          return { status: "complete" };
-        }),
+        startPasswordSignIn(signIn, identifier, password),
       signUpWithPassword: (emailAddress, password) =>
-        withTimeout(async () => {
-          const { error } = await signUp.password({ emailAddress, password });
-          if (error) return errorResult(error);
-          if (signUp.status === "complete") {
-            // A Clerk instance with email verification off completes immediately. (The
-            // signUp proxy's status IS a live getter, unlike signIn's — safe to read.)
-            const finalized = await signUp.finalize();
-            if (finalized.error) return errorResult(finalized.error);
-            return { status: "complete" };
-          }
-          const sent = await signUp.verifications.sendEmailCode();
-          if (sent.error) return errorResult(sent.error);
-          return { status: "needs-verification" };
-        }),
-      verifyEmailCode: (code) =>
-        withTimeout(async () => {
-          if (!signUp.status) {
-            return {
-              status: "error",
-              message:
-                "We couldn't find a sign-up in progress. Please start again from the sign-up screen.",
-            };
-          }
-          const { error } = await signUp.verifications.verifyEmailCode({ code });
-          if (error) return errorResult(error);
-          const finalized = await signUp.finalize();
-          if (finalized.error) return errorResult(finalized.error);
-          return { status: "complete" };
-        }),
-      resendEmailCode: () =>
-        withTimeout(async () => {
-          if (!signUp.status) {
-            return {
-              status: "error",
-              message:
-                "We couldn't find a sign-up in progress. Please start again from the sign-up screen.",
-            };
-          }
-          const sent = await signUp.verifications.sendEmailCode();
-          if (sent.error) return errorResult(sent.error);
-          return { status: "needs-verification" };
-        }),
+        startPasswordSignUp(signUp, emailAddress, password),
+      verifyEmailCode: (code) => verifyPendingEmailCode(signIn, signUp, code),
+      resendEmailCode: () => resendPendingEmailCode(signIn, signUp),
       signInWithGoogle: () =>
-        withTimeout(async () => {
+        (async (): Promise<OnboardingAuthResult> => {
           // Lands on /onboarding/sso-callback (which also handles the first-time-user
           // sign-in → sign-up transfer), then completes at /session/establish; a brand-new
           // identity is routed onward to /onboarding/profile by the session DAL repair.
-          const { error } = await signIn.sso({
-            strategy: "oauth_google",
-            redirectCallbackUrl: SSO_CALLBACK_PATH,
-            redirectUrl: SESSION_ESTABLISH_PATH,
-          });
-          if (error) return errorResult(error);
-          return { status: "complete" };
-        }),
+          const started = await runClerkStep(() =>
+            signIn.sso({
+              strategy: "oauth_google",
+              redirectCallbackUrl: SSO_CALLBACK_PATH,
+              redirectUrl: SESSION_ESTABLISH_PATH,
+            }),
+          );
+          return started.ok ? { status: "complete" } : started.result;
+        })(),
       async signOut() {
         await signOut({ redirectUrl: "/onboarding/sign-in" });
       },
@@ -175,13 +108,13 @@ function FixtureOnboardingAuth({ children }: { children: React.ReactNode }) {
         return { status: "complete" };
       },
       async signUpWithPassword() {
-        return { status: "needs-verification" };
+        return { status: "needs-verification", purpose: "sign-up" };
       },
       async verifyEmailCode() {
         return { status: "complete" };
       },
       async resendEmailCode() {
-        return { status: "needs-verification" };
+        return { status: "needs-verification", purpose: "sign-up" };
       },
       async signInWithGoogle() {
         return { status: "complete" };

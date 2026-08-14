@@ -84,6 +84,10 @@ export function useOnboardingController({
     setError(null);
     try {
       await action();
+    } catch {
+      // Adapter operations should return typed errors, but this is the final containment seam for
+      // provider/runtime exceptions. A rejected promise must never become a silent stuck screen.
+      setError("We couldn't complete that request. Please try again.");
     } finally {
       inFlight.current = false;
       setBusy(false);

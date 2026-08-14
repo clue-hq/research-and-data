@@ -42,6 +42,29 @@ test("BFF permits only same-origin browser mutations", () => {
   );
 });
 
+test("BFF can pin mutations to the configured canonical origin across proxy rewrites", () => {
+  assert.equal(
+    hasAllowedOrigin(
+      new Request("http://127.0.0.1:3000/api/onboarding/provision", {
+        method: "POST",
+        headers: { Origin: "http://localhost:3000" },
+      }),
+      "http://localhost:3000",
+    ),
+    true,
+  );
+  assert.equal(
+    hasAllowedOrigin(
+      new Request("http://localhost:3000/api/onboarding/provision", {
+        method: "POST",
+        headers: { Origin: "http://127.0.0.1:3000" },
+      }),
+      "http://localhost:3000",
+    ),
+    false,
+  );
+});
+
 test("BFF forwards a narrow header allowlist and never browser cookies", () => {
   const incoming = new Headers({
     Cookie: "__session=secret",
