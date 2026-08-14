@@ -217,6 +217,37 @@ def test_multi_worker_accepts_one_optional_agent_turn_handler() -> None:
         )
 
 
+def test_multi_worker_accepts_kind_guarded_stage0_recon_and_official_crawl_handlers() -> None:
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    recon = _CompositionHandler(FleetTaskKind.STAGE0_RECON)
+    crawl = _CompositionHandler(FleetTaskKind.OFFICIAL_SITE_CRAWL)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        stage0_recon_handler=recon,
+        official_site_crawl_handler=crawl,
+        worker_id="shared-worker",
+    )
+    assert FleetTaskKind.STAGE0_RECON in worker._handlers
+    assert FleetTaskKind.OFFICIAL_SITE_CRAWL in worker._handlers
+
+    with pytest.raises(ValueError, match="must own stage0_recon"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            stage0_recon_handler=graph,
+        )
+    with pytest.raises(ValueError, match="must own official_site_crawl"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            official_site_crawl_handler=graph,
+        )
+
+
 # --- the resume-surface helper (spec §2.4): re-driving is a fresh enqueue_drive -------------------
 
 

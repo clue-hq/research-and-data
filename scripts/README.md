@@ -21,6 +21,8 @@ don't pass one).
 | 10 | `10_exa_websets_d4_materialization.py` | Zero-provider-call D4 materialization/replay | `ExaWebsetsD4Materializer` |
 | 11 | `11_exa_websets_d6_acceptance.py` | Bounded live/replay D6 production composition | `ComposingRunDriver` + durable Exa slices |
 | 14 | `14_seed_insight_health_browser_fixture.py` | Authenticated Insight Health browser onboarding | `trial.browser_fixture.seed_insight_health_browser_fixture` |
+| 16 | `16_official_site_c6_live.py` | Retained C6 Firecrawl lifecycle/replay canary | `OfficialSiteCrawlWorkHandler` |
+| 18 | `18_official_site_c8_operator.py` | Body-free C8 progress inspection and fenced recovery | `PostgresOfficialSiteOperations` |
 
 ## One-time setup
 
@@ -271,3 +273,71 @@ python scripts/12_exa_websets_webhook_provision.py \
 On first creation, move the mode-0600 output into the deployment secret manager as
 `CLUE_EXA_WEBSETS_WEBHOOK_SECRET`. The command never prints the secret. Re-running against the
 same active URL/events is a zero-change replay; it refuses drift or multiple managed endpoints.
+
+## Official-site C4 live canary
+
+Script 15 performs one real Firecrawl single-page scrape and runs it through the C4
+prepared/dispatched/receipt/artifact/snapshot protocol. Point it only at a fresh migrated database
+and a dedicated artifact root that can be retained for review:
+
+```bash
+CLUE_DATABASE_URL=postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_c4_acceptance \
+CLUE_C4_ARTIFACT_ROOT=/tmp/clue-c4-live-artifacts \
+uv run python scripts/15_official_site_c4_live.py
+```
+
+The default Firecrawl mode reads `CLUE_FIRECRAWL_API_KEY` from the environment and prints only
+durable IDs, states, call/blob/snapshot counts, receipt key names, and hashes. It never prints
+credentials, raw receipts, or captured page bodies. Keep the named database and artifact root
+until review is complete. Set `CLUE_C4_PAGE_FETCHER=scrapling` to run the same retained canary
+through the credit-free pinned local adapter without a Firecrawl key; the default is `firecrawl`.
+
+## Official-site C6 live lifecycle canary
+
+Script 16 creates a new self-serve fixture in a dedicated migrated database, executes the
+production shadow handler against `https://insighthealth.ai/`, and immediately cold-replays it. It
+refuses any database whose name does not contain `c6`, requires an explicit confirmation variable,
+and prints only IDs, hashes, phase states, and aggregate counters.
+
+```bash
+CLUE_DATABASE_URL=postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_c6_acceptance \
+CLUE_C6_ARTIFACT_ROOT=/tmp/clue-c6-live-artifacts \
+CLUE_C6_LIVE_CONFIRM=1 \
+uv run python scripts/16_official_site_c6_live.py
+```
+
+If the first execution reports `recovery_pending`, retain the database/artifact root and wait for
+the printed run's lease window to expire. Resume the **same** recon rather than seeding another:
+
+```bash
+CLUE_C6_REPLAY_WORKSPACE_ID=<workspace-id> \
+CLUE_C6_REPLAY_RECON_RUN_ID=<recon-run-id> \
+CLUE_DATABASE_URL=postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_c6_acceptance \
+CLUE_C6_ARTIFACT_ROOT=/tmp/clue-c6-live-artifacts \
+CLUE_C6_LIVE_CONFIRM=1 \
+uv run python scripts/16_official_site_c6_live.py
+```
+
+The final replay must retain one crawl run, stable checkpoint IDs, and an attempt delta of zero.
+Keep the isolated database and artifact root until the evidence has been reviewed.
+
+## Official-site C8 inspection and recovery
+
+Script 18 reads the C8 rows/events projection without loading page bodies or full provider
+receipts. It requires an explicit database URL, workspace, and crawl run; no defaults can point an
+operator at an unintended tenant.
+
+```bash
+uv run python scripts/18_official_site_c8_operator.py \
+  --database-url postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_c8_acceptance \
+  --workspace-id <workspace-id> \
+  --crawl-run-id <crawl-run-id> \
+  inspect
+```
+
+Mutation commands require exact repeated IDs. `reclaim-expired` uses DB time and routes an
+already-dispatched call to reconciliation rather than fetching again. `quarantine-spend-unknown`
+also requires the expected lease generation and can only settle an unleased matching ambiguity;
+it never calls a provider. See
+[`docs/runbooks/stage0-official-site-crawl.md`](../docs/runbooks/stage0-official-site-crawl.md) for
+the production decision sequence and safety boundaries.

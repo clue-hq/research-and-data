@@ -82,7 +82,10 @@ export function isOnboardingStep(value: string): value is OnboardingStep {
  */
 export type OnboardingAuthResult =
   | { status: "complete" }
-  | { status: "needs-verification" }
+  | {
+      status: "needs-verification";
+      purpose: "sign-up" | "device-trust" | "second-factor";
+    }
   | { status: "error"; message: string };
 
 export interface OnboardingAuthAdapter {

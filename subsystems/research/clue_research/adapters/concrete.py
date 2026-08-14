@@ -103,8 +103,8 @@ class FirecrawlScrapeBackend:
 
     The scrape *logic* (call the client, map its markdown result → a :class:`RawArtifact`) is
     duck-typed against an injectable ``client`` so it is unit-testable with a fake; the live client
-    is lazy-built from the firecrawl SDK + the ``auth_ref`` credential (wired in M4.5). The SDK
-    is imported only here (import-linter Rule 4); CI never builds the live client.
+    is lazy-built from the Firecrawl SDK + the ``auth_ref`` credential (wired in M4.5). This
+    historical adapter remains strictly single-page while the durable crawl capability is built.
     """
 
     def __init__(self, *, client: Any | None = None) -> None:
@@ -113,10 +113,8 @@ class FirecrawlScrapeBackend:
     def scrape(self, ref: str, ctx: AdaptContext) -> RawArtifact:
         client = self._client or self._build_client(ctx)
         try:
-            result = client.scrape_url(ref, formats=["markdown"])
-        except (
-            Exception
-        ) as exc:  # pragma: no cover - live path; tests inject a ScrapeBackend double
+            result = client.scrape(ref, formats=["markdown"])
+        except Exception as exc:  # pragma: no cover - live path; tests inject a backend double
             raise FetchError(f"firecrawl scrape of {ref!r} failed: {exc}") from exc
         markdown = _firecrawl_markdown(result)
         if markdown is None:
@@ -133,7 +131,7 @@ class FirecrawlScrapeBackend:
         # Lazy import keeps the SDK out of CI and behind the adapter seam (Rule 4). M4.5 owns the
         # config-selected backend + credential resolution; this interim reads the key from Secrets
         # via the manifest's ``auth_ref`` reference (never the secret in code).
-        from firecrawl import FirecrawlApp
+        from firecrawl import Firecrawl
 
         from clue_config import Secrets
 
@@ -143,11 +141,11 @@ class FirecrawlScrapeBackend:
                 f"no Firecrawl credential resolved for auth_ref {ctx.auth_ref!r}; "
                 "wire the live backend in M4.5 or inject a ScrapeBackend double"
             )
-        return FirecrawlApp(api_key=secret.get_secret_value())
+        return Firecrawl(api_key=secret.get_secret_value())
 
 
 def _firecrawl_markdown(result: Any) -> str | None:
-    """Pull the markdown out of a Firecrawl scrape result (dict-shaped or attribute-shaped)."""
+    """Pull markdown from a Firecrawl single-page result (dict- or attribute-shaped)."""
     if isinstance(result, dict):
         value = result.get("markdown")
         return value if isinstance(value, str) else None

@@ -88,7 +88,7 @@ the HTTP-only workspace-selection cookie through the existing session action, th
 real `setting-up` flow. It never silently selects the first membership. Fast-lane completion
 later exits through `/session/establish` into the protected app.
 
-## Workspace setup (slices 2–3 — implemented 2026-08-12 / 2026-08-13)
+## Workspace setup (slices 2–3 + crawl progress C8 — implemented 2026-08-12–14)
 
 `POST /stage0/setup` (BFF: `/api/clue/stage0/setup`, 202; requires `research.launch` — recon
 is spend) captures the provisioned company website as a durable artifact, records the
@@ -121,7 +121,34 @@ unconfigured deployment refuses `start_recon` everywhere, exactly as before slic
     { "field_key": "client.product", "lane": "fast", "status": "started" }
   ],
   "fast_budget_exhausted": null,
-  "background_budget_exhausted": null
+  "background_budget_exhausted": null,
+  "official_site": {
+    "schema_version": "stage0-official-site-c8-v1",
+    "crawl_run_id": "…",
+    "run_status": "fast_active",
+    "phase": "fast",
+    "message": "Scraping selected company pages (3/8).",
+    "states": ["leased", "provider-active", "persisted"],
+    "queued": 4,
+    "leased": 1,
+    "provider_active": 1,
+    "reconciliation_pending": 0,
+    "persistence_pending": 0,
+    "fetched": 3,
+    "total_pages": 8,
+    "snapshots": 3,
+    "fetch_spend_unknown": 0,
+    "extraction_active": 0,
+    "extraction_materialized": 0,
+    "extraction_empty": 0,
+    "extraction_failed": 0,
+    "extraction_spend_unknown": 0,
+    "recovery_required": false,
+    "partial": false,
+    "completed": false,
+    "last_event_seq": 42,
+    "last_event_kind": "stage0.crawl.page_fetched"
+  }
 }
 ```
 
@@ -150,6 +177,13 @@ unconfigured deployment refuses `start_recon` everywhere, exactly as before slic
   yet"** (the lane has not reached COMPLETED, it failed, or the run predates the flag) and
   must never be read as `false`. This is truth-telling, not cost governance: a truncated lane
   must never render as fully-researched.
+- `official_site` — C8's additive, nullable crawl projection. `null` means no durable crawl row
+  exists (and preserves pre-C8 compatibility); a present value combines authoritative row counts
+  with the latest idempotently-reduced crawl event. It exposes no URL, page body, raw model output,
+  or provider receipt. `states` is a non-exclusive operational vocabulary: `queued`, `leased`,
+  `provider-active`, `spend-unknown`, `persisted`, `extracted`, `partial`, `completed`. The frontend
+  accepts future state/status strings but validates all known counts/booleans. C8 does not change
+  the setup release condition: C10 owns the live browser/cutover gate.
 
 ### Progress event vocabulary (D-5 Path B)
 
@@ -297,15 +331,28 @@ budgets are env-backed settings — **`CLUE_STAGE0_FAST_BUDGET_CENTS` (default `
 `clue_config.stage0_policy_from_settings` and composed into the recon tools at
 `build_toolbelt`. The dedupe TTL (24h) and the readiness floors stay versioned constants
 (correctness/governance, not cost), and the library default `DEFAULT_STAGE0_POLICY` keeps its
-old 5¢/100¢ values for uncomposed callers. The 25¢ production default exists because the
-default `CLUE_SCRAPE_BACKEND=firecrawl` costs ~1¢/fetch: the full eleven-field fast walk is
-~11¢, so the old 5¢ envelope reached only ~5 fields and released the user with the last
-checklist groups reading "stopped at the research budget" — exactly the truncation the ruling
-forbids. `CLUE_SCRAPE_BACKEND=scrapling` (local, zero-cost) remains the choice for a deployment
-that would rather walk every field free. The honesty surfaces (`*_budget_exhausted`) and the tier ≤3
-pre-confirmation ceiling are unaffected — truth and compliance, not cost governance. Extractor
-LLM spend is observable on `llm.gateway_call` spans but is **not** charged to the recon
-envelopes; that residual is founder-accepted, not merely parked.
+old 5¢/100¢ values for uncomposed callers. The accepted implementation remains the
+homepage/field-oriented official-site resolver; `CLUE_SCRAPE_BACKEND=scrapling` is the local
+credit-free single-page alternative. The honesty surfaces (`*_budget_exhausted`) and the tier ≤3
+pre-confirmation ceiling are unaffected — truth and compliance, not cost governance. Extractor LLM
+spend is observable on `llm.gateway_call` spans but is **not** charged to the recon envelopes;
+that residual is founder-accepted, not merely parked.
+
+**Implemented through C8 in default-off, allowlisted shadow mode (2026-08-14):** broad
+official-site coverage now has a PostgreSQL frontier/ledger, conservative URL deduplication,
+generation-fenced concurrent leases, one fast/background crawl run, coordinator-owned
+depth/safety/retry rules, content-addressed artifacts with URL-level provenance, provider-neutral
+single-page Firecrawl/Scrapling fetchers, immutable corpus checkpoints, grounded concurrent
+materialization, provider-neutral `official_site` claims, stable crawl/extraction events, a
+rows-first setup projection, privacy-safe metrics/logs, and fenced operator recovery. A retained
+Insight Health Firecrawl + Luna run materialized checkpoint claims and cold-replayed with zero new
+provider attempts or duplicate claims. A rejected provider-owned 50-page spike is not the contract.
+The binding implementation plan and exit gates are
+[`docs/specs/FI-stage0-durable-official-site-crawl-plan.md`](../../../../docs/specs/FI-stage0-durable-official-site-crawl-plan.md).
+The nullable `official_site` field is now part of both fixture/live transport schemas, but the
+current setup screen and browser release continue to derive from the committed legacy fast
+Client-KB version. C9 owns the full offline adversarial gate and C10 owns live browser acceptance
+and authoritative cutover.
 
 Still ahead: brand-kit flips real per `brand-kit.md` when the design-integration branch merges.
 

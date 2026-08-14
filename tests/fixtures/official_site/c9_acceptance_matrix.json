@@ -1,0 +1,78 @@
+{
+  "spec": "FI durable official-site crawl C9 section 20",
+  "provider_mode": "offline-fakes-only",
+  "case_count": 53,
+  "cases": [
+    {"id": "20.1.concurrent_claim_once", "nodeids": ["tests/official_site/test_repository_c1_db.py::test_ten_concurrent_claimers_acquire_one_page_once_and_stale_generation_is_fenced"]},
+    {"id": "20.1.observation_provenance_dedup", "nodeids": ["tests/official_site/test_repository_c1_db.py::test_discovery_replay_deduplicates_a_batch_without_collapsing_its_provenance"]},
+    {"id": "20.1.hash_collision_full_key", "nodeids": ["tests/official_site/test_graph_c2_db.py::test_fetch_key_hash_collision_never_collapses_distinct_full_keys"]},
+    {"id": "20.1.shorter_path_reexpansion", "nodeids": ["tests/official_site/test_graph_c2_db.py::test_shorter_path_reexpands_saved_edges_without_refetch_and_replay_is_idempotent", "tests/official_site/test_coordinator_c5_db.py::test_coordinator_heartbeats_and_shorter_path_expands_without_refetch"]},
+    {"id": "20.1.later_run_freshness", "nodeids": ["tests/official_site/test_acceptance_c9_db.py::test_same_url_in_a_later_run_is_independently_fetchable"]},
+    {"id": "20.1.background_reuses_fast_terminal", "nodeids": ["tests/official_site/test_lifecycle_c6.py::test_deadline_freezes_fast_without_cancelling_inflight_and_background_reuses_run"]},
+
+    {"id": "20.2.stale_renewal", "nodeids": ["tests/official_site/test_acceptance_c9_db.py::test_stale_generation_rejects_every_worker_publication"]},
+    {"id": "20.2.stale_publication", "nodeids": ["tests/official_site/test_acceptance_c9_db.py::test_stale_generation_rejects_every_worker_publication"]},
+    {"id": "20.2.expired_undispatched_reclaim", "nodeids": ["tests/official_site/test_repository_c1_db.py::test_ten_concurrent_claimers_acquire_one_page_once_and_stale_generation_is_fenced", "tests/official_site/test_acceptance_c9_db.py::test_crash_before_dispatch_never_calls_the_provider"]},
+    {"id": "20.2.expired_dispatched_reconciliation", "nodeids": ["tests/official_site/test_acquisition_c4_db.py::test_crash_after_dispatch_quarantines_without_lookup_or_reconciles_by_lookup"]},
+    {"id": "20.2.blob_put_before_db_commit", "nodeids": ["tests/official_site/test_acquisition_c4_db.py::test_storage_failure_and_snapshot_failure_retry_persistence_without_refetch"]},
+    {"id": "20.2.page_commit_before_ack", "nodeids": ["tests/official_site/test_coordinator_c5_db.py::test_link_discovery_replays_after_completion_crash_without_provider_refetch"]},
+    {"id": "20.2.heartbeat_invariant", "nodeids": ["tests/official_site/test_contracts_c0.py::test_config_fails_closed_for_unsafe_or_incoherent_bounds"]},
+
+    {"id": "20.3.url_fixture_matrix", "nodeids": ["tests/official_site/test_policy_c2.py::test_full_versioned_url_policy_fixture_matrix"]},
+    {"id": "20.3.conservative_non_equivalence", "nodeids": ["tests/official_site/test_policy_c2.py::test_conservative_equivalence_and_non_equivalence_are_explicit"]},
+    {"id": "20.3.fragment_policy", "nodeids": ["tests/official_site/test_policy_c2.py::test_full_versioned_url_policy_fixture_matrix"]},
+    {"id": "20.3.sitemap_unknown_depth", "nodeids": ["tests/official_site/test_graph_c2_db.py::test_sitemap_only_page_stays_unknown_depth_and_unknown_children_are_parked"]},
+    {"id": "20.3.depth_two_ceiling", "nodeids": ["tests/official_site/test_policy_c2.py::test_discovery_categories_depth_aliases_and_active_content_are_deterministic"]},
+    {"id": "20.3.external_canonical_refusal", "nodeids": ["tests/official_site/test_graph_c2_db.py::test_observations_edges_and_aliases_are_separate_and_external_canonical_is_rejected"]},
+    {"id": "20.3.redirect_hops_and_private_refusal", "nodeids": ["tests/official_site/test_policy_c2.py::test_redirect_policy_revalidates_chain_final_domain_private_ips_loops_and_ceiling", "tests/official_site/test_fetchers_c3.py::test_pinned_scrapling_transport_refuses_private_and_external_redirect_before_connect"]},
+    {"id": "20.3.redirect_canonical_loops", "nodeids": ["tests/official_site/test_fetchers_c3.py::test_pinned_scrapling_transport_refuses_redirect_loop_and_ceiling", "tests/official_site/test_policy_c2.py::test_sitemap_parser_rejects_bombs_entities_mime_depth_and_loops"]},
+
+    {"id": "20.4.network_target_refusal", "nodeids": ["tests/official_site/test_policy_c2.py::test_ssrf_preflight_refuses_every_non_public_address_class"]},
+    {"id": "20.4.dns_rebinding_defense", "nodeids": ["tests/official_site/test_policy_c2.py::test_local_transport_rebinding_seam_passes_only_prevalidated_addresses", "tests/official_site/test_fetchers_c3.py::test_pinned_scrapling_transport_reresolves_and_pins_every_redirect_hop"]},
+    {"id": "20.4.robots_terminal_visible", "nodeids": ["tests/official_site/test_acceptance_c9_db.py::test_robots_refusal_is_terminal_visible_and_provider_free"]},
+    {"id": "20.4.bounded_mime_size_redirect_sitemap_links", "nodeids": ["tests/official_site/test_policy_c2.py::test_content_mime_decompressed_size_and_link_ceilings_fail_closed", "tests/official_site/test_policy_c2.py::test_sitemap_parser_rejects_bombs_entities_mime_depth_and_loops", "tests/official_site/test_fetchers_c3.py::test_pinned_scrapling_transport_refuses_redirect_loop_and_ceiling"]},
+    {"id": "20.4.provider_result_policy_revalidation", "nodeids": ["tests/official_site/test_fetchers_c3.py::test_firecrawl_known_paid_failures_are_never_blindly_retried", "tests/official_site/test_acceptance_c9_db.py::test_reconciliation_reuses_receipt_and_revalidates_provider_result"]},
+
+    {"id": "20.5.provider_conformance", "nodeids": ["tests/official_site/test_fetchers_c3.py::test_common_provider_conformance_success_and_exactly_one_url_invocation"]},
+    {"id": "20.5.firecrawl_non_recursive", "nodeids": ["tests/official_site/test_fetchers_c3.py::test_firecrawl_adapter_ast_forbids_recursive_provider_operations_and_options"]},
+    {"id": "20.5.retry_and_spend_mapping", "nodeids": ["tests/official_site/test_fetchers_c3.py::test_firecrawl_known_paid_failures_are_never_blindly_retried", "tests/official_site/test_fetchers_c3.py::test_paid_provider_exception_and_timeout_are_spend_unknown_not_retried", "tests/official_site/test_fetchers_c3.py::test_scrapling_http_retry_classification_is_cost_free"]},
+    {"id": "20.5.charged_crash_reconcile_or_quarantine", "nodeids": ["tests/official_site/test_acquisition_c4_db.py::test_crash_after_dispatch_quarantines_without_lookup_or_reconciles_by_lookup", "tests/official_site/test_acceptance_c9_db.py::test_reconciliation_reuses_receipt_and_revalidates_provider_result"]},
+    {"id": "20.5.persistence_only_retry", "nodeids": ["tests/official_site/test_acquisition_c4_db.py::test_storage_failure_and_snapshot_failure_retry_persistence_without_refetch"]},
+    {"id": "20.5.confirmed_no_spend_retry", "nodeids": ["tests/official_site/test_coordinator_c5_db.py::test_retryable_no_spend_is_bounded_and_preflight_refusal_never_calls_provider"]},
+    {"id": "20.5.sanitized_receipts", "nodeids": ["tests/official_site/test_acquisition_c4.py::test_receipt_sanitizer_is_recursive_bounded_and_body_free"]},
+
+    {"id": "20.6.identical_content_provenance", "nodeids": ["tests/official_site/test_acquisition_c4_db.py::test_identical_content_is_one_workspace_blob_and_two_url_snapshots"]},
+    {"id": "20.6.canonical_hint_different_content", "nodeids": ["tests/official_site/test_acceptance_c9_db.py::test_complete_retention_reach_covers_every_table_blob_and_claim"]},
+    {"id": "20.6.complete_claim_lineage", "nodeids": ["tests/official_site/test_acceptance_c9_db.py::test_complete_retention_reach_covers_every_table_blob_and_claim"]},
+    {"id": "20.6.exact_evidence_span", "nodeids": ["tests/official_site/test_materialization_c7.py::test_grounding_accepts_only_matching_checkpoint_snapshot_url_and_exact_quote"]},
+    {"id": "20.6.page_injection_cannot_forge_provenance", "nodeids": ["tests/official_site/test_materialization_c7.py::test_forged_result_header_inside_page_cannot_forge_provenance"]},
+    {"id": "20.6.workspace_retention_erasure_reach", "nodeids": ["tests/official_site/test_acceptance_c9_db.py::test_complete_retention_reach_covers_every_table_blob_and_claim"]},
+
+    {"id": "20.7.fast_deadline_db_time", "nodeids": ["tests/official_site/test_lifecycle_c6.py::test_deadline_freezes_fast_without_cancelling_inflight_and_background_reuses_run", "tests/official_site/test_repository_c1_db.py::test_c6_db_deadline_rehydration_and_fast_checkpoint_are_cold_replay_safe"]},
+    {"id": "20.7.inflight_paid_not_cancelled", "nodeids": ["tests/official_site/test_lifecycle_c6.py::test_deadline_freezes_fast_without_cancelling_inflight_and_background_reuses_run"]},
+    {"id": "20.7.fast_checkpoint_immutable", "nodeids": ["tests/official_site/test_repository_c1_db.py::test_success_persists_url_snapshot_and_freezes_immutable_checkpoint"]},
+    {"id": "20.7.fast_priority_over_background", "nodeids": ["tests/official_site/test_coordinator_c5_db.py::test_background_claim_yields_to_claimable_fast_work_across_runs", "tests/official_site/test_coordinator_c5_db.py::test_background_reconciliation_yields_to_claimable_fast_work"]},
+    {"id": "20.7.background_restart", "nodeids": ["tests/official_site/test_lifecycle_c6.py::test_deadline_freezes_fast_without_cancelling_inflight_and_background_reuses_run"]},
+    {"id": "20.7.setup_poll_responsive", "nodeids": ["tests/api/test_stage0_setup_db.py::test_c6_setup_enqueues_detached_recon_and_polling_remains_responsive"]},
+    {"id": "20.7.progress_is_committed_truth", "nodeids": ["tests/official_site/test_progress_c8_db.py::test_rows_and_duplicate_events_produce_body_free_operator_truth"]},
+    {"id": "20.7.partial_failure_recovery", "nodeids": ["tests/official_site/test_lifecycle_c6.py::test_durable_worker_error_requeues_without_freezing_or_false_completion", "tests/official_site/test_materialization_c7_db.py::test_field_failures_and_ambiguous_model_calls_preserve_sibling_successes", "tests/official_site/test_progress_c8_db.py::test_expired_lease_reclaim_is_db_timed_and_provider_free"]},
+
+    {"id": "20.8.bounded_concurrent_categories", "nodeids": ["tests/official_site/test_materialization_c7_db.py::test_concurrent_grounded_materialization_and_replay_are_exactly_once"]},
+    {"id": "20.8.missing_categories_empty", "nodeids": ["tests/official_site/test_acceptance_c9.py::test_missing_category_builds_empty_operations_without_model_work", "tests/official_site/test_acceptance_c9_db.py::test_missing_categories_commit_empty_without_gateway_calls"]},
+    {"id": "20.8.category_failure_isolated", "nodeids": ["tests/official_site/test_materialization_c7_db.py::test_field_failures_and_ambiguous_model_calls_preserve_sibling_successes"]},
+    {"id": "20.8.versioned_replay_idempotent", "nodeids": ["tests/official_site/test_materialization_c7_db.py::test_concurrent_grounded_materialization_and_replay_are_exactly_once"]},
+    {"id": "20.8.luna_terra_config_only", "nodeids": ["tests/official_site/test_materialization_c7.py::test_luna_and_terra_configuration_passes_through_openrouter_gateway_double"]},
+    {"id": "20.8.preconfirmation_tier_ceiling", "nodeids": ["tests/official_site/test_repository_c1_db.py::test_official_site_logical_source_is_provider_neutral_and_zero_cost", "tests/official_site/test_acceptance_c9_db.py::test_complete_retention_reach_covers_every_table_blob_and_claim"]}
+  ],
+  "crash_boundaries": [
+    {"id": "prepared_before_dispatch", "nodeids": ["tests/official_site/test_acceptance_c9_db.py::test_crash_before_dispatch_never_calls_the_provider"]},
+    {"id": "dispatched_with_lookup", "nodeids": ["tests/official_site/test_acceptance_c9_db.py::test_reconciliation_reuses_receipt_and_revalidates_provider_result"]},
+    {"id": "dispatched_without_lookup", "nodeids": ["tests/official_site/test_acquisition_c4_db.py::test_crash_after_dispatch_quarantines_without_lookup_or_reconciles_by_lookup"]},
+    {"id": "provider_success_result_retained", "nodeids": ["tests/official_site/test_acquisition_c4_db.py::test_storage_failure_and_snapshot_failure_retry_persistence_without_refetch"]},
+    {"id": "provider_success_result_retrievable", "nodeids": ["tests/official_site/test_acquisition_c4_db.py::test_crash_after_dispatch_quarantines_without_lookup_or_reconciles_by_lookup"]},
+    {"id": "provider_success_result_unrecoverable", "nodeids": ["tests/official_site/test_acquisition_c4_db.py::test_unrecoverable_success_is_quarantined_without_refetch", "tests/official_site/test_acquisition_c4_db.py::test_missing_staged_blob_is_quarantined_without_refetch"]},
+    {"id": "persisted_before_page_completion", "nodeids": ["tests/official_site/test_acquisition_c4_db.py::test_lost_completion_resumes_existing_snapshot_without_refetch"]},
+    {"id": "retryable_no_spend", "nodeids": ["tests/official_site/test_coordinator_c5_db.py::test_retryable_no_spend_is_bounded_and_preflight_refusal_never_calls_provider"]},
+    {"id": "terminal_policy_or_robots", "nodeids": ["tests/official_site/test_acceptance_c9_db.py::test_robots_refusal_is_terminal_visible_and_provider_free", "tests/official_site/test_coordinator_c5_db.py::test_retryable_no_spend_is_bounded_and_preflight_refusal_never_calls_provider"]}
+  ]
+}

@@ -62,6 +62,54 @@ The central architecture bet is that verification must be modeled at the claim/d
   Accounts/Contacts runtime fixture and legacy workspace-header path, shares one authenticated
   server/BFF transport, renders the durable zero-account state, records focused/frontend/build/DB
   evidence, and closes signed-in desktop/mobile browser acceptance on the exact allowed origin.
+- `2026-08-14-stage0-crawl-recovery-backoff.md` — closes the C10 Scrapling recovery-wake follow-up:
+  DB-clock delayed fleet requeue, earliest-lease/retry scheduling, bounded exponential fallback,
+  ready-work non-starvation, migration/replay tests, and privacy-safe cadence logs.
+- `2026-08-14-stage0-durable-official-site-crawl-c10.md` — C10 accepted: real Clerk/browser
+  provisioning, sub-40-second Firecrawl/Scrapling authoritative release, same-frontier background,
+  receipt/artifact/claim/replay reconciliation, live-discovered cutover/redirect/progress/category
+  corrections, retained isolated evidence, and explicit provider-cost/recovery follow-ups.
+- `2026-08-14-stage0-durable-official-site-crawl-c9.md` — C9 complete: executable 53-case/nine-
+  crash matrix, recovered-result safety/receipt/provenance hardening, full retention reach, clean
+  200-test isolated-DB gate, migration/frontend/static gates, and fully classified unrelated
+  monolithic-suite baseline failures; C10 live cutover remains.
+- `2026-08-14-stage0-durable-official-site-crawl-c8.md` — C8 complete: stable crawl/extraction
+  events, rows-first setup/operator projection, full §17.4 metrics, privacy-safe logs, actionable
+  fetch/extraction ambiguity reads, fenced recovery CLI/runbook, clean 164-test DB gate, complete
+  frontend/static gates, and retained C7 row-only inspection evidence.
+- `2026-08-14-stage0-durable-official-site-crawl-c7.md` — C7 complete: exact immutable-corpus
+  reading, category-concurrent Luna/Terra extraction, durable response-before-parse operations,
+  snapshot/URL/span grounding, provider-neutral claims, partial success, zero-spend cold replay,
+  retained Insight Health live evidence, and the open C8/C10 lease-latency release gate.
+- `2026-08-14-stage0-durable-official-site-crawl-c6.md` — C6 complete in default-off allowlisted
+  shadow mode: one-run fast/background lifecycle, immutable checkpoints, fleet-owned onboarding
+  recon/crawl work, phase-blocker recovery, reversible task-kind migration, 208-test focused gate,
+  and retained Insight Health Firecrawl evidence with zero-call cold replay.
+- `2026-08-14-stage0-durable-official-site-crawl-c5.md` — C5 complete: PostgreSQL-only bounded
+  worker pool, cross-run global/host capacity, heartbeat/fencing, graceful stop, fast/background
+  fairness, category quotas, replay-safe no-refetch depth expansion, bounded no-spend retries,
+  multiprocess fault tests, and exact C6 production-composition handoff.
+- `2026-08-14-stage0-durable-official-site-crawl-c4.md` — C4 complete: fenced
+  prepared/dispatched/result/persistence attempts, PB-B2 content-addressed artifacts, URL-level
+  provenance snapshots, persistence-only replay, paid-call reconciliation/quarantine, bounded
+  privacy-safe receipts, DSAR reach, expanded crash matrix, and retained Firecrawl/Scrapling
+  canary evidence.
+- `2026-08-14-stage0-durable-official-site-crawl-c2.md` — C2 complete: versioned conservative
+  URL identity, separate observation/edge/alias provenance, bounded sitemap/robots parsing,
+  coordinator-owned SSRF/redirect/MIME/size/link safety, no-refetch shorter-path re-expansion,
+  exhaustive adversarial fixtures, and retained isolated-DB evidence.
+- `2026-08-14-stage0-durable-official-site-crawl-c1.md` — C1 complete: eight-table reversible
+  PostgreSQL frontier/ledger, workspace/run structural isolation, generation-fenced claims and
+  recovery, immutable verified checkpoints, provider-neutral `official_site` source, isolated-DB
+  concurrency/migration evidence, and the exact C2 handoff.
+- `2026-08-14-stage0-durable-official-site-crawl-c0.md` — C0 complete: frozen provider-neutral
+  types/enums/tables/transitions/seams, PostgreSQL dispatch and reconciliation fencing,
+  `official_site` source-key migration ruling, recursive-spike disposition, retained general
+  Stage-0 prerequisites, provider-free fixtures, and the exact C1 handoff.
+- `2026-08-14-stage0-durable-official-site-crawl-plan.md` — founder-approved implementation plan
+  for a new provider-neutral Stage-0 crawler: PostgreSQL-only frontier/ledger, generation-fenced
+  leases, conservative URL identity, provenance-preserving content dedupe, one fast/background
+  run, single-page Firecrawl/Scrapling fetchers, paid-call recovery, C0–C10 gates, and live evidence.
 - `2026-08-06-m8d-r9-parallel-execution.md` — R9 accepted: exact-wave dependency checks,
   atomic budget/provider admission, concurrent Exa/Sumble execution, partial-result joining,
   callback-race-safe composite waits, cold-resume/crash replay, DSAR, and isolated-DB evidence.

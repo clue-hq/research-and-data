@@ -33,7 +33,7 @@ async function proxyRequest(request: Request, context: RouteContext) {
   if (!isAuthenticationEnabled()) {
     return errorResponse(503, "AUTHENTICATION_NOT_CONFIGURED", "Authentication is disabled");
   }
-  if (!hasAllowedOrigin(request)) {
+  if (!hasAllowedOrigin(request, clueAppOrigin())) {
     return errorResponse(403, "REQUEST_ORIGIN_FORBIDDEN", "Mutation origin is not allowed");
   }
   const { path } = await context.params;

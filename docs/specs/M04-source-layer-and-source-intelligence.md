@@ -158,6 +158,14 @@ Concretely, M4 owns six things, one per issue:
 
 ### M4.5 — CRM import resolver (tier-1) + Firecrawl official-site scrape (tier-2)
 
+> **Stage-0 extension approved, not yet implemented (2026-08-14):** M4.5's existing field-level
+> Firecrawl scrape remains the accepted behavior until the dedicated
+> [durable official-site crawl plan](./FI-stage0-durable-official-site-crawl-plan.md) passes its
+> remaining C1–C10 gates. C0 has frozen the provider-neutral contract and removed the rejected
+> provider-owned recursive spike. The plan introduces a single-page fetch seam beneath a
+> PostgreSQL-owned crawl frontier; it does not authorize provider-owned recursion or silently
+> declare the current resolver to be a durable crawler.
+
 > **Superseded 2026-07-23 ([B3×research]):** accounts are now workspace-local (founder ruling
 > 2026-07-22; provider licensing + GDPR controller separation). Where this section frames
 > CRM/scrape claims against a *cross-tenant reuse* boundary ("public-footprint claims remain

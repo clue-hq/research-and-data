@@ -21,7 +21,9 @@ OpenRouter key cannot make the no-gateway cases pass or fail by accident.
 from __future__ import annotations
 
 import ast
+import asyncio
 import inspect
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -202,6 +204,45 @@ def test_projections_root_falls_back_to_the_empty_extractor_without_a_gateway(
         secrets=Secrets(_env_file=None),
     )
     assert isinstance(seen["extractor"], CallableClaimExtractor)
+
+
+def test_self_serve_startup_loads_research_registry_without_c7(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A fresh onboarding-only deployment must seed the source manifests its waterfall reads.
+
+    This is intentionally a startup-composition test rather than another direct
+    ``load_research_packs`` test: the live defect was that the loader existed but the HTTP root
+    called it only when an unrelated C7 surface was enabled.
+    """
+    loaded_with: list[object] = []
+
+    class _Connection:
+        async def execute(self, statement: object) -> None:
+            del statement
+
+    @asynccontextmanager
+    async def fake_transaction():
+        yield _Connection()
+
+    async def capture_load(conn: object) -> None:
+        loaded_with.append(conn)
+
+    monkeypatch.setattr(projections_main, "transaction", fake_transaction)
+    monkeypatch.setattr(projections_main, "load_research_packs", capture_load)
+    monkeypatch.setattr(run_composition, "Secrets", _NoKeySecrets)
+
+    app = projections_main.build_application(
+        _settings(
+            tmp_path,
+            self_serve_provisioning_enabled=True,
+            gateway_allow_stub=False,
+        ),
+        secrets=Secrets(_env_file=None),
+    )
+    asyncio.run(app.state.startup_check())
+
+    assert len(loaded_with) == 1
 
 
 def test_projections_root_builds_no_gateway_when_the_scrape_surface_is_off(

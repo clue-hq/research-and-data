@@ -12,7 +12,7 @@
   "scripts": {
     "assets:sync": "node scripts/sync-brand-assets.mjs",
     "design-system:build": "npm run build --workspace @clue/design-system",
-    "dev": "next dev",
+    "dev": "next dev --hostname localhost",
     "build": "next build",
     "start": "next start",
     "test": "find src -name '*.test.ts' -print0 | xargs -0 tsx --test",

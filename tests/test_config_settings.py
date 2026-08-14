@@ -202,3 +202,50 @@ def test_declared_production_refuses_local_header_even_before_auth_flip() -> Non
             auth_mode="clerk",
             projections_auth_mode="local_header",
         )
+
+
+def test_stage0_official_site_crawl_is_bounded_and_default_off() -> None:
+    settings = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.stage0_official_site_crawl_mode == "off"
+    assert settings.stage0_official_site_crawl_workspace_allowlist == ()
+    assert settings.stage0_page_fetcher == "firecrawl"
+    assert settings.stage0_crawl_max_depth == 2
+    assert settings.stage0_crawl_fast_deadline_seconds == 40
+    assert settings.stage0_extraction_model == "openai/gpt-5.6-luna"
+    assert settings.stage0_extraction_concurrency == 4
+
+
+def test_stage0_official_site_shadow_requires_and_parses_allowlist() -> None:
+    settings = load_settings(
+        _env_file=None,
+        stage0_official_site_crawl_mode="shadow",
+        stage0_official_site_crawl_workspace_allowlist="ws-a, ws-b",
+    )
+    assert settings.stage0_official_site_crawl_workspace_allowlist == ("ws-a", "ws-b")
+
+    with pytest.raises(ValidationError, match="requires an explicit workspace allowlist"):
+        load_settings(_env_file=None, stage0_official_site_crawl_mode="shadow")
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    (
+        (
+            {"stage0_crawl_fast_page_ceiling": 11, "stage0_crawl_total_page_ceiling": 10},
+            "FAST_PAGE_CEILING",
+        ),
+        (
+            {"stage0_crawl_worker_concurrency": 2, "stage0_crawl_per_host_concurrency": 3},
+            "PER_HOST_CONCURRENCY",
+        ),
+        (
+            {"stage0_crawl_lease_ttl_seconds": 40, "stage0_crawl_heartbeat_seconds": 20},
+            "heartbeat intervals",
+        ),
+    ),
+)
+def test_stage0_official_site_crawl_rejects_unsafe_bounds(
+    updates: dict[str, int], message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        load_settings(_env_file=None, **updates)

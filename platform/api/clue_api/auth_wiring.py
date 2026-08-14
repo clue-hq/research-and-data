@@ -5,12 +5,13 @@ domain services consume :class:`clue_auth.RequestPrincipal`; they never import C
 provider claim.
 """
 
+import re
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Literal
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, FastAPI, Header, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -34,10 +35,21 @@ from clue_auth.errors import IdentityConflictError, ProvisioningConflict
 from clue_auth.providers import ClerkAuthenticator, ClerkJwtConfig
 from clue_config import Settings
 from clue_db import ConnFactory
+from clue_obs import get_logger
 
 AUTH_PREFIX = "/auth/v1"
 WORKSPACE_HEADER = "X-Clue-Workspace-Id"
 LOCAL_SUBJECT_HEADER = "X-Clue-Local-Auth-Subject"
+REQUEST_ID_HEADER = "X-Request-Id"
+_SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+log = get_logger("clue_api.auth")
+
+
+def _request_id(request: Request) -> str:
+    existing = request.headers.get(REQUEST_ID_HEADER, "").strip()
+    if existing and _SAFE_REQUEST_ID.fullmatch(existing):
+        return existing
+    return uuid4().hex
 
 
 class SessionMembershipResponse(BaseModel):
@@ -318,7 +330,9 @@ def build_auth_router(
     if conn_factory is not None:
 
         @router.post("/provision", response_model=ProvisionResponse)
-        async def provision(request: Request, body: ProvisionRequest) -> ProvisionResponse:
+        async def provision(
+            request: Request, response: Response, body: ProvisionRequest
+        ) -> ProvisionResponse:
             """FI-4 D-2: one replay-safe operation from a live provider session to an owned
             workspace with its first brand. Requires authentication but deliberately NOT a
             provisioned identity or membership — this route is how both come to exist.
@@ -327,8 +341,11 @@ def build_auth_router(
             semantics (``clue_db.transaction``) — the whole operation is one transaction and
             the 409 path must roll everything back. Wiring ``clue_db.connection`` here would
             silently roll back every successful provision."""
-            session = await service.external_session(authentication_request(request))
+            request_id = _request_id(request)
+            response.headers[REQUEST_ID_HEADER] = request_id
+            log.info("auth.provision.started", request_id=request_id)
             try:
+                session = await service.external_session(authentication_request(request))
                 async with conn_factory() as conn:
                     provisioned = await provision_self_serve_workspace(
                         conn,
@@ -341,7 +358,30 @@ def build_auth_router(
                         company_website=body.company_website,
                     )
             except IdentityConflictError as error:
+                log.info(
+                    "auth.provision.completed",
+                    request_id=request_id,
+                    outcome="conflict",
+                    created=False,
+                )
                 raise ProvisioningConflict(str(error)) from error
+            except PrincipalError:
+                raise
+            except Exception:
+                log.exception(
+                    "auth.provision.failed",
+                    request_id=request_id,
+                    outcome="unexpected_error",
+                )
+                raise
+            log.info(
+                "auth.provision.completed",
+                request_id=request_id,
+                outcome="created" if provisioned.created else "replayed",
+                created=provisioned.created,
+                user_id=provisioned.user.user_id,
+                workspace_id=provisioned.workspace.workspace_id,
+            )
             return ProvisionResponse(
                 user_id=provisioned.user.user_id,
                 workspace_id=provisioned.workspace.workspace_id,
@@ -372,7 +412,16 @@ def install_auth_wiring(
 
     @app.exception_handler(PrincipalError)
     async def _principal_error_handler(request: Request, exc: PrincipalError) -> JSONResponse:
-        request_id = request.headers.get("X-Request-Id", "").strip() or str(uuid4())
+        request_id = _request_id(request)
+        if request.url.path == f"{AUTH_PREFIX}/provision":
+            log.info(
+                "auth.provision.completed",
+                request_id=request_id,
+                outcome="refused",
+                created=False,
+                error_code=exc.code,
+                status=exc.status_code,
+            )
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -382,7 +431,7 @@ def install_auth_wiring(
                     "requestId": request_id,
                 }
             },
-            headers={"X-Request-Id": request_id},
+            headers={REQUEST_ID_HEADER: request_id},
         )
 
     app.include_router(build_auth_router(service=service, conn_factory=conn_factory))

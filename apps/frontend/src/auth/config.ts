@@ -1,4 +1,5 @@
 const TRUE = "true";
+const LOCAL_APP_ORIGIN = "http://localhost:3000";
 
 /** A deployment/configuration fault that is safe to classify without leaking its message. */
 export class ClueConfigurationError extends Error {
@@ -23,6 +24,56 @@ export function clueApiBaseUrl(): string {
   return configured.replace(/\/+$/, "");
 }
 
+/** The canonical browser origin allowed to perform authenticated BFF mutations. */
+export function clueAppOrigin(): string {
+  const configured = process.env.CLUE_APP_ORIGIN?.trim();
+  if (!configured && process.env.NODE_ENV === "production") {
+    throw new Error("CLUE_APP_ORIGIN is required in production when authentication is enabled");
+  }
+  const value = configured || LOCAL_APP_ORIGIN;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("CLUE_APP_ORIGIN must be an absolute http(s) origin");
+  }
+  if (
+    !["http:", "https:"].includes(parsed.protocol) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== "/" ||
+    parsed.search ||
+    parsed.hash ||
+    value.replace(/\/$/, "") !== parsed.origin
+  ) {
+    throw new Error("CLUE_APP_ORIGIN must be an absolute http(s) origin without a path");
+  }
+  return parsed.origin;
+}
+
+function configuredAuthorizedParties(raw: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) {
+      return parsed.map((value) => value.trim()).filter(Boolean);
+    }
+  } catch {
+    // Shell-safe comma-separated form is the backend's other supported representation.
+  }
+  return raw.split(",").map((value) => value.trim()).filter(Boolean);
+}
+
+function requireMatchingAuthorizedParty(): void {
+  const raw = process.env.CLUE_AUTH_CLERK_AUTHORIZED_PARTIES?.trim();
+  if (!raw) return;
+  const appOrigin = clueAppOrigin();
+  if (!configuredAuthorizedParties(raw).includes(appOrigin)) {
+    throw new Error(
+      "CLUE_APP_ORIGIN must be listed in CLUE_AUTH_CLERK_AUTHORIZED_PARTIES",
+    );
+  }
+}
+
 export function requireAuthenticationConfiguration(): void {
   if (!isAuthenticationEnabled()) return;
   const missing = [
@@ -40,4 +91,6 @@ export function requireAuthenticationConfiguration(): void {
       `CLUE_AUTH_ENABLED=true requires configuration: ${missing.join(", ")}`,
     );
   }
+  clueAppOrigin();
+  requireMatchingAuthorizedParty();
 }

@@ -42,7 +42,10 @@ def test_provider_sdk_rule_exempts_only_resolvers_and_adapters() -> None:
     # resolvers/ and adapters/ are the ONLY packages allowed to import a provider SDK.
     assert "clue_research.resolvers" not in sources
     assert "clue_research.adapters" not in sources
+    assert "clue_research.official_site" in sources
     assert "firecrawl" in sdk["forbidden_modules"]
+    assert "scrapling" in sdk["forbidden_modules"]
+    assert "curl_cffi" in sdk["forbidden_modules"]
 
 
 def test_import_contracts_currently_pass() -> None:

@@ -65,11 +65,10 @@ module = ["openai"]
 follow_imports = "skip"
 ignore_missing_imports = true
 
-# M4.3 — the PDF (pypdf) and scrape (firecrawl) libraries are external boundaries used ONLY behind
-# the adapters/ provider seams (PdfTextExtractor / ScrapeBackend), lazy-imported and duck-typed. The
-# firecrawl SDK is not a declared dependency (M4.5 wires the live scrape backend + key); its live
-# default is exercised in M4.5, not CI's double-driven path. Ignore missing stubs so the adapter
-# framework is decoupled from each SDK's exact typed signature.
+# M4.3/M4.5 — the PDF (pypdf) and scrape (firecrawl) libraries are external boundaries used ONLY
+# behind the adapters/provider seams (PdfTextExtractor / ScrapeBackend), lazy-imported and
+# duck-typed. The research subsystem declares the live Firecrawl SDK, while tests inject doubles.
+# Ignore missing stubs so the adapter framework stays decoupled from each SDK's typed signature.
 [[tool.mypy.overrides]]
 module = ["pypdf", "firecrawl"]
 follow_imports = "skip"
@@ -80,7 +79,7 @@ ignore_missing_imports = true
 # Scrapling + markdownify (B2.4) are the credit-free ScrapeBackend's libraries, likewise lazy
 # behind adapters/concrete (Rule 4).
 [[tool.mypy.overrides]]
-module = ["aioboto3", "scrapling.*", "markdownify"]
+module = ["aioboto3", "curl_cffi.*", "scrapling.*", "markdownify"]
 follow_imports = "skip"
 ignore_missing_imports = true
 
@@ -147,12 +146,22 @@ modules = [
     "clue_research.verification",
     "clue_research.discovery_scoring",
     "clue_research.stage0",
+    "clue_research.official_site",
     "clue_research.durable",
     "clue_research.profiling",
     "clue_research.narrative",
     "clue_research.compliance",
     "clue_research.synthesis",
     "clue_research.review",
+]
+ignore_imports = [
+    # C3's provider packages implement the frozen PageFetcher seam. These exact imports are the
+    # intended contract/safety direction; every other adapter <-> official_site edge stays banned.
+    "clue_research.adapters.firecrawl_page -> clue_research.official_site.contracts",
+    "clue_research.adapters.page_fetcher_common -> clue_research.official_site.contracts",
+    "clue_research.adapters.page_fetcher_common -> clue_research.official_site.discovery",
+    "clue_research.adapters.scrapling_page -> clue_research.official_site.contracts",
+    "clue_research.adapters.scrapling_page -> clue_research.official_site.safety",
 ]
 
 # Rule 3a — resolvers import no sibling worker EXCEPT the adapter framework (the M4.5 carve-out): a
@@ -218,6 +227,7 @@ source_modules = [
     "clue_research.icp",
     "clue_research.sources",
     "clue_research.stage0",
+    "clue_research.official_site",
     "clue_research.discovery_scoring",
     "clue_research.durable",
     "clue_research.profiling",
@@ -238,6 +248,7 @@ forbidden_modules = [
     "parallel",
     "firecrawl",
     "scrapling",
+    "curl_cffi",
     "markdownify",
     "simple_salesforce",
     "hubspot",
@@ -256,6 +267,9 @@ ignore_imports = [
     "clue_research.adapters.concrete -> firecrawl",
     "clue_research.adapters.concrete -> scrapling",
     "clue_research.adapters.concrete -> markdownify",
+    "clue_research.adapters.firecrawl_page -> firecrawl",
+    "clue_research.adapters.scrapling_page -> scrapling",
+    "clue_research.adapters.scrapling_page -> curl_cffi",
 ]
 
 # Rule 4b — the LLM-vendor SDK lives ONLY behind the gateway/ package (the model analogue of

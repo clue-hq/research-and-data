@@ -50,7 +50,6 @@ longer copies the URL into ``onboarding_input.source_ref`` (append-only, un-reda
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -61,12 +60,18 @@ from sqlalchemy import text
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import principal_from_request
+from clue_api.stage0_setup_fleet import (
+    ProvisioningScope,
+    Stage0ReconEnqueuer,
+    attempt_input_id,
+    iteration_operation_id,
+    website_digest,
+)
 from clue_core import (
     OnboardingInputId,
     OnboardingInputKind,
     ProjectRunId,
     ReconRunId,
-    operation_id_from_key,
 )
 from clue_db import ConnFactory
 from clue_obs import get_logger
@@ -75,6 +80,10 @@ from clue_research.durable import (
     RECON_FIELD_PROGRESS_KIND,
     RECON_TRANSITION_KIND,
     list_run_events,
+)
+from clue_research.official_site import (
+    OfficialSiteProgressView,
+    PostgresOfficialSiteOperations,
 )
 from clue_research.stage0 import (
     CLIENT_BASELINE_FIELDS,
@@ -120,6 +129,36 @@ class SetupFieldState(BaseModel):
     status: str
 
 
+class SetupOfficialSiteProgress(BaseModel):
+    """Additive C8 row/event truth; intentionally excludes URLs, bodies, and receipts."""
+
+    schema_version: str
+    crawl_run_id: str
+    run_status: str
+    phase: str | None = None
+    message: str
+    states: list[str]
+    queued: int
+    leased: int
+    provider_active: int
+    reconciliation_pending: int
+    persistence_pending: int
+    fetched: int
+    total_pages: int
+    snapshots: int
+    fetch_spend_unknown: int
+    extraction_active: int
+    extraction_materialized: int
+    extraction_empty: int
+    extraction_failed: int
+    extraction_spend_unknown: int
+    recovery_required: bool
+    partial: bool
+    completed: bool
+    last_event_seq: int | None = None
+    last_event_kind: str | None = None
+
+
 class SetupStatusResponse(BaseModel):
     """Lane-level truth for the setting-up screen; ``complete`` == the fast lane finished
     (the release-into-the-app signal) — the background lane keeps running behind it."""
@@ -141,12 +180,42 @@ class SetupStatusResponse(BaseModel):
     # predates the flag): "we do not know yet", never a fabricated False.
     fast_budget_exhausted: bool | None = None
     background_budget_exhausted: bool | None = None
+    # C8 is nullable/additive: old clients ignore it; no crawl row is honest null.
+    official_site: SetupOfficialSiteProgress | None = None
 
 
-class _ProvisioningScope(BaseModel):
-    brand_id: str
-    company_website: str
-    workspace_name: str
+def _setup_official_site(
+    view: OfficialSiteProgressView | None,
+) -> SetupOfficialSiteProgress | None:
+    if view is None:
+        return None
+    return SetupOfficialSiteProgress(
+        schema_version=view.schema_version,
+        crawl_run_id=str(view.crawl_run_id),
+        run_status=view.run_status.value,
+        phase=view.phase.value if view.phase is not None else None,
+        message=view.message,
+        states=[state.value for state in view.states],
+        queued=view.queued + view.retry_wait,
+        leased=view.leased,
+        provider_active=view.provider_active,
+        reconciliation_pending=view.reconciliation_pending,
+        persistence_pending=view.persistence_pending,
+        fetched=view.fetched,
+        total_pages=view.total_pages,
+        snapshots=view.snapshots,
+        fetch_spend_unknown=view.fetch_spend_unknown,
+        extraction_active=view.extraction_active + view.extraction_prepared,
+        extraction_materialized=view.extraction_materialized,
+        extraction_empty=view.extraction_empty,
+        extraction_failed=view.extraction_failed,
+        extraction_spend_unknown=view.extraction_spend_unknown,
+        recovery_required=view.recovery_required,
+        partial=view.partial,
+        completed=view.completed,
+        last_event_seq=view.last_event_seq,
+        last_event_kind=(view.last_event_kind.value if view.last_event_kind is not None else None),
+    )
 
 
 def create_stage0_setup_router(
@@ -154,15 +223,17 @@ def create_stage0_setup_router(
     tool_invoker: ToolInvoker,
     conn_factory: ConnFactory,
     storage: StorageBackend,
+    recon_enqueuer: Stage0ReconEnqueuer | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["stage0-setup"])
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
+    official_site_operations = PostgresOfficialSiteOperations(conn_factory=conn_factory)
     driver_tasks: set[asyncio.Task[None]] = set()
     # Best-effort same-process duplicate-driver suppression; the durable model (per-attempt
     # deterministic ids + the tool's advisory locks) is the real safety net across processes.
     driving_workspaces: set[str] = set()
 
-    async def _provisioning_scope(workspace_id: str) -> _ProvisioningScope | None:
+    async def _provisioning_scope(workspace_id: str) -> ProvisioningScope | None:
         async with conn_factory() as conn:
             row = (
                 (
@@ -181,17 +252,13 @@ def create_stage0_setup_router(
             )
         if row is None or row["company_website"] is None:
             return None
-        return _ProvisioningScope(
+        return ProvisioningScope(
             brand_id=row["brand_id"],
             company_website=row["company_website"],
             workspace_name=row["workspace_name"],
         )
 
-    def _website_digest(website: str) -> str:
-        # No casefold: must match the captured bytes exactly (module docstring, BE-M8).
-        return hashlib.sha256(website.strip().encode("utf-8")).hexdigest()
-
-    def _dedupe(workspace_id: str, scope: _ProvisioningScope) -> str:
+    def _dedupe(workspace_id: str, scope: ProvisioningScope) -> str:
         return recon_dedupe_hash(
             workspace_id=workspace_id,
             brand_id=scope.brand_id,
@@ -214,19 +281,10 @@ def create_stage0_setup_router(
                 ).scalar_one()
             )
 
-    def _iteration_operation_id(
-        workspace_id: str, digest: str, attempt: int, iteration: int
-    ) -> Any:
-        return operation_id_from_key(workspace_id, f"stage0-setup:{digest}:a{attempt}:i{iteration}")
-
-    def _attempt_input_id(workspace_id: str, digest: str, attempt: int) -> OnboardingInputId:
-        derived = operation_id_from_key(workspace_id, f"stage0-setup-input:{digest}:a{attempt}")
-        return OnboardingInputId(UUID(str(derived)))
-
     async def _drive_recon(
         *,
         workspace_id: str,
-        scope: _ProvisioningScope,
+        scope: ProvisioningScope,
         attempt: int,
         onboarding_input_id: OnboardingInputId,
         principal: Any,
@@ -234,7 +292,7 @@ def create_stage0_setup_router(
         """Invoke start_recon with per-iteration operation ids until both lanes are
         terminal or the fast lane fails (never auto-retry a failed lane — retry is a
         human decision that mints a new attempt)."""
-        digest = _website_digest(scope.company_website)
+        digest = website_digest(scope.company_website)
         body: dict[str, Any] = {
             "brand_id": scope.brand_id,
             "name": scope.workspace_name,
@@ -246,7 +304,7 @@ def create_stage0_setup_router(
         driving_workspaces.add(workspace_id)
         try:
             for iteration in range(_MAX_DRIVER_INVOCATIONS):
-                operation_id = _iteration_operation_id(workspace_id, digest, attempt, iteration)
+                operation_id = iteration_operation_id(workspace_id, digest, attempt, iteration)
                 if principal is not None:
                     ctx = tool_context_for_principal(
                         principal, conn_factory=conn_factory, operation_id=operation_id
@@ -315,9 +373,9 @@ def create_stage0_setup_router(
                     "exists for this workspace",
                 },
             )
-        digest = _website_digest(scope.company_website)
+        digest = website_digest(scope.company_website)
         attempt = await _failed_attempt_count(workspace_id, _dedupe(workspace_id, scope))
-        onboarding_input_id = _attempt_input_id(workspace_id, digest, attempt)
+        onboarding_input_id = attempt_input_id(workspace_id, digest, attempt)
         # Capture-before-use: bytes first, capture record second, spend last. The captured
         # bytes ARE the digest's pre-image, so identity and content cannot disagree.
         captured = scope.company_website.strip().encode("utf-8")
@@ -347,33 +405,29 @@ def create_stage0_setup_router(
                 status_code=409,
                 detail={"error": "setup_capture_conflict", "reason": str(error)},
             ) from error
-        # !! THE RECON LANE RUNS ON THIS WEB PROCESS'S OWN EVENT LOOP, AND IT BLOCKS IT. !!
-        #
-        # `_drive_recon` awaits `start_recon`, whose waterfall calls `resolver.resolve`
-        # SYNCHRONOUSLY, and the slice-3 claim extractor's `LLMGateway.complete` is a sync,
-        # network-bound call. Nothing yields to the loop for its duration, so **every other
-        # request served by this process — including this screen's own 1.5s setup polls — waits**.
-        # The multiplier is one completion per Client-KB field: the eleven-field fast walk is
-        # eleven serialized blocking calls, and the background lane walks them again.
-        #
-        # Tolerable today only because the extractor's gate is closed by default: it needs both
-        # `CLUE_SELF_SERVE_PROVISIONING_ENABLED` (these routes) and a real `OPENROUTER_API_KEY`
-        # (without one the HTTP root composes the empty extractor and no completion happens at
-        # all). **This must be fixed before that pair is true in a shared web process** — either
-        # drive recon on the fleet (the binder is already composed there) or put an
-        # `asyncio.to_thread` hop at the waterfall's resolver call. Recorded with an owner in the
-        # repo-root CLAUDE.md backlog, tag `[slice3×stage0]`.
-        task = asyncio.create_task(
-            _drive_recon(
+        if recon_enqueuer is not None:
+            # Production C6 path: return after the durable enqueue. The fleet rehydrates every
+            # input and owns all network/model work; no browser credential enters the queue.
+            await recon_enqueuer.enqueue(
                 workspace_id=workspace_id,
-                scope=scope,
-                attempt=attempt,
                 onboarding_input_id=onboarding_input_id,
-                principal=principal,
+                website_digest=digest,
+                attempt=attempt,
             )
-        )
-        driver_tasks.add(task)
-        task.add_done_callback(driver_tasks.discard)
+        else:
+            # Focused router tests may still inject the pre-C6 in-process driver. The production
+            # application always supplies ``DbStage0ReconEnqueuer`` (guarded by composition tests).
+            task = asyncio.create_task(
+                _drive_recon(
+                    workspace_id=workspace_id,
+                    scope=scope,
+                    attempt=attempt,
+                    onboarding_input_id=onboarding_input_id,
+                    principal=principal,
+                )
+            )
+            driver_tasks.add(task)
+            task.add_done_callback(driver_tasks.discard)
         return SetupStartResponse(schema_version=PROJECTIONS_SCHEMA_VERSION, status="started")
 
     async def _field_truth(
@@ -436,7 +490,7 @@ def create_stage0_setup_router(
         return fields, budgets
 
     async def _serve_lane_truth(
-        workspace_id: str, scope: _ProvisioningScope, recon_run_id: Any
+        workspace_id: str, scope: ProvisioningScope, recon_run_id: Any
     ) -> SetupStatusResponse | None:
         view = await stage0_progress(
             recon_run_id=ReconRunId(recon_run_id),
@@ -461,6 +515,10 @@ def create_stage0_setup_router(
             if brief is not None:
                 fact_count = len(brief.facts)
         fields, budgets = await _field_truth(workspace_id, UUID(view.recon_run_id))
+        official_site = await official_site_operations.read_progress_for_recon(
+            workspace_id=workspace_id,
+            recon_run_id=UUID(view.recon_run_id),
+        )
         return SetupStatusResponse(
             schema_version=PROJECTIONS_SCHEMA_VERSION,
             status=status,
@@ -473,6 +531,7 @@ def create_stage0_setup_router(
             fields=fields,
             fast_budget_exhausted=budgets.get("fast"),
             background_budget_exhausted=budgets.get("background"),
+            official_site=_setup_official_site(official_site),
         )
 
     @router.get("/stage0/setup/current", response_model=SetupStatusResponse)
@@ -482,11 +541,11 @@ def create_stage0_setup_router(
             return SetupStatusResponse(
                 schema_version=PROJECTIONS_SCHEMA_VERSION, status="unavailable"
             )
-        digest = _website_digest(scope.company_website)
+        digest = website_digest(scope.company_website)
         dedupe = _dedupe(workspace_id, scope)
         attempt = await _failed_attempt_count(workspace_id, dedupe)
         # 1) The current attempt's own run (its id is iteration 0's operation id).
-        candidate_id = _iteration_operation_id(workspace_id, digest, attempt, 0)
+        candidate_id = iteration_operation_id(workspace_id, digest, attempt, 0)
         served = await _serve_lane_truth(workspace_id, scope, candidate_id)
         if served is not None:
             return served
@@ -496,7 +555,7 @@ def create_stage0_setup_router(
             captured = (
                 await conn.execute(
                     text("SELECT 1 FROM onboarding_input WHERE id = :id"),
-                    {"id": _attempt_input_id(workspace_id, digest, attempt)},
+                    {"id": attempt_input_id(workspace_id, digest, attempt)},
                 )
             ).scalar_one_or_none()
             # 3) Any other run for this identity (a prior attempt's failure awaiting a

@@ -328,11 +328,13 @@ def build_multi_work_worker(
     graph_handler: WorkHandler,
     entity_research_handler: WorkHandler | None = None,
     agent_turn_handler: WorkHandler | None = None,
+    stage0_recon_handler: WorkHandler | None = None,
+    official_site_crawl_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
     worker_id: str | None = None,
 ) -> LeasedWorkWorker:
-    """One leased drain for project runs, recipe graphs, and optional entity-research jobs.
+    """One leased drain for project runs, recipe graphs, and optional governed work kinds.
 
     R2 adds only the composition seam.  Production deliberately omits the optional handler until
     R3 supplies the governed ``create_agent()`` driver, preserving R1's fail-loud quarantine.
@@ -349,6 +351,16 @@ def build_multi_work_worker(
         raise ValueError("entity_research_handler must own entity_research_job tasks")
     if agent_turn_handler is not None and agent_turn_handler.kind is not FleetTaskKind.AGENT_TURN:
         raise ValueError("agent_turn_handler must own agent_turn tasks")
+    if (
+        stage0_recon_handler is not None
+        and stage0_recon_handler.kind is not FleetTaskKind.STAGE0_RECON
+    ):
+        raise ValueError("stage0_recon_handler must own stage0_recon tasks")
+    if (
+        official_site_crawl_handler is not None
+        and official_site_crawl_handler.kind is not FleetTaskKind.OFFICIAL_SITE_CRAWL
+    ):
+        raise ValueError("official_site_crawl_handler must own official_site_crawl tasks")
     handlers = [
         _OwnedRunGuardHandler(ProjectRunWorkHandler(driver)),
         graph_handler,
@@ -357,6 +369,10 @@ def build_multi_work_worker(
         handlers.append(entity_research_handler)
     if agent_turn_handler is not None:
         handlers.append(agent_turn_handler)
+    if stage0_recon_handler is not None:
+        handlers.append(stage0_recon_handler)
+    if official_site_crawl_handler is not None:
+        handlers.append(official_site_crawl_handler)
     return LeasedWorkWorker(
         handlers=tuple(handlers),
         queue=queue if queue is not None else DbWorkQueue(),

@@ -7,6 +7,7 @@ from collections import deque
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+import pytest
 from pydantic import JsonValue
 
 from clue_fleet import (
@@ -32,7 +33,7 @@ class _Queue:
     def __init__(self, rows: list[WorkTaskRow]) -> None:
         self.rows = deque(rows)
         self.finished: list[tuple[UUID, FleetTaskStatus, dict[str, JsonValue]]] = []
-        self.requeued: list[UUID] = []
+        self.requeued: list[tuple[UUID, timedelta | None]] = []
 
     async def claim_next(
         self,
@@ -71,9 +72,11 @@ class _Queue:
         del task_id, worker_id
         return True
 
-    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool:
+    async def requeue(
+        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+    ) -> bool:
         del worker_id
-        self.requeued.append(task_id)
+        self.requeued.append((task_id, delay))
         return True
 
     async def enqueue(
@@ -167,6 +170,17 @@ class _AtomicallyFinalizingHandler(_Handler):
         )
 
 
+class _DelayedRequeueHandler(_Handler):
+    async def handle(self, context: WorkContext) -> WorkResult:
+        self.contexts.append(context)
+        return WorkResult(
+            outcome="recovery_pending",
+            references={},
+            requeue=True,
+            requeue_after=timedelta(seconds=17),
+        )
+
+
 def _task(kind: FleetTaskKind) -> WorkTaskRow:
     now = _now()
     work_id = WorkId(uuid4())
@@ -182,6 +196,7 @@ def _task(kind: FleetTaskKind) -> WorkTaskRow:
         result_ref={},
         claimed_by=None,
         claimed_at=None,
+        available_at=now,
         enqueued_at=now,
         enqueue_seq=1,
         updated_at=now,
@@ -249,3 +264,38 @@ def test_domain_atomic_wait_does_not_finish_entity_task_twice() -> None:
         assert len(leases.released) == 1
 
     asyncio.run(scenario())
+
+
+def test_delayed_requeue_is_delegated_to_durable_queue_without_sleeping_worker() -> None:
+    async def scenario() -> None:
+        task = _task(FleetTaskKind.OFFICIAL_SITE_CRAWL).model_copy(update={"attempts": 6})
+        queue = _Queue([task])
+        leases = _Leases()
+        handler = _DelayedRequeueHandler(FleetTaskKind.OFFICIAL_SITE_CRAWL)
+        worker = LeasedWorkWorker(
+            handlers=(handler,),
+            queue=queue,
+            leases=leases,
+            worker_id="crawl-worker",
+            heartbeat_interval=10,
+            lease_ttl=timedelta(seconds=30),
+        )
+
+        assert await worker.drain_once()
+        assert handler.contexts[0].task_attempt == 6
+        assert queue.requeued == [(task.task_id, timedelta(seconds=17))]
+        assert len(leases.released) == 1
+
+    asyncio.run(scenario())
+
+
+def test_requeue_delay_requires_requeue_and_non_negative_duration() -> None:
+    with pytest.raises(ValueError, match="requires requeue"):
+        WorkResult(outcome="bad", references={}, requeue_after=timedelta(seconds=1))
+    with pytest.raises(ValueError, match="cannot be negative"):
+        WorkResult(
+            outcome="bad",
+            references={},
+            requeue=True,
+            requeue_after=timedelta(seconds=-1),
+        )

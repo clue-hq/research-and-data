@@ -187,16 +187,12 @@ async def reverse_profile(
         "stage0.reverse_profile",
         **{ATTR_WORKSPACE_ID: workspace_id},
     ) as span:
-        # Field registry must carry the client.* fields before any client claim is written.
-        await load_client_knowledge_pack(conn)
-
-        # FI-2 P2 (spec §3): reverse profiling is a workspace-level stage-0 run — the Client KB
-        # belongs to no project, so ``project_id`` stays NULL. Registered once, in the caller's
-        # transaction, ahead of every claim below; idempotent, so a resumed run (same ``run_id``)
-        # re-registers harmlessly.
-        await record_run_lineage(conn, run_id=run, workspace_id=workspace_id, kind="stage0")
-
-        client_entity_id = await _resolve_client(conn, client_input, workspace_id=workspace_id)
+        client_entity_id = await prepare_client_kb_run(
+            conn,
+            client_input,
+            workspace_id=workspace_id,
+            run_id=run,
+        )
         apply_attributes(span, {ATTR_ENTITY_ID: client_entity_id})
         if on_client_resolved is not None:
             client_account = await get_account(conn, client_entity_id)
@@ -316,6 +312,53 @@ async def reverse_profile(
 
 
 # --- helpers ----------------------------------------------------------------
+
+
+async def prepare_client_kb_run(
+    conn: AsyncConnection,
+    client_input: ClientInput,
+    *,
+    workspace_id: str,
+    run_id: RunId,
+) -> EntityId:
+    """Prepare one Stage-0 claim run without resolving any external source.
+
+    Authoritative official-site crawling needs the same workspace-local client identity, field
+    registry, and run-lineage prerequisites as :func:`reverse_profile`, but it must not invoke the
+    legacy field-level waterfall. Keeping that preparation here makes the C10 cutover reuse the
+    normal identity and lineage rules rather than duplicating them in fleet composition.
+    """
+
+    await load_client_knowledge_pack(conn)
+    await record_run_lineage(conn, run_id=run_id, workspace_id=workspace_id, kind="stage0")
+    return await _resolve_client(conn, client_input, workspace_id=workspace_id)
+
+
+async def finalize_client_kb_version(
+    conn: AsyncConnection,
+    *,
+    client_entity_id: EntityId,
+    workspace_id: str,
+    run_id: RunId,
+    filled_fields: set[str],
+    attempted_fields: set[str],
+    product_id: str | None,
+) -> int:
+    """Commit or replay the version marker after grounded materialization is durable.
+
+    The marker is written *after* the checkpoint extractors finish. Browser release therefore
+    cannot observe a Client-KB version whose official-site claims are still in flight, and the
+    marker's coverage describes the committed run instead of a pre-crawl placeholder.
+    """
+
+    return await _write_version_marker(
+        conn,
+        client_entity_id=client_entity_id,
+        workspace_id=workspace_id,
+        run_id=run_id,
+        coverage=_coverage(filled_fields, attempted_fields),
+        product_id=product_id,
+    )
 
 
 def _entity_ref(entity_id: EntityId) -> Entity:

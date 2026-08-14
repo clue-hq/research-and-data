@@ -24,6 +24,37 @@ export const SetupFieldStateSchema = z.object({
   status: z.enum(["started", "resolved", "empty", "failed"]).catch("started"),
 });
 
+/** C8's additive, body-free official-site crawl projection. Every count comes from committed
+ * rows/events; the client never advances it with a timer. Open string vocabularies preserve
+ * forward compatibility while the booleans/counts keep the operational meaning explicit. */
+export const SetupOfficialSiteProgressSchema = z.object({
+  schema_version: z.string().min(1),
+  crawl_run_id: z.string().min(1),
+  run_status: z.string().min(1),
+  phase: z.string().nullable().optional().default(null),
+  message: z.string().min(1),
+  states: z.array(z.string().min(1)).optional().default([]),
+  queued: z.number().int().nonnegative(),
+  leased: z.number().int().nonnegative(),
+  provider_active: z.number().int().nonnegative(),
+  reconciliation_pending: z.number().int().nonnegative(),
+  persistence_pending: z.number().int().nonnegative(),
+  fetched: z.number().int().nonnegative(),
+  total_pages: z.number().int().nonnegative(),
+  snapshots: z.number().int().nonnegative(),
+  fetch_spend_unknown: z.number().int().nonnegative(),
+  extraction_active: z.number().int().nonnegative(),
+  extraction_materialized: z.number().int().nonnegative(),
+  extraction_empty: z.number().int().nonnegative(),
+  extraction_failed: z.number().int().nonnegative(),
+  extraction_spend_unknown: z.number().int().nonnegative(),
+  recovery_required: z.boolean(),
+  partial: z.boolean(),
+  completed: z.boolean(),
+  last_event_seq: z.number().int().positive().nullable().optional().default(null),
+  last_event_kind: z.string().nullable().optional().default(null),
+});
+
 export const SetupStatusSchema = z.object({
   // `.catch`: an additive backend status must never silently kill the poll loop (review
   // FE-N2); an unknown value degrades to the surfaced-terminal `unavailable` state.
@@ -43,9 +74,14 @@ export const SetupStatusSchema = z.object({
   // never a fabricated `false`.
   fast_budget_exhausted: z.boolean().nullable().optional().default(null),
   background_budget_exhausted: z.boolean().nullable().optional().default(null),
+  // No durable crawl row yet (or a pre-C8 backend) is honest null.
+  official_site: SetupOfficialSiteProgressSchema.nullable().optional().default(null),
 });
 
 export type SetupFieldState = z.infer<typeof SetupFieldStateSchema>;
+export type SetupOfficialSiteProgress = z.infer<
+  typeof SetupOfficialSiteProgressSchema
+>;
 export type SetupStatus = z.infer<typeof SetupStatusSchema>;
 
 export class SetupApiError extends Error {
