@@ -30,7 +30,10 @@ invocation is as observable as a successful one."""
 
 from __future__ import annotations
 
+import json
+
 from pydantic import ValidationError
+from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from clue_obs import get_logger, log_span
 from clue_toolbelt.envelope import Tool, ToolContext, ToolResult
@@ -62,7 +65,14 @@ def _replay_or_conflict(
 
 
 def validate_tool_result(tool: Tool, result: ToolResult) -> ToolResult:
-    """Validate identity and typed references against the exact registered descriptor."""
+    """Validate identity and typed references against the exact registered descriptor.
+
+    ``ToolResult.references`` is a durable JSON envelope, including on idempotent replay. Validate
+    it in Pydantic's JSON mode so strict UUID/datetime/Decimal and tuple contracts accept their
+    canonical JSON representations without weakening the declared output model. Python-strict
+    validation here made a fresh rich result pass only until ``model_dump(mode='json')`` and made
+    every replay of that same valid result fail.
+    """
     descriptor = tool.descriptor
     if result.tool != descriptor.name or result.version != descriptor.version:
         raise ToolContractViolation(
@@ -70,8 +80,17 @@ def validate_tool_result(tool: Tool, result: ToolResult) -> ToolResult:
             f"returned identity {result.tool}@{result.version}",
         )
     try:
-        output = descriptor.output_model.model_validate(result.references)
-    except ValidationError as exc:
+        json_references = to_jsonable_python(result.references)
+        output = descriptor.output_model.model_validate_json(
+            json.dumps(
+                json_references,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+        )
+    except (PydanticSerializationError, TypeError, ValueError, ValidationError) as exc:
         raise ToolContractViolation(descriptor.address, str(exc)) from exc
     return result.model_copy(update={"references": output.model_dump(mode="json")})
 

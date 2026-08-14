@@ -53,7 +53,7 @@ from clue_agents.ports import ExecutionProgress, OperationFailure
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_internal_service
 from clue_api.client_context_authority import (
-    client_kb_version_from_constitution,
+    client_kb_version_for_input_model,
     trusted_client_kb_version_fields,
 )
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
@@ -291,7 +291,7 @@ def _trusted_tool_arguments(
                 reason_code="no_binding",
             )
         merged[key] = captured_turn.value_for(key)
-    client_kb_version = client_kb_version_from_constitution(constitution)
+    client_kb_version = client_kb_version_for_input_model(constitution, input_model)
     if client_kb_version is not None:
         for key in client_kb_version_fields:
             merged[key] = client_kb_version

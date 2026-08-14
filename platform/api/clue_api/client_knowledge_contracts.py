@@ -24,7 +24,7 @@ import json
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Literal, Self
+from typing import ClassVar, Literal, Self
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
@@ -37,7 +37,10 @@ from pydantic import (
     model_validator,
 )
 
-from clue_api.client_context_authority import TRUSTED_CLIENT_KB_VERSION_FIELD
+from clue_api.client_context_authority import (
+    PRODUCTION_CLIENT_KB_AUTHORITY_POLICY,
+    TRUSTED_CLIENT_KB_VERSION_FIELD,
+)
 from clue_core import (
     ClaimFlavor,
     ClaimProvenanceKind,
@@ -142,6 +145,8 @@ class ClientKnowledgeCursorRefused(ValueError):
 
 class ClientKnowledgeV2ScopeInput(ToolInput):
     """Runtime-only Client-KB scope; none of these fields is model-authored."""
+
+    client_kb_authority_policy: ClassVar[str] = PRODUCTION_CLIENT_KB_AUTHORITY_POLICY
 
     client_entity_id: UUID = Field(
         description="Trusted canonical customer account supplied by the platform.",

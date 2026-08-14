@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-14-production-context-s4c.md` — S4-C complete: unregistered frozen `@2` Client-KB
+  discovery/inspection tools, paired production-artifact-only authority injection, typed durable
+  JSON output/replay support, exact-version PostgreSQL/adversarial acceptance, and the S4-D
+  production-registration handoff.
 - `2026-08-14-production-context-s4a-s4b.md` — amended S4-A/B complete: marker/run-based exact
   version readers, retention-safe historical access, deterministic classification/pagination,
   and immutable provider/DB-free `@2` contract fixtures. S4-C through S4-E remain required.

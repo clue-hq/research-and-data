@@ -18,7 +18,8 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from typing import ClassVar
+from decimal import Decimal
+from typing import ClassVar, Literal
 from uuid import UUID
 
 from pydantic import Field, JsonValue
@@ -29,8 +30,25 @@ from clue_api.client_knowledge_contracts import (
     MAX_EVIDENCE_SPAN_BYTES,
     MAX_FIELD_BRIEF_BYTES,
     MAX_FIELD_DESCRIPTION_BYTES,
+    MAX_FIELD_LABEL_BYTES,
     MAX_PROVENANCE_REF_BYTES,
+    ClientClaimFieldV2,
+    ClientClaimInspectionV2Output,
+    ClientClaimLineageV2,
+    ClientClaimProviderLineageV2,
+    ClientClaimQualityV2,
+    ClientClaimSourceV2,
+    ClientClaimV2,
+    ClientKnowledgeCursorRefused,
+    ClientKnowledgeCursorV2,
+    ClientKnowledgeListEntryV2,
+    ClientKnowledgeListV2Output,
+    ClientKnowledgeRefusalCode,
+    InspectClientClaimV2Input,
+    ListClientKnowledgeV2Input,
     canonical_json_bytes,
+    decode_client_knowledge_cursor,
+    encode_client_knowledge_cursor,
     sanitize_source_url,
     truncate_utf8,
 )
@@ -524,6 +542,371 @@ class InspectClientClaimTool(_ClientKnowledgeTool):
         )
 
 
+ClientKnowledgeV2Input = ListClientKnowledgeV2Input | InspectClientClaimV2Input
+
+
+class _ClientKnowledgeV2Tool(Tool):
+    """S4-C read-only implementation base for the frozen production ``@2`` contracts."""
+
+    version = "2"
+    replay: ClassVar[ReplaySafety] = ReplaySafety(
+        policy=ReplayPolicy.EFFECT_FREE,
+        durable_identity=(
+            "exact workspace/client/version read of one immutable Client-KB checkpoint"
+        ),
+        operation_id_required=False,
+        external_boundary=ExternalReplayBoundary.NONE,
+        notes="read-only: no claim, artifact, event, memory, storage, or provider call is created",
+    )
+    effect_class: ClassVar[ToolEffectClass] = ToolEffectClass.READ
+    pin_requirements: ClassVar[tuple[str, ...]] = ("client_kb",)
+
+    def __init__(
+        self,
+        *,
+        conn_factory: ConnFactory = transaction,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        self._conn_factory = conn_factory
+        self._clock = clock
+
+    async def _load_optional(
+        self,
+        inputs: ClientKnowledgeV2Input,
+        ctx: ToolContext,
+    ) -> PinnedClientKnowledge | None:
+        async with self._conn_factory() as conn:
+            return await load_pinned_client_knowledge(
+                conn,
+                workspace_id=ctx.workspace_id,
+                client_entity_id=EntityId(inputs.client_entity_id),
+                client_kb_version=inputs.client_kb_version,
+            )
+
+    def _scope_refusal(self, ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
+        log.warning(
+            "client_knowledge.scope_refused",
+            tool=self.name,
+            version=self.version,
+            actor=ctx.actor,
+            workspace_id=ctx.workspace_id,
+        )
+        return _fail(
+            ClientKnowledgeRefusalCode.SCOPE_UNAVAILABLE.value,
+            "the production Client-KB checkpoint is unavailable",
+        )
+
+    async def _load(
+        self,
+        inputs: ClientKnowledgeV2Input,
+        ctx: ToolContext,
+    ) -> PinnedClientKnowledge:
+        pinned = await self._load_optional(inputs, ctx)
+        if pinned is None:
+            raise RuntimeError("Client-KB checkpoint disappeared after precondition evaluation")
+        return pinned
+
+
+def _decode_v2_list_cursor(
+    inputs: ListClientKnowledgeV2Input,
+) -> tuple[str | None, tuple[PreconditionFailure, ...]]:
+    if inputs.cursor is None:
+        return None, ()
+    try:
+        cursor = decode_client_knowledge_cursor(
+            inputs.cursor,
+            client_entity_id=inputs.client_entity_id,
+            client_kb_version=inputs.client_kb_version,
+            topic=inputs.topic,
+            field_key=inputs.field_key,
+            limit=inputs.limit,
+        )
+    except ClientKnowledgeCursorRefused:
+        return None, _fail(
+            ClientKnowledgeRefusalCode.CURSOR_INVALID.value,
+            "the cursor is unavailable for this Client-KB view",
+        )
+    return cursor.after_field_key, ()
+
+
+def _field_description(
+    field_key: str,
+    definition: ResolvedFieldDefinition | None,
+) -> tuple[str, bool]:
+    source = (
+        definition.description
+        if definition is not None and definition.description
+        else f"Registered Client-KB knowledge for {field_key}."
+    )
+    return truncate_utf8(source, MAX_FIELD_DESCRIPTION_BYTES)
+
+
+def _field_label(field_key: str) -> str:
+    label, _ = truncate_utf8(client_knowledge_field_label(field_key), MAX_FIELD_LABEL_BYTES)
+    return label or field_key
+
+
+class ListClientKnowledgeV2Tool(_ClientKnowledgeV2Tool):
+    """Discover bounded references within the exact production Client-KB checkpoint."""
+
+    name = "list_client_knowledge"
+    input_model: ClassVar[type[ToolInput]] = ListClientKnowledgeV2Input
+    output_model: ClassVar[type[ToolOutput]] = ClientKnowledgeListV2Output
+    parameter_policy: ClassVar[JournalParameterPolicy] = JournalParameterPolicy(
+        safe_display_fields=("topic", "field_key", "limit")
+    )
+
+    async def preconditions(
+        self,
+        inputs: ToolInput,
+        ctx: ToolContext,
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, ListClientKnowledgeV2Input)
+        after, cursor_failure = _decode_v2_list_cursor(inputs)
+        if cursor_failure:
+            return cursor_failure
+        pinned = await self._load_optional(inputs, ctx)
+        if pinned is None:
+            return self._scope_refusal(ctx)
+        try:
+            select_client_knowledge_page(
+                pinned,
+                topic=inputs.topic,
+                field_key=inputs.field_key,
+                after_field_key=after,
+                limit=inputs.limit,
+            )
+        except ClientKnowledgePositionInvalid:
+            return _fail(
+                ClientKnowledgeRefusalCode.CURSOR_INVALID.value,
+                "the cursor is unavailable for this Client-KB view",
+            )
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ListClientKnowledgeV2Input)
+        after, _ = _decode_v2_list_cursor(inputs)
+        pinned = await self._load(inputs, ctx)
+        page = select_client_knowledge_page(
+            pinned,
+            topic=inputs.topic,
+            field_key=inputs.field_key,
+            after_field_key=after,
+            limit=inputs.limit,
+        )
+        entries: list[ClientKnowledgeListEntryV2] = []
+        for field_key in page.field_keys:
+            claim = pinned.claims_by_field[field_key]
+            definition = pinned.definitions.get(field_key)
+            description, description_truncated = _field_description(field_key, definition)
+            brief, brief_truncated = _value_preview(
+                claim.value_json,
+                limit=MAX_FIELD_BRIEF_BYTES,
+            )
+            entries.append(
+                ClientKnowledgeListEntryV2(
+                    field_key=field_key,
+                    label=_field_label(field_key),
+                    description=description,
+                    description_truncated=description_truncated,
+                    topic=client_knowledge_topic(field_key),
+                    brief_value=brief,
+                    brief_truncated=brief_truncated,
+                    claim_id=UUID(str(claim.id)),
+                    retired=definition is not None and not definition.active,
+                )
+            )
+        next_cursor = (
+            encode_client_knowledge_cursor(
+                ClientKnowledgeCursorV2(
+                    client_entity_id=inputs.client_entity_id,
+                    client_kb_version=inputs.client_kb_version,
+                    after_field_key=page.next_after_field_key,
+                    topic=inputs.topic,
+                    field_key=inputs.field_key,
+                    limit=inputs.limit,
+                )
+            )
+            if page.has_more and page.next_after_field_key is not None
+            else None
+        )
+        output = ClientKnowledgeListV2Output(
+            client_entity_id=inputs.client_entity_id,
+            client_kb_version=inputs.client_kb_version,
+            topic=inputs.topic,
+            field_key=inputs.field_key,
+            requested_limit=inputs.limit,
+            knowledge=tuple(entries),
+            returned=len(entries),
+            total_matching=page.total_matching,
+            has_more=page.has_more,
+            next_cursor=next_cursor,
+        )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references=output.model_dump(mode="json"),
+        )
+
+
+def _v2_claim_payload(
+    claim: Claim,
+    *,
+    definition: ResolvedFieldDefinition | None,
+    now: datetime,
+) -> ClientClaimV2:
+    raw_value = canonical_json_bytes(claim.value_json)
+    value_preview, value_truncated = _value_preview(
+        claim.value_json,
+        limit=MAX_CLAIM_VALUE_BYTES,
+    )
+    evidence_span, evidence_truncated = (
+        truncate_utf8(claim.evidence_span, MAX_EVIDENCE_SPAN_BYTES)
+        if claim.evidence_span is not None
+        else (None, False)
+    )
+    description, description_truncated = _field_description(str(claim.field_key), definition)
+    safe_url = sanitize_source_url(claim.source_url)
+    artifact_key, artifact_key_truncated = _bounded_ref(claim.artifact_key)
+    operation_ref, operation_ref_truncated = _bounded_ref(claim.source_operation_ref)
+    snapshot_ref, snapshot_ref_truncated = _bounded_ref(claim.source_snapshot_ref)
+    request_ref, request_ref_truncated = _bounded_ref(claim.source_request_ref)
+    reference = reference_time(claim)
+    ttl = definition.field_def.freshness_ttl if definition is not None else None
+    freshness: Literal["fresh", "stale", "not_configured"]
+    if ttl is None:
+        fresh_until = None
+        freshness = "not_configured"
+    else:
+        fresh_until = reference + ttl
+        freshness = "fresh" if now <= fresh_until else "stale"
+    return ClientClaimV2(
+        claim_id=UUID(str(claim.id)),
+        field=ClientClaimFieldV2(
+            field_key=str(claim.field_key),
+            label=_field_label(str(claim.field_key)),
+            topic=client_knowledge_topic(str(claim.field_key)),
+            description=description,
+            description_truncated=description_truncated,
+            retired=definition is not None and not definition.active,
+        ),
+        value=None if value_truncated else claim.value_json,
+        value_preview=value_preview,
+        value_sha256=f"sha256:{hashlib.sha256(raw_value).hexdigest()}",
+        value_truncated=value_truncated,
+        evidence_span=evidence_span,
+        evidence_span_truncated=evidence_truncated,
+        source=ClientClaimSourceV2(
+            source_key=claim.source_key,
+            source_tier=int(claim.source_tier),
+            extraction_method=claim.extraction_method,
+            public_source_origin=safe_url.public_origin,
+            source_url_sha256=safe_url.exact_sha256,
+            source_url_redacted=safe_url.redacted,
+            artifact_key=artifact_key,
+            artifact_key_truncated=artifact_key_truncated,
+        ),
+        provider_lineage=ClientClaimProviderLineageV2(
+            operation_ref=operation_ref,
+            operation_ref_truncated=operation_ref_truncated,
+            snapshot_ref=snapshot_ref,
+            snapshot_ref_truncated=snapshot_ref_truncated,
+            request_ref=request_ref,
+            request_ref_truncated=request_ref_truncated,
+        ),
+        quality=ClientClaimQualityV2(
+            confidence=Decimal(str(claim.confidence)),
+            corroborations=int(claim.corroborations),
+            verification_status=claim.verification_status,
+            freshness=freshness,
+            freshness_reference_at=reference,
+            fresh_until=fresh_until,
+        ),
+        lineage=ClientClaimLineageV2(
+            run_id=UUID(str(claim.run_id)),
+            research_mode=claim.research_mode,
+            provenance_kind=claim.provenance_kind,
+            claim_flavor=claim.claim_flavor,
+            reuse_scope=claim.reuse_scope,
+            product_id=str(claim.product_id) if claim.product_id is not None else None,
+            observed_at=claim.observed_at,
+            collected_at=claim.collected_at,
+        ),
+    )
+
+
+class InspectClientClaimV2Tool(_ClientKnowledgeV2Tool):
+    """Inspect one exact in-checkpoint claim through the frozen bounded provenance schema."""
+
+    name = "inspect_client_claim"
+    input_model: ClassVar[type[ToolInput]] = InspectClientClaimV2Input
+    output_model: ClassVar[type[ToolOutput]] = ClientClaimInspectionV2Output
+    parameter_policy: ClassVar[JournalParameterPolicy] = JournalParameterPolicy(
+        safe_display_fields=("claim_id",)
+    )
+
+    @staticmethod
+    def _selected_claim(
+        inputs: InspectClientClaimV2Input,
+        pinned: PinnedClientKnowledge,
+    ) -> Claim | None:
+        return pinned.claim(ClaimId(inputs.claim_id))
+
+    async def preconditions(
+        self,
+        inputs: ToolInput,
+        ctx: ToolContext,
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, InspectClientClaimV2Input)
+        pinned = await self._load_optional(inputs, ctx)
+        if pinned is None:
+            return self._scope_refusal(ctx)
+        if self._selected_claim(inputs, pinned) is None:
+            return _fail(
+                ClientKnowledgeRefusalCode.CLAIM_NOT_FOUND.value,
+                "that claim is unavailable in this Client-KB checkpoint",
+            )
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, InspectClientClaimV2Input)
+        pinned = await self._load(inputs, ctx)
+        claim = self._selected_claim(inputs, pinned)
+        if claim is None:
+            raise RuntimeError("Client-KB claim disappeared after precondition evaluation")
+        output = ClientClaimInspectionV2Output(
+            client_entity_id=inputs.client_entity_id,
+            client_kb_version=inputs.client_kb_version,
+            claim=_v2_claim_payload(
+                claim,
+                definition=pinned.definitions.get(str(claim.field_key)),
+                now=self._clock(),
+            ),
+        )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references=output.model_dump(mode="json"),
+        )
+
+
+def build_client_knowledge_v2_tools(
+    *,
+    conn_factory: ConnFactory = transaction,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+) -> tuple[Tool, ...]:
+    """Build S4-C ``@2`` implementations without registering or granting them.
+
+    S4-D owns the production registry/profile/skill/recipe cutover. Keeping this builder separate
+    prevents a completed tool body from accidentally becoming production authority early.
+    """
+
+    return (
+        ListClientKnowledgeV2Tool(conn_factory=conn_factory, clock=clock),
+        InspectClientClaimV2Tool(conn_factory=conn_factory, clock=clock),
+    )
+
+
 def build_client_knowledge_tools(
     *,
     conn_factory: ConnFactory = transaction,
@@ -540,7 +923,10 @@ __all__ = [
     "MAX_CLIENT_KNOWLEDGE_PAGE",
     "InspectClientClaimInput",
     "InspectClientClaimTool",
+    "InspectClientClaimV2Tool",
     "ListClientKnowledgeInput",
     "ListClientKnowledgeTool",
+    "ListClientKnowledgeV2Tool",
     "build_client_knowledge_tools",
+    "build_client_knowledge_v2_tools",
 ]

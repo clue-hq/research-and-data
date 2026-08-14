@@ -7,14 +7,15 @@
 this document conflicts with the provisional note in root `CLAUDE.md`, this document wins.
 
 **Implementation checkpoint (2026-08-14):** S0-S3 are implemented. S4 is governed by the amended
-S4-A through S4-E checkpoints below and is complete only after S4-E. S4-A's version-aware reader
-and S4-B's immutable contract freeze are implemented. The previously shipped `@1` tools and their
+S4-A through S4-E checkpoints below and is complete only after S4-E. S4-A's version-aware reader,
+S4-B's immutable contract freeze, and S4-C's trusted `@2` implementations are implemented. The
+previously shipped `@1` tools and their
 Head-of-ABM/profile/skill/recipe wiring remain frozen compatibility surfaces; they are preliminary
 S4-C/D evidence, not acceptance of those checkpoints. The final public contract is therefore a
-new `@2` revision rather than an in-place rewrite of published `@1` schemas. S4-C must implement
-that frozen revision, S4-D must compose it through new immutable production resources, and S4-E
-must close durable privacy, injection, and replay reach before S4 can be called complete. S3.1,
-S5.0, S5, and S6 remain outside this checkpoint.
+new `@2` revision rather than an in-place rewrite of published `@1` schemas. S4-D must compose the
+implemented revision through new immutable production resources, and S4-E must close durable
+privacy, injection, and replay reach before S4 can be called complete. S3.1, S5.0, S5, and S6
+remain outside this checkpoint.
 
 ## 1. Purpose
 
@@ -542,8 +543,23 @@ is in `tests/api/test_client_knowledge_contracts_s4b.py`.
 - Injected client/version match the paired context artifact, and no model-authored authority value
   can override them.
 - An included ref and an omitted ref resolve at the exact pinned version.
-- Cross-workspace, wrong-version, and non-member reads are indistinguishable.
+- Cross-workspace and unavailable-version scopes share `client_knowledge_unavailable`. Within a
+  valid pinned scope, unknown, foreign, outside-version, same-version non-member, and expired claim
+  refs share `client_claim_not_found`; neither class discloses which internal scope/ref check failed.
 - The implementation conforms byte-for-byte to S4-B schemas without changing their hashes.
+
+**Implemented evidence:** `platform/api/clue_api/client_knowledge_tools.py` provides the separate,
+not-yet-registered `@2` builder and effect-free implementations over the S4-A reader;
+`platform/api/clue_api/client_context_authority.py` makes `@2` require the validated paired
+`client_knowledge` artifact while preserving only `@1`'s frozen trial compatibility fallback; and
+the governed execution seam injects that exact version alongside the constitution client and
+`ToolContext` workspace. Provider-schema, smuggling, pairing, no-fallback, central-registry
+boundary, real-PostgreSQL included/omitted/pagination/version/refusal/truncation/provenance, and
+zero-write/cost replay acceptance lives in
+`tests/api/test_client_knowledge_tools_s4c{,_db}.py`. The shared tool runner now validates durable
+results in JSON mode, so strict UUID/enum/datetime/Decimal/tuple outputs survive fresh execution and
+cold replay without weakening the frozen models. S4-D remains the sole production-registration
+authority.
 
 #### S4-D — Production toolbelt composition
 

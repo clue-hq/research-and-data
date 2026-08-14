@@ -18,12 +18,16 @@ from pydantic import BaseModel
 from clue_agents import AgentConstitution
 
 __all__ = [
+    "PRODUCTION_CLIENT_KB_AUTHORITY_POLICY",
     "TRUSTED_CLIENT_KB_VERSION_FIELD",
+    "client_kb_version_for_input_model",
     "client_kb_version_from_constitution",
+    "production_client_kb_version_from_constitution",
     "trusted_client_kb_version_fields",
 ]
 
 TRUSTED_CLIENT_KB_VERSION_FIELD = "clue_trusted_client_kb_version_field"
+PRODUCTION_CLIENT_KB_AUTHORITY_POLICY = "paired_client_knowledge_artifact"
 
 
 def trusted_client_kb_version_fields(model: type[BaseModel]) -> tuple[str, ...]:
@@ -37,8 +41,17 @@ def trusted_client_kb_version_fields(model: type[BaseModel]) -> tuple[str, ...]:
     )
 
 
-def client_kb_version_from_constitution(constitution: AgentConstitution) -> int | None:
-    """Resolve the exact S3 Client-KB domain pin, or ``None`` when this is not that surface."""
+def production_client_kb_version_from_constitution(
+    constitution: AgentConstitution,
+) -> int | None:
+    """Resolve only the validated production ``client_knowledge`` artifact pin.
+
+    :class:`AgentConstitution` has already proved that the artifact is paired with the active
+    project's Stage-0 artifact and that its workspace, client id, and positive version match the
+    constitution. S4-C's final ``@2`` tools deliberately have no trial/focus-ref fallback: if the
+    paired production artifact is absent, no Client-KB version is injected and validation fails
+    closed before the tool can run.
+    """
 
     artifact = next(
         (
@@ -49,22 +62,44 @@ def client_kb_version_from_constitution(constitution: AgentConstitution) -> int 
         None,
     )
     if artifact is None:
-        # The development Stage-0 trial predates the split S3 artifacts but still pins the same
-        # client/version pair as a trusted focus ref. Keeping this compatibility source lets the
-        # shared Stage-0 skill survive that narrowed surface without letting the model author the
-        # version. Production always takes the artifact branch above.
-        focus = next(
-            (
-                item
-                for item in constitution.focus_refs
-                if item.object_type == "client_account"
-                and item.object_id == constitution.client_entity_id
-                and item.version is not None
-            ),
-            None,
-        )
-        return focus.version if focus is not None else None
+        return None
     # AgentConstitution already proves type, client, workspace, and a positive exact version.
     assert artifact.domain_ref.object_type == "client_knowledge"
+    assert artifact.domain_ref.object_id == constitution.client_entity_id
     assert artifact.domain_ref.version is not None
     return artifact.domain_ref.version
+
+
+def client_kb_version_from_constitution(constitution: AgentConstitution) -> int | None:
+    """Resolve the production pin, with the frozen ``@1`` trial compatibility fallback."""
+
+    production_version = production_client_kb_version_from_constitution(constitution)
+    if production_version is not None:
+        return production_version
+
+    # The development Stage-0 trial predates the split S3 artifacts but still pins the same
+    # client/version pair as a trusted focus ref. Keeping this compatibility source lets the
+    # immutable ``@1`` surface survive without letting the model author the version.
+    focus = next(
+        (
+            item
+            for item in constitution.focus_refs
+            if item.object_type == "client_account"
+            and item.object_id == constitution.client_entity_id
+            and item.version is not None
+        ),
+        None,
+    )
+    return focus.version if focus is not None else None
+
+
+def client_kb_version_for_input_model(
+    constitution: AgentConstitution,
+    model: type[BaseModel],
+) -> int | None:
+    """Apply the authority policy opted into by one immutable tool-input contract."""
+
+    policy = getattr(model, "client_kb_authority_policy", None)
+    if policy == PRODUCTION_CLIENT_KB_AUTHORITY_POLICY:
+        return production_client_kb_version_from_constitution(constitution)
+    return client_kb_version_from_constitution(constitution)
