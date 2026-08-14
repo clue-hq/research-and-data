@@ -268,6 +268,56 @@ next slice per PD-part3 §4: P3.3 (catalog registration).
 - Verified: 221 passed across tests/agents + registry wiring + runtime wiring + the
   P3.2 role ledger; ruff + lint-imports (26/26) clean.
 
-Part III standing: P3.0 spec, P3.1, P3.2 (gate passed), P3.3 — DONE. Next: P3.4 (the
-leg engine: delegation entry, C8 bundle, the routing rule, leg-scoped history,
-agent_turn rows for design turns, speaker projection).
+## P3.4 SHIPPED (2026-08-14) — the leg engine
+
+All six spec items landed, TDD'd against the riyadh DB (55030). Detail note:
+`_memory/2026-08-14-p34-leg-engine.md`. Summary:
+
+- **Delegation entry `open_design_leg@1`** (`design_leg_tools.py`), granted to HEAD_OF_ABM:
+  derives everything from the presenting turn (TRUSTED_TURN_FIELD, gate-tool precedent),
+  validates D5 pins (document CAS from durable row; fail-closed brand (id,version)),
+  freezes the §2.3 bundle (canonical JSON, 24k byte cap = half the 48k L3 layer),
+  opens the leg with a turn-derived id (replay converges). Ceremony: profile v24,
+  C6 authority 102→103, trial withholds it, recipe0-stage0@7 (slot + graph allowlist +
+  compat mirror), RECIPE_0_TOOL_ADDRESSES cert, Stage0StepPinProvider project pin via
+  the injected turn ref (explicit-absence idiom).
+- **Routing rule** (`agent_turn_fleet_wiring.py`): the worker reads
+  `get_open_leg_for_thread` in the submission transaction; open leg → design path
+  (head-of-abm engine, C5 recipe, profile checks all untouched); else unchanged.
+  `_execute_watched` refactored to take the turn body as a callable — stop semantics +
+  exact-artifact boundary shared by both paths.
+- **Leg turn runner** (`design_leg_wiring.py::DesignLegTurnRunner`): agent_turn row
+  role=design parented under leg.parent_execution_id (execution derived uuid5(turn));
+  design run id derived from turn id (crash re-join, never re-run); run stamped
+  leg_id+execution_id (create_run gained the params); bundle rides the constitution as
+  ProjectContextArtifact AND by value in DesignTurnEnvelope.config (request/
+  delegation_bundle/history/leg blocks; scene from the stored document); success =
+  committed AgentFinalizeEnvelope AWAITING_INPUT with open_gate_refs=(leg) → replay
+  short-circuit for free; failure = mark_unfinalized("design_leg_turn_failed"), leg stays
+  open, NO manufactured finalize. No platform workspace lease (workspace_root_id =
+  "design-leg:<id>", documented).
+- **Execution lane**: `design_fleet.InlineDesignLaneDriver` drives the real
+  DesignJobWorkHandler inline under a real work lease — NOT a queue hop, because
+  LeasedWorkWorker drains one task at a time per process; an AGENT_TURN handler awaiting
+  a queued design_job would deadlock a single-worker deployment against itself. Same
+  claim CAS/fences. fleet_main wires it under design_runtime_enabled; disabled →
+  fail-loud unavailable lane.
+- **Leg-scoped history (§2.4)**: `load_design_leg_history` (role='design' +
+  parent_execution_id join — leg-scoped even for turns whose run never got created);
+  `load_head_of_abm_history` (role <> 'design') now IS the conversation engine's load
+  (conversation_turns.py) — head-of-abm never ingests leg transcripts. Summaries at
+  close = P3.5.
+- **Speaker projection**: `design_legs_for_threads` anti-join; ThreadWire.speaker
+  (ThreadSpeakerWire role/design_leg_id/design_leg_state, None = not derived); the
+  thread listing derives it; TurnAcceptedWire.routed_to (accept-time visibility, both
+  fresh + replay paths, read in the accept transaction).
+- **Gate test** `tests/api/test_p34_leg_loop_gate_db.py`: strategy turn →
+  open_design_leg → 2 design turns with design_document focus refs through the REAL
+  ProjectConversationTurnRunner → head-of-abm sentinel 0 calls, no recipe executions,
+  roles design×2 + head_of_abm×1, envelopes carry focus refs + scene + leg history,
+  §2.4 scoping both sides. Plus test_p34_design_leg_tool_db (6), engine (4), speaker (2).
+
+Part III standing: P3.0 spec, P3.1, P3.2 (gate passed), P3.3, **P3.4 — DONE**. Next per
+spec §4: P3.5 (`finish_design_leg`: engine-validated exit, out_of_scope re-delivery,
+mis-exit reopen — the reopen path is deliberately NOT in open_design_leg; its
+derived-id-closed replay refuses `design_leg_replay_closed`).

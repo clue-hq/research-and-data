@@ -1505,12 +1505,13 @@ def test_missing_required_artifact_is_a_terminal_failed_turn(tmp_path: Path) -> 
                 submitted_by_user_id=USER_ID,
                 submitted_via_membership_id=f"{MEMBERSHIP_ID}-{project.workspace_id}",
             )
-            request = SimpleNamespace(turn_id=turn_id)
             with pytest.raises(RequiredTurnArtifactMissing):
+                # P3.4 made the watched wrapper body-agnostic (the routing rule selects the
+                # turn body); this drives it exactly as the head-of-abm path composes it.
                 await runner._execute_watched(
-                    request=request,  # type: ignore[arg-type]
-                    lease=None,
+                    run=lambda: engine.execute(),
                     submission=submission,  # type: ignore[arg-type]
+                    turn_id=turn_id,
                     stream=emitter,
                 )
             assert engine.calls == 1
@@ -1619,12 +1620,13 @@ def test_stop_cancels_the_active_attempt_and_cannot_look_like_a_finished_message
                     "submitted_via_membership_id": f"{MEMBERSHIP_ID}-{project.workspace_id}",
                 },
             )()
-            request = type("_R", (), {"turn_id": turn_id})()
             with pytest.raises(TurnStopped):
+                # P3.4 made the watched wrapper body-agnostic (the routing rule selects the
+                # turn body); this drives it exactly as the head-of-abm path composes it.
                 await runner._execute_watched(
-                    request=request,  # type: ignore[arg-type]
-                    lease=None,
+                    run=lambda: engine.execute(),
                     submission=submission,  # type: ignore[arg-type]
+                    turn_id=turn_id,
                     stream=emitter,
                 )
             assert engine.cancelled is True

@@ -63,6 +63,7 @@ from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.contact_research_fleet_launch import ContactResearchSelectionApprover
 from clue_api.design_fleet import (
     build_design_job_handler,
+    build_design_leg_lane_driver,
     start_design_event_pruner,
     start_design_reaper,
 )
@@ -658,6 +659,12 @@ async def _serve() -> None:
                 parameters=execution_parameters,
                 memory=memory_assembly_factory(settings, transaction),
                 queue=work_queue,
+                # P3.4: the design-leg lane. Same switch as the design_job handler below —
+                # a worker that drains design work can also drive a leg's design turns
+                # inline; one that does not composes the fail-loud unavailable lane.
+                design_lane=build_design_leg_lane_driver(
+                    enabled=settings.design_runtime_enabled
+                ),
                 streaming=settings.chat_turn_streaming_enabled,
                 stream_policy=TurnStreamPolicy(
                     batch_max_chars=settings.chat_turn_stream_batch_max_chars,

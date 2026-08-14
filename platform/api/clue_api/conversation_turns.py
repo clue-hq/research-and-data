@@ -50,6 +50,7 @@ from clue_api.agent_platform_wiring import (
 from clue_api.agent_runtime_wiring import CompletionGuard
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat.turn_stream import TurnStreamEmitter
+from clue_api.design_leg_wiring import load_head_of_abm_history
 from clue_api.head_of_abm_wiring import (
     HeadOfAbmStage0Runtime,
     build_head_of_abm_stage0_execution,
@@ -200,7 +201,12 @@ class ConversationTurnEngine:
 
         constitution = request.constitution
         workspace_id = constitution.workspace_id
-        prior_history = await self.components.history.load(
+        # P3.4 (PD-part3 §2.4): the conversation surface's history is role-scoped — head-of-abm
+        # assembles its own turns and never ingests a design leg's transcript. While a leg is
+        # open this engine does not run at all (the routing rule sends the message to Design);
+        # this load is what keeps the exclusion true after the leg closes.
+        prior_history = await load_head_of_abm_history(
+            self._conn_factory,
             workspace_id=workspace_id,
             thread_id=request.thread_id,
         )

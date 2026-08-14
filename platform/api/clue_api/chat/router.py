@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -123,17 +123,20 @@ from clue_api.chat.schemas import (
     gate_response_message,
     gate_wire,
     message_list_response,
+    thread_speaker_wire,
     thread_wire,
     thread_wire_from_references,
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
+from clue_api.design_leg_wiring import design_legs_for_threads
 from clue_api.thread_store import create_thread, get_thread, thread_id_for_operation
 from clue_api.turn_action import derive_turn_action_ref
 from clue_auth import Permission, PrincipalError, PrincipalService
 from clue_config import Settings
 from clue_core import OperationId, operation_id_from_key
 from clue_db import ConnFactory
+from clue_design import legs as design_leg_dal
 from clue_obs import get_logger
 from clue_projections import (
     DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE,
@@ -1074,12 +1077,21 @@ def build_chat_router(
             thread_ids=thread_ids,
             conn_factory=conn_factory,
         )
+        # P3.4's speaker projection, the third one-statement anti-join: a thread with an open
+        # design leg is owned by Design until the leg closes, and the sidebar chip must say so
+        # without inferring it from transcripts.
+        open_legs = await design_legs_for_threads(
+            conn_factory,
+            workspace_id=who.workspace_id,
+            thread_ids=thread_ids,
+        )
         return ThreadListResponse(
             data=tuple(
                 thread_wire(
                     item,
                     open_gate_kinds=open_gates.get(item.thread_id, ()),
                     running=item.thread_id in busy,
+                    speaker=thread_speaker_wire(open_legs.get(item.thread_id)),
                 )
                 for item in page.items
             ),
@@ -1587,6 +1599,17 @@ def build_chat_router(
                     workspace_id=who.workspace_id,
                     refs=body.context_refs,
                 )
+                # P3.4 accept-time visibility: which agent will receive this message. The same
+                # one-row read the worker's routing rule performs, taken inside the accept
+                # transaction so the 202 can label the pending turn truthfully.
+                open_leg = await design_leg_dal.get_open_leg_for_thread(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    thread_id=thread_id,
+                )
+                routed_to: Literal["head_of_abm", "design"] = (
+                    "design" if open_leg is not None else "head_of_abm"
+                )
                 # The gate is proved before anything is written — including before the replay read,
                 # so a stale or foreign answer never even reaches the capture path.
                 gate = (
@@ -1640,6 +1663,7 @@ def build_chat_router(
                             thread_id=thread_id,
                             requested_at=existing.requested_at.isoformat(),
                             replayed=True,
+                            routed_to=routed_to,
                         )
                     )
                 captured = await persist_user_turn(
@@ -1763,6 +1787,7 @@ def build_chat_router(
                     thread_id=thread_id,
                     requested_at=submission.requested_at.isoformat(),
                     replayed=False,
+                    routed_to=routed_to,
                 )
             )
 

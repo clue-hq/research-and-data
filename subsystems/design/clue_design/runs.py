@@ -164,6 +164,8 @@ async def create_run(
     payload: JsonObject | None = None,
     work_id: UUID | None = None,
     checkpoint_thread_id: str | None = None,
+    leg_id: str | None = None,
+    execution_id: UUID | None = None,
 ) -> JsonObject:
     """Open one **queued** run row and read it back (the ported DTO shape).
 
@@ -185,6 +187,10 @@ async def create_run(
     ``document_id`` is retained only when it names a document of THIS workspace; an unknown id
     is stored as NULL rather than rejected by ``design_agent_run_document_fk`` — see the module
     docstring for why (the async agent-turn route legitimately carries an unstored id).
+
+    ``leg_id`` / ``execution_id`` (Part III P3.1 linkage, stamped since P3.4): a run dispatched
+    from a design leg records the leg it iterates and the platform execution its ``agent_turn``
+    row is scoped under. Standalone-editor runs carry neither — the columns stay honestly NULL.
     """
     resolved: str | None = None
     if document_id is not None:
@@ -199,9 +205,10 @@ async def create_run(
         text(
             "INSERT INTO design_agent_run"
             " (run_id, workspace_id, work_id, checkpoint_thread_id, kind, status,"
-            "  document_id, payload, result_json)"
+            "  document_id, payload, result_json, leg_id, execution_id)"
             " VALUES (:r, :w, :work_id, :thread, CAST(:kind AS design_run_kind),"
-            "         CAST('queued' AS design_run_status), :d, CAST(:payload AS jsonb), NULL)"
+            "         CAST('queued' AS design_run_status), :d, CAST(:payload AS jsonb), NULL,"
+            "         :leg, :execution)"
         ),
         {
             "r": run_id,
@@ -211,6 +218,8 @@ async def create_run(
             "kind": str(kind),
             "d": resolved,
             "payload": dump_json(payload if payload is not None else {}),
+            "leg": leg_id,
+            "execution": execution_id,
         },
     )
     return await require_run(conn, workspace_id=workspace_id, run_id=run_id)

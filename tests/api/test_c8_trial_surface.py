@@ -51,6 +51,10 @@ from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 _WITHHELD = {
     "launch_account_research",
     "launch_contact_research",
+    # P3.4: the design delegation entry is withheld on the trial for the same sentence as
+    # delegation itself — a leg opened from a dev CLI would durably reroute a thread no
+    # design runtime here can serve.
+    "open_design_leg",
     "open_directive_confirmation_gate",
     "start_recon",
     "submit_onboarding_input",
