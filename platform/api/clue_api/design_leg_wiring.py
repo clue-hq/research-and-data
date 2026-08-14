@@ -68,6 +68,7 @@ from clue_api.agent_turn_wiring import (
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
 )
+from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
@@ -503,7 +504,11 @@ class DesignLegTurnRunner:
             focus_refs=focus_refs,
             workspace_id=workspace_id,
         )
-        await self._leg_back_to_awaiting(workspace_id=workspace_id, leg_id=leg_id)
+        await self._leg_back_to_awaiting(
+            workspace_id=workspace_id,
+            leg_id=leg_id,
+            submission=submission,
+        )
 
         if run["status"] != "succeeded":
             await self._turns.mark_unfinalized(
@@ -815,12 +820,30 @@ class DesignLegTurnRunner:
         ):
             raise ValueError("design-leg execution id already has different immutable inputs")
 
-    async def _leg_back_to_awaiting(self, *, workspace_id: str, leg_id: str) -> None:
+    async def _leg_back_to_awaiting(
+        self,
+        *,
+        workspace_id: str,
+        leg_id: str,
+        submission: AgentTurnSubmissionRow,
+    ) -> None:
         async with self._conn_factory() as conn:
             current = await design_legs.get_leg(conn, workspace_id=workspace_id, leg_id=leg_id)
             if current["state"] == "running":
                 await design_legs.mark_leg_awaiting_user(
                     conn, workspace_id=workspace_id, leg_id=leg_id
+                )
+                # Delta 8: the lifecycle frame rides the same transaction as the transition it
+                # announces. A converging retry finds the leg already awaiting and emits nothing
+                # — a frame is a transition's announcement, not a turn's.
+                await emit_turn_event(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=submission.project_id,
+                    thread_id=submission.thread_id,
+                    turn_id=submission.turn_id,
+                    event_type=TurnEventType.LEG_AWAITING_USER,
+                    payload={"leg_id": leg_id},
                 )
 
     async def _project_committed(

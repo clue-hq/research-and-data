@@ -83,6 +83,17 @@ class TurnEventType(StrEnum):
     TEXT_DELTA = "text.delta"
     TEXT_END = "text.end"
     STREAM_RESET = "stream.reset"
+    # P3.7 delta 8 (PD-part3 §3-8): the design-leg lifecycle, on the same thread stream the
+    # speaker chip and the transcript already follow. Emitted transactionally with the durable
+    # leg transition they announce (the open/finish tools; the leg runner), each carrying
+    # ``leg_id`` in the payload — ``leg.closed`` also carries the exit ``reason``. The spec's
+    # sketch said "closing"; with turn-terminal legs the close is one atomic journal+flip, so a
+    # separate closing frame would announce a phase that cannot be observed — dropped in favor
+    # of ``leg.reopened`` (the §2.2 mis-exit re-delegation), which IS a real, durable transition.
+    LEG_OPENED = "leg.opened"
+    LEG_AWAITING_USER = "leg.awaiting_user"
+    LEG_CLOSED = "leg.closed"
+    LEG_REOPENED = "leg.reopened"
 
 
 #: The stored vocabulary as plain strings, kept equal to the enum (and to the DB CHECK) by a test —

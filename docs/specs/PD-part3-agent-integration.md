@@ -202,7 +202,14 @@ continuous session (~95% cached prefill).
    `design_agent_not_wired_until_part_iii` retires) to the design role, plus
    `finish_design_leg` — a deliberately noisy authority-audit change Part II staged.
 8. **Turn-stream vocabulary**: leg lifecycle event types added to the chat turn stream;
-   `run_event.subject_kind` untouched in Part III.
+   `run_event.subject_kind` untouched in Part III. **[Shipped P3.7, amended]:** the four
+   types are `leg.opened` / `leg.awaiting_user` / `leg.closed` (payload carries the exit
+   `reason`) / `leg.reopened` — each emitted transactionally with the durable transition it
+   announces, on the turn that performed it (migration `a051af925d00` widens the
+   `agent_turn_event_stream` CHECK). The earlier sketch's "closing" was dropped: with
+   turn-terminal legs the close is one atomic journal+flip, so a separate closing frame
+   would announce an unobservable phase; `leg.reopened` (the §2.2 mis-exit re-delegation)
+   is a real durable transition and took its place.
 
 ## 4. Slices
 

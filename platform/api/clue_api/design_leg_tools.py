@@ -48,6 +48,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.turn_action import (
     TurnActionUnresolvable,
     TurnIdentity,
@@ -113,6 +114,36 @@ def derive_design_leg_id(*, workspace_id: str, turn_id: UUID) -> str:
 
     framed = f"{len(workspace_id)}:{workspace_id}{len(str(turn_id))}:{turn_id}"
     return str(uuid5(_LEG_NAMESPACE, framed))
+
+
+async def _emit_leg_lifecycle(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn: TurnIdentity,
+    event_type: TurnEventType,
+    leg_id: str,
+    reason: str | None = None,
+) -> None:
+    """Delta 8 (P3.7): announce one leg transition on the chat turn stream.
+
+    Emitted in the SAME transaction as the durable transition, on the turn that performed it —
+    so a crash can never leave a frame without its row, and a replayed invocation (which
+    performs no transition) emits nothing.
+    """
+
+    payload: dict[str, JsonValue] = {"leg_id": leg_id}
+    if reason is not None:
+        payload["reason"] = reason
+    await emit_turn_event(
+        conn,
+        workspace_id=workspace_id,
+        project_id=turn.project_id,
+        thread_id=turn.thread_id,
+        turn_id=turn.turn_id,
+        event_type=event_type,
+        payload=payload,
+    )
 
 
 class OpenDesignLegInput(ToolInput):
@@ -273,6 +304,13 @@ class OpenDesignLegTool(Tool):
                 )
                 created = False
                 reopened = True
+                await _emit_leg_lifecycle(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    turn=resolved.turn,
+                    event_type=TurnEventType.LEG_REOPENED,
+                    leg_id=resolved.leg_id,
+                )
             elif resolved.existing_leg is not None:
                 leg = resolved.existing_leg
                 created = False
@@ -297,6 +335,13 @@ class OpenDesignLegTool(Tool):
                     leg_id=resolved.leg_id,
                 )
                 created = True
+                await _emit_leg_lifecycle(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    turn=resolved.turn,
+                    event_type=TurnEventType.LEG_OPENED,
+                    leg_id=resolved.leg_id,
+                )
         bundle_sha = (
             (await self._bundle_sha(leg["bundle_artifact_ref"], ctx.workspace_id))
             if leg.get("bundle_artifact_ref")
@@ -810,6 +855,14 @@ class FinishDesignLegTool(Tool):
                 summary_refs=summary_refs,
                 pending_user_message_ref=pending_ref,
                 decided_by_run_id=design_leg_run_id(turn.turn_id),
+            )
+            await _emit_leg_lifecycle(
+                conn,
+                workspace_id=ctx.workspace_id,
+                turn=turn,
+                event_type=TurnEventType.LEG_CLOSED,
+                leg_id=leg_id,
+                reason=inputs.reason,
             )
             if redelivered_turn_id is not None:
                 # The leg is closed in this transaction, so the redelivered turn routes to
