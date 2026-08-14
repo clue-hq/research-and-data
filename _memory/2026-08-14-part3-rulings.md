@@ -183,3 +183,32 @@ tests rewritten to the new contracts; design suite 548 passed / 2 skipped).
   explicit effort; consider changing the design default in py_lumen_config), not code.
   If it still loops → dig into the Responses-loop/ToolStrategy interaction next
   (deepagents reviewer stop condition under the governed wrapper).
+
+## P3.2 gate — provider-shape findings ledger (2026-08-14, runs 3-5)
+
+Run-by-run on gpt-5.6-terra (all with the switch code; MAX_ITERATIONS=1):
+- runs 1-2 (effort inherited = platform NONE baseline): reviewer myopic loop (3,338
+  identical read_file calls) → recursion limit. ROOT CAUSE of the loop. Fixed by policy:
+  lumen_agent_reasoning default now "medium" (commit c11dc5e2).
+- run 3 (medium): trio healthy (9/13/5) → upstream OpenAI server_error through all SDK
+  retries at the reviewer's first HEAVY multimodal continuation (req_2b21168af2ca4...).
+- run 4 (medium, ratified default): same — healthy 14/15/3, same upstream 500 at the
+  same shape, 12.5 min of retries.
+- run 5 (medium + fallback claude-opus-4.8, commit 7b9fdeb9): the 500 recurred, the
+  fallback fired and hit a NEW wall: 404 "request contains encrypted reasoning ...
+  produced under a different model. Encrypted payloads can only be replayed to the
+  endpoint that created them." **FINDING — cross-model fallback is structurally unsafe
+  for Responses histories carrying encrypted reasoning items.** GovernedAgentChatModel
+  replays the full history to the fallback candidate; with reasoning items in history
+  the fallback can only be same-endpoint. Follow-up options: same-family-only fallback
+  policy; or the gateway strips encrypted reasoning items on cross-model failover
+  (lossy); or no fallback for reasoning histories. Design default stays
+  fallback=None (honest hard failure).
+- Correlation: effort=none image calls SUCCEEDED (runs 1-2 progressed previews);
+  effort=medium heavy-image continuations 500 upstream (3/3 runs). Run 6 IN FLIGHT:
+  effort=low, no fallback — testing whether low keeps the reviewer sane while avoiding
+  the 500-triggering shape.
+- Constant across ALL runs: role-tagged attribution once per call, zero design-local
+  usage events, ~0.9-0.99 cached-prefill ratios, previews rendering, honest finalize
+  on every failure. The gateway properties of the gate are proven regardless of the
+  provider-shape endgame.
