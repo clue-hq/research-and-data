@@ -18,6 +18,7 @@ import pytest
 from sqlalchemy import text
 from tests.db.conftest import run_async
 
+from clue_api.official_site_crawl_wiring import _AuthoritativeClientKbCommitter
 from clue_core import (
     Claim,
     EntityType,
@@ -164,7 +165,7 @@ class _TrackingFactory:
         return _TrackingContext(self)
 
 
-async def _seed_scope(storage: FsStorage) -> _Scope:
+async def _seed_scope(storage: FsStorage, *, include_marker: bool = True) -> _Scope:
     workspace_id = f"official-site-c7-{uuid4()}"
     brand_id = f"brand-{uuid4()}"
     recon_run_id = uuid4()
@@ -226,20 +227,21 @@ async def _seed_scope(storage: FsStorage) -> _Scope:
         await record_run_lineage(
             conn, run_id=RunId(claim_run_id), workspace_id=workspace_id, kind="stage0"
         )
-        marker = Claim(
-            entity_id=client_entity_id,
-            entity_type=EntityType.ACCOUNT,
-            field_key="client.kb_version",
-            value_json={"version": 1, "run_id": str(claim_run_id)},
-            source_tier=1,
-            extraction_method=ExtractionMethod.HUMAN,
-            confidence=1.0,
-            run_id=RunId(claim_run_id),
-            research_mode=ResearchMode.ACCOUNT_PROFILING,
-            reuse_scope=ReuseScope.TENANT_PRIVATE,
-            workspace_id=workspace_id,
-        )
-        await insert_claim(conn, marker)
+        if include_marker:
+            marker = Claim(
+                entity_id=client_entity_id,
+                entity_type=EntityType.ACCOUNT,
+                field_key="client.kb_version",
+                value_json={"version": 1, "run_id": str(claim_run_id)},
+                source_tier=1,
+                extraction_method=ExtractionMethod.HUMAN,
+                confidence=1.0,
+                run_id=RunId(claim_run_id),
+                research_mode=ResearchMode.ACCOUNT_PROFILING,
+                reuse_scope=ReuseScope.TENANT_PRIVATE,
+                workspace_id=workspace_id,
+            )
+            await insert_claim(conn, marker)
         await conn.execute(
             text(
                 """
@@ -552,6 +554,69 @@ def test_concurrent_grounded_materialization_and_replay_are_exactly_once(tmp_pat
                 )
         finally:
             await _cleanup(scope)
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())
+
+
+def test_authoritative_committer_publishes_marker_and_fast_lane_after_claims(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        scope = await _seed_scope(FsStorage(tmp_path / "cutover-artifacts"), include_marker=False)
+        async with transaction() as conn:
+            await insert_claim(
+                conn,
+                Claim(
+                    entity_id=scope.client_entity_id,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key="client.value_prop",
+                    value_json="Grounded value",
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.HUMAN,
+                    confidence=0.9,
+                    run_id=RunId(scope.claim_run_id),
+                    research_mode=ResearchMode.ACCOUNT_PROFILING,
+                    reuse_scope=ReuseScope.TENANT_PRIVATE,
+                    workspace_id=scope.workspace_id,
+                ),
+            )
+        committer = _AuthoritativeClientKbCommitter(transaction)
+        version = await committer.commit(
+            _request(scope),
+            filled_fields={"client.value_prop"},
+            attempted_fields={"client.value_prop", "client.product"},
+        )
+        assert version == 1
+        async with transaction() as conn:
+            marker = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT value_json FROM claim WHERE workspace_id = :workspace_id "
+                            "AND run_id = :run_id AND field_key = 'client.kb_version'"
+                        ),
+                        {"workspace_id": scope.workspace_id, "run_id": scope.claim_run_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            recon = (
+                await conn.execute(
+                    text(
+                        "SELECT fast_status, fast_client_kb_version FROM recon_run WHERE id = :id"
+                    ),
+                    {"id": scope.recon_run_id},
+                )
+            ).one()
+        assert marker["value_json"]["filled_fields"] == 1
+        assert marker["value_json"]["total_fields"] == 11
+        assert recon.fast_status == "completed"
+        assert recon.fast_client_kb_version == 1
 
     async def wrapped() -> None:
         async with db_lifespan():

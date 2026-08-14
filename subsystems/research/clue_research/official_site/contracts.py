@@ -220,6 +220,8 @@ class PageFetchRequest(FrozenContractModel):
     operation_key: str = Field(min_length=1, max_length=200)
     requested_url: str = Field(min_length=1)
     allowed_hosts: tuple[str, ...] = Field(min_length=1)
+    allowed_registrable_domain: str | None = Field(default=None, min_length=1)
+    allow_subdomains: bool = False
     timeout_seconds: float = Field(gt=0)
     max_response_bytes: int = Field(gt=0)
     accepted_mime_types: tuple[str, ...] = Field(min_length=1)

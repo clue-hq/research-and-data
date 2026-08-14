@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 from html.parser import HTMLParser
-from typing import Any, cast
+from typing import Any, Protocol, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import JsonValue
@@ -126,6 +126,74 @@ _CATEGORY_PAGES: dict[ExtractionCategory, frozenset[PageCategory]] = {
         }
     ),
 }
+
+
+class OfficialSiteClientKbCommitter(Protocol):
+    """Stage-0 seam that owns Client-KB version publication outside the crawler package."""
+
+    async def product_id(self, request: OfficialSiteMaterializationRequest) -> str | None: ...
+
+    async def commit(
+        self,
+        request: OfficialSiteMaterializationRequest,
+        *,
+        filled_fields: set[str],
+        attempted_fields: set[str],
+    ) -> int: ...
+
+
+class _ExistingMarkerClientKbCommitter:
+    """Backward-compatible C7 behavior for direct materializer users and retained replays."""
+
+    def __init__(self, conn_factory: ConnFactory) -> None:
+        self._conn_factory = conn_factory
+
+    async def product_id(self, request: OfficialSiteMaterializationRequest) -> str | None:
+        _, product_id = await self._target(request)
+        return product_id
+
+    async def commit(
+        self,
+        request: OfficialSiteMaterializationRequest,
+        *,
+        filled_fields: set[str],
+        attempted_fields: set[str],
+    ) -> int:
+        del filled_fields, attempted_fields
+        version, _ = await self._target(request)
+        return version
+
+    async def _target(self, request: OfficialSiteMaterializationRequest) -> tuple[int, str | None]:
+        async with self._conn_factory() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT (value_json->>'version')::integer AS version, product_id
+                            FROM claim
+                            WHERE workspace_id = :workspace_id
+                              AND entity_id = :client_entity_id
+                              AND run_id = :claim_run_id
+                              AND field_key = 'client.kb_version'
+                              AND superseded_by IS NULL
+                            ORDER BY observed_at DESC LIMIT 1
+                            """
+                        ),
+                        {
+                            "workspace_id": request.workspace_id,
+                            "client_entity_id": request.client_entity_id,
+                            "claim_run_id": request.claim_run_id,
+                        },
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None or not isinstance(row["version"], int) or row["version"] < 1:
+            raise ValueError("materialization requires a committed Client-KB marker")
+        return row["version"], row["product_id"]
+
 
 _FIELD_GUIDANCE: dict[str, tuple[str, str]] = {
     CLIENT_VALUE_PROP: (
@@ -395,6 +463,7 @@ class GroundedOfficialSiteMaterializer:
         storage: StorageBackend,
         conn_factory: ConnFactory = transaction,
         extraction_concurrency: int = DEFAULT_EXTRACTION_CONCURRENCY,
+        client_kb_committer: OfficialSiteClientKbCommitter | None = None,
     ) -> None:
         if extraction_concurrency < 1:
             raise ValueError("extraction_concurrency must be positive")
@@ -403,6 +472,11 @@ class GroundedOfficialSiteMaterializer:
         self._conn_factory = conn_factory
         self._reader = OfficialSiteCorpusReader(storage=storage, conn_factory=conn_factory)
         self._concurrency = extraction_concurrency
+        self._client_kb_committer = (
+            client_kb_committer
+            if client_kb_committer is not None
+            else _ExistingMarkerClientKbCommitter(conn_factory)
+        )
         # The cap is part of CORPUS_VERSION's frozen semantics. Making it runtime-configurable
         # would let the same checkpoint/model/prompt identity observe a different corpus slice.
         self._max_chars = DEFAULT_MAX_CORPUS_CHARS_PER_OPERATION
@@ -437,7 +511,11 @@ class GroundedOfficialSiteMaterializer:
             elif any(outcome.state in {"failed", "spend_unknown"} for outcome in field_outcomes):
                 failed.add(field_key)
         empty = all_fields - filled - failed
-        version, _ = await self._client_kb_target(request)
+        version = await self._client_kb_committer.commit(
+            request,
+            filled_fields=filled,
+            attempted_fields=all_fields,
+        )
         log.info(
             "stage0_official_site_extraction.completed",
             workspace_id=request.workspace_id,
@@ -502,40 +580,7 @@ class GroundedOfficialSiteMaterializer:
             )
             if registered != _ALL_FIELDS:
                 raise ValueError("materialization requires the committed Client-KB field registry")
-        await self._client_kb_target(request)
-
-    async def _client_kb_target(
-        self, request: OfficialSiteMaterializationRequest
-    ) -> tuple[int, str | None]:
-        async with self._conn_factory() as conn:
-            row = (
-                (
-                    await conn.execute(
-                        text(
-                            """
-                            SELECT (value_json->>'version')::integer AS version, product_id
-                            FROM claim
-                            WHERE workspace_id = :workspace_id
-                              AND entity_id = :client_entity_id
-                              AND run_id = :claim_run_id
-                              AND field_key = 'client.kb_version'
-                            ORDER BY collected_at DESC, id DESC
-                            LIMIT 1
-                            """
-                        ),
-                        {
-                            "workspace_id": request.workspace_id,
-                            "client_entity_id": request.client_entity_id,
-                            "claim_run_id": request.claim_run_id,
-                        },
-                    )
-                )
-                .mappings()
-                .one_or_none()
-            )
-        if row is None or not isinstance(row["version"], int) or row["version"] < 1:
-            raise ValueError("claim run has no Client-KB version marker")
-        return row["version"], cast(str | None, row["product_id"])
+        await self._client_kb_committer.product_id(request)
 
     def _operations(
         self, request: OfficialSiteMaterializationRequest, corpus: Corpus
@@ -864,7 +909,7 @@ class GroundedOfficialSiteMaterializer:
             )
             return _outcome_from_row(row)
 
-        _, product_id = await self._client_kb_target(request)
+        product_id = await self._client_kb_committer.product_id(request)
         claim_ids: list[UUID] = []
         invalid = 0
         for draft in drafts:
@@ -1102,6 +1147,7 @@ __all__ = [
     "CorpusPage",
     "ExtractionCategory",
     "GroundedOfficialSiteMaterializer",
+    "OfficialSiteClientKbCommitter",
     "OfficialSiteCorpusReader",
     "OfficialSiteExtractionPending",
     "normalize_snapshot_content",

@@ -25,6 +25,7 @@ from clue_research.official_site import (
     OfficialSiteCrawlLifecycle,
     OfficialSiteCrawlLifecycleRequest,
     OfficialSiteMaterializationResult,
+    SitemapEntry,
     compute_snapshot_set_sha256,
 )
 
@@ -58,7 +59,7 @@ class _Repository:
         self.client_entity_id: UUID | None = None
         self.status = CrawlRunStatus.QUEUED
         self.created = True
-        self.discoveries: list[object] = []
+        self.discoveries: list[Any] = []
         self.snapshots: list[UUID] = [uuid4()]
         self.checkpoints: dict[CrawlPhase, CorpusCheckpointRef] = {}
         self.transitions: list[tuple[CrawlRunStatus, CrawlRunStatus]] = []
@@ -212,10 +213,50 @@ class _ImmediateCoordinator:
         return _phase_result(self.repository, request.phase)
 
 
+class _DrainAfterDeadlineCoordinator(_ImmediateCoordinator):
+    def __init__(self, repository: _Repository) -> None:
+        super().__init__(repository)
+        self.fast_drain_started = asyncio.Event()
+        self.fast_drain_release = asyncio.Event()
+        self.fast_finished = asyncio.Event()
+
+    async def run_phase(self, request: Any, *, stop_event: asyncio.Event | None = None):
+        self.calls.append(request.phase)
+        if request.phase is CrawlPhase.BACKGROUND:
+            return _phase_result(self.repository, CrawlPhase.BACKGROUND)
+        assert stop_event is not None
+        await stop_event.wait()
+        self.fast_drain_started.set()
+        await self.fast_drain_release.wait()
+        self.fast_finished.set()
+        return _phase_result(self.repository, CrawlPhase.FAST, stopped=True)
+
+
 class _FaultedCoordinator(_ImmediateCoordinator):
     async def run_phase(self, request: Any, *, stop_event: asyncio.Event | None = None):
         result = await super().run_phase(request, stop_event=stop_event)
         return replace(result, pages_completed=0, worker_errors=1)
+
+
+class _ProviderOrderedSeedDiscoverer:
+    async def discover(
+        self,
+        *,
+        root_url: str,
+        url_policy: Any,
+        discovery_policy: Any,
+    ) -> tuple[Any, ...]:
+        del root_url, url_policy
+        urls = (
+            "https://example.com/legal",
+            *(f"https://example.com/product/{index}" for index in range(6)),
+            "https://example.com/pricing",
+            "https://example.com/about-us",
+        )
+        return tuple(
+            discovery_policy.sitemap(SitemapEntry(url, "https://example.com/sitemap.xml"))
+            for url in urls
+        )
 
 
 def _request(repository: _Repository) -> OfficialSiteCrawlLifecycleRequest:
@@ -265,6 +306,31 @@ def test_deadline_freezes_fast_without_cancelling_inflight_and_background_reuses
     run_async(scenario())
 
 
+def test_initial_root_and_sitemap_batch_uses_the_shared_category_quota_prefix() -> None:
+    async def scenario() -> None:
+        repository = _Repository(_config(), deadline_seconds=1)
+        lifecycle = OfficialSiteCrawlLifecycle(
+            repository=repository,
+            coordinator_factory=lambda **_: _ImmediateCoordinator(repository),
+            seed_discoverer=_ProviderOrderedSeedDiscoverer(),
+        )
+
+        await lifecycle.run(_request(repository))
+
+        fetch_keys = tuple(observation.fetch_key for observation in repository.discoveries)
+        assert fetch_keys[:6] == (
+            "https://example.com/",
+            "https://example.com/product/0",
+            "https://example.com/product/1",
+            "https://example.com/product/2",
+            "https://example.com/pricing",
+            "https://example.com/about-us",
+        )
+        assert len(fetch_keys) == 10
+
+    run_async(scenario())
+
+
 class _BlockingMaterializer:
     def __init__(self) -> None:
         self.started = asyncio.Event()
@@ -287,6 +353,32 @@ class _BlockingMaterializer:
             empty_fields=("client.product",),
             failed_fields=(),
         )
+
+
+def test_fast_materialization_overlaps_safe_inflight_drain_after_deadline() -> None:
+    async def scenario() -> None:
+        repository = _Repository(_config(CrawlMode.AUTHORITATIVE), deadline_seconds=0.01)
+        coordinator = _DrainAfterDeadlineCoordinator(repository)
+        materializer = _BlockingMaterializer()
+        materializer.release.set()
+        lifecycle = OfficialSiteCrawlLifecycle(
+            repository=repository,
+            coordinator_factory=lambda **_: coordinator,
+            materializer=materializer,
+        )
+
+        task = asyncio.create_task(lifecycle.run(_request(repository)))
+        await asyncio.wait_for(coordinator.fast_drain_started.wait(), timeout=1)
+        await asyncio.wait_for(materializer.started.wait(), timeout=1)
+        assert not coordinator.fast_finished.is_set()
+        assert repository.status is CrawlRunStatus.FAST_CLOSING
+
+        coordinator.fast_drain_release.set()
+        result = await asyncio.wait_for(task, timeout=1)
+        assert result.status is CrawlRunStatus.COMPLETED
+        assert result.fast_materialization is not None
+
+    run_async(scenario())
 
 
 def test_fast_complete_is_not_published_before_authoritative_client_kb_commit() -> None:

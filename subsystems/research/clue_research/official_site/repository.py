@@ -53,6 +53,7 @@ from clue_research.official_site.contracts import (
     RetryClass,
     compute_snapshot_set_sha256,
 )
+from clue_research.official_site.discovery import FAST_CATEGORY_ORDER, FAST_CATEGORY_QUOTAS
 from clue_research.official_site.models import (
     CrawlReplayConflictError,
     CrawlRunNotFoundError,
@@ -72,20 +73,6 @@ _ACTIVE_LEASE_STATES = (
     CrawlPageState.PERSISTENCE_PENDING.value,
 )
 
-# C5's scheduler policy is fixed by ``stage0-official-site-c0-v1``. The category targets total
-# eleven pages when every category exists; the run-pinned fast ceiling remains the hard upper
-# bound. A category with no queued page never blocks another category.
-_FAST_CATEGORY_QUOTAS: dict[str, int] = {
-    "homepage": 1,
-    "product": 3,
-    "pricing": 1,
-    "customer_proof": 2,
-    "company": 1,
-    "partner": 1,
-    "trust": 1,
-    "blog": 1,
-}
-_CATEGORY_ORDER = tuple(_FAST_CATEGORY_QUOTAS)
 _MAX_NO_SPEND_ATTEMPTS = 3
 
 
@@ -1931,7 +1918,7 @@ class PostgresCrawlRepository:
     @staticmethod
     def _category(row: Mapping[str, Any]) -> str | None:
         reasons = frozenset(str(reason) for reason in (row["priority_reason_json"] or ()))
-        for category in _CATEGORY_ORDER:
+        for category in FAST_CATEGORY_ORDER:
             if f"category:{category}" in reasons:
                 return category
         return None
@@ -1960,7 +1947,7 @@ class PostgresCrawlRepository:
             )
         ).mappings()
         scheduled = [cast(Mapping[str, Any], row) for row in scheduled_rows]
-        category_counts = dict.fromkeys(_CATEGORY_ORDER, 0)
+        category_counts = dict.fromkeys(FAST_CATEGORY_ORDER, 0)
         for row in scheduled:
             category = self._category(row)
             if category is not None:
@@ -1974,7 +1961,7 @@ class PostgresCrawlRepository:
             for candidate in candidates
             if candidate["attempt_count"] == 0
             and (category := self._category(candidate)) is not None
-            and category_counts[category] < _FAST_CATEGORY_QUOTAS[category]
+            and category_counts[category] < FAST_CATEGORY_QUOTAS[category]
         }
         if not under_quota:
             return candidates

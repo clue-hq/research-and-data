@@ -43,9 +43,17 @@ def allowed_hosts(request: PageFetchRequest) -> frozenset[str]:
 
 def url_is_allowed(url: str, request: PageFetchRequest) -> bool:
     parts = urlsplit(url)
-    return parts.scheme.lower() in {"http", "https"} and normalized_host(url) in allowed_hosts(
-        request
+    host = normalized_host(url)
+    if parts.scheme.lower() not in {"http", "https"} or host is None:
+        return False
+    if host in allowed_hosts(request):
+        return True
+    domain = (
+        normalized_host(f"https://{request.allowed_registrable_domain}")
+        if request.allowed_registrable_domain is not None
+        else None
     )
+    return bool(request.allow_subdomains and domain is not None and host.endswith(f".{domain}"))
 
 
 def media_type(value: str | None) -> str | None:

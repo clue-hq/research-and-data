@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from html.parser import HTMLParser
+from types import MappingProxyType
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -37,6 +39,21 @@ class PageCategory(StrEnum):
     TRUST = "trust"
     BLOG = "blog"
     REMAINING = "remaining"
+
+
+FAST_CATEGORY_QUOTAS: Mapping[str, int] = MappingProxyType(
+    {
+        PageCategory.HOMEPAGE.value: 1,
+        PageCategory.PRODUCT.value: 3,
+        PageCategory.PRICING.value: 1,
+        PageCategory.CUSTOMER_PROOF.value: 2,
+        PageCategory.COMPANY.value: 1,
+        PageCategory.PARTNER.value: 1,
+        PageCategory.TRUST.value: 1,
+        PageCategory.BLOG.value: 1,
+    }
+)
+FAST_CATEGORY_ORDER = tuple(FAST_CATEGORY_QUOTAS)
 
 
 _CATEGORY_PATTERNS: tuple[tuple[PageCategory, tuple[str, ...]], ...] = (
@@ -82,9 +99,16 @@ def classify_page(url: str, *, link_text: str | None = None) -> PageCategory:
     parts = urlsplit(url)
     if (parts.path or "/") == "/" and not parts.query and not parts.fragment:
         return PageCategory.HOMEPAGE
-    haystack = f"{parts.path} {link_text or ''}".casefold().replace("_", "-")
+    path = parts.path.casefold().replace("_", "-")
     for category, patterns in _CATEGORY_PATTERNS:
-        if any(pattern in haystack for pattern in patterns):
+        if any(pattern in path for pattern in patterns):
+            return category
+    # Provider link extraction may return an entire article-card description as anchor text. Use
+    # that bounded text only when the URL path itself is opaque; otherwise a blog sentence that
+    # happens to mention "plans" can incorrectly outrank its explicit /blog/ path as pricing.
+    text = (link_text or "").casefold().replace("_", "-")
+    for category, patterns in _CATEGORY_PATTERNS:
+        if any(pattern in text for pattern in patterns):
             return category
     return PageCategory.REMAINING
 
@@ -93,6 +117,36 @@ def _eligibility(category: PageCategory) -> CrawlEligibility:
     if category is PageCategory.REMAINING:
         return CrawlEligibility.BACKGROUND
     return CrawlEligibility.BOTH
+
+
+def _admission_order(observation: UrlObservation) -> tuple[int, int, str, str, str, str]:
+    """Make capacity admission independent of provider/DOM link ordering.
+
+    The repository intentionally preserves the order of a discovery batch because every parser
+    occurrence is provenance.  It also applies the crawl-wide page ceiling while consuming that
+    batch.  Sort here, at the deterministic policy seam, so a provider returning footer links
+    before product/pricing/company links cannot spend the ceiling on lower-priority pages.
+
+    This does not deduplicate observations or change URL identity.  The remaining fields provide
+    a stable order within a priority band while retaining every occurrence downstream.
+    """
+
+    return (
+        0 if observation.policy_outcome is PolicyOutcome.ADMITTED else 1,
+        observation.priority,
+        observation.fetch_key or observation.discovered_url,
+        observation.discovered_via.value,
+        observation.link_text or "",
+        observation.policy_reason or "",
+    )
+
+
+def _observation_category(observation: UrlObservation) -> str | None:
+    reasons = frozenset(observation.priority_reason)
+    return next(
+        (category for category in FAST_CATEGORY_ORDER if f"category:{category}" in reasons),
+        None,
+    )
 
 
 def _refused(
@@ -239,18 +293,67 @@ class OfficialSiteDiscoveryPolicy:
         source_graph_depth: int | None,
     ) -> tuple[tuple[UrlObservation, ...], int]:
         bounded = bound_outgoing_links(links, safety=self.safety)
-        return (
-            tuple(
-                self.link(
-                    link,
-                    source_page_id=source_page_id,
-                    source_url=source_url,
-                    source_graph_depth=source_graph_depth,
-                )
-                for link in bounded.links
-            ),
-            bounded.dropped_count,
+        planned = tuple(
+            self.link(
+                link,
+                source_page_id=source_page_id,
+                source_url=source_url,
+                source_graph_depth=source_graph_depth,
+            )
+            for link in bounded.links
         )
+        return self.order_for_admission(planned), bounded.dropped_count
+
+    def order_for_admission(
+        self, observations: tuple[UrlObservation, ...]
+    ) -> tuple[UrlObservation, ...]:
+        """Put unique category-quota candidates before the capacity-sensitive tail.
+
+        Fast claiming and initial frontier admission intentionally share one quota vocabulary.
+        The prefix reserves no phantom pages: it includes only categories actually observed.  All
+        duplicates, excess same-category URLs, remaining pages, and refusals stay in the returned
+        batch, so neither provenance nor background coverage is discarded.
+        """
+
+        admitted = sorted(
+            (
+                observation
+                for observation in observations
+                if observation.policy_outcome is PolicyOutcome.ADMITTED
+            ),
+            key=_admission_order,
+        )
+        refused = sorted(
+            (
+                observation
+                for observation in observations
+                if observation.policy_outcome is PolicyOutcome.REFUSED
+            ),
+            key=_admission_order,
+        )
+        prefix: list[UrlObservation] = []
+        selected_indices: set[int] = set()
+        selected_fetch_keys: set[str] = set()
+        for category in FAST_CATEGORY_ORDER:
+            selected_for_category = 0
+            for index, observation in enumerate(admitted):
+                if selected_for_category >= FAST_CATEGORY_QUOTAS[category]:
+                    break
+                if index in selected_indices or _observation_category(observation) != category:
+                    continue
+                assert observation.fetch_key is not None
+                if observation.fetch_key in selected_fetch_keys:
+                    continue
+                prefix.append(observation)
+                selected_indices.add(index)
+                selected_fetch_keys.add(observation.fetch_key)
+                selected_for_category += 1
+        tail = [
+            observation
+            for index, observation in enumerate(admitted)
+            if index not in selected_indices
+        ]
+        return (*prefix, *tail, *refused)
 
     def _alias(
         self,

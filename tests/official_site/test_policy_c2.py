@@ -376,6 +376,81 @@ def test_content_mime_decompressed_size_and_link_ceilings_fail_closed() -> None:
     assert planned[0].link_text == "abcd"
 
 
+def test_link_planning_is_deterministic_and_category_first_across_provider_orders() -> None:
+    discovery = OfficialSiteDiscoveryPolicy(url_policy=_url_policy())
+    links = (
+        LinkObservation(discovered_url="/z-legal", link_text="Legal"),
+        LinkObservation(discovered_url="/about-us", link_text="About us"),
+        LinkObservation(discovered_url="/pricing", link_text="Pricing"),
+        LinkObservation(discovered_url="/product/agents", link_text="Agents"),
+        LinkObservation(discovered_url="/customers/acme", link_text="Customer story"),
+        LinkObservation(discovered_url="/a-careers", link_text="Careers"),
+    )
+    source_page_id = uuid4()
+
+    forward, forward_dropped = discovery.plan_links(
+        links,
+        source_page_id=source_page_id,
+        source_url="https://example.com/",
+        source_graph_depth=0,
+    )
+    reverse, reverse_dropped = discovery.plan_links(
+        tuple(reversed(links)),
+        source_page_id=source_page_id,
+        source_url="https://example.com/",
+        source_graph_depth=0,
+    )
+
+    expected_prefix = (
+        "https://example.com/product/agents",
+        "https://example.com/pricing",
+        "https://example.com/customers/acme",
+        "https://example.com/about-us",
+    )
+    expected_tail = (
+        "https://example.com/a-careers",
+        "https://example.com/z-legal",
+    )
+    assert tuple(item.fetch_key for item in forward[:4]) == expected_prefix
+    assert tuple(item.fetch_key for item in forward[4:]) == expected_tail
+    assert tuple(item.fetch_key for item in reverse) == tuple(item.fetch_key for item in forward)
+    assert forward_dropped == reverse_dropped == 0
+
+
+def test_admission_prefix_uses_unique_category_quotas_without_losing_provenance() -> None:
+    discovery = OfficialSiteDiscoveryPolicy(url_policy=_url_policy())
+    source_page_id = uuid4()
+    product_links = tuple(
+        LinkObservation(discovered_url=f"/product/{index}", link_text=f"Product {index}")
+        for index in range(8)
+    )
+    links = (
+        *product_links,
+        LinkObservation(discovered_url="/pricing", link_text="Pricing"),
+        LinkObservation(discovered_url="/about", link_text="About"),
+        LinkObservation(discovered_url="/pricing", link_text="Pricing duplicate"),
+        LinkObservation(discovered_url="/legal", link_text="Legal"),
+    )
+
+    planned, dropped = discovery.plan_links(
+        links,
+        source_page_id=source_page_id,
+        source_url="https://example.com/",
+        source_graph_depth=0,
+    )
+
+    assert tuple(item.fetch_key for item in planned[:5]) == (
+        "https://example.com/product/0",
+        "https://example.com/product/1",
+        "https://example.com/product/2",
+        "https://example.com/pricing",
+        "https://example.com/about",
+    )
+    assert len(planned) == len(links)
+    assert sum(item.fetch_key == "https://example.com/pricing" for item in planned) == 2
+    assert dropped == 0
+
+
 def test_local_transport_rebinding_seam_passes_only_prevalidated_addresses() -> None:
     async def run() -> None:
         received: list[tuple[str, tuple[str, ...]]] = []
@@ -608,6 +683,15 @@ def test_discovery_categories_depth_aliases_and_active_content_are_deterministic
     assert classify_page("https://example.com/pricing") == "pricing"
     assert classify_page("https://example.com/case-studies/acme") == "customer_proof"
     assert classify_page("https://example.com/team") == "company"
+    assert classify_page("https://example.com/partners") == "partner"
+    assert (
+        classify_page(
+            "https://example.com/blog/prior-authorization-approval-rate",
+            link_text="How health plans can improve approval rates",
+        )
+        == "blog"
+    )
+    assert classify_page("https://example.com/p/123", link_text="Pricing plans") == "pricing"
     extracted = extract_html_links(
         b"""
         <html><head><link rel="canonical" href="https://example.com/home"></head><body>
@@ -664,6 +748,32 @@ def test_discovery_categories_depth_aliases_and_active_content_are_deterministic
     assert "no_identity_merge" in (same_canonical.policy_reason or "")
     assert external_canonical.fetch_key is None
     assert external_canonical.policy_reason == "canonical_external_domain_refused"
+
+
+@pytest.mark.parametrize(
+    ("path", "category", "priority"),
+    (
+        ("/product", "product", 10),
+        ("/pricing", "pricing", 20),
+        ("/customers/acme", "customer_proof", 30),
+        ("/about", "company", 40),
+        ("/partners", "partner", 50),
+        ("/security", "trust", 60),
+        ("/blog", "blog", 70),
+        ("/legal", "remaining", 100),
+    ),
+)
+def test_every_discovery_category_has_a_schedulable_priority(
+    path: str, category: str, priority: int
+) -> None:
+    observation = OfficialSiteDiscoveryPolicy(url_policy=_url_policy()).link(
+        LinkObservation(discovered_url=path),
+        source_page_id=uuid4(),
+        source_url="https://example.com/",
+        source_graph_depth=0,
+    )
+    assert f"category:{category}" in observation.priority_reason
+    assert observation.priority == priority
 
 
 def test_sitemap_only_constructor_cannot_be_given_false_link_depth() -> None:

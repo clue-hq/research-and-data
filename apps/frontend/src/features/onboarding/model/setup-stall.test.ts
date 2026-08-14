@@ -52,6 +52,31 @@ test("a lane transition with no new field event still counts as motion", () => {
   assert.equal(stallAdvance(before, after, 12), 0);
 });
 
+test("committed official-site crawl movement resets the stall budget", () => {
+  const before: SetupStallSnapshot = {
+    status: "running",
+    official_site: {
+      run_status: "fast_active",
+      phase: "fast",
+      fetched: 2,
+      snapshots: 2,
+      last_event_seq: 8,
+      last_event_kind: "stage0.crawl.page_fetched",
+    },
+  };
+  const after: SetupStallSnapshot = {
+    ...before,
+    official_site: {
+      ...before.official_site,
+      fetched: 3,
+      snapshots: 3,
+      last_event_seq: 10,
+    },
+  };
+  assert.equal(stallAdvance(before, after, 39), 0);
+  assert.equal(stallAdvance(after, { ...after }, 7), 8);
+});
+
 test("an overall status change resets the count", () => {
   assert.equal(stallAdvance(STARTING, { ...STARTING, status: "running" }, 20), 0);
 });

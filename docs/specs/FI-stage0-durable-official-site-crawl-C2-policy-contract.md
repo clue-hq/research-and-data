@@ -57,7 +57,15 @@ node.
 The deterministic scheduler categories remain the parent plan's ordered categories: homepage,
 product/solution, pricing, customer proof, company, partner/integration, trust/compliance, selected
 blog/resources, and remaining pages. The classifier uses URL path and bounded link text only; no
-model runs in scheduling.
+model runs in scheduling. An explicit path category wins before bounded link text is consulted;
+link text is a fallback for opaque paths, not authority to relabel an explicit `/blog/` URL because
+its article-card description happens to mention “plans.” Each bounded discovery batch is ordered
+by category priority before the repository applies the crawl-wide page ceiling. The prefix uses
+the same unique-URL category quotas as fast claiming, followed by every excess same-category URL,
+remaining page, duplicate, and refusal. Equal-priority observations use a stable URL and
+provenance ordering. This preserves every occurrence and background candidate while preventing
+provider/DOM link order—or one large category—from consuming capacity before other observed
+priority categories are admitted.
 
 Depth rules are structural:
 

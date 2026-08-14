@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, ClassVar
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -18,9 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.stage0_setup import create_stage0_setup_router, setup_workspace_resolver
+from clue_api.stage0_setup_fleet import Stage0ReconWorkHandler, iteration_operation_id
 from clue_auth import RequestPrincipal, permissions_for_role, provision_self_serve_workspace
 from clue_auth.errors import PermissionDenied
+from clue_config import Settings
 from clue_core import OnboardingInputId, ProjectRunId, ReconRunId
+from clue_fleet import LeaseGeneration, WorkContext, WorkId
 from clue_research.durable import (
     RECON_FIELD_PROGRESS_KIND,
     RECON_TRANSITION_KIND,
@@ -211,6 +214,135 @@ class _BlockingReconEnqueuer:
 class _ForbiddenWebInvoker:
     async def invoke(self, *_args: object, **_kwargs: object) -> ToolResult:
         raise AssertionError("production C6 setup must never invoke recon on the API event loop")
+
+
+class _CaptureEnqueuer:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def enqueue(self, **kwargs: object) -> bool:
+        self.calls.append(kwargs)
+        return True
+
+
+def test_authoritative_fleet_bootstrap_never_invokes_legacy_resolver() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+
+            @asynccontextmanager
+            async def conn_factory() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            provisioned = await provision_self_serve_workspace(
+                conn,
+                provider_key="clerk",
+                provider_subject=f"c10-cutover-{uuid4()}",
+                **PROFILE,
+            )
+            workspace_id = provisioned.workspace.workspace_id
+            recon_queue = _CaptureEnqueuer()
+            app = FastAPI()
+            app.include_router(
+                create_stage0_setup_router(
+                    tool_invoker=_ForbiddenWebInvoker(),  # type: ignore[arg-type]
+                    conn_factory=conn_factory,
+                    storage=_MemoryStorage(),  # type: ignore[arg-type]
+                    recon_enqueuer=recon_queue,  # type: ignore[arg-type]
+                )
+            )
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                started = await client.post(
+                    "/stage0/setup", headers={"X-Workspace-Id": workspace_id}
+                )
+            assert started.status_code == 202
+            queued = recon_queue.calls[-1]
+            digest = str(queued["website_digest"])
+            onboarding_input_id = str(queued["onboarding_input_id"])
+            attempt = int(queued["attempt"])
+            work_id = UUID(str(iteration_operation_id(workspace_id, digest, attempt, 0)))
+            crawl_queue = _CaptureEnqueuer()
+            handler = Stage0ReconWorkHandler(
+                tool_invoker=_ForbiddenWebInvoker(),  # type: ignore[arg-type]
+                conn_factory=conn_factory,
+                crawl_enqueuer=crawl_queue,  # type: ignore[arg-type]
+                settings=Settings(  # type: ignore[call-arg]
+                    _env_file=None,
+                    stage0_official_site_crawl_mode="authoritative",
+                    stage0_page_fetcher="scrapling",
+                    stage0_official_site_crawl_workspace_allowlist=(workspace_id,),
+                ),
+            )
+            context = WorkContext(
+                task_id=uuid4(),
+                work_id=WorkId(work_id),
+                worker_id="c10-test",
+                lease_generation=LeaseGeneration(1),
+                payload={
+                    "workspace_id": workspace_id,
+                    "onboarding_input_id": onboarding_input_id,
+                    "website_digest": digest,
+                    "attempt": attempt,
+                },
+                stop_requested=asyncio.Event(),
+                lease_lost=asyncio.Event(),
+            )
+
+            first = await handler.handle(context)
+            replay = await handler.handle(context)
+            assert first.outcome == replay.outcome == "authoritative_crawl_enqueued"
+            assert first.references["fast_status"] == "running"
+            assert first.references["background_status"] == "queued"
+            assert [str(call["recon_run_id"]) for call in crawl_queue.calls] == [
+                str(work_id),
+                str(work_id),
+            ]
+
+            recon = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT client_entity_id, fast_run_id, background_run_id, "
+                            "fast_status, background_status, fast_client_kb_version "
+                            "FROM recon_run WHERE id = :id"
+                        ),
+                        {"id": work_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert recon["client_entity_id"] is not None
+            assert recon["fast_status"] == "running"
+            assert recon["background_status"] == "queued"
+            assert recon["fast_client_kb_version"] is None
+            lineage = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM run_lineage WHERE workspace_id = :workspace_id "
+                        "AND run_id IN (:fast_run_id, :background_run_id) AND kind = 'stage0'"
+                    ),
+                    {
+                        "workspace_id": workspace_id,
+                        "fast_run_id": recon["fast_run_id"],
+                        "background_run_id": recon["background_run_id"],
+                    },
+                )
+            ).scalar_one()
+            markers = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM claim WHERE workspace_id = :workspace_id "
+                        "AND field_key = 'client.kb_version'"
+                    ),
+                    {"workspace_id": workspace_id},
+                )
+            ).scalar_one()
+            assert lineage == 2
+            assert markers == 0
+
+    run_async(scenario())
 
 
 def test_setup_route_captures_drives_lanes_and_serves_lane_truth() -> None:

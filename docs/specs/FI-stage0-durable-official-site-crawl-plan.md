@@ -1,6 +1,6 @@
 # Stage-0 durable official-site crawling — implementation plan
 
-**Status:** C0–C5 implemented and verified; C6–C10 not yet accepted
+**Status:** C0–C10 implemented and accepted; rollout remains default-off and allowlisted
 
 **Branch:** `platform/onboarding-integration`
 
@@ -1038,7 +1038,7 @@ migration, spike inventory, ownership map, and rollout contract are recorded in 
 [C0 contract freeze](./FI-stage0-durable-official-site-crawl-C0-contract.md). Executable authority
 lives in `clue_research.official_site` and
 `tests/fixtures/official_site/c0_contract_fixture.json`. C0 made no migration, provider call, or
-production cutover. C1 through C8 have since landed; C9 is the next implementation slice.
+production cutover. C1 through C10 have since landed; live rollout evidence is retained under C10.
 
 **Deliverables**
 
@@ -1183,7 +1183,7 @@ expiry, and cold-replayed with zero new attempts. Exact contracts, settings, tes
 evidence are in the
 [C6 composition contract](./FI-stage0-durable-official-site-crawl-C6-composition-contract.md).
 Authoritative claim materialization landed in C7 and progress/recovery in C8; offline adversarial
-and live browser/cutover acceptance remain C9–C10. C6's rollout mode defaults off.
+and live browser/cutover acceptance subsequently passed in C9–C10. C6's rollout mode defaults off.
 
 **Deliverables**
 
@@ -1207,8 +1207,8 @@ category/field extraction through the OpenRouter gateway, retains raw responses 
 validates URL and exact span against one trusted snapshot, and writes ordinary append-only
 `official_site` claims. The C0–C7 suite, migration round trip, legacy Stage-0 regressions, and a
 retained Firecrawl + Luna live run/cold replay pass. The live run also exposed lease-recovery
-latency; C8 now surfaces that state, while the ≤40-second browser release gate remains explicitly
-open for C10. Exact contracts and
+latency; C8 now surfaces that state, and C10 subsequently passed the ≤40-second browser release
+gate. Exact contracts and
 evidence are in the
 [C7 materialization contract](./FI-stage0-durable-official-site-crawl-C7-materialization-contract.md).
 
@@ -1265,7 +1265,7 @@ frontend test/lint/build stack pass. The repository-wide monolithic DB baseline 
 independently reproduced agent-resource/test-fixture and shared-schema isolation defects; those
 failures are separated and explained in the
 [C9 offline acceptance record](./FI-stage0-durable-official-site-crawl-C9-offline-acceptance.md).
-C10 remains the live provider/browser/cutover gate.
+C10 subsequently passed the live provider/browser/cutover gate.
 
 **Deliverables**
 
@@ -1281,6 +1281,15 @@ C10 remains the live provider/browser/cutover gate.
 - A critical/adversarial review has no unresolved P1/P2 findings.
 
 ### C10 — Live provider and browser acceptance
+
+**Status: complete (2026-08-14).** Two isolated real-Clerk browser journeys passed authoritative
+provisioning, Firecrawl/Scrapling acquisition, grounded fast release at 30.800605/28.785543 seconds,
+same-frontier background completion, and zero-spend replay. Live failures corrected the legacy
+resolver cutover, fast extraction/drain overlap, frontend stall signature, apex-to-`www` policy,
+and provider-order/category-capacity behavior. Exact IDs, counts, timing, retained databases/roots,
+typed provider/model exceptions, and review evidence are recorded in the
+[C10 live acceptance record](./FI-stage0-durable-official-site-crawl-C10-live-acceptance.md).
+Rollout remains default-off and allowlisted.
 
 **Deliverables**
 
@@ -1473,5 +1482,5 @@ This capability is done only when all are true:
 - the implementation is locally committed in coherent checkpoints and not pushed without explicit
   founder instruction.
 
-Until then, the architecture is approved but the capability is **not merge-ready as a completed
-durable crawler**.
+All C0–C10 gates are now accepted. The capability is merge-ready with its default-off, explicitly
+allowlisted rollout posture intact; widening activation remains a separate operator decision.

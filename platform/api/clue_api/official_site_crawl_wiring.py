@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -16,6 +17,7 @@ from sqlalchemy import text
 
 from clue_api.official_site_progress import DbOfficialSiteProgressEmitter
 from clue_config import Secrets, Settings
+from clue_core import EntityId, ReconRunId, RunId
 from clue_core.gateway import LLMGateway
 from clue_db import ConnFactory, transaction
 from clue_fleet import DbWorkQueue, FleetTaskKind, WorkContext, WorkId, WorkQueue, WorkResult
@@ -34,6 +36,7 @@ from clue_research.official_site import (
     ROBOTS_POLICY_VERSION,
     ConcurrentCrawlCoordinator,
     CrawlMode,
+    CrawlPhase,
     CrawlPhasePendingError,
     CrawlProgressEvent,
     CrawlProgressEventKind,
@@ -42,11 +45,13 @@ from clue_research.official_site import (
     GroundedOfficialSiteMaterializer,
     NullCrawlProgressSink,
     OfficialSiteArtifactStore,
+    OfficialSiteClientKbCommitter,
     OfficialSiteCrawlContractConfig,
     OfficialSiteCrawlLifecycle,
     OfficialSiteCrawlLifecycleRequest,
     OfficialSiteDiscoveryPolicy,
     OfficialSiteExtractionPending,
+    OfficialSiteMaterializationRequest,
     PageFetcher,
     PageFetchRequest,
     PostgresCrawlRepository,
@@ -64,6 +69,11 @@ from clue_research.official_site import (
     progress_event_id,
 )
 from clue_research.official_site.url_policy import ConservativeUrlPolicy
+from clue_research.stage0 import (
+    ReconLaneStatus,
+    finalize_client_kb_version,
+    transition_recon_lane,
+)
 from clue_storage import StorageBackend
 
 log = get_logger("clue_api.official_site_crawl")
@@ -88,6 +98,86 @@ class _ReconScope:
     fast_status: str
     fast_client_kb_version: int | None
     company_website: str
+
+
+class _AuthoritativeClientKbCommitter(OfficialSiteClientKbCommitter):
+    """Publish recon lane truth only after checkpoint-grounded claims are committed."""
+
+    def __init__(self, conn_factory: ConnFactory) -> None:
+        self._conn_factory = conn_factory
+
+    async def product_id(self, request: OfficialSiteMaterializationRequest) -> str | None:
+        row = await self._scope(request)
+        return cast(str | None, row["product_id"])
+
+    async def commit(
+        self,
+        request: OfficialSiteMaterializationRequest,
+        *,
+        filled_fields: set[str],
+        attempted_fields: set[str],
+    ) -> int:
+        row = await self._scope(request)
+        async with self._conn_factory() as conn:
+            version = await finalize_client_kb_version(
+                conn,
+                client_entity_id=EntityId(request.client_entity_id),
+                workspace_id=request.workspace_id,
+                run_id=RunId(request.claim_run_id),
+                filled_fields=filled_fields,
+                attempted_fields=attempted_fields,
+                product_id=cast(str | None, row["product_id"]),
+            )
+            lane = "fast" if request.phase is CrawlPhase.FAST else "background"
+            if lane == "background":
+                await transition_recon_lane(
+                    conn,
+                    recon_run_id=ReconRunId(request.recon_run_id),
+                    workspace_id=request.workspace_id,
+                    lane=lane,
+                    status=ReconLaneStatus.RUNNING,
+                    client_entity_id=EntityId(request.client_entity_id),
+                )
+            await transition_recon_lane(
+                conn,
+                recon_run_id=ReconRunId(request.recon_run_id),
+                workspace_id=request.workspace_id,
+                lane=lane,
+                status=ReconLaneStatus.COMPLETED,
+                client_kb_version=version,
+                client_entity_id=EntityId(request.client_entity_id),
+            )
+        return version
+
+    async def _scope(self, request: OfficialSiteMaterializationRequest) -> dict[str, Any]:
+        async with self._conn_factory() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT product_id, fast_run_id, background_run_id, client_entity_id
+                            FROM recon_run
+                            WHERE id = :recon_run_id AND workspace_id = :workspace_id
+                            """
+                        ),
+                        {
+                            "recon_run_id": request.recon_run_id,
+                            "workspace_id": request.workspace_id,
+                        },
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None or row["client_entity_id"] != request.client_entity_id:
+            raise ValueError("official-site materialization is outside its recon client scope")
+        expected_run = (
+            row["fast_run_id"] if request.phase is CrawlPhase.FAST else row["background_run_id"]
+        )
+        if expected_run != request.claim_run_id:
+            raise ValueError("official-site materialization claim run disagrees with its phase")
+        return dict(row)
 
 
 def crawl_contract_config(
@@ -335,12 +425,24 @@ class OfficialSiteCrawlWorkHandler:
         if workspace_id not in self._settings.stage0_official_site_crawl_workspace_allowlist:
             return WorkResult(outcome="not_allowlisted", references={})
         row = await self._recon_scope(workspace_id, recon_run_id)
-        if row.fast_status != "completed" or row.fast_client_kb_version is None:
+        authoritative_ready = (
+            self._settings.stage0_official_site_crawl_mode == "authoritative"
+            and row.fast_status in {"running", "completed"}
+            and row.client_entity_id is not None
+        )
+        shadow_ready = (
+            self._settings.stage0_official_site_crawl_mode == "shadow"
+            and row.fast_status == "completed"
+            and row.fast_client_kb_version is not None
+            and row.client_entity_id is not None
+        )
+        if not (authoritative_ready or shadow_ready):
             return WorkResult(
                 outcome="awaiting_fast_client_kb",
                 references={"recon_run_id": str(recon_run_id)},
                 requeue=True,
             )
+        assert row.client_entity_id is not None
         root_url = row.company_website
         if "://" not in root_url:
             root_url = f"https://{root_url}"
@@ -596,6 +698,7 @@ def build_official_site_crawl_fleet(
                 storage=storage,
                 conn_factory=conn_factory,
                 extraction_concurrency=settings.stage0_extraction_concurrency,
+                client_kb_committer=_AuthoritativeClientKbCommitter(conn_factory),
             )
             if settings.stage0_official_site_crawl_mode == "authoritative" and gateway is not None
             else None

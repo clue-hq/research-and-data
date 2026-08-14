@@ -15,7 +15,8 @@ from uuid import UUID
 from pydantic import JsonValue
 from sqlalchemy import text
 
-from clue_core import OnboardingInputId, operation_id_from_key
+from clue_config import Settings, stage0_policy_from_settings
+from clue_core import EntityId, OnboardingInputId, ReconRunId, RunId, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_fleet import (
     DbWorkQueue,
@@ -26,6 +27,15 @@ from clue_fleet import (
     WorkResult,
 )
 from clue_obs import get_logger
+from clue_research.claimstore import record_run_lineage
+from clue_research.stage0 import (
+    ClientInput,
+    ReconLaneStatus,
+    prepare_client_kb_run,
+    recon_dedupe_hash,
+    start_recon,
+    transition_recon_lane,
+)
 from clue_toolbelt import PreconditionFailed, ToolContext, ToolInvoker
 
 log = get_logger("clue_api.stage0_setup_fleet")
@@ -101,7 +111,7 @@ class DbStage0ReconEnqueuer:
 
 
 class Stage0ReconWorkHandler:
-    """Drive one legacy recon lane per claim, then yield to the shared fleet."""
+    """Drive legacy lanes in shadow mode or bootstrap the authoritative crawl cutover."""
 
     kind = FleetTaskKind.STAGE0_RECON
 
@@ -111,10 +121,18 @@ class Stage0ReconWorkHandler:
         tool_invoker: ToolInvoker,
         conn_factory: ConnFactory = transaction,
         crawl_enqueuer: OfficialSiteCrawlEnqueuer | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self._tool_invoker = tool_invoker
         self._conn_factory = conn_factory
         self._crawl_enqueuer = crawl_enqueuer
+        self._settings = settings
+        if (
+            settings is not None
+            and settings.stage0_official_site_crawl_mode == "authoritative"
+            and crawl_enqueuer is None
+        ):
+            raise ValueError("authoritative Stage-0 recon requires the durable crawl enqueuer")
 
     async def handle(self, context: WorkContext) -> WorkResult:
         workspace_id, onboarding_input_id, digest, attempt = self._payload(context.payload)
@@ -126,6 +144,17 @@ class Stage0ReconWorkHandler:
             raise ValueError("Stage-0 task website digest no longer matches captured scope")
         if context.stop_requested.is_set() or context.lease_lost.is_set():
             return WorkResult(outcome="stopped", references={}, requeue=True)
+
+        if (
+            self._settings is not None
+            and self._settings.stage0_official_site_crawl_mode == "authoritative"
+        ):
+            return await self._bootstrap_authoritative(
+                workspace_id=workspace_id,
+                onboarding_input_id=onboarding_input_id,
+                expected_work_id=expected_work_id,
+                scope=scope,
+            )
 
         iteration = await self._next_iteration(workspace_id, expected_work_id)
         operation_id = iteration_operation_id(workspace_id, digest, attempt, iteration)
@@ -196,6 +225,90 @@ class Stage0ReconWorkHandler:
                 "background_status": background,
             },
             requeue=not terminal,
+        )
+
+    async def _bootstrap_authoritative(
+        self,
+        *,
+        workspace_id: str,
+        onboarding_input_id: OnboardingInputId,
+        expected_work_id: UUID,
+        scope: ProvisioningScope,
+    ) -> WorkResult:
+        """Create durable recon lineage without invoking the legacy URL resolver."""
+
+        assert self._settings is not None
+        assert self._crawl_enqueuer is not None
+        policy = stage0_policy_from_settings(self._settings)
+        async with self._conn_factory() as conn:
+            recon = await start_recon(
+                conn,
+                workspace_id=workspace_id,
+                brand_id=scope.brand_id,
+                dedupe_hash=recon_dedupe_hash(
+                    workspace_id=workspace_id,
+                    brand_id=scope.brand_id,
+                    product_id=None,
+                    identity=scope.company_website,
+                ),
+                onboarding_input_ids=(onboarding_input_id,),
+                fast_budget_cents=policy.fast_budget_cents,
+                background_budget_cents=policy.background_budget_cents,
+                dedupe_ttl_seconds=policy.recon_dedupe_ttl_seconds,
+                recon_run_id=ReconRunId(expected_work_id),
+            )
+            if recon.client_entity_id is None:
+                client_entity_id = await prepare_client_kb_run(
+                    conn,
+                    ClientInput(name=scope.workspace_name, website=scope.company_website),
+                    workspace_id=workspace_id,
+                    run_id=RunId(recon.fast_run_id),
+                )
+            else:
+                client_entity_id = EntityId(recon.client_entity_id)
+                await record_run_lineage(
+                    conn,
+                    run_id=RunId(recon.fast_run_id),
+                    workspace_id=workspace_id,
+                    kind="stage0",
+                )
+            await record_run_lineage(
+                conn,
+                run_id=RunId(recon.background_run_id),
+                workspace_id=workspace_id,
+                kind="stage0",
+            )
+            if recon.fast_status is ReconLaneStatus.QUEUED:
+                recon = await transition_recon_lane(
+                    conn,
+                    recon_run_id=recon.id,
+                    workspace_id=workspace_id,
+                    lane="fast",
+                    status=ReconLaneStatus.RUNNING,
+                    client_entity_id=client_entity_id,
+                )
+            elif recon.client_entity_id != client_entity_id:
+                raise ValueError("authoritative recon client identity changed during replay")
+
+        enqueued = await self._crawl_enqueuer.enqueue(
+            workspace_id=workspace_id,
+            recon_run_id=UUID(str(recon.id)),
+        )
+        log.info(
+            "stage0_setup.authoritative_crawl_enqueued",
+            workspace_id=workspace_id,
+            recon_run_id=str(recon.id),
+            enqueued=enqueued,
+            execution_owner="fleet",
+        )
+        return WorkResult(
+            outcome="authoritative_crawl_enqueued",
+            references={
+                "recon_run_id": str(recon.id),
+                "fast_status": recon.fast_status.value,
+                "background_status": recon.background_status.value,
+                "crawl_enqueued": enqueued,
+            },
         )
 
     async def _scope(

@@ -238,7 +238,7 @@ class OfficialSiteCrawlLifecycle:
                 DiscoveryBatch(
                     workspace_id=request.workspace_id,
                     crawl_run_id=run.crawl_run_id,
-                    observations=tuple(observations),
+                    observations=discovery.order_for_admission(tuple(observations)),
                 )
             )
             await self._emit(
@@ -280,7 +280,7 @@ class OfficialSiteCrawlLifecycle:
             runtime = await self._runtime(request.workspace_id, run.crawl_run_id)
 
         if runtime.status is CrawlRunStatus.FAST_ACTIVE:
-            fast_phase, fast_checkpoint = await self._run_fast(
+            fast_phase, fast_checkpoint, fast_materialization = await self._run_fast(
                 request=request,
                 crawl_run_id=run.crawl_run_id,
                 coordinator=coordinator,
@@ -312,7 +312,10 @@ class OfficialSiteCrawlLifecycle:
                 phase=CrawlPhase.FAST,
                 result=fast_phase,
             )
-            if request.config.crawl_mode is CrawlMode.AUTHORITATIVE:
+            if (
+                request.config.crawl_mode is CrawlMode.AUTHORITATIVE
+                and fast_materialization is None
+            ):
                 fast_materialization = await self._materialize(
                     request=request,
                     crawl_run_id=run.crawl_run_id,
@@ -423,7 +426,11 @@ class OfficialSiteCrawlLifecycle:
         request: OfficialSiteCrawlLifecycleRequest,
         crawl_run_id: UUID,
         coordinator: CrawlPhaseRunner,
-    ) -> tuple[CoordinatorPhaseResult, CorpusCheckpointRef]:
+    ) -> tuple[
+        CoordinatorPhaseResult,
+        CorpusCheckpointRef,
+        OfficialSiteMaterializationResult | None,
+    ]:
         stop = asyncio.Event()
         runtime = await self._runtime(request.workspace_id, crawl_run_id)
         phase_task = asyncio.create_task(
@@ -446,14 +453,38 @@ class OfficialSiteCrawlLifecycle:
                 stop=stop,
             )
         )
+        materialization: OfficialSiteMaterializationResult | None = None
         try:
             done, _ = await asyncio.wait(
                 {phase_task, deadline_task}, return_when=asyncio.FIRST_COMPLETED
             )
             if deadline_task in done:
                 checkpoint = deadline_task.result()
-                # The coordinator shields already-dispatched calls while the stop signal prevents
-                # every subsequent claim.  Late safe results belong to background, never fast.
+                await self._emit(
+                    request,
+                    crawl_run_id,
+                    kind=CrawlProgressEventKind.FAST_CHECKPOINT_FROZEN,
+                    subject=str(checkpoint.checkpoint_id),
+                    phase=CrawlPhase.FAST,
+                    checkpoint_id=checkpoint.checkpoint_id,
+                    snapshot_count=len(checkpoint.snapshot_ids),
+                )
+                # The checkpoint is immutable, so grounded extraction can safely begin while
+                # already-dispatched calls drain under their existing leases. Those late results
+                # belong only to background. Waiting for them before extraction would make one
+                # slow/ambiguous paid call consume the entire user-visible release budget.
+                if request.config.crawl_mode is CrawlMode.AUTHORITATIVE:
+                    try:
+                        materialization = await self._materialize(
+                            request=request,
+                            crawl_run_id=crawl_run_id,
+                            checkpoint=checkpoint,
+                            phase=CrawlPhase.FAST,
+                        )
+                    except BaseException:
+                        stop.set()
+                        await asyncio.gather(phase_task, return_exceptions=True)
+                        raise
                 phase_result = await phase_task
             else:
                 phase_result = phase_task.result()
@@ -470,16 +501,23 @@ class OfficialSiteCrawlLifecycle:
                     crawl_run_id=crawl_run_id,
                 )
                 stop.set()
-            await self._emit(
-                request,
-                crawl_run_id,
-                kind=CrawlProgressEventKind.FAST_CHECKPOINT_FROZEN,
-                subject=str(checkpoint.checkpoint_id),
-                phase=CrawlPhase.FAST,
-                checkpoint_id=checkpoint.checkpoint_id,
-                snapshot_count=len(checkpoint.snapshot_ids),
-            )
-            return phase_result, checkpoint
+                await self._emit(
+                    request,
+                    crawl_run_id,
+                    kind=CrawlProgressEventKind.FAST_CHECKPOINT_FROZEN,
+                    subject=str(checkpoint.checkpoint_id),
+                    phase=CrawlPhase.FAST,
+                    checkpoint_id=checkpoint.checkpoint_id,
+                    snapshot_count=len(checkpoint.snapshot_ids),
+                )
+                if request.config.crawl_mode is CrawlMode.AUTHORITATIVE:
+                    materialization = await self._materialize(
+                        request=request,
+                        crawl_run_id=crawl_run_id,
+                        checkpoint=checkpoint,
+                        phase=CrawlPhase.FAST,
+                    )
+            return phase_result, checkpoint, materialization
         except asyncio.CancelledError:
             stop.set()
             # C5 converts cancellation into graceful stop and shields a dispatched paid request.

@@ -57,7 +57,16 @@ async def _create_run(
     workspace_id: str,
     brand_id: str,
     recon_run_id: UUID,
+    total_page_ceiling: int | None = None,
 ) -> UUID:
+    config = _config()
+    if total_page_ceiling is not None:
+        config = config.model_copy(
+            update={
+                "fast_page_ceiling": min(config.fast_page_ceiling, total_page_ceiling),
+                "total_page_ceiling": total_page_ceiling,
+            }
+        )
     run = await repository.create_or_get_run(
         CrawlRunCreate(
             workspace_id=workspace_id,
@@ -66,10 +75,95 @@ async def _create_run(
             root_discovered_url="https://example.com/",
             root_fetch_key="https://example.com/",
             allowed_registrable_domain="example.com",
-            config=_config(),
+            config=config,
         )
     )
     return run.crawl_run_id
+
+
+def test_page_ceiling_admits_category_priority_before_provider_link_order() -> None:
+    async def run() -> None:
+        workspace_id = ""
+        async with db_lifespan() as engine:
+            try:
+                async with engine.begin() as conn:
+                    workspace_id, brand_id, recon_run_id = await _seed_scope(conn)
+                repository = PostgresCrawlRepository()
+                run_id = await _create_run(
+                    repository,
+                    workspace_id=workspace_id,
+                    brand_id=brand_id,
+                    recon_run_id=recon_run_id,
+                    total_page_ceiling=4,
+                )
+                discovery = _discovery()
+                await repository.record_discoveries(
+                    DiscoveryBatch(
+                        workspace_id=workspace_id,
+                        crawl_run_id=run_id,
+                        observations=(discovery.root("https://example.com/"),),
+                    )
+                )
+                root_id = await _page_id(
+                    engine,
+                    run_id=run_id,
+                    fetch_key="https://example.com/",
+                )
+                planned, dropped = discovery.plan_links(
+                    (
+                        LinkObservation(discovered_url="/legal", link_text="Legal"),
+                        LinkObservation(discovered_url="/about-us", link_text="About us"),
+                        LinkObservation(discovered_url="/pricing", link_text="Pricing"),
+                        LinkObservation(discovered_url="/product", link_text="Product"),
+                    ),
+                    source_page_id=root_id,
+                    source_url="https://example.com/",
+                    source_graph_depth=0,
+                )
+                result = await repository.record_discoveries(
+                    DiscoveryBatch(
+                        workspace_id=workspace_id,
+                        crawl_run_id=run_id,
+                        observations=planned,
+                    )
+                )
+                assert dropped == 0
+                assert result.page_nodes_created == 3
+
+                async with engine.connect() as conn:
+                    pages = tuple(
+                        (
+                            await conn.execute(
+                                text(
+                                    "SELECT fetch_key FROM official_site_crawl_page "
+                                    "WHERE crawl_run_id = :run_id ORDER BY priority, fetch_key"
+                                ),
+                                {"run_id": run_id},
+                            )
+                        ).scalars()
+                    )
+                    refused = (
+                        await conn.execute(
+                            text(
+                                "SELECT policy_reason FROM official_site_url_observation "
+                                "WHERE crawl_run_id = :run_id AND discovered_url = '/legal'"
+                            ),
+                            {"run_id": run_id},
+                        )
+                    ).scalar_one()
+                assert pages == (
+                    "https://example.com/",
+                    "https://example.com/product",
+                    "https://example.com/pricing",
+                    "https://example.com/about-us",
+                )
+                assert refused == "overall_page_ceiling_reached"
+            finally:
+                if workspace_id:
+                    async with engine.begin() as conn:
+                        await _cleanup_scope(conn, workspace_id)
+
+    run_async(run())
 
 
 async def _page_id(engine: object, *, run_id: UUID, fetch_key: str) -> UUID:

@@ -758,6 +758,7 @@ async def _serve() -> None:
             Stage0ReconWorkHandler(
                 tool_invoker=tool_invoker,
                 crawl_enqueuer=official_site_crawl.enqueuer,
+                settings=settings,
             )
             if settings.self_serve_provisioning_enabled
             else None

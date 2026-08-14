@@ -22,6 +22,24 @@ export interface SetupStallSnapshot {
   fast_status?: string | null;
   background_status?: string | null;
   fields?: readonly { field_key: string; lane: string; status: string }[];
+  official_site?: {
+    run_status?: string;
+    phase?: string | null;
+    queued?: number;
+    leased?: number;
+    provider_active?: number;
+    reconciliation_pending?: number;
+    persistence_pending?: number;
+    fetched?: number;
+    total_pages?: number;
+    snapshots?: number;
+    extraction_active?: number;
+    extraction_materialized?: number;
+    extraction_empty?: number;
+    extraction_failed?: number;
+    last_event_seq?: number | null;
+    last_event_kind?: string | null;
+  } | null;
 }
 
 /**
@@ -46,11 +64,32 @@ const IN_FLIGHT = new Set(["starting", "running"]);
  * stall bound actually watches.
  */
 export function progressSignature(snapshot: SetupStallSnapshot): string {
+  const crawl = snapshot.official_site;
   return JSON.stringify([
     snapshot.status,
     snapshot.fast_status ?? null,
     snapshot.background_status ?? null,
     (snapshot.fields ?? []).map((field) => [field.field_key, field.lane, field.status]),
+    crawl
+      ? [
+          crawl.run_status ?? null,
+          crawl.phase ?? null,
+          crawl.queued ?? null,
+          crawl.leased ?? null,
+          crawl.provider_active ?? null,
+          crawl.reconciliation_pending ?? null,
+          crawl.persistence_pending ?? null,
+          crawl.fetched ?? null,
+          crawl.total_pages ?? null,
+          crawl.snapshots ?? null,
+          crawl.extraction_active ?? null,
+          crawl.extraction_materialized ?? null,
+          crawl.extraction_empty ?? null,
+          crawl.extraction_failed ?? null,
+          crawl.last_event_seq ?? null,
+          crawl.last_event_kind ?? null,
+        ]
+      : null,
   ]);
 }
 

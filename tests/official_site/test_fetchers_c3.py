@@ -577,6 +577,89 @@ def test_pinned_scrapling_transport_reresolves_and_pins_every_redirect_hop() -> 
     )
 
 
+def test_pinned_scrapling_transport_allows_pinned_same_domain_subdomain_redirect() -> None:
+    resolver = StaticAddressResolver(
+        {
+            "example.com": ("93.184.216.34",),
+            "www.example.com": ("93.184.216.35",),
+        }
+    )
+    calls: list[tuple[str, tuple[str, ...]]] = []
+
+    async def connector(
+        url: str,
+        approved_addresses: tuple[str, ...],
+        *,
+        timeout_seconds: float,
+        max_response_bytes: int,
+    ) -> Any:
+        del timeout_seconds, max_response_bytes
+        calls.append((url, approved_addresses))
+        if url == "https://example.com/product":
+            return SimpleNamespace(
+                url=url,
+                http_status=301,
+                headers={"location": "https://www.example.com/product"},
+                content=b"",
+            )
+        return SimpleNamespace(
+            url=url,
+            http_status=200,
+            headers={"content-type": "text/html"},
+            content=HTML,
+        )
+
+    request = _request(
+        allowed_registrable_domain="example.com",
+        allow_subdomains=True,
+    )
+    result = asyncio.run(
+        ScraplingPinnedTransport(resolver=resolver, connector=connector).fetch(request)
+    )
+    assert calls == [
+        ("https://example.com/product", ("93.184.216.34",)),
+        ("https://www.example.com/product", ("93.184.216.35",)),
+    ]
+    assert result.final_url == "https://www.example.com/product"
+
+
+def test_provider_request_subdomain_allowance_is_boundary_safe() -> None:
+    allowed = _request(
+        allowed_registrable_domain="example.com",
+        allow_subdomains=True,
+    )
+    assert (
+        asyncio.run(
+            ScraplingPageFetcher(
+                transport=FakeScraplingTransport(
+                    ScraplingTransportResponse(
+                        final_url="https://www.example.com/product",
+                        http_status=200,
+                        headers={"content-type": "text/html"},
+                        content=HTML,
+                    )
+                )
+            ).fetch_one(allowed)
+        ).retry_class
+        is RetryClass.SUCCESS
+    )
+
+    refused = allowed.model_copy(update={"requested_url": "https://evil-example.com/product"})
+    result = asyncio.run(
+        ScraplingPageFetcher(
+            transport=FakeScraplingTransport(
+                ScraplingTransportResponse(
+                    final_url="https://evil-example.com/product",
+                    http_status=200,
+                    headers={"content-type": "text/html"},
+                    content=HTML,
+                )
+            )
+        ).fetch_one(refused)
+    )
+    assert result.retry_class is RetryClass.POLICY_REFUSED
+
+
 def test_pinned_scrapling_transport_refuses_private_and_external_redirect_before_connect() -> None:
     calls: list[str] = []
 

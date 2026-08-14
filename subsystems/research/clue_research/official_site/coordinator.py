@@ -813,6 +813,8 @@ class ConcurrentCrawlCoordinator:
             operation_key=operation_key,
             requested_url=lease.requested_url,
             allowed_hosts=allowed_hosts,
+            allowed_registrable_domain=self._url_policy.allowed_registrable_domain,
+            allow_subdomains=config.allow_subdomains,
             timeout_seconds=config.request_timeout_seconds,
             max_response_bytes=config.max_response_bytes,
             accepted_mime_types=tuple(sorted(self._safety.effective_mime_types)),
