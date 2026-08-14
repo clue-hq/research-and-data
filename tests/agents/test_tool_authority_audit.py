@@ -55,7 +55,12 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # `()` to `(AgentRole.DESIGN,)`. One role, the composite design deepagent (ruling D2),
     # gains the design write surface it always described; every other role still sees the
     # design plane as role-unavailable. The count is unchanged: this is a grant, not a tool.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 102
+    # P3.4 (PD-part3 §1-D1/§2.3): `open_design_leg` joins, granted to the Head of ABM — the
+    # delegation entry that validates the D5 pins, freezes the §2.3 bundle, and opens the
+    # durable design leg whose existence IS the routing rule. It spends nothing and dispatches
+    # nothing; the trial surface withholds it (102 + 1 = 103).
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 103
+    assert C6_AGENT_TOOL_AUTHORITY["open_design_leg"] == (AgentRole.HEAD_OF_ABM,)
     design_grants = {
         name: roles
         for name, roles in C6_AGENT_TOOL_AUTHORITY.items()

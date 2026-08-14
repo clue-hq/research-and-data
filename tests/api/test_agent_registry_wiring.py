@@ -66,7 +66,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # FI Lane D D4 minted head-of-abm@v23: it pins `open_directive_confirmation_gate@1` and
         # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
         # gate, end the turn, and launch only after the human's own confirming turn.
-        AgentRole.HEAD_OF_ABM: ("7d85eb0083badf9104b004f546368674bc109f46ee6c630a7d14422840ce3ba5"),
+        # PD-part3 P3.4 minted head-of-abm@v24: v23 plus `open_design_leg@1`, the design
+        # delegation entry (validate the D5 pins, freeze the §2.3 bundle, open the durable leg).
+        AgentRole.HEAD_OF_ABM: ("9dd6f18ae61ab228e879bed06cf8c08e23232f32247420b0b75e50fd6ee4b8b2"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -133,8 +135,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # enqueues), reserved identically (63 -> 83); Round C adds the final twenty-one
     # (83 -> 104), completing the design write surface. The frontend×design integration merge
     # unions FI Lane D's five (four REQ-21 thread tools + the D4 directive-confirmation gate),
-    # so the merged inventory is 104 + 5 = 109.
-    assert len(by_address) == 109
+    # so the merged inventory is 104 + 5 = 109. PD-part3 P3.4 adds `open_design_leg@1` — the
+    # head-of-abm's delegation entry onto the design leg (109 + 1 = 110).
+    assert len(by_address) == 110
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
     # NO reason code — the same honest shape as any tool granted to another role —
@@ -222,6 +225,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "inspect_statement_history@1",
         "launch_account_research@1",
         "launch_contact_research@1",
+        "open_design_leg@1",
         "open_directive_confirmation_gate@1",
         "propose_field@2",
         "propose_source@1",

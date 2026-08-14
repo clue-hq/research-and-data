@@ -48,6 +48,10 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # A promoted recipe revision is immutable, so widening the interaction slot's ceiling is a new
     # revision rather than an edit, exactly like the profile mint the same slice needed.
     "recipe0-stage0-v6.json",
+    # PD-part3 P3.4: v7 is v6 plus ``open_design_leg@1`` — the design delegation entry. Same
+    # rule as v6: the C5 slot is a second, independent ceiling, so a profile grant alone would
+    # show the model a tool that plan validation then refuses.
+    "recipe0-stage0-v7.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )

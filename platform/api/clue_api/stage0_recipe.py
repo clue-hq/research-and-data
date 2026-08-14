@@ -112,6 +112,39 @@ class Stage0StepPinProvider:
             digest=pin.digest,
         )
 
+    async def _design_leg_project_pin(
+        self,
+        body: dict[str, JsonValue],
+        *,
+        ctx: ToolContext,
+    ) -> PinRequest:
+        """Resolve ``open_design_leg``'s project pin from the injected presenting-turn ref."""
+
+        from clue_api.turn_action import (
+            TurnActionUnresolvable,
+            load_turn_identity,
+            parse_turn_action_ref,
+        )
+
+        absent = PinRequest(
+            kind="project",
+            key="__not_supplied__",
+            version="missing",
+            required=False,
+        )
+        ref = body.get("source_turn_ref")
+        if not isinstance(ref, str):
+            return absent
+        try:
+            turn_id = parse_turn_action_ref(ref)
+        except TurnActionUnresolvable:
+            return absent
+        async with self._conn_factory() as conn:
+            turn = await load_turn_identity(conn, workspace_id=ctx.workspace_id, turn_id=turn_id)
+        if turn is None:
+            return absent
+        return await self._current(kind="project", key=turn.project_id, ctx=ctx)
+
     async def pins_for(
         self,
         step: RecipeStep,
@@ -211,6 +244,14 @@ class Stage0StepPinProvider:
                     ),
                 )
             )
+        # --- PD-part3 P3.4: the design delegation entry ----------------------------------------
+        # The leg's project is not a body field (every authority value is derived from the
+        # presenting turn), so the pin is resolved through the turn ref the engine injected. A
+        # ref that does not resolve is pinned explicitly absent (the launch tool's idiom) — the
+        # tool's own preconditions are what refuse it, with a reason a model can act on.
+        if step.tool_name == "open_design_leg":
+            requested.append(await self._design_leg_project_pin(body, ctx=ctx))
+
         if step.tool_name in {"open_directive_confirmation_gate", "launch_account_research"}:
             project_run_id = body.get("project_run_id")
             if isinstance(project_run_id, str):

@@ -74,6 +74,7 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_v2_tool,
 )
 from clue_api.deep.composition import build_high_tier_resolver
+from clue_api.design_leg_tools import build_design_leg_tools
 from clue_api.design_tools import build_design_tools
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
@@ -2840,11 +2841,16 @@ def build_toolbelt(
     # authority audit is a strict set equality — a registry whose shape depends on
     # `design_runtime_enabled` would make flipping that switch an AgentCatalogError), but LIVE
     # only where a design runtime is composed; elsewhere every design tool refuses
-    # `design_runtime_not_configured` before any write. No design tool is granted to any agent
-    # role until Part III — see `C6_AGENT_TOOL_AUTHORITY`.
+    # `design_runtime_not_configured` before any write. P3.3 granted the set to
+    # `AgentRole.DESIGN` — see `C6_AGENT_TOOL_AUTHORITY`.
     for tool in build_design_tools(
         enabled=resolved_settings.design_runtime_enabled,
         storage=storage,
     ):
+        registry.register(tool, make_default=True)
+    # P3.4 (PD-part3 §1-D1/§2.3): the head-of-abm's delegation entry onto the design leg.
+    # Registered unconditionally for the same audit reason; without a storage backend it refuses
+    # `design_leg_storage_not_configured` before any write.
+    for tool in build_design_leg_tools(conn_factory=conn_factory, storage=storage):
         registry.register(tool, make_default=True)
     return registry

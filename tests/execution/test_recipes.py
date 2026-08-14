@@ -169,8 +169,9 @@ def test_c67_account_unit_is_preserved_as_replay_only_not_system_seeded() -> Non
     assert account.max_fanout == 1
 
 
-def test_recipe0_v6_is_the_only_promoted_executable_stage0_revision() -> None:
-    """v6 admits the FI Lane D D4 kickoff chain; older revisions remain immutable history."""
+def test_recipe0_v7_is_the_only_promoted_executable_stage0_revision() -> None:
+    """v7 (PD-part3 P3.4) admits the design delegation entry on top of v6's D4 kickoff chain;
+    older revisions remain immutable history."""
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -193,6 +194,7 @@ def test_recipe0_v6_is_the_only_promoted_executable_stage0_revision() -> None:
                 (4, "executable"),
                 (5, "executable"),
                 (6, "executable"),
+                (7, "executable"),
             ]
             effective = [
                 (
@@ -211,9 +213,11 @@ def test_recipe0_v6_is_the_only_promoted_executable_stage0_revision() -> None:
                 (3, RecipeRevisionEventType.SUPERSEDED),
                 (4, RecipeRevisionEventType.SUPERSEDED),
                 (5, RecipeRevisionEventType.SUPERSEDED),
-                (6, RecipeRevisionEventType.PROMOTED),
+                (6, RecipeRevisionEventType.SUPERSEDED),
+                # PD-part3 P3.4: v7 adds `open_design_leg@1` to the interaction slot.
+                (7, RecipeRevisionEventType.PROMOTED),
             ]
-            promoted = recipe0[5][0]
+            promoted = recipe0[6][0]
             slot = next(
                 node for node in promoted.graph.nodes if node.node_key == "stage0_interactions"
             )

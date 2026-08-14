@@ -37,6 +37,10 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "draft_account_research_directive@2",
     "open_directive_confirmation_gate@1",
     "launch_account_research@1",
+    # PD-part3 P3.4 (added in recipe0-stage0@7): the design delegation entry. Opening a leg is a
+    # durable write with no spend and no dispatch; it is certified here because it runs in the
+    # Stage-0 interaction slot, which admits nothing uncertified.
+    "open_design_leg@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

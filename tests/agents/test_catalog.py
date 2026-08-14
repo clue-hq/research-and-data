@@ -104,6 +104,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v21",
         "profile:head-of-abm@v22",
         "profile:head-of-abm@v23",
+        "profile:head-of-abm@v24",
         "profile:head-of-abm@v3",
         "profile:head-of-abm@v4",
         "profile:head-of-abm@v5",

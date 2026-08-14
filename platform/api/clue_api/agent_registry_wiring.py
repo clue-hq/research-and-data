@@ -36,10 +36,10 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # v23 (FI Lane D D4): pins ``open_directive_confirmation_gate@1`` and re-pins
-    # account-deep-steering at v3, whose procedure is the Option-B kickoff — gate first, launch only
-    # after the human's own confirming turn.
-    AgentRole.HEAD_OF_ABM: "v23",
+    # v24 (PD-part3 P3.4): v23 plus ``open_design_leg@1`` — the delegation entry that opens the
+    # design leg (§1-D1's "attach as subagent" wrapper, materialized as a durable act). v23
+    # (FI Lane D D4) pinned ``open_directive_confirmation_gate@1`` and the Option-B kickoff.
+    AgentRole.HEAD_OF_ABM: "v24",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -151,6 +151,11 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "launch_account_deep": (),
     "launch_account_research": (AgentRole.HEAD_OF_ABM,),
     "launch_contact_research": (AgentRole.HEAD_OF_ABM,),
+    # P3.4 (PD-part3 §1-D1/§2.3): delegating to Design is the Head of ABM's own act — the tool
+    # validates the D5 pins, freezes the delegation bundle, and opens the durable leg whose
+    # existence IS the routing rule. It spends nothing and dispatches nothing; the user's next
+    # message on the thread is what becomes the first design turn.
+    "open_design_leg": (AgentRole.HEAD_OF_ABM,),
     # FI Lane D D4 / §3-P5(a): asking the human for authority is the Head of ABM's own act, so the
     # gate-opening tool is granted to that role. It writes an immutable gate row and nothing else —
     # it confirms nothing, spends nothing, and cannot address a gate to anybody but the human whose
@@ -254,6 +259,11 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 # confirmation gate — but never act on the answer — would be inviting a human to
                 # approve spend that no surface here can perform.
                 "open_directive_confirmation_gate",
+                # P3.4 added the design delegation entry to the role. The trial withholds it for
+                # the same sentence as delegation itself: this surface is a manual conversation,
+                # and a leg opened from a dev CLI would durably reroute a thread no design
+                # runtime here can serve.
+                "open_design_leg",
                 "start_recon",
                 "submit_onboarding_input",
                 "synthesize_icps",

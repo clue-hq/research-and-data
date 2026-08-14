@@ -81,8 +81,12 @@ __all__ = [
 #: second, independent ceiling, and until this revision the widened conversation surface would have
 #: shown the model three tools that plan validation then refused. The trial surface still withholds
 #: all three, so raising the shared ceiling grants the trial nothing.
+#:
+#: **v7** (PD-part3 P3.4) adds ``open_design_leg@1`` — the design delegation entry — under the
+#: same rule. The trial surface withholds it too, so the shared ceiling again grants the trial
+#: nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
-CONVERSATION_RECIPE_VERSION = 6
+CONVERSATION_RECIPE_VERSION = 7
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface

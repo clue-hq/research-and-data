@@ -186,6 +186,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # FI Lane D D4 / §3-P5(a). The gate tool's first prerequisite is the *turn* it would address the
     # gate to: a ref naming no turn of this workspace proves no addressee, so it refuses rather than
     # presenting a gate nobody is entitled to answer.
+    "open_design_leg": ("precondition", ("design_leg_storage_not_configured",)),
     "open_directive_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
     "submit_onboarding_input": ("precondition", ("artifact_not_found",)),
     "start_recon": ("precondition", ("onboarding_input_not_found",)),
@@ -440,6 +441,10 @@ def _bodies() -> dict[str, dict[str, object]]:
         "rename_thread": {"thread_id": "thr_absent", "title": "renamed"},
         "set_thread_pinned": {"thread_id": "thr_absent", "pinned": True},
         "archive_thread": {"thread_id": "thr_absent"},
+        "open_design_leg": {
+            "source_turn_ref": f"turn-action:{_UUID()}",
+            "brief": "matrix probe",
+        },
         "open_directive_confirmation_gate": {
             "project_run_id": _UUID(),
             "research_directive_id": _UUID(),
@@ -1149,10 +1154,12 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # enqueues x3, the asset registry x7, personalization + both batch families x7
     # (76 -> 97). FI Lane D D0 adds REQ-21's four thread-shell tools, each with exactly one
     # version, and D4 adds the one gate-presenting tool (97 -> 102 at the integration merge).
-    assert len(registry.names()) == 102
+    # PD-part3 P3.4 adds `open_design_leg` — the head-of-abm's delegation entry onto the design
+    # leg (102 -> 103).
+    assert len(registry.names()) == 103
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 109
+    assert len(registry) == 110
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {
