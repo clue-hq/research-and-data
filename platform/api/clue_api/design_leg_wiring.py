@@ -41,7 +41,6 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -85,7 +84,7 @@ from clue_design.exit_judgment import (
 )
 from clue_obs import get_logger
 from clue_spine import get_project
-from clue_storage import StorageBackend
+from clue_toolbelt import ToolInvoker
 
 log = get_logger("clue_api.design_leg")
 
@@ -200,28 +199,27 @@ DESIGN_LEG_EXIT_SUMMARIES: dict[str, str] = {
 
 def build_design_leg_finisher(
     *,
-    storage: StorageBackend,
+    invoker: ToolInvoker,
     conn_factory: ConnFactory = transaction,
 ) -> DesignLegFinisher:
-    """The production finisher: one private registry holding the real finish tool.
+    """The production finisher: ``finish_design_leg`` through the MANDATORY journaled
+    invoker (adversarial-review fix — the first cut built a private registry and called
+    ``invoke_tool`` bare, which the C5.1 guard rightly refuses from a production root).
 
-    The operation id is derived from the turn, so a crash-retried exit replays the same
-    governed invocation instead of colliding with its own first attempt.
+    The invoker is the worker's shared production ``ToolInvoker`` over the shared
+    registry that already holds the tool, so the exit gets what every governed write
+    gets: the invocation journal, the parameter snapshot, and A9 idempotency keyed on
+    the journal identity. The operation id is derived from the turn, so a crash-retried
+    exit replays the recorded invocation (``JournalDisposition.COMPLETED``) — and even
+    past the journal, the tool's own closing-turn replay converges.
     """
 
-    from clue_api.design_leg_tools import FinishDesignLegTool
-    from clue_toolbelt import ToolContext, ToolRegistry, invoke_tool
-
-    registry = ToolRegistry()
-    registry.register(
-        FinishDesignLegTool(conn_factory=conn_factory, storage=storage), make_default=True
-    )
+    from clue_toolbelt import ToolContext
 
     async def finish(
         *, workspace_id: str, turn_id: UUID, reason: str, summary: str
     ) -> dict[str, Any]:
-        result = await invoke_tool(
-            registry,
+        result = await invoker.invoke(
             "finish_design_leg",
             {
                 "source_turn_ref": derive_turn_action_ref(turn_id),
@@ -234,7 +232,6 @@ def build_design_leg_finisher(
                 conn_factory=conn_factory,
                 operation_id=operation_id_from_key(str(turn_id), "design-leg-exit@1"),
             ),
-            idempotency_ttl_s=3600,
         )
         return dict(result.references)
 
@@ -708,7 +705,12 @@ class DesignLegTurnRunner:
             ),
             # The leg IS the open interaction: the turn is done, the leg awaits the user.
             open_gate_refs=(leg_ref,),
-            finalized_at=datetime.now(tz=UTC),
+            # Replay-stable on purpose (adversarial-review fix): the finalization id is
+            # derived, so every immutable envelope field must be too — a wall-clock
+            # stamp made a crash-retry's envelope differ and record_finalization refuse
+            # forever. The submission's accept time is the durable moment this turn
+            # already owns (the head-of-abm runner's requested_at precedent).
+            finalized_at=submission.requested_at,
         )
         await self._turns.record_finalization(
             turn_id=turn_id,
@@ -845,7 +847,12 @@ class DesignLegTurnRunner:
                 ),
             ),
             open_gate_refs=(),
-            finalized_at=datetime.now(tz=UTC),
+            # Replay-stable on purpose (adversarial-review fix): the finalization id is
+            # derived, so every immutable envelope field must be too — a wall-clock
+            # stamp made a crash-retry's envelope differ and record_finalization refuse
+            # forever. The submission's accept time is the durable moment this turn
+            # already owns (the head-of-abm runner's requested_at precedent).
+            finalized_at=submission.requested_at,
         )
         await self._turns.record_finalization(
             turn_id=turn_id,

@@ -34,7 +34,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TypeVar
 from uuid import UUID
@@ -911,6 +911,29 @@ async def sweep_turn_stream_retention(
         return await prune_turn_events(conn, retention_s=retention_s)
 
 
+def _completion_text(completion: object) -> str | dict[str, object]:
+    """A LangChain completion's text, whatever content shape the provider produced.
+
+    The gateway's models run the Responses API (``output_version="responses/v1"``), whose
+    ``AIMessage.content`` is a LIST of typed blocks — never a plain string — so the naive
+    ``str(content)`` was a Python repr that could never parse and silently disabled the
+    exit bridge (adversarial-review fix; the block-walk mirrors the shipped
+    ``entity_research_runtime`` precedent). Strings and dicts pass through; anything else
+    unrecognized returns ``""``, which parses to ``None`` → the fail-safe CONTINUE.
+    """
+
+    content = getattr(completion, "content", completion)
+    if isinstance(content, (str, dict)):
+        return content
+    if isinstance(content, Sequence):
+        return "".join(
+            str(block.get("text", ""))
+            for block in content
+            if isinstance(block, Mapping) and block.get("type") in ("text", "output_text")
+        )
+    return ""
+
+
 def build_design_leg_exit_judge(
     *,
     models: AgentModelProvider,
@@ -946,10 +969,7 @@ def build_design_leg_exit_judge(
                 )
             prompt = render_exit_judgment_prompt(brief=brief, history=history, message=message)
             completion = await model_holder[0].ainvoke(prompt)  # type: ignore[attr-defined]
-            content = getattr(completion, "content", completion)
-            return parse_exit_judgment(
-                content if isinstance(content, (str, dict)) else str(content)
-            )
+            return parse_exit_judgment(_completion_text(completion))
         except Exception:
             log.warning("design_leg.exit_judge_failed", exc_info=True)
             return None

@@ -78,9 +78,30 @@ class _WorkerDeath(BaseException):
 
 
 def _finisher(seeds: dict[str, Any], storage_root: Path) -> Any:
+    """The finisher over a REAL journaled ToolInvoker (the C5.1 discipline), exactly as
+    the fleet root composes it — registry holding the finish tool, DB idempotency store,
+    snapshot storage. The adversarial-review fix retired the bare-``invoke_tool`` path."""
+
+    from clue_api.design_leg_tools import FinishDesignLegTool
+    from clue_api.execution_wiring import build_tool_invoker
+    from clue_config import load_settings
+    from clue_toolbelt import DbIdempotencyStore, ToolRegistry
+
+    cf = seeds["conn_factory"]
+    registry = ToolRegistry()
+    registry.register(
+        FinishDesignLegTool(conn_factory=cf, storage=FsStorage(storage_root / "artifacts")),
+        make_default=True,
+    )
     return build_design_leg_finisher(
-        storage=FsStorage(storage_root / "artifacts"),
-        conn_factory=seeds["conn_factory"],
+        invoker=build_tool_invoker(
+            registry=registry,
+            idempotency_store=DbIdempotencyStore(conn_factory=cf),
+            storage=FsStorage(storage_root / "snapshots"),
+            settings=load_settings(_env_file=None),
+            conn_factory=cf,
+        ),
+        conn_factory=cf,
     )
 
 

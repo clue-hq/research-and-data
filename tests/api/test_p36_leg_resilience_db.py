@@ -388,6 +388,62 @@ def test_a_worker_killed_before_the_design_work_landed_redrives_the_same_run(
     run_async(scenario())
 
 
+class _DiesOnFinalizeCommit:
+    """The real journal, except the first ``commit_finalization_authority`` is a process
+    death — the exact window between the finalization record and its commit."""
+
+    def __init__(self, inner: DbAgentTurnJournal) -> None:
+        self._inner = inner
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    async def commit_finalization_authority(self, **kwargs: Any) -> Any:
+        raise _WorkerDeath
+
+
+def test_a_worker_killed_between_finalize_record_and_commit_converges(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Adversarial-review fix: the finalize envelope must be REPLAY-STABLE. The
+    finalization id is derived, so the envelope's every immutable field must also be
+    derived from durable state — a wall-clock ``finalized_at`` made the retry's envelope
+    differ and ``record_finalization`` raise 'different immutable envelope' forever,
+    sticking the turn in ``running``. With ``submission.requested_at`` (the head-of-abm
+    precedent) the retry re-records the identical envelope and converges."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="finpoison")
+            submission = await _submit_message(
+                conn, seeds, label="finpoison-1", message="Bolder headline."
+            )
+            components = _fresh_worker_components(seeds, tmp_path)
+            dying = DesignLegTurnRunner(
+                profiles=components["registry"],
+                artifacts=components["artifacts"],
+                turns=_DiesOnFinalizeCommit(components["turns"]),  # type: ignore[arg-type]
+                history=components["history"],
+                lane=_FakeLane(conn_factory=seeds["conn_factory"]),
+                conn_factory=seeds["conn_factory"],
+            )
+            with pytest.raises(_WorkerDeath):
+                await _run_on(conn, seeds, dying, submission)
+
+            # The crash state: finalization RECORDED but not committed, run terminal.
+            retry = await _run_on(
+                conn, seeds, _fresh_runner(seeds, tmp_path, _LaneThatMustNotRun()), submission
+            )
+            assert retry.outcome.status is AgentExecutionStatus.AWAITING_INPUT
+            assert await _history_roles(conn, seeds) == ["user", "assistant"]
+
+    run_async(scenario())
+
+
 # --- per-thread single-flight ------------------------------------------------------------------
 
 

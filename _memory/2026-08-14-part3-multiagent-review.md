@@ -87,7 +87,20 @@ closing-turn structurally disjoint; envelope JSON round-trip clean; claim refs l
 values; finish idempotency independent of toolbelt TTL; heartbeat math sound; no
 mark_leg_running/create_run crash window; §2.4 scoping genuinely wired both sides.
 
-**Disposition: ALL FINDINGS OPEN — assessment only, no fixes applied (user directs).**
-Priority order for the fix pass: 1-3 (red gate + inert bridge + replay poison), then
-4-6, then the MED ledger. Design API server from the smoke left running on :8371
+**Disposition (updated same day, founder-directed): items 1-3 FIXED (TDD, each RED
+reproduced first).** (1) `build_design_leg_finisher` now takes the production
+`ToolInvoker` (fleet_main passes the shared `tool_invoker`; the private registry and
+bare `invoke_tool` are gone) — journal, parameter snapshot, and journal-keyed A9
+idempotency are real now; guard test green; exit-bridge suite runs over a real
+journaled invoker (D4-composition mirror in `_finisher`). (2) the live judge extracts
+text from Responses-API block lists via `_completion_text` (the
+`entity_research_runtime` precedent; handles text/output_text blocks, multi-block
+concat, str/dict passthrough, unknown→""→fail-safe) — pinned by
+`tests/api/test_p37_exit_judge_unit.py` (4 tests, RED-proven on real
+`AIMessage(content=[blocks])`). (3) both design finalize envelopes stamp
+`finalized_at=submission.requested_at` (replay-stable; head-of-abm precedent) — pinned
+by the resilience battery's new record-vs-commit crash-window test (RED reproduced the
+exact 'different immutable envelope' poison).
+Remaining priority: 4-6 (deployment thread-wedge, brand-pin TOCTOU, design-lane
+failure containment), then the MED ledger. Design API server from the smoke left running on :8371
 (background task; dies with session).

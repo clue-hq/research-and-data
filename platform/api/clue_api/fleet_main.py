@@ -680,7 +680,7 @@ async def _serve() -> None:
                     if settings.design_runtime_enabled
                     else None
                 ),
-                design_leg_finisher=build_design_leg_finisher(storage=storage),
+                design_leg_finisher=build_design_leg_finisher(invoker=tool_invoker),
                 streaming=settings.chat_turn_streaming_enabled,
                 stream_policy=TurnStreamPolicy(
                     batch_max_chars=settings.chat_turn_stream_batch_max_chars,
