@@ -15,6 +15,7 @@ from pydantic import JsonValue
 from sqlalchemy import text
 
 from clue_config import Secrets, Settings
+from clue_core.gateway import LLMGateway
 from clue_db import ConnFactory, transaction
 from clue_fleet import DbWorkQueue, FleetTaskKind, WorkContext, WorkId, WorkQueue, WorkResult
 from clue_obs import get_logger
@@ -27,16 +28,20 @@ from clue_research.adapters.scrapling_page import (
 )
 from clue_research.identity import registrable_domain
 from clue_research.official_site import (
+    EXTRACTION_PROMPT_VERSION,
+    EXTRACTION_SCHEMA_VERSION,
     ROBOTS_POLICY_VERSION,
     ConcurrentCrawlCoordinator,
     CrawlMode,
     CrawlPhasePendingError,
     CrawlSafetyPolicy,
+    GroundedOfficialSiteMaterializer,
     OfficialSiteArtifactStore,
     OfficialSiteCrawlContractConfig,
     OfficialSiteCrawlLifecycle,
     OfficialSiteCrawlLifecycleRequest,
     OfficialSiteDiscoveryPolicy,
+    OfficialSiteExtractionPending,
     PageFetcher,
     PageFetchRequest,
     PostgresCrawlRepository,
@@ -282,13 +287,15 @@ class DbOfficialSiteCrawlEnqueuer:
         if workspace_id not in self._settings.stage0_official_site_crawl_workspace_allowlist:
             return False
         work_id = WorkId(uuid5(NAMESPACE_URL, f"official-site-crawl:{recon_run_id}"))
-        return await self._queue.enqueue(
-            kind=FleetTaskKind.OFFICIAL_SITE_CRAWL,
-            work_id=work_id,
-            dedup_key=f"official-site-crawl:{recon_run_id}",
-            priority=-100,
-            payload={"workspace_id": workspace_id, "recon_run_id": str(recon_run_id)},
-            reopen_terminal=True,
+        return bool(
+            await self._queue.enqueue(
+                kind=FleetTaskKind.OFFICIAL_SITE_CRAWL,
+                work_id=work_id,
+                dedup_key=f"official-site-crawl:{recon_run_id}",
+                priority=-100,
+                payload={"workspace_id": workspace_id, "recon_run_id": str(recon_run_id)},
+                reopen_terminal=True,
+            )
         )
 
 
@@ -343,9 +350,21 @@ class OfficialSiteCrawlWorkHandler:
                     fast_claim_run_id=row.fast_run_id,
                     background_claim_run_id=row.background_run_id,
                     extraction_model_id=self._settings.stage0_extraction_model,
-                    extraction_prompt_version="official-site-c7-pending",
-                    extraction_schema_version="official-site-c7-pending",
+                    extraction_prompt_version=EXTRACTION_PROMPT_VERSION,
+                    extraction_schema_version=EXTRACTION_SCHEMA_VERSION,
                 )
+            )
+        except OfficialSiteExtractionPending as pending:
+            log.info(
+                "stage0_official_site_crawl.extraction_pending",
+                workspace_id=workspace_id,
+                recon_run_id=str(recon_run_id),
+                detail=str(pending),
+            )
+            return WorkResult(
+                outcome="extraction_pending",
+                references={"recon_run_id": str(recon_run_id)},
+                requeue=True,
             )
         except CrawlPhasePendingError as pending:
             log.info(
@@ -442,6 +461,7 @@ def build_official_site_crawl_fleet(
     settings: Settings,
     secrets: Secrets,
     storage: StorageBackend,
+    gateway: LLMGateway | None = None,
     conn_factory: ConnFactory = transaction,
     queue: WorkQueue | None = None,
 ) -> OfficialSiteCrawlFleetComposition:
@@ -450,9 +470,14 @@ def build_official_site_crawl_fleet(
     enqueuer = DbOfficialSiteCrawlEnqueuer(settings=settings, queue=queue)
     if settings.stage0_official_site_crawl_mode == "off":
         return OfficialSiteCrawlFleetComposition(enqueuer=enqueuer, handler=None)
-    if settings.stage0_official_site_crawl_mode == "authoritative":
+    if settings.stage0_official_site_crawl_mode == "authoritative" and gateway is None:
+        raise RuntimeError("authoritative Stage-0 official-site crawling requires a model gateway")
+    if (
+        settings.stage0_official_site_crawl_mode == "authoritative"
+        and secrets.openrouter_api_key is None
+    ):
         raise RuntimeError(
-            "authoritative Stage-0 official-site crawling requires the C7 corpus materializer"
+            "authoritative Stage-0 official-site crawling requires an OpenRouter key"
         )
     if settings.stage0_page_fetcher == "firecrawl":
         secret = secrets.firecrawl_api_key
@@ -526,6 +551,16 @@ def build_official_site_crawl_fleet(
         repository=repository,
         coordinator_factory=coordinator_factory,
         seed_discoverer=_RunScopedSeedDiscoverer(),
+        materializer=(
+            GroundedOfficialSiteMaterializer(
+                gateway=gateway,
+                storage=storage,
+                conn_factory=conn_factory,
+                extraction_concurrency=settings.stage0_extraction_concurrency,
+            )
+            if settings.stage0_official_site_crawl_mode == "authoritative" and gateway is not None
+            else None
+        ),
     )
     return OfficialSiteCrawlFleetComposition(
         enqueuer=enqueuer,

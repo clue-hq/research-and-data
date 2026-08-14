@@ -1181,7 +1181,8 @@ completion. The isolated Insight Health Firecrawl canary fetched 11 URL snapshot
 expiry, and cold-replayed with zero new attempts. Exact contracts, settings, tests, and retained
 evidence are in the
 [C6 composition contract](./FI-stage0-durable-official-site-crawl-C6-composition-contract.md).
-Authoritative claim materialization and browser cutover remain C7; C6's rollout mode defaults off.
+Authoritative claim materialization landed in C7; progress, recovery, browser acceptance, and
+cutover remain C8–C10. C6's rollout mode defaults off.
 
 **Deliverables**
 
@@ -1199,6 +1200,15 @@ Authoritative claim materialization and browser cutover remain C7; C6's rollout 
 - Browser release is tied to fast Client-KB commit, not elapsed UI time.
 
 ### C7 — Concurrent extraction and grounded materialization
+
+**Status: complete (2026-08-14).** C7 reads exact immutable checkpoints, runs bounded independent
+category/field extraction through the OpenRouter gateway, retains raw responses before parsing,
+validates URL and exact span against one trusted snapshot, and writes ordinary append-only
+`official_site` claims. The C0–C7 suite, migration round trip, legacy Stage-0 regressions, and a
+retained Firecrawl + Luna live run/cold replay pass. The live run also exposed lease-recovery
+latency, so the ≤40-second release gate remains explicitly open for C8/C10. Exact contracts and
+evidence are in the
+[C7 materialization contract](./FI-stage0-durable-official-site-crawl-C7-materialization-contract.md).
 
 **Deliverables**
 

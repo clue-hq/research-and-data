@@ -212,6 +212,7 @@ def test_stage0_official_site_crawl_is_bounded_and_default_off() -> None:
     assert settings.stage0_crawl_max_depth == 2
     assert settings.stage0_crawl_fast_deadline_seconds == 40
     assert settings.stage0_extraction_model == "openai/gpt-5.6-luna"
+    assert settings.stage0_extraction_concurrency == 4
 
 
 def test_stage0_official_site_shadow_requires_and_parses_allowlist() -> None:

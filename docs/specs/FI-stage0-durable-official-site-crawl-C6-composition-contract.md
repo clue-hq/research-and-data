@@ -5,8 +5,8 @@
 **Authority:** C6 execution/composition detail under
 [`FI-stage0-durable-official-site-crawl-plan.md`](./FI-stage0-durable-official-site-crawl-plan.md)
 
-**Next authority:** C7 owns checkpoint-to-claim extraction/materialization and the authoritative
-cutover.
+**Next authority:** C7 now owns checkpoint-to-claim extraction/materialization; C8–C10 retain
+progress, recovery, authoritative browser proof, and cutover.
 
 ## 1. Outcome and scope
 
@@ -206,7 +206,7 @@ C6's implementation gate is accepted:
 - browser release remains tied to the committed legacy fast Client-KB version;
 - live Firecrawl acquisition, durable recovery, checkpointing, and cold replay are proven.
 
-This is **not** a completed durable-crawler product release. C7 must materialize grounded claims
-from checkpoints and prove authoritative browser/API/database/artifact/provider lineage before the
-flag can move beyond shadow. C8–C10 retain progress/observability, DSAR/retention, and final rollout
-gates from the parent plan.
+This is **not** a completed durable-crawler product release. C7 now materializes grounded claims
+from checkpoints and proves live provider-neutral claim/replay lineage. C8–C10 still retain
+progress/observability, operator recovery, adversarial, browser, provider-receipt, retention, and
+final rollout gates from the parent plan; the flag therefore remains default-off.

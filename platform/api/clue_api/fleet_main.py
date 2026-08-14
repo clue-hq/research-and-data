@@ -751,6 +751,7 @@ async def _serve() -> None:
             settings=settings,
             secrets=secrets,
             storage=storage,
+            gateway=gateway,
             queue=work_queue,
         )
         stage0_recon_handler = (

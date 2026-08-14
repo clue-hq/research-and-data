@@ -232,6 +232,7 @@ def test_schema_contains_all_frozen_tables_and_recon_scope_anchor() -> None:
                 "official_site_page_snapshot",
                 "official_site_alias_observation",
                 "official_site_corpus_checkpoint",
+                "official_site_extraction_operation",
             }
             assert (
                 await conn.execute(

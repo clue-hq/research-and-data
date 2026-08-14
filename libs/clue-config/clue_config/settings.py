@@ -575,9 +575,10 @@ class Settings(BaseSettings):
     stage0_crawl_allow_subdomains: bool = False
     stage0_crawl_robots_policy: Literal["respect"] = "respect"
     stage0_crawl_url_policy_version: Literal["official-site-url-v1"] = "official-site-url-v1"
-    # Reserved for C7 materialization. It is recorded here with the rollout settings so changing
-    # Luna/Terra later remains configuration-only; C6 never invokes this model.
+    # C7 materialization policy. Model selection remains configuration-only; category/field calls
+    # are bounded separately from acquisition workers and never share an open DB connection.
     stage0_extraction_model: str = "openai/gpt-5.6-luna"
+    stage0_extraction_concurrency: int = Field(default=4, ge=1, le=16)
 
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod

@@ -1,0 +1,615 @@
+"""C7 database acceptance: concurrent grounded writes, partial failure, and cold replay."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import threading
+import time
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+from uuid import UUID, uuid4
+
+import pytest
+from sqlalchemy import text
+from tests.db.conftest import run_async
+
+from clue_core import (
+    Claim,
+    EntityType,
+    ExtractionMethod,
+    ResearchMode,
+    ReuseScope,
+    RunId,
+)
+from clue_core.gateway import Completion, Message, TokenUsage
+from clue_db import db_lifespan, transaction
+from clue_research.claimstore import insert_claim, load_core_pack, record_run_lineage
+from clue_research.identity import insert_account_entity
+from clue_research.official_site import (
+    EXTRACTION_PROMPT_VERSION,
+    EXTRACTION_SCHEMA_VERSION,
+    CrawlPhase,
+    GroundedOfficialSiteMaterializer,
+    OfficialSiteMaterializationRequest,
+    compute_snapshot_set_sha256,
+)
+from clue_research.sources import seed_source_manifests
+from clue_research.stage0.fields import load_client_knowledge_pack
+from clue_storage import FsStorage, artifact_key, content_address
+from clue_storage.artifacts import record_artifact
+
+pytestmark = pytest.mark.usefixtures("require_official_site_db")
+
+
+@dataclass(frozen=True, slots=True)
+class _Scope:
+    workspace_id: str
+    brand_id: str
+    recon_run_id: UUID
+    claim_run_id: UUID
+    client_entity_id: UUID
+    crawl_run_id: UUID
+    checkpoint_id: UUID
+
+
+class _Gateway:
+    def __init__(
+        self,
+        *,
+        invalid_fields: frozenset[str] = frozenset(),
+        raising_fields: frozenset[str] = frozenset(),
+    ) -> None:
+        self.invalid_fields = invalid_fields
+        self.raising_fields = raising_fields
+        self.calls: list[tuple[str, str]] = []
+        self._lock = threading.Lock()
+        self._active = 0
+        self.max_active = 0
+
+    def complete(self, *, model: str, messages: list[Message], **opts: object) -> Completion:
+        assert opts["max_tokens"] == 1_500
+        user = messages[-1].content
+        field = re.search(r"^FIELD: ([^\n]+)$", user, re.MULTILINE)
+        assert field is not None
+        field_key = field.group(1)
+        with self._lock:
+            self.calls.append((model, field_key))
+            self._active += 1
+            self.max_active = max(self.max_active, self._active)
+        try:
+            time.sleep(0.03)
+            if field_key in self.raising_fields:
+                raise RuntimeError("ambiguous model failure")
+            block = re.search(
+                r"SNAPSHOT_ID: ([0-9a-f-]+)\nSOURCE_URL: ([^\n]+)\n"
+                r"<<<UNTRUSTED_PAGE_TEXT>>>\n(.*?)\n<<<END_UNTRUSTED_PAGE_TEXT>>>",
+                user,
+                re.DOTALL,
+            )
+            assert block is not None
+            snapshot_id, source_url, body = block.groups()
+            quote = next(line for line in body.splitlines() if line.strip())
+            if field_key in self.invalid_fields:
+                snapshot_id = str(uuid4())
+                source_url = "https://evil.example/forged"
+            if field_key == "client.customer":
+                value: object = [{"name": "Northstar Health", "domain": "northstar.test"}]
+            elif field_key == "client.icp_evidence":
+                value = {"industries": ["healthcare"]}
+            else:
+                value = f"Grounded {field_key}"
+            response = {
+                "claims": [
+                    {
+                        "snapshot_id": snapshot_id,
+                        "source_url": source_url,
+                        "value": value,
+                        "quote": quote,
+                        "confidence": 0.91,
+                    }
+                ]
+            }
+            return Completion(
+                model=model,
+                text=json.dumps(response),
+                usage=TokenUsage(prompt_tokens=100, completion_tokens=25),
+                cost_cents=Decimal("0.25"),
+                finish_reason="completed",
+            )
+        finally:
+            with self._lock:
+                self._active -= 1
+
+    def embed(self, *, model: str, inputs: list[str]) -> object:  # pragma: no cover - never called
+        raise AssertionError((model, inputs))
+
+
+class _TrackingContext(AbstractAsyncContextManager[Any]):
+    def __init__(self, owner: _TrackingFactory) -> None:
+        self.owner = owner
+        self.inner = transaction()
+        self.connection: object | None = None
+
+    async def __aenter__(self) -> Any:
+        connection = await self.inner.__aenter__()
+        self.connection = connection
+        key = id(connection)
+        with self.owner.lock:
+            if key in self.owner.active:
+                self.owner.shared_while_active = True
+            self.owner.active.add(key)
+            self.owner.max_active = max(self.owner.max_active, len(self.owner.active))
+        return connection
+
+    async def __aexit__(self, *args: object) -> bool | None:
+        assert self.connection is not None
+        with self.owner.lock:
+            self.owner.active.remove(id(self.connection))
+        return await self.inner.__aexit__(*args)
+
+
+class _TrackingFactory:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.active: set[int] = set()
+        self.max_active = 0
+        self.shared_while_active = False
+
+    def __call__(self) -> _TrackingContext:
+        return _TrackingContext(self)
+
+
+async def _seed_scope(storage: FsStorage) -> _Scope:
+    workspace_id = f"official-site-c7-{uuid4()}"
+    brand_id = f"brand-{uuid4()}"
+    recon_run_id = uuid4()
+    claim_run_id = uuid4()
+    background_run_id = uuid4()
+    crawl_run_id = uuid4()
+    checkpoint_id = uuid4()
+
+    async with transaction() as conn:
+        await conn.execute(
+            text("INSERT INTO workspace (workspace_id, name) VALUES (:id, 'C7 Test')"),
+            {"id": workspace_id},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO brand (brand_id, workspace_id, name) "
+                "VALUES (:brand_id, :workspace_id, 'C7 Brand')"
+            ),
+            {"brand_id": brand_id, "workspace_id": workspace_id},
+        )
+        client_entity_id = UUID(
+            str(
+                await insert_account_entity(
+                    conn,
+                    canonical_name="C7 Example",
+                    primary_domain="example.com",
+                    workspace_id=workspace_id,
+                )
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO recon_run (
+                    id, workspace_id, brand_id, dedupe_hash, dedupe_expires_at,
+                    fast_run_id, background_run_id, fast_budget_cents,
+                    background_budget_cents, recipe_version, skill_version,
+                    client_entity_id
+                ) VALUES (
+                    :id, :workspace_id, :brand_id, :dedupe_hash, now() + interval '1 hour',
+                    :fast_run_id, :background_run_id, 0, 0, 'test-v1', 'test-v1',
+                    :client_entity_id
+                )
+                """
+            ),
+            {
+                "id": recon_run_id,
+                "workspace_id": workspace_id,
+                "brand_id": brand_id,
+                "dedupe_hash": hashlib.sha256(str(recon_run_id).encode()).hexdigest(),
+                "fast_run_id": claim_run_id,
+                "background_run_id": background_run_id,
+                "client_entity_id": client_entity_id,
+            },
+        )
+        await load_core_pack(conn)
+        await load_client_knowledge_pack(conn)
+        await seed_source_manifests(conn)
+        await record_run_lineage(
+            conn, run_id=RunId(claim_run_id), workspace_id=workspace_id, kind="stage0"
+        )
+        marker = Claim(
+            entity_id=client_entity_id,
+            entity_type=EntityType.ACCOUNT,
+            field_key="client.kb_version",
+            value_json={"version": 1, "run_id": str(claim_run_id)},
+            source_tier=1,
+            extraction_method=ExtractionMethod.HUMAN,
+            confidence=1.0,
+            run_id=RunId(claim_run_id),
+            research_mode=ResearchMode.ACCOUNT_PROFILING,
+            reuse_scope=ReuseScope.TENANT_PRIVATE,
+            workspace_id=workspace_id,
+        )
+        await insert_claim(conn, marker)
+        await conn.execute(
+            text(
+                """
+                INSERT INTO official_site_crawl_run (
+                    id, workspace_id, brand_id, client_entity_id, recon_run_id,
+                    root_discovered_url, root_fetch_key, allowed_registrable_domain,
+                    status, max_graph_depth, fast_claim_deadline_at,
+                    overall_page_ceiling, fast_page_ceiling, provider_policy_version,
+                    url_policy_version, robots_policy_version, config_json, completed_at
+                ) VALUES (
+                    :id, :workspace_id, :brand_id, :client_entity_id, :recon_run_id,
+                    'https://example.com/', 'https://example.com/', 'example.com',
+                    'completed', 2, now() + interval '40 seconds', 20, 12,
+                    'provider-v1', 'official-site-url-v1', 'official-site-robots-v1',
+                    '{}'::jsonb, now()
+                )
+                """
+            ),
+            {
+                "id": crawl_run_id,
+                "workspace_id": workspace_id,
+                "brand_id": brand_id,
+                "client_entity_id": client_entity_id,
+                "recon_run_id": recon_run_id,
+            },
+        )
+
+    page_specs = (
+        (
+            "https://example.com/",
+            "homepage",
+            "Acme automates patient scheduling for healthcare providers.",
+        ),
+        (
+            "https://example.com/pricing",
+            "pricing",
+            "Pricing is custom and customers should contact sales.",
+        ),
+        (
+            "https://example.com/customers/northstar",
+            "customer_proof",
+            "Northstar Health reduced call wait times by 40 percent.",
+        ),
+        (
+            "https://example.com/about",
+            "company",
+            "Founded by clinicians and built for HIPAA-compliant care teams.",
+        ),
+    )
+    snapshots: list[UUID] = []
+    for url, category, body in page_specs:
+        page_id = uuid4()
+        attempt_id = uuid4()
+        snapshot_id = uuid4()
+        snapshots.append(snapshot_id)
+        content = f"<html><body><p>{body}</p></body></html>".encode()
+        digest = content_address(content)
+        key = artifact_key(workspace_id, digest)
+        async with transaction() as conn:
+            await record_artifact(
+                conn,
+                storage_key=key,
+                workspace_id=workspace_id,
+                content_sha256=digest,
+                media_type="text/html",
+                size_bytes=len(content),
+                source_key="official_site",
+                source_url=url,
+            )
+            await storage.put(key, content, media_type="text/html")
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO official_site_crawl_page (
+                        id, workspace_id, crawl_run_id, fetch_key, fetch_key_hash,
+                        representative_requested_url, host, graph_depth, priority,
+                        priority_reason_json, eligibility, state, attempt_count,
+                        discovered_at, queued_at
+                    ) VALUES (
+                        :id, :workspace_id, :crawl_run_id, :url, :hash, :url,
+                        'example.com', 1, 0, CAST(:reasons AS jsonb), 'both', 'queued', 1,
+                        now(), now()
+                    )
+                    """
+                ),
+                {
+                    "id": page_id,
+                    "workspace_id": workspace_id,
+                    "crawl_run_id": crawl_run_id,
+                    "url": url,
+                    "hash": hashlib.sha256(url.encode()).hexdigest(),
+                    "reasons": json.dumps([f"category:{category}", "via:link"]),
+                },
+            )
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO official_site_fetch_attempt (
+                        id, workspace_id, crawl_run_id, page_id, attempt_number,
+                        lease_generation, worker_id, operation_key, provider_key, state,
+                        requested_url, final_url, redirect_chain_json, provider_status,
+                        http_status, media_type, size_bytes, cost_kind, spend_status,
+                        retry_class, artifact_key, content_sha256, started_at, dispatched_at,
+                        provider_completed_at, persisted_at, finished_at
+                    ) VALUES (
+                        :id, :workspace_id, :crawl_run_id, :page_id, 1, 1, 'c7-test',
+                        :operation_key, 'fixture', 'persisted', :url, :url, '[]'::jsonb, 'ok',
+                        200, 'text/html', :size_bytes, 'none', 'no_spend', 'success',
+                        :artifact_key, :content_sha256, now(), now(), now(), now(), now()
+                    )
+                    """
+                ),
+                {
+                    "id": attempt_id,
+                    "workspace_id": workspace_id,
+                    "crawl_run_id": crawl_run_id,
+                    "page_id": page_id,
+                    "operation_key": f"c7-test:{attempt_id}",
+                    "url": url,
+                    "size_bytes": len(content),
+                    "artifact_key": key,
+                    "content_sha256": digest,
+                },
+            )
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO official_site_page_snapshot (
+                        id, workspace_id, crawl_run_id, page_id, fetch_attempt_id,
+                        requested_url, final_url, redirect_chain_json, fetched_at,
+                        provider_key, http_status, media_type, artifact_key, content_sha256,
+                        size_bytes, robots_decision_ref, policy_version
+                    ) VALUES (
+                        :id, :workspace_id, :crawl_run_id, :page_id, :attempt_id,
+                        :url, :url, '[]'::jsonb, now(), 'fixture', 200, 'text/html',
+                        :artifact_key, :content_sha256, :size_bytes, 'robots:test', 'safety-v1'
+                    )
+                    """
+                ),
+                {
+                    "id": snapshot_id,
+                    "workspace_id": workspace_id,
+                    "crawl_run_id": crawl_run_id,
+                    "page_id": page_id,
+                    "attempt_id": attempt_id,
+                    "url": url,
+                    "artifact_key": key,
+                    "content_sha256": digest,
+                    "size_bytes": len(content),
+                },
+            )
+            await conn.execute(
+                text(
+                    "UPDATE official_site_crawl_page "
+                    "SET state = 'fetched', latest_snapshot_id = :snapshot_id, fetched_at = now() "
+                    "WHERE id = :page_id"
+                ),
+                {"snapshot_id": snapshot_id, "page_id": page_id},
+            )
+
+    ordered = tuple(sorted(snapshots, key=str))
+    async with transaction() as conn:
+        await conn.execute(
+            text(
+                """
+                INSERT INTO official_site_corpus_checkpoint (
+                    id, workspace_id, crawl_run_id, phase, version, snapshot_ids_json,
+                    snapshot_set_sha256, coverage_json
+                ) VALUES (
+                    :id, :workspace_id, :crawl_run_id, 'fast', 1,
+                    CAST(:snapshot_ids AS jsonb), :snapshot_hash,
+                    CAST(:coverage AS jsonb)
+                )
+                """
+            ),
+            {
+                "id": checkpoint_id,
+                "workspace_id": workspace_id,
+                "crawl_run_id": crawl_run_id,
+                "snapshot_ids": json.dumps([str(item) for item in ordered]),
+                "snapshot_hash": compute_snapshot_set_sha256(ordered),
+                "coverage": json.dumps({"snapshot_count": len(ordered)}),
+            },
+        )
+    return _Scope(
+        workspace_id=workspace_id,
+        brand_id=brand_id,
+        recon_run_id=recon_run_id,
+        claim_run_id=claim_run_id,
+        client_entity_id=client_entity_id,
+        crawl_run_id=crawl_run_id,
+        checkpoint_id=checkpoint_id,
+    )
+
+
+def _request(scope: _Scope, *, model: str = "openai/gpt-5.6-luna") -> Any:
+    return OfficialSiteMaterializationRequest(
+        workspace_id=scope.workspace_id,
+        crawl_run_id=scope.crawl_run_id,
+        recon_run_id=scope.recon_run_id,
+        claim_run_id=scope.claim_run_id,
+        client_entity_id=scope.client_entity_id,
+        checkpoint_id=scope.checkpoint_id,
+        phase=CrawlPhase.FAST,
+        model_id=model,
+        prompt_version=EXTRACTION_PROMPT_VERSION,
+        schema_version=EXTRACTION_SCHEMA_VERSION,
+    )
+
+
+async def _cleanup(scope: _Scope) -> None:
+    # Claims are intentionally append-only and the database gate explicitly requires a disposable
+    # database.  Unique workspace ids isolate every scenario; retaining its rows also exercises the
+    # same durable/auditable behavior used in production instead of disabling authority triggers in
+    # a test cleanup path.
+    del scope
+
+
+def test_concurrent_grounded_materialization_and_replay_are_exactly_once(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        scope = await _seed_scope(storage)
+        gateway = _Gateway()
+        connections = _TrackingFactory()
+        materializer = GroundedOfficialSiteMaterializer(
+            gateway=gateway,  # type: ignore[arg-type]
+            storage=storage,
+            conn_factory=connections,  # type: ignore[arg-type]
+            extraction_concurrency=4,
+        )
+        try:
+            result = await materializer.materialize(_request(scope))
+            assert result.failed_fields == ()
+            assert result.empty_fields == ()
+            assert set(result.filled_fields) == {
+                "client.value_prop",
+                "client.product",
+                "client.differentiator",
+                "client.pricing_posture",
+                "client.proof_point",
+                "client.customer",
+                "client.icp_evidence",
+                "client.delivered_value",
+                "client.market_reputation",
+            }
+            assert len(result.claim_ids) == 11
+            assert len(gateway.calls) == 11
+            assert gateway.max_active >= 2
+            assert connections.max_active >= 2
+            assert not connections.shared_while_active
+
+            async with transaction() as conn:
+                before = (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM claim WHERE workspace_id = :workspace_id "
+                            "AND source_key = 'official_site'"
+                        ),
+                        {"workspace_id": scope.workspace_id},
+                    )
+                ).scalar_one()
+                provenance = list(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT source_url, source_snapshot_ref, artifact_key "
+                                "FROM claim WHERE workspace_id = :workspace_id "
+                                "AND source_key = 'official_site'"
+                            ),
+                            {"workspace_id": scope.workspace_id},
+                        )
+                    ).all()
+                )
+                assert all(row.source_url.startswith("https://example.com/") for row in provenance)
+                assert all(
+                    row.source_snapshot_ref.startswith("official-site-page:") for row in provenance
+                )
+                assert all(
+                    row.artifact_key.startswith(f"{scope.workspace_id}/") for row in provenance
+                )
+
+            replay = await materializer.materialize(_request(scope))
+            assert replay == result
+            assert len(gateway.calls) == 11
+            async with transaction() as conn:
+                after = (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM claim WHERE workspace_id = :workspace_id "
+                            "AND source_key = 'official_site'"
+                        ),
+                        {"workspace_id": scope.workspace_id},
+                    )
+                ).scalar_one()
+                operations = (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM official_site_extraction_operation "
+                            "WHERE workspace_id = :workspace_id"
+                        ),
+                        {"workspace_id": scope.workspace_id},
+                    )
+                ).scalar_one()
+            assert before == after == 11
+            assert operations == 11
+
+            with pytest.raises(ValueError, match="outside workspace/run"):
+                await materializer.materialize(
+                    _request(scope).model_copy(update={"workspace_id": "another-workspace"})
+                )
+        finally:
+            await _cleanup(scope)
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())
+
+
+def test_field_failures_and_ambiguous_model_calls_preserve_sibling_successes(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "partial-artifacts")
+        scope = await _seed_scope(storage)
+        gateway = _Gateway(
+            invalid_fields=frozenset({"client.pricing_posture"}),
+            raising_fields=frozenset({"client.market_reputation"}),
+        )
+        materializer = GroundedOfficialSiteMaterializer(
+            gateway=gateway,  # type: ignore[arg-type]
+            storage=storage,
+            extraction_concurrency=4,
+        )
+        try:
+            result = await materializer.materialize(_request(scope, model="openai/gpt-5.6-terra"))
+            assert set(result.failed_fields) == {
+                "client.pricing_posture",
+                "client.market_reputation",
+            }
+            assert "client.product" in result.filled_fields
+            assert "client.customer" in result.filled_fields
+            calls = len(gateway.calls)
+            replay = await materializer.materialize(_request(scope, model="openai/gpt-5.6-terra"))
+            assert replay == result
+            assert len(gateway.calls) == calls
+            async with transaction() as conn:
+                states = dict(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT field_key, state FROM official_site_extraction_operation "
+                                "WHERE workspace_id = :workspace_id "
+                                "AND field_key IN ('client.pricing_posture', "
+                                "'client.market_reputation')"
+                            ),
+                            {"workspace_id": scope.workspace_id},
+                        )
+                    ).all()
+                )
+            assert states == {
+                "client.pricing_posture": "failed",
+                "client.market_reputation": "spend_unknown",
+            }
+        finally:
+            await _cleanup(scope)
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())

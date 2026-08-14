@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from pydantic import SecretStr
 
 from clue_api.official_site_crawl_wiring import (
     DbOfficialSiteCrawlEnqueuer,
@@ -101,17 +102,24 @@ def test_off_or_non_allowlisted_workspace_originates_no_crawl() -> None:
     run_async(scenario())
 
 
-def test_contract_settings_are_pinned_and_authoritative_composition_refuses_without_c7() -> None:
+def test_contract_settings_are_pinned_and_authoritative_composition_requires_gateway() -> None:
     config = crawl_contract_config(_settings(), provider_key="fixture")
     assert config.crawl_mode is CrawlMode.SHADOW
     assert config.fast_deadline_seconds == 40
     assert config.max_graph_depth == 2
 
-    with pytest.raises(RuntimeError, match="requires the C7 corpus materializer"):
+    with pytest.raises(RuntimeError, match="requires a model gateway"):
         build_official_site_crawl_fleet(
             settings=_settings(stage0_official_site_crawl_mode="authoritative"),
             secrets=Secrets(_env_file=None),  # type: ignore[call-arg]
             storage=object(),  # type: ignore[arg-type]
+        )
+    with pytest.raises(RuntimeError, match="requires an OpenRouter key"):
+        build_official_site_crawl_fleet(
+            settings=_settings(stage0_official_site_crawl_mode="authoritative"),
+            secrets=Secrets(_env_file=None),  # type: ignore[call-arg]
+            storage=object(),  # type: ignore[arg-type]
+            gateway=object(),  # type: ignore[arg-type]
         )
     with pytest.raises(RuntimeError, match="requires its API key"):
         build_official_site_crawl_fleet(
@@ -119,6 +127,18 @@ def test_contract_settings_are_pinned_and_authoritative_composition_refuses_with
             secrets=Secrets(_env_file=None, firecrawl_api_key=None),  # type: ignore[call-arg]
             storage=object(),  # type: ignore[arg-type]
         )
+    authoritative = build_official_site_crawl_fleet(
+        settings=_settings(
+            stage0_official_site_crawl_mode="authoritative",
+            stage0_page_fetcher="scrapling",
+        ),
+        secrets=Secrets(  # type: ignore[call-arg]
+            _env_file=None, openrouter_api_key=SecretStr("test-only")
+        ),
+        storage=object(),  # type: ignore[arg-type]
+        gateway=object(),  # type: ignore[arg-type]
+    )
+    assert authoritative.handler is not None
 
 
 class _ControlClient:
