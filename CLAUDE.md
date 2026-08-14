@@ -44,8 +44,14 @@ Each production turn persists an immutable workspace/client/account-wide Client-
 before composition; retries and replay keep that exact version even when background recon advances.
 The frozen V1 Client-KB scope is company/account-wide (`product_id IS NULL`). A confirmed project
 product is separate project context and cannot silently filter the shared card or S4 tools; any
-future product-specific knowledge consumption requires the explicit S5.0 contract and a new policy
-version. Production Stage-0 cards reverse-bind every embedded quote to its statement for DSAR.
+product-specific consumption must follow the ratified S5.0 child contract
+`docs/specs/FI-production-deepagent-context-S50-product-knowledge-contract.md`: detailed product
+facts use an independently versioned product scope; selected-product context uses both a bounded
+`ProductKnowledgeCard@1` and separate trusted-scope product tools; `ClientKnowledgeCard@2` owns
+only the bounded company product catalog; and new turns eventually use
+`company-and-selected-product-v2` to pin the company and optional selected-product versions in one
+DB snapshot. S5.0 is contract-complete, not a runtime cutover—V1 remains production until S5-A–F
+pass. Production Stage-0 cards reverse-bind every embedded quote to its statement for DSAR.
 Every slice must reach the real production turn worker, assembler, toolbelt, database/artifacts,
 and replay path; trial-only or compiler-only work does not satisfy an exit gate.
 

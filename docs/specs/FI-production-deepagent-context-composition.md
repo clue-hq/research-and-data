@@ -6,14 +6,19 @@
 **Authority:** contract delta to Doc A Part III and PC-C8 for this production composition. Where
 this document conflicts with the provisional note in root `CLAUDE.md`, this document wins.
 
-**Implementation checkpoint (2026-08-15):** S0-S4 and S3.1 are implemented. S4-A's version-aware reader,
+**Implementation checkpoint (2026-08-15):** S0-S4, S3.1, and the S5.0 decision gate are
+implemented. S4-A's version-aware reader,
 S4-B's immutable contract freeze, S4-C's trusted `@2` implementations, S4-D's production
 composition, and S4-E's privacy/injection/replay hardening all pass their gates. The previously
 shipped `@1` tools and Head-of-ABM `v24` / Stage-0 skill `v11` / Recipe #0 `v7` graph remain frozen
 historical replay resources; S4-D's profile `v25` / skill `v12` also remain immutable. Current
 production selects `@2`, profile `v26`, skill `v13`, and Recipe #0 `v8`. S3.1 adds the immutable
 per-turn scope receipt, statement-level production-card DSAR binding, exact vN retry behavior, and
-real-fleet acceptance. S5.0, S5, and S6 remain outside this checkpoint.
+real-fleet acceptance. S5.0 ratifies the separate company/product knowledge model, paired
+selected-product card/tools, trusted-only product scope, `ClientKnowledgeCard@2` catalog, and the
+new-turn `company-and-selected-product-v2` policy in the
+[S5.0 child contract](./FI-production-deepagent-context-S50-product-knowledge-contract.md). S5
+runtime implementation and S6 remain outside this checkpoint.
 
 ## 1. Purpose
 
@@ -88,9 +93,12 @@ L2 workspace/product
 ├── BrandContextCard                    brand-scoped
 └── ProductProfileCard                  selected-product-scoped, conditional
 
+S5 selected-product extension
+└── ProductKnowledgeCard                selected-product-scoped, conditional on product KB
+
 L3 project
 ├── ProjectConversationCard             active project/thread envelope, always present
-├── ClientKnowledgeCard                 customer-account-scoped, conditional on Client-KB
+├── ClientKnowledgeCard                 account-wide; V2 adds bounded product catalog in S5
 └── Stage0ProjectStateCard              active-project-scoped, conditional on Client-KB
 ```
 
@@ -109,6 +117,13 @@ The budget envelope remains separate authority, not descriptive context.
 
 - `client_entity_id` and exact `client_kb_version`;
 - bounded topic/field descriptions, briefs, claim refs, gaps, coverage, and Client-KB omissions.
+- in V2, the bounded company product catalog and its catalog-claim refs, but never detailed
+  product-scoped facts.
+
+`ProductProfileCard` owns selected-product identity: product/brand ids, name, aliases, and status.
+
+`ProductKnowledgeCard` owns the selected product's exact product-KB version, bounded knowledge
+index, gaps, coverage, omissions, and lineage. Its body does not repeat profile identity.
 
 `Stage0ProjectStateCard` owns:
 
@@ -153,8 +168,9 @@ mixing is forbidden.
 The frozen `company-account-wide-v1` policy has one precise meaning: the Client-KB card and S4
 reads select only the account-wide marker/claims (`product_id IS NULL`). `project.product_id` is a
 separate project pin used by L2 and Stage-0 project state; it never silently filters the shared
-Client-KB. Product-specific claims require the explicit S5.0 product-knowledge contract and a new
-policy version rather than reinterpretation of V1.
+Client-KB. S5.0 ratifies, but does not yet cut over, `company-and-selected-product-v2`: new turns
+will pin the company version plus the independently current selected-product version (when one
+exists) in one DB snapshot. Historical V1 rows remain replayable and are never reinterpreted.
 
 ### D5 — References must explain what they lead to
 
@@ -196,6 +212,11 @@ Both tools derive workspace/client/version authority from the trusted `ToolConte
 The model cannot choose a workspace, client entity, or KB version. Unknown, foreign, expired,
 wrong-version, or non-member claims fail closed. A vN row superseded only by vN+1 remains a vN
 member and must continue to resolve for an already-pinned vN turn.
+
+S5 adds separate `list_product_knowledge@1` and `inspect_product_claim@1` addresses. Their only
+model fields are the same bounded filters/reference; trusted runtime injection supplies
+workspace/client/confirmed-product/product-version. The company tools never gain a product scope
+argument, and each tool pair refuses claims from the other scope.
 
 ### D7 — Human-confirmed product choice is project-specific
 
@@ -302,6 +323,14 @@ scope disagreement before bytes are persisted.
 - `AgentConstitution.client_entity_id` carries the same trusted client pin for engine-side tool
   argument injection. It is authority, not a second model-facing fact.
 
+### 4.5 S5 product-knowledge contract
+
+S5.0 freezes the additive `ClientKnowledgeCard@2`, `ProductProfileCard@1`,
+`ProductKnowledgeCard@1`, separate product `@1` tools, and trusted product-version pin. Exact
+ownership, state transitions, authority fields, compatibility, and privacy requirements live in
+[`FI-production-deepagent-context-S50-product-knowledge-contract.md`](./FI-production-deepagent-context-S50-product-knowledge-contract.md).
+These are ratified target contracts, not current production surfaces until S5 passes its gates.
+
 ## 5. Data and lifecycle
 
 ### 5.1 Canonical client binding
@@ -333,6 +362,11 @@ the recon's client identity. Existing project-scoped onboarding rows are not the
 The row is created before cards, context assembly, model execution, or tools. Ordinary retries,
 crash recovery, and committed replay never update or delete it.
 
+S5 will add `product_kb_version` and the `company-and-selected-product-v2` meaning to new rows.
+The existing `client_kb_version` remains the physical company-version column; it is not renamed or
+reinterpreted. V2 resolves the optional selected-product version in the same DB snapshot and
+supports honest `(confirmed product, no product KB)` rows.
+
 ### 5.3 Card persistence
 
 Cards are content-addressed immutable artifacts with privacy/DSAR subject bindings:
@@ -358,7 +392,7 @@ own context receipt.
 
 ## 6. Product catalog
 
-Add `client.product_catalog` as a registered tenant-private Client-KB field shaped as a bounded
+S5 adds `client.product_catalog` as a registered tenant-private Client-KB field shaped as a bounded
 list of objects with at least `name` and optional `description`/`aliases`. Official-site extraction
 grounds each catalog claim in exact snapshots like every other Client-KB claim.
 
@@ -372,8 +406,10 @@ At the API composition root, a catalog synchronizer:
 - is idempotent on replay;
 - refuses cross-workspace/brand rows.
 
-The Client-KB card describes available products with product refs. The Stage-0 agent proposes from
-those refs. Existing human-only `confirm_project_product` remains the sole project-binding write.
+`ClientKnowledgeCard@2` describes available products with product refs and bounded catalog
+claim lineage. It never embeds detailed product facts. After confirmation, the independently
+versioned Product-KB card/tools describe only that product. The Stage-0 agent proposes from the
+catalog refs; existing human-only `confirm_project_product` remains the sole project-binding write.
 
 ## 7. Sliced roadmap
 
@@ -714,20 +750,53 @@ UUID/tuple wire-shape regression.
 
 ### S5.0 — Product-knowledge consumption decision
 
-Before catalog synchronization begins, ratify that company facts belong to the account-wide
-Client-KB and product facts belong to product-scoped knowledge. Decide whether selected-product
-context uses a `ProductKnowledgeCard`, product-filtered S4 tools, or both, and whether the S5
-catalog requires `ClientKnowledgeCard@2`. No S5 schema or synchronization code proceeds while one
-of these decisions can still change how the agent consumes product knowledge.
+**Status:** implemented and contract-frozen 2026-08-15. Runtime delivery remains S5.
+
+The binding decision is documented exhaustively in
+[`FI-production-deepagent-context-S50-product-knowledge-contract.md`](./FI-production-deepagent-context-S50-product-knowledge-contract.md)
+and frozen by `clue_api.product_knowledge_decision` plus
+`tests/fixtures/production_context/s50_product_knowledge_decision.json`.
+
+The five decisions are:
+
+1. company facts remain in the account-wide (`product_id IS NULL`) Client-KB;
+2. detailed product facts use independently versioned product-scoped knowledge;
+3. selected-product consumption uses both `ProductKnowledgeCard@1` and separate governed
+   `list_product_knowledge@1` / `inspect_product_claim@1` tools;
+4. product scope comes only from the human-confirmed product and exact version in the trusted turn
+   pin—never model arguments;
+5. S5 introduces additive `ClientKnowledgeCard@2` for a typed, bounded product catalog while V1
+   remains immutable for replay.
+
+The target new-turn policy is `company-and-selected-product-v2`. A turn pins the company and
+optional selected-product versions in one DB snapshot, reuses the pair on retry, and permits only
+a later turn to observe background updates. S5.0 intentionally performs no migration, extraction,
+synchronization, runtime card compilation, tool registration, or production cutover.
+
+**Exit evidence:** `tests/api/test_product_knowledge_decision_s50.py` validates the complete
+decision fixture and four context states without a DB/provider, proves product tool schemas expose
+no scope coordinates, proves the existing company tools and `ClientKnowledgeCard@1` are unchanged,
+and assigns every runtime responsibility to S5-A through S5-F.
 
 ### S5 — Recon product catalog and human project selection
 
-**Deliverables**
+S5 implements the S5.0 contract in six ordered checkpoints. The child contract §9 owns their full
+boundaries: S5-A product/card/tool contracts; S5-B grounded catalog extraction/synchronization and
+lineage; S5-C exact product readers/card compilers; S5-D governed product tools; S5-E durable pair
+pin and real production composition; S5-F human selection/refresh acceptance.
 
-- Register and extract `client.product_catalog` from the official-site corpus.
+**Aggregate deliverables**
+
+- Register/extract `client.product_catalog` and product-specific knowledge from the official-site
+  corpus without crossing their scopes.
 - Add durable claim-to-product lineage and idempotent catalog-to-spine synchronization.
-- Include bounded catalog descriptors/product refs in Client-KB context.
-- Update Stage-0 guidance so the agent asks the human to select a product and then uses the
+- Ship `ClientKnowledgeCard@2`, `ProductProfileCard@1`, and `ProductKnowledgeCard@1` through the
+  real assembler with bounded omissions and DSAR reach.
+- Ship separate trusted-scope product list/inspect tools through the production profile, recipe,
+  skill, execution, checkpoint, stream, finalization, and replay paths.
+- Add the `company-and-selected-product-v2` durable pin pair without rewriting historical V1
+  receipts.
+- Update Stage-0 guidance so the agent presents catalog options, asks the human, and uses only the
   existing human-only confirmation operation.
 
 **Passing criteria and tests**
@@ -735,6 +804,10 @@ of these decisions can still change how the agent consumes product knowledge.
 - Multi-product fixture produces grounded catalog claims and distinct same-brand product rows.
 - Replaying extraction/synchronization creates zero duplicate products/lineage.
 - Same-name normalization never merges different explicit products without an alias match.
+- Company tools cannot read product claims; product tools cannot read company or another product's
+  claims; no model schema contains workspace/client/product/version authority.
+- A selected product with no product KB yields an honest profile-only state.
+- Background company/product updates cannot change either member of a pinned turn's version pair.
 - Project A and B can confirm different products from the same catalog.
 - The model cannot directly confirm or repoint a project product.
 - Cross-brand/cross-workspace confirmation is refused.
@@ -800,8 +873,13 @@ S4-A readers
 → S4-D production registration
 → S4-E privacy/security/replay
 → S3.1 production composition reliability
-→ S5.0 product-knowledge decision
-→ S5 catalog and selection
+→ S5.0 product-knowledge decision (complete)
+→ S5-A product/card/tool contracts
+→ S5-B catalog extraction/synchronization + lineage
+→ S5-C product readers/cards
+→ S5-D governed product tools
+→ S5-E durable pair pin + production composition
+→ S5-F human selection + refresh acceptance
 → S6 browser/live acceptance
 ```
 

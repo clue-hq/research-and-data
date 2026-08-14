@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-15-production-context-s50.md` — S5.0 decision gate complete: separate company/product
+  knowledge scopes, paired selected-product card/tools, trusted-only product authority,
+  `ClientKnowledgeCard@2` bounded catalog, coherent durable version-pair policy, executable state
+  manifest, and S5-A–F runtime ownership without a premature cutover.
 - `2026-08-15-production-context-s31.md` — S3.1 complete: immutable database-backed per-turn
   workspace/project/client/company-KB scope receipts, retry-stable vN semantics, frozen
   company-wide versus product-specific policy, production Stage-0 statement bindings, real
