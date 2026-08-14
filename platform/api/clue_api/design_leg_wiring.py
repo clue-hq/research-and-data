@@ -200,8 +200,10 @@ async def load_head_of_abm_history(
     """§2.4's other half: the conversation surface's thread history **without** leg transcripts.
 
     Filtered by turn role rather than by leg id, deliberately: head-of-abm never ingests *any*
-    design exchange, whichever leg produced it. What it does see of a closed leg is the exit
-    summary its history gains at leg close (P3.5) — a summary, not a transcript.
+    design exchange, whichever leg produced it. What it *does* see of a leg is exactly the
+    exit summary ``finish_design_leg`` journaled at close (P3.5) — the one design-turn message
+    whose id the append-only exit journal names. The journal is the authority for what crosses
+    the §2.4 boundary: a summary, never a transcript.
     """
 
     async with conn_factory() as conn:
@@ -213,7 +215,12 @@ async def load_head_of_abm_history(
                 "JOIN agent_turn t ON t.id = m.turn_id AND t.workspace_id = m.workspace_id "
                 "JOIN artifact a ON a.storage_key = m.body_artifact_key "
                 "WHERE m.workspace_id = :workspace AND m.thread_id = :thread "
-                "AND t.role <> 'design' "
+                "AND (t.role <> 'design' OR m.id IN ("
+                "    SELECT CAST(j.summary_refs->>'summary_message_id' AS uuid) "
+                "    FROM design_leg_exit_journal j "
+                "    WHERE j.workspace_id = m.workspace_id "
+                "      AND j.summary_refs ? 'summary_message_id'"
+                ")) "
                 "ORDER BY m.sequence"
             ),
             {"workspace": workspace_id, "thread": thread_id},

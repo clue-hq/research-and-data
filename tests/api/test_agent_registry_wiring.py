@@ -68,7 +68,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # gate, end the turn, and launch only after the human's own confirming turn.
         # PD-part3 P3.4 minted head-of-abm@v24: v23 plus `open_design_leg@1`, the design
         # delegation entry (validate the D5 pins, freeze the §2.3 bundle, open the durable leg).
-        AgentRole.HEAD_OF_ABM: ("9dd6f18ae61ab228e879bed06cf8c08e23232f32247420b0b75e50fd6ee4b8b2"),
+        # P3.5 revised open_design_leg@1's schema in-train (reopen_leg_id + reopened — the
+        # §2.2 mis-exit recovery), refreshing the pinned digests and this aggregate.
+        AgentRole.HEAD_OF_ABM: ("0c1210fcd56eb642fefaab0952ca67de3241ae1f81977573ce6f696ae9f9a3cc"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -136,8 +138,13 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (83 -> 104), completing the design write surface. The frontend×design integration merge
     # unions FI Lane D's five (four REQ-21 thread tools + the D4 directive-confirmation gate),
     # so the merged inventory is 104 + 5 = 109. PD-part3 P3.4 adds `open_design_leg@1` — the
-    # head-of-abm's delegation entry onto the design leg (109 + 1 = 110).
-    assert len(by_address) == 110
+    # head-of-abm's delegation entry onto the design leg (109 + 1 = 110) — and P3.5 adds
+    # `finish_design_leg@1`, the DESIGN-granted leg exit, role-unavailable from this view
+    # (110 + 1 = 111).
+    assert len(by_address) == 111
+    assert (
+        by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    )
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
     # NO reason code — the same honest shape as any tool granted to another role —
@@ -489,12 +496,15 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     One role, a doorway, not a container (ruling D2): design@v1 resolves with ALL 49
     governed design tools pinned and AVAILABLE from its own view — exactly the
     authority the C6 audit grants and nothing else — no delegation, and the
-    P3.2-gate-ratified model policy on its face.
+    P3.2-gate-ratified model policy on its face. P3.5 adds the fiftieth pin:
+    `finish_design_leg@1`, the leg-level exit (§2.2) — the composite's one doorway
+    back to head-of-abm.
     """
     resolved = registry.resolve(AgentRole.DESIGN)
     assert resolved.profile.version == "v1"
-    assert len(resolved.profile.tools) == 49
-    assert all(pin.name.startswith("design_") for pin in resolved.profile.tools)
+    assert len(resolved.profile.tools) == 50
+    assert sum(1 for pin in resolved.profile.tools if pin.name.startswith("design_")) == 49
+    assert any(pin.address == "finish_design_leg@1" for pin in resolved.profile.tools)
 
     by_address = {item.address: item for item in resolved.capabilities}
     available = {

@@ -127,6 +127,11 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "design_set_brand_kit_approval": (AgentRole.DESIGN,),
     "design_upsert_binding_set": (AgentRole.DESIGN,),
     "draft_account_research_directive": (AgentRole.HEAD_OF_ABM,),
+    # P3.5 (PD-part3 §2.2): the leg-level exit, granted to the composite design deepagent — the
+    # only path to a closed leg. Turn-level finalization (the design harness's final.json) is a
+    # different authority and stays design-runtime-internal; this is the engine-validated
+    # doorway back to head-of-abm (lock-in summary, out_of_scope re-delivery, journaled).
+    "finish_design_leg": (AgentRole.DESIGN,),
     "confirm_account_research_directive": (),
     "discover_accounts": (),
     "estimate_project": (),

@@ -375,4 +375,53 @@ def test_the_full_leg_loop_routes_design_and_leaves_head_of_abm_untouched(
             )
             assert [item.turn_id for item in hoabm_history] == [strategy.turn_id]
 
+            # --- 4. P3.5's other half of the gate: lock-in returns the thread -------------
+            from clue_api.design_leg_tools import FinishDesignLegTool
+
+            closing_turn = uuid5(NAMESPACE_URL, "p34gate:design-2")
+            finish_registry = ToolRegistry()
+            finish_registry.register(
+                FinishDesignLegTool(conn_factory=cf, storage=storage), make_default=True
+            )
+            await invoke_tool(
+                finish_registry,
+                "finish_design_leg",
+                {
+                    "source_turn_ref": derive_turn_action_ref(closing_turn),
+                    "reason": "locked",
+                    "summary": "Locked: bold headline on the navy artboard.",
+                },
+                ToolContext(
+                    workspace_id=workspace_id,
+                    actor="agent",
+                    conn_factory=cf,
+                    operation_id=new_operation_id(),
+                ),
+                idempotency_ttl_s=60,
+            )
+            assert (
+                await design_legs.get_open_leg_for_thread(
+                    conn, workspace_id=workspace_id, thread_id=thread_id
+                )
+                is None
+            )
+            # Head-of-abm's history resumes WITH the summary and WITHOUT the transcript.
+            resumed = await load_head_of_abm_history(
+                cf, workspace_id=workspace_id, thread_id=thread_id
+            )
+            assert len(resumed) == 2  # the strategy message + the leg summary
+            summary_body = (await artifacts.read(resumed[-1].body_ref)).decode()
+            assert summary_body == "Locked: bold headline on the navy artboard."
+
+            # The routing rule now sends the next message down the head-of-abm path: this
+            # harness composes that path with None sentinels (recipes etc.), so *reaching*
+            # it raises AttributeError — the proof the thread returned — and the design
+            # lane sees no third dispatch.
+            after_close = await _submit(
+                conn, seeds=seeds, label="after-close", message="Great. Who do we target?"
+            )
+            with pytest.raises(AttributeError):
+                await runner.run(turn_id=after_close.turn_id, workspace_id=workspace_id)
+            assert len(lane.envelopes) == 2
+
     run_async(scenario())

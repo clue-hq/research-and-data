@@ -44,10 +44,12 @@ tools:
     version: "1"
     input_schema_sha256: b3eed222972f43c1b46c49fe7c2aad74edb6674c6f80851b877e169441fe413c
     output_schema_sha256: 564042e1d84be2e27e350c3acc1c123d936508430175584d16615c1cd3382b1d
+  # P3.5 revised the v1 schema in-train (reopen_leg_id + reopened — the §2.2 mis-exit
+  # recovery); digests refreshed per the P3.1 in-commit contract-delta ritual.
   - name: open_design_leg
     version: "1"
-    input_schema_sha256: 50f51d1805f48bbbad88adc9f3a24acb4dffb7ed0c194df10f42033c403dfa88
-    output_schema_sha256: 88b5fc7fc8715d13c621fca505ae70437c413d4df4d16e90fe83730c6c57d6d9
+    input_schema_sha256: 9dd301472627a6e8124534f674a85543966891a0549552d06360e0d9952ba050
+    output_schema_sha256: d7b61100ad386afcd0cb146b9fa7de4f959fe515bf6392ce60f34129fe417ac9
   - name: open_directive_confirmation_gate
     version: "1"
     input_schema_sha256: 12d9a95bb3d8b4dc76fab84022edc45eeb1fb8fbd14aa18b0c6b597dff3dad69

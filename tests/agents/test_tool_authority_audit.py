@@ -59,8 +59,13 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # delegation entry that validates the D5 pins, freezes the §2.3 bundle, and opens the
     # durable design leg whose existence IS the routing rule. It spends nothing and dispatches
     # nothing; the trial surface withholds it (102 + 1 = 103).
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 103
+    # P3.5 (PD-part3 §2.2): `finish_design_leg` joins, granted to the DESIGN role — the
+    # engine-validated leg-level exit and the only path to a closed leg. Turn-level
+    # finalization (the design harness's final.json) is a different authority and remains
+    # design-runtime-internal (103 + 1 = 104).
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 104
     assert C6_AGENT_TOOL_AUTHORITY["open_design_leg"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["finish_design_leg"] == (AgentRole.DESIGN,)
     design_grants = {
         name: roles
         for name, roles in C6_AGENT_TOOL_AUTHORITY.items()

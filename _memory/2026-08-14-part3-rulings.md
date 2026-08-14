@@ -317,7 +317,51 @@ All six spec items landed, TDD'd against the riyadh DB (55030). Detail note:
   roles design×2 + head_of_abm×1, envelopes carry focus refs + scene + leg history,
   §2.4 scoping both sides. Plus test_p34_design_leg_tool_db (6), engine (4), speaker (2).
 
-Part III standing: P3.0 spec, P3.1, P3.2 (gate passed), P3.3, **P3.4 — DONE**. Next per
-spec §4: P3.5 (`finish_design_leg`: engine-validated exit, out_of_scope re-delivery,
-mis-exit reopen — the reopen path is deliberately NOT in open_design_leg; its
-derived-id-closed replay refuses `design_leg_replay_closed`).
+## P3.5 SHIPPED (2026-08-14) — finish_design_leg + mis-exit reopen
+
+Spec §2.2 in full, TDD'd (tests/api/test_p35_finish_design_leg_db.py, 5 tests, plus the
+loop-gate extension). Summary:
+
+- **`finish_design_leg@1`** (design_leg_tools.py), granted to `AgentRole.DESIGN`
+  (authority 103→104; design profile v1 gains its 50th pin) — the ONLY path to
+  `closed`. Engine-validated: only the leg's own design turn may close it (role +
+  parent-execution match, `design_leg_exit_wrong_turn` otherwise); reason vocabulary
+  closed at the Literal. Persists the summary artifact + a durable thread message
+  (uuid5(turn,"leg_summary")), journals append-only (summary_refs carries
+  closing_turn_id / summary_message_id / document version at close /
+  redelivered_turn_id), flips the leg, decided_by_run_id = the turn's derived design
+  run. Turn-level `final.json`/`finalize_run` untouched (spec reconciliation).
+- **out_of_scope re-delivery is DERIVED, never model-authored**: the pending message is
+  the presenting turn's own captured user message; re-submitted as a fresh head-of-abm
+  submission under a derived idempotency key (`design-leg-redelivery:<leg>:<turn>`) —
+  same bytes, same submitter, same context refs; replay converges on one redelivered
+  turn. dispatch_next_thread_turn offered in the close transaction (no-op while the
+  thread's own task is in flight).
+- **§2.4's other half**: `load_head_of_abm_history` now includes design-turn messages
+  whose id the exit journal names (`summary_refs->>'summary_message_id'`) — the journal
+  is the authority for what crosses the boundary; transcripts stay excluded.
+- **Replay-before-open-leg ordering is load-bearing**: a stale retry of a close whose
+  leg was since deliberately REOPENED replays the original journaled decision and never
+  re-closes the reopened leg.
+- **Mis-exit reopen** = `open_design_leg.reopen_leg_id` (the §2.1 "re-delegation names
+  this leg id" edge): validates closed + same-thread + no other open leg; reopens the
+  SAME leg (original bundle/pins/history/parent execution survive; journal survives);
+  output gains `reopened`. Refusals: `design_leg_reopen_not_found` /
+  `design_leg_reopen_wrong_thread` / `design_leg_reopen_not_closed` /
+  `design_leg_already_open`. open_design_leg@1's v1 schema evolved in-train
+  (reopen_leg_id + reopened); head-of-abm v24 digests + manifest aggregate refreshed
+  per the P3.1 in-commit ritual (new aggregate 0c1210fc…).
+- Gate scenarios (spec §4 P3.5) green: lock-in returns summary + head-of-abm resumes
+  (loop-gate extension: after close the routing rule sends the next message down the
+  head-of-abm path and the design lane sees no third dispatch); out-of-scope answers
+  without repetition; reopen restores context (leg history resumes across the close).
+
+Residual for the design-side owner (P3.7/design): the design ORCHESTRATOR does not yet
+hold a live bridge to invoke platform tools mid-turn — finish_design_leg is registered,
+granted, and engine-complete, but has zero production callers until the harness bridge
+lands (same shape as `previous_turn_outcome`'s zero-senders precedent, recorded in
+`_memory/2026-08-14-p34-leg-engine.md` residuals).
+
+Part III standing: P3.0 spec, P3.1, P3.2 (gate passed), P3.3, P3.4, **P3.5 — DONE**.
+Next per spec §4: P3.6 (evals & resilience: exit-judgment golden set, kill-worker/resume
+leg test, single-flight + cross-thread concurrency) then P3.7 (stream bridging + close-out).
