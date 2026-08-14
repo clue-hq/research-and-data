@@ -56,6 +56,7 @@ from clue_api.client_context_authority import (
     client_kb_version_for_input_model,
     trusted_client_kb_version_fields,
 )
+from clue_api.client_knowledge_privacy import client_knowledge_result_subject_bindings
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
 from clue_api.turn_action import derive_turn_action_ref
 from clue_api.turn_binding import (
@@ -1779,10 +1780,15 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         canonical_result = result.model_copy(
             update={"references": validated_output.model_dump(mode="json")}
         )
+        subject_bindings = client_knowledge_result_subject_bindings(
+            address=operation.address,
+            references=canonical_result.references,
+        )
         result_ref = await self._artifacts.persist_body(
             workspace_id=self._constitution.workspace_id,
             data=_canonical_bytes(canonical_result),
             media_type="application/vnd.clue.agent-tool-result+json",
+            subject_bindings=subject_bindings,
         )
         await self._journal.record_tool_result(
             plan_id=plan.plan_id,

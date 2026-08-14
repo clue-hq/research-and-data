@@ -58,6 +58,7 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.chat.turn_stream import TurnStreamCallbackHandler, TurnStreamEmitter
 from clue_api.client_context_authority import trusted_client_kb_version_fields
+from clue_api.client_knowledge_privacy import stream_tool_receipt
 from clue_api.turn_binding import trusted_turn_fields
 from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
@@ -759,10 +760,7 @@ class GovernedAgentToolFactory:
                     tool_version=pin.version,
                     tool_call_id=tool_call_id,
                     operation_id=getattr(receipt, "operation_id", None),
-                    output=cast(
-                        dict[str, JsonValue],
-                        receipt.model_dump(mode="json", exclude_none=True),
-                    ),
+                    output=stream_tool_receipt(receipt),
                 )
             return receipt.model_dump_json(exclude_none=True)
 

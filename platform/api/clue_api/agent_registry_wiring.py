@@ -39,10 +39,10 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # v23 (FI Lane D D4): pins ``open_directive_confirmation_gate@1`` and re-pins
     # account-deep-steering at v3, whose procedure is the Option-B kickoff — gate first, launch only
     # after the human's own confirming turn.
-    # v25 (FI context composition S4-D): cuts production over to the strict @2 Client-KB reads.
-    # They bind only through S3's paired production L3 artifact; @1 remains historical replay.
-    # The shared trial profile retains the read names, but @2 has no compatibility-focus fallback.
-    AgentRole.HEAD_OF_ABM: "v25",
+    # v25 (FI context composition S4-D) cut production over to strict @2 Client-KB reads. v26
+    # (S4-E) retains that exact tool graph while pinning the immutable injection-hardened Stage-0
+    # skill. @1/v25 remain historical replay resources, never silently rewritten.
+    AgentRole.HEAD_OF_ABM: "v26",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

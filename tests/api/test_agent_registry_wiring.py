@@ -67,9 +67,10 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # FI Lane D D4 minted head-of-abm@v23: it pins `open_directive_confirmation_gate@1` and
         # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
         # gate, end the turn, and launch only after the human's own confirming turn.
-        # FI context composition S4-D mints v25/v12 and cuts production over to the strict @2
-        # Client-KB reads while preserving @1 in the inventory for historical replay.
-        AgentRole.HEAD_OF_ABM: ("89b6a326320a0a5dcb299d610e03066dbad1c1402f9599791bfbc429a3749e29"),
+        # FI context composition S4-D minted v25/v12 for strict @2 Client-KB reads. S4-E mints
+        # v26/v13 with the same tools plus the explicit untrusted-evidence instruction boundary;
+        # every prior resource remains in the inventory for historical replay.
+        AgentRole.HEAD_OF_ABM: ("99a2f87b1910cb4aed1626afc07874de7f936e9aca1caa258572da6233c6ec6d"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -211,7 +212,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert head.system_prompt.endswith("## End resolved resource and capability map")
 
 
-def test_s4d_production_project_surface_resolves_only_strict_client_kb_v2() -> None:
+def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardening() -> None:
     """The cutover must be on the real fleet surface, not only a base profile or test builder."""
 
     with hermetic_flag_env():
@@ -223,9 +224,9 @@ def test_s4d_production_project_surface_resolves_only_strict_client_kb_v2() -> N
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v25"
+    assert production.profile_ref.address == "profile:head-of-abm@v26"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v12"
+        "skill:stage0-interview@v13"
     )
     assert {"list_client_knowledge@2", "inspect_client_claim@2"} <= addresses
     assert {"list_client_knowledge@1", "inspect_client_claim@1"}.isdisjoint(addresses)
@@ -250,7 +251,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v12"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v13"
     assert disclosures[1].resource.address == "skill:account-deep-steering@v3"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -335,7 +336,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v12")
+    body = head.open_skill("skill:stage0-interview@v13")
 
     assert required_guidance in body
 
@@ -398,7 +399,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
         assert harness.lease.resources_frozen
         assert (
             harness.lease.backend.stat_entry_sync(
-                ".deepagent/skills/stage0-interview/v12/SKILL.md"
+                ".deepagent/skills/stage0-interview/v13/SKILL.md"
             ).sha256
             == resolved.profile.skills[0].resource.sha256
         )

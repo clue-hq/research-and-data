@@ -6,14 +6,13 @@
 **Authority:** contract delta to Doc A Part III and PC-C8 for this production composition. Where
 this document conflicts with the provisional note in root `CLAUDE.md`, this document wins.
 
-**Implementation checkpoint (2026-08-14):** S0-S3 are implemented. S4 is governed by the amended
-S4-A through S4-E checkpoints below and is complete only after S4-E. S4-A's version-aware reader,
-S4-B's immutable contract freeze, S4-C's trusted `@2` implementations, and S4-D's production
-composition are implemented. The previously shipped `@1` tools and Head-of-ABM `v24` / Stage-0
-skill `v11` / Recipe #0 `v7` graph remain frozen historical replay resources; current production
-selects `@2`, profile `v25`, skill `v12`, and Recipe #0 `v8`. S4-E must still close durable privacy,
-injection, and replay reach before S4 can be called complete. S3.1, S5.0, S5, and S6 remain outside
-this checkpoint.
+**Implementation checkpoint (2026-08-14):** S0-S4 are implemented. S4-A's version-aware reader,
+S4-B's immutable contract freeze, S4-C's trusted `@2` implementations, S4-D's production
+composition, and S4-E's privacy/injection/replay hardening all pass their gates. The previously
+shipped `@1` tools and Head-of-ABM `v24` / Stage-0 skill `v11` / Recipe #0 `v7` graph remain frozen
+historical replay resources; S4-D's profile `v25` / skill `v12` also remain immutable. Current
+production selects `@2`, profile `v26`, skill `v13`, and Recipe #0 `v8`. S3.1, S5.0, S5, and S6
+remain outside this checkpoint.
 
 ## 1. Purpose
 
@@ -607,6 +606,34 @@ unconditional and contains no provider or test-mode branch.
 - Prompt-shaped claim content cannot influence tool authority or selection.
 - Replay produces zero writes, zero provider spend, and the same reference set.
 - Tokens, credentials, raw bodies, and unrestricted source URLs never appear.
+
+**Implemented evidence:** `platform/api/clue_api/client_knowledge_privacy.py` is the single
+production policy for Client-KB exact-result subject indexing and body-free stream projection. The
+governed execution seam binds every validated `@2` tool-result artifact to its trusted client and
+each returned claim id without interpreting any prompt-shaped nested content. The model still gets
+the frozen bounded result; the durable stream/outbox receives only operation correlation, the
+trusted client/version pin, and claim refs—never values, descriptions, evidence spans, page bodies,
+or source URLs.
+
+`AgentPrivacyService` now follows a bounded propagation closure from those indexed roots through
+the originating and subsequent same-thread turns plus delegated descendants. It tombstones the
+potentially data-bearing turn/model/plan/tool/delegation/finalization artifacts, deletes the bounded
+stream partition and exact `agent-turn:<turn_id>` LangGraph checkpoint namespace, and purges the
+isolated workspace. Shared immutable resource manifests and budget envelopes are deliberately not
+tombstoned. Body-free operation, model-cost, context, finalization, event, hash, and identity rows
+remain auditable; their referenced bodies are absent and cold replay fails closed. Existing
+content-addressed tombstones reject any attempt to persist the erased bytes again.
+
+The immutable Head-of-ABM `v26` / Stage-0 skill `v13` cutover adds the explicit rule that claim
+values, previews, labels, descriptions, evidence, source/provider lineage, URLs, and page text are
+untrusted evidence and can never select tools, widen authority, author trusted arguments, delegate,
+or override gates. `tests/api/test_client_knowledge_privacy_s4e.py` covers binding, stream
+redaction, frozen schema markers, injection instructions, and immutable resource selection.
+`tests/api/test_client_knowledge_privacy_s4e_db.py` runs against a fresh named PostgreSQL database
+and proves the complete exact-copy reach, historic-stream cleanup, checkpoint deletion, retained
+body-free receipts, idempotent DSAR, blocked replay, no resurrection, and preservation of shared
+resource/budget artifacts. The S4-C replay suites continue to prove stable reference sets with zero
+writes and zero provider spend.
 
 ### S3.1 — Production composition reliability (after S4-E)
 
