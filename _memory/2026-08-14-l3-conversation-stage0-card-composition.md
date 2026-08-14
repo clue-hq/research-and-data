@@ -1,4 +1,7 @@
-# 2026-08-14 — Provisional L3 conversation and Stage-0 card composition
+# 2026-08-14 — Superseded provisional L3 card discussion
+
+> Superseded later the same day by
+> `docs/specs/FI-production-deepagent-context-composition.md`. Retained as the discussion trail.
 
 ## Founder direction
 
@@ -12,9 +15,9 @@
   reference.
 - A governed path to discover omitted Client-KB refs and dereference exact claims remains required.
   `inspect_statement_history` and `inspect_readiness_history` do not provide that capability.
-- The two-artifact composition is precautionary and provisional. Measure context tokens,
-  duplication, tool-call/selectivity behavior, latency, and missing-context failures before
-  deciding whether it should remain or be consolidated.
+- This two-artifact proposal was subsequently refined into independently owned brand/product,
+  conversation-envelope, account-wide Client-KB, and active-project Stage-0 artifacts. See the
+  binding production spec above.
 
 ## Change and verification
 
