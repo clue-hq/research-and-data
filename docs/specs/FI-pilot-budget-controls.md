@@ -38,6 +38,16 @@ pinned per run (same accepted caveat as `CLUE_VERIFICATION_ENABLED`).
    reservation rows, M13.4 cost observability, and Lane F's settled-spend copy into the
    project ledger at DEEP completion.
 
+### Stage-0 confirmed discovery amendment (2026-08-16)
+
+For the Stage-0-to-discovery transition, approving the ICP is already the human authority to
+proceed. When this flag is off, the backend still evaluates and persists its internal
+`discovery_spend` boundary for audit, but it must record `execution_allowed=true` and must not open
+or project a discovery-spend gate, request an override, or block the run. The exact existing
+Stage-0 inputs are bound by a backend-derived product-context receipt; no receipt id or budget
+field is authored by the model/frontend. The full active-flow contract is
+[`FI-stage0-confirmed-discovery-run-contract.md`](./FI-stage0-confirmed-discovery-run-contract.md).
+
 Kept ON in both modes: depth/fanout structural caps, the exact human-approved account
 selection, canary/quality suspension (not budget), pre-spend *authority* gate (M9.1 — not
 economics), all human tools (`adjust_budget` stays functional and inert-by-consequence).

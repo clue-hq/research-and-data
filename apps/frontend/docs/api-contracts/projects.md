@@ -207,6 +207,16 @@ adversarial conclusions.
 
 #### Frozen Stage-0 authority contracts
 
+The confirmed-discovery transition has an additional ratified amendment:
+[`FI-stage0-confirmed-discovery-run-contract.md`](../../../../docs/specs/FI-stage0-confirmed-discovery-run-contract.md).
+The frontend never submits a `product_context_version_id`, readiness decision id, ICP lineage,
+Client/Product-KB version, or budget value to start the active confirmed run. The backend derives
+or reuses the immutable context receipt from the already pinned Stage-0 inputs. With
+`CLUE_BUDGET_CONTROLS_ENABLED=false`, no discovery-spend gate is returned or rendered; the
+boundary is evaluated and recorded internally in record-only mode. Discovery count/criteria, when
+they genuinely require confirmation, use the separate directive-confirmation flow and are not
+product-context or budget authority.
+
 The existing `evaluate_stage0_readiness@1` and `synthesize_icps@1` schemas remain
 unchanged for historical replay. Their corrected successors are new versioned
 contracts. Slice 1 registers their `@2` successors without silently changing an

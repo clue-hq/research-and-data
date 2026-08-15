@@ -232,6 +232,13 @@ path cannot be considered live until provider-call probes prove the gate decisio
 
 ## 6. Run-entry correction
 
+> **Active-flow amendment (2026-08-16):** this section records the implemented historical
+> `start_confirmed_project_run@1` boundary. The ratified successor derives/reuses an immutable
+> receipt over the existing Client-KB, selected product/profile, Product-KB, and approved ICP;
+> neither the model nor frontend supplies opaque lineage ids. With pilot budget controls disabled,
+> discovery is internally record-only authorized and presents no spend gate. See
+> [`FI-stage0-confirmed-discovery-run-contract.md`](./FI-stage0-confirmed-discovery-run-contract.md).
+
 The current `start_project_run` requires an already-confirmed ICP but creates the old machine at
 `REVERSE_PROFILING`. That can generate a newer Client-KB than the one from which the pinned ICP was
 derived.

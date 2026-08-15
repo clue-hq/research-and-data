@@ -508,6 +508,11 @@ references: readiness_override_id, readiness_decision_id, gate, verdict="overrid
 
 #### `start_confirmed_project_run`
 
+> **Active-flow amendment (2026-08-16):** the input below is the immutable historical `@1`
+> contract. The active successor is backend-derived and has no model-authored lineage, receipt,
+> readiness, ICP, or budget identifiers. See
+> [`FI-stage0-confirmed-discovery-run-contract.md`](./FI-stage0-confirmed-discovery-run-contract.md).
+
 The harness-only post-confirmation entry; the legacy `start_project_run@1` keeps its full fixed
 phase sequence for Recipe #1 compatibility.
 

@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-16-stage0-confirmed-discovery-contract-freeze.md` — freezes the active confirmed-run
+  correction: product context is a backend-derived receipt over five existing Stage-0 inputs,
+  `start_confirmed_project_run@2` has no model-authored lineage, disabled budget controls are
+  internal record-only/no-gate authority, and discovery configuration remains a separate contract.
 - `2026-08-16-stage0-pin-and-client-target-fixes.md` — repairs the company-v2/product-v1 ICP
   synthesis compatibility pin and excludes the workspace's bound client from every FI-2 target
   account surface, with a green 103-test isolated-database matrix.

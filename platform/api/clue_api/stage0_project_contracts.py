@@ -7,6 +7,11 @@ lets the contract battery reject the defective authority shapes before any runti
 The existing ``@1`` tools remain replayable historical contracts.  Their schemas are not mutated:
 the corrected authority split is expressed by ``evaluate_stage0_readiness@2`` and
 ``synthesize_icps@2``.
+
+The 2026-08-16 discovery-run amendment follows the same rule.  It freezes an unregistered
+``start_confirmed_project_run@2`` input with no model-authored lineage, an immutable receipt over
+the substantive Stage-0 inputs that already exist, and the budget-controls-off boundary.  The
+historical ``@1`` tool remains unchanged for replay.
 """
 
 from __future__ import annotations
@@ -21,29 +26,59 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from clue_toolbelt import ToolInput, ToolOutput
 
 __all__ = [
+    "DISCOVERY_CONFIGURATION_SCHEMA_V1",
     "EVALUATE_STAGE0_READINESS_V2",
     "ICP_CONFIRMATION_GATE_KIND",
     "ICP_GATE_DECISIONS",
+    "PRODUCT_CONTEXT_RECEIPT_INPUT_KINDS",
+    "PRODUCT_CONTEXT_RECEIPT_SCHEMA_V1",
+    "START_CONFIRMED_PROJECT_RUN_V2",
     "SYNTHESIZE_ICPS_V2",
+    "DiscoveryConfigurationContract",
+    "DiscoverySpendBoundaryContract",
     "DraftIcpSpecRef",
     "EvaluateStage0ReadinessV2Input",
     "IcpConfirmationGateContract",
+    "ProductContextReceiptContract",
+    "ProductContextReceiptInputRef",
+    "StartConfirmedProjectRunV2Input",
+    "StartConfirmedProjectRunV2Output",
     "Stage0GateResponseContract",
     "Stage0ReadinessV2Output",
     "SynthesizeIcpsV2Input",
     "SynthesizeIcpsV2Output",
     "TrustedStage0ProjectScopeInput",
     "canonical_subject_sha256",
+    "product_context_receipt_manifest_sha256",
 ]
 
 EVALUATE_STAGE0_READINESS_V2 = "evaluate_stage0_readiness@2"
 SYNTHESIZE_ICPS_V2 = "synthesize_icps@2"
+START_CONFIRMED_PROJECT_RUN_V2 = "start_confirmed_project_run@2"
 ICP_CONFIRMATION_GATE_KIND = "icp_confirmation"
+PRODUCT_CONTEXT_RECEIPT_SCHEMA_V1: Literal["stage0-existing-inputs@1"] = "stage0-existing-inputs@1"
+DISCOVERY_CONFIGURATION_SCHEMA_V1: Literal["stage0-discovery-configuration@1"] = (
+    "stage0-discovery-configuration@1"
+)
 
 type IcpGateDecision = Literal["approved", "rejected", "revised"]
+type ProductContextReceiptInputKind = Literal[
+    "client_kb",
+    "selected_product",
+    "product_profile",
+    "product_kb",
+    "approved_icp",
+]
 type Sha256 = str
 
 ICP_GATE_DECISIONS: tuple[IcpGateDecision, ...] = ("approved", "rejected", "revised")
+PRODUCT_CONTEXT_RECEIPT_INPUT_KINDS: tuple[ProductContextReceiptInputKind, ...] = (
+    "client_kb",
+    "selected_product",
+    "product_profile",
+    "product_kb",
+    "approved_icp",
+)
 
 _UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 
@@ -74,6 +109,147 @@ class TrustedStage0ProjectScopeInput(ToolInput):
     """
 
     requires_trusted_stage0_project_scope: ClassVar[bool] = True
+
+
+class ProductContextReceiptInputRef(_FrozenContract):
+    """One exact existing Stage-0 input, represented by reference rather than copied knowledge.
+
+    ``revision`` uses the resource's native durable revision coordinate.  For example, Client-KB
+    and Product-KB use their positive version while a selected-product decision may use its
+    immutable answer receipt.  ``subject_sha256`` binds the canonical bytes at that coordinate.
+    """
+
+    kind: ProductContextReceiptInputKind
+    subject_ref: str = Field(min_length=1)
+    revision: str = Field(min_length=1)
+    subject_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+def product_context_receipt_manifest_sha256(
+    *,
+    workspace_id: str,
+    project_id: str,
+    client_entity_id: str,
+    product_id: str,
+    inputs: tuple[ProductContextReceiptInputRef, ...],
+) -> str:
+    """Digest one canonical receipt payload; the backend is the only intended caller."""
+
+    payload = {
+        "receipt_schema_version": PRODUCT_CONTEXT_RECEIPT_SCHEMA_V1,
+        "workspace_id": workspace_id,
+        "project_id": project_id,
+        "client_entity_id": client_entity_id,
+        "product_id": product_id,
+        "inputs": [item.model_dump(mode="json") for item in inputs],
+    }
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+class ProductContextReceiptContract(_FrozenContract):
+    """Immutable replay/audit receipt over substantive context that already exists.
+
+    This contract never carries prose, generated claims, discovery configuration, or a model-
+    supplied identifier.  The backend derives the references and digest and inserts-or-reuses the
+    matching durable row.
+    """
+
+    receipt_schema_version: Literal["stage0-existing-inputs@1"]
+    workspace_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    client_entity_id: str = Field(pattern=_UUID_PATTERN)
+    product_id: str = Field(min_length=1)
+    inputs: tuple[ProductContextReceiptInputRef, ...] = Field(min_length=5, max_length=5)
+    manifest_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def exact_existing_inputs_and_digest(self) -> ProductContextReceiptContract:
+        if tuple(item.kind for item in self.inputs) != PRODUCT_CONTEXT_RECEIPT_INPUT_KINDS:
+            raise ValueError("product-context receipt must contain each exact Stage-0 input once")
+        expected = product_context_receipt_manifest_sha256(
+            workspace_id=self.workspace_id,
+            project_id=self.project_id,
+            client_entity_id=self.client_entity_id,
+            product_id=self.product_id,
+            inputs=self.inputs,
+        )
+        if self.manifest_sha256 != expected:
+            raise ValueError("product-context receipt digest must match its canonical inputs")
+        return self
+
+
+class DiscoverySpendBoundaryContract(_FrozenContract):
+    """Internal discovery boundary; disabled budget controls can neither block nor interrupt."""
+
+    evaluated_by: Literal["backend"]
+    readiness_decision_id: str = Field(pattern=_UUID_PATTERN)
+    budget_controls_enabled: bool
+    enforcement_mode: Literal["enforced", "record_only"]
+    execution_allowed: bool
+    human_gate_required: bool
+
+    @model_validator(mode="after")
+    def disabled_budget_controls_are_non_interactive(
+        self,
+    ) -> DiscoverySpendBoundaryContract:
+        if not self.budget_controls_enabled and (
+            self.enforcement_mode != "record_only"
+            or not self.execution_allowed
+            or self.human_gate_required
+        ):
+            raise ValueError(
+                "disabled budget controls must record internally, allow execution, and open no gate"
+            )
+        if self.budget_controls_enabled and self.enforcement_mode != "enforced":
+            raise ValueError("enabled budget controls must use the enforced boundary")
+        return self
+
+
+class DiscoveryConfigurationContract(_FrozenContract):
+    """Provider-neutral discovery scope, intentionally separate from context and spend authority."""
+
+    schema_version: Literal["stage0-discovery-configuration@1"]
+    approved_icp_ref: str = Field(min_length=1)
+    entity_type: Literal["company"]
+    requested_account_count: int = Field(gt=0)
+    search_intent: str = Field(min_length=1, max_length=4_000)
+    must_have_criteria: tuple[str, ...] = Field(min_length=1)
+    exclusion_criteria: tuple[str, ...] = ()
+
+    @field_validator("must_have_criteria", "exclusion_criteria")
+    @classmethod
+    def criteria_are_bounded_and_unique(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(values) > 50:
+            raise ValueError("discovery criteria are limited to 50 entries")
+        if any(not value.strip() or len(value) > 500 for value in values):
+            raise ValueError("discovery criteria must be non-blank and at most 500 characters")
+        if len(set(values)) != len(values):
+            raise ValueError("discovery criteria must be unique")
+        return values
+
+
+class StartConfirmedProjectRunV2Input(TrustedStage0ProjectScopeInput):
+    """No model-authored lineage, receipt id, readiness id, ICP id, or budget value.
+
+    The execution-bound project and immutable turn scope identify the confirmed Stage-0 inputs.
+    The backend derives/reuses the receipt and evaluates the discovery boundary.
+    """
+
+
+class StartConfirmedProjectRunV2Output(ToolOutput):
+    """Reference-only result of the backend-owned confirmed-run transition."""
+
+    project_run_id: str = Field(pattern=_UUID_PATTERN)
+    phase: Literal["discovery"]
+    product_context_version_id: str = Field(pattern=_UUID_PATTERN)
+    readiness_decision_id: str = Field(pattern=_UUID_PATTERN)
+    receipt_reused: bool
 
 
 class EvaluateStage0ReadinessV2Input(TrustedStage0ProjectScopeInput):
