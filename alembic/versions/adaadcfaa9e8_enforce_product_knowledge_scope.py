@@ -45,8 +45,7 @@ def upgrade() -> None:
     # reload compares equal instead of seeing runtime ``forbidden`` and stored NULL as different
     # definitions. Workspace-local dynamic Client-KB fields are company-wide by construction.
     op.execute(
-        "UPDATE field_definition SET product_scope='forbidden' "
-        "WHERE field_key LIKE 'client.%'"
+        "UPDATE field_definition SET product_scope='forbidden' WHERE field_key LIKE 'client.%'"
     )
     op.execute(
         "UPDATE workspace_field_definition SET product_scope='forbidden' "
@@ -72,8 +71,7 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "UPDATE field_definition SET product_scope='optional' "
-        "WHERE field_key='client.kb_version'"
+        "UPDATE field_definition SET product_scope='optional' WHERE field_key='client.kb_version'"
     )
 
     # Application writes fail early with ProductScopeError. This trigger is the cross-process and
@@ -170,7 +168,5 @@ def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS claim_product_scope_policy ON claim")
     op.execute("DROP FUNCTION IF EXISTS claim_enforce_product_scope()")
     for table in ("workspace_field_definition", "field_definition"):
-        op.execute(
-            f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {table}_product_scope"
-        )
+        op.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {table}_product_scope")
         op.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS product_scope")

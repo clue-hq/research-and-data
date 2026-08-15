@@ -351,17 +351,18 @@ def test_subject_dsar_redacts_gate_snapshot_and_cannot_resurrect_or_answer_it(
             assert erased.redacted_gate_ids == (gate.gate_id,)
             assert erased.tombstoned_artifact_keys == ()
 
-            stored = await get_gate(
-                conn, workspace_id=seeded.workspace_id, gate_id=gate.gate_id
-            )
+            stored = await get_gate(conn, workspace_id=seeded.workspace_id, gate_id=gate.gate_id)
             assert stored is not None
             assert stored.gate.subject_snapshot == {}
             assert stored.gate.snapshot_erased_at is not None
             assert stored.gate.snapshot_erasure_reason == "dsar_subject_erasure"
             assert stored.is_open is False
-            assert await open_gates_for_thread(
-                conn, workspace_id=seeded.workspace_id, thread_id=seeded.thread_id
-            ) == ()
+            assert (
+                await open_gates_for_thread(
+                    conn, workspace_id=seeded.workspace_id, thread_id=seeded.thread_id
+                )
+                == ()
+            )
 
             # Re-presenting the same derived gate returns the redacted receipt and never restores
             # caller-supplied bytes. Both application and database answer seams fail closed.
@@ -390,9 +391,7 @@ def test_subject_dsar_redacts_gate_snapshot_and_cannot_resurrect_or_answer_it(
             with pytest.raises(DBAPIError):
                 async with conn.begin_nested():
                     await conn.execute(
-                        text(
-                            "UPDATE agent_gate SET max_spend_cents=1 WHERE gate_id=:gate"
-                        ),
+                        text("UPDATE agent_gate SET max_spend_cents=1 WHERE gate_id=:gate"),
                         {"gate": gate.gate_id},
                     )
 

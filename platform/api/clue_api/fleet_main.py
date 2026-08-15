@@ -481,10 +481,14 @@ async def _serve() -> None:
     settings = load_settings()
     secrets = Secrets()
     storage = build_storage_backend(settings)
-    async with production_metrics_lifespan(
-        settings,
-        service_name="clue-worker-fleet",
-    ), db_lifespan(), redis_lifespan():
+    async with (
+        production_metrics_lifespan(
+            settings,
+            service_name="clue-worker-fleet",
+        ),
+        db_lifespan(),
+        redis_lifespan(),
+    ):
         register_compliance_wiring()
         register_narrative_wiring()
         async with transaction() as conn:

@@ -820,10 +820,11 @@ pin and real production composition; S5-F human selection/refresh acceptance.
 
 ### S6 — Refresh, replay, observability, and production acceptance
 
-**Status:** implemented and accepted 2026-08-15. Offline, isolated-database, real-provider, real
-model, and browser evidence is retained and reconciled in
-`FI-production-deepagent-context-composition-S6-acceptance.md`. S6 closes the production loop; it
-does not introduce another card, knowledge store, turn runner, or operator-only source of truth.
+**Status:** implementation complete; live company-context path proven 2026-08-15; full product
+journey acceptance remains open under
+`FI-production-deepagent-context-release-closure.md`. The retained evidence is reconciled in
+`FI-production-deepagent-context-composition-S6-acceptance.md`. S6 does not introduce another
+card, knowledge store, turn runner, or operator-only source of truth.
 
 S6 is delivered through five ordered checkpoints:
 
@@ -972,7 +973,7 @@ S4-A readers
 → S5-D governed product tools (complete)
 → S5-E durable pair pin + production composition (complete)
 → S5-F human selection + refresh acceptance (complete)
-→ S6 browser/live acceptance (complete)
+→ S6 production composition (implementation complete; full product live acceptance open under R5)
 ```
 
 ## 10. Definition of done

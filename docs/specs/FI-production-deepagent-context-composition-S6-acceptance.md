@@ -4,12 +4,13 @@
 
 **Branch:** `platform/onboarding-integration`
 
-**Result:** accepted with all observed live exceptions typed, retained, and reconciled
+**Result:** implementation complete; live company-context path proven; full product journey not
+yet accepted
 
 ## 1. Outcome
 
-S6 closes the production path rather than stopping at independently testable components. The
-accepted chain is:
+S6 composes the production path rather than stopping at independently testable components. The
+retained C2 run proved this chain through company knowledge and exact company-claim inspection:
 
 ```text
 real Clerk session
@@ -17,14 +18,18 @@ real Clerk session
 → real Scrapling official-site acquisition
 → fast Client-KB publication
 → browser release and project creation
-→ durable company/product version-pair pin
+→ durable company/optional-product version-pair pin
 → brand + company Client-KB + project Stage-0 card composition
 → context receipt
 → real Terra Head-of-ABM turn
 → governed Client-KB list and exact-claim inspection
 → checkpoint, stream, finalization, and replay-safe durable state
-→ same-run background extraction and next-turn version refresh
+→ same-run background extraction and a later pinned company version
 ```
+
+The C2 run did **not** prove catalog publication, human product selection, product-card
+composition, product-claim inspection, or a live v1-turn → background-v2 → later-v2-turn sequence.
+Those are release-closure R5 requirements and must not be inferred from isolated S5 fixtures.
 
 The implementation does not add another knowledge store, conversation runner, or card species.
 It composes the S1–S5 contracts through the real API/fleet path and adds only the S6 publication,
@@ -74,11 +79,12 @@ project-state-only changes, Project A/B isolation, missing-product refusal, stab
 pins, replay, crash before and after context persistence, runtime timeout, receipt/body privacy,
 fleet composition, trusted product-selection pins, and same-run fast/background continuity.
 
-### S6-E — Live production acceptance
+### S6-E — Live production discovery run
 
 The retained C2 run used the real browser, Clerk session, backend API, fleet, Scrapling acquisition,
 OpenRouter Luna extraction, and OpenRouter Terra Head-of-ABM. No fixture card, claim, product option,
-or provider response was substituted into the live path.
+or provider response was substituted into the live path. It is retained as honest discovery
+evidence, not accepted proof of the missing product journey.
 
 ## 3. Correlated live evidence
 
@@ -92,7 +98,9 @@ or provider response was substituted into the live path.
 - Final frontier: 30 attempts, 29 fetched/persisted and one quarantined `spend_unknown` attempt.
   The ambiguous paid/provider outcome was not blindly called again.
 - Client-KB version 1 is the fast publication. Version 2 is the background publication with
-  `base_version=1`; the historical v1 corpus and the first turn receipt remain unchanged.
+  `base_version=1`; the historical v1 corpus remained unchanged. Both submitted production turns
+  occurred after background completion and pinned v2, so C2 does not prove a v1 turn receipt
+  remaining pinned while v2 publishes.
 
 ### Browser and deepagent
 
@@ -110,11 +118,13 @@ or provider response was substituted into the live path.
 
 ### Honest live exceptions
 
-1. Luna's live extraction produced a partial company result and did not publish
-   `client.product_catalog`. The product-selection gate therefore returned
-   `product_catalog_empty` instead of presenting fabricated choices. Product catalog extraction,
-   synchronization, selection, and pair-pin behavior remain covered by the S5 isolated/live-fleet
-   acceptance, while this C2 condition proves the production empty-state contract.
+1. Both Luna `client.product_catalog` operations—fast and background—received HTTP 200 and then
+   raised `GatewayError` because no usable output text was present. Under the V1 accounting path
+   both became `spend_unknown`, so no catalog was published and the production gate correctly
+   returned `product_catalog_empty`. This proves the fail-closed empty state, not catalog success.
+   The V2 extraction policy now requests reasoning effort `none`, raises the bounded output budget
+   from 1,500 to 4,096 tokens, and records a known terminal response as retained/costed `failed`
+   instead of `spend_unknown`; its live proof belongs to the next fresh run.
 2. One Scrapling attempt ended `spend_unknown` and remained quarantined. There was no duplicate
    provider call or hidden success claim.
 3. C2 exposed an observability bug: `background_started_at` had been recorded only at completion,
@@ -138,16 +148,16 @@ or provider response was substituted into the live path.
 | Ruff format/check | passed |
 | Mypy | passed, 678 source files |
 | Import-linter | 25 kept, 0 broken |
-| Alembic heads | one head, `1043a61823f1` |
+| Alembic heads | one head, `df332fd7904c` |
 | Fresh upgrade/downgrade/upgrade smoke | passed |
-| Real browser + Clerk + Scrapling + Luna + Terra | passed with typed exceptions above |
+| Real browser + Clerk + Scrapling + Luna + Terra | company path passed; product path absent |
 
-The repository-wide backend suite retained the branch's documented **40-failure shared-baseline
-set**. The failing node categories are unchanged: source-manifest/shared-registry contamination,
-merged design logging discipline, migration tests run against a populated monolithic database,
-downstream seeded-state collisions, and the pre-existing workspace-token rename guard. The clean
-migration database and the 131-test S6 matrix separate those baseline failures from this change;
-no S6-focused test failed and there is no unexplained S6 regression.
+The fresh repository-wide run on `clue_context_release_20260815_broad_c2` produced **32 failures**,
+not the previously reported 40. Twenty-six are suite-order/shared-database contamination and pass
+under their required isolation: three migration-smoke nodes and twenty-three
+discovery/scoring/durable/fleet/waterfall nodes. Six are genuine pre-existing Lane-E acceptance
+drift (one E1, one E2, four E3). No S3–S6 context-composition node failed, but the broad gate is not
+green and these failures cannot be called accepted merely because they are unrelated.
 
 Next 16's default Turbopack production compiler also reproducibly deadlocked in this checkout even
 after its workspace root was pinned. The supported webpack compiler completed the full build,
@@ -170,11 +180,11 @@ Do not modify or delete these until review sign-off:
 The retained roots contain provider receipts and operational logs but this report intentionally
 contains no credentials, user email, raw page bodies, or claim values.
 
-## 6. Acceptance verdict
+## 6. Current verdict
 
-S6 is accepted. A real production route now publishes and refreshes Client-KB versions, preserves
-old turn receipts, composes the brand/shared-company/project-specific context bundle, exposes its
-body-free exact references to operators, lets the production Head-of-ABM resolve bounded refs
-through governed tools, and reports real row/event progress without UI timers. The partial catalog,
-ambiguous provider spend, and pre-fix background timestamp are explicit evidence—not hidden or
-replaced with fixture success.
+S6's production composition is implemented and the live company-context path is proven. Full S6
+acceptance remains open until release-closure R5 publishes a real catalog, records human product
+selection, composes and inspects selected-product knowledge, proves v1-to-v2 turn pin continuity,
+and reconciles the broad-suite release debt. The partial catalog, ambiguous provider spend, and
+pre-fix background timestamp remain explicit retained evidence—not hidden or replaced with fixture
+success.

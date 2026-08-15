@@ -162,9 +162,7 @@ def downgrade() -> None:
         "ALTER TABLE agent_privacy_event ADD CONSTRAINT agent_privacy_event_action CHECK ("
         "action IN ('artifact_tombstoned', 'workspace_purged'))"
     )
-    op.execute(
-        "DROP TRIGGER IF EXISTS agent_gate_answer_snapshot_available ON agent_gate_answer"
-    )
+    op.execute("DROP TRIGGER IF EXISTS agent_gate_answer_snapshot_available ON agent_gate_answer")
     op.execute("DROP FUNCTION IF EXISTS agent_gate_answer_reject_erased_snapshot()")
     op.execute("DROP TRIGGER IF EXISTS agent_gate_append_only ON agent_gate")
     op.execute("DROP FUNCTION IF EXISTS agent_gate_reject_except_privacy_redaction()")

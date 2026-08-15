@@ -746,10 +746,13 @@ def create_projections_router(
 async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Production lifespan: configure logging once, open the DB engine for the app's lifetime."""
     clue_obs.setup()
-    async with production_metrics_lifespan(
-        _app.state.settings,
-        service_name="clue-projections-api",
-    ), db_lifespan():
+    async with (
+        production_metrics_lifespan(
+            _app.state.settings,
+            service_name="clue-projections-api",
+        ),
+        db_lifespan(),
+    ):
         startup_check = getattr(_app.state, "startup_check", None)
         if startup_check is not None:
             await startup_check()

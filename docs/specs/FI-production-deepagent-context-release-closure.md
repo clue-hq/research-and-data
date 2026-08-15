@@ -1,6 +1,6 @@
 # Production Deepagent Context — Release Closure Plan
 
-**Status:** IN PROGRESS on `platform/onboarding-integration`  
+**Status:** IN PROGRESS — R0–R2 complete; R3 active on `platform/onboarding-integration`
 **Date:** 2026-08-15  
 **Parent contract:** `FI-production-deepagent-context-composition.md`  
 **Acceptance contract:** `FI-production-deepagent-context-composition-S6-acceptance.md`
@@ -61,6 +61,8 @@ reported as resolving that separate risk.
 
 ### R0 — Contract and evidence freeze
 
+**Status:** complete 2026-08-15.
+
 **Deliverables**
 
 - Freeze a provider-neutral field-level product-scope policy with `forbidden`, `required`, and
@@ -75,6 +77,8 @@ reported as resolving that separate risk.
 - The existing retained S5/S6 databases and artifact roots remain untouched.
 
 ### R1 — Shared company/product scope enforcement
+
+**Status:** complete 2026-08-15.
 
 **Deliverables**
 
@@ -97,6 +101,8 @@ reported as resolving that separate risk.
 - Fresh upgrade → downgrade → upgrade returns to one Alembic head.
 
 ### R2 — Gate privacy and operational metrics
+
+**Status:** complete 2026-08-15.
 
 **Deliverables**
 
@@ -122,6 +128,8 @@ reported as resolving that separate risk.
 
 ### R3 — Baseline and documentation truth
 
+**Status:** in progress 2026-08-15.
+
 **Deliverables**
 
 - Re-run the whole backend suite on a fresh isolated database.
@@ -136,6 +144,25 @@ reported as resolving that separate risk.
 - The broad suite has zero unexplained failures; an added or removed failure changes the executable
   baseline and fails its guard until reviewed.
 - Documentation never calls the product journey live-proven before R5.
+
+**Current evidence**
+
+- Fresh database `clue_context_release_20260815_broad_c2` upgraded to the single
+  `df332fd7904c` head before the full run and is retained for review.
+- The exact monolithic result is 32 failures, replacing the obsolete 40-failure estimate.
+- Twenty-six are shared-database ordering/contamination failures: three migration tests that
+  correctly refuse downgrade after earlier tests create fleet work, and twenty-three
+  discovery/scoring, durable, fleet, and waterfall tests whose global registries/data are changed
+  by earlier modules. The migration tests pass on a pristine migration database; all twenty-three
+  other nodes pass when their groups run in isolation.
+- Six are genuine pre-existing Lane-E acceptance drift:
+  `test_lane_e_e1_acceptance.py` (one), `test_lane_e_e2_acceptance.py` (one), and
+  `test_lane_e_e3_acceptance.py` (four). They concern verified summary/overview/narrative,
+  unresolved-client, feature-flag, and second-delivery expectations rather than S3–S6 context
+  composition.
+- No S3–S6 context-composition test failed. R3 remains open because the six Lane-E failures still
+  require an owning fix/quarantine decision and the monolithic database harness still needs
+  isolation rather than a misleading green label.
 
 ### R4 — Offline release gate
 
@@ -180,6 +207,13 @@ reported as resolving that separate risk.
    pass with no unexplained duplicate or missing row.
 
 The fresh database and artifact/log roots remain untouched until review sign-off.
+
+The earlier C2 run is discovery evidence, not R5 acceptance: both fast and background
+`client.product_catalog` operations received HTTP 200 responses but emitted no usable output and
+were recorded as `spend_unknown` under the V1 extraction policy. The corrected V2 policy uses a
+bounded 4,096-token envelope with reasoning effort `none`; known terminal HTTP responses are now
+retained and cost-accounted as failed rather than ambiguously spent, while transport ambiguity
+remains quarantined. R5 must prove V2 with a new run and must not mutate or replay the C2 rows.
 
 ## 5. Completion rule
 
