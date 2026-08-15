@@ -29,8 +29,8 @@ The central architecture bet is that verification must be modeled at the claim/d
 ## Topic notes
 - `2026-08-16-stage0-confirmed-run-v2.md` — implements the trusted no-argument
   `start_confirmed_project_run@2` boundary directly over existing Stage-0 context, promotes the
-  immutable v30/v17/v11 resources, and proves receipt/readiness/run reuse without a new human gate
-  or knowledge generation.
+  immutable v30/v17/v11 resources, and records the follow-up hardening for exact context bindings,
+  advanced-run replay, mode-specific readiness identity, and guaranteed Recipe #1 attachment.
 - `2026-08-16-stage0-confirmed-discovery-contract-freeze.md` — freezes the active confirmed-run
   correction: product context is a backend-derived receipt over five existing Stage-0 inputs,
   `start_confirmed_project_run@2` has no model-authored lineage, disabled budget controls are

@@ -11,6 +11,7 @@ from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.product_knowledge_privacy import product_subject_id
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.stage0_project_contracts import (
     PRODUCT_CONTEXT_RECEIPT_SCHEMA_V1,
@@ -129,7 +130,7 @@ async def _turn_context_artifacts(
 ) -> dict[str, _ContextArtifact]:
     """Read the exact context cards already materialized for this immutable turn."""
 
-    if scope.turn_id is None:
+    if scope.turn_id is None or scope.client_entity_id is None or scope.product_id is None:
         return {}
     rows = (
         (
@@ -141,6 +142,11 @@ async def _turn_context_artifacts(
                     JOIN artifact a
                       ON a.storage_key = r.artifact_key
                      AND a.workspace_id = r.workspace_id
+                    JOIN agent_artifact_project p
+                      ON p.workspace_id = r.workspace_id
+                     AND p.project_id = :project_id
+                     AND p.artifact_key = r.artifact_key
+                     AND p.binding_kind = 'project_conversation_context'
                     WHERE r.turn_id = :turn_id
                       AND r.workspace_id = :workspace_id
                       AND r.owner_kind = 'context'
@@ -148,11 +154,36 @@ async def _turn_context_artifacts(
                       AND r.ref_role = 'context_materialization'
                       AND a.erased_at IS NULL
                       AND a.purged_at IS NULL
+                      AND EXISTS (
+                          SELECT 1 FROM agent_artifact_subject client_subject
+                          WHERE client_subject.workspace_id = r.workspace_id
+                            AND client_subject.artifact_key = r.artifact_key
+                            AND client_subject.subject_entity_id = :client_entity_id
+                            AND client_subject.binding_kind = 'context'
+                      )
+                      AND (
+                          a.media_type NOT IN (:product_profile_media, :product_kb_media)
+                          OR EXISTS (
+                              SELECT 1 FROM agent_artifact_subject product_subject
+                              WHERE product_subject.workspace_id = r.workspace_id
+                                AND product_subject.artifact_key = r.artifact_key
+                                AND product_subject.subject_entity_id = :product_subject_id
+                                AND product_subject.binding_kind = 'context'
+                          )
+                      )
                     ORDER BY r.ordinal
-                    FOR SHARE OF a
+                    FOR SHARE OF a, r, p
                     """
                 ),
-                {"turn_id": scope.turn_id, "workspace_id": scope.workspace_id},
+                {
+                    "turn_id": scope.turn_id,
+                    "workspace_id": scope.workspace_id,
+                    "project_id": scope.project_id,
+                    "client_entity_id": scope.client_entity_id,
+                    "product_subject_id": product_subject_id(scope.product_id),
+                    "product_profile_media": PRODUCT_PROFILE_CARD_MEDIA_TYPE,
+                    "product_kb_media": PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
+                },
             )
         )
         .mappings()
@@ -817,6 +848,11 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, StartConfirmedProjectRunV2Input)
+        if self._project_execution_router is None:
+            return _failure(
+                "confirmed_discovery_router_unavailable",
+                "the durable discovery execution router is unavailable",
+            )
         async with self._conn_factory() as conn:
             scope = await _scope(conn, ctx)
             if failure := self._scope_failure(scope):
@@ -844,6 +880,9 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, StartConfirmedProjectRunV2Input)
+        if self._project_execution_router is None:
+            raise RuntimeError("confirmed discovery execution router is unavailable")
+        router = self._project_execution_router
         async with self._conn_factory() as conn:
             scope = await _scope(conn, ctx)
             if self._scope_failure(scope):
@@ -922,7 +961,10 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
                 scope.workspace_id,
                 "confirmed-discovery-readiness:"
                 f"{scope.project_id}:{approved_icp.icp_key}:{approved_icp.version}:"
-                f"{context_ref.version_id}",
+                f"{context_ref.version_id}:readiness-v{self._policy.readiness.version}:"
+                "workspace-policy-v"
+                f"{workspace_policy.version if workspace_policy is not None else 0}:"
+                f"budget-{'enforced' if self._budget_controls_enabled else 'record-only'}",
             )
             readiness_id = ReadinessDecisionId(UUID(str(readiness_operation)))
             readiness_snapshot = await evaluate_readiness(
@@ -971,12 +1013,11 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
                 icp_version=approved_icp.version,
                 budget_cap_cents=None,
             )
-        if self._project_execution_router is not None:
-            await self._project_execution_router.attach_if_eligible(
-                run_id,
-                actor=ctx.actor,
-                parent_execution_id=ctx.execution_id,
-            )
+        await router.attach_confirmed_discovery(
+            run_id,
+            actor=ctx.actor,
+            parent_execution_id=ctx.execution_id,
+        )
         return ToolResult(
             tool=self.name,
             version=self.version,

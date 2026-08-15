@@ -8,10 +8,10 @@ The existing ``@1`` tools remain replayable historical contracts.  Their schemas
 the corrected authority split is expressed by ``evaluate_stage0_readiness@2`` and
 ``synthesize_icps@2``.
 
-The 2026-08-16 discovery-run amendment follows the same rule.  It freezes an unregistered
-``start_confirmed_project_run@2`` input with no model-authored lineage, an immutable receipt over
-the substantive Stage-0 inputs that already exist, and the budget-controls-off boundary.  The
-historical ``@1`` tool remains unchanged for replay.
+The 2026-08-16 discovery-run amendment follows the same rule. It introduced
+``start_confirmed_project_run@2`` with no model-authored lineage, an immutable receipt over the
+substantive Stage-0 inputs that already exist, and the budget-controls-off boundary. The
+historical ``@1`` tool remains unchanged for replay while ``@2`` is the active registered version.
 """
 
 from __future__ import annotations

@@ -30,6 +30,7 @@ from clue_config import DEFAULT_STAGE0_POLICY, Stage0Policy
 from clue_core import (
     AccountEntity,
     EntityId,
+    ICPStatus,
     MemoryWriteSeam,
     OnboardingInputId,
     OnboardingInputKind,
@@ -159,7 +160,8 @@ async def start_confirmed_project_run(
         raise ValueError("project does not carry the requested confirmed product")
     spec = await get_icp_version(conn, workspace_id, icp_key, icp_version)
     if spec is None or (
-        spec.client_entity_id != client_entity_id
+        spec.status is not ICPStatus.ACTIVE
+        or spec.client_entity_id != client_entity_id
         or spec.client_kb_version != client_kb_version
         or spec.product_id != product_id
     ):
@@ -230,8 +232,36 @@ async def start_confirmed_project_run(
         readiness_decision_id=readiness_decision_id,
     )
     run = await get_project_run(conn, project_run_id)
-    if run is None or run.phase is not ProjectPhase.DISCOVERY:
-        raise ValueError("confirmed project run id already belongs to an incompatible run")
+    if run is None:  # pragma: no cover - same-transaction invariant
+        raise ValueError("confirmed project run vanished after insertion")
+    expected_lineage = (
+        project_id,
+        workspace_id,
+        icp_key,
+        icp_version,
+        client_entity_id,
+        client_kb_version,
+        product_id,
+        product_context_version_id,
+        readiness_decision_id,
+        budget_cap_cents,
+    )
+    actual_lineage = (
+        run.project_id,
+        run.workspace_id,
+        run.icp_key,
+        run.icp_version,
+        run.client_entity_id,
+        run.client_kb_version,
+        run.product_id,
+        run.product_context_version_id,
+        run.readiness_decision_id,
+        run.budget_cap_cents,
+    )
+    if actual_lineage != expected_lineage:
+        raise ValueError("confirmed project run id already belongs to different immutable lineage")
+    if tuple(ProjectPhase).index(run.phase) < tuple(ProjectPhase).index(ProjectPhase.DISCOVERY):
+        raise ValueError("confirmed project run has not reached its discovery entry phase")
     return project_run_id
 
 

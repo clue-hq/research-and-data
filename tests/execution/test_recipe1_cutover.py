@@ -6,6 +6,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any, cast
+from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -31,11 +33,15 @@ from clue_api.recipe_wiring import (
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings
 from clue_core import (
+    EntityId,
+    ExecutionId,
     ICPCreatedFrom,
     PhaseContext,
     PhaseResult,
     PhaseStatus,
+    ProductContextVersionId,
     ProjectPhase,
+    ReadinessDecisionId,
 )
 from clue_db import ConnFactory
 from clue_execution import (
@@ -164,7 +170,9 @@ def test_recipe1_routing_is_fail_closed_and_deterministic() -> None:
     )
 
 
-def test_recipe1_phase_spine_waits_and_resumes_without_reexecuting_gate() -> None:
+def test_recipe1_phase_spine_waits_and_resumes_without_reexecuting_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             workspace_id = await seed_workspace(conn, "ws-recipe1-cutover")
@@ -294,6 +302,16 @@ def test_recipe1_phase_spine_waits_and_resumes_without_reexecuting_gate() -> Non
                 queue=queue,
                 conn_factory=factory,
             )
+            forced_router = Recipe1ProjectExecutionRouter(
+                settings=Settings(_env_file=None, recipe1_routing_enabled=False),
+                recipes=reader,
+                starter=starter,
+                executor=executor,
+                parameters=parameters,
+                compatibility=compatibility,
+                queue=queue,
+                conn_factory=factory,
+            )
             invalid_confirmed_run = await machine.start(
                 project_id=project.project_id,
                 workspace_id=workspace_id,
@@ -305,9 +323,47 @@ def test_recipe1_phase_spine_waits_and_resumes_without_reexecuting_gate() -> Non
                 {"run_id": invalid_confirmed_run},
             )
             with pytest.raises(ValueError, match="complete immutable Stage-0 lineage"):
-                await router.attach_if_eligible(invalid_confirmed_run, actor="human")
+                await forced_router.attach_confirmed_discovery(
+                    invalid_confirmed_run,
+                    actor="human",
+                )
 
-            execution_id = await router.attach_if_eligible(run_id, actor="human")
+            # The confirmed handoff bypasses only the legacy workspace canary. Probe that
+            # selection rule with a complete immutable row; the common concrete attach path is
+            # exercised immediately below through the enabled router.
+            confirmed_probe = (await forced_router._load_run(run_id)).model_copy(
+                update={
+                    "phase": ProjectPhase.DISCOVERY,
+                    "client_entity_id": EntityId(uuid4()),
+                    "client_kb_version": 1,
+                    "product_id": "product-confirmed",
+                    "product_context_version_id": ProductContextVersionId(uuid4()),
+                    "readiness_decision_id": ReadinessDecisionId(uuid4()),
+                }
+            )
+            expected_probe_execution = ExecutionId(uuid4())
+            attach_probe = AsyncMock(return_value=expected_probe_execution)
+            monkeypatch.setattr(
+                forced_router,
+                "_load_run",
+                AsyncMock(return_value=confirmed_probe),
+            )
+            monkeypatch.setattr(forced_router, "_attach", attach_probe)
+            assert await forced_router.attach_if_eligible(run_id, actor="human") is None
+            assert (
+                await forced_router.attach_confirmed_discovery(run_id, actor="human")
+                == expected_probe_execution
+            )
+            attach_probe.assert_awaited_once_with(
+                confirmed_probe,
+                actor="human",
+                parent_execution_id=None,
+            )
+
+            execution_id = await router.attach_if_eligible(
+                run_id,
+                actor="human",
+            )
             assert execution_id is not None
             lease = await acquire_work_lease(
                 conn,

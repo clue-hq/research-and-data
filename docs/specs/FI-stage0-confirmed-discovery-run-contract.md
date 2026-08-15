@@ -60,7 +60,9 @@ object:
 The trusted execution/turn scope supplies the project. The tool implementation directly resolves
 the approved ICP and five existing receipt inputs, calls the existing content-addressed
 `compile_product_context`, evaluates the internal discovery boundary, creates or reuses the
-confirmed project run, and attaches the discovery recipe. There is no additional receipt service,
+confirmed project run, and attaches the discovery recipe. This explicit confirmed-Stage-0 handoff
+is not subject to the older opportunistic Recipe #1 canary: successful run entry must not leave a
+durable project run without an execution owner. There is no additional receipt service,
 context-compilation wrapper, agent call, or knowledge-generation phase.
 
 The model and frontend must never author:
@@ -120,5 +122,6 @@ request fields. Exa-specific requirements do not leak into the receipt or run-en
   and `discovery` phase.
 
 `start_confirmed_project_run@2` performs the receipt reuse, internal readiness transition and
-idempotent run start. Discovery-configuration compilation and browser acceptance remain separate
-follow-on checkpoints.
+idempotent run start. A replay after Recipe #1 has advanced the run validates the same immutable
+lineage and does not rewind or fail merely because the current phase is later than `discovery`.
+Discovery-configuration compilation and browser acceptance remain separate follow-on checkpoints.

@@ -37,6 +37,14 @@ RECIPE1_VERSION = 2
 
 
 class ProjectExecutionRouter(Protocol):
+    async def attach_confirmed_discovery(
+        self,
+        project_run_id: ProjectRunId,
+        *,
+        actor: str,
+        parent_execution_id: ExecutionId | None = None,
+    ) -> ExecutionId: ...
+
     async def attach_if_eligible(
         self,
         project_run_id: ProjectRunId,
@@ -76,6 +84,19 @@ class DeferredProjectExecutionRouter:
         if self._target is None:
             raise RuntimeError("project execution router has not been bound")
         return self._target
+
+    async def attach_confirmed_discovery(
+        self,
+        project_run_id: ProjectRunId,
+        *,
+        actor: str,
+        parent_execution_id: ExecutionId | None = None,
+    ) -> ExecutionId:
+        return await self._require().attach_confirmed_discovery(
+            project_run_id,
+            actor=actor,
+            parent_execution_id=parent_execution_id,
+        )
 
     async def attach_if_eligible(
         self,
@@ -255,16 +276,13 @@ class Recipe1ProjectExecutionRouter:
             ProjectPhase.ICP_CONFIRMED.value: dict(lineage),
         }
 
-    async def attach_if_eligible(
+    async def _attach(
         self,
-        project_run_id: ProjectRunId,
+        run: ProjectRunRow,
         *,
         actor: str,
         parent_execution_id: ExecutionId | None = None,
-    ) -> ExecutionId | None:
-        run = await self._load_run(project_run_id)
-        if not recipe1_workspace_eligible(self._settings, run.workspace_id):
-            return None
+    ) -> ExecutionId:
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
@@ -298,6 +316,57 @@ class Recipe1ProjectExecutionRouter:
         )
         await enqueue_recipe_execution(self._queue, start.execution_id)
         return start.execution_id
+
+    async def attach_confirmed_discovery(
+        self,
+        project_run_id: ProjectRunId,
+        *,
+        actor: str,
+        parent_execution_id: ExecutionId | None = None,
+    ) -> ExecutionId:
+        """Attach the ratified Stage-0 handoff regardless of the legacy new-run canary.
+
+        The canary controls opportunistic migration of older run-start paths. A successful
+        ``start_confirmed_project_run@2`` call has already crossed its stricter immutable-lineage
+        boundary and promises a real Recipe #1 discovery execution, so silently returning
+        ``None`` here would leave a durable run with no owner.
+        """
+
+        run = await self._load_run(project_run_id)
+        lineage = (
+            run.client_entity_id,
+            run.client_kb_version,
+            run.product_id,
+            run.product_context_version_id,
+            run.readiness_decision_id,
+        )
+        if not all(value is not None for value in lineage):
+            raise ValueError(
+                "confirmed discovery attach requires complete immutable Stage-0 lineage"
+            )
+        if tuple(ProjectPhase).index(run.phase) < tuple(ProjectPhase).index(ProjectPhase.DISCOVERY):
+            raise ValueError("confirmed discovery attach requires a run at discovery or later")
+        return await self._attach(
+            run,
+            actor=actor,
+            parent_execution_id=parent_execution_id,
+        )
+
+    async def attach_if_eligible(
+        self,
+        project_run_id: ProjectRunId,
+        *,
+        actor: str,
+        parent_execution_id: ExecutionId | None = None,
+    ) -> ExecutionId | None:
+        run = await self._load_run(project_run_id)
+        if not recipe1_workspace_eligible(self._settings, run.workspace_id):
+            return None
+        return await self._attach(
+            run,
+            actor=actor,
+            parent_execution_id=parent_execution_id,
+        )
 
     async def _owner(
         self, project_run_id: ProjectRunId

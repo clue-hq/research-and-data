@@ -31,6 +31,7 @@ from clue_api.agent_turn_submission import thread_work_id
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
 from clue_api.execution_wiring import build_tool_invoker
+from clue_api.product_knowledge_privacy import product_context_subject_bindings
 from clue_api.projections_app import create_projections_app
 from clue_api.stage0_icp_gate_tools import (
     OpenIcpConfirmationGateInput,
@@ -64,6 +65,7 @@ from clue_core import (
     ICPStatus,
     OnboardingInputKind,
     OperationId,
+    ProjectPhase,
     ProjectRunId,
     RawArtifact,
     RunId,
@@ -76,7 +78,8 @@ from clue_projections import (
     STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
 )
 from clue_research.claimstore import record_run_lineage
-from clue_research.durable import get_project_run
+from clue_research.durable import ProjectRunStatus, get_project_run
+from clue_research.durable.project_run import set_phase
 from clue_research.icp import activate_icp_version, create_icp_spec, get_icp_version
 from clue_research.stage0 import (
     current_kb_version,
@@ -147,6 +150,17 @@ class _RecordingProjectExecutionRouter:
         del actor, parent_execution_id
         self.attached.append(project_run_id)
         return None
+
+    async def attach_confirmed_discovery(
+        self,
+        project_run_id: ProjectRunId,
+        *,
+        actor: str,
+        parent_execution_id: ExecutionId | None = None,
+    ) -> ExecutionId:
+        del actor, parent_execution_id
+        self.attached.append(project_run_id)
+        return ExecutionId(uuid5(NAMESPACE_URL, f"confirmed-discovery:{project_run_id}"))
 
     async def pause_owned(
         self,
@@ -469,6 +483,8 @@ async def _answer_count(conn: AsyncConnection, scenario: _Scenario) -> int:
 async def _seed_confirmed_run_turn(
     conn: AsyncConnection,
     scenario: _Scenario,
+    *,
+    foreign_product_profile: bool = False,
 ) -> ExecutionId:
     """Materialize one post-approval governed turn with its exact existing context cards."""
 
@@ -544,11 +560,29 @@ async def _seed_confirmed_run_turn(
             PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
         )
     ):
+        product_scoped = media_type in {
+            PRODUCT_PROFILE_CARD_MEDIA_TYPE,
+            PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
+        }
         context_refs.append(
             await artifacts.persist_body(
                 workspace_id=scenario.workspace_id,
                 data=f"existing-stage0-context-{index}".encode(),
                 media_type=media_type,
+                subject_bindings=(
+                    product_context_subject_bindings(
+                        client_entity_id=UUID(str(client_entity_id)),
+                        product_id=(
+                            "prd_foreign"
+                            if foreign_product_profile
+                            and media_type == PRODUCT_PROFILE_CARD_MEDIA_TYPE
+                            else str(project["product_id"])
+                        ),
+                    )
+                    if product_scoped
+                    else ((UUID(str(client_entity_id)), "context"),)
+                ),
+                project_bindings=((scenario.project_id, "project_conversation_context"),),
             )
         )
 
@@ -680,14 +714,37 @@ def test_confirmed_run_v2_reuses_existing_context_and_creates_one_run_across_ret
             async def conn_factory() -> AsyncIterator[AsyncConnection]:
                 yield conn
 
+            unrouted_ctx = ToolContext(
+                workspace_id=seeded.workspace_id,
+                actor="agent",
+                conn_factory=conn_factory,
+                operation_id=OperationId(uuid4()),
+                execution_id=execution_id,
+            )
+            unrouted_tool = StartConfirmedProjectRunV2Tool(
+                conn_factory=conn_factory,
+                project_execution_router=None,
+                budget_controls_enabled=False,
+            )
+            assert [
+                failure.reason_code
+                for failure in await unrouted_tool.preconditions(
+                    StartConfirmedProjectRunV2Input(), unrouted_ctx
+                )
+            ] == ["confirmed_discovery_router_unavailable"]
+            with pytest.raises(RuntimeError, match="execution router is unavailable"):
+                await unrouted_tool.invoke(StartConfirmedProjectRunV2Input(), unrouted_ctx)
+
             router = _RecordingProjectExecutionRouter()
             tool = StartConfirmedProjectRunV2Tool(
                 conn_factory=conn_factory,
                 project_execution_router=router,
                 budget_controls_enabled=False,
             )
-            outputs: list[StartConfirmedProjectRunV2Output] = []
-            for _ in range(2):
+
+            async def invoke(
+                tool_to_invoke: StartConfirmedProjectRunV2Tool,
+            ) -> StartConfirmedProjectRunV2Output:
                 ctx = ToolContext(
                     workspace_id=seeded.workspace_id,
                     actor="agent",
@@ -695,18 +752,29 @@ def test_confirmed_run_v2_reuses_existing_context_and_creates_one_run_across_ret
                     operation_id=OperationId(uuid4()),
                     execution_id=execution_id,
                 )
-                assert not await tool.preconditions(StartConfirmedProjectRunV2Input(), ctx)
-                outputs.append(
-                    StartConfirmedProjectRunV2Output.model_validate(
-                        (await tool.invoke(StartConfirmedProjectRunV2Input(), ctx)).references
-                    )
+                assert not await tool_to_invoke.preconditions(
+                    StartConfirmedProjectRunV2Input(), ctx
                 )
+                return StartConfirmedProjectRunV2Output.model_validate(
+                    (await tool_to_invoke.invoke(StartConfirmedProjectRunV2Input(), ctx)).references
+                )
+
+            outputs = [await invoke(tool)]
+            first_run_id = ProjectRunId(UUID(outputs[0].project_run_id))
+            await set_phase(
+                conn,
+                first_run_id,
+                phase=ProjectPhase.SCORING,
+                status=ProjectRunStatus.ACTIVE,
+            )
+            outputs.append(await invoke(tool))
 
             assert outputs[0] == outputs[1]
             assert outputs[0].phase == "discovery"
             assert len(router.attached) == 2
-            run = await get_project_run(conn, ProjectRunId(UUID(outputs[0].project_run_id)))
+            run = await get_project_run(conn, first_run_id)
             assert run is not None
+            assert run.phase is ProjectPhase.SCORING
             assert run.project_id == seeded.project_id
             assert run.icp_key == seeded.icp_key
             assert run.icp_version == seeded.icp_version
@@ -816,8 +884,7 @@ def test_confirmed_run_v2_reuses_existing_context_and_creates_one_run_across_ret
                     (
                         await conn.execute(
                             text(
-                                "SELECT count(*) FROM agent_gate "
-                                "WHERE workspace_id=:workspace_id"
+                                "SELECT count(*) FROM agent_gate WHERE workspace_id=:workspace_id"
                             ),
                             {"workspace_id": seeded.workspace_id},
                         )
@@ -825,6 +892,84 @@ def test_confirmed_run_v2_reuses_existing_context_and_creates_one_run_across_ret
                 )
                 == before_human_gates
             )
+
+            # A deployment-mode change cannot reinterpret the stored record-only authority as an
+            # enforced decision on the same immutable run. The new mode derives a distinct
+            # readiness identity, and the run-lineage guard refuses to replace the original.
+            enforced_tool = StartConfirmedProjectRunV2Tool(
+                conn_factory=conn_factory,
+                project_execution_router=router,
+                budget_controls_enabled=True,
+            )
+            with pytest.raises(ValueError, match="different immutable lineage"):
+                async with conn.begin_nested():
+                    await invoke(enforced_tool)
+            assert (
+                int(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT count(*) FROM readiness_decision "
+                                "WHERE workspace_id=:workspace_id AND gate='discovery_spend'"
+                            ),
+                            {"workspace_id": seeded.workspace_id},
+                        )
+                    ).scalar_one()
+                )
+                == 1
+            )
+
+    run_async(scenario())
+
+
+def test_confirmed_run_v2_refuses_a_context_card_bound_to_another_product(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await _seed_scenario(conn, tmp_path, label="confirmed-run-foreign-product")
+            gate = await get_gate(
+                conn,
+                workspace_id=seeded.workspace_id,
+                gate_id=seeded.gate_id,
+            )
+            assert gate is not None
+            app = _app(conn, seeded)
+            async with _client(app) as client:
+                approved = await _answer(
+                    client,
+                    seeded,
+                    decision="approved",
+                    key="confirmed-run-foreign-product-approval",
+                    digest=gate.gate.expected_subject_sha256,
+                )
+            assert approved.status_code == 202, approved.text
+            execution_id = await _seed_confirmed_run_turn(
+                conn,
+                seeded,
+                foreign_product_profile=True,
+            )
+
+            @asynccontextmanager
+            async def conn_factory() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            tool = StartConfirmedProjectRunV2Tool(
+                conn_factory=conn_factory,
+                project_execution_router=_RecordingProjectExecutionRouter(),
+                budget_controls_enabled=False,
+            )
+            ctx = ToolContext(
+                workspace_id=seeded.workspace_id,
+                actor="agent",
+                conn_factory=conn_factory,
+                operation_id=OperationId(uuid4()),
+                execution_id=execution_id,
+            )
+            failures = await tool.preconditions(StartConfirmedProjectRunV2Input(), ctx)
+            assert [failure.reason_code for failure in failures] == [
+                "stage0_context_materialization_missing"
+            ]
 
     run_async(scenario())
 

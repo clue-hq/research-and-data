@@ -46,7 +46,8 @@ from clue_core import (
 )
 from clue_research.adapters import CallableClaimExtractor
 from clue_research.claimstore import WorkspaceScope, claims_by_ids, insert_claim
-from clue_research.durable import RunEventTopic, list_run_events
+from clue_research.durable import ProjectRunStatus, RunEventTopic, list_run_events
+from clue_research.durable.project_run import set_phase
 from clue_research.icp import create_icp_spec
 from clue_research.identity import insert_account_entity
 from clue_research.sources import is_resolver_bound, unbind_resolver
@@ -452,6 +453,45 @@ def test_c4_lineage_readiness_and_confirmed_run_entry() -> None:
             assert run.phase is ProjectPhase.DISCOVERY
             assert run.product_context_version_id == context.version_id
             assert run.readiness_decision_id == readiness.readiness_decision_id
+
+            # A delayed/replayed start must neither fail nor rewind a run which Recipe #1 already
+            # advanced. The same id still cannot be reused for different immutable authority.
+            await set_phase(
+                conn,
+                run_id,
+                phase=ProjectPhase.SCORING,
+                status=ProjectRunStatus.ACTIVE,
+            )
+            await start_confirmed_project_run(
+                conn,
+                project_run_id=run_id,
+                workspace_id=_WORKSPACE,
+                project_id=project.project_id,
+                client_entity_id=client,
+                client_kb_version=1,
+                product_id=product.product_id,
+                product_context_version_id=context.version_id,
+                readiness_decision_id=readiness.readiness_decision_id,
+                icp_key=spec.icp_key,
+                icp_version=spec.version,
+            )
+            advanced = await get_project_run(conn, run_id)
+            assert advanced is not None and advanced.phase is ProjectPhase.SCORING
+            with pytest.raises(ValueError, match="different immutable lineage"):
+                await start_confirmed_project_run(
+                    conn,
+                    project_run_id=run_id,
+                    workspace_id=_WORKSPACE,
+                    project_id=project.project_id,
+                    client_entity_id=client,
+                    client_kb_version=1,
+                    product_id=product.product_id,
+                    product_context_version_id=context.version_id,
+                    readiness_decision_id=readiness.readiness_decision_id,
+                    icp_key=spec.icp_key,
+                    icp_version=spec.version,
+                    budget_cap_cents=Decimal("1"),
+                )
 
     run_async(_run())
 
