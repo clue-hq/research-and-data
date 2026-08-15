@@ -2,7 +2,8 @@
 
 Date: 2026-08-16
 Branch: `platform/integration-onboarding-pilot`
-Status: in progress; Clerk onboarding and automatic fast release accepted after test-stack repair
+Status: stopped at the first invalid downstream prerequisite; Stage-0 interview passed but ICP
+synthesis is blocked by a product-scoped Client-KB version-pin mismatch
 
 ## Isolated runtime
 
@@ -57,9 +58,10 @@ Status: in progress; Clerk onboarding and automatic fast release accepted after 
 
 ## Acceptance still outstanding
 
-ICP revision and approval, FI-2 selected-account launch, budget controls in both modes, per-project
-product selection, replay/DSAR/historical receipts, and design-integration exclusion remain
-outstanding.
+ICP revision and approval, discovery, FI-2 selected-account launch, budget controls in both modes,
+different product choices across projects, DSAR/historical target receipts, and
+design-integration exclusion remain outstanding. The main path cannot progress past ICP synthesis
+without repairing the product-scoped Client-KB resource pin described below.
 
 ## Clerk onboarding and fast-release evidence
 
@@ -83,3 +85,45 @@ outstanding.
   recon ids: 52 background snapshots, 27 claims, all nine company fields filled with one failed
   field operation preserved, Client-KB v2 synchronized, and the linked product received five
   filled fields with two empty and two failed operations. No second crawl was created by retry.
+
+## Project and Stage-0 browser evidence
+
+- Project A inherited Client-KB v2. Before product selection its turn had company knowledge and
+  Stage-0 project state; after the human selected `AI Virtual Care Assistant`, the following turn
+  pinned that exact product and Product-KB v1 and included product profile/product knowledge.
+- Project A used governed `list_client_knowledge@2` and `inspect_client_claim@2` calls. One parallel
+  inspection attempt hit PostgreSQL `DeadlockDetectedError` while inserting an execution event;
+  repair/retry recovered, but the no-deadlock acceptance row failed.
+- The product-selection alert used the product name, but the separate human receipt rendered
+  `Requested changes: AI Virtual Care Assistant`; that label is wrong for a selection receipt.
+  Normal transcript prose also leaked raw internal statement, gate, and readiness ids.
+- A fresh Project B ran the actual Stage-0 interview. The human selected the project product, then
+  the browser answered account scope/exclusions, primary pain and messaging, and buying-committee
+  priorities. The database holds seven project-state statements (including instruction/product
+  selection), two `ready` ICP-synthesis decisions, and no ICP row.
+- The live turn inspector and worker agree on L3 composition. The final interview turn pinned
+  Client-KB v2 and Product-KB v1 under `company-and-selected-product-v2` and included
+  `client_knowledge.json`, `product_knowledge.json`, `product_profile.json`, and
+  `stage0_project_state.json`. The eager onboarding knowledge was therefore available during the
+  interview as intended.
+- `synthesize_icps@2` fails deterministically with
+  `pin_resolution_failed: cannot pin Stage-0 resource
+  client_kb:<client>|<selected-product>@2: missing`. The company Client-KB is v2 while the selected
+  product KB is v1. No ICP draft, ICP gate, discovery plan, or discovery candidate is created.
+- Reloading Project B preserved the product receipt, full interview, ready decision, and synthesis
+  failure without spawning a new turn. Durable replay passed at this stopping point.
+
+## Accounts/FI-2 prerequisite defect
+
+- The Accounts browser page showed Insight Health AI as its only row. That entity is the bound
+  client, not a prospect. Read-only database evidence shows exactly one `account_entity`, its id is
+  the `workspace_client_binding.client_entity_id`, and the workspace has zero `project_account`
+  rows and zero `discovery_candidate_link` rows.
+- `frontend_read/accounts_list.py` scopes `account_entity` only by workspace/merge/project
+  membership and does not exclude the workspace client binding, so the client leaks into the
+  prospect Accounts surface.
+- The frontend `New account` control creates explicitly local, non-durable state. It cannot be used
+  as a substitute for real discovery or a valid FI-2 selected-account launch.
+- Stop downstream browser acceptance here. Do not treat Insight Health as its own target, seed a
+  fixture, or claim discovery/FI-2 evidence until ICP synthesis is repaired and a genuine target
+  account is produced by the platform.
