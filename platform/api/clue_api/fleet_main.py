@@ -91,6 +91,7 @@ from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory
 from clue_api.narrative_wiring import build_client_knowledge_retriever, register_narrative_wiring
 from clue_api.official_site_crawl_wiring import build_official_site_crawl_fleet
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
+from clue_api.production_metrics import production_metrics_lifespan
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
     Recipe1ProjectExecutionRouter,
@@ -480,7 +481,10 @@ async def _serve() -> None:
     settings = load_settings()
     secrets = Secrets()
     storage = build_storage_backend(settings)
-    async with db_lifespan(), redis_lifespan():
+    async with production_metrics_lifespan(
+        settings,
+        service_name="clue-worker-fleet",
+    ), db_lifespan(), redis_lifespan():
         register_compliance_wiring()
         register_narrative_wiring()
         async with transaction() as conn:

@@ -128,6 +128,14 @@ class Settings(BaseSettings):
     # Env: ``CLUE_BUDGET_CONTROLS_ENABLED``.
     budget_controls_enabled: bool = True
 
+    # --- production metrics export -------------------------------------------------------
+    # Tests/dev may retain the deterministic in-memory sink. A production-auth deployment must
+    # choose OTLP explicitly and provide the collector's HTTP /v1/metrics endpoint; otherwise a
+    # process that appears observable would silently discard every metric at shutdown.
+    metrics_exporter: Literal["memory", "otlp"] = "memory"
+    metrics_otlp_endpoint: str | None = None
+    metrics_export_interval_ms: int = Field(default=10_000, ge=100)
+
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
     fleet_poll_interval_s: float = 1.0
@@ -634,6 +642,15 @@ class Settings(BaseSettings):
         if self.auth_environment == "production" and self.projections_auth_mode == "local_header":
             raise ValueError(
                 "production authentication forbids the local-header projections resolver"
+            )
+        if self.metrics_exporter == "otlp" and not self.metrics_otlp_endpoint:
+            raise ValueError(
+                "CLUE_METRICS_OTLP_ENDPOINT is required when CLUE_METRICS_EXPORTER=otlp"
+            )
+        if self.auth_environment == "production" and self.metrics_exporter != "otlp":
+            raise ValueError(
+                "production requires CLUE_METRICS_EXPORTER=otlp; the in-memory sink is not an "
+                "exporter"
             )
         return self
 

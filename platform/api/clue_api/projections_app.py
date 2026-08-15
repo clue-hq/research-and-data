@@ -52,6 +52,7 @@ from clue_api.ingestion_tools import (
 from clue_api.ingestion_tools import (
     header_workspace_resolver as ingestion_header_workspace_resolver,
 )
+from clue_api.production_metrics import production_metrics_lifespan
 from clue_api.research_view_api import (
     build_research_view_router,
     research_actor_resolver,
@@ -745,7 +746,10 @@ def create_projections_router(
 async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Production lifespan: configure logging once, open the DB engine for the app's lifetime."""
     clue_obs.setup()
-    async with db_lifespan():
+    async with production_metrics_lifespan(
+        _app.state.settings,
+        service_name="clue-projections-api",
+    ), db_lifespan():
         startup_check = getattr(_app.state, "startup_check", None)
         if startup_check is not None:
             await startup_check()
@@ -806,6 +810,7 @@ def create_projections_app(
     )
     app.state.startup_check = startup_check
     app.state.auth_closer = auth_closer
+    app.state.settings = resolved
 
     # Review F3: actually serve the declared schema header on EVERY response (JSON routes and the
     # SSE stream alike — response headers precede the streamed body), so a consumer can confirm the
