@@ -367,7 +367,7 @@ class Stage0StepPinProvider:
                     conn,
                     entity_id,
                     workspace_id=ctx.workspace_id,
-                    product_id=product_id if isinstance(product_id, str) else None,
+                    product_id=None,
                 )
             if client_kb_version is None:
                 raise ExecutionConflict("cannot pin a missing Client Knowledge Base")
@@ -375,7 +375,7 @@ class Stage0StepPinProvider:
             requested.append(
                 await self._exact(
                     kind="client_kb",
-                    key=f"{client_entity_id}|{product_id if isinstance(product_id, str) else '-'}",
+                    key=f"{client_entity_id}|-",
                     version=str(client_kb_version),
                     ctx=ctx,
                 )

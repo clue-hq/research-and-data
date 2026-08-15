@@ -34,7 +34,9 @@ from clue_db import db_lifespan, transaction
 from clue_research.claimstore import insert_claim, load_core_pack, record_run_lineage
 from clue_research.identity import insert_account_entity
 from clue_research.official_site import (
+    EXTRACTION_MAX_OUTPUT_TOKENS,
     EXTRACTION_PROMPT_VERSION,
+    EXTRACTION_REASONING_EFFORT,
     EXTRACTION_SCHEMA_VERSION,
     CrawlPhase,
     GroundedOfficialSiteMaterializer,
@@ -69,16 +71,19 @@ class _Gateway:
         *,
         invalid_fields: frozenset[str] = frozenset(),
         raising_fields: frozenset[str] = frozenset(),
+        terminal_failure_fields: frozenset[str] = frozenset(),
     ) -> None:
         self.invalid_fields = invalid_fields
         self.raising_fields = raising_fields
+        self.terminal_failure_fields = terminal_failure_fields
         self.calls: list[tuple[str, str]] = []
         self._lock = threading.Lock()
         self._active = 0
         self.max_active = 0
 
     def complete(self, *, model: str, messages: list[Message], **opts: object) -> Completion:
-        assert opts["max_tokens"] == 1_500
+        assert opts["max_tokens"] == EXTRACTION_MAX_OUTPUT_TOKENS
+        assert opts["reasoning"] == {"effort": EXTRACTION_REASONING_EFFORT}
         user = messages[-1].content
         field = re.search(r"^FIELD: ([^\n]+)$", user, re.MULTILINE)
         assert field is not None
@@ -91,6 +96,19 @@ class _Gateway:
             time.sleep(0.03)
             if field_key in self.raising_fields:
                 raise RuntimeError("ambiguous model failure")
+            if field_key in self.terminal_failure_fields:
+                failure = RuntimeError("known terminal model response")
+                failure.completion = Completion(  # type: ignore[attr-defined]
+                    model=model,
+                    text="",
+                    usage=TokenUsage(prompt_tokens=321, completion_tokens=1_024),
+                    cost_cents=Decimal("1.75"),
+                    finish_reason="max_output_tokens",
+                )
+                failure.failure_code = (  # type: ignore[attr-defined]
+                    "gateway_no_output_max_output_tokens"
+                )
+                raise failure
             block = re.search(
                 r"SNAPSHOT_ID: ([0-9a-f-]+)\nSOURCE_URL: ([^\n]+)\n"
                 r"<<<UNTRUSTED_PAGE_TEXT>>>\n(.*?)\n<<<END_UNTRUSTED_PAGE_TEXT>>>",
@@ -1233,6 +1251,60 @@ def test_field_failures_and_ambiguous_model_calls_preserve_sibling_successes(
             assert states == {
                 "client.pricing_posture": "failed",
                 "client.market_reputation": "spend_unknown",
+            }
+        finally:
+            await _cleanup(scope)
+
+    async def wrapped() -> None:
+        async with db_lifespan():
+            await scenario()
+
+    run_async(wrapped())
+
+
+def test_known_terminal_gateway_response_is_failed_and_costed_without_recall(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "known-terminal-artifacts")
+        scope = await _seed_scope(storage)
+        gateway = _Gateway(terminal_failure_fields=frozenset({"client.product_catalog"}))
+        materializer = GroundedOfficialSiteMaterializer(
+            gateway=gateway,  # type: ignore[arg-type]
+            storage=storage,
+            extraction_concurrency=4,
+        )
+        try:
+            result = await materializer.materialize(_request(scope))
+            assert "client.product_catalog" in result.failed_fields
+            calls = len(gateway.calls)
+            replay = await materializer.materialize(_request(scope))
+            assert replay == result
+            assert len(gateway.calls) == calls
+            async with transaction() as conn:
+                row = (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT state, failure_code, answering_model_id, prompt_tokens, "
+                                "completion_tokens, cost_cents FROM "
+                                "official_site_extraction_operation "
+                                "WHERE workspace_id=:workspace_id "
+                                "AND field_key='client.product_catalog'"
+                            ),
+                            {"workspace_id": scope.workspace_id},
+                        )
+                    )
+                    .mappings()
+                    .one()
+                )
+            assert dict(row) == {
+                "state": "failed",
+                "failure_code": "gateway_no_output_max_output_tokens",
+                "answering_model_id": "openai/gpt-5.6-luna",
+                "prompt_tokens": 321,
+                "completion_tokens": 1_024,
+                "cost_cents": Decimal("1.75"),
             }
         finally:
             await _cleanup(scope)

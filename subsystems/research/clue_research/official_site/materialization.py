@@ -55,9 +55,15 @@ from clue_storage.artifacts import read_verified_artifact, record_artifact
 
 log = get_logger("clue_research.official_site.materialization")
 
-EXTRACTION_PROMPT_VERSION = "official-site-extraction-prompt-v1"
+# V2 keeps the evidence/schema instruction text but freezes a corrected inference envelope: GPT-5.6
+# extraction performs no hidden reasoning and has enough bounded output space for a multi-product
+# catalog.  The version bump makes the paid-call policy change explicit in operation identity and
+# prevents a V1 spend-unknown operation from being mistaken for a replayable V2 result.
+EXTRACTION_PROMPT_VERSION = "official-site-extraction-prompt-v2"
 EXTRACTION_SCHEMA_VERSION = "official-site-extraction-schema-v1"
 CORPUS_VERSION = "official-site-corpus-v1"
+EXTRACTION_MAX_OUTPUT_TOKENS = 4_096
+EXTRACTION_REASONING_EFFORT = "none"
 DEFAULT_EXTRACTION_CONCURRENCY = 4
 DEFAULT_MAX_CORPUS_CHARS_PER_OPERATION = 80_000
 _MIN_CONFIDENCE = 0.3
@@ -902,10 +908,27 @@ class GroundedOfficialSiteMaterializer:
                 self._gateway.complete,
                 model=request.model_id,
                 messages=self._messages(operation),
-                max_tokens=1_500,
+                max_tokens=EXTRACTION_MAX_OUTPUT_TOKENS,
+                reasoning={"effort": EXTRACTION_REASONING_EFFORT},
             )
         except Exception as exc:  # an attempted model call may already have incurred spend
-            row = await self._mark_spend_unknown(request, operation, type(exc).__name__)
+            known_completion = getattr(exc, "completion", None)
+            known_failure_code = getattr(exc, "failure_code", None)
+            if isinstance(known_completion, Completion) and isinstance(known_failure_code, str):
+                # The HTTP/provider response is known and cost-accountable even though it has no
+                # usable text. Retain its (possibly empty) bounded output before terminalizing the
+                # operation, satisfying the same crash fence as a successful response while never
+                # copying a raw provider error body.
+                await self._retain_response(request, operation, known_completion)
+                row = await self._finish_response(
+                    request,
+                    operation,
+                    state="failed",
+                    failure_code=known_failure_code,
+                    claim_ids=(),
+                )
+            else:
+                row = await self._mark_spend_unknown(request, operation, type(exc).__name__)
             return _outcome_from_row(row)
         await self._retain_response(request, operation, completion)
         return await self._materialize_response(request, operation, completion.text)
@@ -1397,6 +1420,8 @@ def _outcome_from_row(row: dict[str, Any]) -> _OperationOutcome:
 __all__ = [
     "CORPUS_VERSION",
     "EXTRACTION_PROMPT_VERSION",
+    "EXTRACTION_MAX_OUTPUT_TOKENS",
+    "EXTRACTION_REASONING_EFFORT",
     "EXTRACTION_SCHEMA_VERSION",
     "Corpus",
     "CorpusPage",

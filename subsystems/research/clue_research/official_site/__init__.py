@@ -38,7 +38,9 @@ from clue_research.official_site.lifecycle import (
 )
 from clue_research.official_site.materialization import (
     CORPUS_VERSION,
+    EXTRACTION_MAX_OUTPUT_TOKENS,
     EXTRACTION_PROMPT_VERSION,
+    EXTRACTION_REASONING_EFFORT,
     EXTRACTION_SCHEMA_VERSION,
     Corpus,
     CorpusPage,
@@ -172,7 +174,9 @@ __all__ = [
     "DISCOVERY_POLICY_VERSION",
     "DurableAcquisitionResult",
     "DurablePageAcquirer",
+    "EXTRACTION_MAX_OUTPUT_TOKENS",
     "EXTRACTION_PROMPT_VERSION",
+    "EXTRACTION_REASONING_EFFORT",
     "EXTRACTION_SCHEMA_VERSION",
     "Corpus",
     "CorpusPage",
