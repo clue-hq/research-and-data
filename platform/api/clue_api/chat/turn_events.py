@@ -172,9 +172,7 @@ _COLUMNS = (
 # so a lock CTE and the max-read in the same statement can still observe the pre-wait value.
 # Without the lock, two writers can both observe N and one loses `UNIQUE (turn_id, sequence)`,
 # silently degrading the stream even though the durable turn still completes.
-_TURN_SEQUENCE_LOCK_SQL = text(
-    "SELECT pg_advisory_xact_lock(hashtextextended(:turn_lock_key, 0))"
-)
+_TURN_SEQUENCE_LOCK_SQL = text("SELECT pg_advisory_xact_lock(hashtextextended(:turn_lock_key, 0))")
 
 _EMIT_SQL = text(
     f"""

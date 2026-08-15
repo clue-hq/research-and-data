@@ -27,6 +27,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-16-integration-step6-verification.md` — records the complete post-merge verification
+  ladder: static/resource/authority gates, merged functional matrices, fresh migration smoke,
+  frontend release checks, and an exact unchanged 32-node backend quarantine match.
 - `2026-08-16-integration-runtime-frontend-conflict-resolution.md` — completes the dependency-order
   runtime/frontend merge: unified gate authority, exact company/product Stage-0 scope, strict tool
   output validation, discriminated frontend decisions, and green backend/frontend verification.

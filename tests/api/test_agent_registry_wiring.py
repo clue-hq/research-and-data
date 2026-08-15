@@ -69,7 +69,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # gate, end the turn, and launch only after the human's own confirming turn.
         # Integration v29/v16 composes trusted @2 readiness/synthesis, both exact human gates,
         # selected-Account launch, and company/product knowledge reads. v1-v28 remain replayable.
-        AgentRole.HEAD_OF_ABM: ("737557760bdd0d6972aea1415f54725e98c4fb81f42cb6251dfec49dc2a5ff98"),
+        AgentRole.HEAD_OF_ABM: ("13e244a29cdbbd3f7d63bceffd06f80e168f07aee68c090b7f83c8e7d73f0919"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"

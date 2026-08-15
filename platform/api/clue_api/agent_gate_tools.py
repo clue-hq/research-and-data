@@ -262,6 +262,11 @@ class OpenDirectiveConfirmationGateTool(Tool):
                     for account_id in resolved.account_ids
                 ),
             )
+        presented_max_spend: str | None = AMOUNT_WITHHELD
+        if self._budget_controls_enabled:
+            if row.max_spend_cents is None:
+                raise RuntimeError("directive confirmation gate is missing its computed spend cap")
+            presented_max_spend = money_text(row.max_spend_cents)
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -276,11 +281,7 @@ class OpenDirectiveConfirmationGateTool(Tool):
                 # above in BOTH modes (audit + approval integrity); only its *presentation* is
                 # gated. The model never needs the number — it hands the human a gate_ref and ends
                 # the turn — so withholding it here costs the flow nothing.
-                "max_spend_cents": (
-                    money_text(row.max_spend_cents)
-                    if self._budget_controls_enabled
-                    else AMOUNT_WITHHELD
-                ),
+                "max_spend_cents": presented_max_spend,
                 "currency": row.currency,
                 "account_count": len(resolved.account_ids),
                 "addressee_user_id": row.addressee_user_id,

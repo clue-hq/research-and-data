@@ -39,7 +39,7 @@ active Head-of-ABM profile, Stage-0 skill, and Recipe #0 revision.
 
 - `tests/agents/test_catalog.py`: 8 passed, including immutable-byte and combined-union guards.
 - Direct catalog materialization computed the v29 resource-manifest digest as
-  `737557760bdd0d6972aea1415f54725e98c4fb81f42cb6251dfec49dc2a5ff98`.
+  `13e244a29cdbbd3f7d63bceffd06f80e168f07aee68c090b7f83c8e7d73f0919`.
 - Structural profile/recipe checks passed, and JSON/YAML parsing confirmed the v29/v16/v10 union.
 - Focused frontend run reached 10 passing tests; two test modules remain uncollectable because the
   separate gate-schema merge conflict still leaves markers in `chat-turn.ts`.

@@ -369,10 +369,10 @@ def test_catalog_gate_human_selection_and_next_turn_product_pair_for_projects_a_
                         f"/api/v1/projects/{project_id}/threads/{thread_id}/turns",
                         json={
                             "gate_response": {
-                                    "gate_id": str(gate_id),
-                                    "decision": decision,
-                                    "expected_subject_sha256": gate.gate.expected_subject_sha256,
-                                    "expected_estimated_cost_cents": None,
+                                "gate_id": str(gate_id),
+                                "decision": decision,
+                                "expected_subject_sha256": gate.gate.expected_subject_sha256,
+                                "expected_estimated_cost_cents": None,
                                 **(
                                     {}
                                     if product_id is None

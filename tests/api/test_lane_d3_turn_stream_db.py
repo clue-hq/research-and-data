@@ -364,9 +364,7 @@ def test_turn_event_sequence_allocator_serializes_concurrent_emitters() -> None:
 
                 async def append(index: int) -> TurnEventRow:
                     async with engine.begin() as conn:
-                        await conn.execute(
-                            text(f'SET LOCAL search_path TO "{schema}", public')
-                        )
+                        await conn.execute(text(f'SET LOCAL search_path TO "{schema}", public'))
                         return await emit_turn_event(
                             conn,
                             workspace_id="ws_turn_event_lock",

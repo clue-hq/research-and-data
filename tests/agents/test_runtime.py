@@ -762,7 +762,12 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
 
 def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp() -> None:
     request, resolved = _request()
-    body = resolved.open_skill("skill:stage0-interview@v12")  # type: ignore[union-attr]
+    stage0_skill = next(  # type: ignore[union-attr]
+        skill.ref.address
+        for skill in resolved.skills  # type: ignore[union-attr]
+        if skill.ref.name == "stage0-interview"
+    )
+    body = resolved.open_skill(stage0_skill)  # type: ignore[union-attr]
     assert "readiness-policy version" in body
     assert "say that no ICP" in body
 
