@@ -41,6 +41,7 @@ from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.client_context_binding import bind_workspace_client
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
@@ -1068,6 +1069,24 @@ def test_a_membership_less_account_serves_an_empty_list() -> None:
             response = await _list(conn, seedling)
             assert response.status_code == 200
             assert response.json()["data"] == []
+
+    run_async(scenario())
+
+
+def test_the_workspace_client_has_no_target_contact_surface() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_workspace(conn, _WS)
+            client = await _account(conn, name="Insight Health", domain="insighthealth.ai")
+            await bind_workspace_client(
+                conn,
+                workspace_id=_WS,
+                client_entity_id=client,
+            )
+
+            response = await _list(conn, client)
+            assert response.status_code == 404
+            assert response.json()["error"]["code"] == "ACCOUNT_NOT_FOUND"
 
     run_async(scenario())
 

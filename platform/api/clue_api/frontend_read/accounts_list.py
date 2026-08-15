@@ -3,8 +3,8 @@
 The workspace-scoped, Band-2 read the frontend `/accounts` table binds to. It composes five
 untouched mechanism surfaces and owns no research logic of its own:
 
-1. **the account spine** — a workspace ``account_entity`` scan (merge losers excluded: a merged
-   account is not a row, it is a redirect — Task 3 serves that);
+1. **the account spine** — a workspace ``account_entity`` scan (the workspace's own client binding
+   and merge losers are excluded: neither is a target-account row; Task 3 serves loser redirects);
 2. **neutral facts** — ONE :func:`~clue_research.claimstore.current_values` batch over the
    list-row neutral field set, under ``WorkspaceScope.for_workspace``. These fields are
    ``project_neutral``, so they serve from the canonical merge in *every* lens and are
@@ -263,11 +263,19 @@ def decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 
 # --- SQL --------------------------------------------------------------------------------------
 
-# Workspace-scoped, merge-losers excluded. ``merged_into IS NULL`` and ``status <> 'merged'`` are
-# equivalent by the ``account_entity_merged_iff_target`` CHECK; the null test is the indexable one.
+# Workspace-scoped, with the customer identity and merge losers excluded. ``merged_into IS NULL``
+# and ``status <> 'merged'`` are equivalent by the ``account_entity_merged_iff_target`` CHECK; the
+# null test is the indexable one. ``workspace_client_binding`` is the authority for which account
+# represents the customer itself, so it must not leak into any target-account lens.
 _ACCOUNT_FILTER = """
     a.workspace_id = :workspace_id
     AND a.merged_into IS NULL
+    AND NOT EXISTS (
+        SELECT 1
+        FROM workspace_client_binding wcb
+        WHERE wcb.workspace_id = a.workspace_id
+          AND wcb.client_entity_id = a.id
+    )
     AND (
         CAST(:project_id AS text) IS NULL
         OR EXISTS (

@@ -63,6 +63,7 @@ from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.auth_wiring import principal_from_request
+from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.contact_eligibility import GovernedCommitteeContact
 from clue_api.frontend_read.account_detail import AccountNotFound
 from clue_api.frontend_read.accounts_list import WireModel
@@ -248,7 +249,8 @@ async def _resolve_account(
     """
     canonical = await surviving_id(conn, EntityId(account_id), EntityType.ACCOUNT)
     account = await get_account(conn, canonical)
-    if account is None or account.workspace_id != workspace_id:
+    client_entity_id = await workspace_client_entity_id(conn, workspace_id=workspace_id)
+    if account is None or account.workspace_id != workspace_id or canonical == client_entity_id:
         raise AccountNotFound(str(account_id))
     return canonical, account.canonical_name
 

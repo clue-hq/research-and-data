@@ -69,6 +69,7 @@ from pydantic import JsonValue
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.frontend_read.accounts_list import (
     SCORE_FIELD_KEYS,
     ProjectScore,
@@ -604,7 +605,8 @@ async def read_account_detail(
     requested = EntityId(account_id)
     canonical = await surviving_id(conn, requested, EntityType.ACCOUNT)
     account = await get_account(conn, canonical)
-    if account is None or account.workspace_id != workspace_id:
+    client_entity_id = await workspace_client_entity_id(conn, workspace_id=workspace_id)
+    if account is None or account.workspace_id != workspace_id or canonical == client_entity_id:
         raise AccountNotFound(str(account_id))
 
     scope = WorkspaceScope.for_workspace(workspace_id)

@@ -47,6 +47,7 @@ from httpx import ASGITransport
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.client_context_binding import bind_workspace_client
 from clue_api.frontend_read import FRONTEND_READ_PREFIX, AccountResearchStatusValue
 from clue_api.frontend_read.accounts_list import decode_cursor, encode_cursor
 from clue_api.projections_app import create_projections_app
@@ -620,6 +621,28 @@ def test_a_membership_less_account_renders_as_a_null_heavy_row() -> None:
             assert seedling["primaryProjectId"] is None
             assert seedling["scores"] == []
             assert seedling["researchStatus"] == []
+
+    run_async(scenario())
+
+
+def test_the_workspace_client_is_not_listed_as_its_own_target_account() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_workspace(conn, _WS)
+            client = await _account(conn, name="Insight Health", domain="insighthealth.ai")
+            target = await _account(conn, name="Neuro Practice", domain="neuro.test")
+            await bind_workspace_client(
+                conn,
+                workspace_id=_WS,
+                client_entity_id=client,
+            )
+
+            response = await _get(conn)
+            assert response.status_code == 200
+            assert [(row["id"], row["name"]) for row in response.json()["data"]] == [
+                (str(target), "Neuro Practice")
+            ]
+            assert response.json()["meta"]["total"] == 1
 
     run_async(scenario())
 

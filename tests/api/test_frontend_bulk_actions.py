@@ -12,11 +12,12 @@ from httpx import ASGITransport
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.client_context_binding import bind_workspace_client
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
 from clue_api.frontend_read.contact_email_lookup import ContactEmailLookupService
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
-from clue_core import AccountStatus
+from clue_core import AccountStatus, EntityId
 from clue_research.adapters.exa_websets import EXA_WEBSETS_SOURCE_KEY
 from clue_research.identity import insert_account_entity
 from clue_research.membership import ensure_project_account
@@ -66,6 +67,12 @@ def test_account_batch_is_page_bounded_idempotent_and_audited() -> None:
             project = await seed_project(conn, _WS, name="Active ABM")
             first = await _account(conn, name="First")
             second = await _account(conn, name="Second")
+            workspace_client = await _account(conn, name="Insight Health")
+            await bind_workspace_client(
+                conn,
+                workspace_id=_WS,
+                client_entity_id=EntityId(workspace_client),
+            )
             await ensure_project_account(
                 conn,
                 workspace_id=_WS,
@@ -92,7 +99,12 @@ def test_account_batch_is_page_bounded_idempotent_and_audited() -> None:
                 }
 
                 body = {
-                    "accountIds": [str(first), str(second), str(foreign)],
+                    "accountIds": [
+                        str(first),
+                        str(second),
+                        str(foreign),
+                        str(workspace_client),
+                    ],
                     "projectId": project.project_id,
                 }
                 headers = {"X-Workspace-Id": _WS, "Idempotency-Key": "page-1-add"}
@@ -108,10 +120,10 @@ def test_account_batch_is_page_bounded_idempotent_and_audited() -> None:
             assert replay.json() == payload
             assert payload["state"] == "partial"
             assert payload["counts"] == {
-                "requested": 3,
+                "requested": 4,
                 "completed": 1,
                 "unchanged": 1,
-                "ineligible": 1,
+                "ineligible": 2,
                 "failed": 0,
             }
             outcomes = {item["subjectId"]: item["outcome"] for item in payload["items"]}
@@ -119,6 +131,7 @@ def test_account_batch_is_page_bounded_idempotent_and_audited() -> None:
                 str(first): "unchanged",
                 str(second): "completed",
                 str(foreign): "ineligible",
+                str(workspace_client): "ineligible",
             }
             memberships = (
                 await conn.execute(
@@ -151,7 +164,7 @@ def test_account_batch_is_page_bounded_idempotent_and_audited() -> None:
                     ),
                     {"workspace_id": _WS},
                 )
-            ).scalar_one() == 3
+            ).scalar_one() == 4
 
     run_async(scenario())
 

@@ -16,6 +16,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import DomainObjectRef
+from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.frontend_read.account_detail import AccountNotFound
 from clue_api.frontend_read.accounts_list import list_accounts
 from clue_api.frontend_read.contacts import (
@@ -129,6 +130,7 @@ async def validated_context_refs(
 
     selected_accounts: set[EntityId] = set()
     contact_parents: list[EntityId] = []
+    client_entity_id = await workspace_client_entity_id(conn, workspace_id=workspace_id)
     for ref in refs:
         try:
             entity_id = EntityId(UUID(ref.object_id))
@@ -143,6 +145,7 @@ async def validated_context_refs(
                 account is None
                 or account.workspace_id != workspace_id
                 or account.merged_into is not None
+                or account.id == client_entity_id
             ):
                 raise ContextReferenceError(
                     "CONTEXT_REF_NOT_FOUND",
@@ -161,6 +164,7 @@ async def validated_context_refs(
             contact is None
             or contact.workspace_id != workspace_id
             or contact.merged_into is not None
+            or contact.account_entity_id == client_entity_id
         ):
             raise ContextReferenceError(
                 "CONTEXT_REF_NOT_FOUND",

@@ -43,10 +43,10 @@ async def resolve_stage0_project_scope(
 ) -> Stage0ProjectScope | None:
     """Resolve the exact Stage-0 lineage for one governed execution, or return ``None``.
 
-    The client identity is discovered only from this project's own onboarding captures.  A client
+    The client identity is discovered only from this project's own onboarding captures. A client
     from another project in the same workspace therefore cannot leak into readiness or synthesis.
-    The Client-KB version is resolved with the project's confirmed product, so unscoped or sibling
-    product claims never contribute.
+    The Client-KB version is the account-wide company lineage; the project's confirmed product is
+    an independent trusted coordinate whose Product-KB version may legitimately differ.
     """
 
     if execution_id is None:

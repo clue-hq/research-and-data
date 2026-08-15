@@ -135,11 +135,14 @@ answer lifecycle; rendering and remaining UI changes stay owned by Slices 3-6.
   **Human action required** recovery notices. A model-emitted digest is not
   authority.
 - Stage-0 readiness input metrics are engine-derived from the pinned,
-  product-scoped Client-KB claims. Coverage and verified-claim counts use the
-  effective expected-field set: the substantive Client-KB baseline plus any
-  tenant-local required-field extensions. An empty configured extension list
-  cannot erase the baseline or turn an empty knowledge base into a misleading
-  ready state. The wire field is named `readiness_policy_version`.
+  account-wide company Client-KB claims. The confirmed product is a separate
+  trusted project pin, and its optional Product-KB has an independent version;
+  company and product version numbers are never required to match. Coverage and
+  verified-claim counts use the effective expected-field set: the substantive
+  company Client-KB baseline plus any tenant-local required-field extensions.
+  An empty configured extension list cannot erase the baseline or turn an empty
+  knowledge base into a misleading ready state. The wire field is named
+  `readiness_policy_version`.
 - Home project creation accepts an optional explicit `project_name`. When it is
   absent, the server derives a bounded durable name from the initial brief.
   The same stored title feeds bootstrap, project header, and sidebar reads;

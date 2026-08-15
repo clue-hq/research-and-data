@@ -29,10 +29,18 @@ from clue_api.stage0_recipe import RecipeStep, Stage0StepPinProvider
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_api.turn_action import derive_turn_action_ref
 from clue_config import load_settings
-from clue_core import new_operation_id
+from clue_core import ExecutionId, new_operation_id, new_run_id
 from clue_db import db_lifespan
 from clue_execution import CompatibilityLoader
-from clue_spine import create_brand, create_product, create_project, get_project
+from clue_research.claimstore import record_run_lineage
+from clue_research.stage0 import finalize_client_kb_version
+from clue_spine import (
+    confirm_project_product,
+    create_brand,
+    create_product,
+    create_project,
+    get_project,
+)
 from clue_storage import FsStorage
 from clue_toolbelt import DbIdempotencyStore, PreconditionFailed, ToolContext, invoke_tool
 from tests.api.test_product_context_s5c_db import _seed_product_context
@@ -114,6 +122,105 @@ async def _make_presenting_turn(
     assert pin.product_id is None
     assert pin.product_kb_version is None
     return submission, pin
+
+
+def test_icp_synthesis_pins_company_kb_independently_from_selected_product_kb(
+    tmp_path: Path,
+) -> None:
+    """Company v2 plus Product v1 must not be resolved as ``client|product@2``."""
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            scope, products, product_version = await _seed_product_context(tmp_path)
+        async with rollback_conn() as conn:
+            company_run = new_run_id()
+            await record_run_lineage(
+                conn,
+                run_id=company_run,
+                workspace_id=scope.workspace_id,
+                kind="stage0",
+            )
+            company_version = await finalize_client_kb_version(
+                conn,
+                client_entity_id=scope.client_entity_id,
+                workspace_id=scope.workspace_id,
+                run_id=company_run,
+                filled_fields=set(),
+                attempted_fields=set(),
+                product_id=None,
+            )
+            assert (company_version, product_version) == (2, 1)
+
+            project = await create_project(
+                conn,
+                workspace_id=scope.workspace_id,
+                brand_id=scope.brand_id,
+                name="Independent KB pin project",
+            )
+            storage = FsStorage(tmp_path / "synthesis-independent-kb-pins")
+            cf = conn_session_factory(conn)
+            artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=cf)
+            submission, _opening_pin = await _make_presenting_turn(
+                conn,
+                artifacts=artifacts,
+                scope=scope,
+                project_id=project.project_id,
+                label="independent-kb-pins",
+            )
+            confirmed = await confirm_project_product(
+                conn,
+                workspace_id=scope.workspace_id,
+                project_id=project.project_id,
+                product_id=products[0].product_id,
+            )
+            assert confirmed is not None
+            execution_id = ExecutionId(
+                (
+                    await conn.execute(
+                        text("SELECT execution_id FROM agent_turn WHERE id = :turn_id"),
+                        {"turn_id": submission.turn_id},
+                    )
+                ).scalar_one()
+            )
+
+            registry = build_toolbelt(
+                storage=storage,
+                settings=load_settings(_env_file=None, chat_enabled=True),
+                gateway=None,
+                conn_factory=cf,
+            )
+            pins = await Stage0StepPinProvider(
+                compatibility=CompatibilityLoader(
+                    build_recipe_pin_registry(tool_registry=registry, conn_factory=cf)
+                ),
+                conn_factory=cf,
+                tools=registry,
+            ).pins_for(
+                RecipeStep(
+                    step_id="synthesize",
+                    tool_name="synthesize_icps",
+                    tool_version="2",
+                    input_refs={},
+                ),
+                ctx=ToolContext(
+                    workspace_id=scope.workspace_id,
+                    actor="agent",
+                    principal_kind="internal_service",
+                    actor_id="svc_agent_execution",
+                    conn_factory=cf,
+                    operation_id=new_operation_id(),
+                    execution_id=execution_id,
+                ),
+            )
+            by_kind = {pin.kind: pin for pin in pins}
+            assert (by_kind["client_kb"].key, by_kind["client_kb"].version) == (
+                f"{scope.client_entity_id}|-",
+                str(company_version),
+            )
+            assert by_kind["product"].key == products[0].product_id
+            assert "product_kb" not in by_kind
+
+    run_async(scenario())
 
 
 def test_catalog_gate_human_selection_and_next_turn_product_pair_for_projects_a_and_b(

@@ -63,9 +63,17 @@ def test_context_validation_preserves_order_and_checks_contact_parent(
     async def read_contact_profile(*_args: object, **_kwargs: object):
         return SimpleNamespace()
 
+    async def workspace_client_entity_id(*_args: object, **_kwargs: object):
+        return None
+
     monkeypatch.setattr(composer_context, "get_account", get_account)
     monkeypatch.setattr(composer_context, "get_contact", get_contact)
     monkeypatch.setattr(composer_context, "read_contact_profile", read_contact_profile)
+    monkeypatch.setattr(
+        composer_context,
+        "workspace_client_entity_id",
+        workspace_client_entity_id,
+    )
 
     ordered = (_ref("contact", CONTACT_A, version=4), _ref("account", ACCOUNT_A, version=3))
     assert (
@@ -103,7 +111,15 @@ def test_context_validation_refuses_stale_or_duplicate_references(
     async def get_account(_conn: object, _entity_id: EntityId):
         return account
 
+    async def workspace_client_entity_id(*_args: object, **_kwargs: object):
+        return None
+
     monkeypatch.setattr(composer_context, "get_account", get_account)
+    monkeypatch.setattr(
+        composer_context,
+        "workspace_client_entity_id",
+        workspace_client_entity_id,
+    )
 
     with pytest.raises(ContextReferenceError) as stale:
         asyncio.run(
@@ -125,6 +141,52 @@ def test_context_validation_refuses_stale_or_duplicate_references(
             )
         )
     assert repeated.value.code == "CONTEXT_REF_DUPLICATE"
+
+
+def test_context_validation_refuses_the_workspace_client_and_its_contacts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    account = SimpleNamespace(
+        id=ACCOUNT_A,
+        workspace_id="ws-r8-context",
+        canonical_version=3,
+        merged_into=None,
+    )
+    contact = SimpleNamespace(
+        id=CONTACT_A,
+        workspace_id="ws-r8-context",
+        account_entity_id=ACCOUNT_A,
+        canonical_version=4,
+        merged_into=None,
+    )
+
+    async def get_account(_conn: object, _entity_id: EntityId):
+        return account
+
+    async def get_contact(_conn: object, _entity_id: EntityId):
+        return contact
+
+    async def workspace_client_entity_id(*_args: object, **_kwargs: object):
+        return ACCOUNT_A
+
+    monkeypatch.setattr(composer_context, "get_account", get_account)
+    monkeypatch.setattr(composer_context, "get_contact", get_contact)
+    monkeypatch.setattr(
+        composer_context,
+        "workspace_client_entity_id",
+        workspace_client_entity_id,
+    )
+
+    for refs in ((_ref("account", ACCOUNT_A),), (_ref("contact", CONTACT_A),)):
+        with pytest.raises(ContextReferenceError) as unavailable:
+            asyncio.run(
+                validated_context_refs(
+                    object(),  # type: ignore[arg-type]
+                    workspace_id="ws-r8-context",
+                    refs=refs,
+                )
+            )
+        assert unavailable.value.code == "CONTEXT_REF_NOT_FOUND"
 
 
 def test_context_preparation_hydrates_exact_records_beyond_the_bounded_catalog(

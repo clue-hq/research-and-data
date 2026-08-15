@@ -350,7 +350,7 @@ class SynthesizeIcpsV2Tool(_Stage0ProjectTool):
                 return _failure("client_not_bound", "the project has no bound client entity")
             if scope.client_kb_version is None:
                 return _failure(
-                    "client_kb_missing", "the confirmed product has no current Client KB"
+                    "client_kb_missing", "the workspace client has no current company Client KB"
                 )
             decision = await _current_backend_readiness(
                 conn,

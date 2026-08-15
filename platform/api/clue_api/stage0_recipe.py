@@ -180,10 +180,11 @@ class Stage0StepPinProvider:
                 requested.append(
                     await self._exact(
                         kind="client_kb",
-                        key=(
-                            f"{trusted_stage0_scope.client_entity_id}|"
-                            f"{trusted_stage0_scope.product_id or '-'}"
-                        ),
+                        # ``client_kb_version`` is the independently-versioned, account-wide
+                        # company snapshot. The selected product is already frozen by the
+                        # separate ``product`` pin above; applying the company version to a
+                        # product-scoped KB key couples two lineages that legitimately differ.
+                        key=f"{trusted_stage0_scope.client_entity_id}|-",
                         version=str(trusted_stage0_scope.client_kb_version),
                         ctx=ctx,
                     )

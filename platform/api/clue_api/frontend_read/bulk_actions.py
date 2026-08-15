@@ -147,6 +147,12 @@ _ACCOUNT_ELIGIBILITY = text(
      AND pa.project_id=:project_id
     WHERE a.workspace_id=:workspace_id
       AND a.merged_into IS NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM workspace_client_binding wcb
+          WHERE wcb.workspace_id = a.workspace_id
+            AND wcb.client_entity_id = a.id
+      )
       AND a.id IN :account_ids
     """
 ).bindparams(bindparam("account_ids", expanding=True, type_=PgUUID(as_uuid=True)))
