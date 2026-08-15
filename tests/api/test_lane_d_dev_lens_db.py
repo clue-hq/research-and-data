@@ -429,7 +429,8 @@ def test_the_gateway_asks_for_reasoning_only_when_the_lens_configures_it() -> No
     """The request is a *config* value, and the per-model baseline survives without it."""
 
     baseline = GatewayConfig()
-    assert _reasoning_request(baseline, model_id="openai/gpt-5.6-terra") == {"effort": "none"}
+    assert _reasoning_request(baseline, model_id="openai/gpt-5.6-terra") == {"effort": "high"}
+    assert _reasoning_request(baseline, model_id="openai/gpt-5.6-sol") == {"effort": "none"}
     assert _reasoning_request(baseline, model_id="anthropic/claude-sonnet-4") is None
 
     lens = GatewayConfig(

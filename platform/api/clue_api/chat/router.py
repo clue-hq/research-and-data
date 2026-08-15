@@ -1744,11 +1744,25 @@ def build_chat_router(
                     message="the selected product was not in the presented catalog",
                 )
         else:
-            if response.revision_request is not None:
+            is_discovery_configuration = (
+                view.gate.subject_snapshot.get("subject_kind") == "discovery_configuration"
+            )
+            if is_discovery_configuration and response.decision == "revised":
+                if response.revision_request is None or not response.revision_request.strip():
+                    raise _refuse(
+                        status_code=422,
+                        code="GATE_REVISION_REQUEST_REQUIRED",
+                        message="revising discovery scope requires the requested changes",
+                    )
+            elif response.revision_request is not None:
                 raise _refuse(
                     status_code=422,
                     code="GATE_REVISION_REQUEST_UNEXPECTED",
-                    message="a directive confirmation does not accept an ICP revision request",
+                    message=(
+                        "revision_request is only valid for a revised discovery scope"
+                        if is_discovery_configuration
+                        else "an account-research directive does not accept revision text"
+                    ),
                 )
             if response.selected_product_id is not None:
                 raise _refuse(
@@ -1985,10 +1999,17 @@ def build_chat_router(
                             code="GATE_ALREADY_ANSWERED",
                             message="this gate has already been answered",
                         ) from exc
-                    if response.decision == "approved" and gate.kind in {
-                        KIND_DIRECTIVE_CONFIRMATION,
-                        KIND_PRODUCT_SELECTION,
-                    }:
+                    is_discovery_configuration = (
+                        gate.kind == KIND_DIRECTIVE_CONFIRMATION
+                        and gate.subject_snapshot.get("subject_kind") == "discovery_configuration"
+                    )
+                    if response.decision == "approved" and (
+                        gate.kind == KIND_PRODUCT_SELECTION
+                        or (
+                            gate.kind == KIND_DIRECTIVE_CONFIRMATION
+                            and not is_discovery_configuration
+                        )
+                    ):
                         # Human-only, invoked outside the model surface with server-derived
                         # authority. Rejection and revision deliberately confirm nothing: they are
                         # durable records of a decision, and the agent answers them in its turn.

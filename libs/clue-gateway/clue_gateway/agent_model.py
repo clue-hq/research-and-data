@@ -512,9 +512,10 @@ class OpenRouterAgentModelProvider:
 def _reasoning_request(config: GatewayConfig, *, model_id: str) -> dict[str, Any] | None:
     """The provider ``reasoning`` block for one governed agent model — config first, baseline else.
 
-    **The baseline (no config).** GPT-5.6's current governed default is reasoning ``none``,
-    expressed in the native Responses shape so it can be tuned by eval-backed policy without
-    returning to Chat params. Every other model asks for nothing.
+    **The baseline (no config).** The production Head-of-ABM model
+    ``openai/gpt-5.6-terra`` uses reasoning ``high``. Other GPT-5.6 routes retain reasoning
+    ``none`` and every non-GPT-5.6 model asks for nothing. The explicit Responses shape keeps the
+    policy inspectable and overrideable without returning to Chat params.
 
     **The override (``GatewayConfig.agent_reasoning``).** Set only by ``default_gateway_config``
     under the dev-only ``CLUE_CHAT_REASONING_TRACE_MODE=raw`` lens, which a production process is
@@ -545,6 +546,8 @@ def _reasoning_request(config: GatewayConfig, *, model_id: str) -> dict[str, Any
     if configured is not None:
         payload = configured.as_provider_payload()
         return dict(payload) if payload else None
+    if model_id == "openai/gpt-5.6-terra":
+        return {"effort": "high"}
     return {"effort": "none"} if model_id.startswith("openai/gpt-5.6") else None
 
 

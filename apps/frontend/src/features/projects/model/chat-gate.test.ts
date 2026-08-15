@@ -80,6 +80,49 @@ test("a durable gate with a withheld amount remains answerable without a cost", 
   assert.equal(card.amountCents, null);
 });
 
+test("a scope-only discovery gate renders its account count and typed revision", () => {
+  const discovery = model({
+    gate: {
+      ...openGate,
+      maxSpendCents: null,
+      currency: null,
+      subjectSnapshot: {
+        subject_kind: "discovery_configuration",
+        approved_icp_ref: "icp-spec:ws-demo:health:v1",
+        planning_policy_version: "stage0-discovery-planning-policy@1",
+        configuration: {
+          schema_version: "stage0-discovery-configuration@1",
+          approved_icp_ref: "icp-spec:ws-demo:health:v1",
+          entity_type: "company",
+          requested_account_count: 10,
+          search_intent: "Find specialty healthcare practices.",
+          must_have_criteria: ["Specialty healthcare"],
+          exclusion_criteria: ["Current customers"],
+        },
+      },
+    },
+  });
+
+  assert.ok(discovery);
+  assert.equal(discovery.title, "Review account discovery scope");
+  assert.equal(discovery.summary, "Discover 10 accounts using the approved ICP criteria");
+  assert.equal(discovery.revisionKind, "discovery");
+  assert.deepEqual(
+    gateAnswerResponse(discovery, {
+      kind: "discovery_revision",
+      decision: "revised",
+      revisionRequest: "  Start with 50 and exclude hospitals.  ",
+    }),
+    {
+      gateId: openGate.gateId,
+      decision: "revised",
+      expectedSubjectSha256: openGate.expectedSubjectSha256,
+      expectedEstimatedCostCents: null,
+      revisionRequest: "Start with 50 and exclude hospitals.",
+    },
+  );
+});
+
 test("a rich stream part can never substitute for the durable gate read", () => {
   const card = model({
     gate: null,

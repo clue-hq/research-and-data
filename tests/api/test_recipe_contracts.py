@@ -172,6 +172,23 @@ def test_confirmed_run_v2_mints_recipe_v11_without_rewriting_v10() -> None:
     assert v11["version"] == 11
 
 
+def test_provider_neutral_discovery_mints_recipe_v12_without_rewriting_v11() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v11 = json.loads((root / "recipe0-stage0-v11.json").read_text())
+    v12 = json.loads((root / "recipe0-stage0-v12.json").read_text())
+
+    v11_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v11.json")
+    assert SYSTEM_RECIPE_FILENAMES[v11_index : v11_index + 2] == (
+        "recipe0-stage0-v11.json",
+        "recipe0-stage0-v12.json",
+    )
+    assert "start_confirmed_project_run@2" in v11["graph"]["tool_allowlist"]
+    assert "start_confirmed_project_run@3" in v12["graph"]["tool_allowlist"]
+    assert "open_discovery_configuration_gate@1" in v12["graph"]["tool_allowlist"]
+    assert "start_confirmed_project_run@2" not in v12["graph"]["tool_allowlist"]
+    assert v12["version"] == 12
+
+
 def test_operation_id_requirements_are_explicit() -> None:
     audit = build_replay_safety_audit(_standing_recipe_registry())
     operation_bound = {item.address for item in audit if item.operation_id_required}
@@ -191,7 +208,7 @@ def test_operation_id_requirements_are_explicit() -> None:
         "resolve_committee@1",
         "reverse_profile@1",
         "run_deep_account@1",
-        "start_confirmed_project_run@2",
+        "start_confirmed_project_run@3",
         "start_project_run@1",
         "start_recon@1",
         "submit_onboarding_input@1",

@@ -2899,7 +2899,12 @@ def build_toolbelt(
         project_execution_router=project_execution_router,
         budget_controls_enabled=resolved_settings.budget_controls_enabled,
     ):
-        registry.register(tool, make_default=True)
+        registry.register(
+            tool,
+            make_default=(
+                tool.name != "start_confirmed_project_run" or tool.version == "3"
+            ),
+        )
     for tool in build_research_directive_tools(
         memory_write_factory=(
             research_directive_memory_write_factory or stage0_memory_write_factory

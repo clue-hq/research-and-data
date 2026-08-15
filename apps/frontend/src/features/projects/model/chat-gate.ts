@@ -138,6 +138,11 @@ export type GateDecisionInput =
       revisionRequest: string;
     }
   | {
+      kind: "discovery_revision";
+      decision: "revised";
+      revisionRequest: string;
+    }
+  | {
       kind: "product_selection";
       decision: "approved";
       selectedProductId: string;
@@ -243,6 +248,7 @@ export interface GateCardModel {
   unavailableReason: string | null;
   recovery: GateRecoveryAction | null;
   revisionRequest: string | null;
+  revisionKind: "icp" | "discovery" | null;
   /** The research run an approved gate's authority actually launched. */
   launches: readonly ChatGateLaunch[];
   productOptions: readonly ProductSelectionOption[];
@@ -291,6 +297,11 @@ export function gateTitle(kind: string): string {
   return GATE_TITLES[kind] ?? "Review requested";
 }
 
+function isDiscoveryConfiguration(gate: ChatGate): boolean {
+  return gate.kind === "directive_confirmation" &&
+    gate.subjectSnapshot.subject_kind === "discovery_configuration";
+}
+
 export function agentGateIdFromPart(part: ChatGatePart): string | null {
   if (
     part.gateRef.objectType !== "agent_gate" ||
@@ -311,11 +322,18 @@ function durableGateSummary(gate: ChatGate): string {
       : `${label} · Version ${gate.subjectRevision}`;
   }
   if (gate.kind === "directive_confirmation") {
-    const accountCount = gate.subjectSnapshot.account_count;
+    const configuration = gate.subjectSnapshot.configuration;
+    const accountCount =
+      configuration && typeof configuration === "object"
+        ? (configuration as Record<string, unknown>).requested_account_count
+        : gate.subjectSnapshot.account_count;
     const scope =
       typeof accountCount === "number"
         ? `${accountCount} ${accountCount === 1 ? "account" : "accounts"}`
         : "the selected accounts";
+    if (isDiscoveryConfiguration(gate)) {
+      return `Discover ${scope} using the approved ICP criteria`;
+    }
     return gate.subjectRevision === null
       ? `Research plan for ${scope}`
       : `Research plan for ${scope} · Version ${gate.subjectRevision}`;
@@ -359,6 +377,7 @@ function notice({
     unavailableReason: reason,
     recovery,
     revisionRequest: null,
+    revisionKind: null,
     launches: [],
     productOptions: [],
     selectedProductId: null,
@@ -533,7 +552,9 @@ export function gateCardModel({
       gateId: gate.gateId,
       state: decision === "approved" ? "responded" : "denied",
       kind: gate.kind,
-      title: gateTitle(gate.kind),
+      title: isDiscoveryConfiguration(gate)
+        ? "Review account discovery scope"
+        : gateTitle(gate.kind),
       summary: durableGateSummary(gate),
       subjectRef: gate.subjectRef,
       subjectRevision: gate.subjectRevision,
@@ -548,6 +569,11 @@ export function gateCardModel({
       recovery: null,
       revisionRequest:
         typeof revisionRequest === "string" ? revisionRequest : null,
+      revisionKind: gate.kind === "icp_confirmation"
+        ? "icp"
+        : isDiscoveryConfiguration(gate)
+          ? "discovery"
+          : null,
       launches: gate.launches,
       productOptions,
       selectedProductId: gate.answer?.selectedOptionRef ?? null,
@@ -586,7 +612,9 @@ export function gateCardModel({
     gateId: gate.gateId,
     state: "requested",
     kind: gate.kind,
-    title: gateTitle(gate.kind),
+    title: isDiscoveryConfiguration(gate)
+      ? "Review account discovery scope"
+      : gateTitle(gate.kind),
     summary: durableGateSummary(gate),
     subjectRef: gate.subjectRef,
     subjectRevision: gate.subjectRevision,
@@ -600,6 +628,11 @@ export function gateCardModel({
     unavailableReason: null,
     recovery: null,
     revisionRequest: null,
+    revisionKind: gate.kind === "icp_confirmation"
+      ? "icp"
+      : isDiscoveryConfiguration(gate)
+        ? "discovery"
+        : null,
     launches: gate.launches,
     productOptions,
     selectedProductId: null,
@@ -739,18 +772,28 @@ export function gateAnswerResponse(
     throw new Error("That option is no longer available for this proposal.");
   }
   const trimmedRevision =
-    input.kind === "icp_revision" ? input.revisionRequest.trim() : undefined;
+    input.kind === "icp_revision" || input.kind === "discovery_revision"
+      ? input.revisionRequest.trim()
+      : undefined;
   if (trimmedRevision && trimmedRevision.length > 4_000) {
     throw new Error("Please keep the requested changes under 4,000 characters.");
   }
-  if (card.kind === "icp_confirmation" && input.decision === "revised") {
+  const revisionKindMatchesGate =
+    (card.revisionKind === "icp" && card.kind === "icp_confirmation") ||
+    (card.revisionKind === "discovery" && card.kind === "directive_confirmation");
+  if (revisionKindMatchesGate && input.decision === "revised") {
     if (!trimmedRevision) {
       throw new Error("Describe what you would like changed before continuing.");
     }
-    if (input.kind !== "icp_revision") {
+    if (
+      (card.revisionKind === "icp" && input.kind !== "icp_revision") ||
+      (card.revisionKind === "discovery" && input.kind !== "discovery_revision")
+    ) {
       throw new Error("Describe what you would like changed before continuing.");
     }
-  } else if (input.kind === "icp_revision") {
+  } else if (
+    input.kind === "icp_revision" || input.kind === "discovery_revision"
+  ) {
     throw new Error("Changes can only be added when requesting a revision.");
   }
   if (card.kind === "product_selection" && input.decision === "approved") {

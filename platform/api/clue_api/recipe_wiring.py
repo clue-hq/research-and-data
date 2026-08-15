@@ -58,6 +58,8 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v10.json",
     # Confirmed-run v2 derives/reuses the existing Stage-0 receipt and starts discovery internally.
     "recipe0-stage0-v11.json",
+    # Provider-neutral discovery scope is derived/confirmed and pinned by start @3.
+    "recipe0-stage0-v12.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )
@@ -317,12 +319,18 @@ def build_recipe_pin_registry(
                     await conn.execute(
                         text(
                             """
-                            SELECT id, workspace_id, project_id, icp_key, icp_version,
-                                   client_entity_id, client_kb_version, product_id,
-                                   product_context_version_id, readiness_decision_id,
-                                   tier_cutoffs_json
-                            FROM project_run
-                            WHERE id = CAST(:key AS uuid) AND workspace_id = :workspace_id
+                            SELECT run.id, run.workspace_id, run.project_id,
+                                   run.icp_key, run.icp_version,
+                                   run.client_entity_id, run.client_kb_version, run.product_id,
+                                   run.product_context_version_id, run.readiness_decision_id,
+                                   run.tier_cutoffs_json,
+                                   config.configuration_sha256
+                            FROM project_run run
+                            LEFT JOIN project_run_discovery_configuration config
+                              ON config.project_run_id = run.id
+                             AND config.workspace_id = run.workspace_id
+                            WHERE run.id = CAST(:key AS uuid)
+                              AND run.workspace_id = :workspace_id
                             """
                         ),
                         {"key": request.key, "workspace_id": context.workspace_id},

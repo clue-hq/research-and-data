@@ -449,8 +449,10 @@ are never accepted from the browser or model.
   reload.
 - The composer keeps one visible model selector, as explicitly ruled for R8.
   Its only option is the server-advertised promoted profile
-  `head-of-abm@v30`, labelled **GPT-5.6 Terra** and backed by
-  `openai/gpt-5.6-terra`. The chosen profile id is accepted, persisted, and
+  `head-of-abm@v31`, labelled **GPT-5.6 Terra** and backed by
+  `openai/gpt-5.6-terra`. Its governed gateway baseline requests reasoning
+  effort `high`; an explicit environment policy may still override that baseline. The chosen
+  profile id is accepted, persisted, and
   checked by the detached worker before the promoted profile is executed.
 - Attachments remain unavailable because this deployment has no durable upload
   receipt endpoint. Both Home and project reads advertise `attachments=false`,
@@ -481,15 +483,17 @@ are never accepted from the browser or model.
 
 ### Immutable resource integration ruling (2026-08-16)
 
-The active conversation profile is `head-of-abm@v30`. The pilot bytes remain
+The active conversation profile is `head-of-abm@v31`. The pilot bytes remain
 authoritative and immutable at profiles `v24`/`v25`, skills `v11`/`v12`, and
 recipes `v7`/`v8`; the onboarding lineage remains immutable at profiles
 `v26`–`v28`, skills `v13`–`v15`, and recipe `v9`. None of those historical
 addresses is rewritten. The former combined lineage at profile `v29`, skill `v16`, and recipe
-`v10` also remains immutable. The active confirmed-run lineage is profile `v30`, skill `v17`, and
-recipe `v11`:
+`v10` also remains immutable. The confirmed-run-v2 lineage at profile `v30`, skill `v17`, and
+recipe `v11` remains immutable. The active provider-neutral discovery lineage is profile `v31`,
+skill `v18`, and recipe `v12`:
 
-- Stage-0 owns `stage0-interview@v17`, trusted readiness/synthesis/run-start `@2`, and the durable
+- Stage-0 owns `stage0-interview@v18`, trusted readiness/synthesis `@2`, provider-neutral
+  run-start `@3`, the scope-only `open_discovery_configuration_gate@1`, and the durable
   exact-subject `open_icp_confirmation_gate@1` lifecycle;
 - FI-2 owns `account-deep-steering@v4` and
   `launch_selected_account_research@1` for exact current-message Account refs;
@@ -554,7 +558,7 @@ It performs no project-membership mutation, provider call or spend. The user
 must still write the instruction that explains what the agent should do.
 
 For the explicit same-message instruction to launch deep Account research,
-the active `head-of-abm@v30` profile may call
+the active `head-of-abm@v31` profile may call
 `launch_selected_account_research@1`. This is a narrow FI pilot path, not a
 relaxation of `launch_account_research@1`:
 
@@ -748,14 +752,14 @@ nothing. It requires `project.read`.
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v30",
+        "id": "head-of-abm@v31",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v30",
+    "default_agent_profile_id": "head-of-abm@v31",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,
@@ -809,7 +813,7 @@ accepts:
     }
   ],
   "attachment_refs": [],
-  "agent_profile_id": "head-of-abm@v30"
+  "agent_profile_id": "head-of-abm@v31"
 }
 ```
 
@@ -946,14 +950,14 @@ project shell:
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v30",
+        "id": "head-of-abm@v31",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v30",
+    "default_agent_profile_id": "head-of-abm@v31",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,

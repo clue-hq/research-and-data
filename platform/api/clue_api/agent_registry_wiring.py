@@ -36,9 +36,9 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # Integration v30 keeps v29's combined authority and replaces only the active confirmed-run
-    # entry with backend-owned @2. v1-v29 remain immutable historical replay inputs.
-    AgentRole.HEAD_OF_ABM: "v30",
+    # Integration v31 keeps v30 immutable and advances only the discovery-scope contract: the
+    # agent may propose a scope-only gate, while backend-owned @3 pins the approved/derived scope.
+    AgentRole.HEAD_OF_ABM: "v31",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -105,6 +105,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # it confirms nothing, spends nothing, and cannot address a gate to anybody but the human whose
     # turn it is answering (the addressee is derived from the durable submission, not proposed).
     "open_directive_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
+    "open_discovery_configuration_gate": (AgentRole.HEAD_OF_ABM,),
     "open_icp_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
     "open_product_selection_gate": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
@@ -214,6 +215,7 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 # confirmation gate — but never act on the answer — would be inviting a human to
                 # approve spend that no surface here can perform.
                 "open_directive_confirmation_gate",
+                "open_discovery_configuration_gate",
                 "open_product_selection_gate",
                 "start_recon",
                 "submit_onboarding_input",
@@ -310,12 +312,10 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
     if name == "draft_account_research_directive":
         return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@2" else ()
-    if name in {
-        "evaluate_stage0_readiness",
-        "start_confirmed_project_run",
-        "synthesize_icps",
-    }:
+    if name in {"evaluate_stage0_readiness", "synthesize_icps"}:
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
+    if name == "start_confirmed_project_run":
+        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@3") else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":
@@ -343,6 +343,8 @@ def _unavailable_reason(address: str, name: str) -> str | None:
         "synthesize_icps@1",
     }:
         return "replaced_by_trusted_stage0_v2"
+    if address == "start_confirmed_project_run@2":
+        return "replaced_by_provider_neutral_discovery_v3"
     return _RESERVED_REASON.get(name)
 
 

@@ -33,6 +33,7 @@ __all__ = [
     "PRODUCT_CONTEXT_RECEIPT_INPUT_KINDS",
     "PRODUCT_CONTEXT_RECEIPT_SCHEMA_V1",
     "START_CONFIRMED_PROJECT_RUN_V2",
+    "START_CONFIRMED_PROJECT_RUN_V3",
     "SYNTHESIZE_ICPS_V2",
     "DiscoveryConfigurationContract",
     "DiscoverySpendBoundaryContract",
@@ -43,6 +44,8 @@ __all__ = [
     "ProductContextReceiptInputRef",
     "StartConfirmedProjectRunV2Input",
     "StartConfirmedProjectRunV2Output",
+    "StartConfirmedProjectRunV3Input",
+    "StartConfirmedProjectRunV3Output",
     "Stage0GateResponseContract",
     "Stage0ReadinessV2Output",
     "SynthesizeIcpsV2Input",
@@ -55,6 +58,7 @@ __all__ = [
 EVALUATE_STAGE0_READINESS_V2 = "evaluate_stage0_readiness@2"
 SYNTHESIZE_ICPS_V2 = "synthesize_icps@2"
 START_CONFIRMED_PROJECT_RUN_V2 = "start_confirmed_project_run@2"
+START_CONFIRMED_PROJECT_RUN_V3 = "start_confirmed_project_run@3"
 ICP_CONFIRMATION_GATE_KIND = "icp_confirmation"
 PRODUCT_CONTEXT_RECEIPT_SCHEMA_V1: Literal["stage0-existing-inputs@1"] = "stage0-existing-inputs@1"
 DISCOVERY_CONFIGURATION_SCHEMA_V1: Literal["stage0-discovery-configuration@1"] = (
@@ -217,21 +221,30 @@ class DiscoveryConfigurationContract(_FrozenContract):
     schema_version: Literal["stage0-discovery-configuration@1"]
     approved_icp_ref: str = Field(min_length=1)
     entity_type: Literal["company"]
-    requested_account_count: int = Field(gt=0)
+    requested_account_count: int = Field(gt=0, le=50)
     search_intent: str = Field(min_length=1, max_length=4_000)
     must_have_criteria: tuple[str, ...] = Field(min_length=1)
     exclusion_criteria: tuple[str, ...] = ()
+
+    @field_validator("search_intent")
+    @classmethod
+    def search_intent_is_canonical(cls, value: str) -> str:
+        canonical = " ".join(value.split())
+        if not canonical:
+            raise ValueError("discovery search intent must be non-blank")
+        return canonical
 
     @field_validator("must_have_criteria", "exclusion_criteria")
     @classmethod
     def criteria_are_bounded_and_unique(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         if len(values) > 50:
             raise ValueError("discovery criteria are limited to 50 entries")
-        if any(not value.strip() or len(value) > 500 for value in values):
+        canonical = tuple(" ".join(value.split()) for value in values)
+        if any(not value or len(value) > 500 for value in canonical):
             raise ValueError("discovery criteria must be non-blank and at most 500 characters")
-        if len(set(values)) != len(values):
+        if len(set(canonical)) != len(canonical):
             raise ValueError("discovery criteria must be unique")
-        return values
+        return canonical
 
 
 class StartConfirmedProjectRunV2Input(TrustedStage0ProjectScopeInput):
@@ -250,6 +263,19 @@ class StartConfirmedProjectRunV2Output(ToolOutput):
     order to continue the project.
     """
 
+    project_run_id: str = Field(pattern=_UUID_PATTERN)
+    phase: Literal["discovery"]
+
+
+class StartConfirmedProjectRunV3Input(TrustedStage0ProjectScopeInput):
+    """No model-authored lineage or discovery configuration.
+
+    The backend derives a complete provider-neutral configuration from the approved ICP or reuses
+    the exact configuration from an approved scope-only gate.
+    """
+
+
+class StartConfirmedProjectRunV3Output(ToolOutput):
     project_run_id: str = Field(pattern=_UUID_PATTERN)
     phase: Literal["discovery"]
 

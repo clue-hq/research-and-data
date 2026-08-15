@@ -198,3 +198,11 @@ def test_discovery_configuration_is_separate_from_context_and_budget_authority()
         "must_have_criteria",
         "exclusion_criteria",
     }.isdisjoint(ProductContextReceiptContract.model_fields)
+
+    with pytest.raises(ValidationError):
+        DiscoveryConfigurationContract(
+            **{
+                **configuration.model_dump(mode="python"),
+                "requested_account_count": 51,
+            }
+        )

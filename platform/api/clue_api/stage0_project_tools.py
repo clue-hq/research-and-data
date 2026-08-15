@@ -4,17 +4,34 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import Annotated, ClassVar, cast
 from uuid import UUID
 
-from pydantic import JsonValue
+from pydantic import Field, JsonValue, StringConstraints
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.agent_gate import (
+    KIND_DIRECTIVE_CONFIRMATION,
+    AgentGateSubjectBinding,
+    directive_confirmation_gate_id,
+    insert_gate,
+)
+from clue_api.agent_gate_tools import gate_ref
+from clue_api.discovery_configuration import (
+    DEFAULT_DISCOVERY_PLANNING_POLICY,
+    DiscoveryConfigurationReceipt,
+    derive_discovery_configuration,
+    discovery_configuration_sha256,
+    parse_discovery_configuration_json,
+    put_discovery_configuration_receipt,
+)
 from clue_api.product_knowledge_privacy import product_subject_id
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.stage0_project_contracts import (
+    DISCOVERY_CONFIGURATION_SCHEMA_V1,
     PRODUCT_CONTEXT_RECEIPT_SCHEMA_V1,
+    DiscoveryConfigurationContract,
     DraftIcpSpecRef,
     EvaluateStage0ReadinessV2Input,
     ProductContextReceiptContract,
@@ -22,14 +39,24 @@ from clue_api.stage0_project_contracts import (
     Stage0ReadinessV2Output,
     StartConfirmedProjectRunV2Input,
     StartConfirmedProjectRunV2Output,
+    StartConfirmedProjectRunV3Input,
+    StartConfirmedProjectRunV3Output,
     SynthesizeIcpsV2Input,
     SynthesizeIcpsV2Output,
+    TrustedStage0ProjectScopeInput,
     canonical_subject_sha256,
     product_context_receipt_manifest_sha256,
 )
 from clue_api.stage0_project_scope import Stage0ProjectScope, resolve_stage0_project_scope
 from clue_api.stage0_tools import start_confirmed_project_run
 from clue_api.statement_evidence import ArtifactStatementEvidenceReader
+from clue_api.turn_action import (
+    TurnActionUnresolvable,
+    TurnIdentity,
+    load_turn_identity,
+    parse_turn_action_ref,
+)
+from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_config import DEFAULT_STAGE0_POLICY, Stage0Policy
 from clue_core import (
     ICPStatus,
@@ -80,12 +107,17 @@ from clue_toolbelt import (
     ToolContext,
     ToolEffectClass,
     ToolInput,
+    ToolOutput,
     ToolResult,
 )
 
 __all__ = [
     "EvaluateStage0ReadinessV2Tool",
+    "OpenDiscoveryConfigurationGateInput",
+    "OpenDiscoveryConfigurationGateOutput",
+    "OpenDiscoveryConfigurationGateTool",
     "StartConfirmedProjectRunV2Tool",
+    "StartConfirmedProjectRunV3Tool",
     "SynthesizeIcpsV2Tool",
     "stage0_project_tools",
 ]
@@ -93,6 +125,7 @@ __all__ = [
 _METRICS_AUTHORITY = "backend_product_scoped_client_kb"
 _CONFIRMED_RUN_METRICS_AUTHORITY = "backend_confirmed_discovery_run_v2"
 _PRODUCT_CONTEXT_COMPILER_VERSION = "product-context@2-existing-stage0-receipt"
+_DISCOVERY_CONFIGURATION_SUBJECT_KIND = "discovery_configuration"
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,8 +142,39 @@ class _ApprovedIcp:
     expected_subject_sha256: str
 
 
+class OpenDiscoveryConfigurationGateInput(TrustedStage0ProjectScopeInput):
+    """A model-authored scope proposal; all identity and authority is server-derived."""
+
+    requested_account_count: int = Field(default=10, ge=1, le=50)
+    search_intent: str = Field(min_length=1, max_length=4_000)
+    must_have_criteria: tuple[str, ...] = Field(min_length=1, max_length=50)
+    exclusion_criteria: tuple[str, ...] = Field(default=(), max_length=50)
+    source_turn_ref: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=1_000),
+    ] = Field(json_schema_extra={TRUSTED_TURN_FIELD: True})
+
+
+class OpenDiscoveryConfigurationGateOutput(ToolOutput):
+    gate_id: str
+    gate_ref: str
+    gate_kind: str
+    subject_ref: str
+    subject_revision: int
+    expected_subject_sha256: str
+    requested_account_count: int
+    addressee_user_id: str
+    created: bool
+
+
 def _failure(code: str, message: str) -> tuple[PreconditionFailure, ...]:
     return (PreconditionFailure(reason_code=code, message=message),)
+
+
+class _DiscoveryConfigurationGateRefused(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 async def _scope(conn: AsyncConnection, ctx: ToolContext) -> Stage0ProjectScope | None:
@@ -273,6 +337,65 @@ async def _approved_icp(
         subject_ref=str(row["subject_ref"]),
         expected_subject_sha256=str(row["expected_subject_sha256"]),
     )
+
+
+async def _approved_discovery_configuration_gate(
+    conn: AsyncConnection,
+    *,
+    scope: Stage0ProjectScope,
+    approved_icp: _ApprovedIcp,
+) -> tuple[DiscoveryConfigurationContract, UUID] | None:
+    """Return the newest exact approved scope proposal for this active ICP."""
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT g.gate_id, g.subject_snapshot, g.expected_subject_sha256
+                    FROM agent_gate g
+                    JOIN agent_gate_answer a
+                      ON a.gate_id = g.gate_id
+                     AND a.workspace_id = g.workspace_id
+                    WHERE g.workspace_id = :workspace_id
+                      AND g.project_id = :project_id
+                      AND g.kind = 'directive_confirmation'
+                      AND g.subject_snapshot ->> 'subject_kind'
+                          = 'discovery_configuration'
+                      AND g.subject_snapshot ->> 'approved_icp_ref' = :approved_icp_ref
+                      AND g.subject_snapshot ->> 'planning_policy_version'
+                          = :planning_policy_version
+                      AND g.snapshot_erased_at IS NULL
+                      AND a.decision = 'approved'
+                      AND a.expected_subject_sha256 = g.expected_subject_sha256
+                    ORDER BY a.answered_at DESC, g.gate_id DESC
+                    LIMIT 1
+                    FOR SHARE OF g, a
+                    """
+                ),
+                {
+                    "workspace_id": scope.workspace_id,
+                    "project_id": scope.project_id,
+                    "approved_icp_ref": approved_icp.subject_ref,
+                    "planning_policy_version": DEFAULT_DISCOVERY_PLANNING_POLICY.version,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        return None
+    snapshot = cast(dict[str, JsonValue], decode_jsonb(row["subject_snapshot"]))
+    if canonical_subject_sha256(snapshot) != str(row["expected_subject_sha256"]):
+        raise ValueError("approved discovery-configuration gate digest does not match its bytes")
+    configuration_value = snapshot.get("configuration")
+    if not isinstance(configuration_value, dict):
+        raise ValueError("approved discovery-configuration gate has no valid configuration")
+    configuration = parse_discovery_configuration_json(configuration_value)
+    if configuration.approved_icp_ref != approved_icp.subject_ref:
+        raise ValueError("approved discovery configuration names a stale ICP")
+    return configuration, UUID(str(row["gate_id"]))
 
 
 def _receipt_from_existing_inputs(
@@ -806,6 +929,189 @@ class SynthesizeIcpsV2Tool(_Stage0ProjectTool):
         )
 
 
+class OpenDiscoveryConfigurationGateTool(_Stage0ProjectTool):
+    """Present a scope-only proposal when the approved ICP cannot determine one itself."""
+
+    name = "open_discovery_configuration_gate"
+    version = "1"
+    model_description = (
+        "Use only when start_confirmed_project_run reports that discovery scope is genuinely "
+        "ambiguous. Propose a provider-neutral company search, normally starting with 10 "
+        "accounts, explain the criteria to the user, and present this scope-only confirmation. "
+        "This is not product-context compilation or spend approval."
+    )
+    input_model: ClassVar[type[ToolInput]] = OpenDiscoveryConfigurationGateInput
+    output_model: ClassVar[type[ToolOutput]] = OpenDiscoveryConfigurationGateOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="one presenting turn plus one exact discovery configuration",
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    effect_class = ToolEffectClass.WRITE
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "requested_account_count",
+            "search_intent",
+            "must_have_criteria",
+            "exclusion_criteria",
+        )
+    )
+    pin_requirements = ("project", "product", "client_kb", "product_kb")
+
+    async def _resolve(
+        self,
+        conn: AsyncConnection,
+        inputs: OpenDiscoveryConfigurationGateInput,
+        ctx: ToolContext,
+    ) -> tuple[
+        Stage0ProjectScope,
+        _ApprovedIcp,
+        DiscoveryConfigurationContract,
+        tuple[str, ...],
+        TurnIdentity,
+    ]:
+        scope = await _scope(conn, ctx)
+        if scope is None or scope.turn_id is None:
+            raise _DiscoveryConfigurationGateRefused(
+                "stage0_turn_scope_not_found",
+                "the governed execution has no immutable Stage-0 turn scope",
+            )
+        approved_icp = await _approved_icp(conn, scope=scope)
+        if approved_icp is None:
+            raise _DiscoveryConfigurationGateRefused(
+                "approved_icp_missing",
+                "the project has no human-approved active ICP",
+            )
+        spec = await get_icp_version(
+            conn,
+            scope.workspace_id,
+            approved_icp.icp_key,
+            approved_icp.version,
+        )
+        if spec is None:
+            raise _DiscoveryConfigurationGateRefused(
+                "approved_icp_missing",
+                "the approved ICP version no longer exists",
+            )
+        derived = derive_discovery_configuration(
+            spec=spec,
+            approved_icp_ref=approved_icp.subject_ref,
+            policy=DEFAULT_DISCOVERY_PLANNING_POLICY,
+        )
+        if derived.configuration is not None:
+            raise _DiscoveryConfigurationGateRefused(
+                "discovery_configuration_gate_unnecessary",
+                "the approved ICP already determines a complete discovery scope",
+            )
+        try:
+            turn_id = parse_turn_action_ref(inputs.source_turn_ref)
+        except TurnActionUnresolvable as exc:
+            raise _DiscoveryConfigurationGateRefused("gate_turn_ref_malformed", str(exc)) from exc
+        turn = await load_turn_identity(
+            conn,
+            workspace_id=ctx.workspace_id,
+            turn_id=turn_id,
+        )
+        if turn is None or turn.project_id != scope.project_id:
+            raise _DiscoveryConfigurationGateRefused(
+                "gate_turn_not_found",
+                "the cited human turn is not in this Stage-0 project",
+            )
+        if turn.submitted_by_user_id is None:
+            raise _DiscoveryConfigurationGateRefused(
+                "gate_addressee_missing",
+                "the cited turn records no human submitter",
+            )
+        try:
+            configuration = DiscoveryConfigurationContract(
+                schema_version=DISCOVERY_CONFIGURATION_SCHEMA_V1,
+                approved_icp_ref=approved_icp.subject_ref,
+                entity_type="company",
+                requested_account_count=inputs.requested_account_count,
+                search_intent=inputs.search_intent,
+                must_have_criteria=inputs.must_have_criteria,
+                exclusion_criteria=inputs.exclusion_criteria,
+            )
+        except ValueError as exc:
+            raise _DiscoveryConfigurationGateRefused(
+                "discovery_configuration_invalid", str(exc)
+            ) from exc
+        return scope, approved_icp, configuration, derived.missing_fields, turn
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, OpenDiscoveryConfigurationGateInput)
+        try:
+            async with self._conn_factory() as conn:
+                await self._resolve(conn, inputs, ctx)
+        except _DiscoveryConfigurationGateRefused as exc:
+            return _failure(exc.code, str(exc))
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, OpenDiscoveryConfigurationGateInput)
+        async with self._conn_factory() as conn:
+            scope, approved_icp, configuration, missing_fields, turn = await self._resolve(
+                conn, inputs, ctx
+            )
+            snapshot: dict[str, JsonValue] = {
+                "subject_kind": _DISCOVERY_CONFIGURATION_SUBJECT_KIND,
+                "approved_icp_ref": approved_icp.subject_ref,
+                "planning_policy_version": DEFAULT_DISCOVERY_PLANNING_POLICY.version,
+                "missing_fields": list(missing_fields),
+                "account_count": configuration.requested_account_count,
+                "configuration": cast(dict[str, JsonValue], configuration.model_dump(mode="json")),
+            }
+            sha256 = canonical_subject_sha256(snapshot)
+            subject_ref = (
+                f"discovery-configuration:{scope.project_id}:"
+                f"{approved_icp.icp_key}:v{approved_icp.version}"
+            )
+            gate_id = directive_confirmation_gate_id(
+                workspace_id=scope.workspace_id,
+                turn_id=turn.turn_id,
+                subject_ref=subject_ref,
+                expected_subject_sha256=sha256,
+            )
+            gate, created = await insert_gate(
+                conn,
+                gate_id=gate_id,
+                workspace_id=scope.workspace_id,
+                project_id=scope.project_id,
+                thread_id=turn.thread_id,
+                turn_id=turn.turn_id,
+                kind=KIND_DIRECTIVE_CONFIRMATION,
+                subject_ref=subject_ref,
+                subject_revision=approved_icp.version,
+                expected_subject_sha256=sha256,
+                subject_snapshot=snapshot,
+                max_spend_cents=None,
+                currency=None,
+                addressee_user_id=turn.submitted_by_user_id or "",
+                subject_bindings=(
+                    AgentGateSubjectBinding(
+                        subject_entity_id=UUID(str(scope.client_entity_id)),
+                        binding_kind="discovery_configuration_client",
+                    ),
+                )
+                if scope.client_entity_id is not None
+                else (),
+            )
+        output = OpenDiscoveryConfigurationGateOutput(
+            gate_id=str(gate.gate_id),
+            gate_ref=gate_ref(gate.gate_id),
+            gate_kind=gate.kind,
+            subject_ref=gate.subject_ref,
+            subject_revision=approved_icp.version,
+            expected_subject_sha256=gate.expected_subject_sha256,
+            requested_account_count=configuration.requested_account_count,
+            addressee_user_id=gate.addressee_user_id,
+            created=created,
+        )
+        return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
+
+
 class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
     """Start discovery from the exact already-materialized, human-approved Stage-0 lineage."""
 
@@ -816,8 +1122,8 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
         "uses the turn's existing Client-KB, selected product, product profile, Product-KB and "
         "approved ICP and returns only the durable project-run reference."
     )
-    input_model = StartConfirmedProjectRunV2Input
-    output_model = StartConfirmedProjectRunV2Output
+    input_model: ClassVar[type[ToolInput]] = StartConfirmedProjectRunV2Input
+    output_model: ClassVar[type[ToolOutput]] = StartConfirmedProjectRunV2Output
     replay = ReplaySafety(
         policy=ReplayPolicy.OPERATION_IDEMPOTENT,
         durable_identity="ProjectRunId(approved ICP + existing product-context receipt)",
@@ -878,11 +1184,15 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
                 )
         return ()
 
-    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
-        assert isinstance(inputs, StartConfirmedProjectRunV2Input)
+    async def _start(
+        self,
+        ctx: ToolContext,
+        *,
+        discovery_configuration: DiscoveryConfigurationContract | None = None,
+        source_gate_id: UUID | None = None,
+    ) -> ProjectRunId:
         if self._project_execution_router is None:
             raise RuntimeError("confirmed discovery execution router is unavailable")
-        router = self._project_execution_router
         async with self._conn_factory() as conn:
             scope = await _scope(conn, ctx)
             if self._scope_failure(scope):
@@ -996,7 +1306,12 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
                 scope.workspace_id,
                 "confirmed-project-run:"
                 f"{scope.project_id}:{approved_icp.icp_key}:{approved_icp.version}:"
-                f"{context_ref.version_id}",
+                f"{context_ref.version_id}"
+                + (
+                    f":discovery-configuration:{discovery_configuration_sha256(discovery_configuration)}"
+                    if discovery_configuration is not None
+                    else ""
+                ),
             )
             run_id = ProjectRunId(UUID(str(run_operation)))
             await start_confirmed_project_run(
@@ -1013,6 +1328,29 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
                 icp_version=approved_icp.version,
                 budget_cap_cents=None,
             )
+            if discovery_configuration is not None:
+                configuration_sha256 = discovery_configuration_sha256(discovery_configuration)
+                await put_discovery_configuration_receipt(
+                    conn,
+                    receipt=DiscoveryConfigurationReceipt(
+                        project_run_id=run_id,
+                        workspace_id=scope.workspace_id,
+                        project_id=scope.project_id,
+                        icp_key=approved_icp.icp_key,
+                        icp_version=approved_icp.version,
+                        planning_policy_version=DEFAULT_DISCOVERY_PLANNING_POLICY.version,
+                        configuration=discovery_configuration,
+                        configuration_sha256=configuration_sha256,
+                        source_gate_id=source_gate_id,
+                    ),
+                )
+        return run_id
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, StartConfirmedProjectRunV2Input)
+        run_id = await self._start(ctx)
+        assert self._project_execution_router is not None
+        router = self._project_execution_router
         await router.attach_confirmed_discovery(
             run_id,
             actor=ctx.actor,
@@ -1022,6 +1360,158 @@ class StartConfirmedProjectRunV2Tool(_Stage0ProjectTool):
             tool=self.name,
             version=self.version,
             references=StartConfirmedProjectRunV2Output(
+                project_run_id=str(run_id),
+                phase="discovery",
+            ).model_dump(),
+        )
+
+
+class StartConfirmedProjectRunV3Tool(StartConfirmedProjectRunV2Tool):
+    """Start discovery with one trusted provider-neutral configuration pinned to the run."""
+
+    version = "3"
+    model_description = (
+        "Start discovery after ICP approval. Takes no arguments. The backend reuses the exact "
+        "Stage-0 context, derives a provider-neutral discovery scope from the approved ICP, and "
+        "pins it to the run. If the ICP is genuinely ambiguous, this call explains which scope "
+        "fields are missing so you can propose them with open_discovery_configuration_gate."
+    )
+    input_model: ClassVar[type[ToolInput]] = StartConfirmedProjectRunV3Input
+    output_model: ClassVar[type[ToolOutput]] = StartConfirmedProjectRunV3Output
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity=(
+            "ProjectRunId(approved ICP + existing product context + discovery configuration)"
+        ),
+        operation_id_required=True,
+    )
+
+    async def _configuration(
+        self,
+        conn: AsyncConnection,
+        *,
+        scope: Stage0ProjectScope,
+        approved_icp: _ApprovedIcp,
+    ) -> tuple[DiscoveryConfigurationContract, UUID | None] | None:
+        spec = await get_icp_version(
+            conn,
+            scope.workspace_id,
+            approved_icp.icp_key,
+            approved_icp.version,
+        )
+        if spec is None:
+            return None
+        derived = derive_discovery_configuration(
+            spec=spec,
+            approved_icp_ref=approved_icp.subject_ref,
+            policy=DEFAULT_DISCOVERY_PLANNING_POLICY,
+        )
+        if derived.configuration is not None:
+            return derived.configuration, None
+        approved_gate = await _approved_discovery_configuration_gate(
+            conn,
+            scope=scope,
+            approved_icp=approved_icp,
+        )
+        if approved_gate is None:
+            return None
+        return approved_gate
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, StartConfirmedProjectRunV3Input)
+        if self._project_execution_router is None:
+            return _failure(
+                "confirmed_discovery_router_unavailable",
+                "the durable discovery execution router is unavailable",
+            )
+        async with self._conn_factory() as conn:
+            scope = await _scope(conn, ctx)
+            if failure := self._scope_failure(scope):
+                return failure
+            assert scope is not None
+            artifacts = await _turn_context_artifacts(conn, scope=scope)
+            required_media = {
+                CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
+                STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
+                PRODUCT_PROFILE_CARD_MEDIA_TYPE,
+                PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
+            }
+            if not required_media.issubset(artifacts):
+                return _failure(
+                    "stage0_context_materialization_missing",
+                    "the turn does not carry every exact existing Stage-0 context card",
+                )
+            approved_icp = await _approved_icp(conn, scope=scope)
+            if approved_icp is None:
+                return _failure(
+                    "approved_icp_missing",
+                    "the project has no human-approved active ICP in this exact Stage-0 lineage",
+                )
+            configuration = await self._configuration(
+                conn,
+                scope=scope,
+                approved_icp=approved_icp,
+            )
+            if configuration is None:
+                spec = await get_icp_version(
+                    conn,
+                    scope.workspace_id,
+                    approved_icp.icp_key,
+                    approved_icp.version,
+                )
+                missing = (
+                    derive_discovery_configuration(
+                        spec=spec,
+                        approved_icp_ref=approved_icp.subject_ref,
+                        policy=DEFAULT_DISCOVERY_PLANNING_POLICY,
+                    ).missing_fields
+                    if spec is not None
+                    else ("approved_icp",)
+                )
+                return _failure(
+                    "discovery_configuration_confirmation_required",
+                    "the approved ICP does not determine "
+                    + ", ".join(missing)
+                    + "; propose a scope (the safe starting count is 10 accounts) and ask the "
+                    "human to confirm it with open_discovery_configuration_gate",
+                )
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, StartConfirmedProjectRunV3Input)
+        async with self._conn_factory() as conn:
+            scope = await _scope(conn, ctx)
+            if self._scope_failure(scope):
+                raise ValueError("trusted Stage-0 confirmed-run scope became incomplete")
+            assert scope is not None
+            approved_icp = await _approved_icp(conn, scope=scope)
+            if approved_icp is None:
+                raise ValueError("no human-approved active ICP exists in this exact turn lineage")
+            resolved = await self._configuration(
+                conn,
+                scope=scope,
+                approved_icp=approved_icp,
+            )
+            if resolved is None:
+                raise ValueError("discovery configuration still requires human confirmation")
+            configuration, source_gate_id = resolved
+        run_id = await self._start(
+            ctx,
+            discovery_configuration=configuration,
+            source_gate_id=source_gate_id,
+        )
+        assert self._project_execution_router is not None
+        await self._project_execution_router.attach_confirmed_discovery(
+            run_id,
+            actor=ctx.actor,
+            parent_execution_id=ctx.execution_id,
+        )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references=StartConfirmedProjectRunV3Output(
                 project_run_id=str(run_id),
                 phase="discovery",
             ).model_dump(),
@@ -1053,7 +1543,17 @@ def stage0_project_tools(
             synthesis_model=synthesis_model,
             statement_evidence=statement_evidence,
         ),
+        OpenDiscoveryConfigurationGateTool(
+            conn_factory=conn_factory,
+            policy=policy,
+        ),
         StartConfirmedProjectRunV2Tool(
+            conn_factory=conn_factory,
+            policy=policy,
+            project_execution_router=project_execution_router,
+            budget_controls_enabled=budget_controls_enabled,
+        ),
+        StartConfirmedProjectRunV3Tool(
             conn_factory=conn_factory,
             policy=policy,
             project_execution_router=project_execution_router,

@@ -30,6 +30,7 @@ from clue_api.agent_gate import get_gate
 from clue_api.agent_turn_submission import thread_work_id
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
+from clue_api.discovery_configuration import get_discovery_configuration_receipt
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.product_knowledge_privacy import product_context_subject_bindings
 from clue_api.projections_app import create_projections_app
@@ -43,12 +44,18 @@ from clue_api.stage0_project_contracts import (
     Stage0ReadinessV2Output,
     StartConfirmedProjectRunV2Input,
     StartConfirmedProjectRunV2Output,
+    StartConfirmedProjectRunV3Input,
+    StartConfirmedProjectRunV3Output,
     SynthesizeIcpsV2Input,
     SynthesizeIcpsV2Output,
 )
 from clue_api.stage0_project_tools import (
     EvaluateStage0ReadinessV2Tool,
+    OpenDiscoveryConfigurationGateInput,
+    OpenDiscoveryConfigurationGateOutput,
+    OpenDiscoveryConfigurationGateTool,
     StartConfirmedProjectRunV2Tool,
+    StartConfirmedProjectRunV3Tool,
     SynthesizeIcpsV2Tool,
 )
 from clue_api.thread_wiring import register_thread_tools
@@ -970,6 +977,154 @@ def test_confirmed_run_v2_refuses_a_context_card_bound_to_another_product(
             assert [failure.reason_code for failure in failures] == [
                 "stage0_context_materialization_missing"
             ]
+
+    run_async(scenario())
+
+
+def test_confirmed_run_v3_pins_one_human_confirmed_provider_neutral_scope(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await _seed_scenario(conn, tmp_path, label="confirmed-run-v3")
+            gate = await get_gate(
+                conn,
+                workspace_id=seeded.workspace_id,
+                gate_id=seeded.gate_id,
+            )
+            assert gate is not None
+            app = _app(conn, seeded)
+            async with _client(app) as client:
+                approved = await _answer(
+                    client,
+                    seeded,
+                    decision="approved",
+                    key="confirmed-run-v3-approval",
+                    digest=gate.gate.expected_subject_sha256,
+                )
+            assert approved.status_code == 202, approved.text
+            approval_turn_id = UUID(approved.json()["data"]["turn_id"])
+            execution_id = await _seed_confirmed_run_turn(conn, seeded)
+
+            @asynccontextmanager
+            async def conn_factory() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            router = _RecordingProjectExecutionRouter()
+            tool = StartConfirmedProjectRunV3Tool(
+                conn_factory=conn_factory,
+                project_execution_router=router,
+                budget_controls_enabled=False,
+            )
+
+            initial_ctx = ToolContext(
+                workspace_id=seeded.workspace_id,
+                actor="agent",
+                conn_factory=conn_factory,
+                operation_id=OperationId(uuid4()),
+                execution_id=execution_id,
+            )
+            initial = await tool.preconditions(StartConfirmedProjectRunV3Input(), initial_ctx)
+            assert [failure.reason_code for failure in initial] == [
+                "discovery_configuration_confirmation_required"
+            ]
+
+            scope_tool = OpenDiscoveryConfigurationGateTool(conn_factory=conn_factory)
+            scope_input = OpenDiscoveryConfigurationGateInput(
+                requested_account_count=50,
+                search_intent="Find independent specialty healthcare practices in the US.",
+                must_have_criteria=(
+                    "Independent specialty healthcare practice",
+                    "United States",
+                ),
+                exclusion_criteria=("Current customers", "Hospitals"),
+                source_turn_ref=derive_turn_action_ref(approval_turn_id),
+            )
+            scope_ctx = ToolContext(
+                workspace_id=seeded.workspace_id,
+                actor="agent",
+                conn_factory=conn_factory,
+                operation_id=OperationId(uuid4()),
+                execution_id=execution_id,
+            )
+            assert not await scope_tool.preconditions(scope_input, scope_ctx)
+            scope_gate = OpenDiscoveryConfigurationGateOutput.model_validate(
+                (await scope_tool.invoke(scope_input, scope_ctx)).references
+            )
+            async with _client(app) as client:
+                scope_approved = await client.post(
+                    f"/api/v1/projects/{seeded.project_id}/threads/"
+                    f"{seeded.thread_id}/turns",
+                    json={
+                        "gate_response": {
+                            "gate_id": scope_gate.gate_id,
+                            "decision": "approved",
+                            "expected_subject_sha256": scope_gate.expected_subject_sha256,
+                        }
+                    },
+                    headers={
+                        "X-Workspace-Id": seeded.workspace_id,
+                        "Idempotency-Key": "confirmed-run-v3-scope-approval",
+                    },
+                )
+            assert scope_approved.status_code == 202, scope_approved.text
+
+            async def invoke() -> StartConfirmedProjectRunV3Output:
+                ctx = ToolContext(
+                    workspace_id=seeded.workspace_id,
+                    actor="agent",
+                    conn_factory=conn_factory,
+                    operation_id=OperationId(uuid4()),
+                    execution_id=execution_id,
+                )
+                inputs = StartConfirmedProjectRunV3Input()
+                assert not await tool.preconditions(inputs, ctx)
+                return StartConfirmedProjectRunV3Output.model_validate(
+                    (await tool.invoke(inputs, ctx)).references
+                )
+
+            first = await invoke()
+            replay = await invoke()
+            assert replay == first
+            assert len(router.attached) == 2
+
+            run_id = ProjectRunId(UUID(first.project_run_id))
+            receipt = await get_discovery_configuration_receipt(
+                conn,
+                project_run_id=run_id,
+                workspace_id=seeded.workspace_id,
+            )
+            assert receipt is not None
+            assert receipt.project_id == seeded.project_id
+            assert (receipt.icp_key, receipt.icp_version) == (
+                seeded.icp_key,
+                seeded.icp_version,
+            )
+            assert receipt.configuration.requested_account_count == 50
+            assert receipt.configuration.entity_type == "company"
+            assert receipt.configuration.must_have_criteria == (
+                "Independent specialty healthcare practice",
+                "United States",
+            )
+            assert receipt.configuration.exclusion_criteria == (
+                "Current customers",
+                "Hospitals",
+            )
+            assert receipt.source_gate_id == UUID(scope_gate.gate_id)
+            assert (
+                int(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT count(*) FROM project_run_discovery_configuration "
+                                "WHERE project_run_id=:project_run_id"
+                            ),
+                            {"project_run_id": run_id},
+                        )
+                    ).scalar_one()
+                )
+                == 1
+            )
 
     run_async(scenario())
 

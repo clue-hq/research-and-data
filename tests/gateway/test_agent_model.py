@@ -189,7 +189,7 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
     assert spans[0].attributes["prompt_tokens"] == 11
     assert spans[0].attributes["completion_tokens"] == 7
     assert requests[0]["model"] == "openai/gpt-5.6-terra"
-    assert requests[0]["reasoning"] == {"effort": "none"}
+    assert requests[0]["reasoning"] == {"effort": "high"}
     assert requests[0]["max_output_tokens"] == 1_024
     assert "messages" not in requests[0]
     assert "max_completion_tokens" not in requests[0]

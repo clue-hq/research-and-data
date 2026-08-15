@@ -1,6 +1,6 @@
 # FI — Stage-0 confirmed discovery-run contract
 
-**Status:** RATIFIED 2026-08-16 (founder); confirmed-run boundary implemented
+**Status:** RATIFIED 2026-08-16 (founder); confirmed-run and provider-neutral discovery boundary implemented
 
 **Supersedes for the active flow:** the model-authored run-entry input in
 [`PC-C0-step4-contract-freeze.md`](./PC-C0-step4-contract-freeze.md) and the corresponding
@@ -50,14 +50,15 @@ The receipt:
 
 ## 2. Confirmed-run entry
 
-The active successor is `start_confirmed_project_run@2`. Its model-authored input is the empty
-object:
+`start_confirmed_project_run@2` implemented the backend-owned context receipt and remains an
+immutable replayable contract. The active provider-neutral successor is
+`start_confirmed_project_run@3`; its model-authored input is still the empty object:
 
 ```json
 {}
 ```
 
-The trusted execution/turn scope supplies the project. The tool implementation directly resolves
+The trusted execution/turn scope supplies the project. The implementation directly resolves
 the approved ICP and five existing receipt inputs, calls the existing content-addressed
 `compile_product_context`, evaluates the internal discovery boundary, creates or reuses the
 confirmed project run, and attaches the discovery recipe. This explicit confirmed-Stage-0 handoff
@@ -72,8 +73,9 @@ The model and frontend must never author:
 - context claim/artifact/memory lists;
 - `budget_cap_cents` or an estimated-cost echo.
 
-The historical `start_confirmed_project_run@1` schema remains unchanged for exact replay but must
-not remain in the active profile/skill/recipe after `@2` is implemented and promoted.
+The historical `@1` and `@2` schemas and behavior remain unchanged for exact replay. Only `@3`
+appears in the active profile, skill and Recipe #0 after the discovery-configuration boundary is
+promoted.
 
 ## 3. Budget-controls-off behavior
 
@@ -101,14 +103,25 @@ Provider-neutral discovery configuration may contain the approved ICP reference,
 requested account count, search intent, must-have criteria, and exclusions. It contains no
 product-context receipt id, readiness id, cost field, or budget authority.
 
-When those values follow deterministically from the approved ICP plus versioned policy, the run
-may proceed without another user interruption. If a material value is genuinely absent or
-ambiguous, the Deep Agent may explain a bounded proposal (for example, start with 10 accounts) and
-use the existing directive-confirmation substrate so the user can revise it. That interaction
-confirms discovery scope only; it never generates product knowledge or grants budget authority.
+The active `stage0-discovery-planning-policy@1` defaults to 10 accounts and admits at most 50.
+When the values follow deterministically from the approved ICP plus that policy, the run proceeds
+without another user interruption. If search intent or must-have criteria is genuinely absent,
+`start_confirmed_project_run@3` returns the exact missing fields. The Deep Agent explains a
+bounded proposal and calls `open_discovery_configuration_gate@1`. The gate reuses kind
+`directive_confirmation` but carries `subject_kind=discovery_configuration`, no spend amount and
+no product-context authority. The user may approve, reject, or request a revision such as changing
+10 accounts to 50.
 
-The provider adapter compiles only a validated provider-neutral configuration into Exa-specific
-request fields. Exa-specific requirements do not leak into the receipt or run-entry tool.
+The final configuration is stored once in append-only
+`project_run_discovery_configuration`, keyed by the project run and bound to its workspace,
+project, approved ICP, planning-policy version, canonical configuration digest, and optional
+approved-gate receipt. The run identity includes the configuration digest, so retries reuse the
+same run while a different confirmed scope cannot collide with it.
+
+The Exa adapter reads only this validated run receipt for current runs, compacts all must-have and
+exclusion rules into Exa's bounded criterion slots, and enforces the 50-account policy ceiling.
+Historical runs without a receipt retain only their already-explicit legacy Exa strategy path.
+Exa-specific requirements do not leak into the ICP, product-context receipt, or run-entry tool.
 
 ## 5. Executable contract
 
@@ -121,7 +134,10 @@ request fields. Exa-specific requirements do not leak into the receipt or run-en
 - empty `StartConfirmedProjectRunV2Input` and a minimal output containing only the project-run id
   and `discovery` phase.
 
+Slice 4 adds the schema-identical empty `StartConfirmedProjectRunV3Input`, the versioned planning
+policy, the scope-only gate tool, the append-only run receipt, and the Exa compiler boundary.
+
 `start_confirmed_project_run@2` performs the receipt reuse, internal readiness transition and
 idempotent run start. A replay after Recipe #1 has advanced the run validates the same immutable
 lineage and does not rewind or fail merely because the current phase is later than `discovery`.
-Discovery-configuration compilation and browser acceptance remain separate follow-on checkpoints.
+Browser acceptance remains a separate follow-on checkpoint.

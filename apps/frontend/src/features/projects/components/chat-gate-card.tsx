@@ -67,7 +67,7 @@ export function ChatGateCard({
   const revisionText = revisionRequest.trim();
 
   function choose(decision: GateDecision) {
-    if (decision === "revised" && card.kind === "icp_confirmation") {
+    if (decision === "revised" && card.revisionKind !== null) {
       setRevising(true);
       return;
     }
@@ -78,7 +78,9 @@ export function ChatGateCard({
     event.preventDefault();
     if (!answerable || !revisionText) return;
     onDecide(card, {
-      kind: "icp_revision",
+      kind: card.revisionKind === "discovery"
+        ? "discovery_revision"
+        : "icp_revision",
       decision: "revised",
       revisionRequest: revisionText,
     });
@@ -164,7 +166,11 @@ export function ChatGateCard({
               id={revisionFieldId}
               maxLength={4_000}
               onChange={(event) => setRevisionRequest(event.target.value)}
-              placeholder="For example: focus on multi-site practices with at least three providers."
+              placeholder={
+                card.revisionKind === "discovery"
+                  ? "For example: start with 50 accounts and exclude current customers."
+                  : "For example: focus on multi-site practices with at least three providers."
+              }
               rows={3}
               value={revisionRequest}
             />

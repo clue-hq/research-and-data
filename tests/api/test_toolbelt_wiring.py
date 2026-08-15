@@ -202,6 +202,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # draft or a presenting turn. This matrix has no governed execution, so trusted scope is the
     # first fail-closed boundary.
     "open_icp_confirmation_gate": ("precondition", ("stage0_scope_not_found",)),
+    "open_discovery_configuration_gate": (
+        "precondition",
+        ("stage0_turn_scope_not_found",),
+    ),
     "open_product_selection_gate": (
         "precondition",
         ("product_selection_scope_unavailable",),
@@ -481,6 +485,13 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         # The current @2 run-entry contract has no model-authored lineage fields.
         "start_confirmed_project_run": {},
+        "open_discovery_configuration_gate": {
+            "requested_account_count": 10,
+            "search_intent": "Find companies matching the approved ICP",
+            "must_have_criteria": ["Industry: healthcare"],
+            "exclusion_criteria": [],
+            "source_turn_ref": "turn-action:00000000-0000-4000-8000-000000000000",
+        },
         "draft_account_research_directive": {
             "project_id": "project_missing",
             "product_id": "product_missing",
@@ -915,15 +926,16 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # surface beside it (53 → 55 in the merged tree). The combined tree retains the Stage-0 ICP
     # gate and selected-Account launch and adds S4's two Client-KB readers plus S5's two Product-KB
     # readers and human-selection gate (55 → 62).
-    assert len(registry.names()) == 62
+    assert len(registry.names()) == 63
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
     # defaults. Corrected @2 contracts retain their immutable @1 versions, so the combined address
     # inventory is larger than the name inventory without rewriting any historical contract.
-    assert len(registry) == 74
-    assert registry.descriptor("start_confirmed_project_run").version == "2"
+    assert len(registry) == 76
+    assert registry.descriptor("start_confirmed_project_run").version == "3"
     assert registry.descriptor("start_confirmed_project_run", "1").version == "1"
+    assert registry.descriptor("start_confirmed_project_run", "2").version == "2"
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {
