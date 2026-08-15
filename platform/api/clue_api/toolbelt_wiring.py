@@ -2884,9 +2884,11 @@ def build_toolbelt(
     ):
         registry.register(
             tool,
-            # Slice 1 retains @1 for historical recipe replay; the trusted @2 evaluator is the
-            # name-only default and the only version pinned by the active agent profile.
-            make_default=tool.name != "evaluate_stage0_readiness",
+            # Preserve @1 for historical recipe replay. The trusted project-scoped successors
+            # registered immediately below own the name-only defaults for readiness and confirmed
+            # run start; active resources pin those exact @2 addresses after promotion.
+            make_default=tool.name
+            not in {"evaluate_stage0_readiness", "start_confirmed_project_run"},
         )
     for tool in stage0_project_tools(
         conn_factory=conn_factory,
@@ -2894,6 +2896,8 @@ def build_toolbelt(
         gateway=gateway,
         synthesis_model=resolved_settings.synthesis_model,
         statement_evidence=statement_evidence,
+        project_execution_router=project_execution_router,
+        budget_controls_enabled=resolved_settings.budget_controls_enabled,
     ):
         registry.register(tool, make_default=True)
     for tool in build_research_directive_tools(

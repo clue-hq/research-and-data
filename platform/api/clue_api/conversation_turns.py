@@ -84,9 +84,9 @@ __all__ = [
 #: shown the model three tools that plan validation then refused. The trial surface still withholds
 #: all three, so raising the shared ceiling grants the trial nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
-# Integration revision 10 composes trusted Stage-0 @2 tools, both human gates, selected-Account
-# launch, and the separate company/product knowledge readers.
-CONVERSATION_RECIPE_VERSION = 10
+# Integration revision 11 advances confirmed-run entry to backend-owned @2 while preserving the
+# complete v10 Stage-0, gate, selected-Account, and company/product knowledge authority.
+CONVERSATION_RECIPE_VERSION = 11
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface

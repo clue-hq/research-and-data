@@ -67,9 +67,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # FI Lane D D4 minted head-of-abm@v23: it pins `open_directive_confirmation_gate@1` and
         # re-pins account-deep-steering at v3, whose procedure is gate-first — draft, present the
         # gate, end the turn, and launch only after the human's own confirming turn.
-        # Integration v29/v16 composes trusted @2 readiness/synthesis, both exact human gates,
-        # selected-Account launch, and company/product knowledge reads. v1-v28 remain replayable.
-        AgentRole.HEAD_OF_ABM: ("13e244a29cdbbd3f7d63bceffd06f80e168f07aee68c090b7f83c8e7d73f0919"),
+        # Integration v30/v17 advances confirmed-run entry to backend-owned @2 while preserving
+        # the v29 combined authority. v1-v29 remain replayable.
+        AgentRole.HEAD_OF_ABM: ("440ab17f78afa0d6419ec96038f10f12909056206c7109c8008786593f9a251b"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -143,7 +143,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # `synthesize_value_narrative@1` is the same shape for the same reason. Merged count: the
     # The inventory retains both versions of readiness/synthesis and company reads, the separate
     # product readers, both gate tools, and FI-2's selected-Account launch.
-    assert len(by_address) == 73
+    assert len(by_address) == 74
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -182,7 +182,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "read_account_research_run@1",
         "read_contact_research_run@1",
         "record_interview_answer@1",
-        "start_confirmed_project_run@1",
+        "start_confirmed_project_run@2",
         "start_recon@1",
         "submit_ingestion@1",
         "submit_onboarding_input@1",
@@ -190,6 +190,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     }
     assert by_address["confirm_project_product@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["evaluate_stage0_readiness@1"].status is (
+        AgentCapabilityStatus.ROLE_UNAVAILABLE
+    )
+    assert by_address["start_confirmed_project_run@1"].status is (
         AgentCapabilityStatus.ROLE_UNAVAILABLE
     )
     assert by_address["synthesize_icps@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
@@ -234,9 +237,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v29"
+    assert production.profile_ref.address == "profile:head-of-abm@v30"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v16"
+        "skill:stage0-interview@v17"
     )
     assert {"list_client_knowledge@2", "inspect_client_claim@2"} <= addresses
     assert {"list_product_knowledge@1", "inspect_product_claim@1"} <= addresses
@@ -255,7 +258,7 @@ def test_stage0_skill_routes_first_selected_product_fact_without_a_product_kb() 
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v16")
+    body = production.open_skill("skill:stage0-interview@v17")
 
     assert "A missing Product-KB card blocks historical product-knowledge reads" in body
     assert "not block a human from supplying the first fact" in body
@@ -281,7 +284,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v16"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v17"
     assert disclosures[1].resource.address == "skill:account-deep-steering@v4"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -356,7 +359,7 @@ def test_c67_account_deepagent_profile_is_historical_only(
         ("novel_source", "or\n  `propose_source`"),
         ("missing_readiness_floor", "cannot turn a failing deterministic result into ready"),
         ("human_override", "records a readiness override"),
-        ("confirmed_start", "durable product and ICP confirmations exist"),
+        ("confirmed_start", "After the human approves the ICP"),
     ),
 )
 def test_stage0_quality_fixture_has_explicit_governed_behavior(
@@ -366,7 +369,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v16")
+    body = head.open_skill("skill:stage0-interview@v17")
 
     assert required_guidance in body
 

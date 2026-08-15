@@ -70,7 +70,7 @@ test("a durable terminal read supersedes an older running stream override", () =
 test("message duplicate protection blocks only the exact in-flight request", () => {
   const guard = new MessageSubmissionGuard();
   let key = 0;
-  const submission = (message: string, agentProfileId = "head-of-abm@v29") => ({
+  const submission = (message: string, agentProfileId = "head-of-abm@v30") => ({
     message,
     contextRefs: [],
     agentProfileId,

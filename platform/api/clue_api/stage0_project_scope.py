@@ -10,10 +10,12 @@ pin materialization so those two authority checks cannot drift.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.agent_turn_scope_pin import get_agent_turn_scope_pin
 from clue_core import EntityId, ExecutionId
 from clue_research.stage0 import current_kb_version
 
@@ -33,6 +35,8 @@ class Stage0ProjectScope:
     product_id: str | None
     client_entity_id: EntityId | None
     client_kb_version: int | None
+    turn_id: UUID | None = None
+    product_kb_version: int | None = None
 
 
 async def resolve_stage0_project_scope(
@@ -51,25 +55,53 @@ async def resolve_stage0_project_scope(
 
     if execution_id is None:
         return None
-    project_id = (
-        await conn.execute(
-            text(
-                """
-                    SELECT e.project_id
+    execution_row = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT e.project_id, t.id AS turn_id
                     FROM execution e
+                    LEFT JOIN agent_turn t
+                      ON t.execution_id = e.id
+                     AND t.workspace_id = e.workspace_id
                     WHERE e.id = :execution_id
                       AND e.workspace_id = :workspace_id
                     """
-            ),
-            {"execution_id": execution_id, "workspace_id": workspace_id},
+                ),
+                {"execution_id": execution_id, "workspace_id": workspace_id},
+            )
         )
-    ).scalar_one_or_none()
-    if project_id is None:
+        .mappings()
+        .one_or_none()
+    )
+    if execution_row is None:
         return None
+    turn_id = execution_row["turn_id"]
+    if turn_id is not None:
+        pin = await get_agent_turn_scope_pin(
+            conn,
+            workspace_id=workspace_id,
+            turn_id=UUID(str(turn_id)),
+        )
+        if pin is not None:
+            if pin.project_id != str(execution_row["project_id"]):
+                raise ValueError("turn scope pin does not match its governed execution")
+            return Stage0ProjectScope(
+                workspace_id=pin.workspace_id,
+                execution_id=execution_id,
+                project_id=pin.project_id,
+                brand_id=pin.brand_id,
+                product_id=pin.product_id,
+                client_entity_id=pin.client_entity_id,
+                client_kb_version=pin.client_kb_version,
+                turn_id=pin.turn_id,
+                product_kb_version=pin.product_kb_version,
+            )
     return await resolve_stage0_project_scope_for_project(
         conn,
         workspace_id=workspace_id,
-        project_id=str(project_id),
+        project_id=str(execution_row["project_id"]),
         execution_id=execution_id,
     )
 

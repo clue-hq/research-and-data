@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 10
+    assert CONVERSATION_RECIPE_VERSION == 11
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -156,6 +156,22 @@ def test_integration_recipe_v10_composes_both_resource_lineages() -> None:
     assert expected <= set(slot["dynamic_tool_allowlist"])
 
 
+def test_confirmed_run_v2_mints_recipe_v11_without_rewriting_v10() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v10 = json.loads((root / "recipe0-stage0-v10.json").read_text())
+    v11 = json.loads((root / "recipe0-stage0-v11.json").read_text())
+
+    v10_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v10.json")
+    assert SYSTEM_RECIPE_FILENAMES[v10_index : v10_index + 2] == (
+        "recipe0-stage0-v10.json",
+        "recipe0-stage0-v11.json",
+    )
+    assert "start_confirmed_project_run@1" in v10["graph"]["tool_allowlist"]
+    assert "start_confirmed_project_run@2" in v11["graph"]["tool_allowlist"]
+    assert "start_confirmed_project_run@1" not in v11["graph"]["tool_allowlist"]
+    assert v11["version"] == 11
+
+
 def test_operation_id_requirements_are_explicit() -> None:
     audit = build_replay_safety_audit(_standing_recipe_registry())
     operation_bound = {item.address for item in audit if item.operation_id_required}
@@ -175,7 +191,7 @@ def test_operation_id_requirements_are_explicit() -> None:
         "resolve_committee@1",
         "reverse_profile@1",
         "run_deep_account@1",
-        "start_confirmed_project_run@1",
+        "start_confirmed_project_run@2",
         "start_project_run@1",
         "start_recon@1",
         "submit_onboarding_input@1",

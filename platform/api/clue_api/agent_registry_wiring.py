@@ -36,11 +36,9 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # Integration v29 composes the pilot's trusted Stage-0 readiness/synthesis, exact-subject ICP
-    # gate, selected-Account launch and account-deep-steering v4 with the onboarding lineage's
-    # company/product knowledge reads and human product-selection gate. v1-v28 remain immutable
-    # historical replay inputs.
-    AgentRole.HEAD_OF_ABM: "v29",
+    # Integration v30 keeps v29's combined authority and replaces only the active confirmed-run
+    # entry with backend-owned @2. v1-v29 remain immutable historical replay inputs.
+    AgentRole.HEAD_OF_ABM: "v30",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -312,7 +310,11 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
     if name == "draft_account_research_directive":
         return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@2" else ()
-    if name in {"evaluate_stage0_readiness", "synthesize_icps"}:
+    if name in {
+        "evaluate_stage0_readiness",
+        "start_confirmed_project_run",
+        "synthesize_icps",
+    }:
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
     if name == "research_account_gaps":
         return ()
@@ -335,7 +337,11 @@ def _unavailable_reason(address: str, name: str) -> str | None:
         return "replaced_by_replay_safe_v2"
     if address == "profile_contact@1":
         return "replaced_by_governed_v2"
-    if address in {"evaluate_stage0_readiness@1", "synthesize_icps@1"}:
+    if address in {
+        "evaluate_stage0_readiness@1",
+        "start_confirmed_project_run@1",
+        "synthesize_icps@1",
+    }:
         return "replaced_by_trusted_stage0_v2"
     return _RESERVED_REASON.get(name)
 

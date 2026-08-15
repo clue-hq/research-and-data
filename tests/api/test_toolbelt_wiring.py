@@ -214,7 +214,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
     "start_confirmed_project_run": (
         "precondition",
-        ("confirmed_stage0_context_not_found",),
+        ("stage0_turn_scope_not_found",),
     ),
     "draft_account_research_directive": (
         "precondition",
@@ -479,16 +479,8 @@ def _bodies() -> dict[str, dict[str, object]]:
             "gate": "icp_synthesis",
             "reason": "matrix",
         },
-        "start_confirmed_project_run": {
-            "project_id": "project_missing",
-            "client_entity_id": _UUID(),
-            "client_kb_version": 1,
-            "product_id": "product_missing",
-            "product_context_version_id": _UUID(),
-            "readiness_decision_id": _UUID(),
-            "icp_key": "matrix",
-            "icp_version": 1,
-        },
+        # The current @2 run-entry contract has no model-authored lineage fields.
+        "start_confirmed_project_run": {},
         "draft_account_research_directive": {
             "project_id": "project_missing",
             "product_id": "product_missing",
@@ -929,7 +921,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
     # defaults. Corrected @2 contracts retain their immutable @1 versions, so the combined address
     # inventory is larger than the name inventory without rewriting any historical contract.
-    assert len(registry) == 73
+    assert len(registry) == 74
+    assert registry.descriptor("start_confirmed_project_run").version == "2"
+    assert registry.descriptor("start_confirmed_project_run", "1").version == "1"
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

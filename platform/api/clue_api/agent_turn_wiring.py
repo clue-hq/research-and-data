@@ -517,6 +517,20 @@ class DbAgentTurnJournal:
                     ordinal=ordinal,
                     ref=ref,
                 )
+            # The production context compiler already created these exact immutable cards before
+            # the turn was journaled. Bind their references to the turn so a later backend-owned
+            # transition can derive replay/audit lineage without re-running compilation, reading
+            # model prose, or looking at mutable "current" project state.
+            for ordinal, item in enumerate(constitution.project_context_artifacts):
+                await _insert_artifact_ref(
+                    conn,
+                    turn_id=request.turn_id,
+                    owner_kind="context",
+                    owner_id=request.turn_id,
+                    role="context_materialization",
+                    ordinal=ordinal,
+                    ref=item.artifact_ref,
+                )
             receipt = await self._read_turn(conn, constitution.workspace_id, request.turn_id)
             if receipt is None:  # pragma: no cover - same transaction invariant
                 raise RuntimeError("inserted agent turn vanished")

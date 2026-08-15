@@ -243,13 +243,15 @@ class StartConfirmedProjectRunV2Input(TrustedStage0ProjectScopeInput):
 
 
 class StartConfirmedProjectRunV2Output(ToolOutput):
-    """Reference-only result of the backend-owned confirmed-run transition."""
+    """Minimal result of the backend-owned confirmed-run transition.
+
+    Receipt and readiness identifiers remain on the durable ``project_run`` lineage.  They are
+    intentionally absent here: neither the model nor the frontend needs an opaque internal id in
+    order to continue the project.
+    """
 
     project_run_id: str = Field(pattern=_UUID_PATTERN)
     phase: Literal["discovery"]
-    product_context_version_id: str = Field(pattern=_UUID_PATTERN)
-    readiness_decision_id: str = Field(pattern=_UUID_PATTERN)
-    receipt_reused: bool
 
 
 class EvaluateStage0ReadinessV2Input(TrustedStage0ProjectScopeInput):

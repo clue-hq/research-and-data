@@ -148,6 +148,7 @@ class Stage0StepPinProvider:
                 "project",
                 "product",
                 "client_kb",
+                "product_kb",
             }
             if "brand" in required_scope_kinds:
                 requested.append(
@@ -186,6 +187,27 @@ class Stage0StepPinProvider:
                         # product-scoped KB key couples two lineages that legitimately differ.
                         key=f"{trusted_stage0_scope.client_entity_id}|-",
                         version=str(trusted_stage0_scope.client_kb_version),
+                        ctx=ctx,
+                    )
+                )
+            if "product_kb" in required_scope_kinds:
+                if (
+                    trusted_stage0_scope.client_entity_id is None
+                    or trusted_stage0_scope.product_id is None
+                    or trusted_stage0_scope.product_kb_version is None
+                ):
+                    raise ExecutionConflict(
+                        "cannot pin a project-scoped Stage-0 tool without selected-product "
+                        "knowledge"
+                    )
+                requested.append(
+                    await self._exact(
+                        kind="product_kb",
+                        key=(
+                            f"{trusted_stage0_scope.client_entity_id}|"
+                            f"{trusted_stage0_scope.product_id}"
+                        ),
+                        version=str(trusted_stage0_scope.product_kb_version),
                         ctx=ctx,
                     )
                 )

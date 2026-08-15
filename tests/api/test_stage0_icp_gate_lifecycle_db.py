@@ -40,10 +40,16 @@ from clue_api.stage0_icp_gate_tools import (
 from clue_api.stage0_project_contracts import (
     EvaluateStage0ReadinessV2Input,
     Stage0ReadinessV2Output,
+    StartConfirmedProjectRunV2Input,
+    StartConfirmedProjectRunV2Output,
     SynthesizeIcpsV2Input,
     SynthesizeIcpsV2Output,
 )
-from clue_api.stage0_project_tools import EvaluateStage0ReadinessV2Tool, SynthesizeIcpsV2Tool
+from clue_api.stage0_project_tools import (
+    EvaluateStage0ReadinessV2Tool,
+    StartConfirmedProjectRunV2Tool,
+    SynthesizeIcpsV2Tool,
+)
 from clue_api.thread_wiring import register_thread_tools
 from clue_api.trial.browser_fixture import (
     BRAND_ID,
@@ -53,9 +59,30 @@ from clue_api.trial.browser_fixture import (
 )
 from clue_api.turn_action import derive_turn_action_ref
 from clue_config import Settings, load_settings
-from clue_core import ExecutionId, ICPStatus, OnboardingInputKind, OperationId, RawArtifact
+from clue_core import (
+    ExecutionId,
+    ICPStatus,
+    OnboardingInputKind,
+    OperationId,
+    ProjectRunId,
+    RawArtifact,
+    RunId,
+    decode_jsonb,
+)
+from clue_projections import (
+    CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
+    PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
+    PRODUCT_PROFILE_CARD_MEDIA_TYPE,
+    STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
+)
+from clue_research.claimstore import record_run_lineage
+from clue_research.durable import get_project_run
 from clue_research.icp import activate_icp_version, create_icp_spec, get_icp_version
-from clue_research.stage0 import submit_onboarding_input
+from clue_research.stage0 import (
+    current_kb_version,
+    finalize_client_kb_version,
+    submit_onboarding_input,
+)
 from clue_spine import create_project
 from clue_storage import FsStorage, SnapshotSink, flush_snapshots
 from clue_toolbelt import DbIdempotencyStore, ToolContext, ToolRegistry
@@ -104,6 +131,41 @@ class _MemoryStorage:
     async def list_blobs(self) -> AsyncIterator[tuple[str, datetime]]:
         return
         yield
+
+
+class _RecordingProjectExecutionRouter:
+    def __init__(self) -> None:
+        self.attached: list[ProjectRunId] = []
+
+    async def attach_if_eligible(
+        self,
+        project_run_id: ProjectRunId,
+        *,
+        actor: str,
+        parent_execution_id: ExecutionId | None = None,
+    ) -> ExecutionId | None:
+        del actor, parent_execution_id
+        self.attached.append(project_run_id)
+        return None
+
+    async def pause_owned(
+        self,
+        project_run_id: ProjectRunId,
+        *,
+        actor: str,
+        reason_code: str,
+    ) -> bool:
+        del project_run_id, actor, reason_code
+        return False
+
+    async def resume_owned(
+        self,
+        project_run_id: ProjectRunId,
+        *,
+        actor: str,
+    ) -> bool:
+        del project_run_id, actor
+        return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,6 +464,369 @@ async def _answer_count(conn: AsyncConnection, scenario: _Scenario) -> int:
             )
         ).scalar_one()
     )
+
+
+async def _seed_confirmed_run_turn(
+    conn: AsyncConnection,
+    scenario: _Scenario,
+) -> ExecutionId:
+    """Materialize one post-approval governed turn with its exact existing context cards."""
+
+    project = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT project_id, name, status, brand_id, product_id "
+                    "FROM project WHERE project_id=:project_id AND workspace_id=:workspace_id"
+                ),
+                {"project_id": scenario.project_id, "workspace_id": scenario.workspace_id},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    client_entity_id = (
+        await conn.execute(
+            text(
+                "SELECT client_entity_id FROM onboarding_input "
+                "WHERE workspace_id=:workspace_id AND project_id=:project_id "
+                "AND client_entity_id IS NOT NULL ORDER BY created_at DESC, id DESC LIMIT 1"
+            ),
+            {"workspace_id": scenario.workspace_id, "project_id": scenario.project_id},
+        )
+    ).scalar_one()
+    company_version = await current_kb_version(
+        conn,
+        client_entity_id,
+        workspace_id=scenario.workspace_id,
+        product_id=None,
+    )
+    product_version = await current_kb_version(
+        conn,
+        client_entity_id,
+        workspace_id=scenario.workspace_id,
+        product_id=str(project["product_id"]),
+    )
+    if product_version is None:
+        product_run_id = RunId(uuid4())
+        await record_run_lineage(
+            conn,
+            run_id=product_run_id,
+            workspace_id=scenario.workspace_id,
+            kind="stage0",
+        )
+        product_version = await finalize_client_kb_version(
+            conn,
+            client_entity_id=client_entity_id,
+            workspace_id=scenario.workspace_id,
+            run_id=product_run_id,
+            filled_fields=set(),
+            attempted_fields=set(),
+            product_id=str(project["product_id"]),
+        )
+    assert company_version is not None
+
+    artifacts = DurableAgentArtifactStore(
+        storage=scenario.storage,
+        conn_factory=conn_session_factory(conn),
+    )
+    manifest = await artifacts.persist_body(
+        workspace_id=scenario.workspace_id,
+        data=b'{"confirmed-run-resources":[]}',
+        media_type="application/json",
+    )
+    context_refs = []
+    for index, media_type in enumerate(
+        (
+            CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
+            STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
+            PRODUCT_PROFILE_CARD_MEDIA_TYPE,
+            PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
+        )
+    ):
+        context_refs.append(
+            await artifacts.persist_body(
+                workspace_id=scenario.workspace_id,
+                data=f"existing-stage0-context-{index}".encode(),
+                media_type=media_type,
+            )
+        )
+
+    execution_id = await _execution(conn, project_id=scenario.project_id)
+    turn_id = (
+        await conn.execute(
+            text(
+                "SELECT turn_id FROM agent_turn_submission "
+                "WHERE workspace_id=:workspace_id AND project_id=:project_id "
+                "AND thread_id=:thread_id ORDER BY requested_at DESC, turn_id DESC LIMIT 1"
+            ),
+            {
+                "workspace_id": scenario.workspace_id,
+                "project_id": scenario.project_id,
+                "thread_id": scenario.thread_id,
+            },
+        )
+    ).scalar_one()
+    await conn.execute(
+        text(
+            "INSERT INTO agent_turn "
+            "(id, execution_id, workspace_id, project_id, thread_id, actor_id, role, "
+            " workspace_root_id, profile_name, profile_version, profile_sha256, "
+            " resource_manifest_key, resource_manifest_artifact_sha256, "
+            " resource_manifest_sha256, retention_class, requested_at) "
+            "VALUES (:id, :execution, :workspace, :project, :thread, 'agent', 'head_of_abm', "
+            " :root, 'head-of-abm', 'v30', :profile_sha, :manifest_key, :manifest_sha, "
+            " :manifest_sha, 'test', :requested_at)"
+        ),
+        {
+            "id": turn_id,
+            "execution": execution_id,
+            "workspace": scenario.workspace_id,
+            "project": scenario.project_id,
+            "thread": scenario.thread_id,
+            "root": f"root-confirmed-run-{turn_id}",
+            "profile_sha": "0" * 64,
+            "manifest_key": manifest.artifact_key,
+            "manifest_sha": manifest.sha256,
+            "requested_at": _AUTHENTICATED_AT,
+        },
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO agent_turn_scope_pin "
+            "(turn_id, workspace_id, project_id, project_name, project_status, brand_id, "
+            " product_id, client_entity_id, client_kb_version, product_kb_version, "
+            " knowledge_scope_policy_version) "
+            "VALUES (:turn_id, :workspace_id, :project_id, :project_name, :project_status, "
+            " :brand_id, :product_id, :client_entity_id, :client_kb_version, "
+            " :product_kb_version, 'company-and-selected-product-v2')"
+        ),
+        {
+            "turn_id": turn_id,
+            "workspace_id": scenario.workspace_id,
+            "project_id": scenario.project_id,
+            "project_name": project["name"],
+            "project_status": project["status"],
+            "brand_id": project["brand_id"],
+            "product_id": project["product_id"],
+            "client_entity_id": client_entity_id,
+            "client_kb_version": company_version,
+            "product_kb_version": product_version,
+        },
+    )
+    for ordinal, ref in enumerate(context_refs):
+        await conn.execute(
+            text(
+                "INSERT INTO agent_artifact_ref "
+                "(id, turn_id, workspace_id, owner_kind, owner_id, ref_role, ordinal, "
+                " artifact_key, artifact_sha256, retention_class) "
+                "VALUES (:id, :turn_id, :workspace_id, 'context', :turn_id, "
+                " 'context_materialization', :ordinal, :artifact_key, :sha256, 'test')"
+            ),
+            {
+                "id": uuid4(),
+                "turn_id": turn_id,
+                "workspace_id": scenario.workspace_id,
+                "ordinal": ordinal,
+                "artifact_key": ref.artifact_key,
+                "sha256": ref.sha256,
+            },
+        )
+    return execution_id
+
+
+def test_confirmed_run_v2_reuses_existing_context_and_creates_one_run_across_retries(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await _seed_scenario(conn, tmp_path, label="confirmed-run-v2")
+            gate = await get_gate(
+                conn,
+                workspace_id=seeded.workspace_id,
+                gate_id=seeded.gate_id,
+            )
+            assert gate is not None
+            app = _app(conn, seeded)
+            async with _client(app) as client:
+                approved = await _answer(
+                    client,
+                    seeded,
+                    decision="approved",
+                    key="confirmed-run-v2-approval",
+                    digest=gate.gate.expected_subject_sha256,
+                )
+            assert approved.status_code == 202, approved.text
+
+            execution_id = await _seed_confirmed_run_turn(conn, seeded)
+            before_claims = int(
+                (
+                    await conn.execute(
+                        text("SELECT count(*) FROM claim WHERE workspace_id=:workspace_id"),
+                        {"workspace_id": seeded.workspace_id},
+                    )
+                ).scalar_one()
+            )
+            before_human_gates = int(
+                (
+                    await conn.execute(
+                        text("SELECT count(*) FROM agent_gate WHERE workspace_id=:workspace_id"),
+                        {"workspace_id": seeded.workspace_id},
+                    )
+                ).scalar_one()
+            )
+
+            @asynccontextmanager
+            async def conn_factory() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            router = _RecordingProjectExecutionRouter()
+            tool = StartConfirmedProjectRunV2Tool(
+                conn_factory=conn_factory,
+                project_execution_router=router,
+                budget_controls_enabled=False,
+            )
+            outputs: list[StartConfirmedProjectRunV2Output] = []
+            for _ in range(2):
+                ctx = ToolContext(
+                    workspace_id=seeded.workspace_id,
+                    actor="agent",
+                    conn_factory=conn_factory,
+                    operation_id=OperationId(uuid4()),
+                    execution_id=execution_id,
+                )
+                assert not await tool.preconditions(StartConfirmedProjectRunV2Input(), ctx)
+                outputs.append(
+                    StartConfirmedProjectRunV2Output.model_validate(
+                        (await tool.invoke(StartConfirmedProjectRunV2Input(), ctx)).references
+                    )
+                )
+
+            assert outputs[0] == outputs[1]
+            assert outputs[0].phase == "discovery"
+            assert len(router.attached) == 2
+            run = await get_project_run(conn, ProjectRunId(UUID(outputs[0].project_run_id)))
+            assert run is not None
+            assert run.project_id == seeded.project_id
+            assert run.icp_key == seeded.icp_key
+            assert run.icp_version == seeded.icp_version
+            assert run.product_context_version_id is not None
+            assert run.readiness_decision_id is not None
+
+            context = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT artifact_refs, freshness_snapshot, compiler_version "
+                            "FROM product_context_version WHERE id=:id"
+                        ),
+                        {"id": run.product_context_version_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            freshness = decode_jsonb(context["freshness_snapshot"])
+            assert context["compiler_version"] == "product-context@2-existing-stage0-receipt"
+            assert len(decode_jsonb(context["artifact_refs"])) == 4
+            assert [item["kind"] for item in freshness["inputs"]] == [
+                "client_kb",
+                "selected_product",
+                "product_profile",
+                "product_kb",
+                "approved_icp",
+            ]
+            assert freshness["manifest_sha256"]
+
+            readiness = (
+                (
+                    await conn.execute(
+                        text("SELECT gate, verdict, metrics FROM readiness_decision WHERE id=:id"),
+                        {"id": run.readiness_decision_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            metrics = decode_jsonb(readiness["metrics"])
+            assert (readiness["gate"], readiness["verdict"]) == (
+                "discovery_spend",
+                "ready",
+            )
+            assert metrics["budget_controls_enabled"] is False
+            assert metrics["budget_enforcement_mode"] == "record_only"
+            assert (
+                int(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT count(*) FROM product_context_version "
+                                "WHERE workspace_id=:workspace_id"
+                            ),
+                            {"workspace_id": seeded.workspace_id},
+                        )
+                    ).scalar_one()
+                )
+                == 1
+            )
+            assert (
+                int(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT count(*) FROM readiness_decision "
+                                "WHERE workspace_id=:workspace_id AND gate='discovery_spend'"
+                            ),
+                            {"workspace_id": seeded.workspace_id},
+                        )
+                    ).scalar_one()
+                )
+                == 1
+            )
+            assert (
+                int(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT count(*) FROM project_run "
+                                "WHERE workspace_id=:workspace_id AND project_id=:project_id"
+                            ),
+                            {
+                                "workspace_id": seeded.workspace_id,
+                                "project_id": seeded.project_id,
+                            },
+                        )
+                    ).scalar_one()
+                )
+                == 1
+            )
+            assert (
+                int(
+                    (
+                        await conn.execute(
+                            text("SELECT count(*) FROM claim WHERE workspace_id=:workspace_id"),
+                            {"workspace_id": seeded.workspace_id},
+                        )
+                    ).scalar_one()
+                )
+                == before_claims
+            )
+            assert (
+                int(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT count(*) FROM agent_gate "
+                                "WHERE workspace_id=:workspace_id"
+                            ),
+                            {"workspace_id": seeded.workspace_id},
+                        )
+                    ).scalar_one()
+                )
+                == before_human_gates
+            )
+
+    run_async(scenario())
 
 
 def test_gate_tool_persists_the_exact_supported_draft_and_replays(tmp_path: Path) -> None:

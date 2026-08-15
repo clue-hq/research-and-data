@@ -61,6 +61,7 @@ async def _make_presenting_turn(
     scope,
     project_id: str,
     label: str,
+    expected_product_id: str | None = None,
 ):
     submission = await _capture_submission(
         conn,
@@ -68,7 +69,7 @@ async def _make_presenting_turn(
         workspace_id=scope.workspace_id,
         project_id=project_id,
         brand_id=scope.brand_id,
-        product_id=None,
+        product_id=expected_product_id,
         client_entity_id=scope.client_entity_id,
         label=label,
     )
@@ -119,8 +120,9 @@ async def _make_presenting_turn(
     )
     pin, created = await load_or_create_agent_turn_scope_pin(conn, submission=submission)
     assert created is True
-    assert pin.product_id is None
-    assert pin.product_kb_version is None
+    assert pin.product_id == expected_product_id
+    if expected_product_id is None:
+        assert pin.product_kb_version is None
     return submission, pin
 
 
@@ -160,7 +162,7 @@ def test_icp_synthesis_pins_company_kb_independently_from_selected_product_kb(
             storage = FsStorage(tmp_path / "synthesis-independent-kb-pins")
             cf = conn_session_factory(conn)
             artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=cf)
-            submission, _opening_pin = await _make_presenting_turn(
+            _submission, _opening_pin = await _make_presenting_turn(
                 conn,
                 artifacts=artifacts,
                 scope=scope,
@@ -174,11 +176,20 @@ def test_icp_synthesis_pins_company_kb_independently_from_selected_product_kb(
                 product_id=products[0].product_id,
             )
             assert confirmed is not None
+            selected_submission, selected_pin = await _make_presenting_turn(
+                conn,
+                artifacts=artifacts,
+                scope=scope,
+                project_id=project.project_id,
+                label="independent-kb-pins-selected",
+                expected_product_id=products[0].product_id,
+            )
+            assert selected_pin.product_kb_version == product_version
             execution_id = ExecutionId(
                 (
                     await conn.execute(
                         text("SELECT execution_id FROM agent_turn WHERE id = :turn_id"),
-                        {"turn_id": submission.turn_id},
+                        {"turn_id": selected_submission.turn_id},
                     )
                 ).scalar_one()
             )

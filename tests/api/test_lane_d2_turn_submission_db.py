@@ -1259,6 +1259,19 @@ def test_a_committed_turn_is_replayed_never_re_executed(tmp_path: Path) -> None:
                 submitted_by_user_id=USER_ID,
                 submitted_via_membership_id=f"{MEMBERSHIP_ID}-{project.workspace_id}",
             )
+            context_refs = int(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM agent_artifact_ref "
+                            "WHERE turn_id=:turn_id AND owner_kind='context' "
+                            "AND owner_id=:turn_id AND ref_role='context_materialization'"
+                        ),
+                        {"turn_id": turn_id},
+                    )
+                ).scalar_one()
+            )
+            assert context_refs == len(constitution.project_context_artifacts)
 
             # The committed outcome of the *first* attempt: an envelope artifact, its finalization,
             # and the immutable commit that makes it authoritative.

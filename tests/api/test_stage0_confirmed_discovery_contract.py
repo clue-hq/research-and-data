@@ -14,6 +14,7 @@ from clue_api.stage0_project_contracts import (
     ProductContextReceiptContract,
     ProductContextReceiptInputRef,
     StartConfirmedProjectRunV2Input,
+    StartConfirmedProjectRunV2Output,
     product_context_receipt_manifest_sha256,
 )
 
@@ -125,6 +126,10 @@ def test_confirmed_run_v2_has_no_model_or_frontend_authored_authority_fields() -
     for field in forbidden:
         with pytest.raises(ValidationError):
             StartConfirmedProjectRunV2Input.model_validate({field: "model-authored"})
+
+
+def test_confirmed_run_v2_does_not_expose_internal_receipt_or_readiness_ids() -> None:
+    assert set(StartConfirmedProjectRunV2Output.model_fields) == {"project_run_id", "phase"}
 
 
 def test_budget_controls_off_is_internal_record_only_allow_without_a_human_gate() -> None:

@@ -21,7 +21,7 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "open_icp_confirmation_gate@1",
     "confirm_icp@1",
     "override_stage0_readiness@1",
-    "start_confirmed_project_run@1",
+    "start_confirmed_project_run@2",
     "propose_field@2",
     "propose_source@1",
     "submit_ingestion@1",
@@ -50,7 +50,7 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "draft_account_research_directive@2",
     "open_directive_confirmation_gate@1",
     "launch_account_research@1",
-    # FI-2 exact current-message Account launch, retained in integration recipe0-stage0@10.
+    # FI-2 exact current-message Account launch, retained in integration recipe0-stage0@11.
     "launch_selected_account_research@1",
 )
 

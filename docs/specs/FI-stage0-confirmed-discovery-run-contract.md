@@ -1,6 +1,6 @@
 # FI — Stage-0 confirmed discovery-run contract
 
-**Status:** RATIFIED 2026-08-16 (founder); checkpoint 1 contract freeze
+**Status:** RATIFIED 2026-08-16 (founder); confirmed-run boundary implemented
 
 **Supersedes for the active flow:** the model-authored run-entry input in
 [`PC-C0-step4-contract-freeze.md`](./PC-C0-step4-contract-freeze.md) and the corresponding
@@ -45,7 +45,8 @@ The receipt:
 - cannot silently select a newer "current" KB, product, or ICP after the turn scope is pinned;
 - cannot mix workspace, project, client, product, or ICP lineages;
 - is derived by trusted backend code; neither the model nor the frontend supplies its id;
-- may be returned as a reference for replay and audit after the backend has created or reused it.
+- remains internal to the durable project-run/replay/audit lineage and is not returned to the
+  model or frontend.
 
 ## 2. Confirmed-run entry
 
@@ -56,9 +57,11 @@ object:
 {}
 ```
 
-The trusted execution/turn scope supplies the project. The backend resolves the approved ICP and
-the five receipt inputs, derives or reuses the receipt, evaluates the internal discovery boundary,
-creates or reuses the confirmed project run, and attaches the discovery recipe.
+The trusted execution/turn scope supplies the project. The tool implementation directly resolves
+the approved ICP and five existing receipt inputs, calls the existing content-addressed
+`compile_product_context`, evaluates the internal discovery boundary, creates or reuses the
+confirmed project run, and attaches the discovery recipe. There is no additional receipt service,
+context-compilation wrapper, agent call, or knowledge-generation phase.
 
 The model and frontend must never author:
 
@@ -105,15 +108,17 @@ confirms discovery scope only; it never generates product knowledge or grants bu
 The provider adapter compiles only a validated provider-neutral configuration into Exa-specific
 request fields. Exa-specific requirements do not leak into the receipt or run-entry tool.
 
-## 5. Checkpoint-1 executable freeze
+## 5. Executable contract
 
-`clue_api.stage0_project_contracts` freezes, without registering runtime behavior:
+`clue_api.stage0_project_contracts` freezes:
 
 - `ProductContextReceiptContract` and its exact five inputs;
 - canonical receipt digest validation;
 - the budget-controls-off non-interactive invariant;
 - the separate provider-neutral discovery configuration;
-- empty `StartConfirmedProjectRunV2Input` and reference-only output.
+- empty `StartConfirmedProjectRunV2Input` and a minimal output containing only the project-run id
+  and `discovery` phase.
 
-Later checkpoints implement receipt persistence/derivation, the internal readiness transition,
-the versioned tool/profile/skill/recipe promotion, discovery compilation, and browser acceptance.
+`start_confirmed_project_run@2` performs the receipt reuse, internal readiness transition and
+idempotent run start. Discovery-configuration compilation and browser acceptance remain separate
+follow-on checkpoints.
