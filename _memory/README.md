@@ -31,7 +31,10 @@ The central architecture bet is that verification must be modeled at the claim/d
   recursive link expansion: fetched snapshots publish immediately, independently fenced expansion
   jobs retry/background-resume without provider refetch, fast wakes respect the DB deadline, the
   browser keeps polling after its timeout fallback, and a retained isolated 210-test DB gate plus
-  frontend/static/migration verification is green.
+  frontend/static/migration verification is green. The later real browser/Scrapling/Luna canary
+  auto-released at roughly 48 seconds and completed 52 snapshots with zero refetch, while exposing
+  an unresolved crawl-run/page lock-order deadlock that inflated background completion to about ten
+  minutes.
 - `2026-08-15-stage0-fast-page-deferral.md` — fixes the 103.759-second eager-recon lease wait:
   clean unresolved fast pages now freeze out at the DB deadline and continue on the same
   background frontier, with authoritative v1/v2/replay regressions and a fresh 61-test DB gate;

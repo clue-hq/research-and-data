@@ -45,7 +45,25 @@
 
 ## Remaining release evidence
 
-- No paid live provider call was made for this internal state-machine correction. Existing
-  Firecrawl/Scrapling single-page adapters are unchanged; the zero-refetch property is proven by
-  provider counters and the durable database path. A later browser canary can validate latency in
-  production-like conditions without changing this contract.
+- A fixture-free browser canary subsequently ran with real Clerk authentication, local Scrapling
+  acquisition, and live OpenRouter Luna extraction against retained database
+  `clue_link_expansion_browser_20260815_c1` and retained root
+  `/private/tmp/clue-link-expansion-browser-20260815-c1`.
+- The browser automatically released to Home without `Continue anyway`: the immutable fast
+  checkpoint froze 8 snapshots at 40.006 seconds and Client-KB extraction/materialization brought
+  end-to-end release to roughly 48 seconds, accepted by the founder for this run.
+- Background completed the same crawl with 52 fetched snapshots, 52 completed expansions, two
+  quarantined ambiguous 90-second Scrapling calls, 245 durable progress events, and zero duplicate
+  provider attempts. The fast/background checkpoints remained one each on browser replay; all 81
+  retained content-addressed artifacts matched their hashes and durable references.
+- Fast extraction published Client-KB v1; background advanced the current KB to v2 with partial,
+  fail-closed extraction: 24 operations materialized, 4 were honest empty results, and 4 rejected
+  all invalid citations/values. One internal user/identity/workspace/brand/membership/provision and
+  one crawl run remained after replay; provisioning logged `created=false`.
+- Live concurrency revealed a separate unresolved lock-order defect: PostgreSQL recorded 23
+  deadlocks while concurrent workers alternated crawl-run FK/key-share locks and page-row locks.
+  Recovery preserved correctness and provider dedupe, but it stretched background completion to
+  598.8 seconds and generated 16 DBAPIError worker failures. Fix lock ordering before treating
+  background latency/noise as production-ready.
+- Browser diagnostics contained only Clerk development-key warnings. Retained logs contained no
+  test identity, verification code, bearer/JWT material, raw claim values, or evidence spans.
