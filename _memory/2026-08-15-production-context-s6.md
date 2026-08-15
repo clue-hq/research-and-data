@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-15
 **Branch:** `platform/onboarding-integration`
-**Status:** implemented and accepted; retained live evidence must remain untouched for review
+**Status:** implementation and company/product composition accepted; production release blocked by
+the measured fast-lane latency exception; retained evidence must remain untouched for review
 
 ## Delivered
 
@@ -24,35 +25,39 @@
 
 ## Live acceptance
 
-- Accepted retained database: `clue_s6_live_20260815_c2`.
-- Accepted retained root: `/private/tmp/clue-s6-live-20260815-c2`.
-- Shared frontend log: `/private/tmp/clue-s6-live-20260815-c1/logs/frontend.log`.
-- Discovery/fault-repair evidence: `clue_s6_live_20260815_c1` and
-  `/private/tmp/clue-s6-live-20260815-c1`.
-- Clean migration database: `clue_s6_migration_20260815_c1` at sole head `1043a61823f1`.
-- The real Clerk → Scrapling → Luna → Client-KB → browser/project → Terra chain released fast in
-  35.804 seconds, continued the same frontier in background, and completed a production
-  list-client-knowledge → exact-claim-inspection sequence through the real toolbelt.
-- One provider attempt remained `spend_unknown` and quarantined with no blind retry. Live product
-  catalog extraction was honestly empty/partial, so selection failed closed instead of presenting
-  fake options.
-- The retained C2 row preserves the pre-fix background-start timestamp defect. Its logs prove the
-  actual start; the corrected activation transaction and idempotency are covered by the final DB
-  regression. Do not rewrite the retained database.
+- Earlier company-path evidence remains in `clue_s6_live_20260815_c2` and its retained roots.
+- Closure evidence is retained in `clue_context_release_20260815_live_c2` and
+  `/private/tmp/clue-context-release-20260815-live-c2`.
+- The real Clerk → Scrapling → Luna → Client-KB → browser/project → Terra chain published a real
+  catalog, recorded human product selection, composed product profile/knowledge, used exact
+  company/product readers, and advanced company/product interview versions independently.
+- A v1 turn receipt remained immutable while background published v2; later turns observed v2/v3.
+- Fast took 103.759 seconds, missed the 40-second deadline, and required Continue-anyway. This is a
+  production blocker even though the product-context path completed correctly.
+- Background continued the same 53-snapshot frontier with zero duplicate successful page fetches;
+  two ambiguous Scrapling pages remain quarantined with no blind retry.
+- Live execution exposed the multi-emitter turn-stream sequence race. The final allocator uses a
+  separate transaction-scoped per-turn advisory-lock statement before the high-water read; 32
+  independent connections and a final live 49-event turn prove contiguous unique allocation.
+- Product selection is functional but its human response still renders as raw JSON. Password and
+  Device-Trust entry were not rerun in the closure session.
 
 ## Verification
 
-- Focused S1–S6 DB/API/fleet/replay matrix: 131 passed.
-- Final timestamp/overlay/trusted-pin regressions: 3 passed.
-- Frontend: 231 tests, lint, design-system build, and default production build passed; 19 routes.
-- Ruff passed; mypy passed across 678 source files; all 25 import-linter contracts passed.
-- Clean Alembic upgrade/downgrade/upgrade passed with one head.
-- The monolithic backend suite retained the previously documented 40 shared-baseline failures;
-  no S6-focused test failed. The clean DB gates separate migration/registry contamination from S6.
+- Final focused S3–S6 matrix: 90 passed; release-quarantine guard: 2 passed.
+- Frontend: 232 tests, lint, design-system build, and production build passed; 19 routes.
+- Ruff passed; mypy passed across 679 source files; all 25 import-linter contracts passed.
+- Clean Alembic upgrade/downgrade/upgrade passed at sole head `df332fd7904c`.
+- A fresh C4 broad run matched the exact reviewed 32-node quarantine: 26 shared-DB/order failures
+  and six owned Lane-E drift failures, with zero added/removed nodes and no S3–S6 failures. Script
+  19 and the manifest now fail closed on any node-set change; this is not described as a green full
+  suite.
 
 ## Review boundary
 
 - Full evidence and typed live exceptions are in
   `docs/specs/FI-production-deepagent-context-composition-S6-acceptance.md`.
+- Release blockers and the exact executable quarantine are tracked in
+  `docs/specs/FI-production-deepagent-context-release-closure.md`.
 - Do not store or copy credentials, user email, raw page bodies, or exact claim values into memory.
 - Do not delete the named databases or roots until review sign-off.

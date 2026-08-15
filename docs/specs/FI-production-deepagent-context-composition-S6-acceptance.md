@@ -4,13 +4,13 @@
 
 **Branch:** `platform/onboarding-integration`
 
-**Result:** implementation complete; live company-context path proven; full product journey not
-yet accepted
+**Result:** production composition and full product journey live-proven; release blocked by the
+measured 103.759-second fast phase and manual browser continuation
 
 ## 1. Outcome
 
 S6 composes the production path rather than stopping at independently testable components. The
-retained C2 run proved this chain through company knowledge and exact company-claim inspection:
+fresh retained closure run proved this chain through company and selected-product knowledge:
 
 ```text
 real Clerk session
@@ -22,14 +22,18 @@ real Clerk session
 → brand + company Client-KB + project Stage-0 card composition
 → context receipt
 → real Terra Head-of-ABM turn
-→ governed Client-KB list and exact-claim inspection
+→ real catalog presentation and human-only product selection
+→ product profile + Product-KB card composition
+→ governed company/product list and exact-claim inspection
+→ governed company/product interview publication on independent versions
 → checkpoint, stream, finalization, and replay-safe durable state
 → same-run background extraction and a later pinned company version
 ```
 
-The C2 run did **not** prove catalog publication, human product selection, product-card
-composition, product-claim inspection, or a live v1-turn → background-v2 → later-v2-turn sequence.
-Those are release-closure R5 requirements and must not be inferred from isolated S5 fixtures.
+The same run also preserved a v1 context receipt while background published v2, then composed
+later v2/v3 turns. No S5 fixture was substituted for the catalog, product, claims, cards, model,
+gate, or tool execution. The result is functionally live-proven but not release-accepted: the fast
+phase took 103.759 seconds and the browser required the explicit Continue-anyway path.
 
 The implementation does not add another knowledge store, conversation runner, or card species.
 It composes the S1–S5 contracts through the real API/fleet path and adds only the S6 publication,
@@ -79,85 +83,101 @@ project-state-only changes, Project A/B isolation, missing-product refusal, stab
 pins, replay, crash before and after context persistence, runtime timeout, receipt/body privacy,
 fleet composition, trusted product-selection pins, and same-run fast/background continuity.
 
-### S6-E — Live production discovery run
+### S6-E — Live production closure run
 
-The retained C2 run used the real browser, Clerk session, backend API, fleet, Scrapling acquisition,
-OpenRouter Luna extraction, and OpenRouter Terra Head-of-ABM. No fixture card, claim, product option,
-or provider response was substituted into the live path. It is retained as honest discovery
-evidence, not accepted proof of the missing product journey.
+The retained closure run used the real browser, Clerk session, backend API, fleet, Scrapling
+acquisition, OpenRouter Luna extraction, and OpenRouter Terra Head-of-ABM. No fixture card, claim,
+product option, or provider response was substituted. It proved the missing product journey and
+also exposed the blocking latency, stream-race, and gate-presentation issues recorded below.
 
 ## 3. Correlated live evidence
 
 ### Fast and background recon
 
-- Recon: `bae04840-bb13-5c9f-9f54-17d17a1016f1`.
-- Fast lane: 2026-08-15 04:05:23.557 IST to 04:05:59.361 IST, **35.804 seconds**. This satisfies
-  the agreed `<=40 seconds` release target.
-- Fast checkpoint: 7 immutable snapshots.
-- Background checkpoint: 29 immutable snapshots; it continued the same run/frontier.
-- Final frontier: 30 attempts, 29 fetched/persisted and one quarantined `spend_unknown` attempt.
-  The ambiguous paid/provider outcome was not blindly called again.
-- Client-KB version 1 is the fast publication. Version 2 is the background publication with
-  `base_version=1`; the historical v1 corpus remained unchanged. Both submitted production turns
-  occurred after background completion and pinned v2, so C2 does not prove a v1 turn receipt
-  remaining pinned while v2 publishes.
+- Retained database: `clue_context_release_20260815_live_c2`; retained root:
+  `/private/tmp/clue-context-release-20260815-live-c2`.
+- Recon: `e1dcb377-4b7e-59bf-b334-bb4359acd3aa`; crawl:
+  `eac3f589-e8cb-43c7-99d6-e3a6f469c6e1`.
+- Fast lane: 2026-08-15 11:23:14.155 IST to 11:24:57.914 IST, **103.759 seconds**.
+  The crawl's fast claim deadline was 11:23:54.201. The run therefore missed the `<=40s` target
+  by 63.759 seconds and required the browser's explicit Continue-anyway action.
+- Fast checkpoint: 11 immutable snapshots at 11:24:48.328. Background checkpoint: 53 snapshots at
+  11:28:22.658 on the same crawl/frontier. Background completed at 11:28:32.265.
+- Final frontier: 53 fetched pages, two quarantined pages, 53 URL-level snapshots, 52 unique
+  content hashes, 55 attempts, and zero pages with duplicate successful provider acquisition.
+  Both ambiguous Scrapling pages remained quarantined and were not blindly retried.
+- Client-KB v1 is the fast publication; v2 is the background publication. Turn
+  `67a06adf-64ee-5b32-91f7-cca6019e6e05` remained pinned to v1 with context bundle
+  `cd12afe3-34f5-5d88-917f-e3d7999b3f34` and aggregate hash
+  `5a9346324ec626e751d315cae1eeb4e50887f92a4dc28825bef10cf978682b49`. Later turns pinned v2,
+  and a governed company interview publication advanced company knowledge to v3 without changing
+  that historical receipt.
 
 ### Browser and deepagent
 
-- The browser was released only after the fast Client-KB marker committed and reached the real
-  Home/project experience.
-- The production turn composed the real brand card, account-wide `ClientKnowledgeCard@2`, and
-  only that project's Stage-0 state. No product card was invented because no product was selected.
-- In the first real Terra turn the model mistyped a claim identifier copied from the bounded card.
-  Exact inspection refused it without widening scope. This is the intended fail-closed result.
-- In the second real Terra turn the Head-of-ABM called `list_client_knowledge@2`, received an exact
-  pinned reference, passed that exact reference to `inspect_client_claim@2`, and rendered bounded
-  official-site provenance, freshness, confidence, verification, and lineage through the real
-  toolbelt. This path incurred no new acquisition spend.
-- Both turns used the immutable `company-and-selected-product-v2` policy and pinned Client-KB v2.
+- Real Clerk authentication and internal workspace/client provisioning were reused from the same
+  retained browser journey. Password and Device-Trust entry were not rerun in this closure, so
+  this is real-session composition proof rather than a second password/MFA acceptance.
+- The real catalog lineage contained Virtual Care Assistant and Aura Anywhere. Production turn
+  `9ad377be-97ee-5876-95b9-d02453235af4` composed the company v3 catalog with no selected product
+  and opened product gate `43ab5609-b400-5b5b-94a2-91bf8c4b81a4`.
+- The authenticated human approved Aura Anywhere (`prd_65ae1808204e59f59776574e9b6d6dee`).
+  Turn `d6cf1d5c-43c2-57c4-b43a-55dfae89a1c1` then pinned `(company v3, product v1)`, composed the
+  selected-product profile and knowledge card, and exercised both company and product inspectors.
+- Human product facts advanced only the selected product from v1 to v2 and then v3. Turn
+  `a367dabc-ebf3-57c4-a3be-51708204fed3` pinned product v2 and inspected its exact governed claim.
+  The final clean turn `99e1a99a-17c6-55a4-8811-939d7c65f111` pinned `(company v3, product v3)`,
+  listed four exact product references without bodies, and persisted 49 unique contiguous stream
+  sequences (`1..49`). Company remained v3 throughout the product-only publications.
+- Context cards, list/inspect tools, model/checkpoint messages, finalization, and replay all used
+  the immutable turn pair rather than resolving whichever company/product marker was newest.
 
 ### Honest live exceptions
 
-1. Both Luna `client.product_catalog` operations—fast and background—received HTTP 200 and then
-   raised `GatewayError` because no usable output text was present. Under the V1 accounting path
-   both became `spend_unknown`, so no catalog was published and the production gate correctly
-   returned `product_catalog_empty`. This proves the fail-closed empty state, not catalog success.
-   The V2 extraction policy now requests reasoning effort `none`, raises the bounded output budget
-   from 1,500 to 4,096 tokens, and records a known terminal response as retained/costed `failed`
-   instead of `spend_unknown`; its live proof belongs to the next fresh run.
-2. One Scrapling attempt ended `spend_unknown` and remained quarantined. There was no duplicate
-   provider call or hidden success claim.
-3. C2 exposed an observability bug: `background_started_at` had been recorded only at completion,
-   although the crawl event log proved the background phase actually started about 40.83 seconds
-   earlier. `BACKGROUND_STARTED` now advances the recon lane to `RUNNING` in the same transaction
-   as its durable event. A dedicated idempotency regression proves start is recorded once and
-   completion remains owned by Client-KB materialization. The retained C2 database intentionally
-   preserves the pre-fix row as discovery evidence; the fix was verified offline after the live
-   run rather than rewriting retained evidence.
+1. The fast phase took 103.759 seconds and the browser required manual continuation. This blocks
+   production release even though the eventual catalog/product context was correct.
+2. Scrapling quarantined two `spend_unknown` pages (`/blog` and
+   `/direct-access-colonoscopy`) without duplicate calls. The remaining 53 pages and both corpus
+   checkpoints reconciled; these two ambiguous outcomes remain operator-visible.
+3. Legitimate stream, tool, and finalization emitters raced on `max(sequence)+1`. The first live
+   product-write turn exposed the collision while its durable turn still completed. The final fix
+   serializes allocation with a transaction-scoped per-turn advisory lock in a separate SQL
+   statement before reading the high-water mark; a 32-independent-connection regression and the
+   final live turn's `49/49` event/sequence count prove the repaired behavior. Interim fault turns
+   remain in the retained evidence and are not called clean acceptance.
+4. The product-selection answer is functionally processed but its human message is rendered as raw
+   JSON in the browser. This is a presentation defect, not a context-authority failure, and must be
+   repaired before calling the user experience polished.
+5. The explicit founder-deferred model-visible `product_id` authority concern was not changed by
+   this closure and remains recorded in the release-closure plan.
 
 ## 4. Verification matrix
 
 | Gate | Result |
 |---|---:|
-| Focused S1–S6 backend/API/fleet/replay/DB matrix | 131 passed |
-| Final background timestamp, overlay, and trusted gate regressions | 3 passed |
-| Frontend tests | 231 passed |
+| Final focused S3–S6 backend/API/fleet/replay/DB matrix | 90 passed |
+| New exact broad-quarantine guard | 2 passed |
+| Independent-connection stream allocator fault test | 32 writers, sequences 1..32 |
+| Frontend tests | 232 passed |
 | Frontend lint | passed |
 | Design-system token build | passed |
 | Default frontend production build | passed, 19 routes |
 | Ruff format/check | passed |
-| Mypy | passed, 678 source files |
+| Mypy | passed, 679 source files |
 | Import-linter | 25 kept, 0 broken |
 | Alembic heads | one head, `df332fd7904c` |
 | Fresh upgrade/downgrade/upgrade smoke | passed |
-| Real browser + Clerk + Scrapling + Luna + Terra | company path passed; product path absent |
+| Broad backend C4 gate | exact reviewed 32-node quarantine; zero added/removed |
+| Real browser + Clerk + Scrapling + Luna + Terra | company/product path passed; fast latency failed |
 
-The fresh repository-wide run on `clue_context_release_20260815_broad_c2` produced **32 failures**,
-not the previously reported 40. Twenty-six are suite-order/shared-database contamination and pass
-under their required isolation: three migration-smoke nodes and twenty-three
-discovery/scoring/durable/fleet/waterfall nodes. Six are genuine pre-existing Lane-E acceptance
-drift (one E1, one E2, four E3). No S3–S6 context-composition node failed, but the broad gate is not
-green and these failures cannot be called accepted merely because they are unrelated.
+The final repository-wide run used fresh database `clue_context_release_20260815_broad_c4` and
+produced **the same exact 32 failures** as C3: 26 suite-order/shared-database isolation failures and
+six genuine pre-existing Lane-E acceptance failures. No S3–S6 context-composition node failed.
+`scripts/19_production_context_release_gate.py` now executes or reads the JUnit result and passes
+only when the exact reviewed node set matches
+`tests/fixtures/production_context/release_broad_quarantine.json`. A count match with a different
+node, a new node, or a repaired node left in quarantine fails closed. The monolithic suite is not
+called green; its debt is owned and mechanically bounded.
 
 Next 16's default Turbopack production compiler also reproducibly deadlocked in this checkout even
 after its workspace root was pinned. The supported webpack compiler completed the full build,
@@ -169,8 +189,13 @@ package to prevent unrelated ancestor lockfiles from expanding the application r
 
 Do not modify or delete these until review sign-off:
 
-- Accepted live database: `clue_s6_live_20260815_c2`.
-- Accepted live artifacts/logs: `/private/tmp/clue-s6-live-20260815-c2`.
+- Closure live database: `clue_context_release_20260815_live_c2`.
+- Closure live artifacts/logs: `/private/tmp/clue-context-release-20260815-live-c2`.
+- Final broad database: `clue_context_release_20260815_broad_c4`.
+- Final broad JUnit: `/private/tmp/clue-context-release-20260815-broad-c4.xml`.
+- Final broad log: `/private/tmp/clue-context-release-20260815-broad-c4-pytest.log`.
+- Earlier accepted company-path database: `clue_s6_live_20260815_c2`.
+- Earlier accepted company-path artifacts/logs: `/private/tmp/clue-s6-live-20260815-c2`.
 - Shared frontend log for that browser session:
   `/private/tmp/clue-s6-live-20260815-c1/logs/frontend.log`.
 - Discovery/fault-repair database: `clue_s6_live_20260815_c1`.
@@ -182,9 +207,16 @@ contains no credentials, user email, raw page bodies, or claim values.
 
 ## 6. Current verdict
 
-S6's production composition is implemented and the live company-context path is proven. Full S6
-acceptance remains open until release-closure R5 publishes a real catalog, records human product
-selection, composes and inspects selected-product knowledge, proves v1-to-v2 turn pin continuity,
-and reconciles the broad-suite release debt. The partial catalog, ambiguous provider spend, and
-pre-fix background timestamp remain explicit retained evidence—not hidden or replaced with fixture
-success.
+S3–S6 production context composition is implemented and the real company + selected-product
+journey is live-proven end to end. The shared claim substrate enforces company/product field scope;
+cards and tools retain exact turn pins; gate snapshots have DSAR/no-resurrection coverage; metrics
+have a production OTLP path; the human catalog selection and independent interview publications
+worked through the production fleet.
+
+The branch is **not production-release-ready**. The final live fast phase missed the target by
+63.759 seconds and required manual continuation. Two Scrapling pages remain spend-unknown,
+password/Device-Trust entry was not rerun, the gate answer has a raw-JSON presentation defect, and
+the broad backend suite remains green only under an exact owned 32-node quarantine rather than in
+absolute terms. The product-context architecture is materially ready; release should wait for the
+fast-lane correction and a new no-override retained run. The model-visible product-scope authority
+issue remains deliberately deferred by founder direction.

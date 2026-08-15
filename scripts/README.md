@@ -341,3 +341,24 @@ also requires the expected lease generation and can only settle an unleased matc
 it never calls a provider. See
 [`docs/runbooks/stage0-official-site-crawl.md`](../docs/runbooks/stage0-official-site-crawl.md) for
 the production decision sequence and safety boundaries.
+
+## Production-context broad release gate
+
+Script 19 runs the full backend suite and compares every observed failure with the exact reviewed
+S3-S6 release quarantine. It does not skip or mark tests as expected failures. A new failure or a
+repaired test that remains in the manifest both fail the command so the baseline cannot silently
+grow or become stale. Point `CLUE_DATABASE_URL` at a fresh, migrated, disposable database first:
+
+```bash
+uv run python scripts/19_production_context_release_gate.py --run
+```
+
+An already-produced JUnit result can be audited without rerunning tests:
+
+```bash
+uv run python scripts/19_production_context_release_gate.py \
+  --junit /path/to/broad-suite.xml
+```
+
+The reviewed owners, reasons, removal conditions, and 32-node baseline live in
+`tests/fixtures/production_context/release_broad_quarantine.json`.

@@ -1,6 +1,7 @@
 # Production Deepagent Context Composition
 
-**Status:** RATIFIED for implementation on `platform/onboarding-integration`  
+**Status:** IMPLEMENTED on `platform/onboarding-integration`; production release blocked by the
+live fast-lane latency exception recorded in the S6 acceptance
 **Date:** 2026-08-14  
 **Owners:** frontend/backend integration + platform agent runtime  
 **Authority:** contract delta to Doc A Part III and PC-C8 for this production composition. Where
@@ -19,8 +20,11 @@ new-turn `company-and-selected-product-v2` policy in the
 [S5.0 child contract](./FI-production-deepagent-context-S50-product-knowledge-contract.md). S5-A–F
 now ship the grounded catalog/product materializer, catalog-to-spine lineage, V2/product cards,
 trusted product tools, durable version pair, real fleet composition, and human product-selection
-gate through profile `v27`, skill `v14`, and Recipe #0 `v9`. S6 live browser/provider acceptance
-remains outside this checkpoint.
+gate through profile `v27`, skill `v14`, and Recipe #0 `v9`. S6 adds publication refresh,
+privacy-safe OTLP observability, body-free operator reads, and full production composition. The
+closure run promotes profile `v28` / skill `v15`, proves real catalog selection and product
+knowledge use, and records the blocking 103.759-second fast phase in the
+[S6 acceptance](./FI-production-deepagent-context-composition-S6-acceptance.md).
 
 ## 1. Purpose
 
@@ -820,8 +824,8 @@ pin and real production composition; S5-F human selection/refresh acceptance.
 
 ### S6 — Refresh, replay, observability, and production acceptance
 
-**Status:** implementation complete; live company-context path proven 2026-08-15; full product
-journey acceptance remains open under
+**Status:** implementation and full company/product production journey proven 2026-08-15; release
+remains blocked by the measured fast-lane latency exception under
 `FI-production-deepagent-context-release-closure.md`. The retained evidence is reconciled in
 `FI-production-deepagent-context-composition-S6-acceptance.md`. S6 does not introduce another
 card, knowledge store, turn runner, or operator-only source of truth.
@@ -973,7 +977,7 @@ S4-A readers
 → S5-D governed product tools (complete)
 → S5-E durable pair pin + production composition (complete)
 → S5-F human selection + refresh acceptance (complete)
-→ S6 production composition (implementation complete; full product live acceptance open under R5)
+→ S6 production composition (implemented and full product path live-proven; latency release gate open)
 ```
 
 ## 10. Definition of done
